@@ -18,7 +18,6 @@ import datetime
 import uuid
 
 import pytest
-import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
@@ -301,8 +300,6 @@ class TestFilters:
     @pytest.mark.asyncio
     async def test_combined_filters(self, db_session: AsyncSession) -> None:
         """Multiple filters applied simultaneously narrow to the intersection."""
-        now = datetime.datetime.now(tz=datetime.timezone.utc)
-
         # Matches all three filters
         await _seed_game(
             db_session,
