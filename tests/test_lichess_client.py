@@ -5,7 +5,7 @@ Uses unittest.mock to simulate httpx streaming responses without real HTTP calls
 
 import json
 from collections.abc import AsyncIterator
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
