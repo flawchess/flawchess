@@ -262,3 +262,84 @@ class TestFetchChesscomGames:
                 results.append(game)
 
         assert results == []
+
+    @pytest.mark.asyncio
+    async def test_410_on_archives_raises_value_error(self):
+        """410 on archives endpoint (e.g. email-format username) should raise ValueError."""
+        gone_resp = _make_response({}, status_code=410)
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=gone_resp)
+
+        with patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()):
+            with pytest.raises(ValueError, match="chess.com request failed"):
+                async for _ in fetch_chesscom_games(
+                    mock_client, "user@domain.com", user_id=1
+                ):
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_403_on_archives_raises_value_error(self):
+        """403 on archives endpoint should raise ValueError."""
+        forbidden_resp = _make_response({}, status_code=403)
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=forbidden_resp)
+
+        with patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()):
+            with pytest.raises(ValueError, match="chess.com request failed"):
+                async for _ in fetch_chesscom_games(
+                    mock_client, "testuser", user_id=1
+                ):
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_500_on_archives_raises_value_error(self):
+        """500 on archives endpoint should raise ValueError."""
+        server_error_resp = _make_response({}, status_code=500)
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=server_error_resp)
+
+        with patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()):
+            with pytest.raises(ValueError, match="chess.com request failed"):
+                async for _ in fetch_chesscom_games(
+                    mock_client, "testuser", user_id=1
+                ):
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_500_on_archive_fetch_skips_archive(self):
+        """500 on a per-archive fetch should skip that archive, not raise."""
+        archives_resp = _make_response(
+            {"archives": ["https://api.chess.com/pub/player/testuser/games/2024/03"]}
+        )
+        server_error_resp = _make_response({}, status_code=500)
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[archives_resp, server_error_resp])
+
+        with patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()):
+            results = []
+            async for game in fetch_chesscom_games(mock_client, "testuser", user_id=1):
+                results.append(game)
+
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_410_on_archive_fetch_skips_archive(self):
+        """410 on a per-archive fetch should skip that archive gracefully."""
+        archives_resp = _make_response(
+            {"archives": ["https://api.chess.com/pub/player/testuser/games/2024/03"]}
+        )
+        gone_resp = _make_response({}, status_code=410)
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[archives_resp, gone_resp])
+
+        with patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()):
+            results = []
+            async for game in fetch_chesscom_games(mock_client, "testuser", user_id=1):
+                results.append(game)
+
+        assert results == []
