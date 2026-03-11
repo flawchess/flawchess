@@ -7,7 +7,7 @@ files:
 ---
 
 ## Problem
-
+?
 Standard Zobrist hashing is all-or-nothing — you can't query for pieces on specific squares from a hash. Users may want to find games matching partial positions, e.g. "all games where black has a pawn on d6, a pawn on c6, and a knight on f6 by move 3." The current three-hash design (full_hash, white_hash, black_hash) cannot support this.
 
 ## Solution

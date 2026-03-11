@@ -55,12 +55,12 @@ Users can determine their success rate for any opening position they specify, fi
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| FastAPI for backend | User expertise, async support, modern Python | — Pending |
-| API-only import (no PGN upload) | Simpler v1, covers primary use case | — Pending |
-| Interactive board over FEN input | Better UX for target users | — Pending |
-| uv for package management | Fast, modern Python tooling | — Pending |
-| Frontend framework | TBD — need to decide React vs simpler approach | — Pending |
-| Database choice | TBD — SQLite vs Postgres, needs position query efficiency | — Pending |
+| FastAPI for backend | User expertise, async support, modern Python | Settled |
+| API-only import (no PGN upload) | Simpler v1, covers primary use case | Settled |
+| Interactive board over FEN input | Better UX for target users | Settled |
+| uv for package management | Fast, modern Python tooling | Settled |
+| React 19 + TypeScript + Vite 5 | react-chessboard 5.x requires React 19; TanStack Query supports it | Settled |
+| PostgreSQL (no SQLite) | Multi-user concurrent writes, BIGINT index performance, asyncpg | Settled |
 
 ---
 *Last updated: 2026-03-11 after initialization*

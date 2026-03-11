@@ -39,7 +39,7 @@ Already decided per PROJECT.md constraints. FastAPI is the right call:
 
 ## Frontend
 
-### Recommendation: React 18.x with Vite 5.x
+### Recommendation: React 19.x with Vite 5.x
 
 React is the right choice here over simpler alternatives (plain HTML/JS, Vue, Svelte) for one key reason: the best interactive chess board library in the JavaScript ecosystem — **Chessground** and its React wrappers — is built with React in mind, and the broader chess UI ecosystem (react-chessboard, etc.) is React-first.
 

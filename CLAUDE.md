@@ -8,8 +8,8 @@ Chessalytics — a multi-user chess analysis platform. Users import games from c
 
 ## Tech Stack
 
-- **Backend**: FastAPI 0.115.x, Python 3.12, uv, Uvicorn
-- **Frontend**: React 18 + TypeScript + Vite 5, react-chessboard 4.x, chess.js, TanStack Query, Tailwind CSS
+- **Backend**: FastAPI 0.115.x, Python 3.13, uv, Uvicorn
+- **Frontend**: React 19 + TypeScript + Vite 5, react-chessboard 5.x, chess.js, TanStack Query, Tailwind CSS
 - **Database**: PostgreSQL (asyncpg). No SQLite.
 - **ORM**: SQLAlchemy 2.x async (`select()` API, not legacy 1.x) + Alembic + asyncpg
 - **Auth**: FastAPI-Users
@@ -75,6 +75,16 @@ JOIN games g ON g.id = gp.game_id
 WHERE gp.white_hash = :hash AND g.user_id = :uid
   AND g.time_control IN (...) -- optional filters
 ```
+
+## Project Management
+
+This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/get-shit-done). All features and work are planned through GSD phases and roadmap. Do not add unplanned features, refactors, or improvements outside the current GSD phase scope. If something seems needed but isn't in the plan, flag it rather than implementing it.
+
+## User Context
+
+- Data scientist, 15 years web dev, Python expert, proficient with FastAPI
+- Not a frontend specialist but comfortable with React
+- Wants to approve tech decisions before they're locked in
 
 ## Critical Constraints
 

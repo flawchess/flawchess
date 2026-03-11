@@ -43,7 +43,7 @@ async def fetch_lichess_games(
     params: dict[str, str | bool] = {
         "pgnInJson": True,
         "perfType": _PERF_TYPES,
-        "moves": False,
+        "moves": True,
         "tags": True,
         "opening": True,
     }
