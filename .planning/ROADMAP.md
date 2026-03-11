@@ -17,6 +17,12 @@
 - IMP-05: All available game metadata is stored (PGN, time control, rated flag, result, opponent, color, platform URL, timestamps)
 - IMP-06: Position hashes (white, black, full Zobrist) are precomputed and stored for every half-move at import time
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Project scaffold, SQLAlchemy models, and Alembic migration
+- [ ] 01-02-PLAN.md — Zobrist hash computation module (TDD)
+
 **Success Criteria:**
 1. A developer can run migrations and observe `games`, `game_positions`, and related tables with the correct columns and indexes in the DB.
 2. Given a PGN string, the position hash module returns three integer hashes per half-move, and unit tests confirm identical board states produce identical hashes.
