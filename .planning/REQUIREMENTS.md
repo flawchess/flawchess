@@ -80,32 +80,32 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| IMP-01 | TBD | Pending |
-| IMP-02 | TBD | Pending |
-| IMP-03 | TBD | Pending |
-| IMP-04 | TBD | Pending |
-| IMP-05 | TBD | Pending |
-| IMP-06 | TBD | Pending |
-| ANL-01 | TBD | Pending |
-| ANL-02 | TBD | Pending |
-| ANL-03 | TBD | Pending |
-| FLT-01 | TBD | Pending |
-| FLT-02 | TBD | Pending |
-| FLT-03 | TBD | Pending |
-| FLT-04 | TBD | Pending |
-| RES-01 | TBD | Pending |
-| RES-02 | TBD | Pending |
-| RES-03 | TBD | Pending |
-| AUTH-01 | TBD | Pending |
-| AUTH-02 | TBD | Pending |
-| INFRA-01 | TBD | Pending |
-| INFRA-02 | TBD | Pending |
-| INFRA-03 | TBD | Pending |
+| IMP-01 | Phase 2: Import Pipeline | Pending |
+| IMP-02 | Phase 2: Import Pipeline | Pending |
+| IMP-03 | Phase 2: Import Pipeline | Pending |
+| IMP-04 | Phase 2: Import Pipeline | Pending |
+| IMP-05 | Phase 1: Data Foundation | Pending |
+| IMP-06 | Phase 1: Data Foundation | Pending |
+| ANL-01 | Phase 4: Frontend and Auth | Pending |
+| ANL-02 | Phase 3: Analysis API | Pending |
+| ANL-03 | Phase 3: Analysis API | Pending |
+| FLT-01 | Phase 3: Analysis API | Pending |
+| FLT-02 | Phase 3: Analysis API | Pending |
+| FLT-03 | Phase 3: Analysis API | Pending |
+| FLT-04 | Phase 3: Analysis API | Pending |
+| RES-01 | Phase 3: Analysis API | Pending |
+| RES-02 | Phase 3: Analysis API | Pending |
+| RES-03 | Phase 3: Analysis API | Pending |
+| AUTH-01 | Phase 4: Frontend and Auth | Pending |
+| AUTH-02 | Phase 4: Frontend and Auth | Pending |
+| INFRA-01 | Phase 1: Data Foundation | Pending |
+| INFRA-02 | Phase 2: Import Pipeline | Pending |
+| INFRA-03 | Phase 1: Data Foundation | Pending |
 
 **Coverage:**
 - v1 requirements: 21 total
-- Mapped to phases: 0
-- Unmapped: 21
+- Mapped to phases: 21
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-11*
