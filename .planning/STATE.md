@@ -2,24 +2,24 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 02-04 complete
-status: completed
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-03-11T14:52:24.198Z"
+current_plan: 03-01 complete
+status: executing
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-03-11T14:59:23.920Z"
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
 Phase: 03-analysis-api
-Status: In Progress — 1/2 plans done
-Current Plan: 03-01 complete
-Stopped At: Completed 03-01-PLAN.md
+Status: Complete — 2/2 plans done
+Current Plan: 03-02 complete
+Stopped At: Completed 03-02-PLAN.md
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -31,7 +31,7 @@ Current focus: Phase 2 - Import Pipeline
 |-------|------|--------|-------|
 | 1 | Data Foundation | Complete | 2/2 |
 | 2 | Import Pipeline | Complete | 4/4 |
-| 3 | Analysis API | In Progress | 1/2 |
+| 3 | Analysis API | Complete | 2/2 |
 | 4 | Frontend and Auth | Pending | 0/0 |
 
 ## Key Context
@@ -65,6 +65,8 @@ Current focus: Phase 2 - Import Pipeline
 - **chess.com per-archive non-200 uses continue**: Partial archive failure uses continue not raise — one bad month should not abort the whole user import
 - **Analysis DISTINCT by Game.id**: _build_base_query uses .distinct(Game.id) so a position appearing at multiple plies counts the game only once in W/D/L stats
 - **Analysis two-query pattern**: query_all_results fetches lightweight (result, user_color) tuples for stats; query_matching_games fetches full Game objects for display — keeps stats accurate for total > limit
+- **DISTINCT ON ORDER BY constraint**: PostgreSQL requires DISTINCT ON column to be first in ORDER BY — paginated analysis query uses order_by(Game.id, Game.played_at.desc())
+- **select_entity list unpacking**: _build_base_query normalizes select_entity to list and unpacks via *entities — supports both single ORM entity and multi-column selects in query_all_results
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -76,6 +78,7 @@ Current focus: Phase 2 - Import Pipeline
 | 02 | 03 | 3min | 2 | 5 |
 | 02 | 04 | 2min | 2 | 2 |
 | 03 | 01 | 2min | 2 | 5 |
+| 03 | 02 | 4min | 2 | 3 |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -84,4 +87,4 @@ Current focus: Phase 2 - Import Pipeline
 - **Add users table and authentication** (database) — users table, FastAPI-Users integration, link chess.com + lichess to single user account
 
 ---
-*Last updated: 2026-03-11 after 03-01 completion — POST /analysis/positions endpoint with W/D/L stats and paginated games*
+*Last updated: 2026-03-11 after 03-02 completion — 26 analysis tests (11 repo + 15 service) covering all 9 requirements; two PostgreSQL query bugs fixed in analysis_repository.py*
