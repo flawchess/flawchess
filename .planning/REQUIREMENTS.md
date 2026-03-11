@@ -9,8 +9,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Import
 
-- [ ] **IMP-01**: User can import games from chess.com by entering their username
-- [ ] **IMP-02**: User can import games from lichess by entering their username
+- [x] **IMP-01**: User can import games from chess.com by entering their username
+- [x] **IMP-02**: User can import games from lichess by entering their username
 - [x] **IMP-03**: User can re-sync to fetch only new games since last import (incremental)
 - [x] **IMP-04**: User sees import progress and status while games are being fetched
 - [x] **IMP-05**: All available game metadata is stored (PGN, time control, rated flag, result, opponent, color, platform URL, timestamps)
@@ -80,8 +80,8 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| IMP-01 | Phase 2: Import Pipeline | Pending |
-| IMP-02 | Phase 2: Import Pipeline | Pending |
+| IMP-01 | Phase 2: Import Pipeline | Complete |
+| IMP-02 | Phase 2: Import Pipeline | Complete |
 | IMP-03 | Phase 2: Import Pipeline | Complete |
 | IMP-04 | Phase 2: Import Pipeline | Complete |
 | IMP-05 | Phase 1: Data Foundation | Complete |
@@ -109,4 +109,4 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-11 after initial definition*
+*Last updated: 2026-03-11 after 02-02 completion (IMP-01, IMP-02 complete)*
