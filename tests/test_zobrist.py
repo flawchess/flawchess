@@ -3,9 +3,9 @@
 Tests verify determinism, color-independence, BIGINT safety, PGN parsing, and
 transposition equivalence for the three-hash scheme (white_hash, black_hash, full_hash).
 """
+
 import chess
 import chess.pgn
-import io
 import pytest
 
 from app.services.zobrist import compute_hashes, hashes_for_game
@@ -17,6 +17,7 @@ INT64_MAX = 2**63 - 1
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def board_after_e4():
@@ -45,6 +46,7 @@ def board_after_e4_d5():
 # Determinism
 # ---------------------------------------------------------------------------
 
+
 def test_starting_position_is_deterministic(starting_board):
     """Same board position yields identical hashes on repeated calls."""
     wh1, bh1, fh1 = compute_hashes(starting_board)
@@ -65,6 +67,7 @@ def test_two_fresh_boards_produce_equal_hashes():
 # Different positions produce different full_hash
 # ---------------------------------------------------------------------------
 
+
 def test_different_positions_different_full_hash(starting_board, board_after_e4):
     """Starting position and position after 1.e4 have different full_hash values."""
     _, _, fh_start = compute_hashes(starting_board)
@@ -75,6 +78,7 @@ def test_different_positions_different_full_hash(starting_board, board_after_e4)
 # ---------------------------------------------------------------------------
 # Color independence
 # ---------------------------------------------------------------------------
+
 
 def test_white_hash_ignores_black_moves(board_after_e4_e5, board_after_e4_d5):
     """After 1.e4 e5 vs 1.e4 d5, white_hash is identical (white pawn on e4 in both)."""
@@ -116,6 +120,7 @@ def test_black_hash_changes_when_black_moves(board_after_e4, board_after_e4_e5):
 # BIGINT safety
 # ---------------------------------------------------------------------------
 
+
 def test_hashes_are_signed_int64(starting_board):
     """All three hash values must fit in PostgreSQL BIGINT range."""
     for h in compute_hashes(starting_board):
@@ -131,6 +136,7 @@ def test_hashes_are_signed_int64_after_moves(board_after_e4_e5):
 # ---------------------------------------------------------------------------
 # Empty board
 # ---------------------------------------------------------------------------
+
 
 def test_empty_board_hashes(empty_board):
     """Cleared board: white_hash and black_hash are 0; full_hash need not be 0."""
@@ -149,11 +155,11 @@ SIMPLE_PGN = "1. e4 e5 2. Nf3 *"
 
 
 def test_hashes_for_game_includes_ply_zero():
-    """PGN '1. e4 e5 2. Nf3 *' should yield 5 entries (ply 0 through 4)."""
+    """PGN '1. e4 e5 2. Nf3 *' has 3 half-moves, so 4 entries (ply 0 through 3)."""
     results = hashes_for_game(SIMPLE_PGN)
-    assert len(results) == 5
+    assert len(results) == 4
     plies = [r[0] for r in results]
-    assert plies == [0, 1, 2, 3, 4]
+    assert plies == [0, 1, 2, 3]
 
 
 def test_hashes_for_game_ply_zero_is_starting_position():
@@ -187,6 +193,7 @@ def test_hashes_for_game_returns_int64_values():
 # ---------------------------------------------------------------------------
 # Transposition equivalence
 # ---------------------------------------------------------------------------
+
 
 def test_transposition_produces_same_hashes():
     """Same final position reached via different move orders has identical hash tuples."""
