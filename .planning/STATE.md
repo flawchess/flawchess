@@ -78,6 +78,7 @@ Current focus: Phase 2 - Import Pipeline
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions for querying pieces on specific squares
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match; optional backend Zobrist lookup
+- **Add users table and authentication** (database) — users table, FastAPI-Users integration, link chess.com + lichess to single user account
 
 ---
 *Last updated: 2026-03-11 after 02-04 completion — Phase 2 Import Pipeline fully complete including UAT gap closure*
