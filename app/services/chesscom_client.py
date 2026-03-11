@@ -73,6 +73,11 @@ async def fetch_chesscom_games(
 
     if archives_resp.status_code == 404:
         raise ValueError(f"chess.com user '{username}' not found")
+    if archives_resp.status_code != 200:
+        raise ValueError(
+            f"chess.com request failed (status {archives_resp.status_code})"
+            f" for user '{username}'"
+        )
 
     archive_urls: list[str] = archives_resp.json().get("archives", [])
 
@@ -92,6 +97,10 @@ async def fetch_chesscom_games(
         if resp.status_code == 429:
             await asyncio.sleep(60)
             resp = await client.get(archive_url, headers=_HEADERS)
+
+        # Skip non-200 archive responses rather than crashing on .json()
+        if resp.status_code != 200:
+            continue
 
         games = resp.json().get("games", [])
         for game in games:
