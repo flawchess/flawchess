@@ -43,6 +43,13 @@ Plans:
 - IMP-04: User sees import progress and status while games are being fetched
 - INFRA-02: Game import runs as a background task (does not block the API server)
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — ImportJob model, schemas, normalization utilities, and game repository
+- [ ] 02-02-PLAN.md — chess.com and lichess API clients
+- [ ] 02-03-PLAN.md — Import service orchestrator and API router
+
 **Success Criteria:**
 1. A user submits a chess.com or lichess username and immediately receives a job ID; the import runs in the background and completes without blocking other requests.
 2. Polling the import status endpoint shows live progress (games fetched so far) and a terminal state (completed or failed with an error message).
