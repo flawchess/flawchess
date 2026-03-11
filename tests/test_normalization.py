@@ -187,19 +187,15 @@ class TestNormalizeChesscomGame:
         assert result["result"] == "1/2-1/2"
 
     def test_timeout_loss_for_black(self):
-        """When user plays black and white wins by timeout, result is '0-1'."""
+        """When white times out and black wins, result should be '0-1'."""
         from app.services.normalization import normalize_chesscom_game
         game = self._make_chesscom_game(white_user="Magnus", black_user="Hikaru",
                                          white_result="timeout", black_result="win")
         # From Hikaru's (black) perspective: black wins
         result = normalize_chesscom_game(game, "Hikaru", user_id=1)
         assert result is not None
-        # white has "timeout" result which means white lost, black won
-        # white_result="timeout" means white timed out -> black wins
-        assert result["result"] == "1-0"  # black wins = "1-0" from our standard? No - "1-0" is white wins
-        # Actually: result is based on game outcome, not user perspective
-        # "1-0" = white wins, "0-1" = black wins
-        # If white timed out, black wins = "0-1"
+        # white timed out -> black wins -> "0-1" (black wins in standard chess notation)
+        assert result["result"] == "0-1"
 
     def test_platform_is_chesscom(self):
         from app.services.normalization import normalize_chesscom_game
