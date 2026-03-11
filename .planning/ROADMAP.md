@@ -75,6 +75,12 @@ Plans:
 - RES-02: Each matching game has a clickable link to the game on chess.com or lichess
 - RES-03: User always sees the total games denominator ("X of Y games matched")
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Schemas, repository, service, and router for analysis endpoint
+- [ ] 03-02-PLAN.md — Repository and service test suite
+
 **Success Criteria:**
 1. Posting a target position hash to the analysis endpoint with `match_side=white` returns only games where the user's white pieces matched, with correct W/D/L counts.
 2. Applying time control, rated, recency, and color filters in combination changes the match count predictably — verifiable against the raw game records in the DB.
