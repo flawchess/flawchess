@@ -31,9 +31,13 @@ def _build_base_query(
 
     Uses DISTINCT ON game.id to avoid counting a game multiple times when the
     target hash appears at more than one ply.
+
+    ``select_entity`` may be a single ORM entity/column or a list of columns.
+    When a list is provided the columns are unpacked into ``select()``.
     """
+    entities = select_entity if isinstance(select_entity, list) else [select_entity]
     base = (
-        select(select_entity)
+        select(*entities)
         .join(GamePosition, GamePosition.game_id == Game.id)
         .where(
             GamePosition.user_id == user_id,
@@ -69,8 +73,9 @@ async def query_all_results(
     Lightweight — only fetches the two columns needed for W/D/L computation.
     DISTINCT by game_id prevents transposition double-counting.
     """
+    # Pass columns as a list so _build_base_query can splat them into select().
     stmt = _build_base_query(
-        select_entity=(Game.result, Game.user_color),
+        select_entity=[Game.result, Game.user_color],
         user_id=user_id,
         hash_column=hash_column,
         target_hash=target_hash,
@@ -115,6 +120,8 @@ async def query_matching_games(
     total: int = (await session.execute(count_stmt)).scalar_one()
 
     # Paginated game objects, ordered most-recent first.
+    # PostgreSQL requires DISTINCT ON expressions to appear first in ORDER BY,
+    # so Game.id must precede played_at in the ORDER BY clause.
     page_stmt = (
         _build_base_query(
             select_entity=Game,
@@ -126,7 +133,7 @@ async def query_matching_games(
             recency_cutoff=recency_cutoff,
             color=color,
         )
-        .order_by(Game.played_at.desc())
+        .order_by(Game.id, Game.played_at.desc())
         .offset(offset)
         .limit(limit)
     )
