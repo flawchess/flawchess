@@ -43,7 +43,7 @@ Plans:
 - IMP-04: User sees import progress and status while games are being fetched
 - INFRA-02: Game import runs as a background task (does not block the API server)
 
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] 02-01-PLAN.md — ImportJob model, schemas, normalization utilities, and game repository

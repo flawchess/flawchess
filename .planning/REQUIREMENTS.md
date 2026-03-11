@@ -11,8 +11,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **IMP-01**: User can import games from chess.com by entering their username
 - [ ] **IMP-02**: User can import games from lichess by entering their username
-- [ ] **IMP-03**: User can re-sync to fetch only new games since last import (incremental)
-- [ ] **IMP-04**: User sees import progress and status while games are being fetched
+- [x] **IMP-03**: User can re-sync to fetch only new games since last import (incremental)
+- [x] **IMP-04**: User sees import progress and status while games are being fetched
 - [x] **IMP-05**: All available game metadata is stored (PGN, time control, rated flag, result, opponent, color, platform URL, timestamps)
 - [x] **IMP-06**: Position hashes (white, black, full Zobrist) are precomputed and stored for every half-move at import time
 
@@ -43,7 +43,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Infrastructure
 
 - [x] **INFRA-01**: Database schema supports efficient position-based queries using indexed Zobrist hash columns
-- [ ] **INFRA-02**: Game import runs as a background task (does not block the API server)
+- [x] **INFRA-02**: Game import runs as a background task (does not block the API server)
 - [x] **INFRA-03**: Duplicate games are prevented via unique constraint on (platform, platform_game_id)
 
 ## v2 Requirements
@@ -82,8 +82,8 @@ Deferred to future release. Tracked but not in current roadmap.
 |-------------|-------|--------|
 | IMP-01 | Phase 2: Import Pipeline | Pending |
 | IMP-02 | Phase 2: Import Pipeline | Pending |
-| IMP-03 | Phase 2: Import Pipeline | Pending |
-| IMP-04 | Phase 2: Import Pipeline | Pending |
+| IMP-03 | Phase 2: Import Pipeline | Complete |
+| IMP-04 | Phase 2: Import Pipeline | Complete |
 | IMP-05 | Phase 1: Data Foundation | Complete |
 | IMP-06 | Phase 1: Data Foundation | Complete |
 | ANL-01 | Phase 4: Frontend and Auth | Pending |
@@ -99,7 +99,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | AUTH-01 | Phase 4: Frontend and Auth | Pending |
 | AUTH-02 | Phase 4: Frontend and Auth | Pending |
 | INFRA-01 | Phase 1: Data Foundation | Complete |
-| INFRA-02 | Phase 2: Import Pipeline | Pending |
+| INFRA-02 | Phase 2: Import Pipeline | Complete |
 | INFRA-03 | Phase 1: Data Foundation | Complete |
 
 **Coverage:**
