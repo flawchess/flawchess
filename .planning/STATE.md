@@ -2,23 +2,24 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 02-02 complete
+current_plan: 02-03 complete
 status: executing
-last_updated: "2026-03-11T13:35:21Z"
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-03-11T13:45:00Z"
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
 Phase: 02-import-pipeline
-Status: In progress — Plan 02 complete (2/3 plans)
-Current Plan: 02-02 complete
-Stopped At: Completed 02-02-PLAN.md
+Status: Complete — all 3 plans done (3/3 plans)
+Current Plan: 02-03 complete
+Stopped At: Completed 02-03-PLAN.md
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -29,7 +30,7 @@ Current focus: Phase 2 - Import Pipeline
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
 | 1 | Data Foundation | Complete | 2/2 |
-| 2 | Import Pipeline | In Progress | 1/3 |
+| 2 | Import Pipeline | Complete | 3/3 |
 | 3 | Analysis API | Pending | 0/0 |
 | 4 | Frontend and Auth | Pending | 0/0 |
 
@@ -57,6 +58,9 @@ Current focus: Phase 2 - Import Pipeline
 - **chess.com 429 backoff**: single 60s sleep + one retry (not exponential) for simplicity
 - **lichess perfType filter**: ultraBullet,bullet,blitz,rapid,classical sent on every request; correspondence and unlimited excluded
 - **lichess moves=false**: PGN available via pgnInJson=true so moves array field excluded from response
+- **Import user_id=1 placeholder**: POST /imports uses hardcoded user_id=1 with TODO comment; real auth added in Phase 4 with FastAPI-Users
+- **In-memory job registry + DB fallback**: Live job state in _jobs dict (zero-latency reads); DB queried only for historical/restarted jobs
+- **PGN lookup via SELECT after bulk_insert**: Correctness over index-alignment — SELECT (id, pgn) for new game IDs handles ON CONFLICT gaps correctly
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -65,6 +69,7 @@ Current focus: Phase 2 - Import Pipeline
 | 01 | 02 | 3min | 3 | 4 |
 | 02 | 01 | 6min | 2 | 10 |
 | 02 | 02 | 3min | 2 | 4 |
+| 02 | 03 | 3min | 2 | 5 |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -72,4 +77,4 @@ Current focus: Phase 2 - Import Pipeline
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match; optional backend Zobrist lookup
 
 ---
-*Last updated: 2026-03-11 after 02-02 completion*
+*Last updated: 2026-03-11 after 02-03 completion — Phase 2 Import Pipeline now complete*
