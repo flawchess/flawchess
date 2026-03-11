@@ -1,7 +1,5 @@
 """Tests for normalization utilities: parse_time_control, normalize_chesscom_game, normalize_lichess_game."""
 
-import pytest
-
 
 class TestParseTimeControl:
     """Tests for parse_time_control function."""

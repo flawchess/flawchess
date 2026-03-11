@@ -6,8 +6,6 @@ Uses real PostgreSQL with transaction rollback — each test is isolated.
 import datetime
 import uuid
 
-import pytest
-import pytest_asyncio
 
 
 class TestBulkInsertGames:
