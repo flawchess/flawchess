@@ -23,5 +23,10 @@ Current focus: Phase 1
 - Auth: FastAPI-Users
 - Core algorithm: Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import
 
+## Accumulated Context
+
+### Pending Todos
+- **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
+
 ---
-*Last updated: 2026-03-11 after roadmap creation*
+*Last updated: 2026-03-11 after todo capture*

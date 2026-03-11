@@ -35,6 +35,7 @@ Users can determine their success rate for any opening position they specify, fi
 - In-app game viewer — link to chess.com/lichess instead
 - Advanced stats (opponent rating, performance over time) — v2
 - Mobile app — web-first
+- Human-like engine analysis — v2+: engine evaluation filtered by human move plausibility at target Elo (see Maia Chess approach). Prunes computer-only moves to show what's realistically findable for humans at a given rating.
 
 ## Context
 
