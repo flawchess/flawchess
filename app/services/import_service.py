@@ -8,10 +8,9 @@ Manages import jobs from chess.com and lichess, including:
 - Zobrist hash computation and bulk DB persistence
 """
 
-import asyncio
 import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any

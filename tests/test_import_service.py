@@ -4,7 +4,6 @@ Focuses on orchestration logic: job lifecycle, incremental sync, hash computatio
 and error handling. All external dependencies are mocked.
 """
 
-import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
