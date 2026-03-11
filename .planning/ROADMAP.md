@@ -17,7 +17,7 @@
 - IMP-05: All available game metadata is stored (PGN, time control, rated flag, result, opponent, color, platform URL, timestamps)
 - IMP-06: Position hashes (white, black, full Zobrist) are precomputed and stored for every half-move at import time
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 01-01-PLAN.md — Project scaffold, SQLAlchemy models, and Alembic migration

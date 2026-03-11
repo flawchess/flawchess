@@ -14,7 +14,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **IMP-03**: User can re-sync to fetch only new games since last import (incremental)
 - [ ] **IMP-04**: User sees import progress and status while games are being fetched
 - [x] **IMP-05**: All available game metadata is stored (PGN, time control, rated flag, result, opponent, color, platform URL, timestamps)
-- [ ] **IMP-06**: Position hashes (white, black, full Zobrist) are precomputed and stored for every half-move at import time
+- [x] **IMP-06**: Position hashes (white, black, full Zobrist) are precomputed and stored for every half-move at import time
 
 ### Analysis
 
@@ -85,7 +85,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | IMP-03 | Phase 2: Import Pipeline | Pending |
 | IMP-04 | Phase 2: Import Pipeline | Pending |
 | IMP-05 | Phase 1: Data Foundation | Complete |
-| IMP-06 | Phase 1: Data Foundation | Pending |
+| IMP-06 | Phase 1: Data Foundation | Complete |
 | ANL-01 | Phase 4: Frontend and Auth | Pending |
 | ANL-02 | Phase 3: Analysis API | Pending |
 | ANL-03 | Phase 3: Analysis API | Pending |

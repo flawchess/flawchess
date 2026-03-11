@@ -2,8 +2,8 @@
 
 ## Current Phase
 Phase: 01-data-foundation
-Status: In progress — Plan 01 complete (1/N plans)
-Current Plan: 01-01 complete
+Status: In progress — Plan 02 complete (2/N plans)
+Current Plan: 01-02 complete
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -13,7 +13,7 @@ Current focus: Phase 1
 ## Phase Progress
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
-| 1 | Data Foundation | In Progress | 1/? |
+| 1 | Data Foundation | In Progress | 2/? |
 | 2 | Import Pipeline | Pending | 0/0 |
 | 3 | Analysis API | Pending | 0/0 |
 | 4 | Frontend and Auth | Pending | 0/0 |
@@ -32,14 +32,18 @@ Current focus: Phase 1
 - **BIGINT type_annotation_map**: `Base` class maps `int -> BIGINT` so all `Mapped[int]` columns auto-resolve to BIGINT
 - **server_default=func.now()**: Used for `imported_at` (not Python-evaluated `datetime.utcnow`)
 - **Local PostgreSQL**: postgresql@17 installed via brew, database `chessalytics` created for development
+- **Zobrist color_pivot**: 0 for WHITE, 1 for BLACK — matches polyglot standard (white = even indices per piece type, black = odd)
+- **hashes_for_game empty list**: Returns [] for PGN with no mainline moves (garbage input); ply 0 only included when at least one move exists
+- **Zobrist ply 0**: hashes_for_game includes ply 0 (initial position) before any move is played
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
 | 01 | 01 | 5min | 2 | 18 |
+| 01 | 02 | 3min | 3 | 4 |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 
 ---
-*Last updated: 2026-03-11 after 01-01 completion*
+*Last updated: 2026-03-11 after 01-02 completion*
