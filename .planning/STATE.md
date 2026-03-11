@@ -4,22 +4,22 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 02-04 complete
 status: completed
-stopped_at: Phase 3 context gathered
-last_updated: "2026-03-11T14:34:01.504Z"
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-03-11T14:52:24.198Z"
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 8
+  completed_plans: 7
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
-Phase: 02-import-pipeline
-Status: Complete — all 4 plans done (4/4 plans)
-Current Plan: 02-04 complete
-Stopped At: Phase 3 context gathered
+Phase: 03-analysis-api
+Status: In Progress — 1/2 plans done
+Current Plan: 03-01 complete
+Stopped At: Completed 03-01-PLAN.md
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -31,7 +31,7 @@ Current focus: Phase 2 - Import Pipeline
 |-------|------|--------|-------|
 | 1 | Data Foundation | Complete | 2/2 |
 | 2 | Import Pipeline | Complete | 4/4 |
-| 3 | Analysis API | Pending | 0/0 |
+| 3 | Analysis API | In Progress | 1/2 |
 | 4 | Frontend and Auth | Pending | 0/0 |
 
 ## Key Context
@@ -63,6 +63,8 @@ Current focus: Phase 2 - Import Pipeline
 - **PGN lookup via SELECT after bulk_insert**: Correctness over index-alignment — SELECT (id, pgn) for new game IDs handles ON CONFLICT gaps correctly
 - **chess.com non-200 archives raises ValueError**: Any non-200/non-404 archives response raises ValueError with status code before .json() is called — consistent with job error contract
 - **chess.com per-archive non-200 uses continue**: Partial archive failure uses continue not raise — one bad month should not abort the whole user import
+- **Analysis DISTINCT by Game.id**: _build_base_query uses .distinct(Game.id) so a position appearing at multiple plies counts the game only once in W/D/L stats
+- **Analysis two-query pattern**: query_all_results fetches lightweight (result, user_color) tuples for stats; query_matching_games fetches full Game objects for display — keeps stats accurate for total > limit
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -73,6 +75,7 @@ Current focus: Phase 2 - Import Pipeline
 | 02 | 02 | 3min | 2 | 4 |
 | 02 | 03 | 3min | 2 | 5 |
 | 02 | 04 | 2min | 2 | 2 |
+| 03 | 01 | 2min | 2 | 5 |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -81,4 +84,4 @@ Current focus: Phase 2 - Import Pipeline
 - **Add users table and authentication** (database) — users table, FastAPI-Users integration, link chess.com + lichess to single user account
 
 ---
-*Last updated: 2026-03-11 after 02-04 completion — Phase 2 Import Pipeline fully complete including UAT gap closure*
+*Last updated: 2026-03-11 after 03-01 completion — POST /analysis/positions endpoint with W/D/L stats and paginated games*

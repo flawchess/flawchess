@@ -75,7 +75,7 @@ Plans:
 - RES-02: Each matching game has a clickable link to the game on chess.com or lichess
 - RES-03: User always sees the total games denominator ("X of Y games matched")
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 03-01-PLAN.md — Schemas, repository, service, and router for analysis endpoint

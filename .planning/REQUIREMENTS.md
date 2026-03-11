@@ -19,21 +19,21 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Analysis
 
 - [ ] **ANL-01**: User can specify a target position by playing moves on an interactive chess board
-- [ ] **ANL-02**: User can filter position matches by white pieces only, black pieces only, or both sides
-- [ ] **ANL-03**: User sees win/draw/loss counts and percentages for all matching games
+- [x] **ANL-02**: User can filter position matches by white pieces only, black pieces only, or both sides
+- [x] **ANL-03**: User sees win/draw/loss counts and percentages for all matching games
 
 ### Filters
 
-- [ ] **FLT-01**: User can filter analysis results by time control (bullet, blitz, rapid, classical)
-- [ ] **FLT-02**: User can filter analysis results by rated vs casual games
-- [ ] **FLT-03**: User can filter analysis results by game recency (week, month, 3 months, 6 months, 1 year, all time)
-- [ ] **FLT-04**: User can filter analysis results by color played (white or black)
+- [x] **FLT-01**: User can filter analysis results by time control (bullet, blitz, rapid, classical)
+- [x] **FLT-02**: User can filter analysis results by rated vs casual games
+- [x] **FLT-03**: User can filter analysis results by game recency (week, month, 3 months, 6 months, 1 year, all time)
+- [x] **FLT-04**: User can filter analysis results by color played (white or black)
 
 ### Results Display
 
-- [ ] **RES-01**: User sees a list of matching games showing opponent name, result, date, and time control
-- [ ] **RES-02**: Each matching game has a clickable link to the game on chess.com or lichess
-- [ ] **RES-03**: User always sees the total games denominator ("X of Y games matched")
+- [x] **RES-01**: User sees a list of matching games showing opponent name, result, date, and time control
+- [x] **RES-02**: Each matching game has a clickable link to the game on chess.com or lichess
+- [x] **RES-03**: User always sees the total games denominator ("X of Y games matched")
 
 ### Auth & Multi-User
 
@@ -87,15 +87,15 @@ Deferred to future release. Tracked but not in current roadmap.
 | IMP-05 | Phase 1: Data Foundation | Complete |
 | IMP-06 | Phase 1: Data Foundation | Complete |
 | ANL-01 | Phase 4: Frontend and Auth | Pending |
-| ANL-02 | Phase 3: Analysis API | Pending |
-| ANL-03 | Phase 3: Analysis API | Pending |
-| FLT-01 | Phase 3: Analysis API | Pending |
-| FLT-02 | Phase 3: Analysis API | Pending |
-| FLT-03 | Phase 3: Analysis API | Pending |
-| FLT-04 | Phase 3: Analysis API | Pending |
-| RES-01 | Phase 3: Analysis API | Pending |
-| RES-02 | Phase 3: Analysis API | Pending |
-| RES-03 | Phase 3: Analysis API | Pending |
+| ANL-02 | Phase 3: Analysis API | Complete |
+| ANL-03 | Phase 3: Analysis API | Complete |
+| FLT-01 | Phase 3: Analysis API | Complete |
+| FLT-02 | Phase 3: Analysis API | Complete |
+| FLT-03 | Phase 3: Analysis API | Complete |
+| FLT-04 | Phase 3: Analysis API | Complete |
+| RES-01 | Phase 3: Analysis API | Complete |
+| RES-02 | Phase 3: Analysis API | Complete |
+| RES-03 | Phase 3: Analysis API | Complete |
 | AUTH-01 | Phase 4: Frontend and Auth | Pending |
 | AUTH-02 | Phase 4: Frontend and Auth | Pending |
 | INFRA-01 | Phase 1: Data Foundation | Complete |
