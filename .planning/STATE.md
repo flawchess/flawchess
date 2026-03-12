@@ -106,6 +106,7 @@ Current focus: Phase 4 - Frontend and Auth
 | 2 | add platform filter in more filters section | 2026-03-12 | b5266a9 | [2-add-platform-filter-in-more-filters-sect](.planning/quick/2-add-platform-filter-in-more-filters-sect/) |
 | 3 | fix matched games count showing wrong total and board reset clears analysis | 2026-03-12 | d6fadbc | [3-fix-matched-games-count-showing-wrong-to](.planning/quick/3-fix-matched-games-count-showing-wrong-to/) |
 | 4 | flag computer opponent games on import and parse chess.com opening names | 2026-03-12 | a2479c2 | [4-flag-computer-opponent-games-on-import-a](.planning/quick/4-flag-computer-opponent-games-on-import-a/) |
+| 5 | add opponent filter (human/bot/both) to dashboard analysis | 2026-03-12 | 011e56a | [5-add-opponent-filter-human-bot-both-to-da](.planning/quick/5-add-opponent-filter-human-bot-both-to-da/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -113,4 +114,4 @@ Current focus: Phase 4 - Frontend and Auth
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match; optional backend Zobrist lookup
 
 ---
-Last activity: 2026-03-12 - Completed quick task 4: flag computer opponent games on import and parse chess.com opening names
+Last activity: 2026-03-12 - Completed quick task 5: add opponent filter (human/bot/both) to dashboard analysis
