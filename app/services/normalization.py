@@ -106,6 +106,25 @@ def _extract_chesscom_eco(eco_url: str | None) -> str | None:
     return None
 
 
+def _extract_chesscom_opening_name(eco_url: str | None) -> str | None:
+    """Parse opening name from chess.com eco URL slug.
+
+    e.g., "https://www.chess.com/openings/Kings-Pawn-Opening-C40" -> "Kings Pawn Opening"
+         "https://www.chess.com/openings/Sicilian-Defense" -> "Sicilian Defense"
+    """
+    if not eco_url:
+        return None
+    # Take the last path segment (the slug)
+    slug = eco_url.rstrip("/").split("/")[-1]
+    if not slug:
+        return None
+    # Strip trailing ECO code: letter A-E followed by 2 digits
+    name = re.sub(r"-[A-E]\d{2}$", "", slug)
+    # Replace hyphens with spaces and strip
+    name = name.replace("-", " ").strip()
+    return name if name else None
+
+
 def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | None:
     """Normalize a chess.com JSON game object to a dict matching Game model columns.
 
@@ -132,11 +151,16 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | N
         user_rating = white.get("rating")
         opponent_rating = black.get("rating")
         opponent_username = black_username
+        opponent_player = black
     else:
         user_color = "black"
         user_rating = black.get("rating")
         opponent_rating = white.get("rating")
         opponent_username = white_username
+        opponent_player = white
+
+    # Computer detection
+    is_computer_game = bool(opponent_player.get("is_computer", False))
 
     # Normalize result
     result = _normalize_chesscom_result(white.get("result", ""), black.get("result", ""))
@@ -168,10 +192,11 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | N
         "time_control_bucket": tc_bucket,
         "time_control_seconds": tc_seconds,
         "rated": bool(game.get("rated", True)),
+        "is_computer_game": is_computer_game,
         "opponent_username": opponent_username,
         "opponent_rating": opponent_rating,
         "user_rating": user_rating,
-        "opening_name": None,  # chess.com doesn't provide a simple name field
+        "opening_name": _extract_chesscom_opening_name(eco_url),
         "opening_eco": opening_eco,
         "played_at": played_at,
     }
@@ -213,11 +238,17 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
         user_rating = white_player.get("rating")
         opponent_rating = black_player.get("rating")
         opponent_username = black_username or None
+        opponent_player = black_player
     else:
         user_color = "black"
         user_rating = black_player.get("rating")
         opponent_rating = white_player.get("rating")
         opponent_username = white_username or None
+        opponent_player = white_player
+
+    # Computer detection: check if opponent is a BOT account
+    opponent_title = opponent_player.get("user", {}).get("title", "")
+    is_computer_game = opponent_title.upper() == "BOT"
 
     # Result from winner field
     winner = game.get("winner")
@@ -272,6 +303,7 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
         "time_control_bucket": tc_bucket,
         "time_control_seconds": tc_seconds,
         "rated": bool(game.get("rated", True)),
+        "is_computer_game": is_computer_game,
         "opponent_username": opponent_username,
         "opponent_rating": opponent_rating,
         "user_rating": user_rating,
