@@ -84,6 +84,7 @@ export type ImportJobStatus = 'pending' | 'running' | 'done' | 'error';
 export interface ImportStatusResponse {
   job_id: string;
   status: ImportJobStatus;
+  games_fetched: number;
   games_imported: number;
   message: string | null;
   started_at: string | null;
