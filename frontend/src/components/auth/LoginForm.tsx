@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import axios from 'axios';
@@ -18,6 +18,14 @@ export function LoginForm() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [googleAvailable, setGoogleAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    apiClient
+      .get<{ available: boolean }>('/auth/google/available')
+      .then((res) => setGoogleAvailable(res.data.available))
+      .catch(() => setGoogleAvailable(false));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,26 +64,30 @@ export function LoginForm() {
         <CardDescription>Enter your credentials to access your account.</CardDescription>
       </CardHeader>
       <CardContent>
-        {/* Google OAuth */}
-        <Button
-          type="button"
-          variant="outline"
-          className="mb-4 w-full"
-          onClick={handleGoogleSignIn}
-          disabled={googleLoading}
-        >
-          <GoogleIcon />
-          {googleLoading ? 'Redirecting...' : 'Sign in with Google'}
-        </Button>
+        {/* Google OAuth — only shown when configured */}
+        {googleAvailable === true && (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              className="mb-4 w-full"
+              onClick={handleGoogleSignIn}
+              disabled={googleLoading}
+            >
+              <GoogleIcon />
+              {googleLoading ? 'Redirecting...' : 'Sign in with Google'}
+            </Button>
 
-        <div className="relative mb-4">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-border" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">or</span>
-          </div>
-        </div>
+            <div className="relative mb-4">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">or</span>
+              </div>
+            </div>
+          </>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">

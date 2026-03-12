@@ -49,6 +49,15 @@ oauth2_callback_dep = OAuth2AuthorizeCallback(
 )
 
 
+@router.get("/auth/google/available", tags=["auth"])
+async def google_oauth_available() -> dict:
+    """Return whether Google OAuth is configured on this server."""
+    available = bool(
+        settings.GOOGLE_OAUTH_CLIENT_ID and settings.GOOGLE_OAUTH_CLIENT_SECRET
+    )
+    return {"available": available}
+
+
 @router.get("/auth/google/authorize", tags=["auth"])
 async def google_authorize(request: Request) -> dict:
     """Return the Google OAuth authorization URL for the frontend to redirect to."""
