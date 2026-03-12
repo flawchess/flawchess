@@ -140,6 +140,14 @@ export function DashboardPage() {
         flipped={boardFlipped}
         lastMove={chess.lastMove}
       />
+      {chess.openingName ? (
+        <div className="flex items-baseline gap-2 px-1 text-sm">
+          <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
+          <span className="text-foreground">{chess.openingName.name}</span>
+        </div>
+      ) : (
+        <div className="h-5" />
+      )}
       <MoveList
         moveHistory={chess.moveHistory}
         currentPly={chess.currentPly}

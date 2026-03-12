@@ -1,7 +1,9 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { Chess } from 'chess.js';
 import { computeHashes, hashToString } from '@/lib/zobrist';
+import { findOpening, preloadOpenings } from '@/lib/openings';
 import type { ZobristHashes } from '@/lib/zobrist';
+import type { Opening } from '@/lib/openings';
 import type { MatchSide } from '@/types/api';
 
 export interface ChessGameState {
@@ -27,6 +29,8 @@ export interface ChessGameState {
   reset: () => void;
   /** Get the hash to send for analysis based on match side */
   getHashForAnalysis: (matchSide: MatchSide) => string;
+  /** Current opening name from the lichess database, or null */
+  openingName: Opening | null;
 }
 
 const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -44,6 +48,12 @@ export function useChessGame(): ChessGameState {
   const [currentPly, setCurrentPly] = useState<number>(0);
   const [hashes, setHashes] = useState<ZobristHashes>(computeInitialHashes);
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
+  const [openingName, setOpeningName] = useState<Opening | null>(null);
+
+  // Pre-load openings database on mount
+  useEffect(() => {
+    preloadOpenings();
+  }, []);
 
   /**
    * Replay moveHistory[0..ply-1] on a fresh Chess instance and sync all state.
@@ -154,6 +164,12 @@ export function useChessGame(): ChessGameState {
     [hashes],
   );
 
+  // Update opening name whenever the viewed ply changes
+  useEffect(() => {
+    const movesAtPly = moveHistory.slice(0, currentPly);
+    findOpening(movesAtPly).then(setOpeningName);
+  }, [moveHistory, currentPly]);
+
   return {
     position,
     moveHistory,
@@ -166,5 +182,6 @@ export function useChessGame(): ChessGameState {
     goBack,
     reset,
     getHashForAnalysis,
+    openingName,
   };
 }
