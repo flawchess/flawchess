@@ -23,6 +23,7 @@ export type TimeControl = 'bullet' | 'blitz' | 'rapid' | 'classical';
 export type MatchSide = 'white' | 'black' | 'full';
 export type Recency = 'week' | 'month' | '3months' | '6months' | 'year' | 'all';
 export type Color = 'white' | 'black';
+export type OpponentType = 'human' | 'bot' | 'both';
 export type UserResult = 'win' | 'draw' | 'loss';
 
 export interface AnalysisRequest {
@@ -32,6 +33,7 @@ export interface AnalysisRequest {
   time_control?: TimeControl[] | null;
   platform?: Platform[] | null;
   rated?: boolean | null;
+  opponent_type?: OpponentType;
   recency?: Recency | null;
   color?: Color | null;
   offset?: number;

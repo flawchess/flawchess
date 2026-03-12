@@ -57,6 +57,7 @@ export function DashboardPage() {
       time_control: filters.timeControls,
       platform: filters.platforms,
       rated: filters.rated,
+      opponent_type: filters.opponentType,
       recency: filters.recency,
       color: filters.color,
       offset: analysisOffset,
@@ -79,6 +80,7 @@ export function DashboardPage() {
         time_control: filters.timeControls,
         platform: filters.platforms,
         rated: filters.rated,
+        opponent_type: filters.opponentType,
         recency: filters.recency,
         color: filters.color,
         offset: newOffset,
@@ -224,7 +226,7 @@ export function DashboardPage() {
         /* Has games but current filters matched nothing */
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center text-muted-foreground">
           <p className="text-base">No games matched the current filter settings.</p>
-          <p className="mt-1 text-sm">Try adjusting the time control, rated, or recency filters.</p>
+          <p className="mt-1 text-sm">Try adjusting the time control, opponent, rated, or recency filters.</p>
         </div>
       ) : (
         <>

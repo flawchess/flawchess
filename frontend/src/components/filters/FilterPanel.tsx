@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { MatchSide, TimeControl, Recency, Color, Platform } from '@/types/api';
+import type { MatchSide, TimeControl, Recency, Color, Platform, OpponentType } from '@/types/api';
 import { cn } from '@/lib/utils';
 
 export interface FilterState {
@@ -18,6 +18,7 @@ export interface FilterState {
   timeControls: TimeControl[] | null; // null = all
   platforms: Platform[] | null; // null = all
   rated: boolean | null; // null = all
+  opponentType: OpponentType; // default human = computer games excluded
   recency: Recency | null; // null = all time
   color: Color | null; // null = any
 }
@@ -27,6 +28,7 @@ export const DEFAULT_FILTERS: FilterState = {
   timeControls: null,
   platforms: null,
   rated: null,
+  opponentType: 'human',
   recency: null,
   color: null,
 };
@@ -195,6 +197,25 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
                 <ToggleGroupItem value="all">All</ToggleGroupItem>
                 <ToggleGroupItem value="rated">Rated</ToggleGroupItem>
                 <ToggleGroupItem value="casual">Casual</ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+
+            {/* Opponent */}
+            <div>
+              <p className="mb-1 text-xs text-muted-foreground">Opponent</p>
+              <ToggleGroup
+                type="single"
+                value={filters.opponentType}
+                onValueChange={(v) => {
+                  if (!v) return;
+                  update({ opponentType: v as OpponentType });
+                }}
+                variant="outline"
+                size="sm"
+              >
+                <ToggleGroupItem value="human">Human</ToggleGroupItem>
+                <ToggleGroupItem value="bot">Bot</ToggleGroupItem>
+                <ToggleGroupItem value="both">Both</ToggleGroupItem>
               </ToggleGroup>
             </div>
 
