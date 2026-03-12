@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { AuthPage } from '@/pages/Auth';
 import { DashboardPage } from '@/pages/Dashboard';
+import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
 
 // ─── Query client ─────────────────────────────────────────────────────────────
 
@@ -33,6 +34,8 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<AuthPage />} />
+      {/* Google OAuth callback — reads token from URL fragment */}
+      <Route path="/auth/callback" element={<OAuthCallbackPage />} />
       <Route
         path="/"
         element={
