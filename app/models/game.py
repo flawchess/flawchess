@@ -36,6 +36,7 @@ class Game(Base):
 
     # Flags
     rated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_computer_game: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # Opponent info
     opponent_username: Mapped[str | None] = mapped_column(String(100))
