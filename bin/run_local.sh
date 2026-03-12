@@ -16,6 +16,7 @@ BACKEND_PID=$!
 # Start frontend
 echo "Starting frontend..."
 cd frontend
+[ ! -d node_modules ] && npm install
 npm run dev &
 FRONTEND_PID=$!
 cd ..
