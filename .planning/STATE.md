@@ -3,23 +3,23 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_plan: 04-03 complete
-status: in_progress
-stopped_at: Checkpoint — Task 3 human-verify (04-03-PLAN.md)
-last_updated: "2026-03-12T10:01:06Z"
+status: complete
+stopped_at: Completed 04-03-PLAN.md — all UAT issues fixed, phase 4 complete
+last_updated: "2026-03-12T10:55:13.368Z"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
 Phase: 04-frontend-and-auth
-Status: In Progress — 3/3 plans done (awaiting human UAT)
+Status: Complete — 3/3 plans done, all UAT fixes applied
 Current Plan: 04-03 complete
-Stopped At: Checkpoint — Task 3 human-verify (04-03-PLAN.md)
+Stopped At: Completed 04-03-PLAN.md — all UAT issues fixed, phase 4 complete
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -32,7 +32,7 @@ Current focus: Phase 4 - Frontend and Auth
 | 1 | Data Foundation | Complete | 2/2 |
 | 2 | Import Pipeline | Complete | 4/4 |
 | 3 | Analysis API | Complete | 2/2 |
-| 4 | Frontend and Auth | In Progress | 3/3 (UAT pending) |
+| 4 | Frontend and Auth | Complete | 3/3 |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -78,6 +78,10 @@ Current focus: Phase 4 - Frontend and Auth
 - **react-chessboard v5 options API**: v5 changed from flat props to a single `options` object prop — `<Chessboard options={{ position, boardStyle, onPieceDrop }} />`
 - **useChessGame replay approach**: goToMove replays from new Chess() rather than undoing — chess.js has no undo API; replay guarantees correctness
 - **PieceDropHandlerArgs.targetSquare is string | null**: null when piece dropped off board — guard required before calling makeMove
+- **Google OAuth SPA flow**: /callback redirects to FRONTEND_URL/auth/callback#token=JWT so SPA can read token from URL fragment without it appearing in server logs
+- **ImportJobStatus mismatch**: backend uses 'completed'/'failed', not 'done'/'error' — was root cause of spinner never stopping + errors never showing
+- **GET /games/count**: lightweight endpoint for dashboard empty-state CTA — avoids special-casing analysis endpoint with null hash
+- **react-chessboard squareStyles**: prop name for per-square CSS overrides is `squareStyles` (not `customSquareStyles`)
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -92,7 +96,7 @@ Current focus: Phase 4 - Frontend and Auth
 | 03 | 02 | 4min | 2 | 3 |
 | 04 | 01 | 10min | 2 | 12 |
 | 04 | 02 | 15min | 3 | 20 |
-| 04 | 03 | 6min | 2 | 13 |
+| 04 | 03 | 45min | 3 | 27 |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -100,4 +104,4 @@ Current focus: Phase 4 - Frontend and Auth
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match; optional backend Zobrist lookup
 
 ---
-*Last updated: 2026-03-12 after 04-03 code complete — full dashboard UI with chess board, analysis, filters, import flow; awaiting human UAT*
+*Last updated: 2026-03-12 after 04-03 UAT fixes — Google OAuth, import fixes, board flip, last-move highlight, game count CTA. Phase 4 complete.*
