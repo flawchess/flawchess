@@ -76,17 +76,18 @@ export interface ImportRequest {
 
 export interface ImportStartedResponse {
   job_id: string;
-  message: string;
+  status: string;
 }
 
-export type ImportJobStatus = 'pending' | 'running' | 'done' | 'error';
+export type ImportJobStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
 export interface ImportStatusResponse {
   job_id: string;
+  platform: string;
+  username: string;
   status: ImportJobStatus;
   games_fetched: number;
   games_imported: number;
-  message: string | null;
-  started_at: string | null;
-  finished_at: string | null;
+  /** Error message if status is 'error' */
+  error: string | null;
 }

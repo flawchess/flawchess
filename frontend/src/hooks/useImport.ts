@@ -23,7 +23,7 @@ export function useImportPolling(jobId: string | null) {
     enabled: !!jobId,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      if (status === 'done' || status === 'error') return false;
+      if (status === 'completed' || status === 'failed') return false;
       return 2000;
     },
   });

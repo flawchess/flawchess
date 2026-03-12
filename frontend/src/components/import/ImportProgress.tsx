@@ -11,7 +11,7 @@ function ImportProgressItem({ jobId, onDone }: ImportProgressItemProps) {
   const { data } = useImportPolling(jobId);
 
   useEffect(() => {
-    if (data?.status === 'done' || data?.status === 'error') {
+    if (data?.status === 'completed' || data?.status === 'failed') {
       const timeout = setTimeout(() => onDone(jobId), 5000);
       return () => clearTimeout(timeout);
     }
@@ -19,8 +19,8 @@ function ImportProgressItem({ jobId, onDone }: ImportProgressItemProps) {
 
   if (!data) return null;
 
-  const isDone = data.status === 'done';
-  const isError = data.status === 'error';
+  const isDone = data.status === 'completed';
+  const isError = data.status === 'failed';
   const isActive = !isDone && !isError;
 
   return (
@@ -39,10 +39,10 @@ function ImportProgressItem({ jobId, onDone }: ImportProgressItemProps) {
         )}
         <span>
           {isDone
-            ? `Imported ${data.games_imported} games`
+            ? `Imported ${data.games_imported} games from ${data.platform}`
             : isError
-              ? `Import failed: ${data.message ?? 'Unknown error'}`
-              : `Importing... ${data.games_fetched} fetched, ${data.games_imported} saved`}
+              ? `Import failed: ${data.error ?? 'Unknown error'}`
+              : `Importing ${data.username} (${data.platform})... ${data.games_fetched} fetched, ${data.games_imported} saved`}
         </span>
       </div>
 
