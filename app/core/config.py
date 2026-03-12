@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     GOOGLE_OAUTH_CLIENT_ID: str = ""
     GOOGLE_OAUTH_CLIENT_SECRET: str = ""
+    # Frontend base URL — used to build OAuth redirect back to SPA
+    FRONTEND_URL: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(env_file=".env")
 

@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.models.base import Base
 from app.models.game import Game  # noqa: F401
 from app.models.game_position import GamePosition  # noqa: F401
+from app.models.oauth_account import OAuthAccount  # noqa: F401
 from app.models.user import User  # noqa: F401
 
 # this is the Alembic Config object, which provides

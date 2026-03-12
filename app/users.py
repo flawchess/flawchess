@@ -6,11 +6,23 @@ from fastapi import Depends
 from fastapi_users import BaseUserManager, FastAPIUsers, IntegerIDMixin
 from fastapi_users.authentication import AuthenticationBackend, BearerTransport, JWTStrategy
 from fastapi_users.db import SQLAlchemyUserDatabase
+from httpx_oauth.clients.google import GoogleOAuth2
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_async_session
+from app.models.oauth_account import OAuthAccount
 from app.models.user import User
+
+
+# ---------------------------------------------------------------------------
+# Google OAuth2 client
+# ---------------------------------------------------------------------------
+
+google_oauth_client = GoogleOAuth2(
+    client_id=settings.GOOGLE_OAUTH_CLIENT_ID,
+    client_secret=settings.GOOGLE_OAUTH_CLIENT_SECRET,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -21,7 +33,7 @@ from app.models.user import User
 async def get_user_db(
     session: AsyncSession = Depends(get_async_session),
 ) -> AsyncGenerator[SQLAlchemyUserDatabase, None]:
-    yield SQLAlchemyUserDatabase(session, User)
+    yield SQLAlchemyUserDatabase(session, User, OAuthAccount)
 
 
 # ---------------------------------------------------------------------------
