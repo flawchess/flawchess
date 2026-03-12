@@ -99,11 +99,11 @@ completed: 2026-03-12
 
 ## Performance
 
-- **Duration:** ~45 min total (6 min initial + 39 min UAT fixes)
+- **Duration:** ~55 min total (6 min initial + 39 min UAT fixes + 10 min UAT round 2)
 - **Started:** 2026-03-12T09:55:06Z
 - **Completed:** 2026-03-12 (after UAT fix pass)
 - **Tasks:** 3 of 3 completed
-- **Files modified:** 27 total (13 initial + 14 UAT fixes)
+- **Files modified:** 34 total (13 initial + 14 UAT fixes + 7 UAT round 2)
 
 ## Accomplishments
 
@@ -123,6 +123,7 @@ completed: 2026-03-12
    - Google SSO frontend + input readability + OAuth callback page — `de505d7` (feat)
    - Fix import spinner and error display — `20c6e75` (fix)
    - Board flip, last-move highlight, filter reorder, game count CTA — `ae015d9` (feat)
+   - UAT round 2: Google SSO hide, input autofill, filter layout — `9b08ffa` (fix)
 
 ## Files Created/Modified
 
@@ -156,6 +157,7 @@ completed: 2026-03-12
 - `app/repositories/game_repository.py` - count_games_for_user()
 - `alembic/env.py` - Added OAuthAccount import
 - `alembic/versions/d809d42c7521_add_oauth_account_table.py` - oauth_account migration
+- `frontend/src/components/ui/collapsible.tsx` - Radix UI Collapsible wrapper (new)
 
 ## Decisions Made
 
@@ -199,8 +201,31 @@ completed: 2026-03-12
 
 ---
 
-**Total deviations:** 5 (2 bugs, 2 missing critical, 1 missing critical during UAT)
-**Impact on plan:** All fixes necessary for correctness. UAT feedback items were user-visible improvements and bug fixes.
+### UAT Round 2 Fixes (post-Task 3 checkpoint)
+
+**6. [Rule 1 - Bug] Google SSO button shown even when OAuth not configured**
+- **Found during:** UAT round 2
+- **Issue:** Button always rendered; clicking it hit `/auth/google/authorize` which attempted to use empty `GOOGLE_OAUTH_CLIENT_ID`, returning an error toast
+- **Fix:** Added `GET /auth/google/available` backend endpoint; frontend fetches on mount and conditionally renders button + divider only when `available === true`
+- **Files modified:** `app/routers/auth.py`, `frontend/src/components/auth/LoginForm.tsx`, `frontend/src/components/auth/RegisterForm.tsx`
+- **Commit:** 9b08ffa
+
+**7. [Rule 1 - Bug] Input autofill still has bright background after first CSS fix**
+- **Found during:** UAT round 2
+- **Issue:** Chrome/Safari autofill applies `-internal-autofill-selected` with a yellow/blue background that overrides `bg-transparent`; the previous `transition` delay hack was insufficient
+- **Fix:** Added `box-shadow: 0 0 0 1000px hsl(var(--background)) inset` via Tailwind arbitrary value to paint over autofill background; kept `-webkit-text-fill-color` for text; added `caret-foreground`
+- **Files modified:** `frontend/src/components/ui/input.tsx`
+- **Commit:** 9b08ffa
+
+**8. [Rule 2 - Missing UX] FilterPanel layout improvements**
+- **Found during:** UAT round 2
+- **Issue:** Filter panel used too much vertical space; Time control/Rated/Recency always visible
+- **Fix:** (a) Moved Played as + Match side onto the same flex row to save vertical space; (b) Wrapped Time control, Rated, Recency in a Radix UI Collapsible labeled "More filters" — collapsed by default; added `collapsible.tsx` UI component
+- **Files modified:** `frontend/src/components/filters/FilterPanel.tsx`; created `frontend/src/components/ui/collapsible.tsx`
+- **Commit:** 9b08ffa
+
+**Total deviations:** 8 (3 bugs, 3 missing critical, 2 UX improvements during UAT)
+**Impact on plan:** All fixes necessary for correct behavior and usability.
 
 ## Self-Check: PASSED
 
