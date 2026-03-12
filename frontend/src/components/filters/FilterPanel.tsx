@@ -10,12 +10,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { MatchSide, TimeControl, Recency, Color } from '@/types/api';
+import type { MatchSide, TimeControl, Recency, Color, Platform } from '@/types/api';
 import { cn } from '@/lib/utils';
 
 export interface FilterState {
   matchSide: MatchSide;
   timeControls: TimeControl[] | null; // null = all
+  platforms: Platform[] | null; // null = all
   rated: boolean | null; // null = all
   recency: Recency | null; // null = all time
   color: Color | null; // null = any
@@ -24,6 +25,7 @@ export interface FilterState {
 export const DEFAULT_FILTERS: FilterState = {
   matchSide: 'full',
   timeControls: null,
+  platforms: null,
   rated: null,
   recency: null,
   color: null,
@@ -40,6 +42,12 @@ const TIME_CONTROL_LABELS: Record<TimeControl, string> = {
   blitz: 'Blitz',
   rapid: 'Rapid',
   classical: 'Classical',
+};
+
+const PLATFORMS: Platform[] = ['chess.com', 'lichess'];
+const PLATFORM_LABELS: Record<Platform, string> = {
+  'chess.com': 'Chess.com',
+  lichess: 'Lichess',
 };
 
 export function FilterPanel({ filters, onChange }: FilterPanelProps) {
@@ -63,6 +71,22 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
   const isTimeControlActive = (tc: TimeControl) => {
     if (filters.timeControls === null) return true;
     return filters.timeControls.includes(tc);
+  };
+
+  const togglePlatform = (p: Platform) => {
+    const current = filters.platforms ?? PLATFORMS;
+    if (current.includes(p)) {
+      const next = current.filter((x) => x !== p);
+      update({ platforms: next.length === PLATFORMS.length ? null : next.length === 0 ? [p] : next });
+    } else {
+      const next = [...current, p];
+      update({ platforms: next.length === PLATFORMS.length ? null : next });
+    }
+  };
+
+  const isPlatformActive = (p: Platform) => {
+    if (filters.platforms === null) return true;
+    return filters.platforms.includes(p);
   };
 
   const content = (
@@ -129,6 +153,27 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
                     )}
                   >
                     {TIME_CONTROL_LABELS[tc]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Platform */}
+            <div>
+              <p className="mb-1 text-xs text-muted-foreground">Platform</p>
+              <div className="flex flex-wrap gap-1">
+                {PLATFORMS.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => togglePlatform(p)}
+                    className={cn(
+                      'rounded border px-2 py-0.5 text-xs transition-colors',
+                      isPlatformActive(p)
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
+                    )}
+                  >
+                    {PLATFORM_LABELS[p]}
                   </button>
                 ))}
               </div>

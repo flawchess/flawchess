@@ -30,6 +30,7 @@ export interface AnalysisRequest {
   target_hash: string;
   match_side?: MatchSide;
   time_control?: TimeControl[] | null;
+  platform?: Platform[] | null;
   rated?: boolean | null;
   recency?: Recency | null;
   color?: Color | null;
