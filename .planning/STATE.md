@@ -103,6 +103,7 @@ Current focus: Phase 4 - Frontend and Auth
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 1 | can the coordinate numbers and letters be displayed outside of the board? | 2026-03-12 | b40ad87 | [1-can-the-coordinate-numbers-and-letters-b](.planning/quick/1-can-the-coordinate-numbers-and-letters-b/) |
+| 2 | add platform filter in more filters section | 2026-03-12 | b5266a9 | [2-add-platform-filter-in-more-filters-sect](.planning/quick/2-add-platform-filter-in-more-filters-sect/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -110,4 +111,4 @@ Current focus: Phase 4 - Frontend and Auth
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match; optional backend Zobrist lookup
 
 ---
-Last activity: 2026-03-12 - Completed quick task 1: can the coordinate numbers and letters be displayed outside of the board?
+Last activity: 2026-03-12 - Completed quick task 2: add platform filter in more filters section
