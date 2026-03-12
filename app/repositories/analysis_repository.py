@@ -25,6 +25,7 @@ def _build_base_query(
     time_control: list[str] | None,
     platform: list[str] | None,
     rated: bool | None,
+    opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     color: str | None,
 ) -> Any:
@@ -53,6 +54,11 @@ def _build_base_query(
         base = base.where(Game.platform.in_(platform))
     if rated is not None:
         base = base.where(Game.rated == rated)
+    if opponent_type == "human":
+        base = base.where(Game.is_computer_game == False)  # noqa: E712
+    elif opponent_type == "bot":
+        base = base.where(Game.is_computer_game == True)  # noqa: E712
+    # "both" = no filter
     if recency_cutoff is not None:
         base = base.where(Game.played_at >= recency_cutoff)
     if color is not None:
@@ -69,6 +75,7 @@ async def query_all_results(
     time_control: list[str] | None,
     platform: list[str] | None,
     rated: bool | None,
+    opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     color: str | None,
 ) -> list[tuple[str, str]]:
@@ -86,6 +93,7 @@ async def query_all_results(
         time_control=time_control,
         platform=platform,
         rated=rated,
+        opponent_type=opponent_type,
         recency_cutoff=recency_cutoff,
         color=color,
     )
@@ -101,6 +109,7 @@ async def query_matching_games(
     time_control: list[str] | None,
     platform: list[str] | None,
     rated: bool | None,
+    opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     color: str | None,
     offset: int,
@@ -120,6 +129,7 @@ async def query_matching_games(
         time_control=time_control,
         platform=platform,
         rated=rated,
+        opponent_type=opponent_type,
         recency_cutoff=recency_cutoff,
         color=color,
     ).subquery()
@@ -138,6 +148,7 @@ async def query_matching_games(
             time_control=time_control,
             platform=platform,
             rated=rated,
+            opponent_type=opponent_type,
             recency_cutoff=recency_cutoff,
             color=color,
         )

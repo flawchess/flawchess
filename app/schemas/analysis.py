@@ -31,6 +31,7 @@ class AnalysisRequest(BaseModel):
     time_control: list[Literal["bullet", "blitz", "rapid", "classical"]] | None = None
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None
+    opponent_type: Literal["human", "bot", "both"] = "human"
     recency: Literal["week", "month", "3months", "6months", "year", "all"] | None = None
     color: Literal["white", "black"] | None = None
 

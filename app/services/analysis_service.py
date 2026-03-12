@@ -86,6 +86,7 @@ async def analyze(
         time_control=request.time_control,
         platform=request.platform,
         rated=request.rated,
+        opponent_type=request.opponent_type,
         recency_cutoff=cutoff,
         color=request.color,
     )
@@ -127,6 +128,7 @@ async def analyze(
         time_control=request.time_control,
         platform=request.platform,
         rated=request.rated,
+        opponent_type=request.opponent_type,
         recency_cutoff=cutoff,
         color=request.color,
         offset=request.offset,
