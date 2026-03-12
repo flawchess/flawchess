@@ -16,6 +16,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# Allow frontend JS source lib (overrides Python lib/ above)
+!frontend/src/lib/
 parts/
 sdist/
 var/
