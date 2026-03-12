@@ -43,7 +43,6 @@ const TIME_CONTROL_LABELS: Record<TimeControl, string> = {
 };
 
 export function FilterPanel({ filters, onChange }: FilterPanelProps) {
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const update = (partial: Partial<FilterState>) => {
@@ -180,24 +179,5 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
     </div>
   );
 
-  return (
-    <>
-      {/* Desktop: always visible */}
-      <div className="hidden md:block">{content}</div>
-
-      {/* Mobile: collapsible */}
-      <div className="md:hidden">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setMobileOpen((o) => !o)}
-          className="w-full justify-between"
-        >
-          Filters
-          {mobileOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </Button>
-        {mobileOpen && <div className="mt-3">{content}</div>}
-      </div>
-    </>
-  );
+  return content;
 }
