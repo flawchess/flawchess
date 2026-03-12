@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 04-02 complete
+current_plan: 04-03 complete
 status: in_progress
-stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-03-12T09:49:00Z"
+stopped_at: Checkpoint — Task 3 human-verify (04-03-PLAN.md)
+last_updated: "2026-03-12T10:01:06Z"
 progress:
   total_phases: 4
   completed_phases: 3
@@ -17,9 +17,9 @@ progress:
 
 ## Current Phase
 Phase: 04-frontend-and-auth
-Status: In Progress — 2/3 plans done
-Current Plan: 04-02 complete
-Stopped At: Completed 04-02-PLAN.md
+Status: In Progress — 3/3 plans done (awaiting human UAT)
+Current Plan: 04-03 complete
+Stopped At: Checkpoint — Task 3 human-verify (04-03-PLAN.md)
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -32,7 +32,7 @@ Current focus: Phase 4 - Frontend and Auth
 | 1 | Data Foundation | Complete | 2/2 |
 | 2 | Import Pipeline | Complete | 4/4 |
 | 3 | Analysis API | Complete | 2/2 |
-| 4 | Frontend and Auth | In Progress | 2/3 |
+| 4 | Frontend and Auth | In Progress | 3/3 (UAT pending) |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -75,6 +75,9 @@ Current focus: Phase 4 - Frontend and Auth
 - **Zobrist JS uses dual indexing**: whiteHash/blackHash use color-relative pivot (white=0, black=1 matching _color_hash); fullHash uses ZobristHasher pivot (white=1, black=0) plus castling/EP/turn
 - **Turn hash XOR on white to move**: chess.polyglot.zobrist_hash XORs index 780 when WHITE is to move — JS port matches this (not black)
 - **shadcn/ui Nova preset, dark-only**: <html class="dark"> in index.html, Nova/Radix theme locked for frontend
+- **react-chessboard v5 options API**: v5 changed from flat props to a single `options` object prop — `<Chessboard options={{ position, boardStyle, onPieceDrop }} />`
+- **useChessGame replay approach**: goToMove replays from new Chess() rather than undoing — chess.js has no undo API; replay guarantees correctness
+- **PieceDropHandlerArgs.targetSquare is string | null**: null when piece dropped off board — guard required before calling makeMove
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -89,6 +92,7 @@ Current focus: Phase 4 - Frontend and Auth
 | 03 | 02 | 4min | 2 | 3 |
 | 04 | 01 | 10min | 2 | 12 |
 | 04 | 02 | 15min | 3 | 20 |
+| 04 | 03 | 6min | 2 | 13 |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -96,4 +100,4 @@ Current focus: Phase 4 - Frontend and Auth
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match; optional backend Zobrist lookup
 
 ---
-*Last updated: 2026-03-12 after 04-02 completion — React frontend with auth flow, Zobrist JS port, dark theme*
+*Last updated: 2026-03-12 after 04-03 code complete — full dashboard UI with chess board, analysis, filters, import flow; awaiting human UAT*

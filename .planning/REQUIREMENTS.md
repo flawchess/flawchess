@@ -18,7 +18,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Analysis
 
-- [ ] **ANL-01**: User can specify a target position by playing moves on an interactive chess board
+- [x] **ANL-01**: User can specify a target position by playing moves on an interactive chess board
 - [x] **ANL-02**: User can filter position matches by white pieces only, black pieces only, or both sides
 - [x] **ANL-03**: User sees win/draw/loss counts and percentages for all matching games
 

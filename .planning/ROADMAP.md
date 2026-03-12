@@ -100,7 +100,7 @@ Plans:
 - AUTH-01: User can create an account and log in
 - AUTH-02: Each user's games and analyses are isolated (row-level data scoping)
 
-**Plans:** 3 plans (2/3 complete)
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 04-01-PLAN.md — Backend auth: User model, FastAPI-Users, auth routes, CORS, replace user_id=1, tests
