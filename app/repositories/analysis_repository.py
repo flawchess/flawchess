@@ -23,6 +23,7 @@ def _build_base_query(
     hash_column: Any,
     target_hash: int,
     time_control: list[str] | None,
+    platform: list[str] | None,
     rated: bool | None,
     recency_cutoff: datetime.datetime | None,
     color: str | None,
@@ -48,6 +49,8 @@ def _build_base_query(
 
     if time_control is not None:
         base = base.where(Game.time_control_bucket.in_(time_control))
+    if platform is not None:
+        base = base.where(Game.platform.in_(platform))
     if rated is not None:
         base = base.where(Game.rated == rated)
     if recency_cutoff is not None:
@@ -64,6 +67,7 @@ async def query_all_results(
     hash_column: Any,
     target_hash: int,
     time_control: list[str] | None,
+    platform: list[str] | None,
     rated: bool | None,
     recency_cutoff: datetime.datetime | None,
     color: str | None,
@@ -80,6 +84,7 @@ async def query_all_results(
         hash_column=hash_column,
         target_hash=target_hash,
         time_control=time_control,
+        platform=platform,
         rated=rated,
         recency_cutoff=recency_cutoff,
         color=color,
@@ -94,6 +99,7 @@ async def query_matching_games(
     hash_column: Any,
     target_hash: int,
     time_control: list[str] | None,
+    platform: list[str] | None,
     rated: bool | None,
     recency_cutoff: datetime.datetime | None,
     color: str | None,
@@ -112,6 +118,7 @@ async def query_matching_games(
         hash_column=hash_column,
         target_hash=target_hash,
         time_control=time_control,
+        platform=platform,
         rated=rated,
         recency_cutoff=recency_cutoff,
         color=color,
@@ -129,6 +136,7 @@ async def query_matching_games(
             hash_column=hash_column,
             target_hash=target_hash,
             time_control=time_control,
+            platform=platform,
             rated=rated,
             recency_cutoff=recency_cutoff,
             color=color,
