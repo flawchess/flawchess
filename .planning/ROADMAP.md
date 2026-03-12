@@ -100,6 +100,13 @@ Plans:
 - AUTH-01: User can create an account and log in
 - AUTH-02: Each user's games and analyses are isolated (row-level data scoping)
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Backend auth: User model, FastAPI-Users, auth routes, CORS, replace user_id=1, tests
+- [ ] 04-02-PLAN.md — Frontend scaffold: Vite + React + shadcn/ui, auth pages, Zobrist JS port
+- [ ] 04-03-PLAN.md — Dashboard UI: chess board, filters, W/D/L results, import modal
+
 **Success Criteria:**
 1. A new user can register, log in, enter a chess.com or lichess username, and see their import progress — all from the browser with no manual API calls.
 2. A user can play moves on the interactive board, select a side filter, and submit the position; the page displays W/D/L percentages and a scrollable list of matching games with external links.
