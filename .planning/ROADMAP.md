@@ -100,10 +100,10 @@ Plans:
 - AUTH-01: User can create an account and log in
 - AUTH-02: Each user's games and analyses are isolated (row-level data scoping)
 
-**Plans:** 3 plans
+**Plans:** 3 plans (1/3 complete)
 
 Plans:
-- [ ] 04-01-PLAN.md — Backend auth: User model, FastAPI-Users, auth routes, CORS, replace user_id=1, tests
+- [x] 04-01-PLAN.md — Backend auth: User model, FastAPI-Users, auth routes, CORS, replace user_id=1, tests
 - [ ] 04-02-PLAN.md — Frontend scaffold: Vite + React + shadcn/ui, auth pages, Zobrist JS port
 - [ ] 04-03-PLAN.md — Dashboard UI: chess board, filters, W/D/L results, import modal
 

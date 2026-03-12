@@ -2,29 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 03-02 complete
-status: completed
-stopped_at: Phase 4 context gathered
-last_updated: "2026-03-12T08:31:48.883Z"
+current_plan: 04-01 complete
+status: in_progress
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-03-12T08:47:49Z"
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 11
+  completed_plans: 9
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
-Phase: 03-analysis-api
-Status: Complete — 2/2 plans done
-Current Plan: 03-02 complete
-Stopped At: Phase 4 context gathered
+Phase: 04-frontend-and-auth
+Status: In Progress — 1/3 plans done
+Current Plan: 04-01 complete
+Stopped At: Completed 04-01-PLAN.md
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Phase 2 - Import Pipeline
+Current focus: Phase 4 - Frontend and Auth
 
 ## Phase Progress
 | Phase | Name | Status | Plans |
@@ -32,12 +32,12 @@ Current focus: Phase 2 - Import Pipeline
 | 1 | Data Foundation | Complete | 2/2 |
 | 2 | Import Pipeline | Complete | 4/4 |
 | 3 | Analysis API | Complete | 2/2 |
-| 4 | Frontend and Auth | Pending | 0/0 |
+| 4 | Frontend and Auth | In Progress | 1/3 |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
 - ORM: SQLAlchemy 2.x async + Alembic
-- Auth: FastAPI-Users
+- Auth: FastAPI-Users 15.0.4 (JWT, integer user IDs)
 - Core algorithm: Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import
 
 ## Accumulated Context
@@ -58,7 +58,6 @@ Current focus: Phase 2 - Import Pipeline
 - **chess.com 429 backoff**: single 60s sleep + one retry (not exponential) for simplicity
 - **lichess perfType filter**: ultraBullet,bullet,blitz,rapid,classical sent on every request; correspondence and unlimited excluded
 - **lichess moves=false**: PGN available via pgnInJson=true so moves array field excluded from response
-- **Import user_id=1 placeholder**: POST /imports uses hardcoded user_id=1 with TODO comment; real auth added in Phase 4 with FastAPI-Users
 - **In-memory job registry + DB fallback**: Live job state in _jobs dict (zero-latency reads); DB queried only for historical/restarted jobs
 - **PGN lookup via SELECT after bulk_insert**: Correctness over index-alignment — SELECT (id, pgn) for new game IDs handles ON CONFLICT gaps correctly
 - **chess.com non-200 archives raises ValueError**: Any non-200/non-404 archives response raises ValueError with status code before .json() is called — consistent with job error contract
@@ -67,6 +66,10 @@ Current focus: Phase 2 - Import Pipeline
 - **Analysis two-query pattern**: query_all_results fetches lightweight (result, user_color) tuples for stats; query_matching_games fetches full Game objects for display — keeps stats accurate for total > limit
 - **DISTINCT ON ORDER BY constraint**: PostgreSQL requires DISTINCT ON column to be first in ORDER BY — paginated analysis query uses order_by(Game.id, Game.played_at.desc())
 - **select_entity list unpacking**: _build_base_query normalizes select_entity to list and unpacks via *entities — supports both single ORM entity and multi-column selects in query_all_results
+- **FastAPI-Users IntegerIDMixin on UserManager**: IntegerIDMixin goes on UserManager class, not on the User model itself
+- **asyncio_default_test_loop_scope=session**: App-level engine pool binds to first event loop; session scope prevents cross-test asyncpg RuntimeError
+- **Auth test unique emails**: Users table persists across runs; tests use uuid4 email suffixes for idempotency
+- **user_id before create_task**: Depends(current_active_user) only valid in request scope — extract user.id before asyncio.create_task
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -79,12 +82,12 @@ Current focus: Phase 2 - Import Pipeline
 | 02 | 04 | 2min | 2 | 2 |
 | 03 | 01 | 2min | 2 | 5 |
 | 03 | 02 | 4min | 2 | 3 |
+| 04 | 01 | 10min | 2 | 12 |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions for querying pieces on specific squares
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match; optional backend Zobrist lookup
-- **Add users table and authentication** (database) — users table, FastAPI-Users integration, link chess.com + lichess to single user account
 
 ---
-*Last updated: 2026-03-11 after 03-02 completion — 26 analysis tests (11 repo + 15 service) covering all 9 requirements; two PostgreSQL query bugs fixed in analysis_repository.py*
+*Last updated: 2026-03-12 after 04-01 completion — FastAPI-Users JWT auth with integer IDs, 166 tests green, users table migrated*

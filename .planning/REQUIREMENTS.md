@@ -37,8 +37,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Auth & Multi-User
 
-- [ ] **AUTH-01**: User can create an account and log in
-- [ ] **AUTH-02**: Each user's games and analyses are isolated (row-level data scoping)
+- [x] **AUTH-01**: User can create an account and log in
+- [x] **AUTH-02**: Each user's games and analyses are isolated (row-level data scoping)
 
 ### Infrastructure
 
@@ -96,8 +96,8 @@ Deferred to future release. Tracked but not in current roadmap.
 | RES-01 | Phase 3: Analysis API | Complete |
 | RES-02 | Phase 3: Analysis API | Complete |
 | RES-03 | Phase 3: Analysis API | Complete |
-| AUTH-01 | Phase 4: Frontend and Auth | Pending |
-| AUTH-02 | Phase 4: Frontend and Auth | Pending |
+| AUTH-01 | Phase 4: Frontend and Auth | Complete |
+| AUTH-02 | Phase 4: Frontend and Auth | Complete |
 | INFRA-01 | Phase 1: Data Foundation | Complete |
 | INFRA-02 | Phase 2: Import Pipeline | Complete |
 | INFRA-03 | Phase 1: Data Foundation | Complete |
@@ -109,4 +109,4 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-11 after 02-02 completion (IMP-01, IMP-02 complete)*
+*Last updated: 2026-03-12 after 04-01 completion (AUTH-01, AUTH-02 complete)*
