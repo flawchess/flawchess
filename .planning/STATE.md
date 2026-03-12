@@ -98,10 +98,16 @@ Current focus: Phase 4 - Frontend and Auth
 | 04 | 02 | 15min | 3 | 20 |
 | 04 | 03 | 45min | 3 | 27 |
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 1 | can the coordinate numbers and letters be displayed outside of the board? | 2026-03-12 | b40ad87 | [1-can-the-coordinate-numbers-and-letters-b](.planning/quick/1-can-the-coordinate-numbers-and-letters-b/) |
+
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions for querying pieces on specific squares
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match; optional backend Zobrist lookup
 
 ---
-*Last updated: 2026-03-12 after 04-03 UAT fixes — Google OAuth, import fixes, board flip, last-move highlight, game count CTA. Phase 4 complete.*
+Last activity: 2026-03-12 - Completed quick task 1: can the coordinate numbers and letters be displayed outside of the board?
