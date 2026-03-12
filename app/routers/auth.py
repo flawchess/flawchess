@@ -1,5 +1,6 @@
 """Auth router: register, JWT login/logout, and Google OAuth endpoints via FastAPI-Users."""
 
+import json
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -62,19 +63,20 @@ async def google_oauth_available() -> dict:
 async def google_authorize(request: Request) -> dict:
     """Return the Google OAuth authorization URL for the frontend to redirect to."""
     csrf_token = secrets.token_urlsafe(32)
-    state_data = {"csrftoken": csrf_token}
+    state_data = {"csrftoken": csrf_token, "aud": _OAUTH_STATE_AUDIENCE}
     state = generate_jwt(
         state_data,
-        _STATE_SECRET := settings.SECRET_KEY,
+        settings.SECRET_KEY,
         lifetime_seconds=600,
-        audience=_OAUTH_STATE_AUDIENCE,
     )
 
-    redirect_url = str(request.url_for(_CALLBACK_ROUTE_NAME))
+    # Build callback URL explicitly — request.url_for() picks up the Vite proxy host (port 5173)
+    # which doesn't match Google's authorized redirect URI (port 8000)
+    redirect_url = f"{settings.BACKEND_URL}/auth/google/callback"
     authorization_url = await google_oauth_client.get_authorization_url(
         redirect_url,
         state,
-        scopes=["openid", "email", "profile"],
+        scope=["openid", "email", "profile"],
     )
 
     response = {"authorization_url": authorization_url}
@@ -99,7 +101,22 @@ async def google_callback(
     except Exception:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state")
 
-    account_id, account_email = await google_oauth_client.get_id_email(token["access_token"])
+    # Decode id_token from Google (avoids People API dependency).
+    # The id_token is a JWT — we only need the payload, Google already validated it.
+    id_token = token.get("id_token")
+    if not id_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No id_token in Google response",
+        )
+    # Decode payload without verification (token was just received over TLS from Google)
+    import base64
+
+    payload_b64 = id_token.split(".")[1]
+    payload_b64 += "=" * (-len(payload_b64) % 4)  # pad base64
+    id_claims = json.loads(base64.urlsafe_b64decode(payload_b64))
+    account_id = id_claims["sub"]
+    account_email = id_claims.get("email")
 
     if account_email is None:
         raise HTTPException(

@@ -13,7 +13,13 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/auth': 'http://localhost:8000',
+      '/auth': {
+        target: 'http://localhost:8000',
+        // Don't proxy /auth/callback — that's a frontend route for OAuth redirect
+        bypass(req) {
+          if (req.url?.startsWith('/auth/callback')) return req.url
+        },
+      },
       '/analysis': 'http://localhost:8000',
       '/games': 'http://localhost:8000',
       '/imports': 'http://localhost:8000',
