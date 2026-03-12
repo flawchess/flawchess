@@ -3,13 +3,28 @@
 import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AnalysisRequest(BaseModel):
     """Request body for POST /analysis/positions."""
 
     target_hash: int
+
+    @field_validator("target_hash", mode="before")
+    @classmethod
+    def coerce_target_hash(cls, v: object) -> object:
+        """Accept string target_hash from the JavaScript frontend.
+
+        JavaScript BigInt cannot be safely represented as a JSON number
+        (IEEE-754 double loses precision for values > 2^53).  The frontend
+        sends the hash as a decimal string; this validator converts it to int
+        before the field is processed.  Plain int values pass through unchanged
+        for backward compatibility with existing Python callers.
+        """
+        if isinstance(v, str):
+            return int(v)
+        return v
     match_side: Literal["white", "black", "full"] = "full"
 
     # Optional filters
