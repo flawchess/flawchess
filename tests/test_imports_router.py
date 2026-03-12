@@ -8,10 +8,12 @@ without spinning up a real server.
 """
 
 import time
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+import pytest_asyncio
 
 import app.services.import_service as import_service
 from app.main import app
@@ -33,11 +35,31 @@ def clear_jobs():
 @pytest.fixture
 def no_op_run_import():
     """Patch run_import to be a no-op coroutine so background tasks don't run."""
+
     async def _noop(job_id: str) -> None:
         pass
 
     with patch("app.services.import_service.run_import", side_effect=_noop):
         yield
+
+
+@pytest_asyncio.fixture(scope="module")
+async def auth_headers() -> dict[str, str]:
+    """Register a user once per module and return auth headers for POST /imports."""
+    email = f"importer_{uuid.uuid4().hex[:8]}@example.com"
+    password = "testpassword123"
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        await client.post("/auth/register", json={"email": email, "password": password})
+        login_resp = await client.post(
+            "/auth/jwt/login",
+            data={"username": email, "password": password},
+        )
+        token = login_resp.json()["access_token"]
+
+    return {"Authorization": f"Bearer {token}"}
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +69,7 @@ def no_op_run_import():
 
 class TestPostImports:
     @pytest.mark.asyncio
-    async def test_post_imports_returns_201_with_job_id(self, no_op_run_import):
+    async def test_post_imports_returns_201_with_job_id(self, no_op_run_import, auth_headers):
         """POST /imports should return 201 with job_id and status pending."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -55,6 +77,7 @@ class TestPostImports:
             resp = await client.post(
                 "/imports",
                 json={"platform": "chess.com", "username": "testuser"},
+                headers=auth_headers,
             )
 
         assert resp.status_code == 201
@@ -64,7 +87,7 @@ class TestPostImports:
         assert len(data["job_id"]) == 36  # UUID format
 
     @pytest.mark.asyncio
-    async def test_post_imports_lichess_returns_201(self, no_op_run_import):
+    async def test_post_imports_lichess_returns_201(self, no_op_run_import, auth_headers):
         """POST /imports should work for lichess platform too."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -72,6 +95,7 @@ class TestPostImports:
             resp = await client.post(
                 "/imports",
                 json={"platform": "lichess", "username": "bobfischer"},
+                headers=auth_headers,
             )
 
         assert resp.status_code == 201
@@ -79,7 +103,9 @@ class TestPostImports:
         assert data["status"] == "pending"
 
     @pytest.mark.asyncio
-    async def test_duplicate_import_returns_existing_job_with_200(self, no_op_run_import):
+    async def test_duplicate_import_returns_existing_job_with_200(
+        self, no_op_run_import, auth_headers
+    ):
         """Second POST for same platform should return existing job with 200."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -88,6 +114,7 @@ class TestPostImports:
             resp1 = await client.post(
                 "/imports",
                 json={"platform": "chess.com", "username": "testuser"},
+                headers=auth_headers,
             )
             assert resp1.status_code == 201
             job_id_1 = resp1.json()["job_id"]
@@ -96,6 +123,7 @@ class TestPostImports:
             resp2 = await client.post(
                 "/imports",
                 json={"platform": "chess.com", "username": "testuser"},
+                headers=auth_headers,
             )
 
         assert resp2.status_code == 200
@@ -103,7 +131,7 @@ class TestPostImports:
         assert data2["job_id"] == job_id_1
 
     @pytest.mark.asyncio
-    async def test_post_imports_is_immediate_non_blocking(self, no_op_run_import):
+    async def test_post_imports_is_immediate_non_blocking(self, no_op_run_import, auth_headers):
         """POST /imports response must come back within 1 second (import is background)."""
         start = time.monotonic()
 
@@ -113,6 +141,7 @@ class TestPostImports:
             resp = await client.post(
                 "/imports",
                 json={"platform": "chess.com", "username": "testuser"},
+                headers=auth_headers,
             )
 
         elapsed = time.monotonic() - start
@@ -120,7 +149,7 @@ class TestPostImports:
         assert elapsed < 1.0, f"Response took too long: {elapsed:.2f}s"
 
     @pytest.mark.asyncio
-    async def test_post_imports_invalid_platform_returns_422(self):
+    async def test_post_imports_invalid_platform_returns_422(self, auth_headers):
         """POST /imports with invalid platform should return 422."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -128,12 +157,13 @@ class TestPostImports:
             resp = await client.post(
                 "/imports",
                 json={"platform": "invalid_platform", "username": "testuser"},
+                headers=auth_headers,
             )
 
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_post_imports_empty_username_returns_422(self):
+    async def test_post_imports_empty_username_returns_422(self, auth_headers):
         """POST /imports with empty username should return 422."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -141,6 +171,7 @@ class TestPostImports:
             resp = await client.post(
                 "/imports",
                 json={"platform": "chess.com", "username": ""},
+                headers=auth_headers,
             )
 
         assert resp.status_code == 422
@@ -153,7 +184,7 @@ class TestPostImports:
 
 class TestGetImportStatus:
     @pytest.mark.asyncio
-    async def test_get_returns_job_progress(self, no_op_run_import):
+    async def test_get_returns_job_progress(self, no_op_run_import, auth_headers):
         """GET /imports/{job_id} should return current progress data."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -162,6 +193,7 @@ class TestGetImportStatus:
             create_resp = await client.post(
                 "/imports",
                 json={"platform": "chess.com", "username": "alice"},
+                headers=auth_headers,
             )
             job_id = create_resp.json()["job_id"]
 
@@ -194,7 +226,7 @@ class TestGetImportStatus:
         assert "not found" in resp.json()["detail"].lower()
 
     @pytest.mark.asyncio
-    async def test_get_job_reflects_updated_progress(self, no_op_run_import):
+    async def test_get_job_reflects_updated_progress(self, no_op_run_import, auth_headers):
         """GET should reflect updated games_fetched count."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -203,6 +235,7 @@ class TestGetImportStatus:
             create_resp = await client.post(
                 "/imports",
                 json={"platform": "lichess", "username": "bob"},
+                headers=auth_headers,
             )
             job_id = create_resp.json()["job_id"]
 
