@@ -13,6 +13,8 @@ export interface ChessGameState {
   currentPly: number;
   /** Zobrist hashes for the current position */
   hashes: ZobristHashes;
+  /** The last move made (from/to squares) for highlighting, or null at start */
+  lastMove: { from: string; to: string } | null;
   /** Make a move by drag-drop */
   makeMove: (sourceSquare: string, targetSquare: string) => boolean;
   /** Jump to a specific ply */
@@ -41,19 +43,28 @@ export function useChessGame(): ChessGameState {
   const [moveHistory, setMoveHistory] = useState<string[]>([]);
   const [currentPly, setCurrentPly] = useState<number>(0);
   const [hashes, setHashes] = useState<ZobristHashes>(computeInitialHashes);
+  const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
 
   /**
    * Replay moveHistory[0..ply-1] on a fresh Chess instance and sync all state.
+   * Extracts the last move's from/to squares for board highlighting.
    */
   const replayTo = useCallback((history: string[], ply: number) => {
     const chess = new Chess();
+    let fromSq: string | null = null;
+    let toSq: string | null = null;
     for (let i = 0; i < ply; i++) {
-      chess.move(history[i]);
+      const move = chess.move(history[i]);
+      if (i === ply - 1 && move) {
+        fromSq = move.from;
+        toSq = move.to;
+      }
     }
     chessRef.current = chess;
     setPosition(chess.fen());
     setCurrentPly(ply);
     setHashes(computeHashes(chess));
+    setLastMove(fromSq && toSq ? { from: fromSq, to: toSq } : null);
   }, []);
 
   const makeMove = useCallback(
@@ -68,6 +79,8 @@ export function useChessGame(): ChessGameState {
         if (!result) return false;
 
         const san = result.san;
+        const from = result.from;
+        const to = result.to;
 
         setMoveHistory((prev) => {
           const atEnd = currentPly === prev.length;
@@ -81,6 +94,7 @@ export function useChessGame(): ChessGameState {
           setCurrentPly(newHistory.length);
           setPosition(chess.fen());
           setHashes(computeHashes(chess));
+          setLastMove({ from, to });
           return newHistory;
         });
 
@@ -128,6 +142,7 @@ export function useChessGame(): ChessGameState {
     setMoveHistory([]);
     setCurrentPly(0);
     setHashes(computeHashes(chess));
+    setLastMove(null);
   }, []);
 
   const getHashForAnalysis = useCallback(
@@ -144,6 +159,7 @@ export function useChessGame(): ChessGameState {
     moveHistory,
     currentPly,
     hashes,
+    lastMove,
     makeMove,
     goToMove,
     goForward,

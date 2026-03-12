@@ -15,6 +15,7 @@ export default defineConfig({
     proxy: {
       '/auth': 'http://localhost:8000',
       '/analysis': 'http://localhost:8000',
+      '/games': 'http://localhost:8000',
       '/imports': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
     },

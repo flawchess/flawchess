@@ -66,6 +66,25 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
 
   const content = (
     <div className="space-y-3">
+      {/* Played as — on top per user request */}
+      <div>
+        <p className="mb-1 text-xs text-muted-foreground">Played as</p>
+        <ToggleGroup
+          type="single"
+          value={filters.color ?? 'any'}
+          onValueChange={(v) => {
+            if (!v) return;
+            update({ color: v === 'any' ? null : (v as Color) });
+          }}
+          variant="outline"
+          size="sm"
+        >
+          <ToggleGroupItem value="any">Any</ToggleGroupItem>
+          <ToggleGroupItem value="white">White</ToggleGroupItem>
+          <ToggleGroupItem value="black">Black</ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+
       {/* Match side */}
       <div>
         <p className="mb-1 text-xs text-muted-foreground">Match side</p>
@@ -141,25 +160,6 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
             <SelectItem value="year">1 year</SelectItem>
           </SelectContent>
         </Select>
-      </div>
-
-      {/* Color played */}
-      <div>
-        <p className="mb-1 text-xs text-muted-foreground">Played as</p>
-        <ToggleGroup
-          type="single"
-          value={filters.color ?? 'any'}
-          onValueChange={(v) => {
-            if (!v) return;
-            update({ color: v === 'any' ? null : (v as Color) });
-          }}
-          variant="outline"
-          size="sm"
-        >
-          <ToggleGroupItem value="any">Any</ToggleGroupItem>
-          <ToggleGroupItem value="white">White</ToggleGroupItem>
-          <ToggleGroupItem value="black">Black</ToggleGroupItem>
-        </ToggleGroup>
       </div>
     </div>
   );

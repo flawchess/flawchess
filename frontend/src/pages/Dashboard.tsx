@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { useChessGame } from '@/hooks/useChessGame';
@@ -11,6 +12,7 @@ import { WDLBar } from '@/components/results/WDLBar';
 import { GameTable } from '@/components/results/GameTable';
 import { ImportModal } from '@/components/import/ImportModal';
 import { ImportProgress } from '@/components/import/ImportProgress';
+import { apiClient } from '@/api/client';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { AnalysisResponse } from '@/types/api';
 
@@ -21,6 +23,7 @@ export function DashboardPage() {
 
   // Board state
   const chess = useChessGame();
+  const [boardFlipped, setBoardFlipped] = useState(false);
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
@@ -33,6 +36,17 @@ export function DashboardPage() {
   // Import state
   const [importOpen, setImportOpen] = useState(false);
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
+
+  // Total game count — fetched on load to drive empty-state messaging
+  const { data: gameCountData, refetch: refetchGameCount } = useQuery<{ count: number }>({
+    queryKey: ['gameCount'],
+    queryFn: async () => {
+      const response = await apiClient.get<{ count: number }>('/games/count');
+      return response.data;
+    },
+    staleTime: 30_000,
+  });
+  const totalGames = gameCountData?.count ?? null;
 
   // ── Analyze ────────────────────────────────────────────────────────────────
 
@@ -90,22 +104,42 @@ export function DashboardPage() {
     setActiveJobIds((ids) => [...ids, jobId]);
   }, []);
 
-  const handleJobDone = useCallback((jobId: string) => {
-    setActiveJobIds((ids) => ids.filter((id) => id !== jobId));
-  }, []);
+  const handleJobDone = useCallback(
+    (jobId: string) => {
+      setActiveJobIds((ids) => ids.filter((id) => id !== jobId));
+      // Refresh game count after import completes
+      refetchGameCount();
+    },
+    [refetchGameCount],
+  );
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
-  const noGamesYet =
-    analysisResult !== null &&
-    analysisResult.stats.total === 0 &&
-    analysisResult.matched_count === 0;
+  // User has zero imported games (known)
+  const hasNoGames = totalGames !== null && totalGames === 0;
+  // Analysis returned no results
+  const analysisReturnedEmpty = analysisResult !== null && analysisResult.matched_count === 0;
+  // Analysis returned no results and user has no games at all
+  const noGamesAtAll = analysisReturnedEmpty && (totalGames === 0 || totalGames === null);
+  // Analysis returned no results but user has games (filters are too narrow)
+  const filtersMatchNothing = analysisReturnedEmpty && totalGames !== null && totalGames > 0;
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  const importButton = (
+    <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+      Import Games
+    </Button>
+  );
+
   const leftColumn = (
     <div className="flex flex-col gap-3">
-      <ChessBoard position={chess.position} onPieceDrop={chess.makeMove} />
+      <ChessBoard
+        position={chess.position}
+        onPieceDrop={chess.makeMove}
+        flipped={boardFlipped}
+        lastMove={chess.lastMove}
+      />
       <MoveList
         moveHistory={chess.moveHistory}
         currentPly={chess.currentPly}
@@ -115,6 +149,7 @@ export function DashboardPage() {
         onBack={chess.goBack}
         onForward={chess.goForward}
         onReset={chess.reset}
+        onFlip={() => setBoardFlipped((f) => !f)}
         canGoBack={chess.currentPly > 0}
         canGoForward={chess.currentPly < chess.moveHistory.length}
       />
@@ -137,15 +172,45 @@ export function DashboardPage() {
   const rightColumn = (
     <div className="flex flex-col gap-4">
       {analysisResult === null ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center text-muted-foreground">
-          <p className="text-base">Play moves on the board and click Analyze to see your stats</p>
-        </div>
-      ) : noGamesYet ? (
+        /* Initial state: no analysis run yet */
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <p className="mb-4 text-muted-foreground">
-            Import your games to start analyzing
+          {hasNoGames ? (
+            /* New user with no games */
+            <>
+              <p className="mb-2 text-base font-medium text-foreground">No games imported yet</p>
+              <p className="mb-6 text-sm text-muted-foreground">
+                Import your games from chess.com or lichess to start analyzing positions.
+              </p>
+              {importButton}
+            </>
+          ) : (
+            /* Has games (or count unknown) — show normal prompt */
+            <>
+              <p className="text-base text-muted-foreground">
+                Play moves on the board and click Analyze to see your stats
+              </p>
+              {totalGames !== null && totalGames > 0 && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {totalGames.toLocaleString()} games imported
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      ) : noGamesAtAll ? (
+        /* Ran analysis, 0 results, 0 total games */
+        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
+          <p className="mb-2 text-base font-medium text-foreground">No games imported yet</p>
+          <p className="mb-6 text-sm text-muted-foreground">
+            Import your games from chess.com or lichess to start analyzing positions.
           </p>
-          <Button onClick={() => setImportOpen(true)}>Import Games</Button>
+          {importButton}
+        </div>
+      ) : filtersMatchNothing ? (
+        /* Has games but current filters matched nothing */
+        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center text-muted-foreground">
+          <p className="text-base">No games matched the current filter settings.</p>
+          <p className="mt-1 text-sm">Try adjusting the time control, rated, or recency filters.</p>
         </div>
       ) : (
         <>
@@ -170,6 +235,11 @@ export function DashboardPage() {
         <div className="mx-auto flex max-w-7xl items-center justify-between">
           <h1 className="text-xl font-bold tracking-tight text-foreground">Chessalytics</h1>
           <div className="flex items-center gap-2">
+            {totalGames !== null && (
+              <span className="hidden text-xs text-muted-foreground sm:block">
+                {totalGames.toLocaleString()} games
+              </span>
+            )}
             <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
               Import Games
             </Button>
