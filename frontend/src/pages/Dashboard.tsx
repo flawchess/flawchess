@@ -158,7 +158,11 @@ export function DashboardPage() {
       <BoardControls
         onBack={chess.goBack}
         onForward={chess.goForward}
-        onReset={chess.reset}
+        onReset={() => {
+          chess.reset();
+          setAnalysisResult(null);
+          setAnalysisOffset(0);
+        }}
         onFlip={() => setBoardFlipped((f) => !f)}
         canGoBack={chess.currentPly > 0}
         canGoForward={chess.currentPly < chess.moveHistory.length}
@@ -228,7 +232,7 @@ export function DashboardPage() {
           <GameTable
             games={analysisResult.games}
             matchedCount={analysisResult.matched_count}
-            totalGames={analysisResult.stats.total}
+            totalGames={totalGames ?? analysisResult.stats.total}
             offset={analysisOffset}
             limit={PAGE_SIZE}
             onPageChange={handlePageChange}
