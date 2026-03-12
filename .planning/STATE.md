@@ -104,6 +104,7 @@ Current focus: Phase 4 - Frontend and Auth
 |---|-------------|------|--------|-----------|
 | 1 | can the coordinate numbers and letters be displayed outside of the board? | 2026-03-12 | b40ad87 | [1-can-the-coordinate-numbers-and-letters-b](.planning/quick/1-can-the-coordinate-numbers-and-letters-b/) |
 | 2 | add platform filter in more filters section | 2026-03-12 | b5266a9 | [2-add-platform-filter-in-more-filters-sect](.planning/quick/2-add-platform-filter-in-more-filters-sect/) |
+| 3 | fix matched games count showing wrong total and board reset clears analysis | 2026-03-12 | d6fadbc | [3-fix-matched-games-count-showing-wrong-to](.planning/quick/3-fix-matched-games-count-showing-wrong-to/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -111,4 +112,4 @@ Current focus: Phase 4 - Frontend and Auth
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match; optional backend Zobrist lookup
 
 ---
-Last activity: 2026-03-12 - Completed quick task 2: add platform filter in more filters section
+Last activity: 2026-03-12 - Completed quick task 3: fix matched games count showing wrong total and board reset clears analysis
