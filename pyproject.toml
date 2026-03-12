@@ -13,6 +13,8 @@ dependencies = [
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
     "httpx>=0.27.0",
+    "fastapi-users[oauth,sqlalchemy]>=15.0.4",
+    "httpx-oauth>=0.16.1",
 ]
 
 [tool.uv]
@@ -24,6 +26,8 @@ dev-dependencies = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 
 [tool.ruff]
 line-length = 100

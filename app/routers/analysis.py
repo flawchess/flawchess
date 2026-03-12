@@ -9,8 +9,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.models.user import User
 from app.schemas.analysis import AnalysisRequest, AnalysisResponse
 from app.services import analysis_service
+from app.users import current_active_user
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -19,16 +21,11 @@ router = APIRouter(prefix="/analysis", tags=["analysis"])
 async def query_positions(
     request: AnalysisRequest,
     session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
 ) -> AnalysisResponse:
     """Return W/D/L stats and paginated game list for a target board position.
 
     The target position is identified by its Zobrist hash. match_side controls
     which hash column is queried (white pieces, black pieces, or full position).
-
-    TODO(phase-4): Replace hardcoded user_id=1 with real authenticated user_id
-    from FastAPI-Users.
     """
-    # TODO(phase-4): Replace with real authenticated user_id from FastAPI-Users.
-    user_id = 1
-
-    return await analysis_service.analyze(session, user_id, request)
+    return await analysis_service.analyze(session, user.id, request)

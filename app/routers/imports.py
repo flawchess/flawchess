@@ -10,9 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.models.user import User
 from app.repositories import import_job_repository
 from app.schemas.imports import ImportRequest, ImportStartedResponse, ImportStatusResponse
 from app.services import import_service
+from app.users import current_active_user
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -21,6 +23,7 @@ router = APIRouter(prefix="/imports", tags=["imports"])
 async def start_import(
     request: ImportRequest,
     response: Response,
+    user: Annotated[User, Depends(current_active_user)],
 ) -> ImportStartedResponse:
     """Trigger a background import from chess.com or lichess.
 
@@ -28,12 +31,9 @@ async def start_import(
 
     If an import for this user+platform is already PENDING or IN_PROGRESS,
     the existing job is returned with HTTP 200 instead of creating a duplicate.
-
-    TODO: Replace hardcoded user_id=1 with real authenticated user once Phase 4
-    FastAPI-Users auth is wired up.
     """
-    # TODO(phase-4): Replace with real authenticated user_id from FastAPI-Users.
-    user_id = 1
+    # Extract user_id before asyncio.create_task — Depends only works in request scope
+    user_id = user.id
 
     # Return existing active job instead of starting a duplicate
     existing = import_service.find_active_job(user_id, request.platform)
