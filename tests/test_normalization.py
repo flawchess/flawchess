@@ -98,8 +98,24 @@ class TestNormalizeChesscomGame:
     def _make_chesscom_game(self, white_user="Magnus", black_user="Hikaru",
                              white_result="win", black_result="checkmated",
                              rules="chess", time_control="600+0",
-                             uuid="test-uuid-123", rated=True):
-        return {
+                             uuid="test-uuid-123", rated=True,
+                             white_is_computer=False, black_is_computer=False,
+                             eco_url="https://www.chess.com/openings/Kings-Pawn-Opening-C40"):
+        white = {
+            "username": white_user,
+            "rating": 2800,
+            "result": white_result,
+        }
+        black = {
+            "username": black_user,
+            "rating": 2750,
+            "result": black_result,
+        }
+        if white_is_computer:
+            white["is_computer"] = True
+        if black_is_computer:
+            black["is_computer"] = True
+        game = {
             "uuid": uuid,
             "url": f"https://www.chess.com/game/live/{uuid}",
             "pgn": '[Event "Live Chess"]\n[White "Magnus"]\n[Black "Hikaru"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 *',
@@ -107,18 +123,12 @@ class TestNormalizeChesscomGame:
             "time_control": time_control,
             "rated": rated,
             "end_time": 1700000000,  # Unix seconds
-            "white": {
-                "username": white_user,
-                "rating": 2800,
-                "result": white_result,
-            },
-            "black": {
-                "username": black_user,
-                "rating": 2750,
-                "result": black_result,
-            },
-            "eco": "https://www.chess.com/openings/Kings-Pawn-Opening-C40",
+            "white": white,
+            "black": black,
         }
+        if eco_url is not None:
+            game["eco"] = eco_url
+        return game
 
     def test_returns_dict_for_standard_game(self):
         from app.services.normalization import normalize_chesscom_game
@@ -243,6 +253,57 @@ class TestNormalizeChesscomGame:
         assert result is not None
         assert result["user_id"] == 42
 
+    def test_computer_opponent_flagged(self):
+        """User plays white, opponent (black) has is_computer=True -> is_computer_game=True."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game(white_user="Magnus", black_user="StockfishBot",
+                                         black_is_computer=True)
+        result = normalize_chesscom_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["is_computer_game"] is True
+
+    def test_computer_opponent_as_black_flagged(self):
+        """User plays black, opponent (white) has is_computer=True -> is_computer_game=True."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game(white_user="StockfishBot", black_user="Magnus",
+                                         white_result="checkmated", black_result="win",
+                                         white_is_computer=True)
+        result = normalize_chesscom_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["is_computer_game"] is True
+
+    def test_human_opponent_not_flagged(self):
+        """Neither player has is_computer field -> is_computer_game=False."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game()
+        result = normalize_chesscom_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["is_computer_game"] is False
+
+    def test_opening_name_from_eco_url(self):
+        """ECO URL with C40 suffix -> opening_name='Kings Pawn Opening'."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game(eco_url="https://www.chess.com/openings/Kings-Pawn-Opening-C40")
+        result = normalize_chesscom_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["opening_name"] == "Kings Pawn Opening"
+
+    def test_opening_name_no_eco_suffix(self):
+        """ECO URL slug with no ECO code -> opening_name from slug with hyphens replaced."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game(eco_url="https://www.chess.com/openings/Sicilian-Defense")
+        result = normalize_chesscom_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["opening_name"] == "Sicilian Defense"
+
+    def test_opening_name_none_when_no_eco(self):
+        """No eco field -> opening_name=None."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game(eco_url=None)
+        result = normalize_chesscom_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["opening_name"] is None
+
 
 class TestNormalizeLichessGame:
     """Tests for normalize_lichess_game function."""
@@ -250,7 +311,14 @@ class TestNormalizeLichessGame:
     def _make_lichess_game(self, white_user="Magnus", black_user="Hikaru",
                             winner=None, variant_key="standard",
                             clock_initial=600, clock_increment=0,
-                            game_id="q7ZvsdUF", rated=True):
+                            game_id="q7ZvsdUF", rated=True,
+                            white_title=None, black_title=None):
+        white_user_obj = {"name": white_user, "id": white_user.lower()}
+        black_user_obj = {"name": black_user, "id": black_user.lower()}
+        if white_title is not None:
+            white_user_obj["title"] = white_title
+        if black_title is not None:
+            black_user_obj["title"] = black_title
         game = {
             "id": game_id,
             "rated": rated,
@@ -262,11 +330,11 @@ class TestNormalizeLichessGame:
             "status": "mate",
             "players": {
                 "white": {
-                    "user": {"name": white_user, "id": white_user.lower()},
+                    "user": white_user_obj,
                     "rating": 2800,
                 },
                 "black": {
-                    "user": {"name": black_user, "id": black_user.lower()},
+                    "user": black_user_obj,
                     "rating": 2750,
                 },
             },
@@ -408,6 +476,32 @@ class TestNormalizeLichessGame:
         assert result is not None
         assert result["time_control_str"] is None
         assert result["time_control_bucket"] is None
+
+    def test_bot_opponent_flagged(self):
+        """Opponent (black) has title='BOT' -> is_computer_game=True."""
+        from app.services.normalization import normalize_lichess_game
+        game = self._make_lichess_game(white_user="Magnus", black_user="Stockfish",
+                                        black_title="BOT")
+        result = normalize_lichess_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["is_computer_game"] is True
+
+    def test_human_opponent_not_flagged(self):
+        """No title field on opponent -> is_computer_game=False."""
+        from app.services.normalization import normalize_lichess_game
+        game = self._make_lichess_game()
+        result = normalize_lichess_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["is_computer_game"] is False
+
+    def test_bot_title_case_insensitive(self):
+        """Opponent title='bot' (lowercase) -> is_computer_game=True."""
+        from app.services.normalization import normalize_lichess_game
+        game = self._make_lichess_game(white_user="Magnus", black_user="Stockfish",
+                                        black_title="bot")
+        result = normalize_lichess_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["is_computer_game"] is True
 
 
 class TestNormalizeChesscomResult:
