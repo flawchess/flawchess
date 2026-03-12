@@ -86,7 +86,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | IMP-04 | Phase 2: Import Pipeline | Complete |
 | IMP-05 | Phase 1: Data Foundation | Complete |
 | IMP-06 | Phase 1: Data Foundation | Complete |
-| ANL-01 | Phase 4: Frontend and Auth | Pending |
+| ANL-01 | Phase 4: Frontend and Auth | In Progress (Zobrist JS port done; board UI in 04-03) |
 | ANL-02 | Phase 3: Analysis API | Complete |
 | ANL-03 | Phase 3: Analysis API | Complete |
 | FLT-01 | Phase 3: Analysis API | Complete |
@@ -109,4 +109,4 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-12 after 04-01 completion (AUTH-01, AUTH-02 complete)*
+*Last updated: 2026-03-12 after 04-02 completion (ANL-01 in progress — Zobrist JS port done, interactive board in 04-03)*

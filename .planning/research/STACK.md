@@ -36,7 +36,7 @@ Already decided per PROJECT.md constraints. FastAPI is the right call:
 - Use `uv run` for running scripts and `uv sync` for installing from lockfile.
 
 ---
-
+ 
 ## Frontend
 
 ### Recommendation: React 19.x with Vite 5.x

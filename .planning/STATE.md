@@ -2,24 +2,24 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 04-01 complete
+current_plan: 04-02 complete
 status: in_progress
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-03-12T08:47:49Z"
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-03-12T09:49:00Z"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 11
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
 Phase: 04-frontend-and-auth
-Status: In Progress — 1/3 plans done
-Current Plan: 04-01 complete
-Stopped At: Completed 04-01-PLAN.md
+Status: In Progress — 2/3 plans done
+Current Plan: 04-02 complete
+Stopped At: Completed 04-02-PLAN.md
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -32,7 +32,7 @@ Current focus: Phase 4 - Frontend and Auth
 | 1 | Data Foundation | Complete | 2/2 |
 | 2 | Import Pipeline | Complete | 4/4 |
 | 3 | Analysis API | Complete | 2/2 |
-| 4 | Frontend and Auth | In Progress | 1/3 |
+| 4 | Frontend and Auth | In Progress | 2/3 |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -70,6 +70,11 @@ Current focus: Phase 4 - Frontend and Auth
 - **asyncio_default_test_loop_scope=session**: App-level engine pool binds to first event loop; session scope prevents cross-test asyncpg RuntimeError
 - **Auth test unique emails**: Users table persists across runs; tests use uuid4 email suffixes for idempotency
 - **user_id before create_task**: Depends(current_active_user) only valid in request scope — extract user.id before asyncio.create_task
+- **Vite proxy for API routing**: Frontend uses relative URLs (/auth, /analysis, /imports) forwarded to localhost:8000 via Vite server.proxy — no hardcoded backend URL
+- **BigInt + string transport for Zobrist**: Hashes computed as BigInt throughout JS (avoids IEEE-754 precision loss), converted to decimal string for JSON; backend coerce_target_hash validator converts str->int
+- **Zobrist JS uses dual indexing**: whiteHash/blackHash use color-relative pivot (white=0, black=1 matching _color_hash); fullHash uses ZobristHasher pivot (white=1, black=0) plus castling/EP/turn
+- **Turn hash XOR on white to move**: chess.polyglot.zobrist_hash XORs index 780 when WHITE is to move — JS port matches this (not black)
+- **shadcn/ui Nova preset, dark-only**: <html class="dark"> in index.html, Nova/Radix theme locked for frontend
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -83,6 +88,7 @@ Current focus: Phase 4 - Frontend and Auth
 | 03 | 01 | 2min | 2 | 5 |
 | 03 | 02 | 4min | 2 | 3 |
 | 04 | 01 | 10min | 2 | 12 |
+| 04 | 02 | 15min | 3 | 20 |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -90,4 +96,4 @@ Current focus: Phase 4 - Frontend and Auth
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match; optional backend Zobrist lookup
 
 ---
-*Last updated: 2026-03-12 after 04-01 completion — FastAPI-Users JWT auth with integer IDs, 166 tests green, users table migrated*
+*Last updated: 2026-03-12 after 04-02 completion — React frontend with auth flow, Zobrist JS port, dark theme*
