@@ -3,11 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_plan: 04-03 complete
-status: complete
-stopped_at: Completed 04-03-PLAN.md — all UAT issues fixed, phase 4 complete
-last_updated: "2026-03-12T10:55:13.368Z"
+status: completed
+stopped_at: Phase 5 context gathered
+last_updated: "2026-03-13T08:21:09.983Z"
+last_activity: "2026-03-12 - Completed quick task 5: add opponent filter (human/bot/both) to dashboard analysis"
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 4
   total_plans: 11
   completed_plans: 11
@@ -19,7 +20,7 @@ progress:
 Phase: 04-frontend-and-auth
 Status: Complete — 3/3 plans done, all UAT fixes applied
 Current Plan: 04-03 complete
-Stopped At: Completed 04-03-PLAN.md — all UAT issues fixed, phase 4 complete
+Stopped At: Phase 5 context gathered
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -41,6 +42,9 @@ Current focus: Phase 4 - Frontend and Auth
 - Core algorithm: Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import
 
 ## Accumulated Context
+
+### Roadmap Evolution
+- Phase 5 added: Position bookmarks and W/D/L comparison charts
 
 ### Key Decisions
 - **AsyncAttrs import path**: Use `from sqlalchemy.ext.asyncio import AsyncAttrs` (not `sqlalchemy.orm`) in SQLAlchemy 2.0.x
