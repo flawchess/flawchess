@@ -11,6 +11,11 @@ interface ChessBoardProps {
 
 const BRIGHT_NOTATION: React.CSSProperties = { color: 'rgba(255, 255, 255, 0.85)', fontWeight: 600 };
 
+const PIECE_NAMES: Record<string, string> = {
+  wP: 'white pawn', wR: 'white rook', wN: 'white knight', wB: 'white bishop', wQ: 'white queen', wK: 'white king',
+  bP: 'black pawn', bR: 'black rook', bN: 'black knight', bB: 'black bishop', bQ: 'black queen', bK: 'black king',
+};
+
 export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove }: ChessBoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [boardWidth, setBoardWidth] = useState(400);
@@ -96,6 +101,19 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove }:
           lightSquareNotationStyle: BRIGHT_NOTATION,
           id: 'chessboard',
           squareStyles,
+          squareRenderer: ({ piece, square, children }) => {
+            const pieceName = piece ? PIECE_NAMES[piece.pieceType] : undefined;
+            const label = pieceName ? `${square} ${pieceName}` : square;
+            return (
+              <div
+                style={{ width: '100%', height: '100%', ...squareStyles[square] }}
+                aria-label={label}
+                data-testid={`square-${square}`}
+              >
+                {children}
+              </div>
+            );
+          },
           onSquareClick: handleSquareClick,
           onPieceDrop: ({ sourceSquare, targetSquare }) => {
             if (!targetSquare) return false;
