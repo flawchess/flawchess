@@ -100,7 +100,8 @@ class TestNormalizeChesscomGame:
                              rules="chess", time_control="600+0",
                              uuid="test-uuid-123", rated=True,
                              white_is_computer=False, black_is_computer=False,
-                             eco_url="https://www.chess.com/openings/Kings-Pawn-Opening-C40"):
+                             eco_url="https://www.chess.com/openings/Kings-Pawn-Opening-C40",
+                             event="Live Chess"):
         white = {
             "username": white_user,
             "rating": 2800,
@@ -118,7 +119,7 @@ class TestNormalizeChesscomGame:
         game = {
             "uuid": uuid,
             "url": f"https://www.chess.com/game/live/{uuid}",
-            "pgn": '[Event "Live Chess"]\n[White "Magnus"]\n[Black "Hikaru"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 *',
+            "pgn": f'[Event "{event}"]\n[White "Magnus"]\n[Black "Hikaru"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 *',
             "rules": rules,
             "time_control": time_control,
             "rated": rated,
@@ -279,6 +280,22 @@ class TestNormalizeChesscomGame:
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
         assert result["is_computer_game"] is False
+
+    def test_play_vs_coach_pgn_event_flagged(self):
+        """PGN Event 'Play vs Coach' without is_computer field -> is_computer_game=True."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game(event="Play vs Coach")
+        result = normalize_chesscom_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["is_computer_game"] is True
+
+    def test_play_vs_computer_pgn_event_flagged(self):
+        """PGN Event 'Play vs Computer' without is_computer field -> is_computer_game=True."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game(event="Play vs Computer")
+        result = normalize_chesscom_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["is_computer_game"] is True
 
     def test_opening_name_from_eco_url(self):
         """ECO URL with C40 suffix -> opening_name='Kings Pawn Opening'."""

@@ -54,6 +54,9 @@ def parse_time_control(tc_str: str) -> tuple[str | None, int | None]:
         return "classical", estimated
 
 
+# chess.com PGN Event tag values that indicate a game against a computer
+_CHESSCOM_COMPUTER_EVENTS = {"Play vs Coach", "Play vs Computer"}
+
 # chess.com result strings that mean the player won
 _CHESSCOM_WIN_RESULTS = {"win"}
 
@@ -159,8 +162,14 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | N
         opponent_username = white_username
         opponent_player = white
 
-    # Computer detection
+    # Computer detection via API field
     is_computer_game = bool(opponent_player.get("is_computer", False))
+    # Fallback: detect via PGN Event tag (e.g. "Play vs Coach", "Play vs Computer")
+    if not is_computer_game:
+        pgn_str = game.get("pgn", "") or ""
+        event_match = re.search(r'\[Event\s+"([^"]+)"\]', pgn_str)
+        if event_match and event_match.group(1) in _CHESSCOM_COMPUTER_EVENTS:
+            is_computer_game = True
 
     # Normalize result
     result = _normalize_chesscom_result(white.get("result", ""), black.get("result", ""))
