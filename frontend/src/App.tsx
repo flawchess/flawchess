@@ -1,11 +1,14 @@
-import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/sonner';
+import { Button } from '@/components/ui/button';
 
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { AuthPage } from '@/pages/Auth';
 import { DashboardPage } from '@/pages/Dashboard';
 import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
+import { BookmarksPage } from '@/pages/Bookmarks';
 
 // ─── Query client ─────────────────────────────────────────────────────────────
 
@@ -18,14 +21,56 @@ const queryClient = new QueryClient({
   },
 });
 
-// ─── Protected route ──────────────────────────────────────────────────────────
+// ─── Nav header ───────────────────────────────────────────────────────────────
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function NavHeader() {
+  const location = useLocation();
+
+  return (
+    <header className="border-b border-border bg-background px-6 py-2">
+      <div className="mx-auto flex max-w-7xl items-center gap-1">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className={
+            location.pathname === '/'
+              ? 'border-b-2 border-primary rounded-none font-medium'
+              : 'rounded-none text-muted-foreground'
+          }
+        >
+          <Link to="/">Analysis</Link>
+        </Button>
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className={
+            location.pathname === '/bookmarks'
+              ? 'border-b-2 border-primary rounded-none font-medium'
+              : 'rounded-none text-muted-foreground'
+          }
+        >
+          <Link to="/bookmarks">Bookmarks</Link>
+        </Button>
+      </div>
+    </header>
+  );
+}
+
+// ─── Layout (protected pages) ─────────────────────────────────────────────────
+
+function ProtectedLayout() {
   const { token } = useAuth();
   if (!token) {
     return <Navigate to="/login" replace />;
   }
-  return <>{children}</>;
+  return (
+    <>
+      <NavHeader />
+      <Outlet />
+    </>
+  );
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -36,14 +81,11 @@ function AppRoutes() {
       <Route path="/login" element={<AuthPage />} />
       {/* Google OAuth callback — reads token from URL fragment */}
       <Route path="/auth/callback" element={<OAuthCallbackPage />} />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <DashboardPage />
-          </ProtectedRoute>
-        }
-      />
+      {/* Protected layout wraps all authenticated pages */}
+      <Route element={<ProtectedLayout />}>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/bookmarks" element={<BookmarksPage />} />
+      </Route>
       {/* Catch-all redirects to dashboard (auth guard handles the rest) */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
