@@ -1,4 +1,4 @@
-import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
+import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import type { BookmarkResponse } from '@/types/bookmarks';
 
@@ -15,9 +15,9 @@ interface WDLBarChartProps {
 }
 
 const chartConfig = {
-  wins: { label: 'Wins', color: 'oklch(0.55 0.18 145)' },
-  draws: { label: 'Draws', color: 'oklch(0.65 0.01 260)' },
-  losses: { label: 'Losses', color: 'oklch(0.55 0.2 25)' },
+  win_pct: { label: 'Wins', color: 'oklch(0.55 0.18 145)' },
+  draw_pct: { label: 'Draws', color: 'oklch(0.65 0.01 260)' },
+  loss_pct: { label: 'Losses', color: 'oklch(0.55 0.2 25)' },
 };
 
 export function WDLBarChart({ bookmarks, wdlStatsMap }: WDLBarChartProps) {
@@ -25,11 +25,16 @@ export function WDLBarChart({ bookmarks, wdlStatsMap }: WDLBarChartProps) {
     .filter((b) => wdlStatsMap[b.id] && wdlStatsMap[b.id].total > 0)
     .map((b) => {
       const s = wdlStatsMap[b.id];
+      const t = s.total;
       return {
         label: b.label,
+        win_pct: t > 0 ? (s.wins / t) * 100 : 0,
+        draw_pct: t > 0 ? (s.draws / t) * 100 : 0,
+        loss_pct: t > 0 ? (s.losses / t) * 100 : 0,
         wins: s.wins,
         draws: s.draws,
         losses: s.losses,
+        total: t,
       };
     });
 
@@ -53,23 +58,32 @@ export function WDLBarChart({ bookmarks, wdlStatsMap }: WDLBarChartProps) {
           tickLine={false}
           axisLine={false}
         />
-        <XAxis type="number" hide />
+        <XAxis
+          type="number"
+          domain={[0, 100]}
+          ticks={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]}
+          tickFormatter={(v) => `${v}%`}
+          tick={{ fontSize: 11 }}
+        />
         <ChartTooltip
-          content={
-            <ChartTooltipContent
-              formatter={(value, name) => {
-                const cfg = chartConfig[name as keyof typeof chartConfig];
-                return (
-                  <span>{cfg?.label ?? name}: {value as number}</span>
-                );
-              }}
-            />
-          }
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null;
+            const d = payload[0].payload;
+            return (
+              <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
+                <div className="font-medium">{d.label}</div>
+                <div className="text-green-500">Wins: {d.wins} ({d.win_pct.toFixed(1)}%)</div>
+                <div className="text-gray-400">Draws: {d.draws} ({d.draw_pct.toFixed(1)}%)</div>
+                <div className="text-red-500">Losses: {d.losses} ({d.loss_pct.toFixed(1)}%)</div>
+                <div className="text-muted-foreground pt-0.5 border-t border-border/50">Total: {d.total} games</div>
+              </div>
+            );
+          }}
         />
         <ChartLegend content={<ChartLegendContent />} />
-        <Bar dataKey="wins" stackId="wdl" fill="var(--color-wins)" radius={[0, 0, 0, 0]} />
-        <Bar dataKey="draws" stackId="wdl" fill="var(--color-draws)" />
-        <Bar dataKey="losses" stackId="wdl" fill="var(--color-losses)" radius={[0, 0, 0, 0]} />
+        <Bar dataKey="win_pct" stackId="wdl" fill="var(--color-win_pct)" radius={[0, 0, 0, 0]} />
+        <Bar dataKey="draw_pct" stackId="wdl" fill="var(--color-draw_pct)" />
+        <Bar dataKey="loss_pct" stackId="wdl" fill="var(--color-loss_pct)" radius={[0, 0, 0, 0]} />
       </BarChart>
     </ChartContainer>
   );

@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,6 +12,7 @@ import {
 import { useBookmarks, useTimeSeries } from '@/hooks/useBookmarks';
 import { WinRateChart } from '@/components/bookmarks/WinRateChart';
 import { WDLBarChart } from '@/components/bookmarks/WDLBarChart';
+import { apiClient } from '@/api/client';
 import { cn } from '@/lib/utils';
 import type { TimeControl, Recency, Platform, OpponentType } from '@/types/api';
 import type { TimeSeriesRequest } from '@/types/bookmarks';
@@ -122,6 +124,30 @@ export function StatsPage() {
   }
 
   const { data: tsData, isFetching } = useTimeSeries(activeRequest);
+
+  // Total game count for the user
+  const { data: gameCountData } = useQuery<{ count: number }>({
+    queryKey: ['gameCount'],
+    queryFn: async () => {
+      const response = await apiClient.get<{ count: number }>('/games/count');
+      return response.data;
+    },
+    staleTime: 30_000,
+  });
+  const totalGames = gameCountData?.count ?? null;
+
+  // Total matched games across all bookmarks (union of unique games)
+  const matchedGames = useMemo(() => {
+    if (!tsData) return null;
+    // Sum all game_counts across all bookmarks and months
+    let total = 0;
+    for (const s of tsData.series) {
+      for (const p of s.data) {
+        total += p.game_count;
+      }
+    }
+    return total;
+  }, [tsData]);
 
   // Derive WDL stats per bookmark
   const wdlStatsMap = useMemo(() => {
@@ -265,9 +291,16 @@ export function StatsPage() {
           </div>
         </div>
 
-        <Button onClick={handleAnalyze} disabled={isFetching} size="lg">
-          {isFetching ? 'Analyzing...' : 'Analyze'}
-        </Button>
+        <div className="flex items-center gap-4">
+          <Button onClick={handleAnalyze} disabled={isFetching} size="lg">
+            {isFetching ? 'Analyzing...' : 'Analyze'}
+          </Button>
+          {matchedGames !== null && totalGames !== null && (
+            <span className="text-sm text-muted-foreground">
+              {matchedGames.toLocaleString()} of {totalGames.toLocaleString()} games matched
+            </span>
+          )}
+        </div>
       </div>
 
       {/* WDL Bar Chart */}
