@@ -1,8 +1,8 @@
 # Roadmap: Chessalytics
 
 ## Overview
-- Total phases: 5
-- Total requirements: 21 (v1) + 7 provisional (Phase 5)
+- Total phases: 6
+- Total requirements: 21 (v1) + 7 provisional (Phase 5) + 5 provisional (Phase 6)
 - Granularity: Coarse
 
 ---
@@ -125,6 +125,7 @@ All 21 v1 requirements are mapped:
 - Phase 3: 9 requirements (ANL-02, ANL-03, FLT-01, FLT-02, FLT-03, FLT-04, RES-01, RES-02, RES-03)
 - Phase 4: 3 requirements (ANL-01, AUTH-01, AUTH-02)
 - Phase 5: 7 provisional requirements (BKM-01 through BKM-07)
+- Phase 6: 5 provisional requirements (TEST-01 through TEST-05)
 
 ---
 
@@ -158,5 +159,32 @@ Plans:
 4. All bookmark data is user-scoped — no cross-user data leakage.
 
 ---
+
+## Phase 6: Optimize UI for Claude Chrome Extension Testing
+
+**Goal:** Audit the frontend and optimize the DOM for AI browser automation via the Claude Chrome extension — add data-testid attributes, semantic HTML, ARIA labels, and click-to-move on the chess board so every interactive element is reliably targetable by automated agents.
+
+**Requirements:**
+- TEST-01: All interactive elements use semantic HTML (button, a, nav) rather than generic div/span with onClick
+- TEST-02: All clickable elements, inputs, and major layout containers have descriptive data-testid attributes
+- TEST-03: All icon-only buttons and dynamic states have accurate aria-labels and ARIA roles
+- TEST-04: Chess board moves are playable by clicking source and target squares (not just drag-and-drop)
+- TEST-05: CLAUDE.md contains Browser Automation Rules mandating data-testid, semantic HTML, and ARIA for all future frontend code
+
+**Depends on:** Phase 5
+**Plans:** 2 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Semantic HTML fixes + data-testid + ARIA labels across all components
+- [ ] 06-02-PLAN.md — Click-to-move on chess board + CLAUDE.md Browser Automation Rules
+
+**Success Criteria:**
+1. Every interactive element in the frontend has a data-testid attribute following the kebab-case naming convention.
+2. The Claude Chrome extension can target any button, link, input, or toggle via data-testid selectors.
+3. The chess board supports both drag-and-drop and click-to-move (two-click pattern).
+4. CLAUDE.md permanently mandates automation-friendly patterns for all future frontend development.
+
+---
 *Created: 2026-03-11*
 *Phase 5 added: 2026-03-13*
+*Phase 6 planned: 2026-03-13*
