@@ -9,11 +9,16 @@ from app.repositories.analysis_repository import (
     HASH_COLUMN_MAP,
     query_all_results,
     query_matching_games,
+    query_time_series,
 )
 from app.schemas.analysis import (
     AnalysisRequest,
     AnalysisResponse,
+    BookmarkTimeSeries,
     GameRecord,
+    TimeSeriesPoint,
+    TimeSeriesRequest,
+    TimeSeriesResponse,
     WDLStats,
 )
 
@@ -155,3 +160,54 @@ async def analyze(
         offset=request.offset,
         limit=request.limit,
     )
+
+
+async def get_time_series(
+    session: AsyncSession,
+    user_id: int,
+    request: TimeSeriesRequest,
+) -> TimeSeriesResponse:
+    """Return monthly win-rate time series for each bookmark in the request.
+
+    Processes all bookmarks in a single service call — no N+1 HTTP calls.
+    Months with zero games for a bookmark are absent (gap, not 0.0).
+    win_rate = wins / (wins + draws + losses) per month.
+    """
+    series: list[BookmarkTimeSeries] = []
+    for bkm in request.bookmarks:
+        hash_column = HASH_COLUMN_MAP[bkm.match_side]
+        rows = await query_time_series(
+            session, user_id, hash_column, bkm.target_hash, bkm.color
+        )
+
+        # Group raw (month_dt, result, user_color) tuples by calendar month string.
+        monthly: dict[str, dict[str, int]] = {}
+        for month_dt, result, user_color in rows:
+            key = month_dt.strftime("%Y-%m")
+            if key not in monthly:
+                monthly[key] = {"wins": 0, "draws": 0, "losses": 0}
+            if result == "1/2-1/2":
+                monthly[key]["draws"] += 1
+            elif (result == "1-0" and user_color == "white") or (
+                result == "0-1" and user_color == "black"
+            ):
+                monthly[key]["wins"] += 1
+            else:
+                monthly[key]["losses"] += 1
+
+        data: list[TimeSeriesPoint] = []
+        for month_str in sorted(monthly.keys()):
+            counts = monthly[month_str]
+            total = counts["wins"] + counts["draws"] + counts["losses"]
+            win_rate = counts["wins"] / total if total > 0 else 0.0
+            data.append(
+                TimeSeriesPoint(
+                    month=month_str,
+                    win_rate=round(win_rate, 4),
+                    game_count=total,
+                )
+            )
+
+        series.append(BookmarkTimeSeries(bookmark_id=bkm.bookmark_id, data=data))
+
+    return TimeSeriesResponse(series=series)

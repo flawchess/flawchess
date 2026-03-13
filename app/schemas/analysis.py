@@ -72,3 +72,47 @@ class AnalysisResponse(BaseModel):
     matched_count: int
     offset: int
     limit: int
+
+
+class TimeSeriesBookmarkParam(BaseModel):
+    """Parameters for one bookmark in a time-series request."""
+
+    bookmark_id: int
+    target_hash: int
+    match_side: Literal["white", "black", "full"] = "full"
+    color: Literal["white", "black"] | None = None
+
+    @field_validator("target_hash", mode="before")
+    @classmethod
+    def coerce_target_hash(cls, v: object) -> object:
+        """Accept string target_hash from the JavaScript frontend (BigInt precision)."""
+        if isinstance(v, str):
+            return int(v)
+        return v
+
+
+class TimeSeriesRequest(BaseModel):
+    """Request body for POST /analysis/time-series."""
+
+    bookmarks: list[TimeSeriesBookmarkParam]
+
+
+class TimeSeriesPoint(BaseModel):
+    """Win-rate data for a single calendar month."""
+
+    month: str       # "2025-01"
+    win_rate: float  # wins / (wins + draws + losses); 0.0 if only draws/losses
+    game_count: int
+
+
+class BookmarkTimeSeries(BaseModel):
+    """Monthly time-series data for one bookmark."""
+
+    bookmark_id: int
+    data: list[TimeSeriesPoint]
+
+
+class TimeSeriesResponse(BaseModel):
+    """Response from POST /analysis/time-series."""
+
+    series: list[BookmarkTimeSeries]

@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_async_session
 from app.models.user import User
 from app.repositories import game_repository
-from app.schemas.analysis import AnalysisRequest, AnalysisResponse
+from app.schemas.analysis import (
+    AnalysisRequest,
+    AnalysisResponse,
+    TimeSeriesRequest,
+    TimeSeriesResponse,
+)
 from app.services import analysis_service
 from app.users import current_active_user
 
@@ -30,6 +35,16 @@ async def query_positions(
     which hash column is queried (white pieces, black pieces, or full position).
     """
     return await analysis_service.analyze(session, user.id, request)
+
+
+@router.post("/analysis/time-series", response_model=TimeSeriesResponse)
+async def get_time_series(
+    request: TimeSeriesRequest,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> TimeSeriesResponse:
+    """Return monthly win-rate time series for a list of bookmark positions."""
+    return await analysis_service.get_time_series(session, user.id, request)
 
 
 @router.get("/games/count")
