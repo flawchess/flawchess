@@ -1,9 +1,12 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useLocation } from 'react-router-dom';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { useChessGame } from '@/hooks/useChessGame';
 import { useAnalysis } from '@/hooks/useAnalysis';
+import { useCreateBookmark } from '@/hooks/useBookmarks';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import { MoveList } from '@/components/board/MoveList';
 import { BoardControls } from '@/components/board/BoardControls';
@@ -12,7 +15,7 @@ import { WDLBar } from '@/components/results/WDLBar';
 import { GameTable } from '@/components/results/GameTable';
 import { ImportModal } from '@/components/import/ImportModal';
 import { ImportProgress } from '@/components/import/ImportProgress';
-import { apiClient } from '@/api/client';
+import { apiClient, bookmarksApi } from '@/api/client';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { AnalysisResponse } from '@/types/api';
 
@@ -20,10 +23,15 @@ const PAGE_SIZE = 50;
 
 export function DashboardPage() {
   const { logout } = useAuth();
+  const location = useLocation();
 
   // Board state
   const chess = useChessGame();
   const [boardFlipped, setBoardFlipped] = useState(false);
+
+  // Bookmark state
+  const [activeBookmarkId, setActiveBookmarkId] = useState<number | null>(null);
+  const createBookmark = useCreateBookmark();
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
@@ -102,6 +110,48 @@ export function DashboardPage() {
     // Don't auto-run analysis — user must click Analyze
   }, []);
 
+  // ── Bookmarks ───────────────────────────────────────────────────────────────
+
+  const handleBookmark = useCallback(async () => {
+    const matchSide = filters.matchSide;
+    const targetHash = chess.getHashForAnalysis(matchSide);
+    const label = chess.openingName?.name ?? `Position (${chess.moveHistory.length} moves)`;
+    const data = {
+      label,
+      target_hash: targetHash,
+      fen: chess.position,
+      moves: chess.moveHistory,
+      color: filters.color,
+      match_side: matchSide,
+    };
+    try {
+      if (activeBookmarkId !== null) {
+        await bookmarksApi.updateLabel(activeBookmarkId, { label });
+        toast.success('Bookmark updated');
+      } else {
+        const created = await createBookmark.mutateAsync(data);
+        setActiveBookmarkId(created.id);
+        toast.success('Position bookmarked');
+      }
+    } catch {
+      toast.error('Failed to save bookmark');
+    }
+  }, [chess, filters, activeBookmarkId, createBookmark]);
+
+  // Hydrate board state when navigating here from /bookmarks via [Load]
+  useEffect(() => {
+    const bkm = (location.state as { bookmark?: { id: number; moves: string[]; color: 'white' | 'black' | null; matchSide: 'white' | 'black' | 'full' } } | null)?.bookmark;
+    if (bkm) {
+      chess.loadMoves(bkm.moves);
+      setFilters(prev => ({
+        ...prev,
+        color: bkm.color ?? null,
+        matchSide: bkm.matchSide,
+      }));
+      setActiveBookmarkId(bkm.id);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally mount-only
+
   // ── Import ─────────────────────────────────────────────────────────────────
 
   const handleImportStarted = useCallback((jobId: string) => {
@@ -164,6 +214,7 @@ export function DashboardPage() {
           chess.reset();
           setAnalysisResult(null);
           setAnalysisOffset(0);
+          setActiveBookmarkId(null);
         }}
         onFlip={() => setBoardFlipped((f) => !f)}
         canGoBack={chess.currentPly > 0}
@@ -174,14 +225,24 @@ export function DashboardPage() {
         <FilterPanel filters={filters} onChange={handleFiltersChange} />
       </div>
 
-      <Button
-        onClick={handleAnalyze}
-        disabled={analysis.isPending}
-        className="w-full"
-        size="lg"
-      >
-        {analysis.isPending ? 'Analyzing...' : 'Analyze'}
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          onClick={handleAnalyze}
+          disabled={analysis.isPending}
+          className="flex-1"
+          size="lg"
+        >
+          {analysis.isPending ? 'Analyzing...' : 'Analyze'}
+        </Button>
+        <Button
+          variant="outline"
+          size="lg"
+          onClick={handleBookmark}
+          disabled={createBookmark.isPending}
+        >
+          {activeBookmarkId !== null ? 'Save' : '★ Bookmark'}
+        </Button>
+      </div>
     </div>
   );
 

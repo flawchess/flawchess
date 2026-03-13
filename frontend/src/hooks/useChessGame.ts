@@ -31,6 +31,8 @@ export interface ChessGameState {
   getHashForAnalysis: (matchSide: MatchSide) => string;
   /** Current opening name from the lichess database, or null */
   openingName: Opening | null;
+  /** Load a saved sequence of SAN moves onto a fresh board */
+  loadMoves: (sans: string[]) => void;
 }
 
 const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -145,6 +147,14 @@ export function useChessGame(): ChessGameState {
     });
   }, [currentPly, replayTo]);
 
+  const loadMoves = useCallback(
+    (sans: string[]) => {
+      setMoveHistory(sans);
+      replayTo(sans, sans.length);
+    },
+    [replayTo],
+  );
+
   const reset = useCallback(() => {
     const chess = new Chess();
     chessRef.current = chess;
@@ -183,5 +193,6 @@ export function useChessGame(): ChessGameState {
     reset,
     getHashForAnalysis,
     openingName,
+    loadMoves,
   };
 }
