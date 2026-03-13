@@ -142,7 +142,7 @@ All 21 v1 requirements are mapped:
 - BKM-07: Bookmark labels are editable inline on the /bookmarks page
 
 **Depends on:** Phase 4
-**Plans:** 5 plans
+**Plans:** 2/5 plans executed
 
 Plans:
 - [ ] 05-01-PLAN.md — Backend bookmark model, migration, schemas, repository, and CRUD router

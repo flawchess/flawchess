@@ -2,30 +2,30 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 04-03 complete
-status: completed
-stopped_at: Phase 5 context gathered
-last_updated: "2026-03-13T08:21:09.983Z"
+current_plan: 05-01 complete
+status: executing
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-03-13T09:01:22.150Z"
 last_activity: "2026-03-12 - Completed quick task 5: add opponent filter (human/bot/both) to dashboard analysis"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 16
+  completed_plans: 13
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
-Phase: 04-frontend-and-auth
-Status: Complete — 3/3 plans done, all UAT fixes applied
-Current Plan: 04-03 complete
-Stopped At: Phase 5 context gathered
+Phase: 05-position-bookmarks-and-w-d-l-comparison-charts
+Status: In Progress — 1/5 plans done
+Current Plan: 05-01 complete
+Stopped At: Completed 05-01-PLAN.md
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Phase 4 - Frontend and Auth
+Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 
 ## Phase Progress
 | Phase | Name | Status | Plans |
@@ -34,6 +34,7 @@ Current focus: Phase 4 - Frontend and Auth
 | 2 | Import Pipeline | Complete | 4/4 |
 | 3 | Analysis API | Complete | 2/2 |
 | 4 | Frontend and Auth | Complete | 3/3 |
+| 5 | Position Bookmarks and W/D/L Charts | In Progress | 1/5 |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -86,6 +87,12 @@ Current focus: Phase 4 - Frontend and Auth
 - **ImportJobStatus mismatch**: backend uses 'completed'/'failed', not 'done'/'error' — was root cause of spinner never stopping + errors never showing
 - **GET /games/count**: lightweight endpoint for dashboard empty-state CTA — avoids special-casing analysis endpoint with null hash
 - **react-chessboard squareStyles**: prop name for per-square CSS overrides is `squareStyles` (not `customSquareStyles`)
+- **Bookmark user_id no FK constraint**: bookmarks table omits FK on user_id — users table is in a different migration, avoids FK ordering issues
+- **Bookmark moves as JSON Text**: moves column stores JSON-encoded list[str] in Text column; BookmarkResponse uses model_validator to deserialize
+- **PUT /bookmarks/reorder before /bookmarks/{id}**: FastAPI route ordering — "reorder" must be defined before /{id} to prevent it being parsed as integer
+- **BookmarkResponse model_validator deserializes moves**: mode="before" validator converts ORM string to list[str] before field validation
+- **date_trunc UTC normalization**: Use `func.timezone("UTC", timestamptz_col)` before `func.date_trunc` — PostgreSQL session timezone (Europe/Zurich) causes month drift without explicit UTC conversion
+- **query_time_series raw tuples**: Returns (month_dt, result, user_color) tuples; service aggregates W/D/L per month key — gap months (no games) are absent from results, not zero-filled
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -101,6 +108,7 @@ Current focus: Phase 4 - Frontend and Auth
 | 04 | 01 | 10min | 2 | 12 |
 | 04 | 02 | 15min | 3 | 20 |
 | 04 | 03 | 45min | 3 | 27 |
+| 05 | 01 | 3min | 2 | 8 |
 
 ### Quick Tasks Completed
 
