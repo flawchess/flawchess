@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 05-04 complete
 status: executing
-stopped_at: "Completed quick task 7: store board flip state in bookmarks"
-last_updated: "2026-03-13T11:39:44.772Z"
-last_activity: "2026-03-13 - Completed quick task 7: Store board flip state in bookmarks"
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-03-13T15:53:18.072Z"
+last_activity: "2026-03-13 - Completed quick task 6: fix bookmark save (validation + session commit)"
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 4
-  total_plans: 16
-  completed_plans: 15
+  total_plans: 18
+  completed_plans: 16
 ---
 
 # Project State: Chessalytics
@@ -20,7 +20,7 @@ progress:
 Phase: 05-position-bookmarks-and-w-d-l-comparison-charts
 Status: In Progress — 4/5 plans done
 Current Plan: 05-04 complete
-Stopped At: Completed quick task 7: store board flip state in bookmarks
+Stopped At: Completed 06-02-PLAN.md
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -46,6 +46,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 
 ### Roadmap Evolution
 - Phase 5 added: Position bookmarks and W/D/L comparison charts
+- Phase 6 added: Optimize UI for Claude Chrome Extension Testing
 
 ### Key Decisions
 - **AsyncAttrs import path**: Use `from sqlalchemy.ext.asyncio import AsyncAttrs` (not `sqlalchemy.orm`) in SQLAlchemy 2.0.x
@@ -97,6 +98,8 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **ProtectedLayout + Outlet**: NavHeader rendered once in ProtectedLayout above Outlet; replaces per-page ProtectedRoute wrapper; auth guard is in ProtectedLayout
 - **isDirtyRef for bookmark blur cancel**: ref (not state) tracks whether blur should skip save; set true on Escape key or action button mousedown
 - **BookmarkRow WDL stats optional**: rendered only when stats prop provided; plan 05-05 wires actual POST /analysis/time-series data
+- **State-during-render reset for selectedSquare**: avoids react-hooks/set-state-in-effect and react-hooks/refs lint violations; uses prevPosition state compared during render — React-recommended derived state pattern
+- **Browser Automation Rules in CLAUDE.md**: permanent mandatory rules for all future frontend code — data-testid on every interactive element, semantic HTML, ARIA labels, chess board must have data-testid="chessboard" and id="chessboard"
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -116,6 +119,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 05 | 02 | 15min | 2 | 5 |
 | 05 | 03 | 10min | 2 | 5 |
 | 05 | 04 | 5min | 2 | 7 |
+| 06 | 02 | 5min | 2 | 2 |
 
 ### Quick Tasks Completed
 

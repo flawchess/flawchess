@@ -172,7 +172,7 @@ Plans:
 - TEST-05: CLAUDE.md contains Browser Automation Rules mandating data-testid, semantic HTML, and ARIA for all future frontend code
 
 **Depends on:** Phase 5
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 06-01-PLAN.md — Semantic HTML fixes + data-testid + ARIA labels across all components
