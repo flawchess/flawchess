@@ -125,6 +125,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 3 | fix matched games count showing wrong total and board reset clears analysis | 2026-03-12 | d6fadbc | [3-fix-matched-games-count-showing-wrong-to](.planning/quick/3-fix-matched-games-count-showing-wrong-to/) |
 | 4 | flag computer opponent games on import and parse chess.com opening names | 2026-03-12 | a2479c2 | [4-flag-computer-opponent-games-on-import-a](.planning/quick/4-flag-computer-opponent-games-on-import-a/) |
 | 5 | add opponent filter (human/bot/both) to dashboard analysis | 2026-03-12 | 011e56a | [5-add-opponent-filter-human-bot-both-to-da](.planning/quick/5-add-opponent-filter-human-bot-both-to-da/) |
+| 6 | fix bookmark save: BookmarkResponse int target_hash validation error | 2026-03-13 | a96293b | [6-fix-bookmark-save-failed-to-save-bookmar](.planning/quick/6-fix-bookmark-save-failed-to-save-bookmar/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -133,4 +134,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-12 - Completed quick task 5: add opponent filter (human/bot/both) to dashboard analysis
+Last activity: 2026-03-13 - Completed quick task 6: fix bookmark save (BookmarkResponse int target_hash validation error)
