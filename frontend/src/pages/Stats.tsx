@@ -183,7 +183,7 @@ export function StatsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
+    <div data-testid="stats-page" className="mx-auto max-w-4xl space-y-6 p-6">
       <h1 className="text-2xl font-semibold">Stats</h1>
 
       {/* Filters */}
@@ -292,7 +292,7 @@ export function StatsPage() {
         </div>
 
         <div className="flex items-center gap-4">
-          <Button onClick={handleAnalyze} disabled={isFetching} size="lg">
+          <Button onClick={handleAnalyze} disabled={isFetching} size="lg" data-testid="stats-btn-analyze">
             {isFetching ? 'Analyzing...' : 'Analyze'}
           </Button>
           {matchedGames !== null && totalGames !== null && (

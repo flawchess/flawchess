@@ -39,23 +39,25 @@ function NavHeader() {
       <div className="mx-auto flex max-w-7xl items-center justify-between">
         <div className="flex items-center gap-1">
           <span className="mr-3 text-lg font-bold tracking-tight text-foreground">Chessalytics</span>
-          {NAV_ITEMS.map(({ to, label }) => (
-            <Button
-              key={to}
-              asChild
-              variant="ghost"
-              size="sm"
-              className={
-                location.pathname === to
-                  ? 'border-b-2 border-primary rounded-none font-medium'
-                  : 'rounded-none text-muted-foreground'
-              }
-            >
-              <Link to={to}>{label}</Link>
-            </Button>
-          ))}
+          <nav aria-label="Main navigation">
+            {NAV_ITEMS.map(({ to, label }) => (
+              <Button
+                key={to}
+                asChild
+                variant="ghost"
+                size="sm"
+                className={
+                  location.pathname === to
+                    ? 'border-b-2 border-primary rounded-none font-medium'
+                    : 'rounded-none text-muted-foreground'
+                }
+              >
+                <Link to={to} data-testid={`nav-${label.toLowerCase()}`}>{label}</Link>
+              </Button>
+            ))}
+          </nav>
         </div>
-        <Button variant="ghost" size="sm" onClick={logout}>
+        <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
           Logout
         </Button>
       </div>

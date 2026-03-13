@@ -73,6 +73,7 @@ export function LoginForm() {
               className="mb-4 w-full"
               onClick={handleGoogleSignIn}
               disabled={googleLoading}
+              data-testid="btn-login-google"
             >
               <GoogleIcon />
               {googleLoading ? 'Redirecting...' : 'Sign in with Google'}
@@ -100,6 +101,7 @@ export function LoginForm() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
+              data-testid="login-email"
             />
           </div>
           <div className="space-y-2">
@@ -112,9 +114,10 @@ export function LoginForm() {
               onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete="current-password"
+              data-testid="login-password"
             />
           </div>
-          <Button type="submit" className="w-full" disabled={submitting}>
+          <Button type="submit" className="w-full" disabled={submitting} data-testid="btn-login">
             {submitting ? 'Signing in…' : 'Log In'}
           </Button>
         </form>

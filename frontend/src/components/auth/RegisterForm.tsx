@@ -116,6 +116,7 @@ export function RegisterForm() {
               className="mb-4 w-full"
               onClick={handleGoogleSignIn}
               disabled={googleLoading}
+              data-testid="btn-register-google"
             >
               <GoogleIcon />
               {googleLoading ? 'Redirecting...' : 'Sign up with Google'}
@@ -143,6 +144,7 @@ export function RegisterForm() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
+              data-testid="register-email"
             />
           </div>
           <div className="space-y-2">
@@ -155,6 +157,7 @@ export function RegisterForm() {
               onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete="new-password"
+              data-testid="register-password"
             />
           </div>
           <div className="space-y-2">
@@ -169,7 +172,7 @@ export function RegisterForm() {
               autoComplete="new-password"
             />
           </div>
-          <Button type="submit" className="w-full" disabled={submitting}>
+          <Button type="submit" className="w-full" disabled={submitting} data-testid="btn-register">
             {submitting ? 'Creating account…' : 'Create Account'}
           </Button>
         </form>

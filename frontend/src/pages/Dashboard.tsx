@@ -193,7 +193,7 @@ export function DashboardPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const importButton = (
-    <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+    <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} data-testid="btn-import-cta">
       Import Games
     </Button>
   );
@@ -242,6 +242,7 @@ export function DashboardPage() {
           disabled={analysis.isPending}
           className="flex-1"
           size="lg"
+          data-testid="btn-filter"
         >
           {analysis.isPending ? 'Filtering...' : 'Filter'}
         </Button>
@@ -249,10 +250,11 @@ export function DashboardPage() {
           variant="outline"
           size="lg"
           onClick={openBookmarkDialog}
+          data-testid="btn-bookmark"
         >
           Bookmark
         </Button>
-        <Button variant="outline" size="lg" onClick={() => setImportOpen(true)}>
+        <Button variant="outline" size="lg" onClick={() => setImportOpen(true)} data-testid="btn-import">
           Import
         </Button>
       </div>
@@ -319,7 +321,7 @@ export function DashboardPage() {
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-background">
+    <div data-testid="dashboard-page" className="flex min-h-0 flex-1 flex-col bg-background">
       {/* Body */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-6">
         {/* Desktop: two-column layout */}
@@ -345,7 +347,7 @@ export function DashboardPage() {
 
       {/* Bookmark label dialog */}
       <Dialog open={bookmarkDialogOpen} onOpenChange={setBookmarkDialogOpen}>
-        <DialogContent>
+        <DialogContent data-testid="bookmark-dialog">
           <DialogHeader>
             <DialogTitle>Save Bookmark</DialogTitle>
             <DialogDescription>
@@ -360,11 +362,13 @@ export function DashboardPage() {
             }}
             placeholder="Bookmark label"
             autoFocus
+            data-testid="bookmark-label-input"
           />
           <DialogFooter>
             <Button
               onClick={handleBookmarkSave}
               disabled={!bookmarkLabel.trim() || createBookmark.isPending}
+              data-testid="btn-bookmark-save"
             >
               {createBookmark.isPending ? 'Saving...' : 'Save'}
             </Button>

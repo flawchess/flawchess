@@ -58,7 +58,7 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" data-testid="import-modal">
         <DialogHeader>
           <DialogTitle>Import Games</DialogTitle>
         </DialogHeader>
@@ -74,10 +74,10 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
               variant="outline"
               className="w-full"
             >
-              <ToggleGroupItem value="chess.com" className="flex-1">
+              <ToggleGroupItem value="chess.com" className="flex-1" data-testid="import-platform-chess-com">
                 chess.com
               </ToggleGroupItem>
-              <ToggleGroupItem value="lichess" className="flex-1">
+              <ToggleGroupItem value="lichess" className="flex-1" data-testid="import-platform-lichess">
                 lichess
               </ToggleGroupItem>
             </ToggleGroup>
@@ -94,6 +94,7 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="off"
               autoFocus
+              data-testid="import-username"
             />
           </div>
 
@@ -126,10 +127,11 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
               variant="ghost"
               onClick={() => onOpenChange(false)}
               disabled={trigger.isPending}
+              data-testid="btn-import-cancel"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={trigger.isPending || !username.trim()}>
+            <Button type="submit" disabled={trigger.isPending || !username.trim()} data-testid="btn-import-start">
               {trigger.isPending ? 'Starting...' : 'Import'}
             </Button>
           </div>

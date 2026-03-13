@@ -68,7 +68,7 @@ export function BookmarksPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-6">
+    <div data-testid="bookmarks-page" className="mx-auto max-w-3xl space-y-8 p-6">
       <h1 className="text-2xl font-semibold">Bookmarks</h1>
       <BookmarkList bookmarks={bookmarks} onReorder={handleReorder} wdlStatsMap={wdlStatsMap} />
     </div>
