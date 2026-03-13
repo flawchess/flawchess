@@ -138,19 +138,19 @@ export function DashboardPage() {
     }
   }, [chess, filters, activeBookmarkId, createBookmark]);
 
-  // Hydrate board state when navigating here from /bookmarks via [Load]
+  // Hydrate board state when navigating here from /bookmarks via [Load] (mount-only)
   useEffect(() => {
     const bkm = (location.state as { bookmark?: { id: number; moves: string[]; color: 'white' | 'black' | null; matchSide: 'white' | 'black' | 'full' } } | null)?.bookmark;
-    if (bkm) {
-      chess.loadMoves(bkm.moves);
-      setFilters(prev => ({
-        ...prev,
-        color: bkm.color ?? null,
-        matchSide: bkm.matchSide,
-      }));
-      setActiveBookmarkId(bkm.id);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally mount-only
+    if (!bkm) return;
+    chess.loadMoves(bkm.moves);
+    setFilters(prev => ({
+      ...prev,
+      color: bkm.color ?? null,
+      matchSide: bkm.matchSide,
+    }));
+    setActiveBookmarkId(bkm.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount-only: read location.state once on arrival from bookmarks page
 
   // ── Import ─────────────────────────────────────────────────────────────────
 
