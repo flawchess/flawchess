@@ -91,6 +91,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Bookmark moves as JSON Text**: moves column stores JSON-encoded list[str] in Text column; BookmarkResponse uses model_validator to deserialize
 - **PUT /bookmarks/reorder before /bookmarks/{id}**: FastAPI route ordering — "reorder" must be defined before /{id} to prevent it being parsed as integer
 - **BookmarkResponse model_validator deserializes moves**: mode="before" validator converts ORM string to list[str] before field validation
+- **get_async_session auto-commit**: Session dependency commits after yield — repositories use flush() for within-request visibility, commit happens automatically at request end
 - **date_trunc UTC normalization**: Use `func.timezone("UTC", timestamptz_col)` before `func.date_trunc` — PostgreSQL session timezone (Europe/Zurich) causes month drift without explicit UTC conversion
 - **query_time_series raw tuples**: Returns (month_dt, result, user_color) tuples; service aggregates W/D/L per month key — gap months (no games) are absent from results, not zero-filled
 - **ProtectedLayout + Outlet**: NavHeader rendered once in ProtectedLayout above Outlet; replaces per-page ProtectedRoute wrapper; auth guard is in ProtectedLayout
@@ -125,7 +126,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 3 | fix matched games count showing wrong total and board reset clears analysis | 2026-03-12 | d6fadbc | [3-fix-matched-games-count-showing-wrong-to](.planning/quick/3-fix-matched-games-count-showing-wrong-to/) |
 | 4 | flag computer opponent games on import and parse chess.com opening names | 2026-03-12 | a2479c2 | [4-flag-computer-opponent-games-on-import-a](.planning/quick/4-flag-computer-opponent-games-on-import-a/) |
 | 5 | add opponent filter (human/bot/both) to dashboard analysis | 2026-03-12 | 011e56a | [5-add-opponent-filter-human-bot-both-to-da](.planning/quick/5-add-opponent-filter-human-bot-both-to-da/) |
-| 6 | fix bookmark save: BookmarkResponse int target_hash validation error | 2026-03-13 | a96293b | [6-fix-bookmark-save-failed-to-save-bookmar](.planning/quick/6-fix-bookmark-save-failed-to-save-bookmar/) |
+| 6 | fix bookmark save: BookmarkResponse int target_hash validation error + session commit | 2026-03-13 | 0e94bcf | [6-fix-bookmark-save-failed-to-save-bookmar](.planning/quick/6-fix-bookmark-save-failed-to-save-bookmar/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -134,4 +135,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-13 - Completed quick task 6: fix bookmark save (BookmarkResponse int target_hash validation error)
+Last activity: 2026-03-13 - Completed quick task 6: fix bookmark save (validation + session commit)
