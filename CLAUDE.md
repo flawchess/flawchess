@@ -96,3 +96,27 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
 - Use `board.board_fen()` (piece placement only) not `board.fen()` (includes castling/en passant) when comparing positions
 - chess.com requires `User-Agent` header; fetch archives sequentially with 100-300ms delays
 - API responses never expose internal hashes — return FEN for display
+
+## Browser Automation Rules
+
+These rules ensure the UI remains compatible with the Claude Chrome extension and other automated testing tools.
+
+### Required on All New Frontend Code
+
+1. **`data-testid` on every interactive element** — buttons, links, inputs, select triggers, toggle items, and collapsible triggers. Use kebab-case, component-prefixed format: `data-testid="btn-import"`, `data-testid="nav-bookmarks"`, `data-testid="filter-time-control-bullet"`.
+
+2. **Semantic HTML** — use `<button>` for clickable non-link elements, `<a>` for navigation, `<nav>` for navigation regions, `<main>` for page content, `<form>` for data entry. Never use `<div onClick>` or `<span onClick>`.
+
+3. **ARIA labels on icon-only buttons** — any button without visible text must have `aria-label`. Example: `<Button aria-label="Flip board" data-testid="board-btn-flip">`.
+
+4. **Major layout containers** — page containers, section headings, and modal dialogs must have `data-testid`. Example: `data-testid="dashboard-page"`, `data-testid="import-modal"`.
+
+5. **Chess board** — the board container must have `data-testid="chessboard"` and the `id="chessboard"` option set (generates stable square IDs like `chessboard-square-e4`). Board moves must support both drag-drop and click-to-click (two clicks: source then target).
+
+### Naming Convention
+- `btn-{action}` — standalone action buttons
+- `nav-{page}` — navigation links
+- `filter-{name}` — filter controls
+- `board-btn-{action}` — board control buttons
+- `{component}-{element}-{id?}` — dynamic elements (e.g., `bookmark-card-3`)
+- `square-{coord}` — chess squares (e.g., `square-e4`)
