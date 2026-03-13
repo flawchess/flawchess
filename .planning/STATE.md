@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 05-02 complete
+current_plan: 05-04 complete
 status: executing
-stopped_at: Completed 05-02-PLAN.md (time-series endpoint)
-last_updated: "2026-03-13T09:01:22.150Z"
+stopped_at: Completed 05-04-PLAN.md (bookmarks UI) - awaiting human verification at checkpoint
+last_updated: "2026-03-13T09:11:41.777Z"
 last_activity: "2026-03-12 - Completed quick task 5: add opponent filter (human/bot/both) to dashboard analysis"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 16
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
 Phase: 05-position-bookmarks-and-w-d-l-comparison-charts
-Status: In Progress — 2/5 plans done
-Current Plan: 05-02 complete
-Stopped At: Completed 05-02-PLAN.md (time-series endpoint)
+Status: In Progress — 4/5 plans done
+Current Plan: 05-04 complete
+Stopped At: Completed 05-04-PLAN.md (bookmarks UI) - awaiting human verification at checkpoint
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -34,7 +34,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 2 | Import Pipeline | Complete | 4/4 |
 | 3 | Analysis API | Complete | 2/2 |
 | 4 | Frontend and Auth | Complete | 3/3 |
-| 5 | Position Bookmarks and W/D/L Charts | In Progress | 1/5 |
+| 5 | Position Bookmarks and W/D/L Charts | In Progress | 4/5 |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -93,6 +93,9 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **BookmarkResponse model_validator deserializes moves**: mode="before" validator converts ORM string to list[str] before field validation
 - **date_trunc UTC normalization**: Use `func.timezone("UTC", timestamptz_col)` before `func.date_trunc` — PostgreSQL session timezone (Europe/Zurich) causes month drift without explicit UTC conversion
 - **query_time_series raw tuples**: Returns (month_dt, result, user_color) tuples; service aggregates W/D/L per month key — gap months (no games) are absent from results, not zero-filled
+- **ProtectedLayout + Outlet**: NavHeader rendered once in ProtectedLayout above Outlet; replaces per-page ProtectedRoute wrapper; auth guard is in ProtectedLayout
+- **isDirtyRef for bookmark blur cancel**: ref (not state) tracks whether blur should skip save; set true on Escape key or action button mousedown
+- **BookmarkRow WDL stats optional**: rendered only when stats prop provided; plan 05-05 wires actual POST /analysis/time-series data
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -110,6 +113,8 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 04 | 03 | 45min | 3 | 27 |
 | 05 | 01 | 3min | 2 | 8 |
 | 05 | 02 | 15min | 2 | 5 |
+| 05 | 03 | 10min | 2 | 5 |
+| 05 | 04 | 5min | 2 | 7 |
 
 ### Quick Tasks Completed
 
