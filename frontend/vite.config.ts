@@ -23,6 +23,7 @@ export default defineConfig({
       '/analysis': 'http://localhost:8000',
       '/games': 'http://localhost:8000',
       '/imports': 'http://localhost:8000',
+      '/bookmarks': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
     },
   },

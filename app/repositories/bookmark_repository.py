@@ -44,6 +44,7 @@ async def create_bookmark(
         moves=json.dumps(data.moves),  # serialize list[str] to JSON string
         color=data.color,
         match_side=data.match_side,
+        is_flipped=data.is_flipped,
         sort_order=0,
     )
     session.add(bookmark)

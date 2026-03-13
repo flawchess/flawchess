@@ -25,33 +25,40 @@ const queryClient = new QueryClient({
 
 function NavHeader() {
   const location = useLocation();
+  const { logout } = useAuth();
 
   return (
-    <header className="border-b border-border bg-background px-6 py-2">
-      <div className="mx-auto flex max-w-7xl items-center gap-1">
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className={
-            location.pathname === '/'
-              ? 'border-b-2 border-primary rounded-none font-medium'
-              : 'rounded-none text-muted-foreground'
-          }
-        >
-          <Link to="/">Analysis</Link>
-        </Button>
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className={
-            location.pathname === '/bookmarks'
-              ? 'border-b-2 border-primary rounded-none font-medium'
-              : 'rounded-none text-muted-foreground'
-          }
-        >
-          <Link to="/bookmarks">Bookmarks</Link>
+    <header className="border-b border-border bg-background px-6 py-3">
+      <div className="mx-auto flex max-w-7xl items-center justify-between">
+        <div className="flex items-center gap-1">
+          <span className="mr-3 text-lg font-bold tracking-tight text-foreground">Chessalytics</span>
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className={
+              location.pathname === '/'
+                ? 'border-b-2 border-primary rounded-none font-medium'
+                : 'rounded-none text-muted-foreground'
+            }
+          >
+            <Link to="/">Analysis</Link>
+          </Button>
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className={
+              location.pathname === '/bookmarks'
+                ? 'border-b-2 border-primary rounded-none font-medium'
+                : 'rounded-none text-muted-foreground'
+            }
+          >
+            <Link to="/bookmarks">Bookmarks</Link>
+          </Button>
+        </div>
+        <Button variant="ghost" size="sm" onClick={logout}>
+          Logout
         </Button>
       </div>
     </header>

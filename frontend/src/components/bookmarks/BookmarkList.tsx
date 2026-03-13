@@ -15,7 +15,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import type { BookmarkResponse } from '@/types/bookmarks';
-import { BookmarkRow } from './BookmarkRow';
+import { BookmarkCard } from './BookmarkCard';
 
 interface Props {
   bookmarks: BookmarkResponse[];
@@ -51,7 +51,7 @@ export function BookmarkList({ bookmarks, onReorder }: Props) {
       <SortableContext items={items.map((b) => b.id)} strategy={verticalListSortingStrategy}>
         <div className="space-y-2">
           {items.map((b) => (
-            <BookmarkRow key={b.id} bookmark={b} />
+            <BookmarkCard key={b.id} bookmark={b} />
           ))}
         </div>
       </SortableContext>
