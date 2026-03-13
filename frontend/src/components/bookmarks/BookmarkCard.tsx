@@ -94,6 +94,7 @@ export function BookmarkCard({ bookmark, stats }: Props) {
       style={style}
       {...attributes}
       className="rounded-md border border-border bg-card p-3"
+      data-testid={`bookmark-card-${bookmark.id}`}
     >
       <div className="flex gap-3">
         {/* Drag handle */}
@@ -121,16 +122,19 @@ export function BookmarkCard({ bookmark, stats }: Props) {
                 onChange={(e) => setLabelValue(e.target.value)}
                 onBlur={handleLabelBlur}
                 onKeyDown={handleLabelKeyDown}
+                data-testid={`bookmark-label-input-${bookmark.id}`}
                 className="w-full bg-transparent text-sm font-medium outline-none border-b border-primary focus:border-primary"
               />
             ) : (
-              <span
-                className="cursor-text text-sm font-medium truncate block"
+              <button
+                className="cursor-text text-sm font-medium truncate block w-full text-left bg-transparent border-none p-0"
                 onClick={handleLabelClick}
                 title={bookmark.label}
+                data-testid={`bookmark-label-${bookmark.id}`}
+                aria-label={`Edit bookmark label: ${bookmark.label}`}
               >
                 {bookmark.label}
-              </span>
+              </button>
             )}
 
             {/* Filter badges */}
@@ -152,6 +156,7 @@ export function BookmarkCard({ bookmark, stats }: Props) {
               className="h-7 text-xs"
               onMouseDown={(e) => e.preventDefault()}
               onClick={handleLoad}
+              data-testid={`bookmark-btn-load-${bookmark.id}`}
             >
               Load
             </Button>
@@ -162,6 +167,7 @@ export function BookmarkCard({ bookmark, stats }: Props) {
               onMouseDown={(e) => e.preventDefault()}
               onClick={handleDelete}
               disabled={deleteBookmark.isPending}
+              data-testid={`bookmark-btn-delete-${bookmark.id}`}
             >
               Delete
             </Button>

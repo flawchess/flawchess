@@ -56,7 +56,7 @@ export function GameTable({
       ) : (
         <>
           {/* Table */}
-          <div className="overflow-x-auto rounded border border-border">
+          <div data-testid="game-table" className="overflow-x-auto rounded border border-border">
             <table className="w-full text-sm">
               <thead className="border-b border-border bg-muted/50">
                 <tr>
@@ -118,6 +118,7 @@ export function GameTable({
                 size="sm"
                 disabled={currentPage === 1}
                 onClick={() => onPageChange(offset - limit)}
+                data-testid="pagination-prev"
               >
                 &lt;
               </Button>
@@ -139,6 +140,7 @@ export function GameTable({
                 size="sm"
                 disabled={currentPage === totalPages}
                 onClick={() => onPageChange(offset + limit)}
+                data-testid="pagination-next"
               >
                 &gt;
               </Button>

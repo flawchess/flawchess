@@ -106,10 +106,11 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
             }}
             variant="outline"
             size="sm"
+            data-testid="filter-played-as"
           >
-            <ToggleGroupItem value="any">Any</ToggleGroupItem>
-            <ToggleGroupItem value="white">White</ToggleGroupItem>
-            <ToggleGroupItem value="black">Black</ToggleGroupItem>
+            <ToggleGroupItem value="any" data-testid="filter-played-as-any">Any</ToggleGroupItem>
+            <ToggleGroupItem value="white" data-testid="filter-played-as-white">White</ToggleGroupItem>
+            <ToggleGroupItem value="black" data-testid="filter-played-as-black">Black</ToggleGroupItem>
           </ToggleGroup>
         </div>
 
@@ -121,10 +122,11 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
             onValueChange={(v) => v && update({ matchSide: v as MatchSide })}
             variant="outline"
             size="sm"
+            data-testid="filter-match-side"
           >
-            <ToggleGroupItem value="white">White</ToggleGroupItem>
-            <ToggleGroupItem value="black">Black</ToggleGroupItem>
-            <ToggleGroupItem value="full">Both</ToggleGroupItem>
+            <ToggleGroupItem value="white" data-testid="filter-match-side-white">White</ToggleGroupItem>
+            <ToggleGroupItem value="black" data-testid="filter-match-side-black">Black</ToggleGroupItem>
+            <ToggleGroupItem value="full" data-testid="filter-match-side-full">Both</ToggleGroupItem>
           </ToggleGroup>
         </div>
       </div>
@@ -132,7 +134,7 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
       {/* More filters — collapsible, collapsed by default */}
       <Collapsible open={moreOpen} onOpenChange={setMoreOpen}>
         <CollapsibleTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground">
+          <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground" data-testid="filter-more-toggle">
             More filters
             {moreOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
           </Button>
@@ -147,6 +149,9 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
                   <button
                     key={tc}
                     onClick={() => toggleTimeControl(tc)}
+                    data-testid={`filter-time-control-${tc}`}
+                    aria-label={`${TIME_CONTROL_LABELS[tc]} time control`}
+                    aria-pressed={isTimeControlActive(tc)}
                     className={cn(
                       'rounded border px-2 py-0.5 text-xs transition-colors',
                       isTimeControlActive(tc)
@@ -168,6 +173,9 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
                   <button
                     key={p}
                     onClick={() => togglePlatform(p)}
+                    data-testid={`filter-platform-${p === 'chess.com' ? 'chess-com' : p}`}
+                    aria-label={`${PLATFORM_LABELS[p]} platform`}
+                    aria-pressed={isPlatformActive(p)}
                     className={cn(
                       'rounded border px-2 py-0.5 text-xs transition-colors',
                       isPlatformActive(p)
@@ -193,10 +201,11 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
                 }}
                 variant="outline"
                 size="sm"
+                data-testid="filter-rated"
               >
-                <ToggleGroupItem value="all">All</ToggleGroupItem>
-                <ToggleGroupItem value="rated">Rated</ToggleGroupItem>
-                <ToggleGroupItem value="casual">Casual</ToggleGroupItem>
+                <ToggleGroupItem value="all" data-testid="filter-rated-all">All</ToggleGroupItem>
+                <ToggleGroupItem value="rated" data-testid="filter-rated-rated">Rated</ToggleGroupItem>
+                <ToggleGroupItem value="casual" data-testid="filter-rated-casual">Casual</ToggleGroupItem>
               </ToggleGroup>
             </div>
 
@@ -212,10 +221,11 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
                 }}
                 variant="outline"
                 size="sm"
+                data-testid="filter-opponent"
               >
-                <ToggleGroupItem value="human">Human</ToggleGroupItem>
-                <ToggleGroupItem value="bot">Bot</ToggleGroupItem>
-                <ToggleGroupItem value="both">Both</ToggleGroupItem>
+                <ToggleGroupItem value="human" data-testid="filter-opponent-human">Human</ToggleGroupItem>
+                <ToggleGroupItem value="bot" data-testid="filter-opponent-bot">Bot</ToggleGroupItem>
+                <ToggleGroupItem value="both" data-testid="filter-opponent-both">Both</ToggleGroupItem>
               </ToggleGroup>
             </div>
 
@@ -226,7 +236,7 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
                 value={filters.recency ?? 'all'}
                 onValueChange={(v) => update({ recency: v === 'all' ? null : (v as Recency) })}
               >
-                <SelectTrigger size="sm">
+                <SelectTrigger size="sm" data-testid="filter-recency">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

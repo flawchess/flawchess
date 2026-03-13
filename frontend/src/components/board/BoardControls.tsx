@@ -27,6 +27,7 @@ export function BoardControls({
         disabled={!canGoBack}
         title="Reset to start"
         aria-label="Reset to start"
+        data-testid="board-btn-reset"
       >
         <SkipBack className="h-4 w-4" />
       </Button>
@@ -37,6 +38,7 @@ export function BoardControls({
         disabled={!canGoBack}
         title="Previous move"
         aria-label="Previous move"
+        data-testid="board-btn-back"
       >
         <ChevronLeft className="h-4 w-4" />
       </Button>
@@ -47,6 +49,7 @@ export function BoardControls({
         disabled={!canGoForward}
         title="Next move"
         aria-label="Next move"
+        data-testid="board-btn-forward"
       >
         <ChevronRight className="h-4 w-4" />
       </Button>
@@ -56,6 +59,7 @@ export function BoardControls({
         onClick={onFlip}
         title="Flip board"
         aria-label="Flip board"
+        data-testid="board-btn-flip"
       >
         <FlipVertical2 className="h-4 w-4" />
       </Button>

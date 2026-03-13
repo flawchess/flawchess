@@ -41,6 +41,8 @@ export function MoveList({ moveHistory, currentPly, onMoveClick }: MoveListProps
               <button
                 ref={currentPly === whitePly ? activeRef : undefined}
                 onClick={() => onMoveClick(whitePly)}
+                data-testid={`move-${whitePly}`}
+                aria-label={`Move ${pairIdx + 1}. ${pair[0]} (white)`}
                 className={cn(
                   'rounded px-1 py-0.5 font-mono hover:bg-accent transition-colors',
                   currentPly === whitePly && 'bg-primary text-primary-foreground hover:bg-primary/90',
@@ -52,6 +54,8 @@ export function MoveList({ moveHistory, currentPly, onMoveClick }: MoveListProps
                 <button
                   ref={currentPly === blackPly ? activeRef : undefined}
                   onClick={() => onMoveClick(blackPly)}
+                  data-testid={`move-${blackPly}`}
+                  aria-label={`Move ${pairIdx + 1}. ${pair[1]} (black)`}
                   className={cn(
                     'rounded px-1 py-0.5 font-mono hover:bg-accent transition-colors',
                     currentPly === blackPly && 'bg-primary text-primary-foreground hover:bg-primary/90',
