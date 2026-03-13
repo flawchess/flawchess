@@ -4,23 +4,23 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 05-04 complete
 status: executing
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-03-13T15:53:18.072Z"
+stopped_at: "Completed 06-01: data-testid and accessibility selectors for all non-board frontend components"
+last_updated: "2026-03-13T15:55:14.686Z"
 last_activity: "2026-03-13 - Completed quick task 6: fix bookmark save (validation + session commit)"
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 18
-  completed_plans: 16
+  completed_plans: 17
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
-Phase: 05-position-bookmarks-and-w-d-l-comparison-charts
-Status: In Progress — 4/5 plans done
-Current Plan: 05-04 complete
-Stopped At: Completed 06-02-PLAN.md
+Phase: 06-optimize-ui-for-claude-chrome-extension-testing
+Status: In Progress — 1/2 plans done
+Current Plan: 06-01 complete
+Stopped At: Completed 06-01: data-testid and accessibility selectors for all non-board frontend components
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -34,7 +34,8 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 2 | Import Pipeline | Complete | 4/4 |
 | 3 | Analysis API | Complete | 2/2 |
 | 4 | Frontend and Auth | Complete | 3/3 |
-| 5 | Position Bookmarks and W/D/L Charts | In Progress | 4/5 |
+| 5 | Position Bookmarks and W/D/L Charts | Complete | 5/5 |
+| 6 | Optimize UI for Claude Chrome Extension Testing | In Progress | 1/2 |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -98,6 +99,8 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **ProtectedLayout + Outlet**: NavHeader rendered once in ProtectedLayout above Outlet; replaces per-page ProtectedRoute wrapper; auth guard is in ProtectedLayout
 - **isDirtyRef for bookmark blur cancel**: ref (not state) tracks whether blur should skip save; set true on Escape key or action button mousedown
 - **BookmarkRow WDL stats optional**: rendered only when stats prop provided; plan 05-05 wires actual POST /analysis/time-series data
+- **data-testid on Link not Button asChild**: Button with asChild merges props into child — put data-testid on the `<Link>` so it renders on the `<a>` tag in the DOM
+- **BookmarkCard label as button**: Converted from `<span onClick>` to `<button>` for semantic HTML and accessibility compliance
 - **State-during-render reset for selectedSquare**: avoids react-hooks/set-state-in-effect and react-hooks/refs lint violations; uses prevPosition state compared during render — React-recommended derived state pattern
 - **Browser Automation Rules in CLAUDE.md**: permanent mandatory rules for all future frontend code — data-testid on every interactive element, semantic HTML, ARIA labels, chess board must have data-testid="chessboard" and id="chessboard"
 
@@ -119,6 +122,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 05 | 02 | 15min | 2 | 5 |
 | 05 | 03 | 10min | 2 | 5 |
 | 05 | 04 | 5min | 2 | 7 |
+| 06 | 01 | 7min | 2 | 14 |
 | 06 | 02 | 5min | 2 | 2 |
 
 ### Quick Tasks Completed
@@ -140,4 +144,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-13 - Completed quick task 6: fix bookmark save (validation + session commit)
+Last activity: 2026-03-13 - Completed 06-01: data-testid and accessibility selectors for all non-board frontend components
