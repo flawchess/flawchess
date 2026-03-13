@@ -1,5 +1,10 @@
 import type { WDLStats } from '@/types/api';
 
+// Shared WDL colors — must match WDLBarChart.tsx
+const WDL_WIN = 'oklch(0.55 0.18 145)';
+const WDL_DRAW = 'oklch(0.65 0.01 260)';
+const WDL_LOSS = 'oklch(0.55 0.2 25)';
+
 interface WDLBarProps {
   stats: WDLStats;
 }
@@ -20,22 +25,22 @@ export function WDLBar({ stats }: WDLBarProps) {
       <div className="flex h-6 w-full overflow-hidden rounded">
         {stats.win_pct > 0 && (
           <div
-            className="bg-green-600 transition-all"
-            style={{ width: `${stats.win_pct}%` }}
+            className="transition-all"
+            style={{ width: `${stats.win_pct}%`, backgroundColor: WDL_WIN }}
             title={`Wins: ${stats.wins} (${stats.win_pct.toFixed(1)}%)`}
           />
         )}
         {stats.draw_pct > 0 && (
           <div
-            className="bg-gray-500 transition-all"
-            style={{ width: `${stats.draw_pct}%` }}
+            className="transition-all"
+            style={{ width: `${stats.draw_pct}%`, backgroundColor: WDL_DRAW }}
             title={`Draws: ${stats.draws} (${stats.draw_pct.toFixed(1)}%)`}
           />
         )}
         {stats.loss_pct > 0 && (
           <div
-            className="bg-red-600 transition-all"
-            style={{ width: `${stats.loss_pct}%` }}
+            className="transition-all"
+            style={{ width: `${stats.loss_pct}%`, backgroundColor: WDL_LOSS }}
             title={`Losses: ${stats.losses} (${stats.loss_pct.toFixed(1)}%)`}
           />
         )}
@@ -44,15 +49,15 @@ export function WDLBar({ stats }: WDLBarProps) {
       {/* Legend */}
       <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm">
         <span>
-          <span className="font-medium text-green-500">W:</span>{' '}
+          <span className="font-medium" style={{ color: WDL_WIN }}>W:</span>{' '}
           {stats.wins} ({stats.win_pct.toFixed(1)}%)
         </span>
         <span>
-          <span className="font-medium text-gray-400">D:</span>{' '}
+          <span className="font-medium" style={{ color: WDL_DRAW }}>D:</span>{' '}
           {stats.draws} ({stats.draw_pct.toFixed(1)}%)
         </span>
         <span>
-          <span className="font-medium text-red-500">L:</span>{' '}
+          <span className="font-medium" style={{ color: WDL_LOSS }}>L:</span>{' '}
           {stats.losses} ({stats.loss_pct.toFixed(1)}%)
         </span>
       </div>
