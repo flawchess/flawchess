@@ -1,4 +1,8 @@
 import axios from 'axios';
+import type {
+  BookmarkResponse, BookmarkCreate, BookmarkUpdate,
+  BookmarkReorderRequest, TimeSeriesRequest, TimeSeriesResponse
+} from '@/types/bookmarks';
 
 /**
  * Central Axios instance.
@@ -39,3 +43,25 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   },
 );
+
+// ─── Bookmarks API ────────────────────────────────────────────────────────────
+
+export const bookmarksApi = {
+  list: () =>
+    apiClient.get<BookmarkResponse[]>('/bookmarks').then(r => r.data),
+  create: (data: BookmarkCreate) =>
+    apiClient.post<BookmarkResponse>('/bookmarks', data).then(r => r.data),
+  updateLabel: (id: number, data: BookmarkUpdate) =>
+    apiClient.put<BookmarkResponse>(`/bookmarks/${id}`, data).then(r => r.data),
+  remove: (id: number) =>
+    apiClient.delete(`/bookmarks/${id}`),
+  reorder: (req: BookmarkReorderRequest) =>
+    apiClient.put<BookmarkResponse[]>('/bookmarks/reorder', req).then(r => r.data),
+};
+
+// ─── Time Series API ──────────────────────────────────────────────────────────
+
+export const timeSeriesApi = {
+  fetch: (req: TimeSeriesRequest) =>
+    apiClient.post<TimeSeriesResponse>('/analysis/time-series', req).then(r => r.data),
+};
