@@ -67,6 +67,42 @@ def _build_base_query(
     return base
 
 
+async def query_time_series(
+    session: AsyncSession,
+    user_id: int,
+    hash_column: Any,
+    target_hash: int,
+    color: str | None,
+) -> list[tuple]:
+    """Return (month_dt, result, user_color) tuples for matching games, grouped by month.
+
+    Uses DATE_TRUNC("month", played_at) so the service can aggregate win rates
+    per calendar month without knowing about individual game dates.
+
+    DISTINCT by Game.id prevents games with the target hash at multiple plies
+    from being counted more than once.  Games without played_at are excluded.
+    """
+    # AT TIME ZONE 'UTC' on a timestamptz column yields a naive UTC timestamp,
+    # ensuring date_trunc truncates in UTC regardless of the PostgreSQL session timezone.
+    played_at_utc = func.timezone("UTC", Game.played_at)
+    month_col = func.date_trunc("month", played_at_utc).label("month")
+    stmt = (
+        select(month_col, Game.result, Game.user_color)
+        .join(GamePosition, GamePosition.game_id == Game.id)
+        .where(
+            GamePosition.user_id == user_id,
+            hash_column == target_hash,
+            Game.played_at.isnot(None),
+        )
+        .distinct(Game.id)
+    )
+    if color is not None:
+        stmt = stmt.where(Game.user_color == color)
+
+    rows = await session.execute(stmt)
+    return list(rows.all())
+
+
 async def query_all_results(
     session: AsyncSession,
     user_id: int,

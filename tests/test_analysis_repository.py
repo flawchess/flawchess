@@ -480,3 +480,141 @@ class TestPagination:
 
         assert total == 5
         assert len(games) == 2
+
+
+# ---------------------------------------------------------------------------
+# TestTimeSeries — BKM-03, BKM-04
+# ---------------------------------------------------------------------------
+
+TS_HASH = 12345  # fixed Zobrist hash for all time-series tests
+
+
+class TestTimeSeries:
+    """Verify query_time_series returns correct monthly (month_dt, result, user_color) tuples."""
+
+    @pytest.mark.asyncio
+    async def test_returns_monthly_buckets(self, db_session: AsyncSession) -> None:
+        """BKM-03: 3 games in Jan 2025 (2W 1L) and 2 games in Mar 2025 (1W 1D) → 2 rows."""
+        from app.repositories.analysis_repository import query_time_series
+
+        jan = datetime.datetime(2025, 1, 15, tzinfo=datetime.timezone.utc)
+        mar = datetime.datetime(2025, 3, 10, tzinfo=datetime.timezone.utc)
+
+        # Jan: 2 wins, 1 loss
+        await _seed_game(db_session, played_at=jan, result="1-0", user_color="white", full_hash=TS_HASH)
+        await _seed_game(db_session, played_at=jan, result="1-0", user_color="white", full_hash=TS_HASH)
+        await _seed_game(db_session, played_at=jan, result="0-1", user_color="white", full_hash=TS_HASH)
+        # Mar: 1 win, 1 draw
+        await _seed_game(db_session, played_at=mar, result="1-0", user_color="white", full_hash=TS_HASH)
+        await _seed_game(db_session, played_at=mar, result="1/2-1/2", user_color="white", full_hash=TS_HASH)
+
+        rows = await query_time_series(
+            db_session,
+            user_id=1,
+            hash_column=HASH_COLUMN_MAP["full"],
+            target_hash=TS_HASH,
+            color=None,
+        )
+
+        # Group by month
+        from collections import defaultdict
+        by_month: dict[str, list] = defaultdict(list)
+        for month_dt, result, user_color in rows:
+            key = month_dt.strftime("%Y-%m")
+            by_month[key].append((result, user_color))
+
+        assert set(by_month.keys()) == {"2025-01", "2025-03"}
+        assert len(by_month["2025-01"]) == 3
+        assert len(by_month["2025-03"]) == 2
+
+        # Verify win_rate for Jan: 2/3 ≈ 0.667
+        jan_wins = sum(1 for r, c in by_month["2025-01"] if r == "1-0" and c == "white")
+        assert jan_wins == 2
+
+    @pytest.mark.asyncio
+    async def test_gap_months(self, db_session: AsyncSession) -> None:
+        """BKM-04: Feb 2025 has no games — it must NOT appear in results."""
+        from app.repositories.analysis_repository import query_time_series
+
+        jan = datetime.datetime(2025, 1, 20, tzinfo=datetime.timezone.utc)
+        mar = datetime.datetime(2025, 3, 5, tzinfo=datetime.timezone.utc)
+
+        await _seed_game(db_session, played_at=jan, full_hash=TS_HASH)
+        await _seed_game(db_session, played_at=mar, full_hash=TS_HASH)
+
+        rows = await query_time_series(
+            db_session,
+            user_id=1,
+            hash_column=HASH_COLUMN_MAP["full"],
+            target_hash=TS_HASH,
+            color=None,
+        )
+
+        months = {row[0].strftime("%Y-%m") for row in rows}
+        assert "2025-02" not in months, "Feb gap month must not appear in results"
+
+    @pytest.mark.asyncio
+    async def test_user_isolation(self, db_session: AsyncSession) -> None:
+        """Games belonging to user B do not appear in user A's time series."""
+        from app.repositories.analysis_repository import query_time_series
+
+        played = datetime.datetime(2025, 6, 1, tzinfo=datetime.timezone.utc)
+
+        # User A game
+        await _seed_game(db_session, user_id=1, played_at=played, full_hash=TS_HASH)
+        # User B game (different user_id)
+        await _seed_game(db_session, user_id=2, played_at=played, full_hash=TS_HASH)
+
+        rows = await query_time_series(
+            db_session,
+            user_id=1,
+            hash_column=HASH_COLUMN_MAP["full"],
+            target_hash=TS_HASH,
+            color=None,
+        )
+
+        assert len(rows) == 1, "Only user A's game should be returned"
+
+    @pytest.mark.asyncio
+    async def test_color_filter(self, db_session: AsyncSession) -> None:
+        """When color='white', only games where user_color='white' are counted."""
+        from app.repositories.analysis_repository import query_time_series
+
+        played = datetime.datetime(2025, 7, 1, tzinfo=datetime.timezone.utc)
+
+        await _seed_game(db_session, played_at=played, user_color="white", full_hash=TS_HASH)
+        await _seed_game(db_session, played_at=played, user_color="black", full_hash=TS_HASH)
+
+        rows = await query_time_series(
+            db_session,
+            user_id=1,
+            hash_column=HASH_COLUMN_MAP["full"],
+            target_hash=TS_HASH,
+            color="white",
+        )
+
+        assert len(rows) == 1
+        _, _, user_color = rows[0]
+        assert user_color == "white"
+
+    @pytest.mark.asyncio
+    async def test_match_side_white(self, db_session: AsyncSession) -> None:
+        """hash_column=GamePosition.white_hash: only games with matching white_hash returned."""
+        from app.repositories.analysis_repository import query_time_series
+
+        played = datetime.datetime(2025, 8, 15, tzinfo=datetime.timezone.utc)
+
+        # Game with matching white_hash
+        await _seed_game(db_session, played_at=played, white_hash=TS_HASH, full_hash=0, black_hash=0)
+        # Game without matching white_hash
+        await _seed_game(db_session, played_at=played, white_hash=99999, full_hash=0, black_hash=0)
+
+        rows = await query_time_series(
+            db_session,
+            user_id=1,
+            hash_column=HASH_COLUMN_MAP["white"],
+            target_hash=TS_HASH,
+            color=None,
+        )
+
+        assert len(rows) == 1
