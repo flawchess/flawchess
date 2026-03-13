@@ -5,11 +5,14 @@ import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MiniBoard } from '@/components/board/MiniBoard';
+import { WDLBar } from '@/components/results/WDLBar';
 import { useUpdateBookmarkLabel, useDeleteBookmark } from '@/hooks/useBookmarks';
 import type { BookmarkResponse } from '@/types/bookmarks';
+import type { WDLStats } from '@/types/api';
 
 interface Props {
   bookmark: BookmarkResponse;
+  stats?: WDLStats;
 }
 
 function formatColor(color: string | null): string {
@@ -22,7 +25,7 @@ function formatMatchSide(side: string): string {
   return side.charAt(0).toUpperCase() + side.slice(1);
 }
 
-export function BookmarkCard({ bookmark }: Props) {
+export function BookmarkCard({ bookmark, stats }: Props) {
   const navigate = useNavigate();
   const updateLabel = useUpdateBookmarkLabel();
   const deleteBookmark = useDeleteBookmark();
@@ -165,6 +168,11 @@ export function BookmarkCard({ bookmark }: Props) {
           </div>
         </div>
       </div>
+      {stats && stats.total > 0 && (
+        <div className="mt-3 pt-3 border-t border-border">
+          <WDLBar stats={stats} />
+        </div>
+      )}
     </div>
   );
 }

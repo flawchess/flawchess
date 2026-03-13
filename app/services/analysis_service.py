@@ -205,6 +205,9 @@ async def get_time_series(
                     month=month_str,
                     win_rate=round(win_rate, 4),
                     game_count=total,
+                    wins=counts["wins"],
+                    draws=counts["draws"],
+                    losses=counts["losses"],
                 )
             )
 

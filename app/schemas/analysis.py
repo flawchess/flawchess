@@ -103,6 +103,9 @@ class TimeSeriesPoint(BaseModel):
     month: str       # "2025-01"
     win_rate: float  # wins / (wins + draws + losses); 0.0 if only draws/losses
     game_count: int
+    wins: int
+    draws: int
+    losses: int
 
 
 class BookmarkTimeSeries(BaseModel):

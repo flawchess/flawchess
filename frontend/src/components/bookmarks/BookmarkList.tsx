@@ -17,12 +17,23 @@ import {
 import type { BookmarkResponse } from '@/types/bookmarks';
 import { BookmarkCard } from './BookmarkCard';
 
+interface WDLStats {
+  wins: number;
+  draws: number;
+  losses: number;
+  total: number;
+  win_pct: number;
+  draw_pct: number;
+  loss_pct: number;
+}
+
 interface Props {
   bookmarks: BookmarkResponse[];
   onReorder: (orderedIds: number[]) => void;
+  wdlStatsMap: Record<number, WDLStats>;
 }
 
-export function BookmarkList({ bookmarks, onReorder }: Props) {
+export function BookmarkList({ bookmarks, onReorder, wdlStatsMap }: Props) {
   const [items, setItems] = useState(bookmarks);
 
   // Sync when server data refreshes (e.g., after delete or label edit)
@@ -51,7 +62,7 @@ export function BookmarkList({ bookmarks, onReorder }: Props) {
       <SortableContext items={items.map((b) => b.id)} strategy={verticalListSortingStrategy}>
         <div className="space-y-2">
           {items.map((b) => (
-            <BookmarkCard key={b.id} bookmark={b} />
+            <BookmarkCard key={b.id} bookmark={b} stats={wdlStatsMap[b.id]} />
           ))}
         </div>
       </SortableContext>

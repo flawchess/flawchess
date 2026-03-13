@@ -44,6 +44,9 @@ export interface TimeSeriesPoint {
   month: string;       // "2025-01"
   win_rate: number;    // 0.0 - 1.0
   game_count: number;
+  wins: number;
+  draws: number;
+  losses: number;
 }
 
 export interface BookmarkTimeSeries {
