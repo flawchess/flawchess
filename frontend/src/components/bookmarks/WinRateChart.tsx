@@ -1,4 +1,5 @@
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import { useState, useCallback } from 'react';
+import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import type { BookmarkResponse } from '@/types/bookmarks';
 import type { BookmarkTimeSeries } from '@/types/bookmarks';
@@ -7,6 +8,14 @@ interface WinRateChartProps {
   bookmarks: BookmarkResponse[];
   series: BookmarkTimeSeries[];
 }
+
+const CHART_COLORS = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+];
 
 const formatMonth = (m: string) => {
   const [year, month] = m.split('-');
@@ -17,6 +26,20 @@ const formatMonth = (m: string) => {
 };
 
 export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
+
+  const handleLegendClick = useCallback((dataKey: string) => {
+    setHiddenKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(dataKey)) {
+        next.delete(dataKey);
+      } else {
+        next.add(dataKey);
+      }
+      return next;
+    });
+  }, []);
+
   // Empty state: no series data or all series have empty data
   const hasData = series.some((s) => s.data.length > 0);
   if (!hasData) {
@@ -27,11 +50,11 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
     );
   }
 
-  // Build chartConfig: one entry per bookmark using --chart-N CSS variables (cycling 1-5)
+  // Build chartConfig: one entry per bookmark using chart CSS variables (cycling 1-5)
   const chartConfig = Object.fromEntries(
     bookmarks.map((b, i) => [
       `bkm_${b.id}`,
-      { label: b.label, color: `hsl(var(--chart-${(i % 5) + 1}))` },
+      { label: b.label, color: CHART_COLORS[i % CHART_COLORS.length] },
     ]),
   );
 
@@ -51,23 +74,49 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
   });
 
   return (
-    <ChartContainer config={chartConfig} className="w-full h-64">
+    <ChartContainer config={chartConfig} className="w-full h-72">
       <LineChart data={data}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="month" tickFormatter={formatMonth} />
         <YAxis domain={[0, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
-        <ChartTooltip content={<ChartTooltipContent />} />
-        {bookmarks.map((b) => (
-          <Line
-            key={b.id}
-            type="monotone"
-            dataKey={`bkm_${b.id}`}
-            stroke={`var(--color-bkm_${b.id})`}
-            strokeWidth={2}
-            dot={false}
-            connectNulls={false}
-          />
-        ))}
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              labelFormatter={(label) => formatMonth(label as string)}
+              formatter={(value, name) => {
+                const cfg = chartConfig[name as string];
+                return (
+                  <span>
+                    {cfg?.label ?? name}: {Math.round((value as number) * 100)}%
+                  </span>
+                );
+              }}
+            />
+          }
+        />
+        <ChartLegend
+          content={
+            <ChartLegendContent />
+          }
+          onClick={(e) => {
+            if (e?.dataKey) handleLegendClick(e.dataKey as string);
+          }}
+        />
+        {bookmarks.map((b) => {
+          const key = `bkm_${b.id}`;
+          return (
+            <Line
+              key={b.id}
+              type="monotone"
+              dataKey={key}
+              stroke={`var(--color-${key})`}
+              strokeWidth={2}
+              dot={false}
+              connectNulls={false}
+              hide={hiddenKeys.has(key)}
+            />
+          );
+        })}
       </LineChart>
     </ChartContainer>
   );

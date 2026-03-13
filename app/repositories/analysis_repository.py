@@ -73,6 +73,11 @@ async def query_time_series(
     hash_column: Any,
     target_hash: int,
     color: str | None,
+    time_control: list[str] | None = None,
+    platform: list[str] | None = None,
+    rated: bool | None = None,
+    opponent_type: str = "human",
+    recency_cutoff: datetime.datetime | None = None,
 ) -> list[tuple]:
     """Return (month_dt, result, user_color) tuples for matching games, grouped by month.
 
@@ -98,6 +103,18 @@ async def query_time_series(
     )
     if color is not None:
         stmt = stmt.where(Game.user_color == color)
+    if time_control is not None:
+        stmt = stmt.where(Game.time_control_bucket.in_(time_control))
+    if platform is not None:
+        stmt = stmt.where(Game.platform.in_(platform))
+    if rated is not None:
+        stmt = stmt.where(Game.rated == rated)
+    if opponent_type == "human":
+        stmt = stmt.where(Game.is_computer_game == False)  # noqa: E712
+    elif opponent_type == "bot":
+        stmt = stmt.where(Game.is_computer_game == True)  # noqa: E712
+    if recency_cutoff is not None:
+        stmt = stmt.where(Game.played_at >= recency_cutoff)
 
     rows = await session.execute(stmt)
     return list(rows.all())

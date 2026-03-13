@@ -173,11 +173,22 @@ async def get_time_series(
     Months with zero games for a bookmark are absent (gap, not 0.0).
     win_rate = wins / (wins + draws + losses) per month.
     """
+    cutoff = recency_cutoff(request.recency)
+
     series: list[BookmarkTimeSeries] = []
     for bkm in request.bookmarks:
         hash_column = HASH_COLUMN_MAP[bkm.match_side]
         rows = await query_time_series(
-            session, user_id, hash_column, bkm.target_hash, bkm.color
+            session,
+            user_id,
+            hash_column,
+            bkm.target_hash,
+            bkm.color,
+            time_control=request.time_control,
+            platform=request.platform,
+            rated=request.rated,
+            opponent_type=request.opponent_type,
+            recency_cutoff=cutoff,
         )
 
         # Group raw (month_dt, result, user_color) tuples by calendar month string.

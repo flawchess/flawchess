@@ -243,7 +243,7 @@ export function DashboardPage() {
           className="flex-1"
           size="lg"
         >
-          {analysis.isPending ? 'Analyzing...' : 'Analyze'}
+          {analysis.isPending ? 'Filtering...' : 'Filter'}
         </Button>
         <Button
           variant="outline"

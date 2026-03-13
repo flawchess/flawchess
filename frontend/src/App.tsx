@@ -9,6 +9,7 @@ import { AuthPage } from '@/pages/Auth';
 import { DashboardPage } from '@/pages/Dashboard';
 import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
 import { BookmarksPage } from '@/pages/Bookmarks';
+import { StatsPage } from '@/pages/Stats';
 
 // ─── Query client ─────────────────────────────────────────────────────────────
 
@@ -23,6 +24,12 @@ const queryClient = new QueryClient({
 
 // ─── Nav header ───────────────────────────────────────────────────────────────
 
+const NAV_ITEMS = [
+  { to: '/', label: 'Games' },
+  { to: '/bookmarks', label: 'Bookmarks' },
+  { to: '/stats', label: 'Stats' },
+] as const;
+
 function NavHeader() {
   const location = useLocation();
   const { logout } = useAuth();
@@ -32,30 +39,21 @@ function NavHeader() {
       <div className="mx-auto flex max-w-7xl items-center justify-between">
         <div className="flex items-center gap-1">
           <span className="mr-3 text-lg font-bold tracking-tight text-foreground">Chessalytics</span>
-          <Button
-            asChild
-            variant="ghost"
-            size="sm"
-            className={
-              location.pathname === '/'
-                ? 'border-b-2 border-primary rounded-none font-medium'
-                : 'rounded-none text-muted-foreground'
-            }
-          >
-            <Link to="/">Analysis</Link>
-          </Button>
-          <Button
-            asChild
-            variant="ghost"
-            size="sm"
-            className={
-              location.pathname === '/bookmarks'
-                ? 'border-b-2 border-primary rounded-none font-medium'
-                : 'rounded-none text-muted-foreground'
-            }
-          >
-            <Link to="/bookmarks">Bookmarks</Link>
-          </Button>
+          {NAV_ITEMS.map(({ to, label }) => (
+            <Button
+              key={to}
+              asChild
+              variant="ghost"
+              size="sm"
+              className={
+                location.pathname === to
+                  ? 'border-b-2 border-primary rounded-none font-medium'
+                  : 'rounded-none text-muted-foreground'
+              }
+            >
+              <Link to={to}>{label}</Link>
+            </Button>
+          ))}
         </div>
         <Button variant="ghost" size="sm" onClick={logout}>
           Logout
@@ -92,6 +90,7 @@ function AppRoutes() {
       <Route element={<ProtectedLayout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/bookmarks" element={<BookmarksPage />} />
+        <Route path="/stats" element={<StatsPage />} />
       </Route>
       {/* Catch-all redirects to dashboard (auth guard handles the rest) */}
       <Route path="*" element={<Navigate to="/" replace />} />

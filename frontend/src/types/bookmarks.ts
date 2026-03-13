@@ -38,6 +38,12 @@ export interface TimeSeriesBookmarkParam {
 
 export interface TimeSeriesRequest {
   bookmarks: TimeSeriesBookmarkParam[];
+  // Optional global filters
+  time_control?: ('bullet' | 'blitz' | 'rapid' | 'classical')[] | null;
+  platform?: ('chess.com' | 'lichess')[] | null;
+  rated?: boolean | null;
+  opponent_type?: 'human' | 'bot' | 'both';
+  recency?: 'week' | 'month' | '3months' | '6months' | 'year' | 'all' | null;
 }
 
 export interface TimeSeriesPoint {

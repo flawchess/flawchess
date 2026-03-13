@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { useBookmarks, useReorderBookmarks, useTimeSeries } from '@/hooks/useBookmarks';
 import { BookmarkList } from '@/components/bookmarks/BookmarkList';
-import { WinRateChart } from '@/components/bookmarks/WinRateChart';
 
 export function BookmarksPage() {
   const { data: bookmarks = [], isLoading } = useBookmarks();
@@ -11,7 +10,7 @@ export function BookmarksPage() {
     reorder.mutate(orderedIds);
   };
 
-  // Build time-series request from current bookmarks
+  // Build time-series request from current bookmarks (for WDL stats on cards)
   const timeSeriesRequest = bookmarks.length > 0
     ? {
         bookmarks: bookmarks.map((b) => ({
@@ -58,11 +57,11 @@ export function BookmarksPage() {
       <div className="p-8 text-center text-muted-foreground">
         <p className="text-lg">No bookmarks yet.</p>
         <p className="mt-2 text-sm">
-          Analyze a position on the{' '}
+          Save a position on the{' '}
           <a href="/" className="underline">
-            Analysis
+            Games
           </a>{' '}
-          page and click ★ Bookmark to save it.
+          page and click Bookmark to save it.
         </p>
       </div>
     );
@@ -72,12 +71,6 @@ export function BookmarksPage() {
     <div className="mx-auto max-w-3xl space-y-8 p-6">
       <h1 className="text-2xl font-semibold">Bookmarks</h1>
       <BookmarkList bookmarks={bookmarks} onReorder={handleReorder} wdlStatsMap={wdlStatsMap} />
-      {tsData && (
-        <div>
-          <h2 className="text-lg font-medium mb-3">Win Rate Over Time</h2>
-          <WinRateChart bookmarks={bookmarks} series={tsData.series} />
-        </div>
-      )}
     </div>
   );
 }
