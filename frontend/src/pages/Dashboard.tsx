@@ -3,7 +3,15 @@ import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/hooks/useAuth';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { useChessGame } from '@/hooks/useChessGame';
 import { useAnalysis } from '@/hooks/useAnalysis';
 import { useCreateBookmark } from '@/hooks/useBookmarks';
@@ -15,14 +23,13 @@ import { WDLBar } from '@/components/results/WDLBar';
 import { GameTable } from '@/components/results/GameTable';
 import { ImportModal } from '@/components/import/ImportModal';
 import { ImportProgress } from '@/components/import/ImportProgress';
-import { apiClient, bookmarksApi } from '@/api/client';
+import { apiClient } from '@/api/client';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { AnalysisResponse } from '@/types/api';
 
 const PAGE_SIZE = 50;
 
 export function DashboardPage() {
-  const { logout } = useAuth();
   const location = useLocation();
 
   // Board state
@@ -30,8 +37,9 @@ export function DashboardPage() {
   const [boardFlipped, setBoardFlipped] = useState(false);
 
   // Bookmark state
-  const [activeBookmarkId, setActiveBookmarkId] = useState<number | null>(null);
   const createBookmark = useCreateBookmark();
+  const [bookmarkDialogOpen, setBookmarkDialogOpen] = useState(false);
+  const [bookmarkLabel, setBookmarkLabel] = useState('');
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
@@ -112,10 +120,18 @@ export function DashboardPage() {
 
   // ── Bookmarks ───────────────────────────────────────────────────────────────
 
-  const handleBookmark = useCallback(async () => {
+  const openBookmarkDialog = useCallback(() => {
+    const defaultLabel = chess.openingName?.name ?? `Position (${chess.moveHistory.length} moves)`;
+    setBookmarkLabel(defaultLabel);
+    setBookmarkDialogOpen(true);
+  }, [chess]);
+
+  const handleBookmarkSave = useCallback(async () => {
+    const label = bookmarkLabel.trim();
+    if (!label) return;
+
     const matchSide = filters.matchSide;
     const targetHash = chess.getHashForAnalysis(matchSide);
-    const label = chess.openingName?.name ?? `Position (${chess.moveHistory.length} moves)`;
     const data = {
       label,
       target_hash: targetHash,
@@ -123,32 +139,28 @@ export function DashboardPage() {
       moves: chess.moveHistory,
       color: filters.color,
       match_side: matchSide,
+      is_flipped: boardFlipped,
     };
     try {
-      if (activeBookmarkId !== null) {
-        await bookmarksApi.updateLabel(activeBookmarkId, { label });
-        toast.success('Bookmark updated');
-      } else {
-        const created = await createBookmark.mutateAsync(data);
-        setActiveBookmarkId(created.id);
-        toast.success('Position bookmarked');
-      }
+      await createBookmark.mutateAsync(data);
+      setBookmarkDialogOpen(false);
+      toast.success('Position bookmarked');
     } catch {
       toast.error('Failed to save bookmark');
     }
-  }, [chess, filters, activeBookmarkId, createBookmark]);
+  }, [chess, filters, boardFlipped, bookmarkLabel, createBookmark]);
 
   // Hydrate board state when navigating here from /bookmarks via [Load] (mount-only)
   useEffect(() => {
-    const bkm = (location.state as { bookmark?: { id: number; moves: string[]; color: 'white' | 'black' | null; matchSide: 'white' | 'black' | 'full' } } | null)?.bookmark;
+    const bkm = (location.state as { bookmark?: { id: number; moves: string[]; color: 'white' | 'black' | null; matchSide: 'white' | 'black' | 'full'; is_flipped?: boolean } } | null)?.bookmark;
     if (!bkm) return;
     chess.loadMoves(bkm.moves);
+    setBoardFlipped(bkm.is_flipped ?? false);
     setFilters(prev => ({
       ...prev,
       color: bkm.color ?? null,
       matchSide: bkm.matchSide,
     }));
-    setActiveBookmarkId(bkm.id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount-only: read location.state once on arrival from bookmarks page
 
@@ -214,7 +226,6 @@ export function DashboardPage() {
           chess.reset();
           setAnalysisResult(null);
           setAnalysisOffset(0);
-          setActiveBookmarkId(null);
         }}
         onFlip={() => setBoardFlipped((f) => !f)}
         canGoBack={chess.currentPly > 0}
@@ -237,10 +248,12 @@ export function DashboardPage() {
         <Button
           variant="outline"
           size="lg"
-          onClick={handleBookmark}
-          disabled={createBookmark.isPending}
+          onClick={openBookmarkDialog}
         >
-          {activeBookmarkId !== null ? 'Save' : '★ Bookmark'}
+          Bookmark
+        </Button>
+        <Button variant="outline" size="lg" onClick={() => setImportOpen(true)}>
+          Import
         </Button>
       </div>
     </div>
@@ -306,27 +319,7 @@ export function DashboardPage() {
   );
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      {/* Header */}
-      <header className="border-b border-border px-6 py-4">
-        <div className="mx-auto flex max-w-7xl items-center justify-between">
-          <h1 className="text-xl font-bold tracking-tight text-foreground">Chessalytics</h1>
-          <div className="flex items-center gap-2">
-            {totalGames !== null && (
-              <span className="hidden text-xs text-muted-foreground sm:block">
-                {totalGames.toLocaleString()} games
-              </span>
-            )}
-            <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-              Import Games
-            </Button>
-            <Button variant="ghost" size="sm" onClick={logout}>
-              Logout
-            </Button>
-          </div>
-        </div>
-      </header>
-
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
       {/* Body */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-6">
         {/* Desktop: two-column layout */}
@@ -349,6 +342,35 @@ export function DashboardPage() {
 
       {/* Import progress toasts */}
       <ImportProgress jobIds={activeJobIds} onJobDone={handleJobDone} />
+
+      {/* Bookmark label dialog */}
+      <Dialog open={bookmarkDialogOpen} onOpenChange={setBookmarkDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save Bookmark</DialogTitle>
+            <DialogDescription>
+              Enter a label for this position bookmark.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={bookmarkLabel}
+            onChange={(e) => setBookmarkLabel(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleBookmarkSave();
+            }}
+            placeholder="Bookmark label"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              onClick={handleBookmarkSave}
+              disabled={!bookmarkLabel.trim() || createBookmark.isPending}
+            >
+              {createBookmark.isPending ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

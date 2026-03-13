@@ -6,6 +6,7 @@ export interface BookmarkResponse {
   moves: string[];
   color: 'white' | 'black' | null;
   match_side: 'white' | 'black' | 'full';
+  is_flipped: boolean;
   sort_order: number;
 }
 
@@ -16,6 +17,7 @@ export interface BookmarkCreate {
   moves: string[];
   color: 'white' | 'black' | null;
   match_side: 'white' | 'black' | 'full';
+  is_flipped: boolean;
 }
 
 export interface BookmarkUpdate {
