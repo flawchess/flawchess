@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { Chessboard } from 'react-chessboard';
 
 interface ChessBoardProps {
@@ -14,6 +14,8 @@ const BRIGHT_NOTATION: React.CSSProperties = { color: 'rgba(255, 255, 255, 0.85)
 export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove }: ChessBoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [boardWidth, setBoardWidth] = useState(400);
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [prevPosition, setPrevPosition] = useState<string>(position);
 
   useEffect(() => {
     const updateWidth = () => {
@@ -32,6 +34,39 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove }:
     return () => observer.disconnect();
   }, []);
 
+  // Reset selected square when position changes (e.g. navigating move history).
+  // State update during render is the React-recommended pattern for derived state resets.
+  if (prevPosition !== position) {
+    setPrevPosition(position);
+    setSelectedSquare(null);
+  }
+
+  type SquareClickHandler = NonNullable<
+    NonNullable<Parameters<typeof Chessboard>[0]['options']>['onSquareClick']
+  >;
+  type SquareHandlerArgs = Parameters<SquareClickHandler>[0];
+
+  const handleSquareClick = useCallback(
+    ({ square, piece }: SquareHandlerArgs) => {
+      if (selectedSquare === null) {
+        // First click: select a square that has a piece
+        if (piece) setSelectedSquare(square);
+      } else if (square === selectedSquare) {
+        // Clicked same square: deselect
+        setSelectedSquare(null);
+      } else {
+        // Second click: attempt move from selectedSquare to target
+        const success = onPieceDrop(selectedSquare, square);
+        setSelectedSquare(null);
+        if (!success && piece !== null) {
+          // Failed move but clicked another piece — reselect that piece
+          setSelectedSquare(square);
+        }
+      }
+    },
+    [selectedSquare, onPieceDrop],
+  );
+
   // Build squareStyles for last-move highlighting
   const squareStyles: Record<string, React.CSSProperties> = {};
   if (lastMove) {
@@ -40,8 +75,16 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove }:
     squareStyles[lastMove.to] = highlightStyle;
   }
 
+  // Yellow highlight on selected square (merged with any lastMove highlight)
+  if (selectedSquare) {
+    squareStyles[selectedSquare] = {
+      ...squareStyles[selectedSquare],
+      backgroundColor: 'rgba(255, 255, 0, 0.5)',
+    };
+  }
+
   return (
-    <div ref={containerRef} className="w-full">
+    <div ref={containerRef} className="w-full" data-testid="chessboard">
       <Chessboard
         options={{
           position,
@@ -51,7 +94,9 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove }:
           lightSquareStyle: { backgroundColor: '#718096' },
           darkSquareNotationStyle: BRIGHT_NOTATION,
           lightSquareNotationStyle: BRIGHT_NOTATION,
+          id: 'chessboard',
           squareStyles,
+          onSquareClick: handleSquareClick,
           onPieceDrop: ({ sourceSquare, targetSquare }) => {
             if (!targetSquare) return false;
             return onPieceDrop(sourceSquare, targetSquare);
