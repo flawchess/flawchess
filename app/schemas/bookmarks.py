@@ -28,6 +28,7 @@ class BookmarkCreate(BaseModel):
     moves: list[str]
     color: str | None = None
     match_side: str = "full"
+    is_flipped: bool = False
 
 
 class BookmarkUpdate(BaseModel):
@@ -60,6 +61,7 @@ class BookmarkResponse(BaseModel):
     moves: list[str]  # deserialized from JSON string stored in DB
     color: str | None
     match_side: str
+    is_flipped: bool
     sort_order: int
 
     @model_validator(mode="before")
@@ -79,6 +81,7 @@ class BookmarkResponse(BaseModel):
                     "moves": json.loads(raw),
                     "color": data.color,
                     "match_side": data.match_side,
+                    "is_flipped": data.is_flipped,
                     "sort_order": data.sort_order,
                 }
         if isinstance(data, dict) and "moves" in data:

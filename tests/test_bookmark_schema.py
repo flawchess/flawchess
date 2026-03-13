@@ -11,7 +11,7 @@ from app.schemas.bookmarks import BookmarkResponse
 class TestBookmarkResponseFromORM:
     """Test BookmarkResponse.model_validate with ORM-like objects (int target_hash)."""
 
-    def _make_orm_bookmark(self, target_hash=123456789012345678, moves=None):
+    def _make_orm_bookmark(self, target_hash=123456789012345678, moves=None, is_flipped=False):
         """Create a mock ORM Bookmark object."""
         obj = MagicMock()
         obj.id = 1
@@ -21,6 +21,7 @@ class TestBookmarkResponseFromORM:
         obj.moves = json.dumps(moves or ["d4", "d5"])
         obj.color = "white"
         obj.match_side = "full"
+        obj.is_flipped = is_flipped
         obj.sort_order = 0
         return obj
 
@@ -52,13 +53,20 @@ class TestBookmarkResponseFromORM:
         assert response.fen == "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1"
         assert response.color == "white"
         assert response.match_side == "full"
+        assert response.is_flipped is False
         assert response.sort_order == 0
+
+    def test_model_validate_is_flipped_true(self):
+        """is_flipped=True should be preserved in the response."""
+        orm_obj = self._make_orm_bookmark(is_flipped=True)
+        response = BookmarkResponse.model_validate(orm_obj)
+        assert response.is_flipped is True
 
 
 class TestBookmarkResponseFromDict:
     """Regression tests: BookmarkResponse.model_validate with dict input (str target_hash)."""
 
-    def _make_dict_bookmark(self, target_hash="123456789012345678", moves=None):
+    def _make_dict_bookmark(self, target_hash="123456789012345678", moves=None, is_flipped=False):
         return {
             "id": 2,
             "label": "Sicilian Defense",
@@ -67,6 +75,7 @@ class TestBookmarkResponseFromDict:
             "moves": moves if moves is not None else ["e4", "c5"],
             "color": "black",
             "match_side": "full",
+            "is_flipped": is_flipped,
             "sort_order": 1,
         }
 

@@ -18,6 +18,7 @@ class Bookmark(Base):
     moves: Mapped[str] = mapped_column(Text, nullable=False)  # JSON-encoded SAN array
     color: Mapped[str | None] = mapped_column(String(10))  # "white" | "black" | None
     match_side: Mapped[str] = mapped_column(String(10), nullable=False, default="full")
+    is_flipped: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime.datetime] = mapped_column(
         nullable=False,
