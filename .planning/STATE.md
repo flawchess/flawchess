@@ -130,6 +130,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions for querying pieces on specific squares
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match; optional backend Zobrist lookup
+- **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
 Last activity: 2026-03-12 - Completed quick task 5: add opponent filter (human/bot/both) to dashboard analysis
