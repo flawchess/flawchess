@@ -21,7 +21,7 @@ const CHART_COLORS = [
   'oklch(0.70 0.15 110)',   // lime
 ];
 
-const MIN_GAMES = 3;
+const MIN_GAMES = 5;
 
 const formatMonth = (m: string) => {
   const [year, month] = m.split('-');
