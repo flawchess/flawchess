@@ -1,8 +1,8 @@
 # Roadmap: Chessalytics
 
 ## Overview
-- Total phases: 4
-- Total requirements: 21
+- Total phases: 5
+- Total requirements: 21 (v1) + 7 provisional (Phase 5)
 - Granularity: Coarse
 
 ---
@@ -124,6 +124,39 @@ All 21 v1 requirements are mapped:
 - Phase 2: 5 requirements (IMP-01, IMP-02, IMP-03, IMP-04, INFRA-02)
 - Phase 3: 9 requirements (ANL-02, ANL-03, FLT-01, FLT-02, FLT-03, FLT-04, RES-01, RES-02, RES-03)
 - Phase 4: 3 requirements (ANL-01, AUTH-01, AUTH-02)
+- Phase 5: 7 provisional requirements (BKM-01 through BKM-07)
+
+---
+
+## Phase 5: Position Bookmarks and W/D/L Comparison Charts
+
+**Goal:** Let users save chess positions as bookmarks (with move history and filter settings), view them on a dedicated /bookmarks page with live W/D/L bars per bookmark and a win-rate-over-time line chart, and load bookmarks back into the board editor for editing.
+
+**Requirements:**
+- BKM-01: User can create, read, update, and delete position bookmarks stored in the backend
+- BKM-02: User can reorder bookmarks by drag-and-drop; order persists across sessions
+- BKM-03: /bookmarks page shows a monthly win-rate line chart with one line per bookmark
+- BKM-04: Months with 0 games for a bookmark show as gaps in the chart line (not 0%)
+- BKM-05: Each user's bookmarks are isolated (user A cannot see user B's bookmarks)
+- BKM-06: [Load] on a bookmark navigates to / with the board pre-populated from the bookmark
+- BKM-07: Bookmark labels are editable inline on the /bookmarks page
+
+**Depends on:** Phase 4
+**Plans:** 5 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Backend bookmark model, migration, schemas, repository, and CRUD router
+- [ ] 05-02-PLAN.md — Backend time-series endpoint (POST /analysis/time-series)
+- [ ] 05-03-PLAN.md — Frontend TS types, API client, useBookmarks hooks, useChessGame.loadMoves, Dashboard bookmark button
+- [ ] 05-04-PLAN.md — Frontend /bookmarks routing, nav tabs, BookmarksPage, sortable BookmarkList, BookmarkRow
+- [ ] 05-05-PLAN.md — WinRateChart (Recharts) and real WDL bar stats wired into BookmarksPage
+
+**Success Criteria:**
+1. User can click "★ Bookmark" on the Analysis page to save the current position; it appears immediately on /bookmarks.
+2. The /bookmarks page shows each bookmark with a W/D/L bar and the user can drag to reorder, edit labels inline, load positions back to the board, and delete bookmarks.
+3. A multi-line Recharts chart below the list shows monthly win rate per bookmark; months with no games show as gaps (not 0%).
+4. All bookmark data is user-scoped — no cross-user data leakage.
 
 ---
 *Created: 2026-03-11*
+*Phase 5 added: 2026-03-13*
