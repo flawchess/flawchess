@@ -74,7 +74,7 @@ class BookmarkResponse(BaseModel):
                 return {
                     "id": data.id,
                     "label": data.label,
-                    "target_hash": data.target_hash,
+                    "target_hash": str(data.target_hash),
                     "fen": data.fen,
                     "moves": json.loads(raw),
                     "color": data.color,
