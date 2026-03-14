@@ -146,6 +146,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 7 | Store board flip state in bookmarks | 2026-03-13 | c0a980e | [7-store-board-flip-state-in-bookmarks](.planning/quick/7-store-board-flip-state-in-bookmarks/) |
 | 9 | Fix Global Stats 500 error (_aggregate_wdl KeyError) and RatingChart adaptive Y-axis | 2026-03-14 | befcb4c | [9-some-fixes-for-phase-7](.planning/quick/9-some-fixes-for-phase-7/) |
 | 10 | Fix Y-axis ticks on chess.com RatingChart — uniform spacing via adaptive step selection | 2026-03-14 | d9eb0f0 | [10-fix-y-axis-ticks-on-chess-com-rating-cha](.planning/quick/10-fix-y-axis-ticks-on-chess-com-rating-cha/) |
+| 11 | Toggle series on/off by clicking legend in all Recharts charts | 2026-03-14 | 4c398f0 | [11-toggle-series-on-off-by-clicking-legend-](.planning/quick/11-toggle-series-on-off-by-clicking-legend-/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -154,4 +155,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-14 - Completed quick task 10: Fix Y-axis ticks on RatingChart
+Last activity: 2026-03-14 - Completed quick task 11: Toggle series on/off by clicking legend
