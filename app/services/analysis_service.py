@@ -149,6 +149,12 @@ async def analyze(
             time_control_bucket=g.time_control_bucket,
             platform=g.platform,
             platform_url=g.platform_url,
+            user_rating=g.user_rating,
+            opponent_rating=g.opponent_rating,
+            opening_name=g.opening_name,
+            opening_eco=g.opening_eco,
+            user_color=g.user_color,
+            move_count=g.move_count,
         )
         for g in games
     ]

@@ -8,6 +8,7 @@ Manages import jobs from chess.com and lichess, including:
 - Zobrist hash computation and bulk DB persistence
 """
 
+import io
 import logging
 import uuid
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+import chess.pgn
 import httpx
 
 from app.core.database import async_session_maker
@@ -312,6 +314,19 @@ async def _flush_batch(
                     "full_hash": full_hash,
                 }
             )
+
+        # Compute and persist move_count for this new game
+        try:
+            from sqlalchemy import update as sa_update
+            game_obj = chess.pgn.read_game(io.StringIO(pgn))
+            if game_obj is not None:
+                ply_count = len(list(game_obj.mainline_moves()))
+                move_count = (ply_count + 1) // 2
+                await session.execute(
+                    sa_update(Game).where(Game.id == game_id).values(move_count=move_count)
+                )
+        except Exception:
+            logger.warning("Failed to compute move_count for game_id=%s", game_id)
 
     if position_rows:
         await game_repository.bulk_insert_positions(session, position_rows)

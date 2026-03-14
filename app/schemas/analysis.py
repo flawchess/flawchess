@@ -62,6 +62,12 @@ class GameRecord(BaseModel):
     time_control_bucket: str | None
     platform: str
     platform_url: str | None
+    user_rating: int | None
+    opponent_rating: int | None
+    opening_name: str | None
+    opening_eco: str | None
+    user_color: str
+    move_count: int | None
 
 
 class AnalysisResponse(BaseModel):
