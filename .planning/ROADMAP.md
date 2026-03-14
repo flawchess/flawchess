@@ -1,8 +1,8 @@
 # Roadmap: Chessalytics
 
 ## Overview
-- Total phases: 8
-- Total requirements: 21 (v1) + 7 provisional (Phase 5) + 5 provisional (Phase 6) + 6 provisional (Phase 7) + 5 provisional (Phase 8)
+- Total phases: 9
+- Total requirements: 21 (v1) + 7 provisional (Phase 5) + 5 provisional (Phase 6) + 6 provisional (Phase 7) + 5 provisional (Phase 8) + 5 provisional (Phase 9)
 - Granularity: Coarse
 
 ---
@@ -128,6 +128,7 @@ All 21 v1 requirements are mapped:
 - Phase 6: 5 provisional requirements (TEST-01 through TEST-05)
 - Phase 7: 6 provisional requirements (STATS-01 through STATS-06)
 - Phase 8: 5 provisional requirements (REWORK-01 through REWORK-05)
+- Phase 9: 5 provisional requirements (GAMES-01 through GAMES-05)
 
 ---
 
@@ -244,8 +245,37 @@ Plans:
 5. Openings page WinRateChart and WDLBarChart render correctly from their new location in components/charts/.
 
 ---
+
+## Phase 9: Rework the games list with game cards, username import, and improved pagination
+
+**Goal:** Transform the games list from a plain HTML table to rich full-width game cards showing more metadata per game, move chess platform usernames from localStorage to backend user profile storage with a streamlined import modal, and replace naive pagination with truncated page numbers and a smaller page size.
+
+**Requirements:**
+- GAMES-01: Games displayed as full-width cards with colored left border accent (green=win, gray=draw, red=loss) showing result, opponent, ratings, opening, color, time control, date, moves, and platform link
+- GAMES-02: Game model has move_count column; existing games backfilled from PGN; new games populated at import time
+- GAMES-03: Platform usernames stored on backend User model; auto-saved on import; import modal shows sync view for returning users and input view for first-time users
+- GAMES-04: GameRecord API response expanded with user_rating, opponent_rating, opening_name, opening_eco, user_color, move_count
+- GAMES-05: Pagination uses truncated page numbers with ellipsis, page size 20, page change scrolls to top
+
+**Depends on:** Phase 8
+**Plans:** 3 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Backend model expansion, migration, schema enrichment, profile endpoint, import username auto-save
+- [ ] 09-02-PLAN.md — Frontend game cards with colored left border and truncated pagination
+- [ ] 09-03-PLAN.md — Import modal redesign with backend-stored usernames and two-mode UI
+
+**Success Criteria:**
+1. Games page shows rich cards with colored left border accent instead of table rows; each card shows result, opponent, ratings, opening, color indicator, TC, date, moves, and platform link.
+2. move_count column exists on Game model; existing games backfilled; new imports populate move_count.
+3. Platform usernames stored in User model; auto-saved after import; localStorage username storage removed.
+4. Import modal shows sync view with per-platform Sync buttons for returning users; input view for first-time users.
+5. Pagination shows truncated page numbers with ellipsis; page size is 20; page change scrolls to top.
+
+---
 *Created: 2026-03-11*
 *Phase 5 added: 2026-03-13*
 *Phase 6 planned: 2026-03-13*
 *Phase 7 planned: 2026-03-14*
 *Phase 8 planned: 2026-03-14*
+*Phase 9 planned: 2026-03-14*
