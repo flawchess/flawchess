@@ -36,12 +36,18 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
     setLichessUsername(profile?.lichess_username ?? '');
   }
 
+  // Add flow state for unconfigured platforms in sync view
+  const [addingPlatform, setAddingPlatform] = useState<'chess.com' | 'lichess' | null>(null);
+  const [addUsername, setAddUsername] = useState('');
+
   // Track previous open value to reset editMode when modal closes (derived state pattern)
   const [prevOpen, setPrevOpen] = useState(open);
   if (open !== prevOpen) {
     setPrevOpen(open);
     if (!open) {
       setEditMode(false);
+      setAddingPlatform(null);
+      setAddUsername('');
     }
   }
 
@@ -54,6 +60,22 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
   const handleSync = async (platform: 'chess.com' | 'lichess', username: string) => {
     try {
       const result = await trigger.mutateAsync({ platform, username });
+      onOpenChange(false);
+      onImportStarted(result.job_id);
+    } catch {
+      toast.error('Failed to start import. Please try again.');
+    }
+  };
+
+  // ── Add flow handler (sync view inline add for unconfigured platforms) ──────
+
+  const handleAdd = async (platform: 'chess.com' | 'lichess') => {
+    const trimmed = addUsername.trim();
+    if (!trimmed) return;
+    try {
+      const result = await trigger.mutateAsync({ platform, username: trimmed });
+      setAddingPlatform(null);
+      setAddUsername('');
       onOpenChange(false);
       onImportStarted(result.job_id);
     } catch {
@@ -177,7 +199,7 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
                   <p className="text-xs text-muted-foreground">Not set</p>
                 )}
               </div>
-              {profile?.chess_com_username && (
+              {profile?.chess_com_username ? (
                 <Button
                   size="sm"
                   onClick={() => handleSync('chess.com', profile.chess_com_username!)}
@@ -186,6 +208,46 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
                 >
                   Sync
                 </Button>
+              ) : (
+                addingPlatform === 'chess.com' ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="text"
+                      placeholder="chess.com username"
+                      value={addUsername}
+                      onChange={(e) => setAddUsername(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAdd('chess.com')}
+                      autoFocus
+                      className="h-8 w-40 text-sm"
+                      data-testid="import-add-username-chess-com"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => handleAdd('chess.com')}
+                      disabled={trigger.isPending || !addUsername.trim()}
+                      data-testid="btn-add-import-chess-com"
+                    >
+                      {trigger.isPending ? 'Starting...' : 'Import'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => { setAddingPlatform(null); setAddUsername(''); }}
+                      data-testid="btn-add-cancel-chess-com"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setAddingPlatform('chess.com'); setAddUsername(''); }}
+                    data-testid="btn-add-chess-com"
+                  >
+                    Add
+                  </Button>
+                )
               )}
             </div>
 
@@ -199,7 +261,7 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
                   <p className="text-xs text-muted-foreground">Not set</p>
                 )}
               </div>
-              {profile?.lichess_username && (
+              {profile?.lichess_username ? (
                 <Button
                   size="sm"
                   onClick={() => handleSync('lichess', profile.lichess_username!)}
@@ -208,6 +270,46 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
                 >
                   Sync
                 </Button>
+              ) : (
+                addingPlatform === 'lichess' ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="text"
+                      placeholder="lichess username"
+                      value={addUsername}
+                      onChange={(e) => setAddUsername(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAdd('lichess')}
+                      autoFocus
+                      className="h-8 w-40 text-sm"
+                      data-testid="import-add-username-lichess"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => handleAdd('lichess')}
+                      disabled={trigger.isPending || !addUsername.trim()}
+                      data-testid="btn-add-import-lichess"
+                    >
+                      {trigger.isPending ? 'Starting...' : 'Import'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => { setAddingPlatform(null); setAddUsername(''); }}
+                      data-testid="btn-add-cancel-lichess"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setAddingPlatform('lichess'); setAddUsername(''); }}
+                    data-testid="btn-add-lichess"
+                  >
+                    Add
+                  </Button>
+                )
               )}
             </div>
 
