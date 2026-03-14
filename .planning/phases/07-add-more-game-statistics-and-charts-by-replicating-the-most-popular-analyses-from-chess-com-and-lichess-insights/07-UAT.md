@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 07-add-more-game-statistics-and-charts
 source: [07-01-SUMMARY.md, 07-02-SUMMARY.md, 07-03-SUMMARY.md]
 started: 2026-03-14T10:40:00Z
@@ -73,9 +73,12 @@ skipped: 4
   reason: "User reported: it works, but we don't need the redirect, please remove"
   severity: minor
   test: 3
-  root_cause: ""
-  artifacts: []
-  missing: []
+  root_cause: "User does not want the /stats → /openings redirect — remove the Route"
+  artifacts:
+    - path: "frontend/src/App.tsx"
+      issue: "Contains <Route path='/stats' element={<Navigate to='/openings' replace />} /> that should be removed"
+  missing:
+    - "Remove the /stats redirect Route from App.tsx"
   debug_session: ""
 
 - truth: "Rating page shows per-platform rating-over-time line charts when games are imported"
@@ -83,17 +86,23 @@ skipped: 4
   reason: "User reported: Despite having imported games from both platforms, both charts show 'No Chess.com/Lichess games imported' empty state"
   severity: major
   test: 4
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "Vite proxy missing /stats entry — frontend requests to /stats/rating-history serve HTML instead of reaching FastAPI backend"
+  artifacts:
+    - path: "frontend/vite.config.ts"
+      issue: "Missing '/stats': 'http://localhost:8000' in server.proxy — all other API prefixes are proxied"
+  missing:
+    - "Add '/stats': 'http://localhost:8000' to Vite proxy configuration"
+  debug_session: ".planning/debug/stats-pages-empty-state.md"
 
 - truth: "Global Stats page shows WDL stacked bars by time control and color when games are imported"
   status: failed
   reason: "User reported: Both charts show 'No data available' despite having imported games"
   severity: major
   test: 7
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "Same Vite proxy issue as test 4 — /stats/global requests not reaching backend"
+  artifacts:
+    - path: "frontend/vite.config.ts"
+      issue: "Missing '/stats' proxy entry"
+  missing:
+    - "Same fix as test 4 — single proxy entry fixes both endpoints"
+  debug_session: ".planning/debug/stats-pages-empty-state.md"
