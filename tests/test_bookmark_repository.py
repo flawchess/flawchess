@@ -1,7 +1,7 @@
-"""Integration tests for bookmark repository.
+"""Integration tests for position bookmark repository.
 
 Coverage:
-- TestCRUD: BKM-01 - create, list, update, delete bookmarks
+- TestCRUD: BKM-01 - create, list, update, delete position bookmarks
 - TestReorder: BKM-02 - drag-reorder support with sort_order reassignment
 - TestIsolation: BKM-05 - per-user isolation enforced at repository layer
 """
@@ -9,14 +9,14 @@ Coverage:
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories.bookmark_repository import (
+from app.repositories.position_bookmark_repository import (
     create_bookmark,
     delete_bookmark,
     get_bookmarks,
     reorder_bookmarks,
     update_bookmark,
 )
-from app.schemas.bookmarks import BookmarkCreate, BookmarkReorderRequest, BookmarkUpdate
+from app.schemas.position_bookmarks import PositionBookmarkCreate, PositionBookmarkReorderRequest, PositionBookmarkUpdate
 
 
 # ---------------------------------------------------------------------------
@@ -31,8 +31,8 @@ def _make_create(
     moves: list[str] | None = None,
     color: str | None = "white",
     match_side: str = "full",
-) -> BookmarkCreate:
-    return BookmarkCreate(
+) -> PositionBookmarkCreate:
+    return PositionBookmarkCreate(
         label=label,
         target_hash=target_hash,
         fen=fen,
@@ -48,11 +48,11 @@ def _make_create(
 
 
 class TestCRUD:
-    """Verify basic CRUD operations on bookmarks."""
+    """Verify basic CRUD operations on position bookmarks."""
 
     @pytest.mark.asyncio
     async def test_create_bookmark(self, db_session: AsyncSession) -> None:
-        """Creates a bookmark and returns Bookmark ORM with id set."""
+        """Creates a position bookmark and returns PositionBookmark ORM with id set."""
         data = _make_create(label="My Bookmark")
         bookmark = await create_bookmark(db_session, user_id=1, data=data)
 
@@ -65,7 +65,7 @@ class TestCRUD:
 
     @pytest.mark.asyncio
     async def test_get_bookmarks(self, db_session: AsyncSession) -> None:
-        """Lists bookmarks ordered by sort_order ascending."""
+        """Lists position bookmarks ordered by sort_order ascending."""
         await create_bookmark(db_session, user_id=1, data=_make_create(label="C"))
         b2 = await create_bookmark(db_session, user_id=1, data=_make_create(label="B"))
         b3 = await create_bookmark(db_session, user_id=1, data=_make_create(label="A"))
@@ -99,7 +99,7 @@ class TestCRUD:
             db_session,
             user_id=1,
             bookmark_id=bookmark.id,
-            data=BookmarkUpdate(label="Updated"),
+            data=PositionBookmarkUpdate(label="Updated"),
         )
 
         assert updated is not None
@@ -110,7 +110,7 @@ class TestCRUD:
 
     @pytest.mark.asyncio
     async def test_delete_bookmark(self, db_session: AsyncSession) -> None:
-        """Removes bookmark; subsequent get returns empty list."""
+        """Removes position bookmark; subsequent get returns empty list."""
         bookmark = await create_bookmark(
             db_session, user_id=99, data=_make_create(label="ToDelete")
         )
@@ -178,7 +178,7 @@ class TestReorder:
 
 
 class TestIsolation:
-    """Verify per-user isolation: users cannot see or modify each other's bookmarks."""
+    """Verify per-user isolation: users cannot see or modify each other's position bookmarks."""
 
     @pytest.mark.asyncio
     async def test_user_b_cannot_read_user_a(self, db_session: AsyncSession) -> None:
@@ -199,7 +199,7 @@ class TestIsolation:
             db_session,
             user_id=20,  # wrong user
             bookmark_id=bookmark.id,
-            data=BookmarkUpdate(label="Hacked"),
+            data=PositionBookmarkUpdate(label="Hacked"),
         )
 
         assert result is None

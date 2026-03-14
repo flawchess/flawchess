@@ -229,7 +229,7 @@ Plans:
 - REWORK-05: Move "Bookmark this position" button into the Position filter collapsible section
 
 **Depends on:** Phase 7
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] 08-01-PLAN.md — Backend rename: Alembic migration, model/repo/schemas/router rename to position_bookmarks, test updates

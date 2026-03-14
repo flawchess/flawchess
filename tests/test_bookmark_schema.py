@@ -1,18 +1,18 @@
-"""Tests for BookmarkResponse Pydantic schema validation."""
+"""Tests for PositionBookmarkResponse Pydantic schema validation."""
 
 import json
 from unittest.mock import MagicMock
 
 import pytest
 
-from app.schemas.bookmarks import BookmarkResponse
+from app.schemas.position_bookmarks import PositionBookmarkResponse
 
 
-class TestBookmarkResponseFromORM:
-    """Test BookmarkResponse.model_validate with ORM-like objects (int target_hash)."""
+class TestPositionBookmarkResponseFromORM:
+    """Test PositionBookmarkResponse.model_validate with ORM-like objects (int target_hash)."""
 
     def _make_orm_bookmark(self, target_hash=123456789012345678, moves=None, is_flipped=False):
-        """Create a mock ORM Bookmark object."""
+        """Create a mock ORM PositionBookmark object."""
         obj = MagicMock()
         obj.id = 1
         obj.label = "Queen's Gambit"
@@ -26,28 +26,28 @@ class TestBookmarkResponseFromORM:
         return obj
 
     def test_model_validate_with_int_target_hash_succeeds(self):
-        """BookmarkResponse.model_validate with ORM object (int target_hash) must succeed."""
+        """PositionBookmarkResponse.model_validate with ORM object (int target_hash) must succeed."""
         orm_obj = self._make_orm_bookmark(target_hash=123456789012345678)
-        response = BookmarkResponse.model_validate(orm_obj)
+        response = PositionBookmarkResponse.model_validate(orm_obj)
         assert response.target_hash == "123456789012345678"
 
     def test_model_validate_returns_str_target_hash(self):
         """target_hash in the response must be a str, not int."""
         orm_obj = self._make_orm_bookmark(target_hash=987654321098765432)
-        response = BookmarkResponse.model_validate(orm_obj)
+        response = PositionBookmarkResponse.model_validate(orm_obj)
         assert isinstance(response.target_hash, str)
         assert response.target_hash == "987654321098765432"
 
     def test_model_validate_deserializes_moves(self):
         """moves field should be deserialized from JSON string."""
         orm_obj = self._make_orm_bookmark(moves=["e4", "e5", "Nf3"])
-        response = BookmarkResponse.model_validate(orm_obj)
+        response = PositionBookmarkResponse.model_validate(orm_obj)
         assert response.moves == ["e4", "e5", "Nf3"]
 
     def test_model_validate_preserves_other_fields(self):
         """All other fields should be correctly extracted from ORM object."""
         orm_obj = self._make_orm_bookmark()
-        response = BookmarkResponse.model_validate(orm_obj)
+        response = PositionBookmarkResponse.model_validate(orm_obj)
         assert response.id == 1
         assert response.label == "Queen's Gambit"
         assert response.fen == "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1"
@@ -59,12 +59,12 @@ class TestBookmarkResponseFromORM:
     def test_model_validate_is_flipped_true(self):
         """is_flipped=True should be preserved in the response."""
         orm_obj = self._make_orm_bookmark(is_flipped=True)
-        response = BookmarkResponse.model_validate(orm_obj)
+        response = PositionBookmarkResponse.model_validate(orm_obj)
         assert response.is_flipped is True
 
 
-class TestBookmarkResponseFromDict:
-    """Regression tests: BookmarkResponse.model_validate with dict input (str target_hash)."""
+class TestPositionBookmarkResponseFromDict:
+    """Regression tests: PositionBookmarkResponse.model_validate with dict input (str target_hash)."""
 
     def _make_dict_bookmark(self, target_hash="123456789012345678", moves=None, is_flipped=False):
         return {
@@ -80,20 +80,20 @@ class TestBookmarkResponseFromDict:
         }
 
     def test_model_validate_with_str_target_hash_succeeds(self):
-        """BookmarkResponse.model_validate with dict (str target_hash) must still work."""
+        """PositionBookmarkResponse.model_validate with dict (str target_hash) must still work."""
         data = self._make_dict_bookmark(target_hash="123456789012345678")
-        response = BookmarkResponse.model_validate(data)
+        response = PositionBookmarkResponse.model_validate(data)
         assert response.target_hash == "123456789012345678"
 
     def test_model_validate_with_list_moves_passes_through(self):
         """moves as list[str] in dict input must pass through unchanged."""
         data = self._make_dict_bookmark(moves=["e4", "c5", "Nf3"])
-        response = BookmarkResponse.model_validate(data)
+        response = PositionBookmarkResponse.model_validate(data)
         assert response.moves == ["e4", "c5", "Nf3"]
 
     def test_model_validate_with_json_string_moves_in_dict(self):
         """moves as JSON string in dict input should also be deserialized."""
         data = self._make_dict_bookmark()
         data["moves"] = json.dumps(["e4", "c5"])
-        response = BookmarkResponse.model_validate(data)
+        response = PositionBookmarkResponse.model_validate(data)
         assert response.moves == ["e4", "c5"]

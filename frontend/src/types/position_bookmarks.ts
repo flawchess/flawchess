@@ -1,4 +1,4 @@
-export interface BookmarkResponse {
+export interface PositionBookmarkResponse {
   id: number;
   label: string;
   target_hash: string;   // string from backend (avoids JS precision loss)
@@ -10,7 +10,7 @@ export interface BookmarkResponse {
   sort_order: number;
 }
 
-export interface BookmarkCreate {
+export interface PositionBookmarkCreate {
   label: string;
   target_hash: string;   // send as string — backend coerces to int
   fen: string;
@@ -20,12 +20,12 @@ export interface BookmarkCreate {
   is_flipped: boolean;
 }
 
-export interface BookmarkUpdate {
+export interface PositionBookmarkUpdate {
   label?: string;
   sort_order?: number;
 }
 
-export interface BookmarkReorderRequest {
+export interface PositionBookmarkReorderRequest {
   ids: number[];
 }
 

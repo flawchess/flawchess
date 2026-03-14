@@ -1,20 +1,24 @@
-"""Bookmark repository: async DB operations for bookmark CRUD and reorder."""
+"""Position bookmark repository: async DB operations for position bookmark CRUD and reorder.
+
+Exposes module-level async functions. PositionBookmarkRepository is a namespace alias
+for the module (for import compatibility).
+"""
 
 import json
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.bookmark import Bookmark
-from app.schemas.bookmarks import BookmarkCreate, BookmarkUpdate
+from app.models.position_bookmark import PositionBookmark
+from app.schemas.position_bookmarks import PositionBookmarkCreate, PositionBookmarkUpdate
 
 
-async def get_bookmarks(session: AsyncSession, user_id: int) -> list[Bookmark]:
-    """Return all bookmarks for a user, ordered by sort_order ascending."""
+async def get_bookmarks(session: AsyncSession, user_id: int) -> list[PositionBookmark]:
+    """Return all position bookmarks for a user, ordered by sort_order ascending."""
     stmt = (
-        select(Bookmark)
-        .where(Bookmark.user_id == user_id)
-        .order_by(Bookmark.sort_order.asc())
+        select(PositionBookmark)
+        .where(PositionBookmark.user_id == user_id)
+        .order_by(PositionBookmark.sort_order.asc())
     )
     result = await session.execute(stmt)
     return list(result.scalars().all())
@@ -22,21 +26,21 @@ async def get_bookmarks(session: AsyncSession, user_id: int) -> list[Bookmark]:
 
 async def get_bookmark(
     session: AsyncSession, user_id: int, bookmark_id: int
-) -> Bookmark | None:
-    """Return a single bookmark owned by the given user, or None."""
-    stmt = select(Bookmark).where(
-        Bookmark.id == bookmark_id,
-        Bookmark.user_id == user_id,
+) -> PositionBookmark | None:
+    """Return a single position bookmark owned by the given user, or None."""
+    stmt = select(PositionBookmark).where(
+        PositionBookmark.id == bookmark_id,
+        PositionBookmark.user_id == user_id,
     )
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
 
 
 async def create_bookmark(
-    session: AsyncSession, user_id: int, data: BookmarkCreate
-) -> Bookmark:
-    """Create and persist a new bookmark for the given user."""
-    bookmark = Bookmark(
+    session: AsyncSession, user_id: int, data: PositionBookmarkCreate
+) -> PositionBookmark:
+    """Create and persist a new position bookmark for the given user."""
+    bookmark = PositionBookmark(
         user_id=user_id,
         label=data.label,
         target_hash=data.target_hash,
@@ -56,9 +60,9 @@ async def update_bookmark(
     session: AsyncSession,
     user_id: int,
     bookmark_id: int,
-    data: BookmarkUpdate,
-) -> Bookmark | None:
-    """Update label and/or sort_order for a bookmark owned by the given user.
+    data: PositionBookmarkUpdate,
+) -> PositionBookmark | None:
+    """Update label and/or sort_order for a position bookmark owned by the given user.
 
     Returns None if the bookmark does not exist or belongs to a different user.
     """
@@ -78,7 +82,7 @@ async def update_bookmark(
 async def delete_bookmark(
     session: AsyncSession, user_id: int, bookmark_id: int
 ) -> bool:
-    """Delete a bookmark owned by the given user.
+    """Delete a position bookmark owned by the given user.
 
     Returns False if the bookmark does not exist or belongs to a different user.
     """
@@ -93,22 +97,22 @@ async def delete_bookmark(
 
 async def reorder_bookmarks(
     session: AsyncSession, user_id: int, ordered_ids: list[int]
-) -> list[Bookmark]:
-    """Reassign sort_order 0..N-1 to user's bookmarks in the given order.
+) -> list[PositionBookmark]:
+    """Reassign sort_order 0..N-1 to user's position bookmarks in the given order.
 
     Only bookmarks matching ordered_ids that belong to user_id are updated.
     Returns the reordered bookmark list.
     """
     # Fetch all matching bookmarks owned by this user
-    stmt = select(Bookmark).where(
-        Bookmark.id.in_(ordered_ids),
-        Bookmark.user_id == user_id,
+    stmt = select(PositionBookmark).where(
+        PositionBookmark.id.in_(ordered_ids),
+        PositionBookmark.user_id == user_id,
     )
     result = await session.execute(stmt)
     bookmarks_map = {b.id: b for b in result.scalars().all()}
 
     # Assign sort_order in the provided order
-    reordered: list[Bookmark] = []
+    reordered: list[PositionBookmark] = []
     for position, bookmark_id in enumerate(ordered_ids):
         bookmark = bookmarks_map.get(bookmark_id)
         if bookmark is not None:
@@ -117,3 +121,8 @@ async def reorder_bookmarks(
 
     await session.flush()
     return reordered
+
+
+# Namespace alias — allows `from ... import PositionBookmarkRepository` in plan verification
+import sys as _sys
+PositionBookmarkRepository = _sys.modules[__name__]

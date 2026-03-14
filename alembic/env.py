@@ -9,7 +9,7 @@ from alembic import context
 
 from app.core.config import settings
 from app.models.base import Base
-from app.models.bookmark import Bookmark  # noqa: F401
+from app.models.position_bookmark import PositionBookmark  # noqa: F401
 from app.models.game import Game  # noqa: F401
 from app.models.game_position import GamePosition  # noqa: F401
 from app.models.oauth_account import OAuthAccount  # noqa: F401

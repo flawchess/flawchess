@@ -1,8 +1,4 @@
-import { useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import {
   Select,
   SelectContent,
@@ -53,8 +49,6 @@ const PLATFORM_LABELS: Record<Platform, string> = {
 };
 
 export function FilterPanel({ filters, onChange }: FilterPanelProps) {
-  const [moreOpen, setMoreOpen] = useState(false);
-
   const update = (partial: Partial<FilterState>) => {
     onChange({ ...filters, ...partial });
   };
@@ -91,169 +85,116 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
     return filters.platforms.includes(p);
   };
 
-  const content = (
+  return (
     <div className="space-y-3">
-      {/* Played as + Match side — always visible, on the same row */}
-      <div className="flex flex-wrap gap-x-4 gap-y-3">
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">Played as</p>
-          <ToggleGroup
-            type="single"
-            value={filters.color ?? 'any'}
-            onValueChange={(v) => {
-              if (!v) return;
-              update({ color: v === 'any' ? null : (v as Color) });
-            }}
-            variant="outline"
-            size="sm"
-            data-testid="filter-played-as"
-          >
-            <ToggleGroupItem value="any" data-testid="filter-played-as-any">Any</ToggleGroupItem>
-            <ToggleGroupItem value="white" data-testid="filter-played-as-white">White</ToggleGroupItem>
-            <ToggleGroupItem value="black" data-testid="filter-played-as-black">Black</ToggleGroupItem>
-          </ToggleGroup>
-        </div>
-
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">Match side</p>
-          <ToggleGroup
-            type="single"
-            value={filters.matchSide}
-            onValueChange={(v) => v && update({ matchSide: v as MatchSide })}
-            variant="outline"
-            size="sm"
-            data-testid="filter-match-side"
-          >
-            <ToggleGroupItem value="white" data-testid="filter-match-side-white">White</ToggleGroupItem>
-            <ToggleGroupItem value="black" data-testid="filter-match-side-black">Black</ToggleGroupItem>
-            <ToggleGroupItem value="full" data-testid="filter-match-side-full">Both</ToggleGroupItem>
-          </ToggleGroup>
+      {/* Time controls */}
+      <div>
+        <p className="mb-1 text-xs text-muted-foreground">Time control</p>
+        <div className="flex flex-wrap gap-1">
+          {TIME_CONTROLS.map((tc) => (
+            <button
+              key={tc}
+              onClick={() => toggleTimeControl(tc)}
+              data-testid={`filter-time-control-${tc}`}
+              aria-label={`${TIME_CONTROL_LABELS[tc]} time control`}
+              aria-pressed={isTimeControlActive(tc)}
+              className={cn(
+                'rounded border px-2 py-0.5 text-xs transition-colors',
+                isTimeControlActive(tc)
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
+              )}
+            >
+              {TIME_CONTROL_LABELS[tc]}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* More filters — collapsible, collapsed by default */}
-      <Collapsible open={moreOpen} onOpenChange={setMoreOpen}>
-        <CollapsibleTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground" data-testid="filter-more-toggle">
-            More filters
-            {moreOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="mt-2 space-y-3">
-            {/* Time controls */}
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Time control</p>
-              <div className="flex flex-wrap gap-1">
-                {TIME_CONTROLS.map((tc) => (
-                  <button
-                    key={tc}
-                    onClick={() => toggleTimeControl(tc)}
-                    data-testid={`filter-time-control-${tc}`}
-                    aria-label={`${TIME_CONTROL_LABELS[tc]} time control`}
-                    aria-pressed={isTimeControlActive(tc)}
-                    className={cn(
-                      'rounded border px-2 py-0.5 text-xs transition-colors',
-                      isTimeControlActive(tc)
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
-                    )}
-                  >
-                    {TIME_CONTROL_LABELS[tc]}
-                  </button>
-                ))}
-              </div>
-            </div>
+      {/* Platform */}
+      <div>
+        <p className="mb-1 text-xs text-muted-foreground">Platform</p>
+        <div className="flex flex-wrap gap-1">
+          {PLATFORMS.map((p) => (
+            <button
+              key={p}
+              onClick={() => togglePlatform(p)}
+              data-testid={`filter-platform-${p === 'chess.com' ? 'chess-com' : p}`}
+              aria-label={`${PLATFORM_LABELS[p]} platform`}
+              aria-pressed={isPlatformActive(p)}
+              className={cn(
+                'rounded border px-2 py-0.5 text-xs transition-colors',
+                isPlatformActive(p)
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
+              )}
+            >
+              {PLATFORM_LABELS[p]}
+            </button>
+          ))}
+        </div>
+      </div>
 
-            {/* Platform */}
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Platform</p>
-              <div className="flex flex-wrap gap-1">
-                {PLATFORMS.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => togglePlatform(p)}
-                    data-testid={`filter-platform-${p === 'chess.com' ? 'chess-com' : p}`}
-                    aria-label={`${PLATFORM_LABELS[p]} platform`}
-                    aria-pressed={isPlatformActive(p)}
-                    className={cn(
-                      'rounded border px-2 py-0.5 text-xs transition-colors',
-                      isPlatformActive(p)
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
-                    )}
-                  >
-                    {PLATFORM_LABELS[p]}
-                  </button>
-                ))}
-              </div>
-            </div>
+      {/* Rated */}
+      <div>
+        <p className="mb-1 text-xs text-muted-foreground">Rated</p>
+        <ToggleGroup
+          type="single"
+          value={filters.rated === null ? 'all' : filters.rated ? 'rated' : 'casual'}
+          onValueChange={(v) => {
+            if (!v) return;
+            update({ rated: v === 'all' ? null : v === 'rated' });
+          }}
+          variant="outline"
+          size="sm"
+          data-testid="filter-rated"
+        >
+          <ToggleGroupItem value="all" data-testid="filter-rated-all">All</ToggleGroupItem>
+          <ToggleGroupItem value="rated" data-testid="filter-rated-rated">Rated</ToggleGroupItem>
+          <ToggleGroupItem value="casual" data-testid="filter-rated-casual">Casual</ToggleGroupItem>
+        </ToggleGroup>
+      </div>
 
-            {/* Rated */}
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Rated</p>
-              <ToggleGroup
-                type="single"
-                value={filters.rated === null ? 'all' : filters.rated ? 'rated' : 'casual'}
-                onValueChange={(v) => {
-                  if (!v) return;
-                  update({ rated: v === 'all' ? null : v === 'rated' });
-                }}
-                variant="outline"
-                size="sm"
-                data-testid="filter-rated"
-              >
-                <ToggleGroupItem value="all" data-testid="filter-rated-all">All</ToggleGroupItem>
-                <ToggleGroupItem value="rated" data-testid="filter-rated-rated">Rated</ToggleGroupItem>
-                <ToggleGroupItem value="casual" data-testid="filter-rated-casual">Casual</ToggleGroupItem>
-              </ToggleGroup>
-            </div>
+      {/* Opponent */}
+      <div>
+        <p className="mb-1 text-xs text-muted-foreground">Opponent</p>
+        <ToggleGroup
+          type="single"
+          value={filters.opponentType}
+          onValueChange={(v) => {
+            if (!v) return;
+            update({ opponentType: v as OpponentType });
+          }}
+          variant="outline"
+          size="sm"
+          data-testid="filter-opponent"
+        >
+          <ToggleGroupItem value="human" data-testid="filter-opponent-human">Human</ToggleGroupItem>
+          <ToggleGroupItem value="bot" data-testid="filter-opponent-bot">Bot</ToggleGroupItem>
+          <ToggleGroupItem value="both" data-testid="filter-opponent-both">Both</ToggleGroupItem>
+        </ToggleGroup>
+      </div>
 
-            {/* Opponent */}
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Opponent</p>
-              <ToggleGroup
-                type="single"
-                value={filters.opponentType}
-                onValueChange={(v) => {
-                  if (!v) return;
-                  update({ opponentType: v as OpponentType });
-                }}
-                variant="outline"
-                size="sm"
-                data-testid="filter-opponent"
-              >
-                <ToggleGroupItem value="human" data-testid="filter-opponent-human">Human</ToggleGroupItem>
-                <ToggleGroupItem value="bot" data-testid="filter-opponent-bot">Bot</ToggleGroupItem>
-                <ToggleGroupItem value="both" data-testid="filter-opponent-both">Both</ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-
-            {/* Recency */}
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Recency</p>
-              <Select
-                value={filters.recency ?? 'all'}
-                onValueChange={(v) => update({ recency: v === 'all' ? null : (v as Recency) })}
-              >
-                <SelectTrigger size="sm" data-testid="filter-recency">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All time</SelectItem>
-                  <SelectItem value="week">Past week</SelectItem>
-                  <SelectItem value="month">Past month</SelectItem>
-                  <SelectItem value="3months">3 months</SelectItem>
-                  <SelectItem value="6months">6 months</SelectItem>
-                  <SelectItem value="year">1 year</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
+      {/* Recency */}
+      <div>
+        <p className="mb-1 text-xs text-muted-foreground">Recency</p>
+        <Select
+          value={filters.recency ?? 'all'}
+          onValueChange={(v) => update({ recency: v === 'all' ? null : (v as Recency) })}
+        >
+          <SelectTrigger size="sm" data-testid="filter-recency">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All time</SelectItem>
+            <SelectItem value="week">Past week</SelectItem>
+            <SelectItem value="month">Past month</SelectItem>
+            <SelectItem value="3months">3 months</SelectItem>
+            <SelectItem value="6months">6 months</SelectItem>
+            <SelectItem value="year">1 year</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
-
-  return content;
 }

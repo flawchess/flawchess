@@ -1,8 +1,8 @@
 import axios from 'axios';
 import type {
-  BookmarkResponse, BookmarkCreate, BookmarkUpdate,
-  BookmarkReorderRequest, TimeSeriesRequest, TimeSeriesResponse
-} from '@/types/bookmarks';
+  PositionBookmarkResponse, PositionBookmarkCreate, PositionBookmarkUpdate,
+  PositionBookmarkReorderRequest, TimeSeriesRequest, TimeSeriesResponse
+} from '@/types/position_bookmarks';
 import type { RatingHistoryResponse, GlobalStatsResponse } from '@/types/stats';
 
 /**
@@ -45,19 +45,19 @@ apiClient.interceptors.response.use(
   },
 );
 
-// ─── Bookmarks API ────────────────────────────────────────────────────────────
+// ─── Position Bookmarks API ───────────────────────────────────────────────────
 
-export const bookmarksApi = {
+export const positionBookmarksApi = {
   list: () =>
-    apiClient.get<BookmarkResponse[]>('/bookmarks').then(r => r.data),
-  create: (data: BookmarkCreate) =>
-    apiClient.post<BookmarkResponse>('/bookmarks', data).then(r => r.data),
-  updateLabel: (id: number, data: BookmarkUpdate) =>
-    apiClient.put<BookmarkResponse>(`/bookmarks/${id}`, data).then(r => r.data),
+    apiClient.get<PositionBookmarkResponse[]>('/position-bookmarks').then(r => r.data),
+  create: (data: PositionBookmarkCreate) =>
+    apiClient.post<PositionBookmarkResponse>('/position-bookmarks', data).then(r => r.data),
+  updateLabel: (id: number, data: PositionBookmarkUpdate) =>
+    apiClient.put<PositionBookmarkResponse>(`/position-bookmarks/${id}`, data).then(r => r.data),
   remove: (id: number) =>
-    apiClient.delete(`/bookmarks/${id}`),
-  reorder: (req: BookmarkReorderRequest) =>
-    apiClient.put<BookmarkResponse[]>('/bookmarks/reorder', req).then(r => r.data),
+    apiClient.delete(`/position-bookmarks/${id}`),
+  reorder: (req: PositionBookmarkReorderRequest) =>
+    apiClient.put<PositionBookmarkResponse[]>('/position-bookmarks/reorder', req).then(r => r.data),
 };
 
 // ─── Time Series API ──────────────────────────────────────────────────────────

@@ -1,11 +1,11 @@
 import { useState, useCallback } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
-import type { BookmarkResponse } from '@/types/bookmarks';
-import type { BookmarkTimeSeries } from '@/types/bookmarks';
+import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
+import type { BookmarkTimeSeries } from '@/types/position_bookmarks';
 
 interface WinRateChartProps {
-  bookmarks: BookmarkResponse[];
+  bookmarks: PositionBookmarkResponse[];
   series: BookmarkTimeSeries[];
 }
 

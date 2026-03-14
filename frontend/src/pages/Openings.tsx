@@ -9,13 +9,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useBookmarks, useTimeSeries } from '@/hooks/useBookmarks';
-import { WinRateChart } from '@/components/bookmarks/WinRateChart';
-import { WDLBarChart } from '@/components/bookmarks/WDLBarChart';
+import { usePositionBookmarks, useTimeSeries } from '@/hooks/usePositionBookmarks';
+import { WinRateChart } from '@/components/charts/WinRateChart';
+import { WDLBarChart } from '@/components/charts/WDLBarChart';
 import { apiClient } from '@/api/client';
 import { cn } from '@/lib/utils';
 import type { TimeControl, Recency, Platform, OpponentType } from '@/types/api';
-import type { TimeSeriesRequest } from '@/types/bookmarks';
+import type { TimeSeriesRequest } from '@/types/position_bookmarks';
 
 interface StatsFilters {
   timeControls: TimeControl[] | null;
@@ -47,7 +47,7 @@ const PLATFORM_LABELS: Record<Platform, string> = {
 };
 
 export function OpeningsPage() {
-  const { data: bookmarks = [], isLoading } = useBookmarks();
+  const { data: bookmarks = [], isLoading } = usePositionBookmarks();
   const [filters, setFilters] = useState<StatsFilters>(DEFAULT_STATS_FILTERS);
   const [activeRequest, setActiveRequest] = useState<TimeSeriesRequest | null>(null);
 

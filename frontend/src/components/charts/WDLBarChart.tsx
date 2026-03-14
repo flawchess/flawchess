@@ -1,6 +1,6 @@
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import type { BookmarkResponse } from '@/types/bookmarks';
+import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 
 interface WDLStats {
   wins: number;
@@ -10,7 +10,7 @@ interface WDLStats {
 }
 
 interface WDLBarChartProps {
-  bookmarks: BookmarkResponse[];
+  bookmarks: PositionBookmarkResponse[];
   wdlStatsMap: Record<number, WDLStats>;
 }
 

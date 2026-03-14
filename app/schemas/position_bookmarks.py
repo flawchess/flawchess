@@ -1,12 +1,12 @@
-"""Pydantic v2 schemas for bookmark CRUD operations."""
+"""Pydantic v2 schemas for position bookmark CRUD operations."""
 
 import json
 
 from pydantic import BaseModel, ConfigDict, field_serializer, field_validator, model_validator
 
 
-class BookmarkCreate(BaseModel):
-    """Request body for creating a bookmark."""
+class PositionBookmarkCreate(BaseModel):
+    """Request body for creating a position bookmark."""
 
     label: str
     target_hash: int  # JavaScript sends as decimal string; coerced by validator
@@ -31,21 +31,21 @@ class BookmarkCreate(BaseModel):
     is_flipped: bool = False
 
 
-class BookmarkUpdate(BaseModel):
-    """Request body for updating a bookmark (all fields optional)."""
+class PositionBookmarkUpdate(BaseModel):
+    """Request body for updating a position bookmark (all fields optional)."""
 
     label: str | None = None
     sort_order: int | None = None
 
 
-class BookmarkReorderRequest(BaseModel):
-    """Request body for bulk reorder: ordered list of bookmark IDs."""
+class PositionBookmarkReorderRequest(BaseModel):
+    """Request body for bulk reorder: ordered list of position bookmark IDs."""
 
     ids: list[int]
 
 
-class BookmarkResponse(BaseModel):
-    """Response schema for a single bookmark."""
+class PositionBookmarkResponse(BaseModel):
+    """Response schema for a single position bookmark."""
 
     model_config = ConfigDict(from_attributes=True)
 

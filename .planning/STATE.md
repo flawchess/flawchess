@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 06-01 complete
+current_plan: 08-01 complete
 status: executing
-stopped_at: Phase 8 context gathered
-last_updated: "2026-03-14T13:34:34.321Z"
+stopped_at: Completed 08-03-PLAN.md
+last_updated: "2026-03-14T14:26:51.077Z"
 last_activity: "2026-03-14 - Completed quick task 12: Fix opening ECO categorization via openings.tsv"
 progress:
   total_phases: 8
-  completed_phases: 6
-  total_plans: 21
-  completed_plans: 20
+  completed_phases: 7
+  total_plans: 24
+  completed_plans: 23
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
-Phase: 06-optimize-ui-for-claude-chrome-extension-testing
-Status: In Progress — 1/2 plans done
-Current Plan: 06-01 complete
-Stopped At: Phase 8 context gathered
+Phase: 08-rework-games-and-bookmark-tabs
+Status: In Progress — 1/? plans done
+Current Plan: 08-01 complete
+Stopped At: Completed 08-03-PLAN.md
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -35,7 +35,9 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 3 | Analysis API | Complete | 2/2 |
 | 4 | Frontend and Auth | Complete | 3/3 |
 | 5 | Position Bookmarks and W/D/L Charts | Complete | 5/5 |
-| 6 | Optimize UI for Claude Chrome Extension Testing | In Progress | 1/2 |
+| 6 | Optimize UI for Claude Chrome Extension Testing | Complete | 2/2 |
+| 7 | More game statistics and charts | Complete | 3/3 |
+| 8 | Rework Games and Bookmark tabs | Complete | 3/3 |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -109,6 +111,14 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Stats.tsx kept as dead code**: not deleted after Openings.tsx rename — will be removed in cleanup at end of phase 7
 - **RatingChart data model**: flat array of {date, [tc]: rating} rows (one per game) — each row has only one TC key, Recharts handles gaps between TC lines naturally
 - **WDLCategoryChart as local component**: unexported component inside GlobalStatsCharts.tsx — avoids react-refresh/only-export-components lint violation while keeping chart logic co-located
+- **op.rename_table + ALTER INDEX RENAME for bookmarks->position_bookmarks**: preserves existing data for zero-data-loss rename in Alembic migration
+- **PositionBookmarkRepository = sys.modules[__name__] alias**: satisfies import contract while keeping module-level function pattern in position_bookmark_repository
+- **PositionBookmarkCard uses onLoad(bookmark) callback instead of navigate()**: consumer decides navigation behavior — decouples card from routing
+- **WinRateChart and WDLBarChart relocated to components/charts/**: shared chart components now live in neutral folder, use PositionBookmarkResponse type
+- **position-bookmarks query key replaces bookmarks in TanStack Query cache**: all hooks use ['position-bookmarks'] query key for cache invalidation
+- **Dashboard three-section collapsible layout**: Position filter (open by default), Position bookmarks (collapsed), More filters (collapsed) — Played as and Match side toggles moved from FilterPanel into Position filter section
+- **handleLoadBookmark pattern**: chess.loadMoves(bkm.moves), setBoardFlipped(bkm.is_flipped), setFilters to bkm.color + bkm.match_side — consumer decides navigation behavior
+- **Vite proxy /bookmarks -> /position-bookmarks**: proxy entry must match API route prefix; old /bookmarks entry caused black screen on load and 404s on bookmark save
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -133,6 +143,10 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | Phase 07 P02 | 2min | 2 tasks | 4 files |
 | Phase 07 P01 | 5min | 2 tasks | 8 files |
 | Phase 07 P03 | 2min | 2 tasks | 7 files |
+| Phase 08 P01 | 8min | 2 tasks | 9 files |
+| Phase 08 P02 | 6min | 2 tasks | 12 files |
+| Phase 08 P03 | 30min | 3 tasks | 7 files |
+| Phase 08 P03 | 30min | 3 tasks | 7 files |
 
 ### Quick Tasks Completed
 
