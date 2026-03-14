@@ -25,6 +25,7 @@ export default defineConfig({
       '/imports': 'http://localhost:8000',
       '/position-bookmarks': 'http://localhost:8000',
       '/stats': 'http://localhost:8000',
+      '/users': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
     },
   },

@@ -20,7 +20,7 @@ import chess.pgn
 import httpx
 
 from app.core.database import async_session_maker
-from app.repositories import game_repository, import_job_repository
+from app.repositories import game_repository, import_job_repository, user_repository
 from app.services import chesscom_client, lichess_client
 from app.services.zobrist import hashes_for_game
 
@@ -174,6 +174,15 @@ async def run_import(job_id: str) -> None:
                 completed_at=datetime.now(timezone.utc),
             )
             await session.commit()
+
+            # Best-effort: auto-save platform username to user profile
+            try:
+                await user_repository.update_platform_username(
+                    session, job.user_id, job.platform, job.username
+                )
+                await session.commit()
+            except Exception:
+                logger.warning("Failed to save platform username for job %s", job_id)
 
         job.status = JobStatus.COMPLETED
 
