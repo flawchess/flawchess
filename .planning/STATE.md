@@ -6,7 +6,7 @@ current_plan: 09-03 complete
 status: complete
 stopped_at: Completed 09-03 ImportModal redesign with two-mode UI and localStorage removal
 last_updated: "2026-03-14T15:54:42.452Z"
-last_activity: "2026-03-14 - Completed 09-01: backend model expansion, GameRecord enrichment, and profile endpoint"
+last_activity: "2026-03-14 - Completed 09-02: GameCard and GameCardList components with truncated pagination, PAGE_SIZE=20"
 progress:
   total_phases: 9
   completed_phases: 8
@@ -125,6 +125,9 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Dashboard three-section collapsible layout**: Position filter (open by default), Position bookmarks (collapsed), More filters (collapsed) — Played as and Match side toggles moved from FilterPanel into Position filter section
 - **handleLoadBookmark pattern**: chess.loadMoves(bkm.moves), setBoardFlipped(bkm.is_flipped), setFilters to bkm.color + bkm.match_side — consumer decides navigation behavior
 - **Vite proxy /bookmarks -> /position-bookmarks**: proxy entry must match API route prefix; old /bookmarks entry caused black screen on load and 404s on bookmark save
+- **getPaginationItems module-private**: not exported from GameCardList.tsx to satisfy react-refresh/only-export-components ESLint rule
+- **GameCardList replaces GameTable**: drop-in replacement with matching props interface; PAGE_SIZE reduced from 50 to 20 games per page
+- **GameCard left border accent**: border-l-4 with border-l-green-600/border-l-gray-500/border-l-red-600 for win/draw/loss — plain div not shadcn Card
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -180,4 +183,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-14 - Completed 09-01: backend model expansion, GameRecord enrichment, and profile endpoint
+Last activity: 2026-03-14 - Completed 09-02: GameCard and GameCardList components with truncated pagination, PAGE_SIZE=20
