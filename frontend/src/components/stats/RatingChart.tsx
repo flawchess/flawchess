@@ -17,14 +17,44 @@ const chartConfig = {
   classical: { label: 'Classical', color: 'oklch(0.60 0.22 310)' },
 };
 
-const formatTs = (ts: number) =>
-  new Date(ts).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+const DAY_MS = 1000 * 60 * 60 * 24;
 
-/** Compute equally-spaced first-of-month timestamps across the data range. */
-function computeXTicks(minTs: number, maxTs: number): number[] {
-  const spanMs = maxTs - minTs;
-  const spanMonths = spanMs / (1000 * 60 * 60 * 24 * 30.44);
+/** Compute equally-spaced tick timestamps across the data range, adapting to span. */
+function computeXTicks(minTs: number, maxTs: number): { ticks: number[]; mode: 'daily' | 'weekly' | 'monthly' } {
+  const spanDays = (maxTs - minTs) / DAY_MS;
 
+  // Daily ticks for spans up to ~10 days (past week filter)
+  if (spanDays <= 10) {
+    const ticks: number[] = [];
+    const start = new Date(minTs);
+    let cur = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
+    const end = maxTs + DAY_MS; // include the last day
+    while (cur <= end) {
+      ticks.push(cur);
+      cur += DAY_MS;
+    }
+    return { ticks, mode: 'daily' };
+  }
+
+  // Weekly ticks for spans up to ~5 weeks (past month filter)
+  if (spanDays <= 35) {
+    const ticks: number[] = [];
+    const start = new Date(minTs);
+    // Start at the Monday at or before minTs
+    const startDate = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()));
+    const dayOfWeek = startDate.getUTCDay(); // 0=Sun, 1=Mon
+    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    let cur = startDate.getTime() - mondayOffset * DAY_MS;
+    const end = maxTs + DAY_MS;
+    while (cur <= end) {
+      ticks.push(cur);
+      cur += 7 * DAY_MS;
+    }
+    return { ticks, mode: 'weekly' };
+  }
+
+  // Monthly and longer intervals
+  const spanMonths = spanDays / 30.44;
   let intervalMonths: number;
   if (spanMonths <= 6) {
     intervalMonths = 1;
@@ -39,7 +69,6 @@ function computeXTicks(minTs: number, maxTs: number): number[] {
   }
 
   const minDate = new Date(minTs);
-  // Start at the first month boundary at or before minTs
   let cur = new Date(Date.UTC(minDate.getUTCFullYear(), minDate.getUTCMonth(), 1));
 
   const ticks: number[] = [];
@@ -51,7 +80,7 @@ function computeXTicks(minTs: number, maxTs: number): number[] {
     cur = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth() + intervalMonths, 1));
   }
 
-  return ticks;
+  return { ticks, mode: 'monthly' };
 }
 
 export function RatingChart({ data, platform }: RatingChartProps) {
@@ -138,16 +167,18 @@ export function RatingChart({ data, platform }: RatingChartProps) {
     };
   }, [chartData, hiddenKeys]);
 
-  const { xTicks, xDomain } = useMemo(() => {
+  const { xTicks, xDomain, xTickMode } = useMemo(() => {
     if (chartData.length === 0) {
-      return { xTicks: undefined, xDomain: undefined };
+      return { xTicks: undefined, xDomain: undefined, xTickMode: 'monthly' as const };
     }
     const timestamps = chartData.map((row) => row.dateTs as number);
     const minTs = Math.min(...timestamps);
     const maxTs = Math.max(...timestamps);
+    const { ticks, mode } = computeXTicks(minTs, maxTs);
     return {
-      xTicks: computeXTicks(minTs, maxTs),
+      xTicks: ticks,
       xDomain: [minTs, maxTs] as [number, number],
+      xTickMode: mode,
     };
   }, [chartData]);
 
@@ -172,7 +203,16 @@ export function RatingChart({ data, platform }: RatingChartProps) {
           scale="time"
           domain={xDomain}
           ticks={xTicks}
-          tickFormatter={formatTs}
+          tickFormatter={(ts: number) => {
+            const d = new Date(ts);
+            if (xTickMode === 'daily') {
+              return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }
+            if (xTickMode === 'weekly') {
+              return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }
+            return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          }}
           tick={{ fontSize: 12 }}
           allowDuplicatedCategory={false}
         />
