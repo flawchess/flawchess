@@ -3,6 +3,7 @@ import type {
   BookmarkResponse, BookmarkCreate, BookmarkUpdate,
   BookmarkReorderRequest, TimeSeriesRequest, TimeSeriesResponse
 } from '@/types/bookmarks';
+import type { RatingHistoryResponse, GlobalStatsResponse } from '@/types/stats';
 
 /**
  * Central Axios instance.
@@ -64,4 +65,17 @@ export const bookmarksApi = {
 export const timeSeriesApi = {
   fetch: (req: TimeSeriesRequest) =>
     apiClient.post<TimeSeriesResponse>('/analysis/time-series', req).then(r => r.data),
+};
+
+// ─── Stats API ────────────────────────────────────────────────────────────────
+
+export const statsApi = {
+  getRatingHistory: (recency: string | null) =>
+    apiClient.get<RatingHistoryResponse>('/stats/rating-history', {
+      params: recency ? { recency } : {},
+    }).then(r => r.data),
+  getGlobalStats: (recency: string | null) =>
+    apiClient.get<GlobalStatsResponse>('/stats/global', {
+      params: recency ? { recency } : {},
+    }).then(r => r.data),
 };
