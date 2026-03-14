@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { GameCard } from '@/components/results/GameCard';
 import type { GameRecord } from '@/types/api';
@@ -9,6 +10,7 @@ interface GameCardListProps {
   offset: number;
   limit: number;
   onPageChange: (offset: number) => void;
+  headerAction?: ReactNode;
 }
 
 type PaginationItem = number | 'ellipsis-start' | 'ellipsis-end';
@@ -61,6 +63,7 @@ export function GameCardList({
   offset,
   limit,
   onPageChange,
+  headerAction,
 }: GameCardListProps) {
   const totalPages = Math.max(1, Math.ceil(matchedCount / limit));
   const currentPage = Math.floor(offset / limit) + 1;
@@ -76,11 +79,14 @@ export function GameCardList({
 
   return (
     <div data-testid="game-card-list" className="space-y-3">
-      {/* Matched count */}
-      <p className="text-sm text-muted-foreground">
-        <span className="font-medium text-foreground">{matchedCount}</span> of{' '}
-        <span className="font-medium text-foreground">{totalGames}</span> games matched
-      </p>
+      {/* Matched count row */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">{matchedCount}</span> of{' '}
+          <span className="font-medium text-foreground">{totalGames}</span> games matched
+        </p>
+        {headerAction}
+      </div>
 
       {games.length === 0 ? (
         <p className="py-4 text-center text-sm text-muted-foreground">No games to display</p>

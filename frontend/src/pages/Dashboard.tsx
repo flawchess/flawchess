@@ -400,15 +400,15 @@ export function DashboardPage() {
     </div>
   );
 
+  const inlineImportButton = (
+    <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} data-testid="btn-import">
+      <Download className="h-4 w-4" />
+      Import
+    </Button>
+  );
+
   const rightColumn = (
     <div className="flex flex-col gap-4">
-      {/* Import button — always visible at top of games list */}
-      <div className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} data-testid="btn-import">
-          <Download className="h-4 w-4" />
-          Import
-        </Button>
-      </div>
       {positionFilterActive ? (
         /* Position-filtered view */
         analysisResult === null ? (
@@ -440,6 +440,7 @@ export function DashboardPage() {
               offset={analysisOffset}
               limit={PAGE_SIZE}
               onPageChange={handlePageChange}
+              headerAction={inlineImportButton}
             />
           </>
         )
@@ -467,6 +468,7 @@ export function DashboardPage() {
               offset={defaultOffset}
               limit={PAGE_SIZE}
               onPageChange={handleDefaultPageChange}
+              headerAction={inlineImportButton}
             />
           </>
         ) : null
