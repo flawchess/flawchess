@@ -6,6 +6,22 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from app.core.config import settings
 
 
+@pytest.fixture(autouse=True, scope="session")
+def disable_dev_auth_bypass():
+    """Force JWT auth in tests even when ENVIRONMENT=development.
+
+    In development mode, app/users.py sets current_active_user = _dev_bypass_user
+    at import time. This fixture overrides the FastAPI dependency so that tests
+    correctly exercise JWT auth enforcement regardless of ENVIRONMENT setting.
+    """
+    from app.main import app as fastapi_app
+    from app.users import _dev_bypass_user, _jwt_current_active_user
+
+    fastapi_app.dependency_overrides[_dev_bypass_user] = _jwt_current_active_user
+    yield
+    fastapi_app.dependency_overrides.pop(_dev_bypass_user, None)
+
+
 @pytest.fixture
 def starting_board() -> chess.Board:
     """Return a fresh starting-position chess board."""
