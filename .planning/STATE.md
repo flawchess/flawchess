@@ -189,6 +189,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 11 | Toggle series on/off by clicking legend in all Recharts charts | 2026-03-14 | 4c398f0 | [11-toggle-series-on-off-by-clicking-legend-](.planning/quick/11-toggle-series-on-off-by-clicking-legend-/) |
 | 12 | Fix opening ECO categorization via openings.tsv longest-prefix matching | 2026-03-14 | fceef4f | [12-fix-the-opening-eco-categorization-for-c](.planning/quick/12-fix-the-opening-eco-categorization-for-c/) |
 | 13 | Critical bug: games, bookmarks, and usernames not displayed despite valid DB data | 2026-03-14 | 814b76d | [13-critical-bug-games-bookmarks-and-usernam](.planning/quick/13-critical-bug-games-bookmarks-and-usernam/) |
+| 14 | Set up separate test database with auto-migration | 2026-03-14 | 59e99f5 | [14-set-up-separate-test-database-with-auto-](.planning/quick/14-set-up-separate-test-database-with-auto-/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -197,4 +198,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-14 - Completed quick task 13: Fix dev bypass non-deterministic user query
+Last activity: 2026-03-14 - Completed quick task 14: Set up separate test database with auto-migration
