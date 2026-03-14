@@ -157,10 +157,7 @@ export function RatingChart({ data, platform }: RatingChartProps) {
           }}
         />
         <ChartLegend
-          content={<ChartLegendContent hiddenKeys={hiddenKeys} />}
-          onClick={(e) => {
-            if (e?.dataKey) handleLegendClick(e.dataKey as string);
-          }}
+          content={<ChartLegendContent hiddenKeys={hiddenKeys} onClickItem={handleLegendClick} />}
         />
         {TIME_CONTROLS.map((tc) => (
           <Line

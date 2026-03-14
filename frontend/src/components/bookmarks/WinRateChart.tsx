@@ -123,10 +123,7 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
           }}
         />
         <ChartLegend
-          content={<ChartLegendContent hiddenKeys={hiddenKeys} />}
-          onClick={(e) => {
-            if (e?.dataKey) handleLegendClick(e.dataKey as string);
-          }}
+          content={<ChartLegendContent hiddenKeys={hiddenKeys} onClickItem={handleLegendClick} />}
         />
         {bookmarks.map((b) => {
           const key = `bkm_${b.id}`;
