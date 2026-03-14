@@ -55,9 +55,11 @@ export function RatingChart({ data, platform }: RatingChartProps) {
     return rows;
   }, [data]);
 
-  const yDomain = useMemo(() => {
+  const { yDomain, yTicks } = useMemo(() => {
     const visibleTcs = TIME_CONTROLS.filter((tc) => !hiddenKeys.has(tc));
-    if (visibleTcs.length === 0 || chartData.length === 0) return ['auto', 'auto'] as [string, string];
+    if (visibleTcs.length === 0 || chartData.length === 0) {
+      return { yDomain: ['auto', 'auto'] as [string, string], yTicks: undefined };
+    }
 
     let min = Infinity;
     let max = -Infinity;
@@ -71,9 +73,39 @@ export function RatingChart({ data, platform }: RatingChartProps) {
       }
     }
 
-    if (!isFinite(min) || !isFinite(max)) return ['auto', 'auto'] as [string, string];
+    if (!isFinite(min) || !isFinite(max)) {
+      return { yDomain: ['auto', 'auto'] as [string, string], yTicks: undefined };
+    }
 
-    return [Math.floor(min / 100) * 100, Math.ceil(max / 100) * 100] as [number, number];
+    // If all ratings are identical, use a small range so ticks are meaningful
+    if (min === max) {
+      min = min - 50;
+      max = max + 50;
+    }
+
+    const range = max - min;
+
+    // Pick the largest step where range/step >= 4 (aim for 4-8 ticks)
+    const STEP_CANDIDATES = [10, 20, 50, 100, 200, 500];
+    let step = STEP_CANDIDATES[0];
+    for (const candidate of STEP_CANDIDATES) {
+      if (range / candidate >= 4) {
+        step = candidate;
+      }
+    }
+
+    const domainMin = Math.floor(min / step) * step;
+    const domainMax = Math.ceil(max / step) * step;
+
+    const ticks: number[] = [];
+    for (let t = domainMin; t <= domainMax; t += step) {
+      ticks.push(t);
+    }
+
+    return {
+      yDomain: [domainMin, domainMax] as [number, number],
+      yTicks: ticks,
+    };
   }, [chartData, hiddenKeys]);
 
   if (data.length === 0) {
@@ -96,7 +128,7 @@ export function RatingChart({ data, platform }: RatingChartProps) {
           tickFormatter={formatDate}
           interval="preserveStartEnd"
         />
-        <YAxis domain={yDomain} />
+        <YAxis domain={yDomain} ticks={yTicks} />
         <ChartTooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
