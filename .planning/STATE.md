@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 09-03 complete
 status: completed
-stopped_at: Completed 09-08 Fix test regressions - green test suite
-last_updated: "2026-03-14T19:15:49.450Z"
+stopped_at: "Completed quick-13: Fix dev bypass non-deterministic user query"
+last_updated: "2026-03-14T20:01:59.938Z"
 last_activity: "2026-03-14 - Completed 09-02: GameCard and GameCardList components with truncated pagination, PAGE_SIZE=20"
 progress:
   total_phases: 9
@@ -20,7 +20,7 @@ progress:
 Phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
 Status: Complete — 3/3 plans done
 Current Plan: 09-03 complete
-Stopped At: Completed 09-08 Fix test regressions - green test suite
+Stopped At: Completed quick-13: Fix dev bypass non-deterministic user query
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
