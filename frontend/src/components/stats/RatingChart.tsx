@@ -42,6 +42,27 @@ export function RatingChart({ data, platform }: RatingChartProps) {
 
   const testId = `rating-chart-${platform.toLowerCase().replace(/[.\s]/g, '-')}`;
 
+  const yDomain = useMemo(() => {
+    const visibleTcs = TIME_CONTROLS.filter((tc) => !hiddenKeys.has(tc));
+    if (visibleTcs.length === 0) return ['auto', 'auto'] as [string, string];
+
+    let min = Infinity;
+    let max = -Infinity;
+    for (const row of chartData) {
+      for (const tc of visibleTcs) {
+        const val = row[tc];
+        if (typeof val === 'number') {
+          if (val < min) min = val;
+          if (val > max) max = val;
+        }
+      }
+    }
+
+    if (!isFinite(min) || !isFinite(max)) return ['auto', 'auto'] as [string, string];
+
+    return [Math.floor(min / 100) * 100, Math.ceil(max / 100) * 100] as [number, number];
+  }, [chartData, hiddenKeys]);
+
   const chartData = useMemo(() => {
     if (data.length === 0) return [];
 
@@ -75,7 +96,7 @@ export function RatingChart({ data, platform }: RatingChartProps) {
           tickFormatter={formatDate}
           interval="preserveStartEnd"
         />
-        <YAxis />
+        <YAxis domain={yDomain} />
         <ChartTooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
