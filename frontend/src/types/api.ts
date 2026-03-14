@@ -58,6 +58,12 @@ export interface GameRecord {
   time_control_bucket: string | null;
   platform: string;
   platform_url: string | null;
+  user_rating: number | null;
+  opponent_rating: number | null;
+  opening_name: string | null;
+  opening_eco: string | null;
+  user_color: string;
+  move_count: number | null;
 }
 
 export interface AnalysisResponse {
