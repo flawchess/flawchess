@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { Upload, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useUpdatePositionBookmarkLabel, useDeletePositionBookmark } from '@/hooks/usePositionBookmarks';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
@@ -79,6 +80,21 @@ export function PositionBookmarkCard({ bookmark, onLoad }: Props) {
         ☰
       </span>
 
+      {/* Color indicator */}
+      <span
+        className="text-muted-foreground shrink-0 text-sm"
+        data-testid={`bookmark-color-${bookmark.id}`}
+        aria-label={
+          bookmark.color === 'white'
+            ? 'Played as white'
+            : bookmark.color === 'black'
+              ? 'Played as black'
+              : 'Played as any'
+        }
+      >
+        {bookmark.color === 'white' ? '●' : bookmark.color === 'black' ? '○' : '◐'}
+      </span>
+
       {/* Editable label */}
       {isEditing ? (
         <input
@@ -104,28 +120,29 @@ export function PositionBookmarkCard({ bookmark, onLoad }: Props) {
 
       {/* Load button */}
       <Button
-        variant="outline"
-        size="sm"
-        className="h-7 text-xs shrink-0"
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0"
         onMouseDown={() => { isDirtyRef.current = true; }}
         onClick={handleLoad}
         data-testid={`bookmark-btn-load-${bookmark.id}`}
+        aria-label="Load bookmark"
       >
-        Load
+        <Upload size={15} />
       </Button>
 
       {/* Delete button */}
       <Button
         variant="ghost"
-        size="sm"
-        className="h-7 text-xs text-muted-foreground hover:text-destructive shrink-0"
+        size="icon"
+        className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
         onMouseDown={() => { isDirtyRef.current = true; }}
         onClick={handleDelete}
         disabled={deleteBookmark.isPending}
         data-testid={`bookmark-btn-delete-${bookmark.id}`}
         aria-label={`Delete bookmark: ${bookmark.label}`}
       >
-        x
+        <Trash2 size={15} />
       </Button>
     </div>
   );
