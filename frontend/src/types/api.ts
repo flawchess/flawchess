@@ -52,14 +52,11 @@ export interface WDLStats {
 
 export interface GameRecord {
   game_id: number;
-  opponent_username: string | null;
   user_result: UserResult;
   played_at: string | null;
   time_control_bucket: string | null;
   platform: string;
   platform_url: string | null;
-  user_rating: number | null;
-  opponent_rating: number | null;
   opening_name: string | null;
   opening_eco: string | null;
   user_color: string;

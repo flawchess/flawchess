@@ -65,13 +65,13 @@ export function GameCard({ game }: GameCardProps) {
         </span>
         <span className="text-sm truncate">
           <span
-            className={isUserWhite ? 'font-semibold text-foreground' : 'text-muted-foreground'}
+            className={!isUserWhite ? 'font-semibold text-foreground' : 'text-muted-foreground'}
           >
             ○ {whiteName} {whiteRating}
           </span>
           <span className="mx-1.5 text-muted-foreground">vs</span>
           <span
-            className={!isUserWhite ? 'font-semibold text-foreground' : 'text-muted-foreground'}
+            className={isUserWhite ? 'font-semibold text-foreground' : 'text-muted-foreground'}
           >
             ● {blackName} {blackRating}
           </span>

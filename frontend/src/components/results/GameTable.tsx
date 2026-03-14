@@ -81,7 +81,7 @@ export function GameTable({
                       </span>
                     </td>
                     <td className="px-3 py-2 text-foreground">
-                      {game.opponent_username ?? '—'}
+                      {game.user_color === 'white' ? game.black_username : game.white_username ?? '—'}
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">
                       {formatDate(game.played_at)}
