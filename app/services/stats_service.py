@@ -23,6 +23,9 @@ _TIME_CONTROL_ORDER = ["bullet", "blitz", "rapid", "classical"]
 # Color ordering for consistent output.
 _COLOR_ORDER = ["white", "black"]
 
+# Maps derive_user_result() return values to WDL dict keys.
+_OUTCOME_KEY_MAP = {"win": "wins", "draw": "draws", "loss": "losses"}
+
 
 async def get_rating_history(
     session: AsyncSession,
@@ -81,7 +84,7 @@ def _aggregate_wdl(
 
     for label_key, result, user_color in rows:
         outcome = derive_user_result(result, user_color)
-        counts[label_key][outcome + "s"] += 1
+        counts[label_key][_OUTCOME_KEY_MAP[outcome]] += 1
 
     categories = []
     for key in label_order:
