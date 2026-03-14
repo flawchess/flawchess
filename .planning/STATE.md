@@ -4,9 +4,9 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 09-03 complete
 status: completed
-stopped_at: "Completed quick-18: Add color circles and icon buttons to PositionBookmarkCard"
-last_updated: "2026-03-14T21:43:21.721Z"
-last_activity: "2026-03-14 - Completed quick task 17: Move the Import button inline with matched games count"
+stopped_at: "Completed quick-19: Fix x-axis in rating charts - adaptive equal-distance ticks"
+last_updated: "2026-03-14T21:59:18.012Z"
+last_activity: "2026-03-14 - Completed quick task 18: Add color circles and icon buttons to bookmark cards"
 progress:
   total_phases: 9
   completed_phases: 8
@@ -20,7 +20,7 @@ progress:
 Phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
 Status: Complete — 3/3 plans done
 Current Plan: 09-03 complete
-Stopped At: Completed quick-18: Add color circles and icon buttons to PositionBookmarkCard
+Stopped At: Completed quick-19: Fix x-axis in rating charts - adaptive equal-distance ticks
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -136,6 +136,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **useGamesQuery vs useAnalysis split**: useGamesQuery uses useQuery for auto-fetch on mount; useAnalysis useMutation is for Filter button only; enabled=!positionFilterActive prevents redundant API calls when filter is active
 - **Derived user_rating via CASE WHEN**: stats_repository uses CASE WHEN user_color='white' THEN white_rating ELSE black_rating END — no stored user_rating column needed
 - **GameCard opponent bolding**: !isUserWhite for white span bold, isUserWhite for black span bold — the opponent (not the user) is always emphasized
+- **RatingChart numeric timestamp x-axis**: type="number" scale="time" with dateTs field + computeXTicks (adaptive 1/2/3/6/12 month intervals) — eliminates repeated labels; tooltip formats dateTs back to readable date
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -193,6 +194,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 16 | Move the Import button to the top of the games list. Remove the games imported indicator | 2026-03-14 | 300f05d | [16-move-the-import-button-to-the-top-of-the](.planning/quick/16-move-the-import-button-to-the-top-of-the/) |
 | 17 | Move the Import button to the same row as the n of m games matched indicator (right aligned) | 2026-03-14 | 8945bc8 | [17-move-the-import-button-to-the-same-row-a](.planning/quick/17-move-the-import-button-to-the-same-row-a/) |
 | 18 | Add color circles and icon buttons to bookmark cards | 2026-03-14 | 27879d1 | [18-add-color-circles-and-icon-buttons-to-bo](.planning/quick/18-add-color-circles-and-icon-buttons-to-bo/) |
+| 19 | Fix x-axis in rating charts — adaptive equal-distance ticks | 2026-03-14 | c997dcc | [19-fix-x-axis-in-rating-charts-adaptive-equ](.planning/quick/19-fix-x-axis-in-rating-charts-adaptive-equ/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -201,4 +203,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-14 - Completed quick task 18: Add color circles and icon buttons to bookmark cards
+Last activity: 2026-03-14 - Completed quick task 19: Fix x-axis in rating charts - adaptive equal-distance ticks
