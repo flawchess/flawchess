@@ -90,7 +90,7 @@ async def _dev_bypass_user(
     from sqlalchemy import select as sa_select
 
     result = await session.execute(
-        sa_select(User).where(User.is_active == True).limit(1)  # noqa: E712
+        sa_select(User).where(User.is_active == True).order_by(User.id).limit(1)  # noqa: E712
     )
     user = result.unique().scalar_one_or_none()
     if user is None:
