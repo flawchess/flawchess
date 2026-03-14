@@ -192,6 +192,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 14 | Set up separate test database with auto-migration | 2026-03-14 | 59e99f5 | [14-set-up-separate-test-database-with-auto-](.planning/quick/14-set-up-separate-test-database-with-auto-/) |
 | 16 | Move the Import button to the top of the games list. Remove the games imported indicator | 2026-03-14 | 300f05d | [16-move-the-import-button-to-the-top-of-the](.planning/quick/16-move-the-import-button-to-the-top-of-the/) |
 | 17 | Move the Import button to the same row as the n of m games matched indicator (right aligned) | 2026-03-14 | 8945bc8 | [17-move-the-import-button-to-the-same-row-a](.planning/quick/17-move-the-import-button-to-the-same-row-a/) |
+| 18 | Add color circles and icon buttons to bookmark cards | 2026-03-14 | 27879d1 | [18-add-color-circles-and-icon-buttons-to-bo](.planning/quick/18-add-color-circles-and-icon-buttons-to-bo/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -200,4 +201,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-14 - Completed quick task 17: Move the Import button inline with matched games count
+Last activity: 2026-03-14 - Completed quick task 18: Add color circles and icon buttons to bookmark cards
