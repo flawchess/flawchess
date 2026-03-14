@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 09-03 complete
 status: completed
-stopped_at: "Completed 09-04 Backend gap closure: player usernames and optional target_hash"
-last_updated: "2026-03-14T17:16:59.665Z"
+stopped_at: "Completed 09-05 Frontend gap closure: GameCard both-player display and default games list on mount"
+last_updated: "2026-03-14T17:22:58.804Z"
 last_activity: "2026-03-14 - Completed 09-02: GameCard and GameCardList components with truncated pagination, PAGE_SIZE=20"
 progress:
   total_phases: 9
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 29
-  completed_plans: 27
+  completed_plans: 28
 ---
 
 # Project State: Chessalytics
@@ -20,7 +20,7 @@ progress:
 Phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
 Status: Complete — 3/3 plans done
 Current Plan: 09-03 complete
-Stopped At: Completed 09-04 Backend gap closure: player usernames and optional target_hash
+Stopped At: Completed 09-05 Frontend gap closure: GameCard both-player display and default games list on mount
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -131,6 +131,8 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **getPaginationItems module-private**: not exported from GameCardList.tsx to satisfy react-refresh/only-export-components ESLint rule
 - **GameCardList replaces GameTable**: drop-in replacement with matching props interface; PAGE_SIZE reduced from 50 to 20 games per page
 - **GameCard left border accent**: border-l-4 with border-l-green-600/border-l-gray-500/border-l-red-600 for win/draw/loss — plain div not shadcn Card
+- **positionFilterActive flag for Dashboard right-column**: false=auto-fetched default games list (useQuery), true=WDL+position-filtered view (useMutation result)
+- **useGamesQuery vs useAnalysis split**: useGamesQuery uses useQuery for auto-fetch on mount; useAnalysis useMutation is for Filter button only; enabled=!positionFilterActive prevents redundant API calls when filter is active
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -163,6 +165,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | Phase 09 P03 | 3min | 2 tasks | 4 files |
 | Phase 09 P02 | 4min | 2 tasks | 4 files |
 | Phase 09 P04 | 4min | 2 tasks | 8 files |
+| Phase 09 P05 | 4min | 2 tasks | 4 files |
 
 ### Quick Tasks Completed
 

@@ -258,7 +258,7 @@ Plans:
 - GAMES-05: Pagination uses truncated page numbers with ellipsis, page size 20, page change scrolls to top
 
 **Depends on:** Phase 8
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 - [ ] 09-01-PLAN.md — Backend model expansion, migration, schema enrichment, profile endpoint, import username auto-save
