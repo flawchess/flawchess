@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 09-03 complete
 status: completed
-stopped_at: Completed 09-06 Drop redundant user-relative columns and fix GameCard bolding
-last_updated: "2026-03-14T18:46:13.282Z"
+stopped_at: Completed 09-08 Fix test regressions - green test suite
+last_updated: "2026-03-14T19:15:49.450Z"
 last_activity: "2026-03-14 - Completed 09-02: GameCard and GameCardList components with truncated pagination, PAGE_SIZE=20"
 progress:
   total_phases: 9
   completed_phases: 8
-  total_plans: 31
-  completed_plans: 30
+  total_plans: 32
+  completed_plans: 31
 ---
 
 # Project State: Chessalytics
@@ -20,7 +20,7 @@ progress:
 Phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
 Status: Complete — 3/3 plans done
 Current Plan: 09-03 complete
-Stopped At: Completed 09-06 Drop redundant user-relative columns and fix GameCard bolding
+Stopped At: Completed 09-08 Fix test regressions - green test suite
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -56,6 +56,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - Phase 9 added: Rework the games list with game cards, username import, and improved pagination
 
 ### Key Decisions
+- **FastAPI dependency_overrides for test auth bypass**: Use `dependency_overrides[_dev_bypass_user] = _jwt_current_active_user` in session-scoped autouse fixture — intercepts at resolution time regardless of how routers imported the callable; avoids patching module-level attributes directly
 - **ENVIRONMENT setting dev bypass**: `ENVIRONMENT=development` in .env swaps `current_active_user` to `_dev_bypass_user` at import time — returns first active user without JWT; all routers get the bypass automatically since they import from `app.users`
 - **Optional target_hash in analysis**: `target_hash=None` skips the `game_positions` join entirely and queries `games` table directly with `Game.user_id` filter — enables a default "all games" list without position filter
 - **Backfill migration partial data**: `white_username` is NULL for existing games where user played white (own per-game username was never stored); correctly backfilled where known from `opponent_username`
@@ -170,6 +171,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | Phase 09 P05 | 4min | 2 tasks | 4 files |
 | Phase 09 P07 | 5min | 1 tasks | 1 files |
 | Phase 09 P06 | 6min | 2 tasks | 12 files |
+| Phase 09 P08 | 5min | 2 tasks | 2 files |
 
 ### Quick Tasks Completed
 
