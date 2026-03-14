@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 08-01 complete
+current_plan: 09-01 complete
 status: executing
-stopped_at: Phase 9 context gathered
-last_updated: "2026-03-14T15:09:02.750Z"
+stopped_at: Completed 09-01 backend model expansion and profile endpoint
+last_updated: "2026-03-14T15:47:53.083Z"
 last_activity: "2026-03-14 - Completed quick task 12: Fix opening ECO categorization via openings.tsv"
 progress:
   total_phases: 9
   completed_phases: 7
-  total_plans: 24
-  completed_plans: 23
+  total_plans: 27
+  completed_plans: 24
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
-Phase: 08-rework-games-and-bookmark-tabs
-Status: In Progress — 1/? plans done
-Current Plan: 08-01 complete
-Stopped At: Phase 9 context gathered
+Phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
+Status: In Progress — 1/3 plans done
+Current Plan: 09-01 complete
+Stopped At: Completed 09-01 backend model expansion and profile endpoint
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -38,6 +38,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 6 | Optimize UI for Claude Chrome Extension Testing | Complete | 2/2 |
 | 7 | More game statistics and charts | Complete | 3/3 |
 | 8 | Rework Games and Bookmark tabs | Complete | 3/3 |
+| 9 | Rework games list with game cards and improved pagination | In Progress | 1/3 |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -55,6 +56,9 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - Phase 9 added: Rework the games list with game cards, username import, and improved pagination
 
 ### Key Decisions
+- **result.unique().scalar_one() for User queries**: User model has joined eager load on oauth_accounts — must call .unique() before scalar extraction or SQLAlchemy raises InvalidRequestError
+- **update_profile non-None only**: PUT /users/me/profile only applies fields with non-None values so partial updates don't clear existing usernames
+- **Import auto-save best-effort**: platform username saved after final import commit in separate try/except + commit so username save failure doesn't roll back the import
 - **AsyncAttrs import path**: Use `from sqlalchemy.ext.asyncio import AsyncAttrs` (not `sqlalchemy.orm`) in SQLAlchemy 2.0.x
 - **user_id denormalized on game_positions**: Required for composite index lookups without joins on the analysis hot path
 - **BIGINT type_annotation_map**: `Base` class maps `int -> BIGINT` so all `Mapped[int]` columns auto-resolve to BIGINT
@@ -148,6 +152,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | Phase 08 P02 | 6min | 2 tasks | 12 files |
 | Phase 08 P03 | 30min | 3 tasks | 7 files |
 | Phase 08 P03 | 30min | 3 tasks | 7 files |
+| Phase 09 P01 | 5min | 3 tasks | 12 files |
 
 ### Quick Tasks Completed
 
@@ -172,4 +177,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-14 - Completed quick task 12: Fix opening ECO categorization via openings.tsv
+Last activity: 2026-03-14 - Completed 09-01: backend model expansion, GameRecord enrichment, and profile endpoint
