@@ -1,8 +1,8 @@
 # Roadmap: Chessalytics
 
 ## Overview
-- Total phases: 6
-- Total requirements: 21 (v1) + 7 provisional (Phase 5) + 5 provisional (Phase 6)
+- Total phases: 7
+- Total requirements: 21 (v1) + 7 provisional (Phase 5) + 5 provisional (Phase 6) + 6 provisional (Phase 7)
 - Granularity: Coarse
 
 ---
@@ -126,6 +126,7 @@ All 21 v1 requirements are mapped:
 - Phase 4: 3 requirements (ANL-01, AUTH-01, AUTH-02)
 - Phase 5: 7 provisional requirements (BKM-01 through BKM-07)
 - Phase 6: 5 provisional requirements (TEST-01 through TEST-05)
+- Phase 7: 6 provisional requirements (STATS-01 through STATS-06)
 
 ---
 
@@ -185,6 +186,36 @@ Plans:
 4. CLAUDE.md permanently mandates automation-friendly patterns for all future frontend development.
 
 ---
+
+## Phase 7: Add More Game Statistics and Charts
+
+**Goal:** Extend the application with three statistics pages (Openings, Rating, Global Stats) providing rating-over-time charts per platform/time-control, WDL breakdowns by time control and color, and restructured 5-item navigation -- all using existing game data with no schema migration.
+
+**Requirements:**
+- STATS-01: Navigation restructured from 3 to 5 items (Analysis, Bookmarks, Openings, Rating, Global Stats)
+- STATS-02: Openings page replaces Stats with identical content (bookmark WDL bars, win rate chart, all filters)
+- STATS-03: Rating page shows per-platform rating-over-time line charts with togglable time control lines and recency filter
+- STATS-04: Global Stats page shows WDL breakdown by time control and by color with recency filter
+- STATS-05: Backend GET endpoints for rating history and global stats with recency filter and auth
+- STATS-06: ECO extraction test coverage confirms chess.com variation URLs handled correctly
+
+**Depends on:** Phase 6
+**Plans:** 3 plans
+
+Plans:
+- [ ] 07-01-PLAN.md — Backend stats schemas, repository, service, router, and tests
+- [ ] 07-02-PLAN.md — Frontend navigation restructuring and Openings page rename
+- [ ] 07-03-PLAN.md — Rating page and Global Stats page with charts, hooks, and API wiring
+
+**Success Criteria:**
+1. Navigation shows 5 items; Openings page has all existing Stats functionality; /stats redirects to /openings.
+2. Rating page shows two separate Recharts LineCharts (chess.com and lichess) with per-time-control lines togglable via legend click, filtered by recency.
+3. Global Stats page shows WDL stacked bars by time control (4 categories) and by color (2 categories), filtered by recency.
+4. Backend GET /stats/rating-history and GET /stats/global return correct data with auth and recency filter support.
+5. ECO extraction handles chess.com variation URLs gracefully with test coverage.
+
+---
 *Created: 2026-03-11*
 *Phase 5 added: 2026-03-13*
 *Phase 6 planned: 2026-03-13*
+*Phase 7 planned: 2026-03-14*
