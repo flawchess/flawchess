@@ -190,6 +190,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 12 | Fix opening ECO categorization via openings.tsv longest-prefix matching | 2026-03-14 | fceef4f | [12-fix-the-opening-eco-categorization-for-c](.planning/quick/12-fix-the-opening-eco-categorization-for-c/) |
 | 13 | Critical bug: games, bookmarks, and usernames not displayed despite valid DB data | 2026-03-14 | 814b76d | [13-critical-bug-games-bookmarks-and-usernam](.planning/quick/13-critical-bug-games-bookmarks-and-usernam/) |
 | 14 | Set up separate test database with auto-migration | 2026-03-14 | 59e99f5 | [14-set-up-separate-test-database-with-auto-](.planning/quick/14-set-up-separate-test-database-with-auto-/) |
+| 16 | Move the Import button to the top of the games list. Remove the games imported indicator | 2026-03-14 | 300f05d | [16-move-the-import-button-to-the-top-of-the](.planning/quick/16-move-the-import-button-to-the-top-of-the/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -198,4 +199,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-14 - Completed quick task 14: Set up separate test database with auto-migration
+Last activity: 2026-03-14 - Completed quick task 16: Move the Import button to the top of the games list
