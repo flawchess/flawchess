@@ -1,9 +1,67 @@
+import asyncio
+
 import chess
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+
+
+@pytest.fixture(scope="session")
+def test_engine():
+    """Create an async engine for the test DB and run Alembic migrations.
+
+    Session-scoped: created once per test session, disposed at teardown.
+    Runs alembic upgrade head against chessalytics_test to ensure schema is current.
+    Alembic uses a sync URL (postgresql://) because alembic.command.upgrade is synchronous.
+    """
+    # Temporarily patch settings.DATABASE_URL so env.py's config.set_main_option
+    # call uses the test DB URL (env.py overrides sqlalchemy.url from settings).
+    # Keep postgresql+asyncpg:// — env.py uses async_engine_from_config with asyncpg.
+    original_url = settings.DATABASE_URL
+    settings.DATABASE_URL = settings.TEST_DATABASE_URL
+
+    try:
+        alembic_cfg = AlembicConfig("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", settings.TEST_DATABASE_URL)
+        alembic_command.upgrade(alembic_cfg, "head")
+    finally:
+        settings.DATABASE_URL = original_url
+
+    # Create the async engine for the rest of the test session
+    engine = create_async_engine(settings.TEST_DATABASE_URL, echo=False)
+    yield engine
+    # Dispose the engine synchronously at teardown
+    engine.sync_engine.dispose()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def override_get_async_session(test_engine):
+    """Route all FastAPI dependency-injected sessions to the test DB.
+
+    Session-scoped autouse: active for the entire test session.
+    Overrides get_async_session so that ASGITransport-based tests (auth, etc.)
+    write to chessalytics_test instead of the dev DB.
+
+    Uses commit-after-yield (same as production) so auth tests work correctly
+    with real DB writes to the test DB.
+    """
+    from app.core.database import get_async_session
+    from app.main import app as fastapi_app
+
+    test_session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def _test_session_generator():
+        async with test_session_maker() as session:
+            yield session
+            await session.commit()
+
+    fastapi_app.dependency_overrides[get_async_session] = _test_session_generator
+    yield
+    fastapi_app.dependency_overrides.pop(get_async_session, None)
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -37,16 +95,14 @@ def empty_board() -> chess.Board:
 
 
 @pytest_asyncio.fixture
-async def db_session() -> AsyncSession:
+async def db_session(test_engine) -> AsyncSession:
     """Provide an AsyncSession wrapped in a transaction that is rolled back after each test.
 
-    This uses the real PostgreSQL database (DATABASE_URL from settings/env).
+    Uses the test DB engine (chessalytics_test) bound by the test_engine fixture.
     Each test runs inside a transaction that is always rolled back, so tests
     do not pollute each other even without cleanup code.
     """
-    engine = create_async_engine(settings.DATABASE_URL, echo=False)
-
-    async with engine.connect() as conn:
+    async with test_engine.connect() as conn:
         # Begin a transaction that we'll roll back at the end
         await conn.begin()
         # Bind a session to this connection
@@ -56,5 +112,3 @@ async def db_session() -> AsyncSession:
         finally:
             await session.close()
             await conn.rollback()
-
-    await engine.dispose()
