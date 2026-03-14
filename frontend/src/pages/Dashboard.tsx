@@ -15,7 +15,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { useChessGame } from '@/hooks/useChessGame';
-import { useAnalysis } from '@/hooks/useAnalysis';
+import { useAnalysis, useGamesQuery } from '@/hooks/useAnalysis';
 import {
   usePositionBookmarks,
   useCreatePositionBookmark,
@@ -67,6 +67,15 @@ export function DashboardPage() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResponse | null>(null);
   const [analysisOffset, setAnalysisOffset] = useState(0);
 
+  // Default unfiltered games list (shown before user runs a position filter)
+  const [positionFilterActive, setPositionFilterActive] = useState(false);
+  const [defaultOffset, setDefaultOffset] = useState(0);
+  const defaultGames = useGamesQuery({
+    offset: defaultOffset,
+    limit: PAGE_SIZE,
+    enabled: !positionFilterActive,
+  });
+
   // Import state
   const [importOpen, setImportOpen] = useState(false);
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
@@ -85,6 +94,7 @@ export function DashboardPage() {
   // ── Analyze ────────────────────────────────────────────────────────────────
 
   const handleAnalyze = useCallback(async () => {
+    setPositionFilterActive(true);
     const request = {
       target_hash: chess.getHashForAnalysis(filters.matchSide),
       match_side: filters.matchSide,
@@ -134,6 +144,10 @@ export function DashboardPage() {
     setFilters(newFilters);
     setAnalysisOffset(0);
     // Don't auto-run analysis — user must click Filter
+  }, []);
+
+  const handleDefaultPageChange = useCallback((newOffset: number) => {
+    setDefaultOffset(newOffset);
   }, []);
 
   // ── Bookmarks ───────────────────────────────────────────────────────────────
@@ -191,6 +205,8 @@ export function DashboardPage() {
       refetchGameCount();
       // Invalidate user profile so stored usernames reflect latest import
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+      // Refresh default games list so newly imported games appear immediately
+      queryClient.invalidateQueries({ queryKey: ['games'] });
     },
     [refetchGameCount, queryClient],
   );
@@ -257,6 +273,7 @@ export function DashboardPage() {
                 chess.reset();
                 setAnalysisResult(null);
                 setAnalysisOffset(0);
+                setPositionFilterActive(false);
               }}
               onFlip={() => setBoardFlipped((f) => !f)}
               canGoBack={chess.currentPly > 0}
@@ -389,59 +406,70 @@ export function DashboardPage() {
 
   const rightColumn = (
     <div className="flex flex-col gap-4">
-      {analysisResult === null ? (
-        /* Initial state: no analysis run yet */
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          {hasNoGames ? (
-            /* New user with no games */
-            <>
-              <p className="mb-2 text-base font-medium text-foreground">No games imported yet</p>
-              <p className="mb-6 text-sm text-muted-foreground">
-                Import your games from chess.com or lichess to start analyzing positions.
-              </p>
-              {importButton}
-            </>
-          ) : (
-            /* Has games (or count unknown) — show normal prompt */
-            <>
-              <p className="text-base text-muted-foreground">
-                Play moves on the board and click Filter to see your stats
-              </p>
-              {totalGames !== null && totalGames > 0 && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {totalGames.toLocaleString()} games imported
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      ) : noGamesAtAll ? (
-        /* Ran analysis, 0 results, 0 total games */
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <p className="mb-2 text-base font-medium text-foreground">No games imported yet</p>
-          <p className="mb-6 text-sm text-muted-foreground">
-            Import your games from chess.com or lichess to start analyzing positions.
-          </p>
-          {importButton}
-        </div>
-      ) : filtersMatchNothing ? (
-        /* Has games but current filters matched nothing */
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center text-muted-foreground">
-          <p className="text-base">No games matched the current filter settings.</p>
-          <p className="mt-1 text-sm">Try adjusting the time control, opponent, rated, or recency filters.</p>
-        </div>
+      {positionFilterActive ? (
+        /* Position-filtered view */
+        analysisResult === null ? (
+          <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
+            <p className="text-base text-muted-foreground">Filtering...</p>
+          </div>
+        ) : noGamesAtAll ? (
+          /* Ran analysis, 0 results, 0 total games */
+          <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
+            <p className="mb-2 text-base font-medium text-foreground">No games imported yet</p>
+            <p className="mb-6 text-sm text-muted-foreground">
+              Import your games from chess.com or lichess to start analyzing positions.
+            </p>
+            {importButton}
+          </div>
+        ) : filtersMatchNothing ? (
+          /* Has games but current filters matched nothing */
+          <div className="flex flex-1 flex-col items-center justify-center py-12 text-center text-muted-foreground">
+            <p className="text-base">No games matched the current filter settings.</p>
+            <p className="mt-1 text-sm">Try adjusting the time control, opponent, rated, or recency filters.</p>
+          </div>
+        ) : (
+          <>
+            <WDLBar stats={analysisResult.stats} />
+            <GameCardList
+              games={analysisResult.games}
+              matchedCount={analysisResult.matched_count}
+              totalGames={totalGames ?? analysisResult.stats.total}
+              offset={analysisOffset}
+              limit={PAGE_SIZE}
+              onPageChange={handlePageChange}
+            />
+          </>
+        )
       ) : (
-        <>
-          <WDLBar stats={analysisResult.stats} />
-          <GameCardList
-            games={analysisResult.games}
-            matchedCount={analysisResult.matched_count}
-            totalGames={totalGames ?? analysisResult.stats.total}
-            offset={analysisOffset}
-            limit={PAGE_SIZE}
-            onPageChange={handlePageChange}
-          />
-        </>
+        /* Default unfiltered games list — shown on mount */
+        hasNoGames ? (
+          /* New user with zero games */
+          <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
+            <p className="mb-2 text-base font-medium text-foreground">No games imported yet</p>
+            <p className="mb-6 text-sm text-muted-foreground">
+              Import your games from chess.com or lichess to start analyzing positions.
+            </p>
+            {importButton}
+          </div>
+        ) : defaultGames.isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <p className="text-muted-foreground">Loading games...</p>
+          </div>
+        ) : defaultGames.data ? (
+          <>
+            <p className="text-sm text-muted-foreground">
+              {defaultGames.data.matched_count.toLocaleString()} games imported
+            </p>
+            <GameCardList
+              games={defaultGames.data.games}
+              matchedCount={defaultGames.data.matched_count}
+              totalGames={defaultGames.data.matched_count}
+              offset={defaultOffset}
+              limit={PAGE_SIZE}
+              onPageChange={handleDefaultPageChange}
+            />
+          </>
+        ) : null
       )}
     </div>
   );

@@ -31,12 +31,6 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
-function formatRatings(userRating: number | null, opponentRating: number | null): string {
-  const user = userRating !== null ? String(userRating) : '—';
-  const opp = opponentRating !== null ? String(opponentRating) : '—';
-  return `${user} vs ${opp}`;
-}
-
 function formatOpening(name: string | null, eco: string | null): string {
   if (eco && name) return `${eco} ${name}`;
   if (eco) return eco;
@@ -45,9 +39,11 @@ function formatOpening(name: string | null, eco: string | null): string {
 }
 
 export function GameCard({ game }: GameCardProps) {
-  // White circle (U+25CB) for white, black circle (U+25CF) for black
-  const colorCircle = game.user_color === 'white' ? '○' : '●';
-  const colorLabel = game.user_color === 'white' ? 'White' : 'Black';
+  const whiteName = game.white_username ?? '?';
+  const blackName = game.black_username ?? '?';
+  const whiteRating = game.white_rating !== null ? `(${game.white_rating})` : '';
+  const blackRating = game.black_rating !== null ? `(${game.black_rating})` : '';
+  const isUserWhite = game.user_color === 'white';
 
   return (
     <div
@@ -57,7 +53,7 @@ export function GameCard({ game }: GameCardProps) {
         BORDER_CLASSES[game.user_result],
       )}
     >
-      {/* Line 1: Result badge, color indicator, opponent, platform link */}
+      {/* Line 1: Result badge + both players + platform link */}
       <div className="flex items-center gap-2">
         <span
           className={cn(
@@ -67,15 +63,18 @@ export function GameCard({ game }: GameCardProps) {
         >
           {RESULT_LABELS[game.user_result]}
         </span>
-        <span
-          className="text-sm shrink-0"
-          title={colorLabel}
-          aria-label={`Played as ${colorLabel}`}
-        >
-          {colorCircle}
-        </span>
-        <span className="font-semibold text-foreground truncate">
-          {game.opponent_username ?? '—'}
+        <span className="text-sm truncate">
+          <span
+            className={isUserWhite ? 'font-semibold text-foreground' : 'text-muted-foreground'}
+          >
+            ○ {whiteName} {whiteRating}
+          </span>
+          <span className="mx-1.5 text-muted-foreground">vs</span>
+          <span
+            className={!isUserWhite ? 'font-semibold text-foreground' : 'text-muted-foreground'}
+          >
+            ● {blackName} {blackRating}
+          </span>
         </span>
         {game.platform_url ? (
           <a
@@ -93,9 +92,8 @@ export function GameCard({ game }: GameCardProps) {
         )}
       </div>
 
-      {/* Line 2: Ratings, opening, time control, date, moves */}
+      {/* Line 2: Opening, time control, date, moves */}
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-        <span>{formatRatings(game.user_rating, game.opponent_rating)}</span>
         <span className="truncate max-w-[200px]">{formatOpening(game.opening_name, game.opening_eco)}</span>
         {game.time_control_bucket && (
           <span className="capitalize">{game.time_control_bucket}</span>
