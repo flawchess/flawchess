@@ -1,0 +1,318 @@
+"""Integration tests for the stats repository.
+
+All tests use a real PostgreSQL database through the db_session fixture,
+which wraps each test in a rolled-back transaction for isolation.
+
+Coverage:
+- query_rating_history: returns per-platform per-game rating data points
+- query_rating_history: filters by recency_cutoff
+- query_rating_history: excludes games with NULL user_rating
+- query_results_by_time_control: returns (bucket, result, user_color) tuples
+- query_results_by_time_control: filters by recency_cutoff
+- query_results_by_time_control: excludes games with NULL time_control_bucket
+- query_results_by_color: returns (user_color, result) tuples
+- query_results_by_color: filters by recency_cutoff
+"""
+
+import datetime
+import uuid
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.game import Game
+from app.repositories.stats_repository import (
+    query_rating_history,
+    query_results_by_color,
+    query_results_by_time_control,
+)
+
+
+# ---------------------------------------------------------------------------
+# Seed helper
+# ---------------------------------------------------------------------------
+
+
+def _unique_game_id() -> str:
+    """Return a unique platform_game_id for each call."""
+    return str(uuid.uuid4())
+
+
+async def _seed_game(
+    session: AsyncSession,
+    *,
+    user_id: int = 1,
+    platform: str = "chess.com",
+    result: str = "1-0",
+    user_color: str = "white",
+    time_control_bucket: str | None = "blitz",
+    user_rating: int | None = 1500,
+    played_at: datetime.datetime | None = None,
+) -> Game:
+    """Insert a Game row and flush to obtain IDs."""
+    if played_at is None:
+        played_at = datetime.datetime.now(tz=datetime.timezone.utc)
+
+    game = Game(
+        user_id=user_id,
+        platform=platform,
+        platform_game_id=_unique_game_id(),
+        platform_url="https://chess.com/game/123",
+        pgn="1. e4 e5 *",
+        variant="Standard",
+        result=result,
+        user_color=user_color,
+        time_control_str="600+0",
+        time_control_bucket=time_control_bucket,
+        time_control_seconds=600,
+        rated=True,
+        opponent_username="opponent",
+        user_rating=user_rating,
+    )
+    game.played_at = played_at
+    session.add(game)
+    await session.flush()
+    return game
+
+
+# ---------------------------------------------------------------------------
+# TestQueryRatingHistory
+# ---------------------------------------------------------------------------
+
+
+class TestQueryRatingHistory:
+    """Tests for query_rating_history repository function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_game_with_rating(self, db_session: AsyncSession) -> None:
+        """A game with user_rating should appear in results."""
+        await _seed_game(db_session, platform="chess.com", user_rating=1600)
+
+        rows = await query_rating_history(
+            db_session, user_id=1, platform="chess.com", recency_cutoff=None
+        )
+
+        assert len(rows) == 1
+        date_val, rating, tc_bucket = rows[0]
+        assert rating == 1600
+        assert tc_bucket == "blitz"
+
+    @pytest.mark.asyncio
+    async def test_excludes_null_rating(self, db_session: AsyncSession) -> None:
+        """Games without user_rating should be excluded."""
+        await _seed_game(db_session, platform="chess.com", user_rating=None)
+
+        rows = await query_rating_history(
+            db_session, user_id=1, platform="chess.com", recency_cutoff=None
+        )
+
+        assert len(rows) == 0
+
+    @pytest.mark.asyncio
+    async def test_filters_by_platform(self, db_session: AsyncSession) -> None:
+        """Only games from the specified platform are returned."""
+        await _seed_game(db_session, platform="chess.com", user_rating=1500)
+        await _seed_game(db_session, platform="lichess", user_rating=1600)
+
+        chesscom_rows = await query_rating_history(
+            db_session, user_id=1, platform="chess.com", recency_cutoff=None
+        )
+        lichess_rows = await query_rating_history(
+            db_session, user_id=1, platform="lichess", recency_cutoff=None
+        )
+
+        assert len(chesscom_rows) == 1
+        assert len(lichess_rows) == 1
+        assert chesscom_rows[0][1] == 1500
+        assert lichess_rows[0][1] == 1600
+
+    @pytest.mark.asyncio
+    async def test_filters_by_recency_cutoff(self, db_session: AsyncSession) -> None:
+        """Games before the recency_cutoff should be excluded."""
+        old_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=60)
+        recent_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=5)
+        cutoff = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=30)
+
+        await _seed_game(db_session, platform="chess.com", user_rating=1400, played_at=old_date)
+        await _seed_game(db_session, platform="chess.com", user_rating=1600, played_at=recent_date)
+
+        rows = await query_rating_history(
+            db_session, user_id=1, platform="chess.com", recency_cutoff=cutoff
+        )
+
+        assert len(rows) == 1
+        assert rows[0][1] == 1600
+
+    @pytest.mark.asyncio
+    async def test_ordered_by_played_at(self, db_session: AsyncSession) -> None:
+        """Results should be ordered chronologically by played_at."""
+        dates = [
+            datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=i)
+            for i in [10, 5, 1]
+        ]
+        ratings = [1400, 1500, 1600]
+
+        # Insert in reverse order
+        for dt, rating in zip(reversed(dates), reversed(ratings)):
+            await _seed_game(db_session, platform="chess.com", user_rating=rating, played_at=dt)
+
+        rows = await query_rating_history(
+            db_session, user_id=1, platform="chess.com", recency_cutoff=None
+        )
+
+        actual_ratings = [r[1] for r in rows]
+        assert actual_ratings == sorted(actual_ratings)
+
+    @pytest.mark.asyncio
+    async def test_filters_by_user_id(self, db_session: AsyncSession) -> None:
+        """Only games for the specified user_id are returned."""
+        await _seed_game(db_session, user_id=1, platform="chess.com", user_rating=1500)
+        await _seed_game(db_session, user_id=2, platform="chess.com", user_rating=1900)
+
+        rows = await query_rating_history(
+            db_session, user_id=1, platform="chess.com", recency_cutoff=None
+        )
+
+        assert len(rows) == 1
+        assert rows[0][1] == 1500
+
+
+# ---------------------------------------------------------------------------
+# TestQueryResultsByTimeControl
+# ---------------------------------------------------------------------------
+
+
+class TestQueryResultsByTimeControl:
+    """Tests for query_results_by_time_control repository function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_tuple_with_bucket_result_color(self, db_session: AsyncSession) -> None:
+        """Each row should be a (time_control_bucket, result, user_color) tuple."""
+        await _seed_game(
+            db_session, time_control_bucket="blitz", result="1-0", user_color="white"
+        )
+
+        rows = await query_results_by_time_control(
+            db_session, user_id=1, recency_cutoff=None
+        )
+
+        assert len(rows) == 1
+        bucket, result, color = rows[0]
+        assert bucket == "blitz"
+        assert result == "1-0"
+        assert color == "white"
+
+    @pytest.mark.asyncio
+    async def test_excludes_null_time_control_bucket(self, db_session: AsyncSession) -> None:
+        """Games without time_control_bucket should be excluded."""
+        await _seed_game(db_session, time_control_bucket=None)
+
+        rows = await query_results_by_time_control(
+            db_session, user_id=1, recency_cutoff=None
+        )
+
+        assert len(rows) == 0
+
+    @pytest.mark.asyncio
+    async def test_multiple_buckets(self, db_session: AsyncSession) -> None:
+        """Returns games from multiple time control buckets."""
+        await _seed_game(db_session, time_control_bucket="bullet", result="0-1")
+        await _seed_game(db_session, time_control_bucket="blitz", result="1-0")
+        await _seed_game(db_session, time_control_bucket="rapid", result="1/2-1/2")
+
+        rows = await query_results_by_time_control(
+            db_session, user_id=1, recency_cutoff=None
+        )
+
+        assert len(rows) == 3
+        buckets = {r[0] for r in rows}
+        assert buckets == {"bullet", "blitz", "rapid"}
+
+    @pytest.mark.asyncio
+    async def test_filters_by_recency_cutoff(self, db_session: AsyncSession) -> None:
+        """Games before the recency_cutoff should be excluded."""
+        old_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=60)
+        recent_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=5)
+        cutoff = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=30)
+
+        await _seed_game(db_session, time_control_bucket="bullet", played_at=old_date)
+        await _seed_game(db_session, time_control_bucket="blitz", played_at=recent_date)
+
+        rows = await query_results_by_time_control(
+            db_session, user_id=1, recency_cutoff=cutoff
+        )
+
+        assert len(rows) == 1
+        assert rows[0][0] == "blitz"
+
+    @pytest.mark.asyncio
+    async def test_filters_by_user_id(self, db_session: AsyncSession) -> None:
+        """Only games for the specified user_id are returned."""
+        await _seed_game(db_session, user_id=1, time_control_bucket="blitz")
+        await _seed_game(db_session, user_id=2, time_control_bucket="rapid")
+
+        rows = await query_results_by_time_control(
+            db_session, user_id=1, recency_cutoff=None
+        )
+
+        assert len(rows) == 1
+        assert rows[0][0] == "blitz"
+
+
+# ---------------------------------------------------------------------------
+# TestQueryResultsByColor
+# ---------------------------------------------------------------------------
+
+
+class TestQueryResultsByColor:
+    """Tests for query_results_by_color repository function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_tuple_with_color_and_result(self, db_session: AsyncSession) -> None:
+        """Each row should be a (user_color, result) tuple."""
+        await _seed_game(db_session, user_color="white", result="1-0")
+
+        rows = await query_results_by_color(db_session, user_id=1, recency_cutoff=None)
+
+        assert len(rows) == 1
+        color, result = rows[0]
+        assert color == "white"
+        assert result == "1-0"
+
+    @pytest.mark.asyncio
+    async def test_both_colors_returned(self, db_session: AsyncSession) -> None:
+        """Returns games with both white and black user colors."""
+        await _seed_game(db_session, user_color="white", result="1-0")
+        await _seed_game(db_session, user_color="black", result="0-1")
+
+        rows = await query_results_by_color(db_session, user_id=1, recency_cutoff=None)
+
+        assert len(rows) == 2
+        colors = {r[0] for r in rows}
+        assert colors == {"white", "black"}
+
+    @pytest.mark.asyncio
+    async def test_filters_by_recency_cutoff(self, db_session: AsyncSession) -> None:
+        """Games before the recency_cutoff should be excluded."""
+        old_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=60)
+        recent_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=5)
+        cutoff = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=30)
+
+        await _seed_game(db_session, user_color="white", played_at=old_date)
+        await _seed_game(db_session, user_color="black", played_at=recent_date)
+
+        rows = await query_results_by_color(db_session, user_id=1, recency_cutoff=cutoff)
+
+        assert len(rows) == 1
+        assert rows[0][0] == "black"
+
+    @pytest.mark.asyncio
+    async def test_filters_by_user_id(self, db_session: AsyncSession) -> None:
+        """Only games for the specified user_id are returned."""
+        await _seed_game(db_session, user_id=1, user_color="white")
+        await _seed_game(db_session, user_id=2, user_color="black")
+
+        rows = await query_results_by_color(db_session, user_id=1, recency_cutoff=None)
+
+        assert len(rows) == 1
+        assert rows[0][0] == "white"
