@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 09-03 complete
 status: completed
-stopped_at: Completed 09-07 Import modal Add button for unconfigured platforms
-last_updated: "2026-03-14T18:41:59.055Z"
+stopped_at: Completed 09-06 Drop redundant user-relative columns and fix GameCard bolding
+last_updated: "2026-03-14T18:46:13.282Z"
 last_activity: "2026-03-14 - Completed 09-02: GameCard and GameCardList components with truncated pagination, PAGE_SIZE=20"
 progress:
   total_phases: 9
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 31
-  completed_plans: 29
+  completed_plans: 30
 ---
 
 # Project State: Chessalytics
@@ -20,7 +20,7 @@ progress:
 Phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
 Status: Complete — 3/3 plans done
 Current Plan: 09-03 complete
-Stopped At: Completed 09-07 Import modal Add button for unconfigured platforms
+Stopped At: Completed 09-06 Drop redundant user-relative columns and fix GameCard bolding
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -133,6 +133,8 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **GameCard left border accent**: border-l-4 with border-l-green-600/border-l-gray-500/border-l-red-600 for win/draw/loss — plain div not shadcn Card
 - **positionFilterActive flag for Dashboard right-column**: false=auto-fetched default games list (useQuery), true=WDL+position-filtered view (useMutation result)
 - **useGamesQuery vs useAnalysis split**: useGamesQuery uses useQuery for auto-fetch on mount; useAnalysis useMutation is for Filter button only; enabled=!positionFilterActive prevents redundant API calls when filter is active
+- **Derived user_rating via CASE WHEN**: stats_repository uses CASE WHEN user_color='white' THEN white_rating ELSE black_rating END — no stored user_rating column needed
+- **GameCard opponent bolding**: !isUserWhite for white span bold, isUserWhite for black span bold — the opponent (not the user) is always emphasized
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -167,6 +169,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | Phase 09 P04 | 4min | 2 tasks | 8 files |
 | Phase 09 P05 | 4min | 2 tasks | 4 files |
 | Phase 09 P07 | 5min | 1 tasks | 1 files |
+| Phase 09 P06 | 6min | 2 tasks | 12 files |
 
 ### Quick Tasks Completed
 
