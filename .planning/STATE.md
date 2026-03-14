@@ -4,9 +4,9 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 09-03 complete
 status: completed
-stopped_at: "Completed quick-14: Set up separate test database with auto-migration"
-last_updated: "2026-03-14T20:17:24.551Z"
-last_activity: "2026-03-14 - Completed quick task 13: Fix dev bypass non-deterministic user query"
+stopped_at: "Completed quick-16: Move Import button to top of games list"
+last_updated: "2026-03-14T20:53:34.605Z"
+last_activity: "2026-03-14 - Completed quick task 14: Set up separate test database with auto-migration"
 progress:
   total_phases: 9
   completed_phases: 8
@@ -20,7 +20,7 @@ progress:
 Phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
 Status: Complete — 3/3 plans done
 Current Plan: 09-03 complete
-Stopped At: Completed quick-14: Set up separate test database with auto-migration
+Stopped At: Completed quick-16: Move Import button to top of games list
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
