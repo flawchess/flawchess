@@ -21,7 +21,7 @@ type PaginationItem = number | 'ellipsis-start' | 'ellipsis-end';
  * - Otherwise: always show page 1 and last page; show a window of 2 pages on
  *   either side of the current page; fill gaps with ellipsis markers.
  */
-export function getPaginationItems(currentPage: number, totalPages: number): PaginationItem[] {
+function getPaginationItems(currentPage: number, totalPages: number): PaginationItem[] {
   if (totalPages <= 7) {
     return Array.from({ length: totalPages }, (_, i) => i + 1);
   }
