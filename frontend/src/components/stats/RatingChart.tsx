@@ -17,13 +17,42 @@ const chartConfig = {
   classical: { label: 'Classical', color: 'oklch(0.60 0.22 310)' },
 };
 
-const formatDate = (dateStr: string) => {
-  const [year, month] = dateStr.split('-');
-  return new Date(Number(year), Number(month) - 1).toLocaleDateString('en-US', {
-    month: 'short',
-    year: '2-digit',
-  });
-};
+const formatTs = (ts: number) =>
+  new Date(ts).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+
+/** Compute equally-spaced first-of-month timestamps across the data range. */
+function computeXTicks(minTs: number, maxTs: number): number[] {
+  const spanMs = maxTs - minTs;
+  const spanMonths = spanMs / (1000 * 60 * 60 * 24 * 30.44);
+
+  let intervalMonths: number;
+  if (spanMonths <= 6) {
+    intervalMonths = 1;
+  } else if (spanMonths <= 18) {
+    intervalMonths = 2;
+  } else if (spanMonths <= 36) {
+    intervalMonths = 3;
+  } else if (spanMonths <= 72) {
+    intervalMonths = 6;
+  } else {
+    intervalMonths = 12;
+  }
+
+  const minDate = new Date(minTs);
+  // Start at the first month boundary at or before minTs
+  let cur = new Date(Date.UTC(minDate.getUTCFullYear(), minDate.getUTCMonth(), 1));
+
+  const ticks: number[] = [];
+  const maxDate = new Date(maxTs);
+  const endTs = Date.UTC(maxDate.getUTCFullYear(), maxDate.getUTCMonth() + 1, 1);
+
+  while (cur.getTime() <= endTs) {
+    ticks.push(cur.getTime());
+    cur = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth() + intervalMonths, 1));
+  }
+
+  return ticks;
+}
 
 export function RatingChart({ data, platform }: RatingChartProps) {
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
@@ -45,10 +74,11 @@ export function RatingChart({ data, platform }: RatingChartProps) {
   const chartData = useMemo(() => {
     if (data.length === 0) return [];
 
-    // Build a flat array where each entry is { date, [tc]: rating }
+    // Build a flat array where each entry is { date, dateTs, [tc]: rating }
     // One row per data point (each game is its own data point)
     const rows: Record<string, string | number>[] = data.map((point) => ({
       date: point.date,
+      dateTs: new Date(point.date).getTime(),
       [point.time_control_bucket]: point.rating,
     }));
 
@@ -108,6 +138,19 @@ export function RatingChart({ data, platform }: RatingChartProps) {
     };
   }, [chartData, hiddenKeys]);
 
+  const { xTicks, xDomain } = useMemo(() => {
+    if (chartData.length === 0) {
+      return { xTicks: undefined, xDomain: undefined };
+    }
+    const timestamps = chartData.map((row) => row.dateTs as number);
+    const minTs = Math.min(...timestamps);
+    const maxTs = Math.max(...timestamps);
+    return {
+      xTicks: computeXTicks(minTs, maxTs),
+      xDomain: [minTs, maxTs] as [number, number],
+    };
+  }, [chartData]);
+
   if (data.length === 0) {
     return (
       <div
@@ -124,17 +167,28 @@ export function RatingChart({ data, platform }: RatingChartProps) {
       <LineChart data={chartData}>
         <CartesianGrid vertical={false} />
         <XAxis
-          dataKey="date"
-          tickFormatter={formatDate}
-          interval="preserveStartEnd"
+          dataKey="dateTs"
+          type="number"
+          scale="time"
+          domain={xDomain}
+          ticks={xTicks}
+          tickFormatter={formatTs}
+          tick={{ fontSize: 12 }}
+          allowDuplicatedCategory={false}
         />
         <YAxis domain={yDomain} ticks={yTicks} />
         <ChartTooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
+            // label is dateTs (number); format it to a readable date
+            const dateLabel = new Date(label as number).toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+            });
             return (
               <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
-                <div className="font-medium">{label as string}</div>
+                <div className="font-medium">{dateLabel}</div>
                 {payload
                   .filter((item) => item.value !== undefined)
                   .map((item) => {
