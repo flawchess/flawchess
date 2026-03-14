@@ -144,6 +144,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 5 | add opponent filter (human/bot/both) to dashboard analysis | 2026-03-12 | 011e56a | [5-add-opponent-filter-human-bot-both-to-da](.planning/quick/5-add-opponent-filter-human-bot-both-to-da/) |
 | 6 | fix bookmark save: BookmarkResponse int target_hash validation error + session commit | 2026-03-13 | 0e94bcf | [6-fix-bookmark-save-failed-to-save-bookmar](.planning/quick/6-fix-bookmark-save-failed-to-save-bookmar/) |
 | 7 | Store board flip state in bookmarks | 2026-03-13 | c0a980e | [7-store-board-flip-state-in-bookmarks](.planning/quick/7-store-board-flip-state-in-bookmarks/) |
+| 9 | Fix Global Stats 500 error (_aggregate_wdl KeyError) and RatingChart adaptive Y-axis | 2026-03-14 | befcb4c | [9-some-fixes-for-phase-7](.planning/quick/9-some-fixes-for-phase-7/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
