@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 09-01 complete
-status: executing
-stopped_at: Completed 09-01 backend model expansion and profile endpoint
-last_updated: "2026-03-14T15:47:53.083Z"
-last_activity: "2026-03-14 - Completed quick task 12: Fix opening ECO categorization via openings.tsv"
+current_plan: 09-03 complete
+status: complete
+stopped_at: Completed 09-03 ImportModal redesign with two-mode UI and localStorage removal
+last_updated: "2026-03-14T15:54:42.452Z"
+last_activity: "2026-03-14 - Completed 09-01: backend model expansion, GameRecord enrichment, and profile endpoint"
 progress:
   total_phases: 9
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 27
-  completed_plans: 24
+  completed_plans: 26
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
 Phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
-Status: In Progress — 1/3 plans done
-Current Plan: 09-01 complete
-Stopped At: Completed 09-01 backend model expansion and profile endpoint
+Status: Complete — 3/3 plans done
+Current Plan: 09-03 complete
+Stopped At: Completed 09-03 ImportModal redesign with two-mode UI and localStorage removal
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -56,6 +56,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - Phase 9 added: Rework the games list with game cards, username import, and improved pagination
 
 ### Key Decisions
+- **Derived state pattern for ImportModal reset**: track prevProfile/prevOpen in state, compare during render, call setState inline — avoids react-hooks/set-state-in-effect lint violation (same pattern as selectedSquare)
 - **result.unique().scalar_one() for User queries**: User model has joined eager load on oauth_accounts — must call .unique() before scalar extraction or SQLAlchemy raises InvalidRequestError
 - **update_profile non-None only**: PUT /users/me/profile only applies fields with non-None values so partial updates don't clear existing usernames
 - **Import auto-save best-effort**: platform username saved after final import commit in separate try/except + commit so username save failure doesn't roll back the import
@@ -153,6 +154,8 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | Phase 08 P03 | 30min | 3 tasks | 7 files |
 | Phase 08 P03 | 30min | 3 tasks | 7 files |
 | Phase 09 P01 | 5min | 3 tasks | 12 files |
+| Phase 09 P03 | 3min | 2 tasks | 4 files |
+| Phase 09 P02 | 4min | 2 tasks | 4 files |
 
 ### Quick Tasks Completed
 
