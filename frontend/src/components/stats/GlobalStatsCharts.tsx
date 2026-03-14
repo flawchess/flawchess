@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import type { WDLByCategory } from '@/types/stats';
@@ -20,6 +21,20 @@ const chartConfig = {
 };
 
 function WDLCategoryChart({ data, title, testId }: WDLCategoryChartProps) {
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
+
+  const handleLegendClick = useCallback((dataKey: string) => {
+    setHiddenKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(dataKey)) {
+        next.delete(dataKey);
+      } else {
+        next.add(dataKey);
+      }
+      return next;
+    });
+  }, []);
+
   if (data.length === 0) {
     return (
       <div>
@@ -75,10 +90,15 @@ function WDLCategoryChart({ data, title, testId }: WDLCategoryChartProps) {
               );
             }}
           />
-          <ChartLegend content={<ChartLegendContent />} />
-          <Bar dataKey="win_pct" stackId="wdl" fill="var(--color-win_pct)" radius={[0, 0, 0, 0]} />
-          <Bar dataKey="draw_pct" stackId="wdl" fill="var(--color-draw_pct)" />
-          <Bar dataKey="loss_pct" stackId="wdl" fill="var(--color-loss_pct)" radius={[0, 0, 0, 0]} />
+          <ChartLegend
+            content={<ChartLegendContent hiddenKeys={hiddenKeys} />}
+            onClick={(e) => {
+              if (e?.dataKey) handleLegendClick(e.dataKey as string);
+            }}
+          />
+          <Bar dataKey="win_pct" stackId="wdl" fill="var(--color-win_pct)" radius={[0, 0, 0, 0]} hide={hiddenKeys.has('win_pct')} />
+          <Bar dataKey="draw_pct" stackId="wdl" fill="var(--color-draw_pct)" hide={hiddenKeys.has('draw_pct')} />
+          <Bar dataKey="loss_pct" stackId="wdl" fill="var(--color-loss_pct)" radius={[0, 0, 0, 0]} hide={hiddenKeys.has('loss_pct')} />
         </BarChart>
       </ChartContainer>
     </div>
