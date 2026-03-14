@@ -44,11 +44,6 @@ class Game(Base):
     white_rating: Mapped[int | None]
     black_rating: Mapped[int | None]
 
-    # Opponent info (user-relative, kept for backward compatibility)
-    opponent_username: Mapped[str | None] = mapped_column(String(100))
-    opponent_rating: Mapped[int | None]
-    user_rating: Mapped[int | None]
-
     # Opening info (from platform, display only — not used for position matching)
     opening_name: Mapped[str | None] = mapped_column(String(200))
     opening_eco: Mapped[str | None] = mapped_column(String(10))

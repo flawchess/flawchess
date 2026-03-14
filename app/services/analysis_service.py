@@ -144,14 +144,11 @@ async def analyze(
     game_records = [
         GameRecord(
             game_id=g.id,
-            opponent_username=g.opponent_username,
             user_result=derive_user_result(g.result, g.user_color),
             played_at=g.played_at,
             time_control_bucket=g.time_control_bucket,
             platform=g.platform,
             platform_url=g.platform_url,
-            user_rating=g.user_rating,
-            opponent_rating=g.opponent_rating,
             white_username=g.white_username,
             black_username=g.black_username,
             white_rating=g.white_rating,

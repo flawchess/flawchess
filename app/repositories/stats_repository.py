@@ -2,7 +2,7 @@
 
 import datetime
 
-from sqlalchemy import Date, cast, func, select
+from sqlalchemy import Date, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
@@ -19,19 +19,24 @@ async def query_rating_history(
     Each row is a (date, rating, time_control_bucket) tuple where date is a
     Python date object (UTC-normalized from the timestamptz column).
 
-    Excludes games where user_rating or played_at is NULL.
+    Excludes games where the derived user_rating or played_at is NULL.
     Results are ordered chronologically by played_at.
     """
+    user_rating_expr = case(
+        (Game.user_color == "white", Game.white_rating),
+        else_=Game.black_rating,
+    ).label("user_rating")
+
     stmt = (
         select(
             cast(func.timezone("UTC", Game.played_at), Date),
-            Game.user_rating,
+            user_rating_expr,
             Game.time_control_bucket,
         )
         .where(
             Game.user_id == user_id,
             Game.platform == platform,
-            Game.user_rating.is_not(None),
+            user_rating_expr.is_not(None),
             Game.played_at.is_not(None),
         )
         .order_by(Game.played_at)

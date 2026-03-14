@@ -120,15 +120,9 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | N
     username_lower = username.lower()
     if white_username.lower() == username_lower:
         user_color = "white"
-        user_rating = white.get("rating")
-        opponent_rating = black.get("rating")
-        opponent_username = black_username
         opponent_player = black
     else:
         user_color = "black"
-        user_rating = black.get("rating")
-        opponent_rating = white.get("rating")
-        opponent_username = white_username
         opponent_player = white
 
     # PGN string (used for both computer detection and opening lookup)
@@ -176,9 +170,6 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | N
         "black_username": black_username,
         "white_rating": white.get("rating"),
         "black_rating": black.get("rating"),
-        "opponent_username": opponent_username,
-        "opponent_rating": opponent_rating,
-        "user_rating": user_rating,
         "opening_name": opening_name,
         "opening_eco": opening_eco,
         "played_at": played_at,
@@ -218,15 +209,9 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
     username_lower = username.lower()
     if white_username.lower() == username_lower:
         user_color = "white"
-        user_rating = white_player.get("rating")
-        opponent_rating = black_player.get("rating")
-        opponent_username = black_username or None
         opponent_player = black_player
     else:
         user_color = "black"
-        user_rating = black_player.get("rating")
-        opponent_rating = white_player.get("rating")
-        opponent_username = white_username or None
         opponent_player = white_player
 
     # Computer detection: check if opponent is a BOT account
@@ -287,9 +272,6 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
         "black_username": black_username,
         "white_rating": white_player.get("rating"),
         "black_rating": black_player.get("rating"),
-        "opponent_username": opponent_username,
-        "opponent_rating": opponent_rating,
-        "user_rating": user_rating,
         "opening_name": opening_name,
         "opening_eco": opening_eco,
         "played_at": played_at,

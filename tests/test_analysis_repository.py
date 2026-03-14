@@ -51,7 +51,8 @@ async def _seed_game(
     rated: bool = True,
     time_control_bucket: str = "blitz",
     played_at: datetime.datetime | None = None,
-    opponent_username: str = "opponent",
+    white_username: str = "testuser",
+    black_username: str = "opponent",
     platform_url: str | None = "https://chess.com/game/123",
     full_hash: int = 9999,
     white_hash: int = 1111,
@@ -78,7 +79,8 @@ async def _seed_game(
         time_control_bucket=time_control_bucket,
         time_control_seconds=600,
         rated=rated,
-        opponent_username=opponent_username,
+        white_username=white_username,
+        black_username=black_username,
     )
     game.played_at = played_at
     session.add(game)
@@ -394,7 +396,8 @@ class TestDeduplication:
             time_control_bucket="blitz",
             time_control_seconds=600,
             rated=True,
-            opponent_username="opp",
+            white_username="testuser",
+            black_username="opp",
         )
         game.played_at = datetime.datetime.now(tz=datetime.timezone.utc)
         db_session.add(game)

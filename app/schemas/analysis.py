@@ -59,14 +59,11 @@ class GameRecord(BaseModel):
     """A single game that matched the queried position."""
 
     game_id: int
-    opponent_username: str | None
     user_result: Literal["win", "draw", "loss"]
     played_at: datetime.datetime | None
     time_control_bucket: str | None
     platform: str
     platform_url: str | None
-    user_rating: int | None
-    opponent_rating: int | None
     white_username: str | None
     black_username: str | None
     white_rating: int | None
