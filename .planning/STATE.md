@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 05-04 complete
+current_plan: 06-01 complete
 status: executing
-stopped_at: "Completed 06-01: data-testid and accessibility selectors for all non-board frontend components"
-last_updated: "2026-03-13T15:55:14.686Z"
-last_activity: "2026-03-13 - Completed quick task 6: fix bookmark save (validation + session commit)"
+stopped_at: Phase 7 context gathered
+last_updated: "2026-03-14T09:04:35.073Z"
+last_activity: "2026-03-13 - Completed 06-01: data-testid and accessibility selectors for all non-board frontend components"
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 5
   total_plans: 18
   completed_plans: 17
@@ -20,7 +20,7 @@ progress:
 Phase: 06-optimize-ui-for-claude-chrome-extension-testing
 Status: In Progress — 1/2 plans done
 Current Plan: 06-01 complete
-Stopped At: Completed 06-01: data-testid and accessibility selectors for all non-board frontend components
+Stopped At: Phase 7 context gathered
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -48,6 +48,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 ### Roadmap Evolution
 - Phase 5 added: Position bookmarks and W/D/L comparison charts
 - Phase 6 added: Optimize UI for Claude Chrome Extension Testing
+- Phase 7 added: Add more game statistics and charts by replicating the most popular analyses from chess.com and lichess insights
 
 ### Key Decisions
 - **AsyncAttrs import path**: Use `from sqlalchemy.ext.asyncio import AsyncAttrs` (not `sqlalchemy.orm`) in SQLAlchemy 2.0.x
