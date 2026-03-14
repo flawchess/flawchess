@@ -38,14 +38,18 @@ class Game(Base):
     rated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_computer_game: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    # Opponent info
-    opponent_username: Mapped[str | None] = mapped_column(String(100))
-    opponent_rating: Mapped[int | None]
-    user_rating: Mapped[int | None]
+    # Player info (absolute, not user-relative)
+    white_username: Mapped[str | None] = mapped_column(String(100))
+    black_username: Mapped[str | None] = mapped_column(String(100))
+    white_rating: Mapped[int | None]
+    black_rating: Mapped[int | None]
 
     # Opening info (from platform, display only — not used for position matching)
     opening_name: Mapped[str | None] = mapped_column(String(200))
     opening_eco: Mapped[str | None] = mapped_column(String(10))
+
+    # Move count (total full moves in the game)
+    move_count: Mapped[int | None] = mapped_column(nullable=True)
 
     # Timestamps
     played_at: Mapped[datetime.datetime | None]

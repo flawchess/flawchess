@@ -20,8 +20,8 @@ HASH_COLUMN_MAP = {
 def _build_base_query(
     select_entity: Any,
     user_id: int,
-    hash_column: Any,
-    target_hash: int,
+    hash_column: Any | None,
+    target_hash: int | None,
     time_control: list[str] | None,
     platform: list[str] | None,
     rated: bool | None,
@@ -31,22 +31,31 @@ def _build_base_query(
 ) -> Any:
     """Build a filtered SELECT that joins game_positions -> games.
 
-    Uses DISTINCT ON game.id to avoid counting a game multiple times when the
-    target hash appears at more than one ply.
+    When ``target_hash`` is None, queries all games for the user directly from
+    the ``games`` table without a position filter.  When ``target_hash`` is
+    provided, joins ``game_positions`` and filters by hash, using DISTINCT ON
+    game.id to avoid counting a game multiple times when the target hash appears
+    at more than one ply.
 
     ``select_entity`` may be a single ORM entity/column or a list of columns.
     When a list is provided the columns are unpacked into ``select()``.
     """
     entities = select_entity if isinstance(select_entity, list) else [select_entity]
-    base = (
-        select(*entities)
-        .join(GamePosition, GamePosition.game_id == Game.id)
-        .where(
-            GamePosition.user_id == user_id,
-            hash_column == target_hash,
+
+    if target_hash is not None and hash_column is not None:
+        # Position-filtered query: join game_positions and filter by hash
+        base = (
+            select(*entities)
+            .join(GamePosition, GamePosition.game_id == Game.id)
+            .where(
+                GamePosition.user_id == user_id,
+                hash_column == target_hash,
+            )
+            .distinct(Game.id)
         )
-        .distinct(Game.id)
-    )
+    else:
+        # All-games query: no position filter, query games table directly
+        base = select(*entities).where(Game.user_id == user_id)
 
     if time_control is not None:
         base = base.where(Game.time_control_bucket.in_(time_control))
@@ -123,8 +132,8 @@ async def query_time_series(
 async def query_all_results(
     session: AsyncSession,
     user_id: int,
-    hash_column: Any,
-    target_hash: int,
+    hash_column: Any | None,
+    target_hash: int | None,
     time_control: list[str] | None,
     platform: list[str] | None,
     rated: bool | None,
@@ -157,8 +166,8 @@ async def query_all_results(
 async def query_matching_games(
     session: AsyncSession,
     user_id: int,
-    hash_column: Any,
-    target_hash: int,
+    hash_column: Any | None,
+    target_hash: int | None,
     time_control: list[str] | None,
     platform: list[str] | None,
     rated: bool | None,
@@ -190,25 +199,39 @@ async def query_matching_games(
     total: int = (await session.execute(count_stmt)).scalar_one()
 
     # Paginated game objects, ordered most-recent first.
-    # PostgreSQL requires DISTINCT ON expressions to appear first in ORDER BY,
-    # so Game.id must precede played_at in the ORDER BY clause.
-    page_stmt = (
-        _build_base_query(
-            select_entity=Game,
-            user_id=user_id,
-            hash_column=hash_column,
-            target_hash=target_hash,
-            time_control=time_control,
-            platform=platform,
-            rated=rated,
-            opponent_type=opponent_type,
-            recency_cutoff=recency_cutoff,
-            color=color,
-        )
-        .order_by(Game.id, Game.played_at.desc())
-        .offset(offset)
-        .limit(limit)
+    # When DISTINCT ON is used (position-filtered queries), PostgreSQL requires
+    # the DISTINCT ON expression first in ORDER BY, preventing direct date sorting.
+    # Wrap as subquery to deduplicate first, then sort by played_at in outer query.
+    dedup_subq = _build_base_query(
+        select_entity=Game,
+        user_id=user_id,
+        hash_column=hash_column,
+        target_hash=target_hash,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=recency_cutoff,
+        color=color,
     )
+    if target_hash is not None:
+        # DISTINCT ON needs id-first ordering for dedup; outer query re-sorts
+        dedup_subq = dedup_subq.order_by(Game.id)
+        dedup_cte = dedup_subq.cte("deduped_games")
+        page_stmt = (
+            select(Game)
+            .join(dedup_cte, Game.id == dedup_cte.c.id)
+            .order_by(Game.played_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    else:
+        page_stmt = (
+            dedup_subq
+            .order_by(Game.played_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
     result = await session.execute(page_stmt)
     games = list(result.scalars().all())
 

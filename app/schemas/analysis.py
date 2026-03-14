@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 class AnalysisRequest(BaseModel):
     """Request body for POST /analysis/positions."""
 
-    target_hash: int
+    target_hash: int | None = None
 
     @field_validator("target_hash", mode="before")
     @classmethod
@@ -21,7 +21,10 @@ class AnalysisRequest(BaseModel):
         sends the hash as a decimal string; this validator converts it to int
         before the field is processed.  Plain int values pass through unchanged
         for backward compatibility with existing Python callers.
+        None is allowed and means "return all user games" (no position filter).
         """
+        if v is None:
+            return None
         if isinstance(v, str):
             return int(v)
         return v
@@ -56,12 +59,19 @@ class GameRecord(BaseModel):
     """A single game that matched the queried position."""
 
     game_id: int
-    opponent_username: str | None
     user_result: Literal["win", "draw", "loss"]
     played_at: datetime.datetime | None
     time_control_bucket: str | None
     platform: str
     platform_url: str | None
+    white_username: str | None
+    black_username: str | None
+    white_rating: int | None
+    black_rating: int | None
+    opening_name: str | None
+    opening_eco: str | None
+    user_color: str
+    move_count: int | None
 
 
 class AnalysisResponse(BaseModel):

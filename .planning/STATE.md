@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 08-01 complete
-status: executing
-stopped_at: Completed 08-03-PLAN.md
-last_updated: "2026-03-14T14:26:51.077Z"
-last_activity: "2026-03-14 - Completed quick task 12: Fix opening ECO categorization via openings.tsv"
+current_plan: 09-03 complete
+status: completed
+stopped_at: Completed 09-08 Fix test regressions - green test suite
+last_updated: "2026-03-14T19:15:49.450Z"
+last_activity: "2026-03-14 - Completed 09-02: GameCard and GameCardList components with truncated pagination, PAGE_SIZE=20"
 progress:
-  total_phases: 8
-  completed_phases: 7
-  total_plans: 24
-  completed_plans: 23
+  total_phases: 9
+  completed_phases: 8
+  total_plans: 32
+  completed_plans: 31
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
-Phase: 08-rework-games-and-bookmark-tabs
-Status: In Progress — 1/? plans done
-Current Plan: 08-01 complete
-Stopped At: Completed 08-03-PLAN.md
+Phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
+Status: Complete — 3/3 plans done
+Current Plan: 09-03 complete
+Stopped At: Completed 09-08 Fix test regressions - green test suite
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -38,6 +38,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 6 | Optimize UI for Claude Chrome Extension Testing | Complete | 2/2 |
 | 7 | More game statistics and charts | Complete | 3/3 |
 | 8 | Rework Games and Bookmark tabs | Complete | 3/3 |
+| 9 | Rework games list with game cards and improved pagination | In Progress | 4/5 |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -52,8 +53,17 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - Phase 6 added: Optimize UI for Claude Chrome Extension Testing
 - Phase 7 added: Add more game statistics and charts by replicating the most popular analyses from chess.com and lichess insights
 - Phase 8 added: Rework Games and Bookmark tabs: position filter section, position bookmarks section, rename bookmarks to position_bookmarks
+- Phase 9 added: Rework the games list with game cards, username import, and improved pagination
 
 ### Key Decisions
+- **FastAPI dependency_overrides for test auth bypass**: Use `dependency_overrides[_dev_bypass_user] = _jwt_current_active_user` in session-scoped autouse fixture — intercepts at resolution time regardless of how routers imported the callable; avoids patching module-level attributes directly
+- **ENVIRONMENT setting dev bypass**: `ENVIRONMENT=development` in .env swaps `current_active_user` to `_dev_bypass_user` at import time — returns first active user without JWT; all routers get the bypass automatically since they import from `app.users`
+- **Optional target_hash in analysis**: `target_hash=None` skips the `game_positions` join entirely and queries `games` table directly with `Game.user_id` filter — enables a default "all games" list without position filter
+- **Backfill migration partial data**: `white_username` is NULL for existing games where user played white (own per-game username was never stored); correctly backfilled where known from `opponent_username`
+- **Derived state pattern for ImportModal reset**: track prevProfile/prevOpen in state, compare during render, call setState inline — avoids react-hooks/set-state-in-effect lint violation (same pattern as selectedSquare)
+- **result.unique().scalar_one() for User queries**: User model has joined eager load on oauth_accounts — must call .unique() before scalar extraction or SQLAlchemy raises InvalidRequestError
+- **update_profile non-None only**: PUT /users/me/profile only applies fields with non-None values so partial updates don't clear existing usernames
+- **Import auto-save best-effort**: platform username saved after final import commit in separate try/except + commit so username save failure doesn't roll back the import
 - **AsyncAttrs import path**: Use `from sqlalchemy.ext.asyncio import AsyncAttrs` (not `sqlalchemy.orm`) in SQLAlchemy 2.0.x
 - **user_id denormalized on game_positions**: Required for composite index lookups without joins on the analysis hot path
 - **BIGINT type_annotation_map**: `Base` class maps `int -> BIGINT` so all `Mapped[int]` columns auto-resolve to BIGINT
@@ -119,6 +129,13 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Dashboard three-section collapsible layout**: Position filter (open by default), Position bookmarks (collapsed), More filters (collapsed) — Played as and Match side toggles moved from FilterPanel into Position filter section
 - **handleLoadBookmark pattern**: chess.loadMoves(bkm.moves), setBoardFlipped(bkm.is_flipped), setFilters to bkm.color + bkm.match_side — consumer decides navigation behavior
 - **Vite proxy /bookmarks -> /position-bookmarks**: proxy entry must match API route prefix; old /bookmarks entry caused black screen on load and 404s on bookmark save
+- **getPaginationItems module-private**: not exported from GameCardList.tsx to satisfy react-refresh/only-export-components ESLint rule
+- **GameCardList replaces GameTable**: drop-in replacement with matching props interface; PAGE_SIZE reduced from 50 to 20 games per page
+- **GameCard left border accent**: border-l-4 with border-l-green-600/border-l-gray-500/border-l-red-600 for win/draw/loss — plain div not shadcn Card
+- **positionFilterActive flag for Dashboard right-column**: false=auto-fetched default games list (useQuery), true=WDL+position-filtered view (useMutation result)
+- **useGamesQuery vs useAnalysis split**: useGamesQuery uses useQuery for auto-fetch on mount; useAnalysis useMutation is for Filter button only; enabled=!positionFilterActive prevents redundant API calls when filter is active
+- **Derived user_rating via CASE WHEN**: stats_repository uses CASE WHEN user_color='white' THEN white_rating ELSE black_rating END — no stored user_rating column needed
+- **GameCard opponent bolding**: !isUserWhite for white span bold, isUserWhite for black span bold — the opponent (not the user) is always emphasized
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -147,6 +164,14 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | Phase 08 P02 | 6min | 2 tasks | 12 files |
 | Phase 08 P03 | 30min | 3 tasks | 7 files |
 | Phase 08 P03 | 30min | 3 tasks | 7 files |
+| Phase 09 P01 | 5min | 3 tasks | 12 files |
+| Phase 09 P03 | 3min | 2 tasks | 4 files |
+| Phase 09 P02 | 4min | 2 tasks | 4 files |
+| Phase 09 P04 | 4min | 2 tasks | 8 files |
+| Phase 09 P05 | 4min | 2 tasks | 4 files |
+| Phase 09 P07 | 5min | 1 tasks | 1 files |
+| Phase 09 P06 | 6min | 2 tasks | 12 files |
+| Phase 09 P08 | 5min | 2 tasks | 2 files |
 
 ### Quick Tasks Completed
 
@@ -171,4 +196,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-14 - Completed quick task 12: Fix opening ECO categorization via openings.tsv
+Last activity: 2026-03-14 - Completed 09-02: GameCard and GameCardList components with truncated pagination, PAGE_SIZE=20

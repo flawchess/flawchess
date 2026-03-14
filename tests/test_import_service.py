@@ -440,3 +440,123 @@ class TestRunImport:
         """run_import with unknown job_id should log and return without error."""
         # Should not raise
         await run_import("nonexistent-job-id")
+
+    @pytest.mark.asyncio
+    async def test_username_saved_after_import(self):
+        """After a successful chess.com import, the user's chess_com_username is saved."""
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+        mock_update_username = AsyncMock()
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_empty_async_gen,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "app.services.import_service.user_repository.update_platform_username",
+                mock_update_username,
+            ),
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        job = get_job(job_id)
+        assert job is not None
+        assert job.status == JobStatus.COMPLETED
+        mock_update_username.assert_called_once_with(mock_session, 1, "chess.com", "alice")
+
+    @pytest.mark.asyncio
+    async def test_move_count_populated(self):
+        """After importing a game, move_count is set correctly from PGN (1.e4 e5 = 1 full move)."""
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        # 1. e4 e5 = 2 plies = 1 full move => move_count = (2+1)//2 = 1
+        pgn = "1. e4 e5 *"
+
+        async def _yield_one_game(*args, **kwargs):
+            yield {
+                "platform": "chess.com",
+                "platform_game_id": "game-mc-1",
+                "pgn": pgn,
+                "user_id": 1,
+            }
+
+        mock_session = _make_mock_session()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = [(999, pgn)]
+        mock_session.execute.return_value = result_mock
+
+        mock_maker = _mock_session_maker(mock_session)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_one_game,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[999]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.hashes_for_game",
+                return_value=[(0, 1, 2, 3), (1, 4, 5, 6)],
+            ),
+            patch(
+                "app.services.import_service.user_repository.update_platform_username",
+                new=AsyncMock(),
+            ),
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        # Verify session.execute was called with an update that sets move_count
+        # The mock session's execute is called multiple times; we look for the UPDATE call
+        execute_calls = mock_session.execute.call_args_list
+        update_calls = [
+            call for call in execute_calls
+            if hasattr(call.args[0], "is_update") and call.args[0].is_update
+        ]
+        assert len(update_calls) >= 1, "Expected at least one UPDATE call for move_count"

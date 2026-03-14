@@ -44,7 +44,8 @@ async def _seed_game(
     rated: bool = True,
     time_control_bucket: str = "blitz",
     played_at: datetime.datetime | None = None,
-    opponent_username: str = "opponent",
+    white_username: str = "testuser",
+    black_username: str = "opponent",
     platform_url: str | None = "https://www.chess.com/game/live/12345",
     full_hash: int = 11111111,
     white_hash: int = 22222222,
@@ -67,7 +68,8 @@ async def _seed_game(
         time_control_bucket=time_control_bucket,
         time_control_seconds=600,
         rated=rated,
-        opponent_username=opponent_username,
+        white_username=white_username,
+        black_username=black_username,
     )
     game.played_at = played_at
     session.add(game)
@@ -202,13 +204,14 @@ class TestGameRecord:
 
     @pytest.mark.asyncio
     async def test_game_record_fields(self, db_session: AsyncSession) -> None:
-        """GameRecord exposes opponent, result, date, time_control, platform_url."""
+        """GameRecord exposes players, result, date, time_control, platform_url."""
         played = datetime.datetime(2024, 6, 15, 12, 0, 0, tzinfo=datetime.timezone.utc)
         await _seed_game(
             db_session,
             result="1-0",
             user_color="white",
-            opponent_username="grandmaster_bot",
+            white_username="testuser",
+            black_username="grandmaster_bot",
             played_at=played,
             time_control_bucket="rapid",
             platform="chess.com",
@@ -222,7 +225,10 @@ class TestGameRecord:
         assert len(response.games) == 1
         rec = response.games[0]
 
-        assert rec.opponent_username == "grandmaster_bot"
+        # User is white, opponent is black
+        assert rec.white_username == "testuser"
+        assert rec.black_username == "grandmaster_bot"
+        assert rec.user_color == "white"
         assert rec.user_result == "win"
         assert rec.played_at == played
         assert rec.time_control_bucket == "rapid"

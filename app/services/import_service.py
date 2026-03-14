@@ -8,6 +8,7 @@ Manages import jobs from chess.com and lichess, including:
 - Zobrist hash computation and bulk DB persistence
 """
 
+import io
 import logging
 import uuid
 from dataclasses import dataclass
@@ -15,10 +16,11 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+import chess.pgn
 import httpx
 
 from app.core.database import async_session_maker
-from app.repositories import game_repository, import_job_repository
+from app.repositories import game_repository, import_job_repository, user_repository
 from app.services import chesscom_client, lichess_client
 from app.services.zobrist import hashes_for_game
 
@@ -173,6 +175,15 @@ async def run_import(job_id: str) -> None:
             )
             await session.commit()
 
+            # Best-effort: auto-save platform username to user profile
+            try:
+                await user_repository.update_platform_username(
+                    session, job.user_id, job.platform, job.username
+                )
+                await session.commit()
+            except Exception:
+                logger.warning("Failed to save platform username for job %s", job_id)
+
         job.status = JobStatus.COMPLETED
 
     except Exception as exc:
@@ -312,6 +323,19 @@ async def _flush_batch(
                     "full_hash": full_hash,
                 }
             )
+
+        # Compute and persist move_count for this new game
+        try:
+            from sqlalchemy import update as sa_update
+            game_obj = chess.pgn.read_game(io.StringIO(pgn))
+            if game_obj is not None:
+                ply_count = len(list(game_obj.mainline_moves()))
+                move_count = (ply_count + 1) // 2
+                await session.execute(
+                    sa_update(Game).where(Game.id == game_id).values(move_count=move_count)
+                )
+        except Exception:
+            logger.warning("Failed to compute move_count for game_id=%s", game_id)
 
     if position_rows:
         await game_repository.bulk_insert_positions(session, position_rows)

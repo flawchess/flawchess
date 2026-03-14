@@ -46,10 +46,15 @@ async def _seed_game(
     result: str = "1-0",
     user_color: str = "white",
     time_control_bucket: str | None = "blitz",
-    user_rating: int | None = 1500,
+    white_rating: int | None = None,
+    black_rating: int | None = None,
     played_at: datetime.datetime | None = None,
 ) -> Game:
-    """Insert a Game row and flush to obtain IDs."""
+    """Insert a Game row and flush to obtain IDs.
+
+    Pass white_rating/black_rating to set the player ratings.
+    The effective user_rating is derived by the repository via CASE WHEN user_color.
+    """
     if played_at is None:
         played_at = datetime.datetime.now(tz=datetime.timezone.utc)
 
@@ -66,8 +71,8 @@ async def _seed_game(
         time_control_bucket=time_control_bucket,
         time_control_seconds=600,
         rated=True,
-        opponent_username="opponent",
-        user_rating=user_rating,
+        white_rating=white_rating,
+        black_rating=black_rating,
     )
     game.played_at = played_at
     session.add(game)
@@ -85,8 +90,8 @@ class TestQueryRatingHistory:
 
     @pytest.mark.asyncio
     async def test_returns_game_with_rating(self, db_session: AsyncSession) -> None:
-        """A game with user_rating should appear in results."""
-        await _seed_game(db_session, platform="chess.com", user_rating=1600)
+        """A game with white_rating (user is white) should appear in results."""
+        await _seed_game(db_session, platform="chess.com", user_color="white", white_rating=1600)
 
         rows = await query_rating_history(
             db_session, user_id=99999, platform="chess.com", recency_cutoff=None
@@ -99,8 +104,8 @@ class TestQueryRatingHistory:
 
     @pytest.mark.asyncio
     async def test_excludes_null_rating(self, db_session: AsyncSession) -> None:
-        """Games without user_rating should be excluded."""
-        await _seed_game(db_session, platform="chess.com", user_rating=None)
+        """Games without white_rating when user is white should be excluded."""
+        await _seed_game(db_session, platform="chess.com", user_color="white", white_rating=None)
 
         rows = await query_rating_history(
             db_session, user_id=99999, platform="chess.com", recency_cutoff=None
@@ -111,8 +116,8 @@ class TestQueryRatingHistory:
     @pytest.mark.asyncio
     async def test_filters_by_platform(self, db_session: AsyncSession) -> None:
         """Only games from the specified platform are returned."""
-        await _seed_game(db_session, platform="chess.com", user_rating=1500)
-        await _seed_game(db_session, platform="lichess", user_rating=1600)
+        await _seed_game(db_session, platform="chess.com", user_color="white", white_rating=1500)
+        await _seed_game(db_session, platform="lichess", user_color="white", white_rating=1600)
 
         chesscom_rows = await query_rating_history(
             db_session, user_id=99999, platform="chess.com", recency_cutoff=None
@@ -133,8 +138,8 @@ class TestQueryRatingHistory:
         recent_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=5)
         cutoff = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=30)
 
-        await _seed_game(db_session, platform="chess.com", user_rating=1400, played_at=old_date)
-        await _seed_game(db_session, platform="chess.com", user_rating=1600, played_at=recent_date)
+        await _seed_game(db_session, platform="chess.com", user_color="white", white_rating=1400, played_at=old_date)
+        await _seed_game(db_session, platform="chess.com", user_color="white", white_rating=1600, played_at=recent_date)
 
         rows = await query_rating_history(
             db_session, user_id=99999, platform="chess.com", recency_cutoff=cutoff
@@ -154,7 +159,7 @@ class TestQueryRatingHistory:
 
         # Insert in reverse order
         for dt, rating in zip(reversed(dates), reversed(ratings)):
-            await _seed_game(db_session, platform="chess.com", user_rating=rating, played_at=dt)
+            await _seed_game(db_session, platform="chess.com", user_color="white", white_rating=rating, played_at=dt)
 
         rows = await query_rating_history(
             db_session, user_id=99999, platform="chess.com", recency_cutoff=None
@@ -166,8 +171,8 @@ class TestQueryRatingHistory:
     @pytest.mark.asyncio
     async def test_filters_by_user_id(self, db_session: AsyncSession) -> None:
         """Only games for the specified user_id are returned."""
-        await _seed_game(db_session, user_id=99999, platform="chess.com", user_rating=1500)
-        await _seed_game(db_session, user_id=2, platform="chess.com", user_rating=1900)
+        await _seed_game(db_session, user_id=99999, platform="chess.com", user_color="white", white_rating=1500)
+        await _seed_game(db_session, user_id=2, platform="chess.com", user_color="white", white_rating=1900)
 
         rows = await query_rating_history(
             db_session, user_id=99999, platform="chess.com", recency_cutoff=None

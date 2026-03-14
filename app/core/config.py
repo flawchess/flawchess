@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     BACKEND_URL: str = "http://localhost:8000"
     # Frontend base URL — used to build OAuth redirect back to SPA
     FRONTEND_URL: str = "http://localhost:5173"
+    # Environment: "development" bypasses JWT auth on all endpoints
+    ENVIRONMENT: str = "production"
 
     model_config = SettingsConfigDict(env_file=".env")
 

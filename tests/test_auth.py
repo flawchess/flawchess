@@ -199,7 +199,7 @@ class TestUserIsolation:
             user_id=user_a_id,
             platform="chess.com",
             platform_game_id=f"isolation-test-{uuid.uuid4().hex[:8]}",
-            opponent_username="opponent",
+            black_username="opponent",
             result="1-0",
             user_color="white",
             played_at=datetime.datetime.now(tz=datetime.timezone.utc),

@@ -27,8 +27,8 @@ export type OpponentType = 'human' | 'bot' | 'both';
 export type UserResult = 'win' | 'draw' | 'loss';
 
 export interface AnalysisRequest {
-  /** Hash sent as string to avoid JS precision loss for large 64-bit integers */
-  target_hash: string;
+  /** Hash sent as string to avoid JS precision loss. Optional -- omit to get all games. */
+  target_hash?: string;
   match_side?: MatchSide;
   time_control?: TimeControl[] | null;
   platform?: Platform[] | null;
@@ -52,12 +52,19 @@ export interface WDLStats {
 
 export interface GameRecord {
   game_id: number;
-  opponent_username: string | null;
   user_result: UserResult;
   played_at: string | null;
   time_control_bucket: string | null;
   platform: string;
   platform_url: string | null;
+  opening_name: string | null;
+  opening_eco: string | null;
+  user_color: string;
+  move_count: number | null;
+  white_username: string | null;
+  black_username: string | null;
+  white_rating: number | null;
+  black_rating: number | null;
 }
 
 export interface AnalysisResponse {
