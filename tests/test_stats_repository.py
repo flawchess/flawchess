@@ -41,7 +41,7 @@ def _unique_game_id() -> str:
 async def _seed_game(
     session: AsyncSession,
     *,
-    user_id: int = 1,
+    user_id: int = 99999,
     platform: str = "chess.com",
     result: str = "1-0",
     user_color: str = "white",
@@ -89,7 +89,7 @@ class TestQueryRatingHistory:
         await _seed_game(db_session, platform="chess.com", user_rating=1600)
 
         rows = await query_rating_history(
-            db_session, user_id=1, platform="chess.com", recency_cutoff=None
+            db_session, user_id=99999, platform="chess.com", recency_cutoff=None
         )
 
         assert len(rows) == 1
@@ -103,7 +103,7 @@ class TestQueryRatingHistory:
         await _seed_game(db_session, platform="chess.com", user_rating=None)
 
         rows = await query_rating_history(
-            db_session, user_id=1, platform="chess.com", recency_cutoff=None
+            db_session, user_id=99999, platform="chess.com", recency_cutoff=None
         )
 
         assert len(rows) == 0
@@ -115,10 +115,10 @@ class TestQueryRatingHistory:
         await _seed_game(db_session, platform="lichess", user_rating=1600)
 
         chesscom_rows = await query_rating_history(
-            db_session, user_id=1, platform="chess.com", recency_cutoff=None
+            db_session, user_id=99999, platform="chess.com", recency_cutoff=None
         )
         lichess_rows = await query_rating_history(
-            db_session, user_id=1, platform="lichess", recency_cutoff=None
+            db_session, user_id=99999, platform="lichess", recency_cutoff=None
         )
 
         assert len(chesscom_rows) == 1
@@ -137,7 +137,7 @@ class TestQueryRatingHistory:
         await _seed_game(db_session, platform="chess.com", user_rating=1600, played_at=recent_date)
 
         rows = await query_rating_history(
-            db_session, user_id=1, platform="chess.com", recency_cutoff=cutoff
+            db_session, user_id=99999, platform="chess.com", recency_cutoff=cutoff
         )
 
         assert len(rows) == 1
@@ -157,7 +157,7 @@ class TestQueryRatingHistory:
             await _seed_game(db_session, platform="chess.com", user_rating=rating, played_at=dt)
 
         rows = await query_rating_history(
-            db_session, user_id=1, platform="chess.com", recency_cutoff=None
+            db_session, user_id=99999, platform="chess.com", recency_cutoff=None
         )
 
         actual_ratings = [r[1] for r in rows]
@@ -166,11 +166,11 @@ class TestQueryRatingHistory:
     @pytest.mark.asyncio
     async def test_filters_by_user_id(self, db_session: AsyncSession) -> None:
         """Only games for the specified user_id are returned."""
-        await _seed_game(db_session, user_id=1, platform="chess.com", user_rating=1500)
+        await _seed_game(db_session, user_id=99999, platform="chess.com", user_rating=1500)
         await _seed_game(db_session, user_id=2, platform="chess.com", user_rating=1900)
 
         rows = await query_rating_history(
-            db_session, user_id=1, platform="chess.com", recency_cutoff=None
+            db_session, user_id=99999, platform="chess.com", recency_cutoff=None
         )
 
         assert len(rows) == 1
@@ -193,7 +193,7 @@ class TestQueryResultsByTimeControl:
         )
 
         rows = await query_results_by_time_control(
-            db_session, user_id=1, recency_cutoff=None
+            db_session, user_id=99999, recency_cutoff=None
         )
 
         assert len(rows) == 1
@@ -208,7 +208,7 @@ class TestQueryResultsByTimeControl:
         await _seed_game(db_session, time_control_bucket=None)
 
         rows = await query_results_by_time_control(
-            db_session, user_id=1, recency_cutoff=None
+            db_session, user_id=99999, recency_cutoff=None
         )
 
         assert len(rows) == 0
@@ -221,7 +221,7 @@ class TestQueryResultsByTimeControl:
         await _seed_game(db_session, time_control_bucket="rapid", result="1/2-1/2")
 
         rows = await query_results_by_time_control(
-            db_session, user_id=1, recency_cutoff=None
+            db_session, user_id=99999, recency_cutoff=None
         )
 
         assert len(rows) == 3
@@ -239,7 +239,7 @@ class TestQueryResultsByTimeControl:
         await _seed_game(db_session, time_control_bucket="blitz", played_at=recent_date)
 
         rows = await query_results_by_time_control(
-            db_session, user_id=1, recency_cutoff=cutoff
+            db_session, user_id=99999, recency_cutoff=cutoff
         )
 
         assert len(rows) == 1
@@ -248,11 +248,11 @@ class TestQueryResultsByTimeControl:
     @pytest.mark.asyncio
     async def test_filters_by_user_id(self, db_session: AsyncSession) -> None:
         """Only games for the specified user_id are returned."""
-        await _seed_game(db_session, user_id=1, time_control_bucket="blitz")
+        await _seed_game(db_session, user_id=99999, time_control_bucket="blitz")
         await _seed_game(db_session, user_id=2, time_control_bucket="rapid")
 
         rows = await query_results_by_time_control(
-            db_session, user_id=1, recency_cutoff=None
+            db_session, user_id=99999, recency_cutoff=None
         )
 
         assert len(rows) == 1
@@ -272,7 +272,7 @@ class TestQueryResultsByColor:
         """Each row should be a (user_color, result) tuple."""
         await _seed_game(db_session, user_color="white", result="1-0")
 
-        rows = await query_results_by_color(db_session, user_id=1, recency_cutoff=None)
+        rows = await query_results_by_color(db_session, user_id=99999, recency_cutoff=None)
 
         assert len(rows) == 1
         color, result = rows[0]
@@ -285,7 +285,7 @@ class TestQueryResultsByColor:
         await _seed_game(db_session, user_color="white", result="1-0")
         await _seed_game(db_session, user_color="black", result="0-1")
 
-        rows = await query_results_by_color(db_session, user_id=1, recency_cutoff=None)
+        rows = await query_results_by_color(db_session, user_id=99999, recency_cutoff=None)
 
         assert len(rows) == 2
         colors = {r[0] for r in rows}
@@ -301,7 +301,7 @@ class TestQueryResultsByColor:
         await _seed_game(db_session, user_color="white", played_at=old_date)
         await _seed_game(db_session, user_color="black", played_at=recent_date)
 
-        rows = await query_results_by_color(db_session, user_id=1, recency_cutoff=cutoff)
+        rows = await query_results_by_color(db_session, user_id=99999, recency_cutoff=cutoff)
 
         assert len(rows) == 1
         assert rows[0][0] == "black"
@@ -309,10 +309,10 @@ class TestQueryResultsByColor:
     @pytest.mark.asyncio
     async def test_filters_by_user_id(self, db_session: AsyncSession) -> None:
         """Only games for the specified user_id are returned."""
-        await _seed_game(db_session, user_id=1, user_color="white")
+        await _seed_game(db_session, user_id=99999, user_color="white")
         await _seed_game(db_session, user_id=2, user_color="black")
 
-        rows = await query_results_by_color(db_session, user_id=1, recency_cutoff=None)
+        rows = await query_results_by_color(db_session, user_id=99999, recency_cutoff=None)
 
         assert len(rows) == 1
         assert rows[0][0] == "white"
