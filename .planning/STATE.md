@@ -4,11 +4,11 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 08-01 complete
 status: executing
-stopped_at: Completed 08-03-PLAN.md
-last_updated: "2026-03-14T14:26:51.077Z"
+stopped_at: Phase 9 context gathered
+last_updated: "2026-03-14T15:09:02.750Z"
 last_activity: "2026-03-14 - Completed quick task 12: Fix opening ECO categorization via openings.tsv"
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 7
   total_plans: 24
   completed_plans: 23
@@ -20,7 +20,7 @@ progress:
 Phase: 08-rework-games-and-bookmark-tabs
 Status: In Progress — 1/? plans done
 Current Plan: 08-01 complete
-Stopped At: Completed 08-03-PLAN.md
+Stopped At: Phase 9 context gathered
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -52,6 +52,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - Phase 6 added: Optimize UI for Claude Chrome Extension Testing
 - Phase 7 added: Add more game statistics and charts by replicating the most popular analyses from chess.com and lichess insights
 - Phase 8 added: Rework Games and Bookmark tabs: position filter section, position bookmarks section, rename bookmarks to position_bookmarks
+- Phase 9 added: Rework the games list with game cards, username import, and improved pagination
 
 ### Key Decisions
 - **AsyncAttrs import path**: Use `from sqlalchemy.ext.asyncio import AsyncAttrs` (not `sqlalchemy.orm`) in SQLAlchemy 2.0.x
