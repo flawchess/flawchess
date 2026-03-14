@@ -188,6 +188,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 10 | Fix Y-axis ticks on chess.com RatingChart — uniform spacing via adaptive step selection | 2026-03-14 | d9eb0f0 | [10-fix-y-axis-ticks-on-chess-com-rating-cha](.planning/quick/10-fix-y-axis-ticks-on-chess-com-rating-cha/) |
 | 11 | Toggle series on/off by clicking legend in all Recharts charts | 2026-03-14 | 4c398f0 | [11-toggle-series-on-off-by-clicking-legend-](.planning/quick/11-toggle-series-on-off-by-clicking-legend-/) |
 | 12 | Fix opening ECO categorization via openings.tsv longest-prefix matching | 2026-03-14 | fceef4f | [12-fix-the-opening-eco-categorization-for-c](.planning/quick/12-fix-the-opening-eco-categorization-for-c/) |
+| 13 | Critical bug: games, bookmarks, and usernames not displayed despite valid DB data | 2026-03-14 | 814b76d | [13-critical-bug-games-bookmarks-and-usernam](.planning/quick/13-critical-bug-games-bookmarks-and-usernam/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -196,4 +197,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-14 - Completed 09-02: GameCard and GameCardList components with truncated pagination, PAGE_SIZE=20
+Last activity: 2026-03-14 - Completed quick task 13: Fix dev bypass non-deterministic user query
