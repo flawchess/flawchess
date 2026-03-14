@@ -79,7 +79,8 @@ async def analyze(
     5. Fetch paginated Game objects.
     6. Build GameRecord list and return AnalysisResponse.
     """
-    hash_column = HASH_COLUMN_MAP[request.match_side]
+    # When target_hash is None, skip position filtering entirely
+    hash_column = HASH_COLUMN_MAP[request.match_side] if request.target_hash is not None else None
     cutoff = recency_cutoff(request.recency)
 
     # --- Stats (full result set, no pagination) ---
@@ -151,6 +152,10 @@ async def analyze(
             platform_url=g.platform_url,
             user_rating=g.user_rating,
             opponent_rating=g.opponent_rating,
+            white_username=g.white_username,
+            black_username=g.black_username,
+            white_rating=g.white_rating,
+            black_rating=g.black_rating,
             opening_name=g.opening_name,
             opening_eco=g.opening_eco,
             user_color=g.user_color,
