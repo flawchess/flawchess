@@ -318,7 +318,7 @@ export function DashboardPage() {
               </div>
             </div>
 
-            {/* Bookmark this position */}
+            {/* Bookmark */}
             <div>
               <Button
                 variant="outline"
@@ -327,7 +327,7 @@ export function DashboardPage() {
                 data-testid="btn-bookmark"
               >
                 <Bookmark className="h-4 w-4" />
-                Bookmark this position
+                Bookmark
               </Button>
             </div>
           </div>
@@ -351,7 +351,7 @@ export function DashboardPage() {
           <div className="pt-2">
             {bookmarks.length === 0 ? (
               <p className="px-2 text-xs text-muted-foreground">
-                No position bookmarks yet. Use the 'Bookmark this position' button above to save positions.
+                No position bookmarks yet. Use the 'Bookmark' button above to save positions.
               </p>
             ) : (
               <PositionBookmarkList
