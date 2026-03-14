@@ -123,7 +123,7 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
           }}
         />
         <ChartLegend
-          content={<ChartLegendContent />}
+          content={<ChartLegendContent hiddenKeys={hiddenKeys} />}
           onClick={(e) => {
             if (e?.dataKey) handleLegendClick(e.dataKey as string);
           }}
