@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 06-01 complete
 status: executing
-stopped_at: "Completed 07-01: backend stats API endpoints"
-last_updated: "2026-03-14T09:31:46.011Z"
+stopped_at: "Completed 07-03: Rating and Global Stats frontend pages"
+last_updated: "2026-03-14T09:37:15.457Z"
 last_activity: "2026-03-13 - Completed 06-01: data-testid and accessibility selectors for all non-board frontend components"
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 21
-  completed_plans: 19
+  completed_plans: 20
 ---
 
 # Project State: Chessalytics
@@ -20,7 +20,7 @@ progress:
 Phase: 06-optimize-ui-for-claude-chrome-extension-testing
 Status: In Progress — 1/2 plans done
 Current Plan: 06-01 complete
-Stopped At: Completed 07-01: backend stats API endpoints
+Stopped At: Completed 07-03: Rating and Global Stats frontend pages
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -106,6 +106,8 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Browser Automation Rules in CLAUDE.md**: permanent mandatory rules for all future frontend code — data-testid on every interactive element, semantic HTML, ARIA labels, chess board must have data-testid="chessboard" and id="chessboard"
 - **data-testid hyphen normalization for multi-word nav labels**: label.toLowerCase().replace(/\s+/g, '-') so "Global Stats" -> nav-global-stats (not "nav-global stats" with a space)
 - **Stats.tsx kept as dead code**: not deleted after Openings.tsx rename — will be removed in cleanup at end of phase 7
+- **RatingChart data model**: flat array of {date, [tc]: rating} rows (one per game) — each row has only one TC key, Recharts handles gaps between TC lines naturally
+- **WDLCategoryChart as local component**: unexported component inside GlobalStatsCharts.tsx — avoids react-refresh/only-export-components lint violation while keeping chart logic co-located
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -129,6 +131,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 06 | 02 | 5min | 2 | 2 |
 | Phase 07 P02 | 2min | 2 tasks | 4 files |
 | Phase 07 P01 | 5min | 2 tasks | 8 files |
+| Phase 07 P03 | 2min | 2 tasks | 7 files |
 
 ### Quick Tasks Completed
 
