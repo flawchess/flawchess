@@ -38,7 +38,13 @@ class Game(Base):
     rated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_computer_game: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    # Opponent info
+    # Player info (absolute, not user-relative)
+    white_username: Mapped[str | None] = mapped_column(String(100))
+    black_username: Mapped[str | None] = mapped_column(String(100))
+    white_rating: Mapped[int | None]
+    black_rating: Mapped[int | None]
+
+    # Opponent info (user-relative, kept for backward compatibility)
     opponent_username: Mapped[str | None] = mapped_column(String(100))
     opponent_rating: Mapped[int | None]
     user_rating: Mapped[int | None]
