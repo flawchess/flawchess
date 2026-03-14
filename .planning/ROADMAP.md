@@ -1,8 +1,8 @@
 # Roadmap: Chessalytics
 
 ## Overview
-- Total phases: 7
-- Total requirements: 21 (v1) + 7 provisional (Phase 5) + 5 provisional (Phase 6) + 6 provisional (Phase 7)
+- Total phases: 8
+- Total requirements: 21 (v1) + 7 provisional (Phase 5) + 5 provisional (Phase 6) + 6 provisional (Phase 7) + 5 provisional (Phase 8)
 - Granularity: Coarse
 
 ---
@@ -127,6 +127,7 @@ All 21 v1 requirements are mapped:
 - Phase 5: 7 provisional requirements (BKM-01 through BKM-07)
 - Phase 6: 5 provisional requirements (TEST-01 through TEST-05)
 - Phase 7: 6 provisional requirements (STATS-01 through STATS-06)
+- Phase 8: 5 provisional requirements (REWORK-01 through REWORK-05)
 
 ---
 
@@ -215,7 +216,36 @@ Plans:
 5. ECO extraction handles chess.com variation URLs gracefully with test coverage.
 
 ---
+
+## Phase 8: Rework Games and Bookmark tabs: position filter section, position bookmarks section, rename bookmarks to position_bookmarks
+
+**Goal:** Restructure the Games (Dashboard) page left column into three collapsible sections (Position filter, Position bookmarks, More filters), merge bookmark content from the Bookmarks tab into the Games page, remove the Bookmarks navigation tab, and rename bookmarks to position_bookmarks across the entire stack (DB, backend, frontend, API paths).
+
+**Requirements:**
+- REWORK-01: Rename bookmarks to position_bookmarks across DB table, backend models/schemas/routers, frontend types/hooks/components, and API paths
+- REWORK-02: Dashboard left column restructured into three collapsible sections (Position filter open, Position bookmarks collapsed, More filters collapsed) with always-visible Filter + Import buttons
+- REWORK-03: Remove dedicated Bookmarks page and navigation tab (5 tabs to 4 tabs: Games, Openings, Rating, Global Stats)
+- REWORK-04: Remove WDL bars and WinRateChart from bookmark cards; relocate chart components to components/charts/
+- REWORK-05: Move "Bookmark this position" button into the Position filter collapsible section
+
+**Depends on:** Phase 7
+**Plans:** 3 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — Backend rename: Alembic migration, model/repo/schemas/router rename to position_bookmarks, test updates
+- [ ] 08-02-PLAN.md — Frontend rename: types/hooks/API client/components rename to position-bookmarks, chart relocation, card simplification
+- [ ] 08-03-PLAN.md — Dashboard UI restructure: three collapsible sections, in-place bookmark Load, Bookmarks page removal, nav update
+
+**Success Criteria:**
+1. Database table is `position_bookmarks` with all CRUD endpoints at `/position-bookmarks` paths; all tests pass.
+2. Dashboard left column has three collapsible sections: Position filter (open by default), Position bookmarks (collapsed), More filters (collapsed); Filter and Import buttons always visible below.
+3. Loading a bookmark replays moves in-place on the board without page navigation.
+4. Navigation shows 4 tabs (Games, Openings, Rating, Global Stats); /bookmarks redirects to /.
+5. Openings page WinRateChart and WDLBarChart render correctly from their new location in components/charts/.
+
+---
 *Created: 2026-03-11*
 *Phase 5 added: 2026-03-13*
 *Phase 6 planned: 2026-03-13*
 *Phase 7 planned: 2026-03-14*
+*Phase 8 planned: 2026-03-14*
