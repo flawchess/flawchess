@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: resolved
 phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
 source: [09-01-SUMMARY.md, 09-02-SUMMARY.md, 09-03-SUMMARY.md]
 started: 2026-03-14T16:10:00Z
-updated: 2026-03-14T16:45:00Z
+updated: 2026-03-14T18:30:00Z
 ---
 
 ## Current Test
@@ -52,7 +52,7 @@ skipped: 1
 ## Gaps
 
 - truth: "Game cards show both player usernames, color played, and ratings on two lines"
-  status: failed
+  status: resolved
   reason: "User reported: The player username should be shown, not only the opponent name. It's still missing in the games table. Make sure it's imported (it may change on chess.com, you can't assume the username of old games is the same as now). Display the players, the color played, and the rating on two lines"
   severity: major
   test: 2
@@ -77,7 +77,7 @@ skipped: 1
   debug_session: ".planning/debug/game-card-missing-usernames.md"
 
 - truth: "Dashboard shows unfiltered games list by default instead of placeholder message"
-  status: failed
+  status: resolved
   reason: "User reported: It works, but I still see the 'Play moves on the board and click Filter to see your stats' message, instead of the unfiltered games list"
   severity: major
   test: 3
