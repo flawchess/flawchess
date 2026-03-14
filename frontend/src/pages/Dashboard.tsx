@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ChevronUp, ChevronDown, Bookmark, Filter, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -27,17 +27,22 @@ import { BoardControls } from '@/components/board/BoardControls';
 import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import { PositionBookmarkList } from '@/components/position-bookmarks/PositionBookmarkList';
 import { WDLBar } from '@/components/results/WDLBar';
-import { GameTable } from '@/components/results/GameTable';
+import { GameCardList } from '@/components/results/GameCardList';
 import { ImportModal } from '@/components/import/ImportModal';
 import { ImportProgress } from '@/components/import/ImportProgress';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { apiClient } from '@/api/client';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { MatchSide, Color, AnalysisResponse } from '@/types/api';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 20;
 
 export function DashboardPage() {
+  // Prefetch user profile so it's ready when import modal opens
+  useUserProfile();
+  const queryClient = useQueryClient();
+
   // Board state
   const chess = useChessGame();
   const [boardFlipped, setBoardFlipped] = useState(false);
@@ -184,8 +189,10 @@ export function DashboardPage() {
       setActiveJobIds((ids) => ids.filter((id) => id !== jobId));
       // Refresh game count after import completes
       refetchGameCount();
+      // Invalidate user profile so stored usernames reflect latest import
+      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
     },
-    [refetchGameCount],
+    [refetchGameCount, queryClient],
   );
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -426,7 +433,7 @@ export function DashboardPage() {
       ) : (
         <>
           <WDLBar stats={analysisResult.stats} />
-          <GameTable
+          <GameCardList
             games={analysisResult.games}
             matchedCount={analysisResult.matched_count}
             totalGames={totalGames ?? analysisResult.stats.total}
