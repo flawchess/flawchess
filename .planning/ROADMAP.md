@@ -258,12 +258,14 @@ Plans:
 - GAMES-05: Pagination uses truncated page numbers with ellipsis, page size 20, page change scrolls to top
 
 **Depends on:** Phase 8
-**Plans:** 3/3 plans complete
+**Plans:** 5 plans (3 complete + 2 gap closure)
 
 Plans:
 - [ ] 09-01-PLAN.md — Backend model expansion, migration, schema enrichment, profile endpoint, import username auto-save
 - [ ] 09-02-PLAN.md — Frontend game cards with colored left border and truncated pagination
 - [ ] 09-03-PLAN.md — Import modal redesign with backend-stored usernames and two-mode UI
+- [ ] 09-04-PLAN.md — Gap closure: both-player columns, optional target_hash, dev auth bypass
+- [ ] 09-05-PLAN.md — Gap closure: GameCard redesign with both players, default games list on dashboard
 
 **Success Criteria:**
 1. Games page shows rich cards with colored left border accent instead of table rows; each card shows result, opponent, ratings, opening, color indicator, TC, date, moves, and platform link.
