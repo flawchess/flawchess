@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 09-03 complete
 status: completed
-stopped_at: Completed 09-03 ImportModal redesign with two-mode UI and localStorage removal
-last_updated: "2026-03-14T15:59:58.282Z"
+stopped_at: "Completed 09-04 Backend gap closure: player usernames and optional target_hash"
+last_updated: "2026-03-14T17:16:59.665Z"
 last_activity: "2026-03-14 - Completed 09-02: GameCard and GameCardList components with truncated pagination, PAGE_SIZE=20"
 progress:
   total_phases: 9
-  completed_phases: 8
-  total_plans: 27
-  completed_plans: 26
+  completed_phases: 7
+  total_plans: 29
+  completed_plans: 27
 ---
 
 # Project State: Chessalytics
@@ -20,7 +20,7 @@ progress:
 Phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
 Status: Complete — 3/3 plans done
 Current Plan: 09-03 complete
-Stopped At: Completed 09-03 ImportModal redesign with two-mode UI and localStorage removal
+Stopped At: Completed 09-04 Backend gap closure: player usernames and optional target_hash
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -38,7 +38,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 6 | Optimize UI for Claude Chrome Extension Testing | Complete | 2/2 |
 | 7 | More game statistics and charts | Complete | 3/3 |
 | 8 | Rework Games and Bookmark tabs | Complete | 3/3 |
-| 9 | Rework games list with game cards and improved pagination | In Progress | 1/3 |
+| 9 | Rework games list with game cards and improved pagination | In Progress | 4/5 |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -56,6 +56,9 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - Phase 9 added: Rework the games list with game cards, username import, and improved pagination
 
 ### Key Decisions
+- **ENVIRONMENT setting dev bypass**: `ENVIRONMENT=development` in .env swaps `current_active_user` to `_dev_bypass_user` at import time — returns first active user without JWT; all routers get the bypass automatically since they import from `app.users`
+- **Optional target_hash in analysis**: `target_hash=None` skips the `game_positions` join entirely and queries `games` table directly with `Game.user_id` filter — enables a default "all games" list without position filter
+- **Backfill migration partial data**: `white_username` is NULL for existing games where user played white (own per-game username was never stored); correctly backfilled where known from `opponent_username`
 - **Derived state pattern for ImportModal reset**: track prevProfile/prevOpen in state, compare during render, call setState inline — avoids react-hooks/set-state-in-effect lint violation (same pattern as selectedSquare)
 - **result.unique().scalar_one() for User queries**: User model has joined eager load on oauth_accounts — must call .unique() before scalar extraction or SQLAlchemy raises InvalidRequestError
 - **update_profile non-None only**: PUT /users/me/profile only applies fields with non-None values so partial updates don't clear existing usernames
@@ -159,6 +162,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | Phase 09 P01 | 5min | 3 tasks | 12 files |
 | Phase 09 P03 | 3min | 2 tasks | 4 files |
 | Phase 09 P02 | 4min | 2 tasks | 4 files |
+| Phase 09 P04 | 4min | 2 tasks | 8 files |
 
 ### Quick Tasks Completed
 
