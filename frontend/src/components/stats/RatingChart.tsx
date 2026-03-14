@@ -42,9 +42,22 @@ export function RatingChart({ data, platform }: RatingChartProps) {
 
   const testId = `rating-chart-${platform.toLowerCase().replace(/[.\s]/g, '-')}`;
 
+  const chartData = useMemo(() => {
+    if (data.length === 0) return [];
+
+    // Build a flat array where each entry is { date, [tc]: rating }
+    // One row per data point (each game is its own data point)
+    const rows: Record<string, string | number>[] = data.map((point) => ({
+      date: point.date,
+      [point.time_control_bucket]: point.rating,
+    }));
+
+    return rows;
+  }, [data]);
+
   const yDomain = useMemo(() => {
     const visibleTcs = TIME_CONTROLS.filter((tc) => !hiddenKeys.has(tc));
-    if (visibleTcs.length === 0) return ['auto', 'auto'] as [string, string];
+    if (visibleTcs.length === 0 || chartData.length === 0) return ['auto', 'auto'] as [string, string];
 
     let min = Infinity;
     let max = -Infinity;
@@ -62,19 +75,6 @@ export function RatingChart({ data, platform }: RatingChartProps) {
 
     return [Math.floor(min / 100) * 100, Math.ceil(max / 100) * 100] as [number, number];
   }, [chartData, hiddenKeys]);
-
-  const chartData = useMemo(() => {
-    if (data.length === 0) return [];
-
-    // Build a flat array where each entry is { date, [tc]: rating }
-    // One row per data point (each game is its own data point)
-    const rows: Record<string, string | number>[] = data.map((point) => ({
-      date: point.date,
-      [point.time_control_bucket]: point.rating,
-    }));
-
-    return rows;
-  }, [data]);
 
   if (data.length === 0) {
     return (
