@@ -49,13 +49,15 @@ completed: 2026-03-14
 
 - Replaced category string x-axis with numeric timestamp axis (`type="number"` `scale="time"`)
 - Added `dateTs` field (millisecond timestamp) to each chartData row
-- Implemented `computeXTicks()` helper that picks tick interval adaptively (1, 2, 3, 6, or 12 months) based on data span
+- Implemented `computeXTicks()` helper that picks tick interval adaptively: daily (<=10 days), weekly (<=35 days), monthly, bimonthly, quarterly, semi-annual, annual
 - Updated tooltip to format `dateTs` number as a readable date string ("Mar 14, 2026")
-- Removed old `formatDate` string-based helper; replaced with `formatTs` (timestamp-based)
+- Removed old `formatDate` string-based helper; tick formatter is inline and mode-aware
+- Tick label format adapts: "Mar 14" for daily/weekly, "Mar '26" for monthly+
 
 ## Task Commits
 
 1. **Task 1: Implement adaptive equal-distance x-axis ticks** - `c997dcc` (feat)
+2. **Task 1 (refinement): Add daily and weekly tick modes** - `f2b8c5d` (fix)
 
 **Plan metadata:** pending final docs commit
 
