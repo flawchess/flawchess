@@ -99,7 +99,7 @@ function AppRoutes() {
         <Route path="/openings" element={<OpeningsPage />} />
         <Route path="/rating" element={<RatingPage />} />
         <Route path="/global-stats" element={<GlobalStatsPage />} />
-        <Route path="/stats" element={<Navigate to="/openings" replace />} />
+
       </Route>
       {/* Catch-all redirects to dashboard (auth guard handles the rest) */}
       <Route path="*" element={<Navigate to="/" replace />} />
