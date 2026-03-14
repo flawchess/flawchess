@@ -4,9 +4,9 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 06-01 complete
 status: executing
-stopped_at: "Completed 07-03: Rating and Global Stats frontend pages"
-last_updated: "2026-03-14T09:41:17.750Z"
-last_activity: "2026-03-13 - Completed 06-01: data-testid and accessibility selectors for all non-board frontend components"
+stopped_at: "Completed quick-12: Fix opening ECO categorization via openings.tsv prefix matching"
+last_updated: "2026-03-14T12:02:24.063Z"
+last_activity: "2026-03-14 - Completed quick task 11: Toggle series on/off by clicking legend"
 progress:
   total_phases: 7
   completed_phases: 6
@@ -20,7 +20,7 @@ progress:
 Phase: 06-optimize-ui-for-claude-chrome-extension-testing
 Status: In Progress — 1/2 plans done
 Current Plan: 06-01 complete
-Stopped At: Completed 07-03: Rating and Global Stats frontend pages
+Stopped At: Completed quick-12: Fix opening ECO categorization via openings.tsv prefix matching
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -147,6 +147,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 9 | Fix Global Stats 500 error (_aggregate_wdl KeyError) and RatingChart adaptive Y-axis | 2026-03-14 | befcb4c | [9-some-fixes-for-phase-7](.planning/quick/9-some-fixes-for-phase-7/) |
 | 10 | Fix Y-axis ticks on chess.com RatingChart — uniform spacing via adaptive step selection | 2026-03-14 | d9eb0f0 | [10-fix-y-axis-ticks-on-chess-com-rating-cha](.planning/quick/10-fix-y-axis-ticks-on-chess-com-rating-cha/) |
 | 11 | Toggle series on/off by clicking legend in all Recharts charts | 2026-03-14 | 4c398f0 | [11-toggle-series-on-off-by-clicking-legend-](.planning/quick/11-toggle-series-on-off-by-clicking-legend-/) |
+| 12 | Fix opening ECO categorization via openings.tsv longest-prefix matching | 2026-03-14 | fceef4f | [12-fix-the-opening-eco-categorization-for-c](.planning/quick/12-fix-the-opening-eco-categorization-for-c/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -155,4 +156,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-14 - Completed quick task 11: Toggle series on/off by clicking legend
+Last activity: 2026-03-14 - Completed quick task 12: Fix opening ECO categorization via openings.tsv
