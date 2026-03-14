@@ -9,7 +9,9 @@ import { AuthPage } from '@/pages/Auth';
 import { DashboardPage } from '@/pages/Dashboard';
 import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
 import { BookmarksPage } from '@/pages/Bookmarks';
-import { StatsPage } from '@/pages/Stats';
+import { OpeningsPage } from '@/pages/Openings';
+import { RatingPage } from '@/pages/Rating';
+import { GlobalStatsPage } from '@/pages/GlobalStats';
 
 // ─── Query client ─────────────────────────────────────────────────────────────
 
@@ -27,7 +29,9 @@ const queryClient = new QueryClient({
 const NAV_ITEMS = [
   { to: '/', label: 'Games' },
   { to: '/bookmarks', label: 'Bookmarks' },
-  { to: '/stats', label: 'Stats' },
+  { to: '/openings', label: 'Openings' },
+  { to: '/rating', label: 'Rating' },
+  { to: '/global-stats', label: 'Global Stats' },
 ] as const;
 
 function NavHeader() {
@@ -52,7 +56,7 @@ function NavHeader() {
                     : 'rounded-none text-muted-foreground'
                 }
               >
-                <Link to={to} data-testid={`nav-${label.toLowerCase()}`}>{label}</Link>
+                <Link to={to} data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}>{label}</Link>
               </Button>
             ))}
           </nav>
@@ -92,7 +96,10 @@ function AppRoutes() {
       <Route element={<ProtectedLayout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/bookmarks" element={<BookmarksPage />} />
-        <Route path="/stats" element={<StatsPage />} />
+        <Route path="/openings" element={<OpeningsPage />} />
+        <Route path="/rating" element={<RatingPage />} />
+        <Route path="/global-stats" element={<GlobalStatsPage />} />
+        <Route path="/stats" element={<Navigate to="/openings" replace />} />
       </Route>
       {/* Catch-all redirects to dashboard (auth guard handles the rest) */}
       <Route path="*" element={<Navigate to="/" replace />} />
