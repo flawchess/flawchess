@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/chessalytics"
+    TEST_DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/chessalytics_test"
     DB_ECHO: bool = False
     SECRET_KEY: str = "change-me-in-production"
     GOOGLE_OAUTH_CLIENT_ID: str = ""
