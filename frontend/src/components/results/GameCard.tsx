@@ -1,5 +1,6 @@
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import type { GameRecord, UserResult } from '@/types/api';
 
 interface GameCardProps {
@@ -67,29 +68,30 @@ export function GameCard({ game }: GameCardProps) {
           <span
             className={!isUserWhite ? 'font-semibold text-foreground' : 'text-muted-foreground'}
           >
-            ○ {whiteName} {whiteRating}
+            ● {whiteName} {whiteRating}
           </span>
           <span className="mx-1.5 text-muted-foreground">vs</span>
           <span
             className={isUserWhite ? 'font-semibold text-foreground' : 'text-muted-foreground'}
           >
-            ● {blackName} {blackRating}
+            ○ {blackName} {blackRating}
           </span>
         </span>
-        {game.platform_url ? (
-          <a
-            href={game.platform_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Open game on platform"
-            data-testid={`game-card-link-${game.game_id}`}
-          >
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        ) : (
-          <span className="ml-auto shrink-0 text-muted-foreground text-xs">{game.platform}</span>
-        )}
+        <span className="ml-auto shrink-0 flex items-center gap-1.5 text-muted-foreground">
+          <PlatformIcon platform={game.platform} className="h-4 w-4" />
+          {game.platform_url ? (
+            <a
+              href={game.platform_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground transition-colors"
+              aria-label="Open game on platform"
+              data-testid={`game-card-link-${game.game_id}`}
+            >
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          ) : null}
+        </span>
       </div>
 
       {/* Line 2: Opening, time control, date, moves */}

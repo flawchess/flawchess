@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
 source: [09-01-SUMMARY.md, 09-02-SUMMARY.md, 09-03-SUMMARY.md, 09-04-SUMMARY.md, 09-05-SUMMARY.md]
 started: 2026-03-14T19:00:00Z
@@ -59,8 +59,26 @@ skipped: 0
   reason: "User reported: I want the opponent name bolded, not mine. Also, the color circle indicators are not working, I think they are reversed (show white when I played black and vice versa). Always show the white player on the left. In the DB I see redundant fields in the games table, opponent_username, opponent_rating, user_rating, and opponent_rating should be removed, and inferred from user_color and the newer <color>_username and <color>_rating fields"
   severity: major
   test: 3
-  artifacts: []
-  missing: []
+  root_cause: "GameCard.tsx bolding logic inverted: isUserWhite ? 'font-semibold' bolds the user's own name instead of opponent. White IS always on left (correct). Circles are correct but misperceived due to bolding bug. Redundant DB columns: opponent_username, opponent_rating, user_rating are fully derivable from user_color + white_*/black_* fields."
+  artifacts:
+    - path: "frontend/src/components/results/GameCard.tsx"
+      issue: "Bolding logic inverted on lines 67-77: bolds user instead of opponent"
+    - path: "app/models/game.py"
+      issue: "Redundant columns: opponent_username, opponent_rating, user_rating (lines 48-50)"
+    - path: "app/schemas/analysis.py"
+      issue: "Redundant schema fields: opponent_username, opponent_rating, user_rating"
+    - path: "app/services/analysis_service.py"
+      issue: "Passes redundant fields"
+    - path: "app/services/normalization.py"
+      issue: "Populates redundant fields"
+    - path: "app/repositories/stats_repository.py"
+      issue: "Uses Game.user_rating directly — needs CASE WHEN user_color='white' THEN white_rating ELSE black_rating END"
+  missing:
+    - "Swap bolding logic in GameCard.tsx to bold opponent name"
+    - "Drop opponent_username, opponent_rating, user_rating columns via migration"
+    - "Update stats_repository to derive user_rating from user_color + white_rating/black_rating"
+    - "Remove redundant fields from schemas, normalization, frontend types"
+  debug_session: ".planning/debug/game-card-display-issues.md"
 
 - truth: "After importing from one platform, user can import from the other platform without going through Edit usernames"
   status: failed

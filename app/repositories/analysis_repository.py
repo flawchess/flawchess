@@ -199,25 +199,39 @@ async def query_matching_games(
     total: int = (await session.execute(count_stmt)).scalar_one()
 
     # Paginated game objects, ordered most-recent first.
-    # PostgreSQL requires DISTINCT ON expressions to appear first in ORDER BY,
-    # so Game.id must precede played_at in the ORDER BY clause.
-    page_stmt = (
-        _build_base_query(
-            select_entity=Game,
-            user_id=user_id,
-            hash_column=hash_column,
-            target_hash=target_hash,
-            time_control=time_control,
-            platform=platform,
-            rated=rated,
-            opponent_type=opponent_type,
-            recency_cutoff=recency_cutoff,
-            color=color,
-        )
-        .order_by(Game.id, Game.played_at.desc())
-        .offset(offset)
-        .limit(limit)
+    # When DISTINCT ON is used (position-filtered queries), PostgreSQL requires
+    # the DISTINCT ON expression first in ORDER BY, preventing direct date sorting.
+    # Wrap as subquery to deduplicate first, then sort by played_at in outer query.
+    dedup_subq = _build_base_query(
+        select_entity=Game,
+        user_id=user_id,
+        hash_column=hash_column,
+        target_hash=target_hash,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=recency_cutoff,
+        color=color,
     )
+    if target_hash is not None:
+        # DISTINCT ON needs id-first ordering for dedup; outer query re-sorts
+        dedup_subq = dedup_subq.order_by(Game.id)
+        dedup_cte = dedup_subq.cte("deduped_games")
+        page_stmt = (
+            select(Game)
+            .join(dedup_cte, Game.id == dedup_cte.c.id)
+            .order_by(Game.played_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    else:
+        page_stmt = (
+            dedup_subq
+            .order_by(Game.played_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
     result = await session.execute(page_stmt)
     games = list(result.scalars().all())
 
