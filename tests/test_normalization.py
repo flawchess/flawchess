@@ -594,3 +594,101 @@ class TestNormalizeChesscomResult:
         result = normalize_chesscom_game(game, "Alice", user_id=1)
         assert result is not None
         assert result["result"] == "1/2-1/2"
+
+
+class TestChesscomEcoExtraction:
+    """Tests for _extract_chesscom_eco and _extract_chesscom_opening_name functions.
+
+    Covers standard ECO URLs, variation URLs with move notation, and edge cases.
+    """
+
+    def test_standard_eco_url_returns_code(self) -> None:
+        """Standard URL with ECO code suffix returns the correct ECO code."""
+        from app.services.normalization import _extract_chesscom_eco
+
+        url = "https://www.chess.com/openings/Kings-Pawn-Opening-C40"
+        result = _extract_chesscom_eco(url)
+        assert result == "C40"
+
+    def test_variation_url_with_move_notation_returns_none(self) -> None:
+        """Variation URL containing move notation (e.g. '4.exd5') returns None.
+
+        chess.com variation URLs like Kings-Gambit-Accepted-Modern-Defense-4.exd5
+        contain move notation instead of ECO code — no A-E letter followed by 2 digits.
+        """
+        from app.services.normalization import _extract_chesscom_eco
+
+        url = "https://www.chess.com/openings/Kings-Gambit-Accepted-Modern-Defense-4.exd5"
+        result = _extract_chesscom_eco(url)
+        assert result is None
+
+    def test_url_with_no_eco_code_returns_none(self) -> None:
+        """URL slug with no ECO code (e.g. 'Sicilian-Defense') returns None."""
+        from app.services.normalization import _extract_chesscom_eco
+
+        url = "https://www.chess.com/openings/Sicilian-Defense"
+        result = _extract_chesscom_eco(url)
+        assert result is None
+
+    def test_none_input_returns_none(self) -> None:
+        """None input returns None."""
+        from app.services.normalization import _extract_chesscom_eco
+
+        result = _extract_chesscom_eco(None)
+        assert result is None
+
+    def test_empty_string_returns_none(self) -> None:
+        """Empty string input returns None."""
+        from app.services.normalization import _extract_chesscom_eco
+
+        result = _extract_chesscom_eco("")
+        assert result is None
+
+    def test_another_eco_code_returned(self) -> None:
+        """ECO code A00 is correctly extracted from a URL."""
+        from app.services.normalization import _extract_chesscom_eco
+
+        url = "https://www.chess.com/openings/Polish-Opening-A00"
+        result = _extract_chesscom_eco(url)
+        assert result == "A00"
+
+    def test_opening_name_standard_url(self) -> None:
+        """Standard URL with ECO suffix returns opening name without ECO code."""
+        from app.services.normalization import _extract_chesscom_opening_name
+
+        url = "https://www.chess.com/openings/Kings-Pawn-Opening-C40"
+        result = _extract_chesscom_opening_name(url)
+        assert result == "Kings Pawn Opening"
+
+    def test_opening_name_variation_url(self) -> None:
+        """Variation URL with move notation returns full slug as opening name.
+
+        The slug includes move notation since there's no ECO code to strip.
+        """
+        from app.services.normalization import _extract_chesscom_opening_name
+
+        url = "https://www.chess.com/openings/Kings-Gambit-Accepted-Modern-Defense-4.exd5"
+        result = _extract_chesscom_opening_name(url)
+        assert result == "Kings Gambit Accepted Modern Defense 4.exd5"
+
+    def test_opening_name_no_eco_suffix(self) -> None:
+        """URL slug with no ECO code returns opening name from slug."""
+        from app.services.normalization import _extract_chesscom_opening_name
+
+        url = "https://www.chess.com/openings/Sicilian-Defense"
+        result = _extract_chesscom_opening_name(url)
+        assert result == "Sicilian Defense"
+
+    def test_opening_name_none_input_returns_none(self) -> None:
+        """None input returns None."""
+        from app.services.normalization import _extract_chesscom_opening_name
+
+        result = _extract_chesscom_opening_name(None)
+        assert result is None
+
+    def test_opening_name_empty_string_returns_none(self) -> None:
+        """Empty string input returns None."""
+        from app.services.normalization import _extract_chesscom_opening_name
+
+        result = _extract_chesscom_opening_name("")
+        assert result is None
