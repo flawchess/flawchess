@@ -6,6 +6,8 @@ Converts chess.com and lichess game objects into dicts matching the Game model c
 import datetime
 import re
 
+from app.services.opening_lookup import find_opening
+
 
 def parse_time_control(tc_str: str) -> tuple[str | None, int | None]:
     """Parse a time control string into (bucket, estimated_seconds).
@@ -95,39 +97,6 @@ def _normalize_chesscom_result(white_result: str, black_result: str) -> str:
         return "1/2-1/2"  # safe fallback
 
 
-def _extract_chesscom_eco(eco_url: str | None) -> str | None:
-    """Extract ECO code from chess.com opening URL.
-
-    e.g., "https://www.chess.com/openings/Kings-Pawn-Opening-C40" -> "C40"
-    """
-    if not eco_url:
-        return None
-    # ECO codes are like A00-E99 (letter + 2 digits)
-    match = re.search(r"[A-E]\d{2}", eco_url)
-    if match:
-        return match.group(0)
-    return None
-
-
-def _extract_chesscom_opening_name(eco_url: str | None) -> str | None:
-    """Parse opening name from chess.com eco URL slug.
-
-    e.g., "https://www.chess.com/openings/Kings-Pawn-Opening-C40" -> "Kings Pawn Opening"
-         "https://www.chess.com/openings/Sicilian-Defense" -> "Sicilian Defense"
-    """
-    if not eco_url:
-        return None
-    # Take the last path segment (the slug)
-    slug = eco_url.rstrip("/").split("/")[-1]
-    if not slug:
-        return None
-    # Strip trailing ECO code: letter A-E followed by 2 digits
-    name = re.sub(r"-[A-E]\d{2}$", "", slug)
-    # Replace hyphens with spaces and strip
-    name = name.replace("-", " ").strip()
-    return name if name else None
-
-
 def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | None:
     """Normalize a chess.com JSON game object to a dict matching Game model columns.
 
@@ -162,11 +131,13 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | N
         opponent_username = white_username
         opponent_player = white
 
+    # PGN string (used for both computer detection and opening lookup)
+    pgn_str = game.get("pgn", "") or ""
+
     # Computer detection via API field
     is_computer_game = bool(opponent_player.get("is_computer", False))
     # Fallback: detect via PGN Event tag (e.g. "Play vs Coach", "Play vs Computer")
     if not is_computer_game:
-        pgn_str = game.get("pgn", "") or ""
         event_match = re.search(r'\[Event\s+"([^"]+)"\]', pgn_str)
         if event_match and event_match.group(1) in _CHESSCOM_COMPUTER_EVENTS:
             is_computer_game = True
@@ -184,16 +155,15 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | N
     if end_time is not None:
         played_at = datetime.datetime.fromtimestamp(end_time, tz=datetime.timezone.utc)
 
-    # Opening
-    eco_url = game.get("eco")
-    opening_eco = _extract_chesscom_eco(eco_url)
+    # Opening via longest-prefix match against openings.tsv
+    opening_eco, opening_name = find_opening(pgn_str)
 
     return {
         "user_id": user_id,
         "platform": "chess.com",
         "platform_game_id": game["uuid"],
         "platform_url": game.get("url"),
-        "pgn": game.get("pgn", ""),
+        "pgn": pgn_str,
         "variant": "Standard",
         "result": result,
         "user_color": user_color,
@@ -205,7 +175,7 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | N
         "opponent_username": opponent_username,
         "opponent_rating": opponent_rating,
         "user_rating": user_rating,
-        "opening_name": _extract_chesscom_opening_name(eco_url),
+        "opening_name": opening_name,
         "opening_eco": opening_eco,
         "played_at": played_at,
     }
@@ -283,19 +253,15 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
     # Timestamp: createdAt is in milliseconds
     created_at_ms = game.get("createdAt")
     if created_at_ms is not None:
-        played_at = datetime.datetime.fromtimestamp(
-            created_at_ms / 1000, tz=datetime.timezone.utc
-        )
+        played_at = datetime.datetime.fromtimestamp(created_at_ms / 1000, tz=datetime.timezone.utc)
     else:
         played_at = None
 
-    # Opening
-    opening = game.get("opening", {})
-    opening_eco = opening.get("eco") if opening else None
-    opening_name = opening.get("name") if opening else None
-
     # PGN (requires pgnInJson=true parameter on lichess request)
     pgn = game.get("pgn", "")
+
+    # Opening via longest-prefix match against openings.tsv
+    opening_eco, opening_name = find_opening(pgn)
 
     game_id = game["id"]
 
