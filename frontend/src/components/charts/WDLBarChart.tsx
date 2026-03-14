@@ -18,6 +18,7 @@ const chartConfig = {
   win_pct: { label: 'Wins', color: 'oklch(0.55 0.18 145)' },
   draw_pct: { label: 'Draws', color: 'oklch(0.65 0.01 260)' },
   loss_pct: { label: 'Losses', color: 'oklch(0.55 0.2 25)' },
+  game_count: { label: 'Games', color: 'transparent' },
 };
 
 export function WDLBarChart({ bookmarks, wdlStatsMap }: WDLBarChartProps) {
@@ -35,8 +36,10 @@ export function WDLBarChart({ bookmarks, wdlStatsMap }: WDLBarChartProps) {
         draws: s.draws,
         losses: s.losses,
         total: t,
+        game_count: t,
       };
-    });
+    })
+    .sort((a, b) => b.total - a.total);
 
   if (data.length === 0) {
     return (
@@ -47,7 +50,7 @@ export function WDLBarChart({ bookmarks, wdlStatsMap }: WDLBarChartProps) {
   }
 
   return (
-    <ChartContainer config={chartConfig} className="w-full" style={{ height: Math.max(120, data.length * 48 + 60) }}>
+    <ChartContainer config={chartConfig} className="w-full" style={{ height: Math.max(120, data.length * 64 + 60) }}>
       <BarChart data={data} layout="vertical" margin={{ left: 8, right: 16 }}>
         <CartesianGrid horizontal={false} />
         <YAxis
@@ -59,11 +62,18 @@ export function WDLBarChart({ bookmarks, wdlStatsMap }: WDLBarChartProps) {
           axisLine={false}
         />
         <XAxis
+          xAxisId="pct"
           type="number"
           domain={[0, 100]}
           ticks={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]}
           tickFormatter={(v) => `${v}%`}
           tick={{ fontSize: 11 }}
+        />
+        <XAxis
+          xAxisId="count"
+          type="number"
+          orientation="top"
+          hide={true}
         />
         <ChartTooltip
           content={({ active, payload }) => {
@@ -81,9 +91,22 @@ export function WDLBarChart({ bookmarks, wdlStatsMap }: WDLBarChartProps) {
           }}
         />
         <ChartLegend content={<ChartLegendContent />} />
-        <Bar dataKey="win_pct" stackId="wdl" fill="var(--color-win_pct)" radius={[0, 0, 0, 0]} />
-        <Bar dataKey="draw_pct" stackId="wdl" fill="var(--color-draw_pct)" />
-        <Bar dataKey="loss_pct" stackId="wdl" fill="var(--color-loss_pct)" radius={[0, 0, 0, 0]} />
+        <Bar xAxisId="pct" dataKey="win_pct" stackId="wdl" fill="var(--color-win_pct)" radius={[0, 0, 0, 0]} />
+        <Bar xAxisId="pct" dataKey="draw_pct" stackId="wdl" fill="var(--color-draw_pct)" />
+        <Bar xAxisId="pct" dataKey="loss_pct" stackId="wdl" fill="var(--color-loss_pct)" radius={[0, 0, 0, 0]} />
+        <Bar
+          xAxisId="count"
+          dataKey="game_count"
+          name="Games"
+          fill="transparent"
+          shape={(props: unknown) => {
+            const { x, y, width, height } = props as { x: number; y: number; width: number; height: number };
+            return (
+              <rect x={x} y={y} width={width} height={height}
+                fill="transparent" stroke="oklch(0.6 0 0)" strokeWidth={1} />
+            );
+          }}
+        />
       </BarChart>
     </ChartContainer>
   );
