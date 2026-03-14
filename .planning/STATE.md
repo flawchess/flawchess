@@ -4,11 +4,11 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 06-01 complete
 status: executing
-stopped_at: "Completed quick-12: Fix opening ECO categorization via openings.tsv prefix matching"
-last_updated: "2026-03-14T12:02:24.063Z"
-last_activity: "2026-03-14 - Completed quick task 11: Toggle series on/off by clicking legend"
+stopped_at: Phase 8 context gathered
+last_updated: "2026-03-14T13:34:34.321Z"
+last_activity: "2026-03-14 - Completed quick task 12: Fix opening ECO categorization via openings.tsv"
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 6
   total_plans: 21
   completed_plans: 20
@@ -20,7 +20,7 @@ progress:
 Phase: 06-optimize-ui-for-claude-chrome-extension-testing
 Status: In Progress — 1/2 plans done
 Current Plan: 06-01 complete
-Stopped At: Completed quick-12: Fix opening ECO categorization via openings.tsv prefix matching
+Stopped At: Phase 8 context gathered
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -49,6 +49,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - Phase 5 added: Position bookmarks and W/D/L comparison charts
 - Phase 6 added: Optimize UI for Claude Chrome Extension Testing
 - Phase 7 added: Add more game statistics and charts by replicating the most popular analyses from chess.com and lichess insights
+- Phase 8 added: Rework Games and Bookmark tabs: position filter section, position bookmarks section, rename bookmarks to position_bookmarks
 
 ### Key Decisions
 - **AsyncAttrs import path**: Use `from sqlalchemy.ext.asyncio import AsyncAttrs` (not `sqlalchemy.orm`) in SQLAlchemy 2.0.x
