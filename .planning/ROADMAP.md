@@ -200,7 +200,7 @@ Plans:
 - STATS-06: ECO extraction test coverage confirms chess.com variation URLs handled correctly
 
 **Depends on:** Phase 6
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] 07-01-PLAN.md — Backend stats schemas, repository, service, router, and tests
