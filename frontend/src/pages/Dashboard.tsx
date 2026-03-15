@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ChevronUp, ChevronDown, Bookmark, Filter, Download } from 'lucide-react';
+import { ChevronUp, ChevronDown, Bookmark, Filter, Download, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
@@ -79,6 +79,10 @@ export function DashboardPage() {
   // Import state
   const [importOpen, setImportOpen] = useState(false);
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
+
+  // Delete all games state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Total game count — fetched on load to drive empty-state messaging
   const { data: gameCountData, refetch: refetchGameCount } = useQuery<{ count: number }>({
@@ -210,6 +214,28 @@ export function DashboardPage() {
     },
     [refetchGameCount, queryClient],
   );
+
+  // ── Delete All Games ────────────────────────────────────────────────────────
+
+  const handleDeleteAllGames = useCallback(async () => {
+    setIsDeleting(true);
+    try {
+      await apiClient.delete('/imports/games');
+      setDeleteDialogOpen(false);
+      // Reset analysis state
+      setAnalysisResult(null);
+      setPositionFilterActive(false);
+      setAnalysisOffset(0);
+      setDefaultOffset(0);
+      // Refetch total games count and default games list
+      refetchGameCount();
+      defaultGames.refetch();
+    } catch {
+      // Error handled by axios interceptor
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [refetchGameCount, defaultGames]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -400,11 +426,22 @@ export function DashboardPage() {
     </div>
   );
 
-  const inlineImportButton = (
-    <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} data-testid="btn-import">
-      <Download className="h-4 w-4" />
-      Import
-    </Button>
+  const headerActions = (
+    <div className="flex items-center gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setDeleteDialogOpen(true)}
+        data-testid="btn-delete-games"
+      >
+        <Trash2 className="h-4 w-4" />
+        Delete
+      </Button>
+      <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} data-testid="btn-import">
+        <Download className="h-4 w-4" />
+        Import
+      </Button>
+    </div>
   );
 
   const rightColumn = (
@@ -440,7 +477,7 @@ export function DashboardPage() {
               offset={analysisOffset}
               limit={PAGE_SIZE}
               onPageChange={handlePageChange}
-              headerAction={inlineImportButton}
+              headerAction={headerActions}
             />
           </>
         )
@@ -468,7 +505,7 @@ export function DashboardPage() {
               offset={defaultOffset}
               limit={PAGE_SIZE}
               onPageChange={handleDefaultPageChange}
-              headerAction={inlineImportButton}
+              headerAction={headerActions}
             />
           </>
         ) : null
@@ -500,6 +537,35 @@ export function DashboardPage() {
 
       {/* Import progress toasts */}
       <ImportProgress jobIds={activeJobIds} onJobDone={handleJobDone} />
+
+      {/* Delete all games confirmation dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent data-testid="delete-games-modal">
+          <DialogHeader>
+            <DialogTitle>Delete All Games</DialogTitle>
+            <DialogDescription>
+              This will permanently delete all your imported games and positions. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+              data-testid="btn-delete-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteAllGames}
+              disabled={isDeleting}
+              data-testid="btn-delete-confirm"
+            >
+              {isDeleting ? 'Deleting...' : 'Delete All Games'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Bookmark label dialog */}
       <Dialog open={bookmarkDialogOpen} onOpenChange={setBookmarkDialogOpen}>
