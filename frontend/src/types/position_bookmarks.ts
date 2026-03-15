@@ -5,7 +5,7 @@ export interface PositionBookmarkResponse {
   fen: string;
   moves: string[];
   color: 'white' | 'black' | null;
-  match_side: 'white' | 'black' | 'full';
+  match_side: 'mine' | 'opponent' | 'both' | 'white' | 'black' | 'full'; // new values + legacy values for backward compat
   is_flipped: boolean;
   sort_order: number;
 }
@@ -16,7 +16,7 @@ export interface PositionBookmarkCreate {
   fen: string;
   moves: string[];
   color: 'white' | 'black' | null;
-  match_side: 'white' | 'black' | 'full';
+  match_side: 'mine' | 'opponent' | 'both';
   is_flipped: boolean;
 }
 
@@ -32,7 +32,7 @@ export interface PositionBookmarkReorderRequest {
 export interface TimeSeriesBookmarkParam {
   bookmark_id: number;
   target_hash: string;
-  match_side: 'white' | 'black' | 'full';
+  match_side: 'white' | 'black' | 'full'; // backend API format (resolved before sending)
   color: 'white' | 'black' | null;
 }
 

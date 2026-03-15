@@ -20,16 +20,36 @@ export interface LoginResponse {
 // ─── Analysis ────────────────────────────────────────────────────────────────
 
 export type TimeControl = 'bullet' | 'blitz' | 'rapid' | 'classical';
-export type MatchSide = 'white' | 'black' | 'full';
+/** Frontend representation: mine/opponent/both (relative to the user's color) */
+export type MatchSide = 'mine' | 'opponent' | 'both';
+/** Backend API representation: white/black/full */
+export type ApiMatchSide = 'white' | 'black' | 'full';
 export type Recency = 'week' | 'month' | '3months' | '6months' | 'year' | 'all';
 export type Color = 'white' | 'black';
 export type OpponentType = 'human' | 'bot' | 'both';
 export type UserResult = 'win' | 'draw' | 'loss';
 
+/** Resolves mine/opponent/both + color to the API's white/black/full value */
+export function resolveMatchSide(matchSide: MatchSide, color: Color): ApiMatchSide {
+  if (matchSide === 'both') return 'full';
+  if (matchSide === 'mine') return color; // mine when white = 'white', mine when black = 'black'
+  // opponent
+  return color === 'white' ? 'black' : 'white';
+}
+
+/** Convert legacy stored bookmark match_side values (white/black/full) to the new mine/opponent/both format */
+export function legacyToMatchSide(apiSide: string): MatchSide {
+  if (apiSide === 'full' || apiSide === 'both') return 'both';
+  // Legacy 'white'/'black' stored in bookmarks — treat as 'mine'
+  // since users typically bookmarked their own side
+  if (apiSide === 'mine' || apiSide === 'opponent') return apiSide as MatchSide;
+  return 'mine';
+}
+
 export interface AnalysisRequest {
   /** Hash sent as string to avoid JS precision loss. Optional -- omit to get all games. */
   target_hash?: string;
-  match_side?: MatchSide;
+  match_side?: ApiMatchSide;
   time_control?: TimeControl[] | null;
   platform?: Platform[] | null;
   rated?: boolean | null;

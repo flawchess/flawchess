@@ -4,7 +4,8 @@ import { computeHashes, hashToString } from '@/lib/zobrist';
 import { findOpening, preloadOpenings } from '@/lib/openings';
 import type { ZobristHashes } from '@/lib/zobrist';
 import type { Opening } from '@/lib/openings';
-import type { MatchSide } from '@/types/api';
+import type { MatchSide, Color } from '@/types/api';
+import { resolveMatchSide } from '@/types/api';
 
 export interface ChessGameState {
   /** Current FEN for react-chessboard */
@@ -27,8 +28,8 @@ export interface ChessGameState {
   goBack: () => void;
   /** Reset to starting position */
   reset: () => void;
-  /** Get the hash to send for analysis based on match side */
-  getHashForAnalysis: (matchSide: MatchSide) => string;
+  /** Get the hash to send for analysis based on match side and user color */
+  getHashForAnalysis: (matchSide: MatchSide, color: Color) => string;
   /** Current opening name from the lichess database, or null */
   openingName: Opening | null;
   /** Load a saved sequence of SAN moves onto a fresh board */
@@ -166,9 +167,10 @@ export function useChessGame(): ChessGameState {
   }, []);
 
   const getHashForAnalysis = useCallback(
-    (matchSide: MatchSide): string => {
-      if (matchSide === 'white') return hashToString(hashes.whiteHash);
-      if (matchSide === 'black') return hashToString(hashes.blackHash);
+    (matchSide: MatchSide, color: Color): string => {
+      const resolved = resolveMatchSide(matchSide, color);
+      if (resolved === 'white') return hashToString(hashes.whiteHash);
+      if (resolved === 'black') return hashToString(hashes.blackHash);
       return hashToString(hashes.fullHash);
     },
     [hashes],
