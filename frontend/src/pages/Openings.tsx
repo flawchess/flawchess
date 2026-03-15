@@ -14,7 +14,8 @@ import { WinRateChart } from '@/components/charts/WinRateChart';
 import { WDLBarChart } from '@/components/charts/WDLBarChart';
 import { apiClient } from '@/api/client';
 import { cn } from '@/lib/utils';
-import type { TimeControl, Recency, Platform, OpponentType } from '@/types/api';
+import type { TimeControl, Recency, Platform, OpponentType, Color, MatchSide } from '@/types/api';
+import { resolveMatchSide, legacyToMatchSide } from '@/types/api';
 import type { TimeSeriesRequest } from '@/types/position_bookmarks';
 
 interface StatsFilters {
@@ -93,7 +94,10 @@ export function OpeningsPage() {
       bookmarks: bookmarks.map((b) => ({
         bookmark_id: b.id,
         target_hash: b.target_hash,
-        match_side: b.match_side,
+        match_side: resolveMatchSide(
+          legacyToMatchSide(b.match_side) as MatchSide,
+          (b.color ?? 'white') as Color,
+        ),
         color: b.color,
       })),
       time_control: filters.timeControls,
@@ -112,7 +116,10 @@ export function OpeningsPage() {
       bookmarks: bookmarks.map((b) => ({
         bookmark_id: b.id,
         target_hash: b.target_hash,
-        match_side: b.match_side,
+        match_side: resolveMatchSide(
+          legacyToMatchSide(b.match_side) as MatchSide,
+          (b.color ?? 'white') as Color,
+        ),
         color: b.color,
       })),
       time_control: filters.timeControls,

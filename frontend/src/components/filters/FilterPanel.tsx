@@ -20,7 +20,7 @@ export interface FilterState {
 }
 
 export const DEFAULT_FILTERS: FilterState = {
-  matchSide: 'full',
+  matchSide: 'both',
   timeControls: null,
   platforms: null,
   rated: null,

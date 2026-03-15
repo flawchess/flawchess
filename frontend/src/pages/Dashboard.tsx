@@ -34,6 +34,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { apiClient } from '@/api/client';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { MatchSide, Color, AnalysisResponse } from '@/types/api';
+import { resolveMatchSide, legacyToMatchSide } from '@/types/api';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 
 const PAGE_SIZE = 20;
@@ -100,8 +101,8 @@ export function DashboardPage() {
   const handleAnalyze = useCallback(async () => {
     setPositionFilterActive(true);
     const request = {
-      target_hash: chess.getHashForAnalysis(filters.matchSide),
-      match_side: filters.matchSide,
+      target_hash: chess.getHashForAnalysis(filters.matchSide, filters.color),
+      match_side: resolveMatchSide(filters.matchSide, filters.color),
       time_control: filters.timeControls,
       platform: filters.platforms,
       rated: filters.rated,
@@ -123,8 +124,8 @@ export function DashboardPage() {
     async (newOffset: number) => {
       setAnalysisOffset(newOffset);
       const request = {
-        target_hash: chess.getHashForAnalysis(filters.matchSide),
-        match_side: filters.matchSide,
+        target_hash: chess.getHashForAnalysis(filters.matchSide, filters.color),
+        match_side: resolveMatchSide(filters.matchSide, filters.color),
         time_control: filters.timeControls,
         platform: filters.platforms,
         rated: filters.rated,
@@ -167,7 +168,7 @@ export function DashboardPage() {
     if (!label) return;
 
     const matchSide = filters.matchSide;
-    const targetHash = chess.getHashForAnalysis(matchSide);
+    const targetHash = chess.getHashForAnalysis(matchSide, filters.color);
     const data = {
       label,
       target_hash: targetHash,
@@ -189,7 +190,7 @@ export function DashboardPage() {
   const handleLoadBookmark = useCallback((bkm: PositionBookmarkResponse) => {
     chess.loadMoves(bkm.moves);
     setBoardFlipped(bkm.is_flipped ?? false);
-    setFilters(prev => ({ ...prev, color: bkm.color ?? 'white', matchSide: bkm.match_side as MatchSide }));
+    setFilters(prev => ({ ...prev, color: bkm.color ?? 'white', matchSide: legacyToMatchSide(bkm.match_side) }));
   }, [chess]);
 
   const handleReorder = useCallback((orderedIds: number[]) => {
@@ -323,8 +324,14 @@ export function DashboardPage() {
                   size="sm"
                   data-testid="filter-played-as"
                 >
-                  <ToggleGroupItem value="white" data-testid="filter-played-as-white">White</ToggleGroupItem>
-                  <ToggleGroupItem value="black" data-testid="filter-played-as-black">Black</ToggleGroupItem>
+                  <ToggleGroupItem value="white" data-testid="filter-played-as-white">
+                    <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
+                    White
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="black" data-testid="filter-played-as-black">
+                    <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
+                    Black
+                  </ToggleGroupItem>
                 </ToggleGroup>
               </div>
 
@@ -338,9 +345,9 @@ export function DashboardPage() {
                   size="sm"
                   data-testid="filter-match-side"
                 >
-                  <ToggleGroupItem value="white" data-testid="filter-match-side-white">White</ToggleGroupItem>
-                  <ToggleGroupItem value="black" data-testid="filter-match-side-black">Black</ToggleGroupItem>
-                  <ToggleGroupItem value="full" data-testid="filter-match-side-full">Both</ToggleGroupItem>
+                  <ToggleGroupItem value="mine" data-testid="filter-match-side-mine">Mine</ToggleGroupItem>
+                  <ToggleGroupItem value="opponent" data-testid="filter-match-side-opponent">Opponent</ToggleGroupItem>
+                  <ToggleGroupItem value="both" data-testid="filter-match-side-both">Both</ToggleGroupItem>
                 </ToggleGroup>
               </div>
             </div>
