@@ -97,6 +97,10 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
 - chess.com requires `User-Agent` header; fetch archives sequentially with 100-300ms delays
 - API responses never expose internal hashes — return FEN for display
 
+## User Interface
+
+- The UI must be mobile friendly. Use responsive design patterns (Tailwind breakpoints, flexible layouts) so all pages and components work well on small screens.
+
 ## Browser Automation Rules
 
 These rules ensure the UI remains compatible with the Claude Chrome extension and other automated testing tools.
