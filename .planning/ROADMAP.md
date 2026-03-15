@@ -1,8 +1,8 @@
 # Roadmap: Chessalytics
 
 ## Overview
-- Total phases: 9
-- Total requirements: 21 (v1) + 7 provisional (Phase 5) + 5 provisional (Phase 6) + 6 provisional (Phase 7) + 5 provisional (Phase 8) + 5 provisional (Phase 9)
+- Total phases: 10
+- Total requirements: 21 (v1) + 7 provisional (Phase 5) + 5 provisional (Phase 6) + 6 provisional (Phase 7) + 5 provisional (Phase 8) + 5 provisional (Phase 9) + 8 provisional (Phase 10)
 - Granularity: Coarse
 
 ---
@@ -129,6 +129,7 @@ All 21 v1 requirements are mapped:
 - Phase 7: 6 provisional requirements (STATS-01 through STATS-06)
 - Phase 8: 5 provisional requirements (REWORK-01 through REWORK-05)
 - Phase 9: 5 provisional requirements (GAMES-01 through GAMES-05)
+- Phase 10: 8 provisional requirements (AUTOBKM-01 through AUTOBKM-08)
 
 ---
 
@@ -278,9 +279,41 @@ Plans:
 5. Pagination shows truncated page numbers with ellipsis; page size is 20; page change scrolls to top.
 
 ---
+
+## Phase 10: Auto-generate position bookmarks from most played openings
+
+**Goal:** Let users auto-generate position bookmarks from their most-played opening positions, with a suggestion modal showing mini board previews and bulk save, and enhance existing bookmark cards with mini board thumbnails and inline piece filter controls.
+
+**Requirements:**
+- AUTOBKM-01: Backend identifies top 5 white + top 5 black positions by frequency at ply 6-14 in game_positions
+- AUTOBKM-02: Suggestions exclude positions already bookmarked by the user (deduplication by full_hash)
+- AUTOBKM-03: Piece filter heuristic suggests "Mine" vs "Both" based on opponent variation ratio
+- AUTOBKM-04: Backend PATCH endpoint updates bookmark match_side and recomputes target_hash
+- AUTOBKM-05: Suggestions modal shows mini board previews, game counts, opening names, and suggested piece filter
+- AUTOBKM-06: User can select/deselect suggestions and bulk-save as position bookmarks
+- AUTOBKM-07: Bookmark cards show mini board thumbnails (~60-80px)
+- AUTOBKM-08: Bookmark cards have inline piece filter (match_side) control
+
+**Depends on:** Phase 9
+**Plans:** 3 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — Backend suggestion endpoint + match_side update endpoint with schemas, repository, and tests
+- [ ] 10-02-PLAN.md — Frontend suggestions modal with mini boards, piece filter toggles, and bulk save
+- [ ] 10-03-PLAN.md — Bookmark card enhancements: mini board thumbnails and inline piece filter control
+
+**Success Criteria:**
+1. GET /position-bookmarks/suggestions returns up to 10 suggestions (5 white + 5 black) with FEN, moves, hashes, game count, opening info, and piece filter heuristic.
+2. Suggestions exclude already-bookmarked positions; piece filter heuristic suggests "mine" or "both".
+3. Suggestions modal displays mini board previews with opening names and game counts; user can toggle piece filter and bulk-save selected suggestions.
+4. PATCH /position-bookmarks/{id}/match-side updates match_side and recomputes target_hash correctly.
+5. Bookmark cards show mini board thumbnails and inline piece filter toggles; changing piece filter calls the backend.
+
+---
 *Created: 2026-03-11*
 *Phase 5 added: 2026-03-13*
 *Phase 6 planned: 2026-03-13*
 *Phase 7 planned: 2026-03-14*
 *Phase 8 planned: 2026-03-14*
 *Phase 9 planned: 2026-03-14*
+*Phase 10 planned: 2026-03-15*
