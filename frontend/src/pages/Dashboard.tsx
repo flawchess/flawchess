@@ -544,7 +544,7 @@ export function DashboardPage() {
           <DialogHeader>
             <DialogTitle>Delete All Games</DialogTitle>
             <DialogDescription>
-              This will permanently delete all your imported games and positions. This action cannot be undone.
+              This will delete all your imported games. You can import them again anytime.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
