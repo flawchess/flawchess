@@ -307,7 +307,7 @@ export function DashboardPage() {
               canGoForward={chess.currentPly < chess.moveHistory.length}
             />
 
-            {/* Played as + Match side */}
+            {/* Played as + Piece filter */}
             <div className="flex flex-wrap gap-x-4 gap-y-3">
               <div>
                 <p className="mb-1 text-xs text-muted-foreground">Played as</p>
@@ -336,18 +336,18 @@ export function DashboardPage() {
               </div>
 
               <div>
-                <p className="mb-1 text-xs text-muted-foreground">Match side</p>
+                <p className="mb-1 text-xs text-muted-foreground">Piece filter</p>
                 <ToggleGroup
                   type="single"
                   value={filters.matchSide}
                   onValueChange={(v) => v && setFilters(prev => ({ ...prev, matchSide: v as MatchSide }))}
                   variant="outline"
                   size="sm"
-                  data-testid="filter-match-side"
+                  data-testid="filter-piece-filter"
                 >
-                  <ToggleGroupItem value="mine" data-testid="filter-match-side-mine">Mine</ToggleGroupItem>
-                  <ToggleGroupItem value="opponent" data-testid="filter-match-side-opponent">Opponent</ToggleGroupItem>
-                  <ToggleGroupItem value="both" data-testid="filter-match-side-both">Both</ToggleGroupItem>
+                  <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
+                  <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
+                  <ToggleGroupItem value="both" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
                 </ToggleGroup>
               </div>
             </div>
