@@ -189,7 +189,7 @@ export function DashboardPage() {
   const handleLoadBookmark = useCallback((bkm: PositionBookmarkResponse) => {
     chess.loadMoves(bkm.moves);
     setBoardFlipped(bkm.is_flipped ?? false);
-    setFilters(prev => ({ ...prev, color: bkm.color ?? null, matchSide: bkm.match_side as MatchSide }));
+    setFilters(prev => ({ ...prev, color: bkm.color ?? 'white', matchSide: bkm.match_side as MatchSide }));
   }, [chess]);
 
   const handleReorder = useCallback((orderedIds: number[]) => {
@@ -312,16 +312,17 @@ export function DashboardPage() {
                 <p className="mb-1 text-xs text-muted-foreground">Played as</p>
                 <ToggleGroup
                   type="single"
-                  value={filters.color ?? 'any'}
+                  value={filters.color}
                   onValueChange={(v) => {
                     if (!v) return;
-                    setFilters(prev => ({ ...prev, color: v === 'any' ? null : (v as Color) }));
+                    const color = v as Color;
+                    setFilters(prev => ({ ...prev, color }));
+                    setBoardFlipped(color === 'black');
                   }}
                   variant="outline"
                   size="sm"
                   data-testid="filter-played-as"
                 >
-                  <ToggleGroupItem value="any" data-testid="filter-played-as-any">Any</ToggleGroupItem>
                   <ToggleGroupItem value="white" data-testid="filter-played-as-white">White</ToggleGroupItem>
                   <ToggleGroupItem value="black" data-testid="filter-played-as-black">Black</ToggleGroupItem>
                 </ToggleGroup>

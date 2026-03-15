@@ -16,7 +16,7 @@ export interface FilterState {
   rated: boolean | null; // null = all
   opponentType: OpponentType; // default human = computer games excluded
   recency: Recency | null; // null = all time
-  color: Color | null; // null = any
+  color: Color;
 }
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -26,7 +26,7 @@ export const DEFAULT_FILTERS: FilterState = {
   rated: null,
   opponentType: 'human',
   recency: null,
-  color: null,
+  color: 'white',
 };
 
 interface FilterPanelProps {
