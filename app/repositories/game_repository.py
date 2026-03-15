@@ -1,6 +1,6 @@
 """Game repository: bulk insert with ON CONFLICT DO NOTHING and position insertion."""
 
-from sqlalchemy import func, insert, select
+from sqlalchemy import delete, func, insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +39,23 @@ async def count_games_for_user(session: AsyncSession, user_id: int) -> int:
     """Return total number of games imported by the given user."""
     result = await session.execute(select(func.count()).select_from(Game).where(Game.user_id == user_id))
     return result.scalar_one()
+
+
+async def delete_all_games_for_user(session: AsyncSession, user_id: int) -> int:
+    """Delete all games and positions for the given user.
+
+    Deletes game_positions first (child rows), then games. Returns the count of deleted games.
+
+    Args:
+        session: AsyncSession to use for the deletes.
+        user_id: The user whose data should be deleted.
+
+    Returns:
+        Number of games deleted.
+    """
+    await session.execute(delete(GamePosition).where(GamePosition.user_id == user_id))
+    result = await session.execute(delete(Game).where(Game.user_id == user_id).returning(Game.id))
+    return len(result.fetchall())
 
 
 async def bulk_insert_positions(session: AsyncSession, position_rows: list[dict]) -> None:

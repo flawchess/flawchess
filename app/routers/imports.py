@@ -7,11 +7,13 @@ import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.models.import_job import ImportJob
 from app.models.user import User
-from app.repositories import import_job_repository
+from app.repositories import game_repository, import_job_repository
 from app.schemas.imports import ImportRequest, ImportStartedResponse, ImportStatusResponse
 from app.services import import_service
 from app.users import current_active_user
@@ -87,3 +89,18 @@ async def get_import_status(
         )
 
     raise HTTPException(status_code=404, detail="Job not found")
+
+
+@router.delete("/games")
+async def delete_all_games(
+    user: Annotated[User, Depends(current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> dict:
+    """Delete all games, positions, and import jobs for the authenticated user.
+
+    Returns the count of deleted games.
+    """
+    deleted_count = await game_repository.delete_all_games_for_user(session, user.id)
+    await session.execute(delete(ImportJob).where(ImportJob.user_id == user.id))
+    await session.commit()
+    return {"deleted_count": deleted_count}
