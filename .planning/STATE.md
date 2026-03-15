@@ -4,9 +4,9 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 09-03 complete
 status: completed
-stopped_at: "Completed quick-20: Add a delete button left of the import button"
-last_updated: "2026-03-15T08:37:22.532Z"
-last_activity: "2026-03-14 - Completed quick task 19: Fix x-axis in rating charts - adaptive equal-distance ticks"
+stopped_at: "Completed quick-21: Rename alembic migration files with UTC timestamp prefix"
+last_updated: "2026-03-15T08:52:31.998Z"
+last_activity: "2026-03-15 - Completed quick task 20: Add delete button with confirmation modal"
 progress:
   total_phases: 9
   completed_phases: 8
@@ -20,7 +20,7 @@ progress:
 Phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
 Status: Complete — 3/3 plans done
 Current Plan: 09-03 complete
-Stopped At: Completed quick-20: Add a delete button left of the import button
+Stopped At: Completed quick-21: Rename alembic migration files with UTC timestamp prefix
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
