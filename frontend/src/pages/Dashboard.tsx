@@ -34,7 +34,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { apiClient } from '@/api/client';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { MatchSide, Color, AnalysisResponse } from '@/types/api';
-import { resolveMatchSide, legacyToMatchSide } from '@/types/api';
+import { resolveMatchSide } from '@/types/api';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 
 const PAGE_SIZE = 20;
@@ -190,7 +190,7 @@ export function DashboardPage() {
   const handleLoadBookmark = useCallback((bkm: PositionBookmarkResponse) => {
     chess.loadMoves(bkm.moves);
     setBoardFlipped(bkm.is_flipped ?? false);
-    setFilters(prev => ({ ...prev, color: bkm.color ?? 'white', matchSide: legacyToMatchSide(bkm.match_side) }));
+    setFilters(prev => ({ ...prev, color: bkm.color ?? 'white', matchSide: bkm.match_side }));
   }, [chess]);
 
   const handleReorder = useCallback((orderedIds: number[]) => {
