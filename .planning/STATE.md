@@ -195,6 +195,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 17 | Move the Import button to the same row as the n of m games matched indicator (right aligned) | 2026-03-14 | 8945bc8 | [17-move-the-import-button-to-the-same-row-a](.planning/quick/17-move-the-import-button-to-the-same-row-a/) |
 | 18 | Add color circles and icon buttons to bookmark cards | 2026-03-14 | 27879d1 | [18-add-color-circles-and-icon-buttons-to-bo](.planning/quick/18-add-color-circles-and-icon-buttons-to-bo/) |
 | 19 | Fix x-axis in rating charts — adaptive equal-distance ticks | 2026-03-14 | c997dcc | [19-fix-x-axis-in-rating-charts-adaptive-equ](.planning/quick/19-fix-x-axis-in-rating-charts-adaptive-equ/) |
+| 20 | Add a delete button left of the import button which deletes all the user's imported games. There should be a confirmation modal for this. | 2026-03-15 | 1a318e8 | [20-add-a-delete-button-left-of-the-import-b](./quick/20-add-a-delete-button-left-of-the-import-b/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -203,4 +204,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-14 - Completed quick task 19: Fix x-axis in rating charts - adaptive equal-distance ticks
+Last activity: 2026-03-15 - Completed quick task 20: Add delete button with confirmation modal
