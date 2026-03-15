@@ -1,3 +1,5 @@
+import type { MatchSide } from './api';
+
 export interface PositionBookmarkResponse {
   id: number;
   label: string;
@@ -5,7 +7,7 @@ export interface PositionBookmarkResponse {
   fen: string;
   moves: string[];
   color: 'white' | 'black' | null;
-  match_side: 'mine' | 'opponent' | 'both' | 'white' | 'black' | 'full'; // new values + legacy values for backward compat
+  match_side: MatchSide;
   is_flipped: boolean;
   sort_order: number;
 }

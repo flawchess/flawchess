@@ -37,14 +37,6 @@ export function resolveMatchSide(matchSide: MatchSide, color: Color): ApiMatchSi
   return color === 'white' ? 'black' : 'white';
 }
 
-/** Convert legacy stored bookmark match_side values (white/black/full) to the new mine/opponent/both format */
-export function legacyToMatchSide(apiSide: string): MatchSide {
-  if (apiSide === 'full' || apiSide === 'both') return 'both';
-  // Legacy 'white'/'black' stored in bookmarks — treat as 'mine'
-  // since users typically bookmarked their own side
-  if (apiSide === 'mine' || apiSide === 'opponent') return apiSide as MatchSide;
-  return 'mine';
-}
 
 export interface AnalysisRequest {
   /** Hash sent as string to avoid JS precision loss. Optional -- omit to get all games. */
