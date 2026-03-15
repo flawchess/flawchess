@@ -4,9 +4,9 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 09-03 complete
 status: completed
-stopped_at: "Completed quick-22: Remove Any option from Played as filter and auto-flip board on color change"
-last_updated: "2026-03-15T09:28:00.000Z"
-last_activity: "2026-03-15 - Completed quick task 22: Remove Any option from Played as filter and auto-flip board on color change"
+stopped_at: "Completed quick-23: Add color icons to Played as and relabel Match side to Mine/Opponent/Both"
+last_updated: "2026-03-15T09:32:48Z"
+last_activity: "2026-03-15 - Completed quick task 23: Add color icons to Played as and relabel Match side to Mine/Opponent/Both"
 progress:
   total_phases: 9
   completed_phases: 8
@@ -198,6 +198,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 20 | Add a delete button left of the import button which deletes all the user's imported games. There should be a confirmation modal for this. | 2026-03-15 | 1a318e8 | [20-add-a-delete-button-left-of-the-import-b](./quick/20-add-a-delete-button-left-of-the-import-b/) |
 | 21 | Alembic migration filenames with UTC timestamp prefix | 2026-03-15 | 0d9a7b7 | [21-alembic-migration-filenames-should-start](./quick/21-alembic-migration-filenames-should-start/) |
 | 22 | Remove Any option from Played as filter and auto-flip board on color change | 2026-03-15 | a778447 | [22-remove-any-option-from-played-as-filter-](./quick/22-remove-any-option-from-played-as-filter-/) |
+| 23 | Add color icons to Played as and relabel Match side to Mine/Opponent/Both | 2026-03-15 | c192361 | [23-add-color-icons-to-played-as-options-and](./quick/23-add-color-icons-to-played-as-options-and/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -206,4 +207,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-15 - Completed quick task 22: Remove Any option from Played as filter and auto-flip board on color change
+Last activity: 2026-03-15 - Completed quick task 23: Add color icons to Played as and relabel Match side to Mine/Opponent/Both
