@@ -1,7 +1,8 @@
 import axios from 'axios';
 import type {
   PositionBookmarkResponse, PositionBookmarkCreate, PositionBookmarkUpdate,
-  PositionBookmarkReorderRequest, TimeSeriesRequest, TimeSeriesResponse
+  PositionBookmarkReorderRequest, TimeSeriesRequest, TimeSeriesResponse,
+  MatchSideUpdateRequest, SuggestionsResponse
 } from '@/types/position_bookmarks';
 import type { RatingHistoryResponse, GlobalStatsResponse } from '@/types/stats';
 
@@ -58,6 +59,10 @@ export const positionBookmarksApi = {
     apiClient.delete(`/position-bookmarks/${id}`),
   reorder: (req: PositionBookmarkReorderRequest) =>
     apiClient.put<PositionBookmarkResponse[]>('/position-bookmarks/reorder', req).then(r => r.data),
+  updateMatchSide: (id: number, data: MatchSideUpdateRequest) =>
+    apiClient.patch<PositionBookmarkResponse>(`/position-bookmarks/${id}/match-side`, data).then(r => r.data),
+  getSuggestions: () =>
+    apiClient.get<SuggestionsResponse>('/position-bookmarks/suggestions').then(r => r.data),
 };
 
 // ─── Time Series API ──────────────────────────────────────────────────────────

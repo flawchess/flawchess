@@ -3,23 +3,128 @@
 HTTP layer only — all DB operations go through position_bookmark_repository.
 """
 
+import io
 from typing import Annotated
 
+import chess
+import chess.pgn
 from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.models.game import Game
+from app.models.game_position import GamePosition
 from app.models.user import User
 from app.repositories import position_bookmark_repository
 from app.schemas.position_bookmarks import (
+    MatchSideUpdateRequest,
     PositionBookmarkCreate,
     PositionBookmarkReorderRequest,
     PositionBookmarkResponse,
     PositionBookmarkUpdate,
+    PositionSuggestion,
+    SuggestionsResponse,
 )
+from app.services.opening_lookup import find_opening
 from app.users import current_active_user
 
 router = APIRouter(tags=["position-bookmarks"])
+
+
+# NOTE: /position-bookmarks/suggestions MUST be defined BEFORE /position-bookmarks/{id} so
+# FastAPI does not attempt to parse "suggestions" as an integer bookmark ID.
+@router.get("/position-bookmarks/suggestions", response_model=SuggestionsResponse)
+async def get_suggestions(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> SuggestionsResponse:
+    """Return up to 5 white + 5 black position bookmark suggestions from most-played openings.
+
+    Suggestions are derived from the user's most frequently played positions in ply range 6-14.
+    Already-bookmarked positions are excluded. Each suggestion includes FEN, SAN moves,
+    opening name/ECO, game count, and a recommended piece filter (mine vs both).
+    """
+    PLY_MIN = 2
+    PLY_MAX = 8
+    LIMIT_PER_COLOR = 5
+
+    # Get target_hashes of positions already bookmarked (for deduplication)
+    existing_target_hashes = await position_bookmark_repository.get_existing_target_hashes(
+        session, user.id
+    )
+
+    suggestions: list[PositionSuggestion] = []
+
+    for color in ("white", "black"):
+        top_positions = await position_bookmark_repository.get_top_positions_for_color(
+            session,
+            user_id=user.id,
+            color=color,
+            ply_min=PLY_MIN,
+            ply_max=PLY_MAX,
+            limit=LIMIT_PER_COLOR,
+            exclude_target_hashes=existing_target_hashes,
+        )
+
+        for white_hash, black_hash, full_hash, game_count in top_positions:
+            # Find a representative game for this position
+            stmt = (
+                select(GamePosition.game_id, GamePosition.ply)
+                .where(
+                    GamePosition.full_hash == full_hash,
+                    GamePosition.user_id == user.id,
+                )
+                .limit(1)
+            )
+            gp_result = await session.execute(stmt)
+            gp_row = gp_result.first()
+            if gp_row is None:
+                continue
+
+            game_id, ply = gp_row.game_id, gp_row.ply
+
+            pgn_stmt = select(Game.pgn).where(Game.id == game_id)
+            pgn_result = await session.execute(pgn_stmt)
+            pgn = pgn_result.scalar_one_or_none()
+            if pgn is None:
+                continue
+
+            # Reconstruct FEN and SAN moves at the target ply using python-chess
+            try:
+                game = chess.pgn.read_game(io.StringIO(pgn))
+                if game is None:
+                    continue
+                board = game.board()
+                san_moves: list[str] = []
+                for i, move in enumerate(game.mainline_moves()):
+                    if i >= ply:
+                        break
+                    san_moves.append(board.san(move))
+                    board.push(move)
+                position_fen = board.fen()
+            except Exception:
+                continue
+
+            # Look up opening name from SAN moves
+            opening_pgn = " ".join(san_moves)
+            opening_eco, opening_name = find_opening(opening_pgn)
+
+            suggestions.append(
+                PositionSuggestion(
+                    white_hash=str(white_hash),
+                    black_hash=str(black_hash),
+                    full_hash=str(full_hash),
+                    fen=position_fen,
+                    moves=san_moves,
+                    color=color,
+                    game_count=game_count,
+                    opening_name=opening_name,
+                    opening_eco=opening_eco,
+                )
+            )
+
+    return SuggestionsResponse(suggestions=suggestions)
 
 
 @router.get("/position-bookmarks", response_model=list[PositionBookmarkResponse])
@@ -83,3 +188,22 @@ async def delete_bookmark(
     if not deleted:
         raise HTTPException(status_code=404, detail="Position bookmark not found")
     return Response(status_code=204)
+
+
+@router.patch(
+    "/position-bookmarks/{bookmark_id}/match-side",
+    response_model=PositionBookmarkResponse,
+)
+async def update_match_side(
+    bookmark_id: int,
+    data: MatchSideUpdateRequest,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> PositionBookmarkResponse:
+    """Update match_side for a position bookmark, recomputing target_hash from the stored FEN."""
+    bookmark = await position_bookmark_repository.update_match_side(
+        session, bookmark_id, user.id, data.match_side
+    )
+    if bookmark is None:
+        raise HTTPException(status_code=404, detail="Position bookmark not found")
+    return PositionBookmarkResponse.model_validate(bookmark)

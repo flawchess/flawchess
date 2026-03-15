@@ -258,7 +258,7 @@ export function DashboardPage() {
   );
 
   const leftColumn = (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 min-w-0">
       {/* Section 1: Position filter */}
       <Collapsible open={positionFilterOpen} onOpenChange={setPositionFilterOpen}>
         <CollapsibleTrigger asChild>
@@ -383,17 +383,11 @@ export function DashboardPage() {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="pt-2">
-            {bookmarks.length === 0 ? (
-              <p className="px-2 text-xs text-muted-foreground">
-                No position bookmarks yet. Use the 'Bookmark' button above to save positions.
-              </p>
-            ) : (
-              <PositionBookmarkList
-                bookmarks={bookmarks}
-                onReorder={handleReorder}
-                onLoad={handleLoadBookmark}
-              />
-            )}
+            <PositionBookmarkList
+              bookmarks={bookmarks}
+              onReorder={handleReorder}
+              onLoad={handleLoadBookmark}
+            />
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -526,7 +520,7 @@ export function DashboardPage() {
       {/* Body */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-6">
         {/* Desktop: two-column layout */}
-        <div className="hidden md:grid md:grid-cols-[auto_1fr] md:gap-8 xl:grid-cols-[400px_1fr]">
+        <div className="hidden md:grid md:grid-cols-[350px_1fr] md:gap-8 xl:grid-cols-[400px_1fr]">
           <div className="min-w-0">{leftColumn}</div>
           <div className="min-w-0">{rightColumn}</div>
         </div>

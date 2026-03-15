@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 09-03 complete
-status: completed
-stopped_at: "Completed quick-24: Remove legacyToMatchSide dead code and narrow PositionBookmarkResponse.match_side type"
-last_updated: "2026-03-15T09:41:40Z"
-last_activity: "2026-03-15 - Completed quick task 24: Remove legacyToMatchSide dead code and narrow PositionBookmarkResponse.match_side type"
+current_plan: 10-04 complete
+status: executing
+stopped_at: Completed 10-04-PLAN.md
+last_updated: "2026-03-15T12:11:14.599Z"
+last_activity: "2026-03-15 - Completed quick task 25: Remove piece filter from suggestion modal, hardcode match_side to 'both'"
 progress:
-  total_phases: 9
-  completed_phases: 8
-  total_plans: 32
-  completed_plans: 31
+  total_phases: 10
+  completed_phases: 9
+  total_plans: 36
+  completed_plans: 35
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
-Phase: 09-rework-the-games-list-with-game-cards-username-import-and-improved-pagination
-Status: Complete — 3/3 plans done
-Current Plan: 09-03 complete
-Stopped At: Completed quick-21: Rename alembic migration files with UTC timestamp prefix
+Phase: 10-auto-generate-position-bookmarks-from-most-played-openings
+Status: Complete — 4/4 plans done
+Current Plan: 10-04 complete
+Stopped At: Completed 10-04-PLAN.md
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-11)
@@ -38,7 +38,8 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 6 | Optimize UI for Claude Chrome Extension Testing | Complete | 2/2 |
 | 7 | More game statistics and charts | Complete | 3/3 |
 | 8 | Rework Games and Bookmark tabs | Complete | 3/3 |
-| 9 | Rework games list with game cards and improved pagination | In Progress | 4/5 |
+| 9 | Rework games list with game cards and improved pagination | Complete | 5/5 |
+| 10 | Auto-generate position bookmarks from most played openings | Complete | 4/4 |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -54,6 +55,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - Phase 7 added: Add more game statistics and charts by replicating the most popular analyses from chess.com and lichess insights
 - Phase 8 added: Rework Games and Bookmark tabs: position filter section, position bookmarks section, rename bookmarks to position_bookmarks
 - Phase 9 added: Rework the games list with game cards, username import, and improved pagination
+- Phase 10 added: Auto-generate position bookmarks from most played openings
 
 ### Key Decisions
 - **FastAPI dependency_overrides for test auth bypass**: Use `dependency_overrides[_dev_bypass_user] = _jwt_current_active_user` in session-scoped autouse fixture — intercepts at resolution time regardless of how routers imported the callable; avoids patching module-level attributes directly
@@ -137,6 +139,14 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Derived user_rating via CASE WHEN**: stats_repository uses CASE WHEN user_color='white' THEN white_rating ELSE black_rating END — no stored user_rating column needed
 - **GameCard opponent bolding**: !isUserWhite for white span bold, isUserWhite for black span bold — the opponent (not the user) is always emphasized
 - **RatingChart numeric timestamp x-axis**: type="number" scale="time" with dateTs field + computeXTicks (adaptive 1/2/3/6/12 month intervals) — eliminates repeated labels; tooltip formats dateTs back to readable date
+- **get_existing_target_hashes reads target_hash directly**: reads target_hash column from bookmarks instead of recomputing full_hash from FEN — avoids exclusion failure for mine/opponent bookmarks where target_hash != full_hash
+- **get_top_positions_for_color groups by color-specific hash**: groups by white_hash (white) or black_hash (black) to merge opponent variations; requires minimum 2 games; excludes by target hash not full_hash
+- **suggest_match_side two-granularity heuristic**: if my_hash_count > 2 * full_hash_count within ply range, suggest "mine" (opponent varies); else suggest "both" — replaces flawed ratio threshold 1.5 that was mathematically unreachable
+- **create_bookmark sort_order MAX+1**: sort_order = COALESCE(MAX(sort_order), -1) + 1 so new bookmarks always append in stable order instead of hardcoded 0
+- **ToggleGroup type=single for match_side in bookmark card**: fires empty string when re-clicking active item — guard with `if (!value) return` prevents clearing the active selection
+- **MiniBoard hidden sm:block in bookmark card**: mini board hidden on very small screens to keep card layout clean on mobile; visible from sm breakpoint up
+- **usePositionSuggestions enabled:false**: suggestions hook uses enabled:false so data only fetches on demand via refetch() when user clicks Suggest bookmarks — avoids unnecessary API calls on page load
+- **Sequential for-of await in bulk bookmark save**: saves suggestions one-by-one with await rather than Promise.all to prevent sort_order race conditions on the backend
 
 ### Performance Metrics
 | Phase | Plan | Duration | Tasks | Files |
@@ -173,6 +183,10 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | Phase 09 P07 | 5min | 1 tasks | 1 files |
 | Phase 09 P06 | 6min | 2 tasks | 12 files |
 | Phase 09 P08 | 5min | 2 tasks | 2 files |
+| Phase 10 P01 | 4min | 2 tasks | 4 files |
+| Phase 10 P03 | 3min | 2 tasks | 4 files |
+| Phase 10 P02 | 5min | 2 tasks | 7 files |
+| Phase 10 P04 | 5min | 2 tasks | 4 files |
 
 ### Quick Tasks Completed
 
@@ -200,6 +214,7 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 | 22 | Remove Any option from Played as filter and auto-flip board on color change | 2026-03-15 | a778447 | [22-remove-any-option-from-played-as-filter-](./quick/22-remove-any-option-from-played-as-filter-/) |
 | 23 | Add color icons to Played as and relabel Match side to Mine/Opponent/Both | 2026-03-15 | c192361 | [23-add-color-icons-to-played-as-options-and](./quick/23-add-color-icons-to-played-as-options-and/) |
 | 24 | Remove legacyToMatchSide dead code and narrow PositionBookmarkResponse.match_side type | 2026-03-15 | 41b1cd7 | [24-remove-legacy-bookmark-match-side-conver](./quick/24-remove-legacy-bookmark-match-side-conver/) |
+| 25 | Remove piece filter from suggestion modal, hardcode match_side to 'both' | 2026-03-15 | 951d5e3 | [25-remove-the-piece-filter-in-the-bookmark-](./quick/25-remove-the-piece-filter-in-the-bookmark-/) |
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -208,4 +223,4 @@ Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
 - **Optimize for automated browser testing with Chrome Plugin** (testing) — Add data-testid attributes and stable selectors for browser automation UAT
 
 ---
-Last activity: 2026-03-15 - Completed quick task 24: Remove legacyToMatchSide dead code and narrow PositionBookmarkResponse.match_side type
+Last activity: 2026-03-15 - Completed quick task 25: Remove piece filter from suggestion modal, hardcode match_side to 'both'

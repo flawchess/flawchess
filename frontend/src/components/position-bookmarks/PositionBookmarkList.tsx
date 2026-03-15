@@ -14,8 +14,11 @@ import {
   verticalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable';
+import { Sparkles } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 import { PositionBookmarkCard } from './PositionBookmarkCard';
+import { SuggestionsModal } from './SuggestionsModal';
 
 interface Props {
   bookmarks: PositionBookmarkResponse[];
@@ -25,6 +28,7 @@ interface Props {
 
 export function PositionBookmarkList({ bookmarks, onReorder, onLoad }: Props) {
   const [items, setItems] = useState(bookmarks);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
 
   // Sync when server data refreshes (e.g., after delete or label edit)
   useEffect(() => {
@@ -48,14 +52,36 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad }: Props) {
   };
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={items.map((b) => b.id)} strategy={verticalListSortingStrategy}>
-        <div className="space-y-2">
-          {items.map((b) => (
-            <PositionBookmarkCard key={b.id} bookmark={b} onLoad={onLoad} />
-          ))}
-        </div>
-      </SortableContext>
-    </DndContext>
+    <>
+      <div className="flex justify-end mb-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setSuggestionsOpen(true)}
+          data-testid="btn-suggest-bookmarks"
+        >
+          <Sparkles className="h-4 w-4 mr-1" />
+          Suggest bookmarks
+        </Button>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="px-2 text-xs text-muted-foreground break-words">
+          No position bookmarks yet. Use the &apos;Bookmark&apos; button above to save positions, or use &apos;Suggest bookmarks&apos; to auto-generate from your most-played openings.
+        </p>
+      ) : (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={items.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-2">
+              {items.map((b) => (
+                <PositionBookmarkCard key={b.id} bookmark={b} onLoad={onLoad} />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      )}
+
+      <SuggestionsModal open={suggestionsOpen} onOpenChange={setSuggestionsOpen} />
+    </>
   );
 }

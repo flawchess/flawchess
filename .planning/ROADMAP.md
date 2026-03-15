@@ -100,7 +100,7 @@ Plans:
 - AUTH-01: User can create an account and log in
 - AUTH-02: Each user's games and analyses are isolated (row-level data scoping)
 
-**Plans:** 3/3 plans complete
+**Plans:** 4 plans (3 complete + 1 gap closure)
 
 Plans:
 - [x] 04-01-PLAN.md — Backend auth: User model, FastAPI-Users, auth routes, CORS, replace user_id=1, tests
@@ -203,7 +203,7 @@ Plans:
 - STATS-06: ECO extraction test coverage confirms chess.com variation URLs handled correctly
 
 **Depends on:** Phase 6
-**Plans:** 3/3 plans complete
+**Plans:** 4 plans (3 complete + 1 gap closure)
 
 Plans:
 - [ ] 07-01-PLAN.md — Backend stats schemas, repository, service, router, and tests
@@ -231,7 +231,7 @@ Plans:
 - REWORK-05: Move "Bookmark this position" button into the Position filter collapsible section
 
 **Depends on:** Phase 7
-**Plans:** 3/3 plans complete
+**Plans:** 4 plans (3 complete + 1 gap closure)
 
 Plans:
 - [ ] 08-01-PLAN.md — Backend rename: Alembic migration, model/repo/schemas/router rename to position_bookmarks, test updates
@@ -295,12 +295,13 @@ Plans:
 - AUTOBKM-08: Bookmark cards have inline piece filter (match_side) control
 
 **Depends on:** Phase 9
-**Plans:** 3 plans
+**Plans:** 4/4 plans complete
 
 Plans:
 - [ ] 10-01-PLAN.md — Backend suggestion endpoint + match_side update endpoint with schemas, repository, and tests
 - [ ] 10-02-PLAN.md — Frontend suggestions modal with mini boards, piece filter toggles, and bulk save
 - [ ] 10-03-PLAN.md — Bookmark card enhancements: mini board thumbnails and inline piece filter control
+- [ ] 10-04-PLAN.md — Gap closure: fix suggestion dedup, match_side heuristic, sort_order, and Opponent label
 
 **Success Criteria:**
 1. GET /position-bookmarks/suggestions returns up to 10 suggestions (5 white + 5 black) with FEN, moves, hashes, game count, opening info, and piece filter heuristic.

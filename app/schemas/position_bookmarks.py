@@ -5,6 +5,36 @@ import json
 from pydantic import BaseModel, ConfigDict, field_serializer, field_validator, model_validator
 
 
+class PositionSuggestion(BaseModel):
+    """A single position bookmark suggestion derived from most-played openings."""
+
+    white_hash: str
+    black_hash: str
+    full_hash: str
+    fen: str
+    moves: list[str]
+    color: str  # "white" | "black"
+    game_count: int
+    opening_name: str | None
+    opening_eco: str | None
+
+    @field_serializer("white_hash", "black_hash", "full_hash")
+    def serialize_hash(self, v: int) -> str:
+        return str(v)
+
+
+class SuggestionsResponse(BaseModel):
+    """Response schema for position bookmark suggestions."""
+
+    suggestions: list[PositionSuggestion]
+
+
+class MatchSideUpdateRequest(BaseModel):
+    """Request body for updating match_side on an existing position bookmark."""
+
+    match_side: str  # "mine" | "opponent" | "both"
+
+
 class PositionBookmarkCreate(BaseModel):
     """Request body for creating a position bookmark."""
 

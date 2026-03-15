@@ -3,8 +3,11 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Upload, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useUpdatePositionBookmarkLabel, useDeletePositionBookmark } from '@/hooks/usePositionBookmarks';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { useUpdatePositionBookmarkLabel, useDeletePositionBookmark, useUpdateMatchSide } from '@/hooks/usePositionBookmarks';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
+import type { MatchSide } from '@/types/api';
+import { MiniBoard } from './MiniBoard';
 
 interface Props {
   bookmark: PositionBookmarkResponse;
@@ -14,6 +17,7 @@ interface Props {
 export function PositionBookmarkCard({ bookmark, onLoad }: Props) {
   const updateLabel = useUpdatePositionBookmarkLabel();
   const deleteBookmark = useDeletePositionBookmark();
+  const updateMatchSide = useUpdateMatchSide();
 
   const [isEditing, setIsEditing] = useState(false);
   const [labelValue, setLabelValue] = useState(bookmark.label);
@@ -63,6 +67,11 @@ export function PositionBookmarkCard({ bookmark, onLoad }: Props) {
     deleteBookmark.mutate(bookmark.id);
   };
 
+  const handleMatchSideChange = (value: string) => {
+    if (!value) return; // ToggleGroup fires empty string when clicking the active item
+    updateMatchSide.mutate({ id: bookmark.id, data: { match_side: value as MatchSide } });
+  };
+
   return (
     <div
       ref={setNodeRef}
@@ -80,43 +89,77 @@ export function PositionBookmarkCard({ bookmark, onLoad }: Props) {
         ☰
       </span>
 
-      {/* Color indicator */}
-      <span
-        className="text-muted-foreground shrink-0 text-sm"
-        data-testid={`bookmark-color-${bookmark.id}`}
-        aria-label={
-          bookmark.color === 'white'
-            ? 'Played as white'
-            : bookmark.color === 'black'
-              ? 'Played as black'
-              : 'Played as any'
-        }
+      {/* Mini board thumbnail — hidden on very small screens */}
+      <div
+        className="hidden sm:block shrink-0"
+        data-testid={`bookmark-mini-board-${bookmark.id}`}
+        style={{ opacity: updateMatchSide.isPending ? 0.6 : 1, transition: 'opacity 0.15s' }}
       >
-        {bookmark.color === 'white' ? '●' : bookmark.color === 'black' ? '○' : '◐'}
-      </span>
+        <MiniBoard fen={bookmark.fen} flipped={bookmark.is_flipped} size={60} />
+      </div>
 
-      {/* Editable label */}
-      {isEditing ? (
-        <input
-          autoFocus
-          value={labelValue}
-          onChange={(e) => setLabelValue(e.target.value)}
-          onBlur={handleLabelBlur}
-          onKeyDown={handleLabelKeyDown}
-          data-testid={`bookmark-label-input-${bookmark.id}`}
-          className="flex-1 min-w-0 bg-transparent text-sm font-medium outline-none border-b border-primary focus:border-primary"
-        />
-      ) : (
-        <button
-          className="flex-1 min-w-0 cursor-text text-sm font-medium truncate text-left bg-transparent border-none p-0"
-          onClick={handleLabelClick}
-          title={bookmark.label}
-          data-testid={`bookmark-label-${bookmark.id}`}
-          aria-label={`Edit bookmark label: ${bookmark.label}`}
+      {/* Label + piece filter stacked */}
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        {/* Editable label */}
+        {isEditing ? (
+          <input
+            autoFocus
+            value={labelValue}
+            onChange={(e) => setLabelValue(e.target.value)}
+            onBlur={handleLabelBlur}
+            onKeyDown={handleLabelKeyDown}
+            data-testid={`bookmark-label-input-${bookmark.id}`}
+            className="min-w-0 bg-transparent text-sm font-medium outline-none border-b border-primary focus:border-primary"
+          />
+        ) : (
+          <button
+            className="min-w-0 cursor-text text-sm font-medium truncate text-left bg-transparent border-none p-0"
+            onClick={handleLabelClick}
+            title={bookmark.label}
+            data-testid={`bookmark-label-${bookmark.id}`}
+            aria-label={`Edit bookmark label: ${bookmark.label}`}
+          >
+            {bookmark.label}
+          </button>
+        )}
+
+        {/* Piece filter toggle */}
+        <ToggleGroup
+          type="single"
+          value={bookmark.match_side}
+          onValueChange={handleMatchSideChange}
+          variant="outline"
+          size="sm"
+          data-testid={`bookmark-match-side-${bookmark.id}`}
+          className="justify-start"
+          aria-label="Piece filter"
         >
-          {bookmark.label}
-        </button>
-      )}
+          <ToggleGroupItem
+            value="mine"
+            data-testid={`bookmark-match-side-${bookmark.id}-mine`}
+            aria-label="Match my pieces only"
+            className="text-xs h-6 px-2"
+          >
+            Mine
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="opponent"
+            data-testid={`bookmark-match-side-${bookmark.id}-opponent`}
+            aria-label="Match opponent pieces only"
+            className="text-xs h-6 px-2"
+          >
+            Opponent
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="both"
+            data-testid={`bookmark-match-side-${bookmark.id}-both`}
+            aria-label="Match both sides"
+            className="text-xs h-6 px-2"
+          >
+            Both
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </div>
 
       {/* Load button */}
       <Button

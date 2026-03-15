@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { positionBookmarksApi, timeSeriesApi } from '@/api/client';
-import type { PositionBookmarkCreate, PositionBookmarkResponse, PositionBookmarkUpdate, TimeSeriesRequest } from '@/types/position_bookmarks';
+import type { PositionBookmarkCreate, PositionBookmarkResponse, PositionBookmarkUpdate, TimeSeriesRequest, MatchSideUpdateRequest } from '@/types/position_bookmarks';
 
 export function usePositionBookmarks() {
   return useQuery({
@@ -58,10 +58,30 @@ export function useReorderPositionBookmarks() {
   });
 }
 
+export function useUpdateMatchSide() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: MatchSideUpdateRequest }) =>
+      positionBookmarksApi.updateMatchSide(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['position-bookmarks'] });
+    },
+  });
+}
+
 export function useTimeSeries(req: TimeSeriesRequest | null) {
   return useQuery({
     queryKey: ['timeSeries', req],
     queryFn: () => timeSeriesApi.fetch(req!),
     enabled: !!req && req.bookmarks.length > 0,
+  });
+}
+
+export function usePositionSuggestions() {
+  return useQuery({
+    queryKey: ['position-bookmark-suggestions'],
+    queryFn: positionBookmarksApi.getSuggestions,
+    staleTime: 60_000,
+    enabled: false,  // only fetch when user clicks "Suggest bookmarks"
   });
 }
