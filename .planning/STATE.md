@@ -1,45 +1,36 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-current_plan: 10-04 complete
-status: executing
-stopped_at: Completed 10-04-PLAN.md
-last_updated: "2026-03-15T12:11:14.599Z"
-last_activity: "2026-03-15 - Completed quick task 25: Remove piece filter from suggestion modal, hardcode match_side to 'both'"
+milestone: v1.1
+milestone_name: Opening Explorer & UI Restructuring
+current_plan: —
+status: defining_requirements
+stopped_at: —
+last_updated: "2026-03-16T00:00:00.000Z"
+last_activity: "2026-03-16 — Milestone v1.1 started"
 progress:
-  total_phases: 10
-  completed_phases: 9
-  total_plans: 36
-  completed_plans: 35
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
-Phase: 10-auto-generate-position-bookmarks-from-most-played-openings
-Status: Complete — 4/4 plans done
-Current Plan: 10-04 complete
-Stopped At: Completed 10-04-PLAN.md
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-16 — Milestone v1.1 started
 
 ## Project Reference
-See: .planning/PROJECT.md (updated 2026-03-11)
+See: .planning/PROJECT.md (updated 2026-03-16)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Phase 5 - Position Bookmarks and W/D/L Comparison Charts
+Current focus: v1.1 — Opening Explorer & UI Restructuring
 
 ## Phase Progress
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
-| 1 | Data Foundation | Complete | 2/2 |
-| 2 | Import Pipeline | Complete | 4/4 |
-| 3 | Analysis API | Complete | 2/2 |
-| 4 | Frontend and Auth | Complete | 3/3 |
-| 5 | Position Bookmarks and W/D/L Charts | Complete | 5/5 |
-| 6 | Optimize UI for Claude Chrome Extension Testing | Complete | 2/2 |
-| 7 | More game statistics and charts | Complete | 3/3 |
-| 8 | Rework Games and Bookmark tabs | Complete | 3/3 |
-| 9 | Rework games list with game cards and improved pagination | Complete | 5/5 |
-| 10 | Auto-generate position bookmarks from most played openings | Complete | 4/4 |
+| (v1.1 phases not yet defined) | | | |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess

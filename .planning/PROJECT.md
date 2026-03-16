@@ -8,34 +8,51 @@ A multi-user chess analysis platform that lets players import their games from c
 
 Users can determine their success rate for any opening position they specify, filtering by their own pieces only, regardless of how platforms categorize the opening.
 
+## Current Milestone: v1.1 Opening Explorer & UI Restructuring
+
+**Goal:** Add an interactive move explorer (inspired by openingtree.com) showing next moves with W/D/L stats for every position, and restructure the UI with a dedicated Import page and merged Openings tab with sub-tabs.
+
+**Target features:**
+- Move explorer: next moves with W/D/L stats per move, click-to-navigate
+- Store move SAN in game_positions for performant lookups
+- Dedicated Import page (replaces modal)
+- Merged Openings tab with Move Explorer / Games / Statistics sub-tabs
+- Shared filter sidebar across all sub-tabs
+
 ## Requirements
 
 ### Validated
 
-(None yet — ship to validate)
+<!-- Shipped in v1.0 and confirmed working -->
+
+- ✓ Import games from chess.com and lichess via API by username — v1.0
+- ✓ On-demand re-sync to fetch latest games — v1.0
+- ✓ Store all available game metadata for future analyses — v1.0
+- ✓ Interactive chess board to specify search positions by playing moves — v1.0
+- ✓ Filter analysis by white/black/both position matching — v1.0
+- ✓ Filter by time control, rated/casual, recency, color, opponent type — v1.0
+- ✓ Display win/draw/loss rates for matching games — v1.0
+- ✓ Display matching games as cards with metadata and platform links — v1.0
+- ✓ Multi-user support with data isolation — v1.0
+- ✓ Position bookmarks with auto-suggestions, mini boards, drag-reorder — v1.0
+- ✓ Rating history and global stats pages — v1.0
 
 ### Active
 
-- [ ] Import games from chess.com and lichess via API by username
-- [ ] On-demand re-sync to fetch latest games
-- [ ] Store all available game metadata for future analyses
-- [ ] Interactive chess board to specify search positions by playing moves
-- [ ] Filter analysis by white position only, black position only, or both
-- [ ] Strict move order matching or any-order position matching
-- [ ] Filter by time control (bullet, blitz, rapid, classical)
-- [ ] Filter by rated vs casual games
-- [ ] Filter by game recency (week, month, 3 months, 6 months, 1 year, all time)
-- [ ] Display win/draw/loss rates for matching games
-- [ ] Display matching games with ending position, opponent names, and links to source platform
-- [ ] Multi-user support (users import and analyze their own games)
+<!-- v1.1 scope — building toward these -->
+
+- [ ] Move explorer showing next moves with W/D/L stats per move
+- [ ] Store move SAN in game_positions with index for performant lookups
+- [ ] Dedicated Import page replacing import modal
+- [ ] Merged Openings tab with Move Explorer / Games / Statistics sub-tabs
+- [ ] Shared filter sidebar across Openings sub-tabs
 
 ### Out of Scope
 
-- Manual PGN file upload — API import only for v1
+- Manual PGN file upload — API import only
 - In-app game viewer — link to chess.com/lichess instead
-- Advanced stats (opponent rating, performance over time) — v2
 - Mobile app — web-first
-- Human-like engine analysis — v2+: engine evaluation filtered by human move plausibility at target Elo (see Maia Chess approach). Prunes computer-only moves to show what's realistically findable for humans at a given rating.
+- Human-like engine analysis — future: engine evaluation filtered by human move plausibility at target Elo (see Maia Chess approach)
 
 ## Context
 
@@ -62,5 +79,7 @@ Users can determine their success rate for any opening position they specify, fi
 | React 19 + TypeScript + Vite 5 | react-chessboard 5.x requires React 19; TanStack Query supports it | Settled |
 | PostgreSQL (no SQLite) | Multi-user concurrent writes, BIGINT index performance, asyncpg | Settled |
 
+| DB wipe for v1.1 | No migration needed — reimport after schema change | Settled |
+
 ---
-*Last updated: 2026-03-11 after initialization*
+*Last updated: 2026-03-16 after milestone v1.1 start*
