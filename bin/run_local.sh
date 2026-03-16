@@ -8,6 +8,10 @@ pkill -f "uvicorn app.main:app" 2>/dev/null || true
 pkill -f "vite" 2>/dev/null || true
 sleep 1
 
+# Run database migrations
+echo "Running migrations..."
+uv run alembic upgrade head
+
 # Start backend
 echo "Starting backend..."
 uv run uvicorn app.main:app --reload --port 8000 &

@@ -67,7 +67,7 @@ async def bulk_insert_positions(session: AsyncSession, position_rows: list[dict]
     Args:
         session: AsyncSession to use for the insert.
         position_rows: List of dicts with keys: game_id, user_id, ply,
-                       full_hash, white_hash, black_hash.
+                       full_hash, white_hash, black_hash, move_san.
     """
     if not position_rows:
         return

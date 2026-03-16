@@ -2,27 +2,26 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Opening Explorer & UI Restructuring
-current_plan: —
-status: ready_to_plan
-stopped_at: —
-last_updated: "2026-03-16T00:00:00.000Z"
-last_activity: "2026-03-16 — Roadmap v1.1 created (phases 11-14)"
+status: executing
+last_updated: "2026-03-16T19:25:16.299Z"
+last_activity: 2026-03-16 — Completed 11-01-PLAN.md (move_san column + import pipeline)
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
+  percent: 100
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
 Phase: 11 of 14 (Schema and Import Pipeline)
-Plan: —
-Status: Ready to plan
-Last activity: 2026-03-16 — Roadmap v1.1 created (phases 11-14)
+Plan: 1 of 1 complete
+Status: In progress
+Last activity: 2026-03-16 — Completed 11-01-PLAN.md (move_san column + import pipeline)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100%
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-16)
@@ -32,7 +31,7 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 ## Phase Progress
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
-| 11 | Schema and Import Pipeline | Not started | TBD |
+| 11 | Schema and Import Pipeline | In progress (1/1 plan complete) | 1 |
 | 12 | Backend Next-Moves Endpoint | Not started | TBD |
 | 13 | Frontend Move Explorer Component | Not started | TBD |
 | 14 | UI Restructuring | Not started | TBD |
@@ -48,7 +47,7 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 
 ### Key Decisions
 - **DB wipe for v1.1**: No migration needed — reimport after schema change (settled in PROJECT.md)
-- **move_san ply semantics**: move_san on ply N = move played FROM position at ply N (leading to ply N+1); final position row has NULL; ply-0 has NULL
+- **move_san ply semantics**: move_san on ply N = move played FROM position at ply N (leading to ply N+1); final position row has NULL; ply-0 has first move SAN (not NULL) — confirmed in 11-01 execution
 - **DISTINCT + GROUP BY for next-moves**: use COUNT(DISTINCT g.id) not COUNT(*) — transpositions cause same position at multiple plies in one game; mirrors existing _build_base_query discipline
 - **Filter state lifted to OpeningsPage**: all shared filter state must live in OpeningsPage parent — not inside sub-tab components — to survive tab switches without reset
 - **positionFilterActive gating**: Move Explorer should only activate when at least 1 move played or bookmark loaded (avoids overwhelming starting-position list)
@@ -65,4 +64,4 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 None.
 
 ---
-Last activity: 2026-03-16 — Roadmap v1.1 created (phases 11-14)
+Last activity: 2026-03-16 — Completed 11-01-PLAN.md (move_san column + import pipeline)

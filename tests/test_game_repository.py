@@ -129,6 +129,7 @@ class TestBulkInsertPositions:
                 "full_hash": 12345678,
                 "white_hash": 9876543,
                 "black_hash": 1111111,
+                "move_san": "e4",
             },
             {
                 "game_id": game_id,
@@ -137,10 +138,61 @@ class TestBulkInsertPositions:
                 "full_hash": 22345678,
                 "white_hash": 19876543,
                 "black_hash": 11111111,
+                "move_san": None,
             },
         ]
         # Should not raise
         await bulk_insert_positions(db_session, position_rows)
+
+    async def test_insert_positions_with_move_san(self, db_session):
+        from sqlalchemy import select
+        from app.models.game_position import GamePosition
+        from app.repositories.game_repository import bulk_insert_games, bulk_insert_positions
+
+        row = self._make_game_row(f"lich-{__import__('uuid').uuid4().hex}")
+        [game_id] = await bulk_insert_games(db_session, [row])
+
+        position_rows = [
+            {
+                "game_id": game_id,
+                "user_id": 1,
+                "ply": 0,
+                "full_hash": 11111111,
+                "white_hash": 22222222,
+                "black_hash": 33333333,
+                "move_san": "e4",
+            },
+            {
+                "game_id": game_id,
+                "user_id": 1,
+                "ply": 1,
+                "full_hash": 44444444,
+                "white_hash": 55555555,
+                "black_hash": 66666666,
+                "move_san": "e5",
+            },
+            {
+                "game_id": game_id,
+                "user_id": 1,
+                "ply": 2,
+                "full_hash": 77777777,
+                "white_hash": 88888888,
+                "black_hash": 99999999,
+                "move_san": None,
+            },
+        ]
+        await bulk_insert_positions(db_session, position_rows)
+
+        result = await db_session.execute(
+            select(GamePosition)
+            .where(GamePosition.game_id == game_id)
+            .order_by(GamePosition.ply)
+        )
+        rows = result.scalars().all()
+        assert len(rows) == 3
+        assert rows[0].move_san == "e4"
+        assert rows[1].move_san == "e5"
+        assert rows[2].move_san is None
 
     async def test_insert_empty_positions(self, db_session):
         from app.repositories.game_repository import bulk_insert_positions

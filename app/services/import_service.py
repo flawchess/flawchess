@@ -312,7 +312,7 @@ async def _flush_batch(
             logger.warning("Failed to compute hashes for game_id=%s", game_id)
             continue
 
-        for ply, white_hash, black_hash, full_hash in hash_tuples:
+        for ply, white_hash, black_hash, full_hash, move_san in hash_tuples:
             position_rows.append(
                 {
                     "game_id": game_id,
@@ -321,6 +321,7 @@ async def _flush_batch(
                     "white_hash": white_hash,
                     "black_hash": black_hash,
                     "full_hash": full_hash,
+                    "move_san": move_san,
                 }
             )
 

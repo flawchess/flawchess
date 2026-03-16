@@ -184,10 +184,53 @@ def test_hashes_for_game_invalid_pgn():
 
 def test_hashes_for_game_returns_int64_values():
     """All hash values in the returned list are within BIGINT range."""
-    for _, wh, bh, fh in hashes_for_game(SIMPLE_PGN):
+    for _, wh, bh, fh, _ in hashes_for_game(SIMPLE_PGN):
         assert INT64_MIN <= wh <= INT64_MAX
         assert INT64_MIN <= bh <= INT64_MAX
         assert INT64_MIN <= fh <= INT64_MAX
+
+
+def test_hashes_for_game_returns_move_san():
+    """For PGN '1. e4 e5 2. Nf3 *', result has 4 entries with correct move_san values."""
+    results = hashes_for_game(SIMPLE_PGN)
+    assert len(results) == 4
+    # Each entry is a 5-tuple
+    assert all(len(r) == 5 for r in results)
+    # move_san values: e4, e5, Nf3, None (final position)
+    assert results[0][4] == "e4"
+    assert results[1][4] == "e5"
+    assert results[2][4] == "Nf3"
+    assert results[3][4] is None
+
+
+def test_hashes_for_game_move_san_null_on_final_ply():
+    """For PGN '1. e4 *', result has 2 entries; final position has move_san=None."""
+    results = hashes_for_game("1. e4 *")
+    assert len(results) == 2
+    assert results[1][4] is None
+
+
+def test_hashes_for_game_move_san_ply_zero():
+    """For PGN '1. e4 e5 *', ply-0 has move_san='e4' (first move SAN, not None)."""
+    results = hashes_for_game("1. e4 e5 *")
+    assert results[0][4] == "e4"
+
+
+def test_hashes_for_game_preserves_hash_values():
+    """Ply-0 hashes match compute_hashes(chess.Board()); ply-1 hashes match board after e4."""
+    results = hashes_for_game(SIMPLE_PGN)
+    # ply-0 hashes = starting position
+    expected_wh, expected_bh, expected_fh = compute_hashes(chess.Board())
+    assert results[0][1] == expected_wh
+    assert results[0][2] == expected_bh
+    assert results[0][3] == expected_fh
+    # ply-1 hashes = board after e4
+    board_after_e4 = chess.Board()
+    board_after_e4.push_san("e4")
+    exp_wh, exp_bh, exp_fh = compute_hashes(board_after_e4)
+    assert results[1][1] == exp_wh
+    assert results[1][2] == exp_bh
+    assert results[1][3] == exp_fh
 
 
 # ---------------------------------------------------------------------------

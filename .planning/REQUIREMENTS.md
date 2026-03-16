@@ -20,9 +20,9 @@ Requirements for milestone v1.1: Opening Explorer & UI Restructuring.
 
 ### Move Explorer
 
-- [ ] **MEXP-01**: game_positions table has a `move_san` column storing the SAN of the move played from each position (NULL at final position and ply 0)
-- [ ] **MEXP-02**: game_positions has a covering index on `(user_id, full_hash, move_san)` for fast aggregation
-- [ ] **MEXP-03**: Import pipeline populates `move_san` for every position during game import
+- [x] **MEXP-01**: game_positions table has a `move_san` column storing the SAN of the move played from each position (NULL at final position and ply 0)
+- [x] **MEXP-02**: game_positions has a covering index on `(user_id, full_hash, move_san)` for fast aggregation
+- [x] **MEXP-03**: Import pipeline populates `move_san` for every position during game import
 - [ ] **MEXP-04**: Backend endpoint returns next moves for a given position hash with game count and W/D/L stats per move, respecting all existing filters
 - [ ] **MEXP-05**: Transpositions are handled correctly — each game counted only once per move even if position reached via different move orders
 - [ ] **MEXP-06**: Move Explorer tab displays a 3-column table (Move, Games, Results) with a W/D/L stacked bar in the Results column
@@ -70,9 +70,9 @@ Requirements for milestone v1.1: Opening Explorer & UI Restructuring.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MEXP-01 | Phase 11 | Pending |
-| MEXP-02 | Phase 11 | Pending |
-| MEXP-03 | Phase 11 | Pending |
+| MEXP-01 | Phase 11 | Complete |
+| MEXP-02 | Phase 11 | Complete |
+| MEXP-03 | Phase 11 | Complete |
 | MEXP-04 | Phase 12 | Pending |
 | MEXP-05 | Phase 12 | Pending |
 | MEXP-06 | Phase 13 | Pending |

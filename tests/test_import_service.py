@@ -423,7 +423,7 @@ class TestRunImport:
             ),
             patch(
                 "app.services.import_service.hashes_for_game",
-                return_value=[(0, 1, 2, 3), (1, 4, 5, 6)],
+                return_value=[(0, 1, 2, 3, "e4"), (1, 4, 5, 6, None)],
             ) as mock_hashes,
         ):
             mock_http_ctx = AsyncMock()
@@ -434,6 +434,77 @@ class TestRunImport:
             await run_import(job_id)
 
         mock_hashes.assert_called_once_with(pgn)
+
+    @pytest.mark.asyncio
+    async def test_position_rows_include_move_san(self):
+        """run_import should pass position_rows with move_san to bulk_insert_positions."""
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        pgn = "1. e4 e5 *"
+
+        async def _yield_one_game(*args, **kwargs):
+            yield {
+                "platform": "chess.com",
+                "platform_game_id": "game-moveSan-1",
+                "pgn": pgn,
+                "user_id": 1,
+            }
+
+        mock_session = _make_mock_session()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = [(999, pgn)]
+        mock_session.execute.return_value = result_mock
+
+        mock_maker = _mock_session_maker(mock_session)
+        captured_positions: list[dict] = []
+
+        async def _capture_bulk_insert_positions(session, position_rows):
+            captured_positions.extend(position_rows)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_one_game,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[999]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(side_effect=_capture_bulk_insert_positions),
+            ),
+            patch(
+                "app.services.import_service.hashes_for_game",
+                return_value=[(0, 100, 200, 300, "e4"), (1, 400, 500, 600, "e5"), (2, 700, 800, 900, None)],
+            ),
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        assert len(captured_positions) == 3
+        assert "move_san" in captured_positions[0]
+        assert captured_positions[0]["move_san"] == "e4"
+        assert captured_positions[1]["move_san"] == "e5"
+        assert captured_positions[2]["move_san"] is None
 
     @pytest.mark.asyncio
     async def test_unknown_job_id_does_nothing(self):
@@ -538,7 +609,7 @@ class TestRunImport:
             ),
             patch(
                 "app.services.import_service.hashes_for_game",
-                return_value=[(0, 1, 2, 3), (1, 4, 5, 6)],
+                return_value=[(0, 1, 2, 3, "e4"), (1, 4, 5, 6, None)],
             ),
             patch(
                 "app.services.import_service.user_repository.update_platform_username",

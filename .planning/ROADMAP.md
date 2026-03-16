@@ -175,7 +175,7 @@ Plans:
 | 8. Games and Bookmark Tab Rework | v1.0 | 3/3 | Complete | 2026-03-14 |
 | 9. Game Cards, Username Import, Pagination | v1.0 | 8/8 | Complete | 2026-03-15 |
 | 10. Auto-Generate Position Bookmarks | v1.0 | 4/4 | Complete | 2026-03-15 |
-| 11. Schema and Import Pipeline | v1.1 | 0/1 | Not started | - |
+| 11. Schema and Import Pipeline | 1/1 | Complete    | 2026-03-16 | - |
 | 12. Backend Next-Moves Endpoint | v1.1 | 0/? | Not started | - |
 | 13. Frontend Move Explorer Component | v1.1 | 0/? | Not started | - |
 | 14. UI Restructuring | v1.1 | 0/? | Not started | - |

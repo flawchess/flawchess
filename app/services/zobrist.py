@@ -74,20 +74,28 @@ def compute_hashes(board: chess.Board) -> tuple[int, int, int]:
     return white_hash, black_hash, full_hash
 
 
-def hashes_for_game(pgn_text: str) -> list[tuple[int, int, int, int]]:
+def hashes_for_game(pgn_text: str) -> list[tuple[int, int, int, int, str | None]]:
     """Parse *pgn_text* and return hashes for every half-move including ply 0.
 
-    Each entry is a 4-tuple ``(ply, white_hash, black_hash, full_hash)`` where
-    ``ply`` starts at 0 (the initial position before any move is played).
+    Each entry is a 5-tuple ``(ply, white_hash, black_hash, full_hash, move_san)``
+    where ``ply`` starts at 0 (the initial position before any move is played).
 
-    For PGN ``"1. e4 e5 2. Nf3 *"`` the function returns 5 entries (ply 0-4).
+    ``move_san`` is the SAN of the move played FROM position at ``ply`` (leading
+    to ply+1).  The final position row always has ``move_san=None`` because no
+    move is played from it.  Ply-0 has the SAN of the first move for games with moves.
+
+    For PGN ``"1. e4 e5 2. Nf3 *"`` the function returns 4 entries (ply 0-3):
+        - (0, wh, bh, fh, "e4")
+        - (1, wh, bh, fh, "e5")
+        - (2, wh, bh, fh, "Nf3")
+        - (3, wh, bh, fh, None)
 
     Args:
         pgn_text: A PGN-formatted string.  May contain a single game.
 
     Returns:
-        A list of ``(ply, white_hash, black_hash, full_hash)`` tuples, or an
-        empty list when *pgn_text* is empty, unparseable, or contains no moves.
+        A list of ``(ply, white_hash, black_hash, full_hash, move_san)`` tuples,
+        or an empty list when *pgn_text* is empty, unparseable, or contains no moves.
     """
     try:
         game = chess.pgn.read_game(io.StringIO(pgn_text))
@@ -101,16 +109,17 @@ def hashes_for_game(pgn_text: str) -> list[tuple[int, int, int, int]]:
     if not moves:
         return []
 
-    results: list[tuple[int, int, int, int]] = []
+    results: list[tuple[int, int, int, int, str | None]] = []
     board = game.board()
 
-    # ply 0 — initial position (before any move is played)
-    wh, bh, fh = compute_hashes(board)
-    results.append((0, wh, bh, fh))
-
-    for ply, move in enumerate(moves, start=1):
-        board.push(move)
+    for ply, move in enumerate(moves):
+        move_san: str = board.san(move)  # BEFORE push: board must be in pre-move position
         wh, bh, fh = compute_hashes(board)
-        results.append((ply, wh, bh, fh))
+        results.append((ply, wh, bh, fh, move_san))
+        board.push(move)
+
+    # Final position: no move is played from here
+    wh, bh, fh = compute_hashes(board)
+    results.append((len(moves), wh, bh, fh, None))
 
     return results
