@@ -1,9 +1,9 @@
 import type { WDLStats } from '@/types/api';
 
 // Shared WDL colors — must match WDLBarChart.tsx
-const WDL_WIN = 'oklch(0.55 0.18 145)';
-const WDL_DRAW = 'oklch(0.65 0.01 260)';
-const WDL_LOSS = 'oklch(0.55 0.2 25)';
+export const WDL_WIN = 'oklch(0.55 0.18 145)';
+export const WDL_DRAW = 'oklch(0.65 0.01 260)';
+export const WDL_LOSS = 'oklch(0.55 0.2 25)';
 
 interface WDLBarProps {
   stats: WDLStats;

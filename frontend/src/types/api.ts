@@ -87,6 +87,38 @@ export interface AnalysisResponse {
   limit: number;
 }
 
+// ─── Next Moves ──────────────────────────────────────────────────────────────
+
+export interface NextMovesRequest {
+  target_hash: string;         // BigInt as decimal string (hashToString output)
+  time_control?: TimeControl[] | null;
+  platform?: Platform[] | null;
+  rated?: boolean | null;
+  opponent_type?: OpponentType;
+  recency?: Recency | null;
+  color?: Color | null;
+  sort_by?: 'frequency' | 'win_rate';
+}
+
+export interface NextMoveEntry {
+  move_san: string;
+  game_count: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  win_pct: number;
+  draw_pct: number;
+  loss_pct: number;
+  result_hash: string;    // BigInt as string
+  result_fen: string;     // board FEN (piece placement only)
+  transposition_count: number;
+}
+
+export interface NextMovesResponse {
+  position_stats: WDLStats;
+  moves: NextMoveEntry[];
+}
+
 // ─── Imports ─────────────────────────────────────────────────────────────────
 
 export type Platform = 'chess.com' | 'lichess';

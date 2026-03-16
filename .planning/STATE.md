@@ -2,26 +2,26 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Opening Explorer & UI Restructuring
-status: completed
-last_updated: "2026-03-16T20:22:36.436Z"
-last_activity: 2026-03-16 — Completed 12-02-PLAN.md (get_next_moves service function and POST /analysis/next-moves endpoint)
+status: executing
+last_updated: "2026-03-16T21:55:08.293Z"
+last_activity: 2026-03-16 — Completed 13-02-PLAN.md Task 1 (MoveExplorer component, Dashboard integration, board arrows); awaiting human-verify checkpoint
 progress:
   total_phases: 5
-  completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
-  percent: 38
+  completed_phases: 3
+  total_plans: 5
+  completed_plans: 5
+  percent: 100
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
-Phase: 12 of 14 (Backend Next-Moves Endpoint)
-Plan: 2 of 2 complete
-Status: Phase complete — ready for Phase 13
-Last activity: 2026-03-16 — Completed 12-02-PLAN.md (get_next_moves service function and POST /analysis/next-moves endpoint)
+Phase: 13 of 14 (Frontend Move Explorer Component)
+Plan: 2 of 2 (Task 1 complete, awaiting human-verify checkpoint for Task 2)
+Status: In progress — awaiting browser verification of MEXP-06, MEXP-07, MEXP-11, MEXP-12
+Last activity: 2026-03-16 — Completed 13-02-PLAN.md Task 1 (MoveExplorer component, Dashboard integration, board arrows)
 
-Progress: [████░░░░░░] 38%
+Progress: [██████████] 100%
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-16)
@@ -33,7 +33,7 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 |-------|------|--------|-------|
 | 11 | Schema and Import Pipeline | Complete (1/1 plan complete) | 1 |
 | 12 | Backend Next-Moves Endpoint | Complete (2/2 plans complete) | 2 |
-| 13 | Frontend Move Explorer Component | Not started | TBD |
+| 13 | Frontend Move Explorer Component | In progress (2/2 plans, awaiting checkpoint) | 2 |
 | 14 | UI Restructuring | Not started | TBD |
 
 ## Key Context
@@ -56,6 +56,11 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 - **Import page cache invalidation**: handleJobDone callbacks must invalidate ['games'], ['gameCount'], ['userProfile'] on the new ImportPage — same as current Dashboard modal
 - **result_fen via PGN replay**: _fetch_result_fens pushes N moves in mainline and calls board.board_fen() — computed at query time, not stored; uses DISTINCT ON batch + PGN batch to avoid N+1
 - **position_stats uses full_hash**: next-moves endpoint always uses GamePosition.full_hash for position_stats (no match_side concept in this endpoint)
+- **BoardArrow type defined locally in ChessBoard.tsx**: react-chessboard v5 Arrow import path is fragile; local interface is simpler and sufficient
+- **clearArrowsOnPositionChange: false is CRITICAL**: without it react-chessboard clears arrows on every position prop change, causing them to vanish after every move
+- **useNextMoves has no enabled gate**: explorer is always visible per design; positionFilterActive gate handled at parent component level in Plan 02
+- **MoveExplorer receives props not hook**: hook called in Dashboard parent so boardArrows can be computed from same data in single useMemo
+- **TypeScript filter narrowing**: `.filter((a): a is NonNullable<typeof a> => a !== null)` required — `.filter(Boolean)` does not narrow union types in strict mode
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -71,4 +76,4 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 None.
 
 ---
-Last activity: 2026-03-16 — Completed 12-02-PLAN.md (get_next_moves service function and POST /analysis/next-moves endpoint)
+Last activity: 2026-03-16 — Completed 13-02-PLAN.md Task 1 (MoveExplorer component, Dashboard integration, board arrows); awaiting human-verify checkpoint

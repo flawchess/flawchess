@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { Chess } from 'chess.js';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ChevronUp, ChevronDown, Bookmark, Filter, Download, Trash2 } from 'lucide-react';
@@ -15,6 +16,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { useChessGame } from '@/hooks/useChessGame';
+import { useNextMoves } from '@/hooks/useNextMoves';
 import { useAnalysis, useGamesQuery } from '@/hooks/useAnalysis';
 import {
   usePositionBookmarks,
@@ -22,6 +24,7 @@ import {
   useReorderPositionBookmarks,
 } from '@/hooks/usePositionBookmarks';
 import { ChessBoard } from '@/components/board/ChessBoard';
+import { MoveExplorer } from '@/components/move-explorer/MoveExplorer';
 import { MoveList } from '@/components/board/MoveList';
 import { BoardControls } from '@/components/board/BoardControls';
 import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
@@ -57,6 +60,45 @@ export function DashboardPage() {
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
+
+  // Next moves for Move Explorer
+  const nextMoves = useNextMoves(chess.hashes.fullHash, filters);
+  const [hoveredMove, setHoveredMove] = useState<string | null>(null);
+
+  // Board arrows derived from next move frequencies
+  const boardArrows = useMemo(() => {
+    if (!nextMoves.data?.moves.length) return [];
+
+    const chessInstance = new Chess(chess.position);
+    const legalMoves = chessInstance.moves({ verbose: true });
+    const moveMap = new Map(legalMoves.map(m => [m.san, { from: m.from, to: m.to }]));
+
+    const moves = nextMoves.data.moves;
+    const maxCount = Math.max(...moves.map(m => m.game_count), 1);
+    const MIN_OPACITY = 0.15;
+
+    return moves
+      .map(entry => {
+        const squares = moveMap.get(entry.move_san);
+        if (!squares) return null;
+        const isHovered = entry.move_san === hoveredMove;
+        if (isHovered) {
+          return {
+            startSquare: squares.from,
+            endSquare: squares.to,
+            color: '#0a3d6b',
+          };
+        }
+        const opacity = MIN_OPACITY + (1 - MIN_OPACITY) * (entry.game_count / maxCount);
+        const alpha = Math.round(opacity * 255).toString(16).padStart(2, '0');
+        return {
+          startSquare: squares.from,
+          endSquare: squares.to,
+          color: `#1d6ab1${alpha}`,
+        };
+      })
+      .filter((a): a is NonNullable<typeof a> => a !== null);
+  }, [nextMoves.data, chess.position, hoveredMove]);
 
   // Section open state
   const [positionFilterOpen, setPositionFilterOpen] = useState(true);
@@ -279,6 +321,7 @@ export function DashboardPage() {
               onPieceDrop={chess.makeMove}
               flipped={boardFlipped}
               lastMove={chess.lastMove}
+              arrows={boardArrows}
             />
             {chess.openingName ? (
               <div className="flex items-baseline gap-2 px-1 text-sm">
@@ -448,6 +491,15 @@ export function DashboardPage() {
 
   const rightColumn = (
     <div className="flex flex-col gap-4">
+      {/* Move Explorer — always shown, auto-fetches */}
+      <MoveExplorer
+        moves={nextMoves.data?.moves ?? []}
+        isLoading={nextMoves.isLoading}
+        isError={nextMoves.isError}
+        position={chess.position}
+        onMoveClick={(from, to) => chess.makeMove(from, to)}
+        onMoveHover={setHoveredMove}
+      />
       {positionFilterActive ? (
         /* Position-filtered view */
         analysisResult === null ? (

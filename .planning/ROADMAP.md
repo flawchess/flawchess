@@ -185,7 +185,7 @@ Plans:
 | 10. Auto-Generate Position Bookmarks | v1.0 | 4/4 | Complete | 2026-03-15 |
 | 11. Schema and Import Pipeline | 1/1 | Complete    | 2026-03-16 | - |
 | 12. Backend Next-Moves Endpoint | 2/2 | Complete    | 2026-03-16 | - |
-| 13. Frontend Move Explorer Component | v1.1 | 0/2 | Not started | - |
+| 13. Frontend Move Explorer Component | 2/2 | Complete   | 2026-03-16 | - |
 | 14. UI Restructuring | v1.1 | 0/? | Not started | - |
 
 ### Phase 15: Consolidation - remove unnecessary code, rename endpoints/modules, update CLAUDE.md and README.md

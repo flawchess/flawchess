@@ -1,12 +1,20 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Chessboard } from 'react-chessboard';
 
+interface BoardArrow {
+  startSquare: string;
+  endSquare: string;
+  color: string;
+}
+
 interface ChessBoardProps {
   position: string;
   onPieceDrop: (sourceSquare: string, targetSquare: string) => boolean;
   flipped?: boolean;
   /** Highlight: { from: "e2", to: "e4" } for the last move */
   lastMove?: { from: string; to: string } | null;
+  /** Arrows to render on the board (react-chessboard arrow format) */
+  arrows?: BoardArrow[];
 }
 
 const BRIGHT_NOTATION: React.CSSProperties = { color: 'rgba(255, 255, 255, 0.85)', fontWeight: 600 };
@@ -16,7 +24,7 @@ const PIECE_NAMES: Record<string, string> = {
   bP: 'black pawn', bR: 'black rook', bN: 'black knight', bB: 'black bishop', bQ: 'black queen', bK: 'black king',
 };
 
-export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove }: ChessBoardProps) {
+export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, arrows = [] }: ChessBoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [boardWidth, setBoardWidth] = useState(400);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
@@ -100,6 +108,8 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove }:
           darkSquareNotationStyle: BRIGHT_NOTATION,
           lightSquareNotationStyle: BRIGHT_NOTATION,
           id: 'chessboard',
+          arrows: arrows,
+          clearArrowsOnPositionChange: false,
           squareStyles,
           squareRenderer: ({ piece, square, children }) => {
             const pieceName = piece ? PIECE_NAMES[piece.pieceType] : undefined;
