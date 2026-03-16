@@ -106,7 +106,7 @@ Plans:
 
 ---
 
-### 🚧 v1.1 Opening Explorer & UI Restructuring (In Progress)
+### v1.1 Opening Explorer & UI Restructuring (In Progress)
 
 **Milestone Goal:** Add an interactive move explorer showing next moves with W/D/L stats per position, and restructure the UI with a dedicated Import page and merged Openings tab with sub-tabs.
 
@@ -165,7 +165,12 @@ Plans:
   2. The Import page at /import contains all import controls, username management, and sync functionality; the import modal no longer exists.
   3. Navigation shows exactly four items: Import, Openings, Rating, Global Stats; all existing routes resolve correctly with no broken links.
   4. After completing an import on the Import page, game counts and user profile data update automatically (TanStack Query cache invalidated correctly).
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 14-01-PLAN.md -- Import page, App routing/nav update, useDebounce and usePositionAnalysisQuery hooks
+- [ ] 14-02-PLAN.md -- OpeningsPage tabbed hub with sidebar and 3 sub-tabs (Move Explorer, Games, Statistics)
+- [ ] 14-03-PLAN.md -- Human verification of all UIRS requirements
 
 ---
 
@@ -186,7 +191,7 @@ Plans:
 | 11. Schema and Import Pipeline | 1/1 | Complete    | 2026-03-16 | - |
 | 12. Backend Next-Moves Endpoint | 2/2 | Complete    | 2026-03-16 | - |
 | 13. Frontend Move Explorer Component | 2/2 | Complete    | 2026-03-16 | - |
-| 14. UI Restructuring | v1.1 | 0/? | Not started | - |
+| 14. UI Restructuring | v1.1 | 0/3 | Not started | - |
 
 ### Phase 15: Consolidation - remove unnecessary code, rename endpoints/modules, update CLAUDE.md and README.md
 
