@@ -150,7 +150,11 @@ Plans:
   3. The explorer shows no results (empty state) when no position filter is active or no moves are available for the current position.
   4. A transposition warning icon with hover tooltip appears on move rows where the resulting position has been reached through other move orders.
   5. The chessboard displays transparent arrows for all next moves, with opacity proportional to move frequency (using react-chessboard's native `arrows` option).
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 13-01-PLAN.md -- Types, useNextMoves hook, WDL color export, ChessBoard arrows prop, tooltip install
+- [ ] 13-02-PLAN.md -- MoveExplorer component, Dashboard integration, board arrows, human verification
 
 ### Phase 14: UI Restructuring
 **Goal**: The Openings page becomes a tabbed hub with shared filter state, and import lives on its own dedicated page — giving every feature a clear home with no state loss on tab switch.
@@ -181,7 +185,7 @@ Plans:
 | 10. Auto-Generate Position Bookmarks | v1.0 | 4/4 | Complete | 2026-03-15 |
 | 11. Schema and Import Pipeline | 1/1 | Complete    | 2026-03-16 | - |
 | 12. Backend Next-Moves Endpoint | 2/2 | Complete    | 2026-03-16 | - |
-| 13. Frontend Move Explorer Component | v1.1 | 0/? | Not started | - |
+| 13. Frontend Move Explorer Component | v1.1 | 0/2 | Not started | - |
 | 14. UI Restructuring | v1.1 | 0/? | Not started | - |
 
 ### Phase 15: Consolidation - remove unnecessary code, rename endpoints/modules, update CLAUDE.md and README.md
