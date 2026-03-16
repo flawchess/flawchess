@@ -3,25 +3,25 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Opening Explorer & UI Restructuring
 status: executing
-last_updated: "2026-03-16T22:26:46.324Z"
+last_updated: "2026-03-16T23:20:16.132Z"
 last_activity: 2026-03-16 — Completed 13-02-PLAN.md Task 1 (MoveExplorer component, Dashboard integration, board arrows)
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 8
+  completed_plans: 6
   percent: 100
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
-Phase: 13 of 14 (Frontend Move Explorer Component)
-Plan: 2 of 2 (Task 1 complete, awaiting human-verify checkpoint for Task 2)
-Status: In progress — awaiting browser verification of MEXP-06, MEXP-07, MEXP-11, MEXP-12
-Last activity: 2026-03-16 — Completed 13-02-PLAN.md Task 1 (MoveExplorer component, Dashboard integration, board arrows)
+Phase: 14 of 14 (UI Restructuring)
+Plan: 1 of 2 complete
+Status: In progress — 14-01 complete, ready for 14-02 (OpeningsPage tabbed hub)
+Last activity: 2026-03-17 — Completed 14-01-PLAN.md (Import page, App routing/nav, hooks for Plan 02)
 
-Progress: [██████████] 100%
+Progress: [████████░░] 75%
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-16)
@@ -33,8 +33,8 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 |-------|------|--------|-------|
 | 11 | Schema and Import Pipeline | Complete (1/1 plan complete) | 1 |
 | 12 | Backend Next-Moves Endpoint | Complete (2/2 plans complete) | 2 |
-| 13 | Frontend Move Explorer Component | In progress (2/2 plans, awaiting checkpoint) | 2 |
-| 14 | UI Restructuring | Not started | TBD |
+| 13 | Frontend Move Explorer Component | Complete (2/2 plans complete) | 2 |
+| 14 | UI Restructuring | In progress (1/2 plans complete) | 2 |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -61,6 +61,9 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 - **useNextMoves has no enabled gate**: explorer is always visible per design; positionFilterActive gate handled at parent component level in Plan 02
 - **MoveExplorer receives props not hook**: hook called in Dashboard parent so boardArrows can be computed from same data in single useMemo
 - **TypeScript filter narrowing**: `.filter((a): a is NonNullable<typeof a> => a !== null)` required — `.filter(Boolean)` does not narrow union types in strict mode
+- **ImportProgress at App level**: rendered outside Routes in AppRoutes fragment so job toasts fire from any page
+- **isActive() nav helper**: uses startsWith('/openings') for prefix matching /openings/* wildcard route in NavHeader
+- **usePositionAnalysisQuery uses useQuery**: not useMutation — Plan 02 can auto-fetch on position/filter change without manual trigger
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -76,4 +79,4 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 None.
 
 ---
-Last activity: 2026-03-16 — Completed 13-02-PLAN.md Task 1 (MoveExplorer component, Dashboard integration, board arrows); awaiting human-verify checkpoint
+Last activity: 2026-03-17 — Completed 14-01-PLAN.md (Import page, App routing, nav, ImportProgress at App level, useDebounce + usePositionAnalysisQuery hooks)

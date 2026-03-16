@@ -35,8 +35,8 @@ Requirements for milestone v1.1: Opening Explorer & UI Restructuring.
 
 - [ ] **UIRS-01**: Openings tab has three sub-tabs: Move Explorer, Games, Statistics — with shared filter sidebar (board, position bookmarks, more filters)
 - [ ] **UIRS-02**: Filter state persists when switching between sub-tabs (no reset on tab change)
-- [ ] **UIRS-03**: Dedicated Import page replaces the import modal, showing import controls, username management, and sync functionality
-- [ ] **UIRS-04**: Navigation updated: Import | Openings | Rating | Global Stats
+- [x] **UIRS-03**: Dedicated Import page replaces the import modal, showing import controls, username management, and sync functionality
+- [x] **UIRS-04**: Navigation updated: Import | Openings | Rating | Global Stats
 
 ## Future Requirements
 
@@ -82,8 +82,8 @@ Requirements for milestone v1.1: Opening Explorer & UI Restructuring.
 | MEXP-12 | Phase 13 | Complete |
 | UIRS-01 | Phase 14 | Pending |
 | UIRS-02 | Phase 14 | Pending |
-| UIRS-03 | Phase 14 | Pending |
-| UIRS-04 | Phase 14 | Pending |
+| UIRS-03 | Phase 14 | Complete |
+| UIRS-04 | Phase 14 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 14 total

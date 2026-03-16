@@ -191,14 +191,14 @@ Plans:
 | 11. Schema and Import Pipeline | 1/1 | Complete    | 2026-03-16 | - |
 | 12. Backend Next-Moves Endpoint | 2/2 | Complete    | 2026-03-16 | - |
 | 13. Frontend Move Explorer Component | 2/2 | Complete    | 2026-03-16 | - |
-| 14. UI Restructuring | v1.1 | 0/3 | Not started | - |
+| 14. UI Restructuring | 1/3 | In Progress|  | - |
 
 ### Phase 15: Consolidation - remove unnecessary code, rename endpoints/modules, update CLAUDE.md and README.md
 
 **Goal:** [To be planned]
 **Requirements**: TBD
 **Depends on:** Phase 14
-**Plans:** 2/2 plans complete
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] TBD (run /gsd:plan-phase 15 to break down)
