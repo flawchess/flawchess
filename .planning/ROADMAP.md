@@ -120,7 +120,10 @@ Plans:
   1. game_positions table has a nullable move_san column; NULL appears on ply-0 rows and the final position row; all other rows have a valid SAN string.
   2. The covering index (user_id, full_hash, move_san) exists in the database and is used by EXPLAIN ANALYZE on a representative aggregation query.
   3. After a full re-import, every game_positions row for a completed game has move_san populated; re-importing the same games produces identical move_san values with no duplicates.
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 11-01-PLAN.md -- Add move_san column, covering index, update zobrist and import pipeline
 
 ### Phase 12: Backend Next-Moves Endpoint
 **Goal**: A single endpoint aggregates next moves for any position hash with correct W/D/L counts, respecting all existing filters and handling transpositions without double-counting.
@@ -172,7 +175,7 @@ Plans:
 | 8. Games and Bookmark Tab Rework | v1.0 | 3/3 | Complete | 2026-03-14 |
 | 9. Game Cards, Username Import, Pagination | v1.0 | 8/8 | Complete | 2026-03-15 |
 | 10. Auto-Generate Position Bookmarks | v1.0 | 4/4 | Complete | 2026-03-15 |
-| 11. Schema and Import Pipeline | v1.1 | 0/? | Not started | - |
+| 11. Schema and Import Pipeline | v1.1 | 0/1 | Not started | - |
 | 12. Backend Next-Moves Endpoint | v1.1 | 0/? | Not started | - |
 | 13. Frontend Move Explorer Component | v1.1 | 0/? | Not started | - |
 | 14. UI Restructuring | v1.1 | 0/? | Not started | - |
