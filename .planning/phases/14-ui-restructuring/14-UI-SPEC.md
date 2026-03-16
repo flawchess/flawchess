@@ -69,9 +69,9 @@ Source: Existing Dashboard.tsx patterns (`mx-auto w-full max-w-7xl flex-1 px-4 p
 Source: Existing pages use `text-2xl font-semibold` for page headings (Openings.tsx line 188), `text-sm` for body content, `text-xs text-muted-foreground` for labels and captions. Geist Variable is declared in `src/index.css` as `--font-sans`.
 
 Notes:
-- Section headings within content area (e.g. "Win / Draw / Loss"): `text-lg font-medium` — matches existing Openings.tsx pattern
-- Nav brand: `text-lg font-bold tracking-tight` — existing, do not change
-- Sub-tab trigger labels: `text-sm` at weight 500 (shadcn Tabs default) — acceptable
+- Section headings within content area (e.g. "Win / Draw / Loss"): `text-base font-semibold` — visual distinction via weight only, no new size introduced
+- Nav brand: `text-base font-semibold tracking-tight` — existing element, align to declared sizes and weights
+- Sub-tab trigger labels: `text-sm` — shadcn Tabs default weight is not declared in this contract
 
 ---
 
@@ -228,7 +228,7 @@ Games tab shows all games by default (no `positionFilterActive` gating). When no
 | Element | Copy |
 |---------|------|
 | Primary CTA — Import page | "Sync" (per platform, e.g. "Sync chess.com") |
-| Primary CTA — first-time import | "Import" (submit button on username form) |
+| Primary CTA — first-time import | "Import Games" (submit button on username form) |
 | Nav — Import link | "Import" |
 | Nav — Openings link | "Openings" |
 | Sub-tab — Move Explorer | "Move Explorer" |
