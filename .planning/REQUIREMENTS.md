@@ -27,6 +27,9 @@ Requirements for milestone v1.1: Opening Explorer & UI Restructuring.
 - [ ] **MEXP-05**: Transpositions are handled correctly — each game counted only once per move even if position reached via different move orders
 - [ ] **MEXP-06**: Move Explorer tab displays a 3-column table (Move, Games, Results) with a W/D/L stacked bar in the Results column
 - [ ] **MEXP-07**: Clicking a move row advances the board to the resulting position and refreshes the explorer with the new position's next moves
+- [ ] **MEXP-10**: Next-moves endpoint returns transposition count (total games reaching the resulting position via any move order) alongside direct game count
+- [ ] **MEXP-11**: Move Explorer shows a transposition warning icon with hover tooltip when the resulting position has been reached through other move orders
+- [ ] **MEXP-12**: Chessboard displays transparent arrows for all next moves from the current position, with opacity proportional to move frequency
 
 ### UI Restructuring
 
@@ -67,23 +70,26 @@ Requirements for milestone v1.1: Opening Explorer & UI Restructuring.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MEXP-01 | — | Pending |
-| MEXP-02 | — | Pending |
-| MEXP-03 | — | Pending |
-| MEXP-04 | — | Pending |
-| MEXP-05 | — | Pending |
-| MEXP-06 | — | Pending |
-| MEXP-07 | — | Pending |
-| UIRS-01 | — | Pending |
-| UIRS-02 | — | Pending |
-| UIRS-03 | — | Pending |
-| UIRS-04 | — | Pending |
+| MEXP-01 | Phase 11 | Pending |
+| MEXP-02 | Phase 11 | Pending |
+| MEXP-03 | Phase 11 | Pending |
+| MEXP-04 | Phase 12 | Pending |
+| MEXP-05 | Phase 12 | Pending |
+| MEXP-06 | Phase 13 | Pending |
+| MEXP-07 | Phase 13 | Pending |
+| MEXP-10 | Phase 12 | Pending |
+| MEXP-11 | Phase 13 | Pending |
+| MEXP-12 | Phase 13 | Pending |
+| UIRS-01 | Phase 14 | Pending |
+| UIRS-02 | Phase 14 | Pending |
+| UIRS-03 | Phase 14 | Pending |
+| UIRS-04 | Phase 14 | Pending |
 
 **Coverage:**
-- v1.1 requirements: 11 total
-- Mapped to phases: 0
-- Unmapped: 11 ⚠️
+- v1.1 requirements: 14 total
+- Mapped to phases: 14
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-16 after milestone v1.1 requirements definition*
+*Last updated: 2026-03-16 after milestone v1.1 roadmap creation*
