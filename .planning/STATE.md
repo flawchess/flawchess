@@ -3,25 +3,25 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Opening Explorer & UI Restructuring
 status: executing
-last_updated: "2026-03-16T23:20:16.132Z"
-last_activity: 2026-03-16 — Completed 13-02-PLAN.md Task 1 (MoveExplorer component, Dashboard integration, board arrows)
+last_updated: "2026-03-17T00:00:00.000Z"
+last_activity: 2026-03-17 — Completed 14-02-PLAN.md (OpeningsPage tabbed hub)
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 8
-  completed_plans: 6
-  percent: 100
+  completed_plans: 8
+  percent: 88
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
 Phase: 14 of 14 (UI Restructuring)
-Plan: 1 of 2 complete
-Status: In progress — 14-01 complete, ready for 14-02 (OpeningsPage tabbed hub)
-Last activity: 2026-03-17 — Completed 14-01-PLAN.md (Import page, App routing/nav, hooks for Plan 02)
+Plan: 2 of 2 complete
+Status: Phase 14 complete — ready for Phase 15 (Consolidation)
+Last activity: 2026-03-17 — Completed 14-02-PLAN.md (OpeningsPage tabbed hub with 3 URL-based sub-tabs)
 
-Progress: [████████░░] 75%
+Progress: [█████████░] 88%
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-16)
@@ -34,7 +34,8 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 | 11 | Schema and Import Pipeline | Complete (1/1 plan complete) | 1 |
 | 12 | Backend Next-Moves Endpoint | Complete (2/2 plans complete) | 2 |
 | 13 | Frontend Move Explorer Component | Complete (2/2 plans complete) | 2 |
-| 14 | UI Restructuring | In progress (1/2 plans complete) | 2 |
+| 14 | UI Restructuring | Complete (2/2 plans complete) | 2 |
+| 15 | Consolidation | Planned | ? |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -64,12 +65,15 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 - **ImportProgress at App level**: rendered outside Routes in AppRoutes fragment so job toasts fire from any page
 - **isActive() nav helper**: uses startsWith('/openings') for prefix matching /openings/* wildcard route in NavHeader
 - **usePositionAnalysisQuery uses useQuery**: not useMutation — Plan 02 can auto-fetch on position/filter change without manual trigger
+- **OpeningsPage tabbed hub**: all shared state (chess, filters, boardFlipped, bookmarks, gamesOffset) in parent component — never inside TabsContent children — for tab-switch persistence (UIRS-02)
+- **No positionFilterActive gate on Games tab**: usePositionAnalysisQuery always auto-fetches from initial position — cleaner UX than Dashboard's manual Filter button flow
+- **Tab JSX content as variables**: moveExplorerContent/gamesContent/statisticsContent defined before return and reused in both desktop and mobile Tabs instances
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions for querying pieces on specific squares
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match
-- **GamesTab pagination offset survival**: Phase 14 planning should decide whether page offset survives tab switches (lift to OpeningsPage state)
+- **GamesTab pagination offset**: offset is in OpeningsPage state and resets to 0 on tab switch — decided in 14-02 execution
 - **Track user account creation and last login timestamps** (auth) — Add created_at and last_login columns to users table
 
 ### Roadmap Evolution
@@ -79,4 +83,4 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 None.
 
 ---
-Last activity: 2026-03-17 — Completed 14-01-PLAN.md (Import page, App routing, nav, ImportProgress at App level, useDebounce + usePositionAnalysisQuery hooks)
+Last activity: 2026-03-17 — Completed 14-02-PLAN.md (OpeningsPage tabbed hub with 3 URL-based sub-tabs, shared sidebar, auto-fetch on all tabs)
