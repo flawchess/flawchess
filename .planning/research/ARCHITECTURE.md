@@ -1,413 +1,497 @@
-# Architecture Research: Chessalytics
+# Architecture Research
 
-## System Components
+**Domain:** Chess analysis platform — move explorer and UI restructuring (v1.1)
+**Researched:** 2026-03-16
+**Confidence:** HIGH (based on direct codebase analysis of v1.0 implementation)
 
-### Backend API (FastAPI)
-Handles all server-side logic. Responsibilities:
-- User authentication and session management
-- Game import orchestration (chess.com and lichess APIs)
-- Position query processing
-- Returning win/draw/loss statistics and matching game records
+## Standard Architecture
 
-### Frontend (TBD: React or HTMX+Alpine)
-- Interactive chessboard for position entry (e.g., chessboard.js or react-chessboard)
-- Filter controls: side to match, move-order mode, time control, rated/casual, date range
-- Results display: aggregate W/D/L rates plus individual game list with opponent names and external links
-
-### Database
-Stores users, games, and the position index. The position index is the critical component — everything else is standard CRUD. SQLite works at development scale and for single-server deployments; PostgreSQL is the right choice for multi-user production because of concurrent writes and better indexing options.
-
-### Game Import Pipeline
-An async background pipeline that runs on demand (triggered by the user requesting a sync):
-1. Fetch game list from chess.com / lichess API for the user's username
-2. Diff against already-stored games to find new ones
-3. Parse each game's PGN to extract moves and metadata
-4. Walk every position in the game, compute its position key, and write to the position index
-5. Commit game record and all positions atomically
-
-### Component Boundaries
+### System Overview
 
 ```
-User browser
-    └─► Frontend (React / HTMX)
-            ├─► GET /api/games/import          → triggers background sync
-            ├─► GET /api/analysis?fen=...      → returns W/D/L stats + game list
-            └─► GET /api/games/:id             → single game metadata + external link
-
-FastAPI backend
-    ├── routers/          HTTP layer only — no business logic
-    ├── services/         Business logic (import, analysis)
-    ├── repositories/     DB access (no SQL in services)
-    └── background_tasks/ Import pipeline workers
-
-Database (SQLite / PostgreSQL)
-    ├── users
-    ├── games
-    ├── game_positions   (the position index — high write volume during import)
-    └── sync_state       (tracks last sync per user/platform)
+┌─────────────────────────────────────────────────────────────────────┐
+│                         FRONTEND (React 19)                          │
+├──────────────────┬───────────────────────────────┬──────────────────┤
+│  /import (NEW)   │  /openings (RESTRUCTURED)      │  / (Dashboard)   │
+│  ImportPage      │  OpeningsPage                  │  DashboardPage   │
+│  (full page)     │  ├─ Board + shared filters      │  (unchanged      │
+│                  │  ├─ MoveExplorerTab (NEW)        │   except import  │
+│                  │  ├─ GamesTab (extracted)         │   button links   │
+│                  │  └─ StatisticsTab (existing)     │   to /import)    │
+├──────────────────┴───────────────────────────────┴──────────────────┤
+│               TanStack Query (cache / server state)                  │
+│  useAnalysis  useNextMoves(NEW)  useImport  usePositionBookmarks     │
+├─────────────────────────────────────────────────────────────────────┤
+│                   API Client (axios / apiClient)                     │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │ HTTP/JSON
+┌────────────────────────────▼────────────────────────────────────────┐
+│                        BACKEND (FastAPI)                             │
+├─────────────────────────────────────────────────────────────────────┤
+│  routers/analysis.py                                                 │
+│    POST /analysis/positions       (existing)                         │
+│    POST /analysis/time-series     (existing)                         │
+│    POST /analysis/next-moves      (NEW)                              │
+│    GET  /games/count              (existing)                         │
+├─────────────────────────────────────────────────────────────────────┤
+│  services/analysis_service.py                                        │
+│    analyze()           get_time_series()    get_next_moves() (NEW)   │
+│                                                                      │
+│  services/import_service.py                                          │
+│    _flush_batch()      MODIFY to populate move_san                   │
+├─────────────────────────────────────────────────────────────────────┤
+│  repositories/analysis_repository.py                                 │
+│    query_all_results()  query_matching_games()  query_time_series()  │
+│    query_next_moves()   (NEW)                                        │
+├─────────────────────────────────────────────────────────────────────┤
+│  models/game_position.py                                             │
+│    ADD  move_san: Mapped[str | None]                                 │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────────┐
+│                         PostgreSQL                                   │
+│                                                                      │
+│  game_positions                                                      │
+│    id, game_id, user_id, ply                                         │
+│    full_hash, white_hash, black_hash                                 │
+│    move_san  VARCHAR(10)   ← ADD (NULL at ply 0)                     │
+│                                                                      │
+│  Existing indexes:                                                   │
+│    ix_gp_user_full_hash   (user_id, full_hash)                       │
+│    ix_gp_user_white_hash  (user_id, white_hash)                      │
+│    ix_gp_user_black_hash  (user_id, black_hash)                      │
+│                                                                      │
+│  New index:                                                          │
+│    ix_gp_user_full_hash_move_san  (user_id, full_hash, move_san)     │
+│    (covering index — eliminates heap fetch for next-moves GROUP BY)  │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
----
+### Component Responsibilities
 
-## Data Model
+| Component | Responsibility | Status |
+|-----------|----------------|--------|
+| `game_positions` table | Position fingerprints per half-move | ADD `move_san` column + covering index |
+| `hashes_for_game()` in `zobrist.py` | Compute hashes for every ply | MODIFY to also return SAN per ply |
+| `import_service._flush_batch()` | Build position rows for bulk insert | MODIFY to populate `move_san` |
+| `analysis_repository` | DB queries for position lookups | ADD `query_next_moves()` |
+| `analysis_service` | Orchestrate queries, compute WDL | ADD `get_next_moves()` |
+| `analysis` router | HTTP surface for analysis | ADD `POST /analysis/next-moves` |
+| `OpeningsPage` | Openings analysis tab | RESTRUCTURE with board + sub-tabs |
+| `DashboardPage` | Position filter + game list | REMOVE import modal, link to `/import` |
+| `ImportPage` (new) | Dedicated import / sync page | NEW |
+| `MoveExplorerTab` (new) | Next-move table with W/D/L | NEW |
+| `GamesTab` (new) | Game list extracted from Dashboard | NEW |
+| `StatisticsTab` (new) | Charts extracted from current Openings | NEW |
+| `useNextMoves` (new) | TanStack Query wrapper | NEW |
 
-### Core Tables
+## Recommended Project Structure
 
-**users**
-```sql
-id          INTEGER PRIMARY KEY
-username    TEXT NOT NULL UNIQUE
-created_at  TIMESTAMP
+### Backend additions
+
+```
+app/
+├── models/
+│   └── game_position.py        # ADD move_san: Mapped[str | None]
+├── services/
+│   ├── zobrist.py              # MODIFY hashes_for_game() → 5-tuples
+│   ├── import_service.py       # MODIFY _flush_batch() — unpack move_san
+│   └── analysis_service.py     # ADD get_next_moves()
+├── repositories/
+│   └── analysis_repository.py  # ADD query_next_moves()
+├── routers/
+│   └── analysis.py             # ADD POST /analysis/next-moves
+└── schemas/
+    └── analysis.py             # ADD NextMovesRequest, NextMoveRecord, NextMovesResponse
 ```
 
-**games**
-```sql
-id              INTEGER PRIMARY KEY
-user_id         INTEGER REFERENCES users(id)
-platform        TEXT      -- 'chess_com' | 'lichess'
-platform_id     TEXT      -- platform's own game ID (for dedup and external links)
-pgn             TEXT      -- full PGN, stored for re-parsing without re-fetching
-played_at       TIMESTAMP
-time_control    TEXT      -- 'bullet' | 'blitz' | 'rapid' | 'classical'
-rated           BOOLEAN
-user_color      TEXT      -- 'white' | 'black'
-opponent_name   TEXT
-result          TEXT      -- 'win' | 'draw' | 'loss' (from user's perspective)
-opening_eco     TEXT      -- from platform metadata, stored but not relied upon
+### Frontend additions
+
+```
+frontend/src/
+├── pages/
+│   ├── Openings.tsx            # RESTRUCTURE with Tabs + sub-tab routing
+│   └── Import.tsx              # NEW — full page for import/sync
+├── components/
+│   └── openings/
+│       ├── MoveExplorerTab.tsx  # NEW — next-move table with W/D/L per move
+│       ├── GamesTab.tsx         # NEW — game list (logic from Dashboard)
+│       └── StatisticsTab.tsx    # NEW — charts from current OpeningsPage
+├── hooks/
+│   └── useNextMoves.ts          # NEW — TanStack Query for /analysis/next-moves
+└── types/
+    └── api.ts                   # ADD NextMovesRequest, NextMoveRecord, NextMovesResponse
 ```
 
-**game_positions** (the hot table)
-```sql
-id              INTEGER PRIMARY KEY
-game_id         INTEGER REFERENCES games(id)
-ply             INTEGER   -- half-move number (0 = starting position, 1 = after White's first move)
-white_hash      INTEGER   -- 64-bit hash of white piece placement only
-black_hash      INTEGER   -- 64-bit hash of black piece placement only
-full_hash       INTEGER   -- 64-bit hash of both sides (complete position)
--- Indexes: (white_hash), (black_hash), (full_hash), (game_id, ply)
+## Architectural Patterns
+
+### Pattern 1: move_san stored at the origin position ply
+
+**What:** The `move_san` column on a `game_positions` row holds the SAN of the move played FROM that position (ply N → ply N+1). The initial position (ply 0) has `move_san = NULL` — no move was played to reach the starting position.
+
+**Why this is correct for move explorer:** The query is "what moves were played FROM position X?" That means: `WHERE full_hash = hash(X) AND move_san IS NOT NULL GROUP BY move_san`. Each matching row's `move_san` is exactly the move played from position X. If move_san were stored on the destination row, you would need to know destination hashes in advance — a circular dependency.
+
+**Trade-offs:** move_san is derivable from PGN + ply at any time, so this is storage redundancy (~4-6 bytes per row). At 200k position rows per user, overhead is negligible. Eliminates costly PGN re-parsing at query time.
+
+**Example:**
+```
+ply=0  full_hash=<start>   move_san=NULL     (initial position; no move yet)
+ply=1  full_hash=<after e4> move_san="e5"    (White played e4 to reach this pos)
+ply=2  full_hash=<after e5> move_san="Nf3"   (Black played e5 to reach this pos)
 ```
 
-### Position Representation
+When querying moves FROM the starting position: `WHERE full_hash = <start> → move_san = "e4"` (from the ply=0 row... wait — ply=0 has `move_san=NULL`). Correction: the ply=0 row has `move_san=NULL`. The ply=1 row's `full_hash` is hash(after e4). The move "e4" was played at ply=0 so `move_san="e4"` belongs on the ply=0 row. Clarification:
 
-**FEN (Forsyth-Edwards Notation)** is the human-readable format but is a poor database key because string comparison is slow, it encodes side-to-move and castling rights (irrelevant for this use case), and it is large.
+```
+ply=0  full_hash=<start>     move_san="e4"   (the move played FROM the start position)
+ply=1  full_hash=<after e4>  move_san="e5"   (the move played FROM after-e4 position)
+ply=2  full_hash=<after e5>  move_san="Nf3"
+...
+ply=N  full_hash=<last pos>  move_san=NULL   (final position; no move played from it)
+```
 
-**The right storage key is a Zobrist hash** — a 64-bit integer computed by XOR-ing random bitstrings for each (square, piece-type, color) combination present on the board. python-chess computes this via `board.zobrist_hash()` (using the `chess.polyglot` module). For this application, the standard Zobrist hash is extended: two separate hashes are computed — one for white pieces only and one for black pieces only — enabling independent side filtering.
+So move_san is NULL on the LAST position in a game (the game-ending position), not on ply 0.
 
-**Bitboards** are the internal engine representation (a 64-bit integer per piece type per color, one bit per square). python-chess uses bitboards internally; the application does not need to store them — only the derived hashes.
-
-### Position Hash Computation Strategy
-
+**Implementation in `hashes_for_game()`:**
 ```python
-import chess
-import chess.polyglot
+# ply 0 — initial position; capture the move that will be played from it
+board = game.board()
+moves = list(game.mainline_moves())
 
-def compute_position_hashes(board: chess.Board):
-    """
-    Compute three 64-bit hashes:
-    - full_hash:  both sides, standard Zobrist (built into python-chess)
-    - white_hash: white pieces only, ignoring black pieces
-    - black_hash: black pieces only, ignoring white pieces
-    """
-    # Full hash — python-chess provides this directly
-    full_hash = chess.polyglot.zobrist_hash(board)
+for ply, move in enumerate(moves):
+    move_san = board.san(move)      # SAN before push — while move is legal on this board
+    wh, bh, fh = compute_hashes(board)
+    results.append((ply, wh, bh, fh, move_san))  # ply=0 gets move_san of first move
+    board.push(move)
 
-    # Side-isolated hashes: clone board, remove one side's pieces, hash
-    white_only = board.copy()
-    for sq in chess.SQUARES:
-        piece = white_only.piece_at(sq)
-        if piece and piece.color == chess.BLACK:
-            white_only.remove_piece_at(sq)
-    white_hash = chess.polyglot.zobrist_hash(white_only)
-
-    black_only = board.copy()
-    for sq in chess.SQUARES:
-        piece = black_only.piece_at(sq)
-        if piece and piece.color == chess.WHITE:
-            black_only.remove_piece_at(sq)
-    black_hash = chess.polyglot.zobrist_hash(black_only)
-
-    return white_hash, black_hash, full_hash
+# Final position (no move played from it)
+wh, bh, fh = compute_hashes(board)
+results.append((len(moves), wh, bh, fh, None))
 ```
 
-This approach is fast (< 1 ms per position), produces deterministic keys, and enables independent side-filtering at query time with simple integer equality comparisons — which database indexes handle extremely efficiently.
+### Pattern 2: Composite covering index for next-move aggregation
 
-### Indexing Strategy
+**What:** The existing `ix_gp_user_full_hash` index (on `user_id, full_hash`) already covers the WHERE clause for next-moves queries. Adding `move_san` as a third column creates a covering index that eliminates heap lookups for the GROUP BY.
 
-The three hash columns on `game_positions` are the critical indexes:
-
-```sql
-CREATE INDEX idx_gp_white_hash ON game_positions(white_hash);
-CREATE INDEX idx_gp_black_hash ON game_positions(black_hash);
-CREATE INDEX idx_gp_full_hash  ON game_positions(full_hash);
-```
-
-A typical analysis query becomes:
-```sql
--- "Show me all my games where my white pieces matched this position"
-SELECT g.id, g.result, g.opponent_name, g.platform, g.platform_id, g.played_at, gp.ply
-FROM game_positions gp
-JOIN games g ON g.id = gp.game_id
-WHERE gp.white_hash = :white_hash
-  AND g.user_id = :user_id
-  AND g.time_control IN ('blitz', 'rapid')   -- optional filter
-  AND g.played_at >= :since                   -- optional filter
-```
-
-At thousands of games with ~40 positions each (~100k rows per user), this query resolves in milliseconds via the hash index.
-
----
-
-## Position Matching Algorithms
-
-### The Two Dimensions of Matching
-
-Chessalytics has two orthogonal matching modes:
-
-1. **Which side to match**: white pieces only, black pieces only, or both sides
-2. **Move-order sensitivity**: strict (must reach position via exact move sequence) vs. any-order (position reached by any move sequence)
-
-These combine into four query variants.
-
-### Side Filtering
-
-Because the white and black hashes are stored independently, side filtering is trivially a matter of which hash column is queried:
-
-| User wants | Query column |
-|---|---|
-| White pieces only | `white_hash = :target_white_hash` |
-| Black pieces only | `black_hash = :target_black_hash` |
-| Both sides exact  | `full_hash = :target_full_hash` |
-
-The "white pieces only" case is the primary use case from the project requirements: "I always play 1.e4 e5 2.Nf3 — show me all my games where my white pieces were in that configuration, regardless of what Black played."
-
-This means white_hash matches but black_hash may differ — which is precisely why storing the hashes separately is essential.
-
-### Move-Order-Aware Matching (Strict)
-
-In strict mode, the user specifies a sequence of moves (e.g., 1.e4 e5 2.Nf3), and we only want games that reached the target position via exactly that move sequence.
-
-**Implementation:** Walk the game's move list in order. At each ply, compare the position's hash against the target hash for the appropriate ply depth. If any ply diverges, stop — the game does not match.
-
+**Recommended index:**
 ```python
-def game_matches_strict(game_pgn: str, target_moves: list[str], match_side: str) -> bool:
-    board = chess.Board()
-    target_board = chess.Board()
-
-    for target_move_san in target_moves:
-        target_board.push_san(target_move_san)
-    target_hash = side_hash(target_board, match_side)
-    target_ply = len(target_moves)
-
-    game = chess.pgn.read_game(io.StringIO(game_pgn))
-    board = game.board()
-    for i, move in enumerate(game.mainline_moves()):
-        board.push(move)
-        if i + 1 == target_ply:
-            return side_hash(board, match_side) == target_hash
-    return False
+# In game_position.py __table_args__:
+Index("ix_gp_user_full_hash_move_san", "user_id", "full_hash", "move_san"),
 ```
 
-**Database optimization for strict mode:** Store the ply number in `game_positions`. A strict query adds `AND gp.ply = :target_ply` to the hash lookup, drastically reducing the result set before any Python-side validation.
+This is the only new index needed. The same index serves: `WHERE user_id = :uid AND full_hash = :h AND move_san IS NOT NULL GROUP BY move_san`.
 
-```sql
-SELECT g.id, g.result ...
-FROM game_positions gp
-JOIN games g ON g.id = gp.game_id
-WHERE gp.white_hash = :white_hash
-  AND gp.ply = :target_ply      -- strict mode: only at the right move depth
-  AND g.user_id = :user_id
+The same white_hash / black_hash patterns are covered by existing indexes — no additional indexes needed for white/black match_side filtering in next-moves.
+
+**No standalone index on `move_san`** — it is never queried in isolation.
+
+### Pattern 3: next-moves query — GROUP BY in repository, WDL in service
+
+**What:** Single aggregating SQL query in the repository. Service computes loss count and percentages. This mirrors the existing `query_all_results` → `analyze()` separation.
+
+**SQLAlchemy query structure:**
+```python
+async def query_next_moves(
+    session: AsyncSession,
+    user_id: int,
+    hash_column: Any,
+    target_hash: int,
+    # ... same filter params as _build_base_query
+) -> list[tuple]:
+    """Return (move_san, game_count, wins, draws) per move from target position."""
+    wins_expr = func.sum(
+        case(
+            (and_(Game.result == "1-0", Game.user_color == "white"), 1),
+            (and_(Game.result == "0-1", Game.user_color == "black"), 1),
+            else_=0,
+        )
+    ).label("wins")
+    draws_expr = func.sum(
+        case((Game.result == "1/2-1/2", 1), else_=0)
+    ).label("draws")
+
+    stmt = (
+        select(
+            GamePosition.move_san,
+            func.count(Game.id.distinct()).label("game_count"),
+            wins_expr,
+            draws_expr,
+        )
+        .join(Game, Game.id == GamePosition.game_id)
+        .where(
+            GamePosition.user_id == user_id,
+            hash_column == target_hash,
+            GamePosition.move_san.isnot(None),
+        )
+        .group_by(GamePosition.move_san)
+        .order_by(func.count(Game.id.distinct()).desc())
+    )
+    # ... apply same optional filters (time_control, platform, rated, etc.)
+    rows = await session.execute(stmt)
+    return list(rows.all())
 ```
 
-This is extremely selective: a specific white_hash at a specific ply will typically match very few rows.
+**DISTINCT on game_id** (`func.count(Game.id.distinct())`) is required. A transposition can cause the same position to appear at multiple plies in the same game, which would double-count that game without DISTINCT.
 
-### Move-Order-Agnostic Matching (Any-Order)
+### Pattern 4: Sub-tabs with shared filter state in OpeningsPage
 
-In any-order mode, the user specifies a target board state and wants to find all games where that configuration appeared at any point — regardless of move order.
+**What:** `OpeningsPage` owns both the chess board state (position, move history) and the filter state. These are passed as props to three sub-tabs. The `Tabs` component from `@/components/ui/tabs` is already installed and used throughout the project.
 
-**Database query:** Drop the `ply` constraint entirely. The hash index lookup returns all games where the target position appeared at any move.
+**Tab values:** `"explorer"`, `"games"`, `"statistics"`
 
-```sql
-SELECT DISTINCT g.id, g.result ...
-FROM game_positions gp
-JOIN games g ON g.id = gp.game_id
-WHERE gp.white_hash = :white_hash
-  AND g.user_id = :user_id
+**Query gating:** Each sub-tab enables its query only when it is the active tab. This prevents three simultaneous requests on page load.
+
+```tsx
+// MoveExplorerTab receives: { position_hash, match_side, filters }
+// GamesTab receives: { position_hash, match_side, filters }
+// StatisticsTab receives: { filters } (bookmarks-based, no board position needed)
 ```
 
-The `DISTINCT` is needed because the same position could appear multiple times in a game (e.g., repetition). The first matching ply per game is the one to display.
+**Filter state ownership:** `OpeningsPage` holds a single `filters` state object (same shape as `FilterState` from `FilterPanel`). The existing `FilterPanel` component is reused as a shared sidebar. Filters are NOT duplicated into each sub-tab — they flow down as read-only props.
 
-### Partial Position Matching (Subset Matching)
+### Pattern 5: ImportPage as a lifted ImportModal
 
-The requirements specify matching by one side's pieces only. This is not "partial" in the sense of caring about a subset of squares — it is "partial" in the sense of ignoring one color. The hash-based approach handles this cleanly because the hash for white pieces is independent of black piece placement.
+**What:** The `ImportModal` component contains all the import logic (first-time view, sync view, edit mode, add-platform flow). For the dedicated `ImportPage`, this content is rendered as a full page rather than inside a `Dialog` wrapper.
 
-If a future requirement arises for true subset matching (e.g., "find games where my knight was on f3 and my bishop was on c4, regardless of other pieces"), that requires a different approach:
+**Implementation approach:** Either:
+1. Extract `ImportModal`'s body into a separate `ImportForm` component used by both modal and page.
+2. Or simply render the existing `ImportModal` content directly in `ImportPage` without the `Dialog` wrapper.
 
-- **Column-per-piece-type**: Store the square occupancy for each piece type as a bitmask integer. Query with bitwise AND: `white_knights & :mask = :mask`.
-- **PostgreSQL arrays or JSONB**: Store piece placements as queryable structured data.
-- **Dedicated search index** (e.g., a trigram or inverted index over piece-square strings).
+Option 2 is simpler — lift the inner `<form>` and sync view JSX into a standalone page component. The `ImportModal` can be removed entirely or kept temporarily while `DashboardPage` still references it (remove as part of the UI restructuring).
 
-For v1, the full-side hash approach covers all stated requirements without this complexity.
-
-### Hash Collision Risk
-
-A 64-bit Zobrist hash has a collision probability of ~1/2^64 per pair of positions — negligible for thousands of games. False positive matches would show up as games that don't visually match the query position; these are rare enough to ignore for v1.
-
----
+**DashboardPage change:** The import button (`btn-import`) changes from `onClick={() => setImportOpen(true)}` to a React Router `<Link to="/import">`. Remove `ImportModal` and `ImportProgress` from `DashboardPage` — these move to `ImportPage`.
 
 ## Data Flow
 
-### Game Import Pipeline
+### Next-Moves Request Flow
 
 ```
-User triggers sync
-    │
-    ▼
-ImportService.sync(user_id, platform, username)
-    │
-    ├─► Fetch game list from chess.com API
-    │       GET https://api.chess.com/pub/player/{username}/games/{year}/{month}
-    │       Returns JSON array of games with PGN included
-    │
-    ├─► Fetch game list from lichess API
-    │       GET https://lichess.org/api/games/user/{username}
-    │       Accept: application/x-ndjson  (streaming newline-delimited JSON)
-    │
-    ├─► Dedup: filter out platform_ids already in DB
-    │
-    └─► For each new game (run as async tasks):
-            │
-            ├─► Parse PGN with python-chess
-            │       chess.pgn.read_game(io.StringIO(pgn))
-            │
-            ├─► Extract metadata
-            │       time_control, rated, opponent name, result, played_at, opening ECO
-            │
-            ├─► Walk all positions
-            │       board = game.board()
-            │       for ply, move in enumerate(game.mainline_moves()):
-            │           board.push(move)
-            │           white_h, black_h, full_h = compute_position_hashes(board)
-            │           stage position record: (game_id, ply+1, white_h, black_h, full_h)
-            │
-            └─► Write to DB atomically
-                    INSERT INTO games ...
-                    INSERT INTO game_positions (batch) ...
+User navigates board to position X in MoveExplorerTab
+    ↓
+MoveExplorerTab calls useNextMoves({ hash, match_side, ...filters })
+    ↓
+TanStack Query (enabled when tab is active):
+    POST /analysis/next-moves
+    { full_hash, match_side, time_control, platform, rated, opponent_type, recency, color }
+    ↓
+analysis router → analysis_service.get_next_moves()
+    ↓
+analysis_repository.query_next_moves()
+    SELECT move_san, COUNT(DISTINCT g.id) AS game_count, SUM(wins), SUM(draws)
+    FROM game_positions gp JOIN games g ON g.id = gp.game_id
+    WHERE gp.user_id = :uid AND gp.full_hash = :hash AND gp.move_san IS NOT NULL
+    GROUP BY move_san ORDER BY game_count DESC
+    ↓
+Service: loss = game_count - wins - draws; compute percentages
+    ↓
+NextMovesResponse: [{ move_san, game_count, wins, draws, losses, win_pct, ... }]
+    ↓
+MoveExplorerTab renders table: Move | Games | W% | D% | L%
+Click on a row → board advances that move → new hash → new next-moves fetch
 ```
 
-**chess.com API note:** The monthly endpoint returns complete PGNs, so one call per month per user covers everything. Pagination is by month; the sync state table records the last synced month.
-
-**lichess API note:** The NDJSON streaming endpoint is more efficient — it can filter by `since` timestamp and returns games as a stream, avoiding large JSON payloads. The `moves=true&clocks=false&evals=false` query parameters trim the response.
-
-**Throughput estimate:** A game with 40 moves generates 40 position records. A user with 5,000 games generates 200,000 position rows. With batch inserts, this processes in seconds.
-
-### Analysis Query Flow
+### Import Pipeline Change (move_san population)
 
 ```
-User specifies position on interactive board
-    │
-    ▼
-Frontend sends query
-    POST /api/analysis
-    {
-        "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
-        "match_side": "white",          // "white" | "black" | "both"
-        "move_order": "any",            // "strict" | "any"
-        "move_sequence": ["e4"],        // only for "strict" mode
-        "filters": {
-            "time_controls": ["blitz", "rapid"],
-            "rated_only": true,
-            "since_days": 365
-        }
-    }
-    │
-    ▼
-AnalysisService
-    │
-    ├─► Parse FEN with python-chess → compute query hashes
-    │
-    ├─► Build SQL query based on match_side and move_order
-    │
-    ├─► Execute query → list of (game_id, ply, result)
-    │
-    ├─► Aggregate: count wins/draws/losses
-    │
-    └─► Return response:
-            {
-                "total": 47,
-                "wins": 28, "draws": 5, "losses": 14,
-                "win_rate": 0.596,
-                "games": [
-                    {
-                        "id": 123,
-                        "platform": "lichess",
-                        "platform_id": "aBcDeFgH",
-                        "external_url": "https://lichess.org/aBcDeFgH",
-                        "opponent": "DragonSlayer99",
-                        "result": "win",
-                        "played_at": "2025-11-03",
-                        "matched_at_ply": 2
-                    }, ...
-                ]
-            }
+_flush_batch() calls hashes_for_game(pgn)
+    ↓
+hashes_for_game() returns 5-tuples: (ply, wh, bh, fh, move_san)
+    ↓
+position_rows dicts include "move_san" key
+    ↓
+game_repository.bulk_insert_positions() writes move_san to DB
+    (no change to bulk_insert_positions beyond the extra column in dicts)
 ```
 
-**FEN input vs. move sequence:** The frontend interactive board can export both a FEN (for any-order mode) and the move sequence used to reach it (for strict mode). For strict mode, the move sequence is the authoritative input — the FEN is derived from it but the ply number and move list determine the query.
+### UI Routing Change
+
+```
+Current:
+  /             DashboardPage  (board + game list + import modal)
+  /openings     OpeningsPage   (bookmarks + WDL charts + win-rate chart)
+
+After v1.1:
+  /             DashboardPage  (board + game list; import button links to /import)
+  /openings     OpeningsPage   (board + shared filters + sub-tabs)
+                   sub-tab: explorer  → MoveExplorerTab
+                   sub-tab: games     → GamesTab
+                   sub-tab: statistics → StatisticsTab
+  /import       ImportPage     (full-page import/sync UI)
+```
+
+### Filter and Board State in Restructured OpeningsPage
+
+```
+OpeningsPage
+  │  owns: filters state, chess board state (position, move history)
+  │
+  ├─► ChessBoard + MoveList + BoardControls  (interactive board — same as Dashboard)
+  │
+  ├─► FilterPanel  (existing component, receives filters + onChange)
+  │
+  └─► <Tabs>
+        ├─► MoveExplorerTab (props: hash, match_side, filters)
+        │     useNextMoves({ hash, match_side, ...filters }, enabled: activeTab==='explorer')
+        │
+        ├─► GamesTab (props: hash, match_side, filters)
+        │     useAnalysis() mutation (same as Dashboard's handleAnalyze)
+        │
+        └─► StatisticsTab (props: filters)
+              useTimeSeries() (same as current OpeningsPage)
+```
+
+## New vs. Modified: Explicit Accounting
+
+### New
+
+| Item | Type | Location |
+|------|------|----------|
+| `move_san` column | DB column | `game_positions` table |
+| `ix_gp_user_full_hash_move_san` | DB index | `game_positions` |
+| `query_next_moves()` | Repository function | `analysis_repository.py` |
+| `get_next_moves()` | Service function | `analysis_service.py` |
+| `NextMovesRequest`, `NextMoveRecord`, `NextMovesResponse` | Pydantic schemas | `schemas/analysis.py` |
+| `POST /analysis/next-moves` | API endpoint | `analysis` router |
+| `useNextMoves` | React hook | `hooks/useNextMoves.ts` |
+| `MoveExplorerTab` | React component | `components/openings/MoveExplorerTab.tsx` |
+| `GamesTab` | React component | `components/openings/GamesTab.tsx` |
+| `StatisticsTab` | React component | `components/openings/StatisticsTab.tsx` |
+| `ImportPage` | React page | `pages/Import.tsx` |
+| `/import` route + nav item | Router + nav | `App.tsx` |
+
+### Modified
+
+| Item | Change | Location |
+|------|--------|----------|
+| `hashes_for_game()` | Returns 5-tuples with `move_san` | `services/zobrist.py` |
+| `import_service._flush_batch()` | Unpacks 5-tuples, adds `move_san` to position row dicts | `services/import_service.py` |
+| `GamePosition` model | ADD `move_san: Mapped[str \| None]` | `models/game_position.py` |
+| `OpeningsPage` | Restructure: add board, shared filters, Tabs container | `pages/Openings.tsx` |
+| `App.tsx` | Add `/import` route and nav item | `App.tsx` |
+| `DashboardPage` | Import button links to `/import`; remove ImportModal + ImportProgress | `pages/Dashboard.tsx` |
+
+### Unchanged / Reused As-Is
+
+| Item | Why unchanged |
+|------|---------------|
+| `_build_base_query()` | `query_next_moves()` mirrors its filter parameter pattern |
+| Existing hash indexes | `ix_gp_user_full_hash` covers the WHERE for next-moves |
+| `analysis_service.analyze()` | GamesTab reuses this endpoint unchanged |
+| `useAnalysis` / `useGamesQuery` hooks | Reused by GamesTab as-is |
+| `FilterPanel` component | Reused as shared filter sidebar in OpeningsPage |
+| `ChessBoard`, `MoveList`, `BoardControls` | Reused in OpeningsPage (same as Dashboard) |
+
+## Build Order (Dependency-Aware)
+
+```
+Step 1 — DB schema + import pipeline (blocks everything)
+  1a. Add move_san to GamePosition model + covering index
+  1b. Modify hashes_for_game() to return 5-tuples with move_san
+  1c. Modify _flush_batch() to unpack 5-tuples and include move_san in position rows
+  1d. DB wipe + fresh import to validate move_san populates correctly
+
+Step 2 — Backend endpoint (blocks frontend next-moves)
+  2a. Add Pydantic schemas: NextMovesRequest, NextMoveRecord, NextMovesResponse
+  2b. Add query_next_moves() to analysis_repository.py
+  2c. Add get_next_moves() to analysis_service.py
+  2d. Add POST /analysis/next-moves to analysis router
+  2e. Write test for query_next_moves() and get_next_moves()
+
+Step 3 — Frontend: move explorer (depends on Step 2)
+  3a. Add NextMovesRequest/Response types to types/api.ts
+  3b. Add useNextMoves hook
+  3c. Build MoveExplorerTab component
+
+Step 4 — Frontend: UI restructuring (independent of Steps 2-3, can parallel)
+  4a. Create ImportPage (lift ImportModal content into full page)
+  4b. Add /import route to App.tsx, add Import to nav
+  4c. Update DashboardPage: change import button to link, remove ImportModal
+  4d. Create GamesTab (extract game list + analysis from Dashboard logic)
+  4e. Create StatisticsTab (extract charts from current OpeningsPage)
+  4f. Restructure OpeningsPage: add board state, shared FilterPanel, Tabs
+  4g. Wire all three sub-tabs into OpeningsPage
+
+Step 5 — Integration
+  5a. Connect MoveExplorerTab into OpeningsPage (merge Steps 3 + 4)
+  5b. End-to-end test: play moves → explorer shows next moves with WDL
+```
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Querying move_san without DISTINCT on game_id
+
+**What people do:** `COUNT(*)` instead of `COUNT(DISTINCT g.id)` in the next-moves GROUP BY.
+
+**Why it's wrong:** Transpositions cause the same position hash to appear at multiple plies in one game. Without DISTINCT, a single game contributes multiple rows and inflates counts. The existing `_build_base_query` already uses `.distinct(Game.id)` for this exact reason. The next-moves query must apply the same discipline.
+
+**Do this instead:** `COUNT(DISTINCT g.id)` in the aggregation. Or use a subquery to deduplicate by game_id before grouping — but the DISTINCT aggregate is simpler and performs well.
+
+### Anti-Pattern 2: Putting move_san on the destination position row
+
+**What people do:** Attach move_san to the position row for the position REACHED by the move (ply N+1) instead of the position FROM which the move was played (ply N).
+
+**Why it's wrong:** The move explorer query asks "what moves are available FROM position X?" This requires `WHERE full_hash = hash(X)` and reading `move_san` on those rows. If move_san were on destination rows, you would need to know destination hashes — which is the answer you are trying to find.
+
+**Do this instead:** Store move_san on the row for the position FROM which the move was played. The final game position (no move played from it) has `move_san = NULL`.
+
+### Anti-Pattern 3: Each sub-tab fires queries independently on mount
+
+**What people do:** All three sub-tabs use `enabled: true` in their query hooks, triggering three DB queries simultaneously on page load.
+
+**Why it's wrong:** Wasted DB hits, degraded load time, and potentially inconsistent intermediate states as tabs render with stale data.
+
+**Do this instead:** Gate each query with `enabled: activeTab === 'explorer'` (or `'games'`, `'statistics'`). TanStack Query caches results — switching back to a previously active tab with unchanged filters is instant (no re-fetch unless `staleTime` has passed).
+
+### Anti-Pattern 4: Duplicating filter state into sub-tabs
+
+**What people do:** Each sub-tab manages its own copy of filter controls (time control, platform, rated, etc.).
+
+**Why it's wrong:** Three sources of truth for the same filter state. Filter changes in one tab don't reflect in others. The existing Openings page already has inline filter widgets — multiplying them by 3 is confusing.
+
+**Do this instead:** Filter state lives in `OpeningsPage`. The existing `FilterPanel` component is rendered once as a shared sidebar and passes state down via props. Sub-tabs receive `filters` as a read-only prop.
+
+## Integration Points
+
+### External Services
+
+| Service | Integration Pattern | Notes |
+|---------|---------------------|-------|
+| chess.com API | `chesscom_client.py` — unchanged | move_san comes from PGN parsing, not the API |
+| lichess API | `lichess_client.py` — unchanged | Same — PGN already fetched and stored |
+
+### Internal Boundaries
+
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| `hashes_for_game()` → `_flush_batch()` | Return type extends from 4-tuple to 5-tuple | Single call site — update together |
+| `analysis_repository` → `analysis_service` | New `query_next_moves()` mirrors `query_all_results()` pattern | Reuse `HASH_COLUMN_MAP` and filter helpers |
+| `OpeningsPage` → sub-tabs | Props: `{ filters, position_hash, match_side }` | Sub-tabs are presentational; query logic lives in hooks |
+| `ImportPage` / `DashboardPage` → import flow | `ImportPage` owns the import UI; Dashboard links to it | `ImportProgress` component may stay in Dashboard or move to a layout-level component |
+
+## Scaling Considerations
+
+| Scale | Architecture Adjustments |
+|-------|--------------------------|
+| 0-10k games/user | Indexed GROUP BY is sub-10ms; no adjustments needed |
+| 10k-100k games/user | Covering index `(user_id, full_hash, move_san)` eliminates heap fetches |
+| 100k+ games/user | Consider materialised view for move aggregates if GROUP BY latency becomes noticeable (not expected for this user base) |
+
+### Scaling Priorities
+
+1. **First bottleneck:** next-moves GROUP BY on large `game_positions` tables — mitigated by the covering index added in this milestone.
+2. **Second bottleneck:** GamesTab pagination in Openings reuses the existing optimised `query_matching_games()` path — no additional work needed.
+
+## Sources
+
+- Direct analysis of `app/models/game_position.py` — existing schema
+- Direct analysis of `app/repositories/analysis_repository.py` — existing query patterns (DISTINCT, filter helpers, HASH_COLUMN_MAP)
+- Direct analysis of `app/services/zobrist.py` — `hashes_for_game()` current return type
+- Direct analysis of `app/services/import_service.py` — `_flush_batch()` position row construction
+- Direct analysis of `frontend/src/pages/Openings.tsx` — existing filter state and chart components
+- Direct analysis of `frontend/src/pages/Dashboard.tsx` — ImportModal usage, board state, game list
+- Direct analysis of `frontend/src/App.tsx` — existing routes and nav items
+- `.planning/PROJECT.md` — v1.1 scope and settled decisions (DB wipe confirmed)
 
 ---
-
-## Suggested Build Order
-
-The dependencies flow from data inward to query outward. Nothing in the query layer can be validated until the data layer produces real records.
-
-### Phase 1: Data Foundation
-1. **Database schema** — Define all tables and indexes. Migrate with Alembic. Get this right early; schema changes later are expensive.
-2. **Position hash module** — Pure Python, no DB dependency. Test exhaustively: verify white_hash and black_hash are independent, verify hash stability across python-chess versions, add collision sanity checks.
-3. **PGN parser + position indexer** — Takes a PGN string, produces game metadata and a list of position records. Pure logic, easily unit-tested without a DB.
-
-### Phase 2: Import Pipeline
-4. **chess.com API client** — Fetch games by username/month, handle rate limits and 404s for unknown users.
-5. **lichess API client** — NDJSON streaming, `since` parameter for incremental sync.
-6. **Import service** — Orchestrates dedup, parsing, and DB writes. Background task in FastAPI.
-7. **Sync state tracking** — Record last-synced timestamp per user/platform so re-sync only fetches new games.
-
-### Phase 3: Analysis Engine
-8. **Analysis query builder** — Takes parsed query parameters, selects the right hash column and ply filter, returns game IDs and results.
-9. **Analysis API endpoint** — Thin HTTP layer around the analysis service.
-
-### Phase 4: Frontend
-10. **Interactive chessboard** — Position entry is the core UX. Use `react-chessboard` (React) or `chessboard.js` (vanilla). Must export both FEN and move sequence.
-11. **Filter controls and results display** — Relatively straightforward once the board works.
-
-### Phase 5: Auth and Multi-User
-12. **User auth** — FastAPI-Users or a simple JWT approach. Can be bolted on after single-user flow is validated.
-
-### Key Dependency: Validate the hash strategy first
-
-Before writing any API client code, write a test that:
-1. Creates a known position in python-chess
-2. Computes white_hash and black_hash
-3. Creates a second board with the same white pieces but different black pieces
-4. Asserts that white_hash matches but full_hash differs
-
-This test is the proof-of-concept for the entire data model. If it passes, the architecture is sound. Do this before importing a single real game.
-
----
-
-## Design Decisions and Tradeoffs
-
-### SQLite vs PostgreSQL
-- SQLite is fine for development and single-user deployments. The position index at 200k rows per user is well within SQLite's sweet spot.
-- PostgreSQL becomes necessary for multi-user concurrent writes and for `BIGINT` index performance at scale (1M+ rows). Given the multi-user requirement in the project, plan for PostgreSQL in production even if SQLite is used for local dev.
-- Use SQLAlchemy ORM with Alembic migrations so the DB backend is swappable.
-
-### Storing full PGN vs. derived data only
-- Store the raw PGN. It is small (a 40-move game is ~2 KB) and preserves optionality: re-parse with different logic later without re-fetching from the API.
-- The position index can be rebuilt from stored PGNs if the schema changes.
-
-### Hash-per-position vs. game-level move array
-- Alternative: store each game as a JSON array of FEN strings and use JSON operators in PostgreSQL to query. This is simpler to write but slower to query — JSON path operators don't benefit from conventional B-tree indexes.
-- The hash-per-row approach with indexed integers is faster at query time and scales better.
-
-### Precomputing vs. on-demand position extraction
-- Precompute and store all position hashes at import time. This shifts cost to import (acceptable — runs in background) and makes queries fast (critical — user is waiting).
-- On-demand parsing (walk PGN at query time) is too slow for thousands of games.
+*Architecture research for: Chessalytics v1.1 — Move Explorer + UI Restructuring*
+*Researched: 2026-03-16*

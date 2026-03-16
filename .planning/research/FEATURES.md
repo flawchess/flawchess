@@ -1,130 +1,173 @@
-# Features Research: Chessalytics
+# Feature Research
 
-> Research based on analysis of lichess, chess.com Insights, ChessBase, Chess Tempo, and similar platforms.
-> Complexity estimates: Low (days), Medium (1–2 weeks), High (weeks+).
-
----
-
-## Table Stakes (must have or users leave)
-
-These are the features every chess analysis tool provides. Missing any of them makes the product feel unfinished to the target audience.
-
-### Game Import
-- **Import by username from chess.com and lichess** — Both platforms expose public REST APIs. Chess.com returns monthly archives as PGN/JSON; lichess streams NDJSON. Handling pagination, rate limits, and partial syncs is the main complexity. *Complexity: Medium*
-- **Re-sync / incremental fetch** — Users expect to add new games without re-importing everything. Requires storing the last-fetched timestamp or game ID per source. *Complexity: Low (once import works)*
-- **Import progress feedback** — A progress indicator during long imports (hundreds of games) is expected. Silent background jobs that fail without feedback cause user abandonment. *Complexity: Low*
-
-### Game Storage and Metadata
-- **Store full PGN / move list** — Required to compute positions later. Cannot analyze what you didn't store. *Complexity: Low (schema design matters)*
-- **Store standard metadata** — Result, date, time control, rated/casual, platform, opponent username, opening name from platform, game URL. Chess.com and lichess both provide this. *Complexity: Low*
-- **Correct color assignment** — Know which side the importing user played. Both APIs provide this. *Complexity: Low*
-
-### Position-Based Analysis (the core product)
-- **Interactive board for position entry** — Users play moves on a board to define a target position rather than typing FEN strings. This is the primary UX decision. *Complexity: Medium (needs a chess board component — chessboard.js, react-chessboard, or cm-chessboard are established options)*
-- **Position matching against stored games** — For each game, determine if the target position was reached. Requires replaying move sequences with python-chess. *Complexity: Medium (the key algorithmic challenge; FEN normalization is straightforward with python-chess)*
-- **Win/draw/loss rates for matching games** — Aggregate results for matched games, split by color. *Complexity: Low (pure aggregation once matching works)*
-- **List of matching games** — Show individual matched games with opponent, result, date, time control, and link back to chess.com or lichess. *Complexity: Low*
-
-### Filters
-- **Filter by color (white / black / both)** — Core to the product's value proposition. Users need to isolate their own piece placement. *Complexity: Low*
-- **Filter by time control** — Bullet / blitz / rapid / classical. Users' styles differ drastically by time control; mixing them produces misleading stats. Every platform provides this. *Complexity: Low*
-- **Filter by rated vs. casual** — Casual games are often throwaway; mixing them skews stats. *Complexity: Low*
-- **Filter by recency** — Last week / month / 3 months / 6 months / 1 year / all time. Results from 3 years ago may not reflect current play. *Complexity: Low*
-
-### Authentication and Multi-User
-- **User accounts** — Each user manages their own imported games and analyses. *Complexity: Medium (standard auth; session management)*
-- **User data isolation** — Users only see their own games. *Complexity: Low (row-level filtering)*
+**Domain:** Chess opening explorer + analysis UI restructuring
+**Researched:** 2026-03-16
+**Confidence:** HIGH (established patterns across lichess, chess.com, openingtree.com; confirmed by official docs and source code)
 
 ---
 
-## Differentiators (competitive advantage)
-
-These are features Chessalytics has or could have that lichess Explorer and chess.com Insights lack.
-
-### Position-Based Filtering Independent of Opening Name
-**This is the core differentiator.** Lichess's Opening Explorer and chess.com's Openings tab both group games by ECO code or opening name. If lichess calls 1.e4 d6 2.d4 Nf6 3.Nc3 g6 the "Pirc Defense" and a slight move-order variation the "Czech Defense," those games are siloed — even if the user played identical moves and reached the same position. Chessalytics groups by actual board state, not by naming convention.
-
-- **Any-order position matching** — Match games where a target position was reached regardless of move order. Useful for transpositions (e.g., reaching the same King's Indian structure via different move orders). *Complexity: High (compute a canonical FEN after each half-move; match against stored FEN snapshots; precomputing FEN snapshots per game at import time makes queries fast)*
-- **Strict move-order matching** — Match only games where moves were played in the exact sequence entered. Useful when the user cares about the specific line, not just the resulting position. *Complexity: Medium (compare move prefix sequences directly)*
-- **Own-pieces-only filtering** — The user defines a position using only their own pieces; opponent piece placement is ignored when matching. This is explicitly not possible in any existing consumer tool. *Complexity: Medium (mask opponent pieces from FEN before comparison)*
-
-### Per-User Personal Game Database
-Lichess Explorer works against a global master database or all lichess games — not your personal history. Chess.com Insights shows aggregate stats but does not let you query by position. Chessalytics is the only tool that lets a club-level player ask "what is my personal win rate from this exact pawn structure?"
-
-### Transparent, Queryable Filters
-Chess.com Insights buries its filter logic. Chessalytics exposes all filter combinations simultaneously, making the effect of each filter immediately visible.
+> This file covers features for v1.1: Move Explorer and UI restructuring.
+> v1.0 features (import, position analysis, bookmarks, game cards, stats) are already shipped.
+> Dependencies on v1.0 are noted where relevant.
 
 ---
 
-## Anti-Features (things to deliberately NOT build for v1)
+## Feature Landscape
 
-These features are tempting but impose disproportionate complexity for the value they deliver at v1 scale.
+### Table Stakes (Users Expect These)
 
-### Manual PGN Upload
-Already excluded in PROJECT.md. Adds a file parsing pipeline (handling malformed PGNs, variant headers, encoding issues) without covering a use case not already served by the API path. Every user who has PGN games also has a chess.com or lichess account. Defer to v2 or permanently exclude.
+These are features that any opening/move explorer is expected to have. Missing them makes the product feel incomplete to chess players familiar with lichess Explorer or chess.com Game Explorer.
 
-### In-App Game Viewer / Move Replay
-Already excluded. Linking to the source platform is sufficient. Building a full move-by-move viewer requires a synchronized board + move list component, keyboard navigation, annotation support, and engine integration expectations from users. Enormous surface area for v1.
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| Move table showing next moves with game count | Every explorer (lichess, chess.com, 365chess) shows this as the primary data | LOW | Query game_positions WHERE full_hash = :current_hash, GROUP BY move_san |
+| W/D/L stats per move row | Standard since at least 2015; users explicitly look for this | LOW | Aggregate from existing games.result data; same logic as position-level stats already built |
+| Stacked W/D/L bar per move row | Visual pattern users are trained on from chess.com and lichess; text percentages alone feel bare | LOW | CSS bar, same component used in existing position stats panel |
+| Click a move row to advance position | Core interaction: click = play that move on the board | LOW | Dispatch move to board state; board already supports this interaction |
+| Total game count for current position | Shows sample size; users judge reliability of stats from this | LOW | Sum of all move rows |
+| Sorted by frequency (most common first) | Default sort in all explorers; users expect most popular first | LOW | ORDER BY game_count DESC |
+| Empty state when no games reach position | Users play into uncommon lines; "no games found" is expected feedback | LOW | Simple conditional render |
+| Play moves on board updates explorer | Bidirectional: board drives explorer and explorer drives board | LOW | Board state already drives position query; same mechanism |
+| Color filter (as white / as black) | Chess results differ drastically by side; this is the most-used filter | LOW | Already exists in v1.0 filter sidebar; reuse |
+| Time control filter | Already in v1.0; users expect consistency across all views | LOW | Reuse existing filter sidebar |
+| Reset to starting position | Users need to return to start without page reload | LOW | Clear move history, reset board to initial FEN |
+| Dedicated Import page (not modal) | Import from a modal is cramped; power users want a full page with status history and per-platform controls | MEDIUM | Move existing modal content to route /import; show import history, per-platform last-sync timestamps |
 
-### Engine Analysis / Stockfish Integration
-Players will immediately expect "show me the blunder" functionality once they see a game viewer. Engine integration (evaluation bar, best move arrows, mistake classification) is a separate product. Avoid even partial implementation; it anchors user expectations.
+### Differentiators (Competitive Advantage)
 
-### Opening Name Display / ECO Codes
-Displaying ECO codes or opening names alongside position results seems helpful but requires maintaining an opening book database (or using the platform-supplied name, which is the exact inconsistency Chessalytics is solving). It adds confusion without improving the core value proposition.
+These align with the core Chessalytics value proposition: position-based analysis of your own games, independent of opening name.
 
-### Opponent Analysis
-"How do I do against 1.d4 players?" is a natural follow-on question, but it requires different data modeling (filtering on opponent metadata, not user positions) and a separate UX surface. V2.
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| "As white" / "as black" W/D/L split in move table | Lichess explorer shows global W/D/L regardless of who you are; Chessalytics shows YOUR personal result from each move | LOW | Filter game_positions by user's color in the query |
+| Move explorer scoped to the user's imported games only | Lichess shows master/all-platform stats; chess.com shows master DB; neither gives club players personal position stats | LOW | Already the architecture — user_id in game_positions ensures this |
+| Move explorer shares filter sidebar with Games and Statistics sub-tabs | No other personal chess tool offers a unified filter that updates all views simultaneously | MEDIUM | Shared filter state (React context or URL query params) propagated to all three sub-tab queries |
+| Move explorer works for any position reachable from initial position (not just named openings) | Lichess and chess.com explorers degrade past move 20-25 for personal games; Chessalytics has no such limit since it is querying your own indexed positions | LOW | The Zobrist hash approach handles all positions equally; no special handling needed |
+| Sub-tab navigation within Openings (Move Explorer / Games / Statistics) | Chess.com analysis has tabs but they are not scoped to a single position+filter state; our tabs share both position and filter | MEDIUM | React Router sub-routes or tab state; position and filter must persist across tab switches |
+| SAN stored in game_positions for direct move lookup | Enables single-query move explorer without PGN replay at query time | MEDIUM | Schema change: add move_san column to game_positions; populate at import; add index |
 
-### Performance Over Time / Trend Charts
-Time-series charts of win rate by opening are compelling but require sufficient data density to be meaningful (most users won't have enough games per position per month). False signal is worse than no signal for a new user. V2 once data volume is understood.
+### Anti-Features (Commonly Requested, Often Problematic)
 
-### Rating-Based Filtering
-Filtering games by opponent Elo band (e.g., "only games vs. 1600–1800") is a ChessBase staple but requires storing opponent ratings, adds a filter dimension that multiplies the number of segments, and dilutes already-small sample sizes. V2.
-
-### Social / Sharing Features
-Sharing a position analysis URL with friends, or publishing opening repertoires publicly. Adds auth complexity (public vs. private), URL scheme design, and no clear v1 user value. V2.
-
-### Browser Extension / Auto-Import
-Some tools auto-detect when a user finishes a game and import immediately. Technically fragile (scraping, browser API changes) and out of scope for a web platform. Not worth the maintenance burden.
-
----
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| Engine evaluation per move in explorer | Users see it on lichess/chess.com and want it | Requires Stockfish process management (subprocess, async queuing), CPU cost scales with concurrent users, and immediately anchors user expectations toward full engine analysis (blunder detection, evaluation bar). Scope explosion risk. | Defer to v2+. The personal W/D/L data is the differentiator; engine eval undercuts it by making users focus on "best move" instead of "my move". |
+| Opening name / ECO code label in explorer | Feels orienting; lichess shows it | Requires maintaining an opening book database or accepting platform naming inconsistency — the exact problem Chessalytics exists to solve. Adds false authority to a naming system the product rejects. | Show move number and SAN only. Position speaks for itself. |
+| Link out to sample games from explorer move rows | Nice for context; chess.com shows "notable games" below move table | The Games sub-tab already shows matched games for the position. Duplicating in the move explorer creates two sources of truth. | After clicking a move in explorer (advancing position), switch to Games sub-tab to see games. |
+| Tree / branching visualization (visual opening tree) | Openingtree.com does this; looks impressive | Rendering a tree of depth 5+ with W/D/L per branch is a React render performance problem. For club-level game counts (hundreds to low thousands), many branches have 1-2 games and produce misleading statistics. | Flat move table is faster to read, easier to implement, and more honest about sample sizes. |
+| Percent score (chess points / max points) instead of W/D/L | Openingtree shows win% = (wins + 0.5×draws) / total | Hides the draw rate, which is important context. A 50% score with 100% draws is very different from 50% wins 0% draws. | Show W, D, L as separate columns. |
+| Infinite depth exploration (follow any line arbitrarily deep) | Natural behavior: click move, click next move, explore ad hoc | Already supported by the architecture — each position has a hash and the query works at any depth. Not a feature to avoid; just not special-cased. | This works automatically from the move table + board interaction. No additional work needed. |
+| Import status as a modal | Current v1.0 uses modal | Modals block navigation; long imports (100s of games) need a persistent UI. Users want to import and then browse bookmarks. | Dedicated /import page. |
 
 ## Feature Dependencies
 
-Build order follows the dependency chain. Each layer must exist before the next is useful.
+```
+[SAN stored in game_positions] (schema + import change)
+    └──enables──> [Move explorer table] (single DB query, no PGN replay)
 
-### Layer 0 — Infrastructure (no dependencies)
-1. User auth (accounts, sessions)
-2. Database schema (users, games, game_moves or game_fens)
-3. chess.com API client (fetch games by username, paginate, rate-limit)
-4. lichess API client (NDJSON stream, handle large archives)
+[Move explorer table]
+    └──requires──> [Board state drives position hash] (already exists in v1.0)
+    └──requires──> [W/D/L aggregation per position] (already exists in v1.0)
 
-### Layer 1 — Import Pipeline (depends on Layer 0)
-5. Game import endpoint — accepts username + platform, calls API client, stores games + metadata
-6. Incremental re-sync — track last-fetched marker per user+platform, fetch only new games
-7. FEN snapshot generation at import time — replay each game with python-chess, store FEN after every half-move. This is the key precomputation that makes position queries fast.
+[Shared filter sidebar]
+    └──requires──> [Sub-tab navigation] (Openings → Move Explorer / Games / Statistics)
+    └──enables──> [Consistent filter state across tabs]
 
-### Layer 2 — Position Matching (depends on Layer 1)
-8. FEN normalization — strip en-passant / castling rights from FEN for position-only comparison (python-chess handles this)
-9. Own-pieces-only FEN masking — zero out opponent piece squares before comparison
-10. Strict move-order match query — compare move prefix string against stored moves
-11. Any-order position match query — look up target FEN in stored FEN snapshots
+[Sub-tab navigation]
+    └──requires──> [Merged Openings tab] (replaces separate Analysis + Games tabs)
+    └──requires──> [React state or URL param management for active tab]
 
-### Layer 3 — Analysis UI (depends on Layer 2)
-12. Interactive board component — lets user input a position by playing moves
-13. Filter controls — color, time control, rated/casual, recency
-14. W/D/L results display — counts and percentages for matched games
-15. Matching games list — table with opponent, result, date, platform link
+[Dedicated Import page]
+    └──replaces──> [Import modal] (modal can be removed after page exists)
+    └──requires──> [Route /import] (new React Router route)
 
-### Layer 4 — Polish (depends on Layer 3)
-16. Import progress indicator
-17. Empty states (no games yet, no matching games, filters too narrow)
-18. Error handling for API failures (chess.com/lichess downtime, invalid usernames)
-19. Re-sync button with "last synced at" timestamp
+[Move explorer click-to-navigate]
+    └──requires──> [Board accepts programmatic move input] (already exists in v1.0)
+    └──enhances──> [Games sub-tab] (navigating to a position in explorer shows games for that position)
+```
 
-### Key constraint: FEN snapshots at import time
-Storing a FEN string after every half-move at import is the design decision that makes Layer 2 queries viable. Without it, every position query requires replaying all games on the fly, which becomes slow at thousands of games. The tradeoff is storage (roughly 50–80 bytes × average 40 moves × thousands of games = tens of MB per active user, which is acceptable for SQLite or Postgres).
+### Dependency Notes
+
+- **SAN in game_positions requires DB wipe**: PROJECT.md already records "DB wipe for v1.1 — No migration needed — reimport after schema change." This is the accepted approach. The SAN column is the only schema-blocking dependency for the move explorer.
+- **Sub-tab navigation must preserve position + filter state**: If the user is at e4 e5 Nf3 with blitz filter, switching from Move Explorer to Games tab must show games from that same position with that same filter. This is a React state design constraint, not a backend constraint.
+- **Shared filter sidebar is additive**: The filter sidebar already exists in v1.0 for the analysis view. Sharing it across sub-tabs is a state management refactor, not a new backend feature.
+- **Dedicated Import page does not block any other v1.1 feature**: It can be built independently and in any order relative to the move explorer.
+
+## MVP Definition
+
+### Launch With (v1.1)
+
+These are the features that constitute the v1.1 milestone as defined in PROJECT.md.
+
+- [ ] Add move_san column to game_positions, populate at import — required for performant move explorer queries
+- [ ] Move explorer: flat move table showing SAN, game count, W/D/L counts and %, stacked bar visual
+- [ ] Move explorer: click row advances board to that move, table refreshes for new position
+- [ ] Move explorer: reset to start position button
+- [ ] Sub-tab structure: Openings tab splits into Move Explorer / Games / Statistics sub-tabs
+- [ ] Shared filter sidebar: single filter state drives all three sub-tabs
+- [ ] Dedicated Import page at /import, replacing import modal
+
+### Add After Validation (v1.x)
+
+- [ ] Sort options in move explorer (by frequency, by win rate, by game count) — low complexity but adds noise for v1.1
+- [ ] "Opponent's next moves" toggle — show what opponents played from this position, not just the user's moves
+- [ ] Position URL sharing — encode current position as URL param so users can share specific analyses
+
+### Future Consideration (v2+)
+
+- [ ] Engine evaluation per move — requires Stockfish integration and multi-user queuing
+- [ ] Opening tree visualization — visual branching tree; complex render, misleading at small sample sizes
+- [ ] Rating-based filter — filter games by opponent Elo band; dilutes already-small samples
+- [ ] Time-series win rate chart — requires data density to be meaningful; V2 once user game volumes are understood
+
+## Feature Prioritization Matrix
+
+| Feature | User Value | Implementation Cost | Priority |
+|---------|------------|---------------------|----------|
+| SAN in game_positions (schema + import) | HIGH (blocks everything else) | LOW | P1 |
+| Move explorer table with W/D/L per move | HIGH | LOW | P1 |
+| Click-to-navigate in move explorer | HIGH | LOW | P1 |
+| Stacked W/D/L bar per move | MEDIUM | LOW | P1 |
+| Sub-tab navigation (Move Explorer / Games / Statistics) | HIGH | MEDIUM | P1 |
+| Shared filter sidebar across sub-tabs | HIGH | MEDIUM | P1 |
+| Dedicated Import page | MEDIUM | MEDIUM | P1 |
+| Reset board button in explorer | MEDIUM | LOW | P1 |
+| Sort options in move explorer | LOW | LOW | P2 |
+| Opponent moves toggle | MEDIUM | MEDIUM | P2 |
+| Position URL sharing | LOW | MEDIUM | P3 |
+| Engine evaluation per move | HIGH (users want it) | HIGH (scope risk) | P3 |
+
+**Priority key:**
+- P1: Must have for v1.1 launch
+- P2: Add after core is stable
+- P3: Future consideration
+
+## Competitor Feature Analysis
+
+| Feature | lichess Explorer | chess.com Game Explorer | openingtree.com | Chessalytics v1.1 |
+|---------|-----------------|------------------------|-----------------|-------------------|
+| Move table with game count | Yes (global DB) | Yes (master DB) | Yes (personal games) | Yes (personal games) |
+| W/D/L per move | Yes (global) | Yes (master) | Yes (personal, combined score) | Yes (personal, split W/D/L) |
+| Stacked W/D/L bar | Yes | Yes | No (text only) | Yes |
+| Click move to advance | Yes | Yes | Yes | Yes |
+| Personal games database | Yes (player mode) | Yes (my games) | Yes (primary feature) | Yes (primary feature) |
+| Position-independent of opening name | No (ECO-named) | No (ECO-named) | No (move-order tree) | Yes (Zobrist hash) |
+| Sub-tabs (explorer/games/stats) | No | Separate pages | No | Yes (unified) |
+| Shared filter across views | No | No | Partial | Yes |
+| Own-pieces-only matching | No | No | No | Yes (v1.0 inherited) |
+| Dedicated import page | n/a | n/a | n/a | Yes (v1.1) |
+| Engine eval per move | Yes (optional) | Yes | No | No (deferred) |
+| Opening name labels | Yes | Yes | No | No (anti-feature) |
+
+## Sources
+
+- [lichess opening explorer source (lila-openingexplorer)](https://github.com/lichess-org/lila-openingexplorer) — confirms move, white/draws/black columns
+- [openingtree/openingtree GitHub](https://github.com/openingtree/openingtree) — confirms personal game move tree with W/D/L
+- [chess.com Game Explorer help](https://support.chess.com/en/articles/8708732-how-do-i-use-the-game-explorer) — confirms move list, click-to-navigate, stacked bar, notable games panel
+- [chess.com Game Explorer overview](https://support.chess.com/en/articles/8615183-what-is-the-game-explorer) — confirms master DB, personal games mode, dropdown database selection
+- [lichess forum: opening explorer usage](https://lichess.org/forum/general-chess-discussion/how-do-i-use-the-opening-explorer) — confirms 3-part info: frequency, win rate, engine
+- [chess.com forum: percentage bar explanation](https://www.chess.com/forum/view/help-support/what-is-the-bar-with-the-percentages) — confirms white/gray/black stacked bar pattern
 
 ---
 
-*Research completed: 2026-03-11. Based on direct knowledge of lichess, chess.com, ChessBase, Chess Tempo, and Scid vs. PC feature sets.*
+*Feature research for: Chessalytics v1.1 — Move Explorer and UI Restructuring*
+*Researched: 2026-03-16*
