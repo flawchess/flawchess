@@ -1,16 +1,18 @@
+import { useState, useCallback } from 'react';
 import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
 import { Link } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/sonner';
 import { Button } from '@/components/ui/button';
 
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { AuthPage } from '@/pages/Auth';
-import { DashboardPage } from '@/pages/Dashboard';
+import { ImportPage } from '@/pages/Import';
 import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
 import { OpeningsPage } from '@/pages/Openings';
 import { RatingPage } from '@/pages/Rating';
 import { GlobalStatsPage } from '@/pages/GlobalStats';
+import { ImportProgress } from '@/components/import/ImportProgress';
 
 // ─── Query client ─────────────────────────────────────────────────────────────
 
@@ -26,7 +28,7 @@ const queryClient = new QueryClient({
 // ─── Nav header ───────────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Games' },
+  { to: '/import', label: 'Import' },
   { to: '/openings', label: 'Openings' },
   { to: '/rating', label: 'Rating' },
   { to: '/global-stats', label: 'Global Stats' },
@@ -35,6 +37,11 @@ const NAV_ITEMS = [
 function NavHeader() {
   const location = useLocation();
   const { logout } = useAuth();
+
+  const isActive = (to: string) =>
+    to === '/openings'
+      ? location.pathname.startsWith('/openings')
+      : location.pathname === to;
 
   return (
     <header className="border-b border-border bg-background px-6 py-3">
@@ -49,7 +56,7 @@ function NavHeader() {
                 variant="ghost"
                 size="sm"
                 className={
-                  location.pathname === to
+                  isActive(to)
                     ? 'border-b-2 border-primary rounded-none font-medium'
                     : 'rounded-none text-muted-foreground'
                 }
@@ -85,21 +92,39 @@ function ProtectedLayout() {
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 function AppRoutes() {
+  const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
+  const queryClient = useQueryClient();
+
+  const handleImportStarted = useCallback((jobId: string) => {
+    setActiveJobIds((ids) => [...ids, jobId]);
+  }, []);
+
+  const handleJobDone = useCallback((jobId: string) => {
+    setActiveJobIds((ids) => ids.filter((id) => id !== jobId));
+    queryClient.invalidateQueries({ queryKey: ['games'] });
+    queryClient.invalidateQueries({ queryKey: ['gameCount'] });
+    queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+  }, [queryClient]);
+
   return (
-    <Routes>
-      <Route path="/login" element={<AuthPage />} />
-      {/* Google OAuth callback — reads token from URL fragment */}
-      <Route path="/auth/callback" element={<OAuthCallbackPage />} />
-      {/* Protected layout wraps all authenticated pages */}
-      <Route element={<ProtectedLayout />}>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/openings" element={<OpeningsPage />} />
-        <Route path="/rating" element={<RatingPage />} />
-        <Route path="/global-stats" element={<GlobalStatsPage />} />
-      </Route>
-      {/* Catch-all redirects to dashboard (auth guard handles the rest) */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/login" element={<AuthPage />} />
+        {/* Google OAuth callback — reads token from URL fragment */}
+        <Route path="/auth/callback" element={<OAuthCallbackPage />} />
+        {/* Protected layout wraps all authenticated pages */}
+        <Route element={<ProtectedLayout />}>
+          <Route path="/" element={<Navigate to="/openings" replace />} />
+          <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} />} />
+          <Route path="/openings/*" element={<OpeningsPage />} />
+          <Route path="/rating" element={<RatingPage />} />
+          <Route path="/global-stats" element={<GlobalStatsPage />} />
+        </Route>
+        {/* Catch-all redirects to openings */}
+        <Route path="*" element={<Navigate to="/openings" replace />} />
+      </Routes>
+      <ImportProgress jobIds={activeJobIds} onJobDone={handleJobDone} />
+    </>
   );
 }
 
