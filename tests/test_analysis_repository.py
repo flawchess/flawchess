@@ -12,6 +12,9 @@ Coverage:
 - Combined filters (intersection behavior)
 - Transposition deduplication (game counted once even with multi-ply match)
 - Pagination (offset, limit, total count)
+- MEXP-04: query_next_moves returns per-move W/D/L aggregation
+- MEXP-05: transposition dedup (same game at multiple plies counted once per move)
+- MEXP-10: query_transposition_counts returns batch {hash: count}
 """
 
 import datetime
@@ -57,6 +60,7 @@ async def _seed_game(
     full_hash: int = 9999,
     white_hash: int = 1111,
     black_hash: int = 2222,
+    move_san: str | None = None,
 ) -> tuple[Game, GamePosition]:
     """Insert one Game + one GamePosition row and flush to obtain IDs.
 
@@ -93,11 +97,37 @@ async def _seed_game(
         full_hash=full_hash,
         white_hash=white_hash,
         black_hash=black_hash,
+        move_san=move_san,
     )
     session.add(position)
     await session.flush()
 
     return game, position
+
+
+async def _add_position(
+    session: AsyncSession,
+    game_id: int,
+    user_id: int,
+    ply: int,
+    full_hash: int,
+    white_hash: int = 0,
+    black_hash: int = 0,
+    move_san: str | None = None,
+) -> GamePosition:
+    """Insert an additional GamePosition for an existing game and flush."""
+    position = GamePosition(
+        game_id=game_id,
+        user_id=user_id,
+        ply=ply,
+        full_hash=full_hash,
+        white_hash=white_hash,
+        black_hash=black_hash,
+        move_san=move_san,
+    )
+    session.add(position)
+    await session.flush()
+    return position
 
 
 # ---------------------------------------------------------------------------
@@ -621,3 +651,368 @@ class TestTimeSeries:
         )
 
         assert len(rows) == 1
+
+
+# ---------------------------------------------------------------------------
+# TestNextMoves — MEXP-04
+# ---------------------------------------------------------------------------
+
+NM_SOURCE_HASH = 100  # queried source position hash
+NM_E4_HASH = 200      # result hash after e4
+NM_D4_HASH = 300      # result hash after d4
+
+
+class TestNextMoves:
+    """MEXP-04: query_next_moves returns per-move W/D/L aggregation."""
+
+    @pytest.mark.asyncio
+    async def test_basic_next_moves(self, db_session: AsyncSession) -> None:
+        """3 games at same position: 2 play e4 (1W 1D), 1 plays d4 (1L).
+
+        Expected:
+        - e4: game_count=2, wins=1, draws=1, losses=0, result_hash=NM_E4_HASH
+        - d4: game_count=1, wins=0, draws=0, losses=1, result_hash=NM_D4_HASH
+        """
+        from app.repositories.analysis_repository import query_next_moves
+
+        # Game 1: e4 → win
+        game1, _ = await _seed_game(
+            db_session,
+            result="1-0",
+            user_color="white",
+            full_hash=NM_SOURCE_HASH,
+            move_san="e4",
+        )
+        await _add_position(
+            db_session, game1.id, 1, ply=2, full_hash=NM_E4_HASH
+        )
+
+        # Game 2: e4 → draw
+        game2, _ = await _seed_game(
+            db_session,
+            result="1/2-1/2",
+            user_color="white",
+            full_hash=NM_SOURCE_HASH,
+            move_san="e4",
+        )
+        await _add_position(
+            db_session, game2.id, 1, ply=2, full_hash=NM_E4_HASH
+        )
+
+        # Game 3: d4 → loss
+        game3, _ = await _seed_game(
+            db_session,
+            result="0-1",
+            user_color="white",
+            full_hash=NM_SOURCE_HASH,
+            move_san="d4",
+        )
+        await _add_position(
+            db_session, game3.id, 1, ply=2, full_hash=NM_D4_HASH
+        )
+
+        rows = await query_next_moves(
+            db_session,
+            user_id=1,
+            target_hash=NM_SOURCE_HASH,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+
+        # Build lookup by move_san
+        by_move = {row.move_san: row for row in rows}
+
+        assert len(by_move) == 2, f"Expected 2 moves, got {len(by_move)}: {list(by_move.keys())}"
+
+        e4 = by_move["e4"]
+        assert e4.game_count == 2
+        assert e4.wins == 1
+        assert e4.draws == 1
+        assert e4.losses == 0
+        assert e4.result_hash == NM_E4_HASH
+
+        d4 = by_move["d4"]
+        assert d4.game_count == 1
+        assert d4.wins == 0
+        assert d4.draws == 0
+        assert d4.losses == 1
+        assert d4.result_hash == NM_D4_HASH
+
+
+# ---------------------------------------------------------------------------
+# TestNextMovesTranspositions — MEXP-05
+# ---------------------------------------------------------------------------
+
+NM_TRANS_SOURCE_HASH = 400
+NM_TRANS_RESULT_HASH = 401
+
+
+class TestNextMovesTranspositions:
+    """MEXP-05: game with same move_san at multiple plies counted once per move."""
+
+    @pytest.mark.asyncio
+    async def test_transposition_counted_once(self, db_session: AsyncSession) -> None:
+        """1 game visits source_hash at ply 2 and ply 6, plays 'Nf3' both times.
+
+        query_next_moves must return game_count=1 for 'Nf3', not 2.
+        """
+        from app.repositories.analysis_repository import query_next_moves
+
+        game = Game(
+            user_id=1,
+            platform="chess.com",
+            platform_game_id=_unique_game_id(),
+            platform_url=None,
+            pgn="1. Nf3 Nf6 2. Nf3 Nf6 *",
+            variant="Standard",
+            result="1-0",
+            user_color="white",
+            time_control_str="600+0",
+            time_control_bucket="blitz",
+            time_control_seconds=600,
+            rated=True,
+            white_username="testuser",
+            black_username="opp",
+        )
+        game.played_at = datetime.datetime.now(tz=datetime.timezone.utc)
+        db_session.add(game)
+        await db_session.flush()
+
+        # Same source position at ply 2 and ply 6
+        await _add_position(db_session, game.id, 1, ply=2, full_hash=NM_TRANS_SOURCE_HASH, move_san="Nf3")
+        await _add_position(db_session, game.id, 1, ply=3, full_hash=NM_TRANS_RESULT_HASH)  # result at ply 3
+        await _add_position(db_session, game.id, 1, ply=6, full_hash=NM_TRANS_SOURCE_HASH, move_san="Nf3")
+        await _add_position(db_session, game.id, 1, ply=7, full_hash=NM_TRANS_RESULT_HASH)  # result at ply 7
+
+        rows = await query_next_moves(
+            db_session,
+            user_id=1,
+            target_hash=NM_TRANS_SOURCE_HASH,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+
+        assert len(rows) == 1
+        assert rows[0].move_san == "Nf3"
+        assert rows[0].game_count == 1, f"Expected game_count=1, got {rows[0].game_count}"
+
+
+# ---------------------------------------------------------------------------
+# TestNextMovesFilters — MEXP-04 filter application
+# ---------------------------------------------------------------------------
+
+NM_FILTER_HASH = 500
+NM_FILTER_RESULT_HASH = 501
+
+
+class TestNextMovesFilters:
+    """Filter application narrows next-moves results correctly."""
+
+    @pytest.mark.asyncio
+    async def test_time_control_filter(self, db_session: AsyncSession) -> None:
+        """2 games at same position (blitz vs rapid), filter blitz → only blitz counted."""
+        from app.repositories.analysis_repository import query_next_moves
+
+        # Blitz game plays e4
+        game_blitz, _ = await _seed_game(
+            db_session,
+            time_control_bucket="blitz",
+            full_hash=NM_FILTER_HASH,
+            move_san="e4",
+        )
+        await _add_position(db_session, game_blitz.id, 1, ply=2, full_hash=NM_FILTER_RESULT_HASH)
+
+        # Rapid game plays e4
+        game_rapid, _ = await _seed_game(
+            db_session,
+            time_control_bucket="rapid",
+            full_hash=NM_FILTER_HASH,
+            move_san="e4",
+        )
+        await _add_position(db_session, game_rapid.id, 1, ply=2, full_hash=NM_FILTER_RESULT_HASH)
+
+        rows = await query_next_moves(
+            db_session,
+            user_id=1,
+            target_hash=NM_FILTER_HASH,
+            time_control=["blitz"],
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+
+        assert len(rows) == 1
+        assert rows[0].game_count == 1
+
+    @pytest.mark.asyncio
+    async def test_rated_filter(self, db_session: AsyncSession) -> None:
+        """2 games at same position (rated vs unrated), filter rated=True → only rated counted."""
+        from app.repositories.analysis_repository import query_next_moves
+
+        # Rated game
+        game_rated, _ = await _seed_game(
+            db_session,
+            rated=True,
+            full_hash=NM_FILTER_HASH,
+            move_san="d4",
+        )
+        await _add_position(db_session, game_rated.id, 1, ply=2, full_hash=NM_FILTER_RESULT_HASH + 1)
+
+        # Unrated game plays same move
+        game_unrated, _ = await _seed_game(
+            db_session,
+            rated=False,
+            full_hash=NM_FILTER_HASH,
+            move_san="d4",
+        )
+        await _add_position(db_session, game_unrated.id, 1, ply=2, full_hash=NM_FILTER_RESULT_HASH + 1)
+
+        rows = await query_next_moves(
+            db_session,
+            user_id=1,
+            target_hash=NM_FILTER_HASH,
+            time_control=None,
+            platform=None,
+            rated=True,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+
+        # Only the rated game should be counted for d4
+        by_move = {row.move_san: row for row in rows}
+        assert "d4" in by_move
+        assert by_move["d4"].game_count == 1
+
+
+# ---------------------------------------------------------------------------
+# TestTranspositionCounts — MEXP-10
+# ---------------------------------------------------------------------------
+
+TC_RESULT_HASH = 600
+
+
+class TestTranspositionCounts:
+    """MEXP-10: query_transposition_counts returns batch {result_hash: count}."""
+
+    @pytest.mark.asyncio
+    async def test_batch_transposition_count(self, db_session: AsyncSession) -> None:
+        """2 games both reach result_hash=600 (via different source positions).
+
+        query_transposition_counts([600]) must return {600: 2}.
+        """
+        from app.repositories.analysis_repository import query_transposition_counts
+
+        # Game A: plays e4 from source_hash=100 → result_hash=600
+        game_a, _ = await _seed_game(
+            db_session, full_hash=100, move_san="e4"
+        )
+        await _add_position(db_session, game_a.id, 1, ply=2, full_hash=TC_RESULT_HASH)
+
+        # Game B: plays c4 from source_hash=150 → result_hash=600 (transposition)
+        game_b = Game(
+            user_id=1,
+            platform="chess.com",
+            platform_game_id=_unique_game_id(),
+            platform_url=None,
+            pgn="1. c4 e5 *",
+            variant="Standard",
+            result="1-0",
+            user_color="white",
+            time_control_str="600+0",
+            time_control_bucket="blitz",
+            time_control_seconds=600,
+            rated=True,
+            white_username="testuser",
+            black_username="opp",
+        )
+        game_b.played_at = datetime.datetime.now(tz=datetime.timezone.utc)
+        db_session.add(game_b)
+        await db_session.flush()
+
+        await _add_position(db_session, game_b.id, 1, ply=1, full_hash=150, move_san="c4")
+        await _add_position(db_session, game_b.id, 1, ply=2, full_hash=TC_RESULT_HASH)
+
+        counts = await query_transposition_counts(
+            db_session,
+            user_id=1,
+            result_hash_list=[TC_RESULT_HASH],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+
+        assert TC_RESULT_HASH in counts
+        assert counts[TC_RESULT_HASH] == 2, f"Expected 2, got {counts[TC_RESULT_HASH]}"
+
+    @pytest.mark.asyncio
+    async def test_empty_hash_list(self, db_session: AsyncSession) -> None:
+        """Empty result_hash_list returns empty dict."""
+        from app.repositories.analysis_repository import query_transposition_counts
+
+        counts = await query_transposition_counts(
+            db_session,
+            user_id=1,
+            result_hash_list=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+
+        assert counts == {}
+
+
+# ---------------------------------------------------------------------------
+# TestNextMovesNullMoveExcluded — NULL move_san excluded
+# ---------------------------------------------------------------------------
+
+NM_NULL_HASH = 700
+
+
+class TestNextMovesNullMoveExcluded:
+    """NULL move_san rows (final position) must not appear in next-moves results."""
+
+    @pytest.mark.asyncio
+    async def test_null_move_san_excluded(self, db_session: AsyncSession) -> None:
+        """Seed a game where position at NM_NULL_HASH has move_san=None.
+
+        query_next_moves must return no rows for this source hash.
+        """
+        from app.repositories.analysis_repository import query_next_moves
+
+        # Game with only a NULL move_san position (final position)
+        game, _ = await _seed_game(
+            db_session,
+            full_hash=NM_NULL_HASH,
+            move_san=None,  # explicitly NULL — final position
+        )
+
+        rows = await query_next_moves(
+            db_session,
+            user_id=1,
+            target_hash=NM_NULL_HASH,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+
+        assert rows == [], f"Expected no rows, got: {rows}"

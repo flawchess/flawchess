@@ -180,7 +180,7 @@ Plans:
 | 9. Game Cards, Username Import, Pagination | v1.0 | 8/8 | Complete | 2026-03-15 |
 | 10. Auto-Generate Position Bookmarks | v1.0 | 4/4 | Complete | 2026-03-15 |
 | 11. Schema and Import Pipeline | 1/1 | Complete    | 2026-03-16 | - |
-| 12. Backend Next-Moves Endpoint | v1.1 | 0/2 | Not started | - |
+| 12. Backend Next-Moves Endpoint | 2/2 | Complete    | 2026-03-16 | - |
 | 13. Frontend Move Explorer Component | v1.1 | 0/? | Not started | - |
 | 14. UI Restructuring | v1.1 | 0/? | Not started | - |
 
@@ -189,7 +189,7 @@ Plans:
 **Goal:** [To be planned]
 **Requirements**: TBD
 **Depends on:** Phase 14
-**Plans:** 0 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (run /gsd:plan-phase 15 to break down)

@@ -136,3 +136,56 @@ class TimeSeriesResponse(BaseModel):
     """Response from POST /analysis/time-series."""
 
     series: list[BookmarkTimeSeries]
+
+
+class NextMovesRequest(BaseModel):
+    """Request body for POST /analysis/next-moves."""
+
+    target_hash: int  # required — no None allowed (unlike AnalysisRequest)
+
+    @field_validator("target_hash", mode="before")
+    @classmethod
+    def coerce_target_hash(cls, v: object) -> object:
+        """Accept string target_hash from the JavaScript frontend.
+
+        JavaScript BigInt cannot be safely represented as a JSON number
+        (IEEE-754 double loses precision for values > 2^53).  The frontend
+        sends the hash as a decimal string; this validator converts it to int
+        before the field is processed.  Plain int values pass through unchanged
+        for backward compatibility with existing Python callers.
+        """
+        if isinstance(v, str):
+            return int(v)
+        return v
+
+    # Optional filters — same as AnalysisRequest but no match_side, offset, or limit
+    time_control: list[Literal["bullet", "blitz", "rapid", "classical"]] | None = None
+    platform: list[Literal["chess.com", "lichess"]] | None = None
+    rated: bool | None = None
+    opponent_type: Literal["human", "bot", "both"] = "human"
+    recency: Literal["week", "month", "3months", "6months", "year", "all"] | None = None
+    color: Literal["white", "black"] | None = None
+    sort_by: Literal["frequency", "win_rate"] = "frequency"
+
+
+class NextMoveEntry(BaseModel):
+    """Statistics for a single next move from a queried position."""
+
+    move_san: str
+    game_count: int
+    wins: int
+    draws: int
+    losses: int
+    win_pct: float
+    draw_pct: float
+    loss_pct: float
+    result_hash: str   # BigInt as string for JS safety (full_hash of resulting position)
+    result_fen: str    # board FEN of resulting position (piece placement only)
+    transposition_count: int
+
+
+class NextMovesResponse(BaseModel):
+    """Response from POST /analysis/next-moves."""
+
+    position_stats: WDLStats
+    moves: list[NextMoveEntry]

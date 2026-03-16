@@ -14,6 +14,8 @@ from app.repositories import game_repository
 from app.schemas.analysis import (
     AnalysisRequest,
     AnalysisResponse,
+    NextMovesRequest,
+    NextMovesResponse,
     TimeSeriesRequest,
     TimeSeriesResponse,
 )
@@ -45,6 +47,20 @@ async def get_time_series(
 ) -> TimeSeriesResponse:
     """Return monthly win-rate time series for a list of bookmark positions."""
     return await analysis_service.get_time_series(session, user.id, request)
+
+
+@router.post("/analysis/next-moves", response_model=NextMovesResponse)
+async def get_next_moves(
+    request: NextMovesRequest,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> NextMovesResponse:
+    """Return next moves with W/D/L stats for a target board position.
+
+    Each move entry includes game count, win/draw/loss counts and percentages,
+    the resulting position's hash and FEN, and a transposition count.
+    """
+    return await analysis_service.get_next_moves(session, user.id, request)
 
 
 @router.get("/games/count")

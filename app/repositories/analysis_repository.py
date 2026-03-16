@@ -3,8 +3,9 @@
 import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
@@ -236,3 +237,150 @@ async def query_matching_games(
     games = list(result.scalars().all())
 
     return games, total
+
+
+def _apply_game_filters(
+    stmt: Any,
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+    color: str | None,
+) -> Any:
+    """Apply standard game filter WHERE clauses to a statement.
+
+    Shared by query_next_moves and query_transposition_counts to ensure
+    consistent filter application without duplicating logic.
+    """
+    if time_control is not None:
+        stmt = stmt.where(Game.time_control_bucket.in_(time_control))
+    if platform is not None:
+        stmt = stmt.where(Game.platform.in_(platform))
+    if rated is not None:
+        stmt = stmt.where(Game.rated == rated)
+    if opponent_type == "human":
+        stmt = stmt.where(Game.is_computer_game == False)  # noqa: E712
+    elif opponent_type == "bot":
+        stmt = stmt.where(Game.is_computer_game == True)  # noqa: E712
+    # "both" = no filter
+    if recency_cutoff is not None:
+        stmt = stmt.where(Game.played_at >= recency_cutoff)
+    if color is not None:
+        stmt = stmt.where(Game.user_color == color)
+    return stmt
+
+
+async def query_next_moves(
+    session: AsyncSession,
+    user_id: int,
+    target_hash: int,
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+    color: str | None,
+) -> list[Any]:
+    """Aggregate next moves for a given position with per-move W/D/L stats.
+
+    Uses a self-join on game_positions (gp1=source, gp2=next ply) to obtain
+    both move_san and the resulting position's full_hash in a single query.
+    COUNT(DISTINCT game_id) with CASE WHEN handles transposition dedup and
+    W/D/L categorization simultaneously.
+
+    Returns a list of rows with columns:
+        (move_san, result_hash, game_count, wins, draws, losses)
+    Rows with NULL move_san (final position) are excluded.
+    """
+    gp1 = aliased(GamePosition, name="gp1")
+    gp2 = aliased(GamePosition, name="gp2")
+
+    # CASE expressions: yield Game.id when condition is true, else NULL.
+    # COUNT(DISTINCT ...) counts distinct non-NULL values.
+    win_case = case(
+        (
+            ((Game.result == "1-0") & (Game.user_color == "white"))
+            | ((Game.result == "0-1") & (Game.user_color == "black")),
+            Game.id,
+        ),
+        else_=None,
+    )
+    draw_case = case(
+        (Game.result == "1/2-1/2", Game.id),
+        else_=None,
+    )
+    loss_case = case(
+        (
+            ((Game.result == "1-0") & (Game.user_color == "black"))
+            | ((Game.result == "0-1") & (Game.user_color == "white")),
+            Game.id,
+        ),
+        else_=None,
+    )
+
+    stmt = (
+        select(
+            gp1.move_san,
+            gp2.full_hash.label("result_hash"),
+            func.count(Game.id.distinct()).label("game_count"),
+            func.count(win_case.distinct()).label("wins"),
+            func.count(draw_case.distinct()).label("draws"),
+            func.count(loss_case.distinct()).label("losses"),
+        )
+        .join(Game, Game.id == gp1.game_id)
+        .join(gp2, (gp2.game_id == gp1.game_id) & (gp2.ply == gp1.ply + 1))
+        .where(
+            gp1.user_id == user_id,
+            gp1.full_hash == target_hash,
+            gp1.move_san.isnot(None),
+        )
+        .group_by(gp1.move_san, gp2.full_hash)
+    )
+
+    stmt = _apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff, color)
+
+    rows = await session.execute(stmt)
+    return list(rows.all())
+
+
+async def query_transposition_counts(
+    session: AsyncSession,
+    user_id: int,
+    result_hash_list: list[int],
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+    color: str | None,
+) -> dict[int, int]:
+    """Return the total distinct games reaching each result_hash under the same filters.
+
+    For each full_hash in result_hash_list, counts distinct game_ids that have
+    a game_positions row with that full_hash (via any move order / transposition).
+    Respects all filter parameters for consistent filtering with query_next_moves.
+
+    Returns: {result_hash: transposition_count}
+    Missing hashes (no games reached them under filters) are omitted from dict.
+    """
+    if not result_hash_list:
+        return {}
+
+    stmt = (
+        select(
+            GamePosition.full_hash.label("result_hash"),
+            func.count(GamePosition.game_id.distinct()).label("transposition_count"),
+        )
+        .join(Game, Game.id == GamePosition.game_id)
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.full_hash.in_(result_hash_list),
+        )
+        .group_by(GamePosition.full_hash)
+    )
+
+    stmt = _apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff, color)
+
+    rows = await session.execute(stmt)
+    return {row.result_hash: row.transposition_count for row in rows}
