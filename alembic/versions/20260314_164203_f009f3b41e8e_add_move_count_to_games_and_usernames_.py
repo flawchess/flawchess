@@ -32,47 +32,6 @@ def upgrade() -> None:
     op.add_column('users', sa.Column('lichess_username', sa.String(length=100), nullable=True))
     # ### end Alembic commands ###
 
-    # --- Data migration: backfill move_count for existing games ---
-    bind = op.get_bind()
-    games_table = sa.table(
-        'games',
-        sa.column('id', sa.Integer),
-        sa.column('pgn', sa.Text),
-        sa.column('move_count', sa.Integer),
-    )
-
-    offset = 0
-    while True:
-        rows = bind.execute(
-            sa.select(games_table.c.id, games_table.c.pgn)
-            .where(games_table.c.move_count.is_(None))
-            .where(games_table.c.pgn.isnot(None))
-            .order_by(games_table.c.id)
-            .limit(_BATCH_SIZE)
-            .offset(offset)
-        ).fetchall()
-
-        if not rows:
-            break
-
-        for game_id, pgn in rows:
-            try:
-                game_obj = chess.pgn.read_game(io.StringIO(pgn))
-                if game_obj is None:
-                    continue
-                ply_count = len(list(game_obj.mainline_moves()))
-                move_count = (ply_count + 1) // 2
-                bind.execute(
-                    sa.update(games_table)
-                    .where(games_table.c.id == game_id)
-                    .values(move_count=move_count)
-                )
-            except Exception:
-                logger.warning("Failed to backfill move_count for game_id=%s, skipping", game_id)
-                continue
-
-        offset += _BATCH_SIZE
-
 
 def downgrade() -> None:
     """Downgrade schema."""

@@ -27,19 +27,6 @@ def upgrade() -> None:
     op.add_column('games', sa.Column('black_rating', sa.BIGINT(), nullable=True))
     # ### end Alembic commands ###
 
-    # Backfill from existing user-relative columns.
-    # When user_color='white': white_username is unknown (not stored per-game),
-    #   white_rating=user_rating, black_rating=opponent_rating, black_username=opponent_username.
-    # When user_color='black': black_username is unknown,
-    #   black_rating=user_rating, white_rating=opponent_rating, white_username=opponent_username.
-    op.execute("""
-        UPDATE games SET
-            white_username = CASE WHEN user_color = 'white' THEN NULL ELSE opponent_username END,
-            black_username = CASE WHEN user_color = 'black' THEN NULL ELSE opponent_username END,
-            white_rating = CASE WHEN user_color = 'white' THEN user_rating ELSE opponent_rating END,
-            black_rating = CASE WHEN user_color = 'black' THEN user_rating ELSE opponent_rating END
-    """)
-
 
 def downgrade() -> None:
     """Downgrade schema."""
