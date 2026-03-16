@@ -134,7 +134,11 @@ Plans:
   2. A position reachable by two different move orders in the same game is counted only once per move entry (transposition-safe).
   3. All existing filters (time control, rated/casual, recency, color, opponent type) reduce the move list correctly — verified by comparing filtered vs unfiltered game counts.
   4. Each move entry includes a transposition count (total games reaching the resulting position via any move order) alongside the direct game count.
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 12-01-PLAN.md -- Schemas + repository aggregation queries with tests
+- [ ] 12-02-PLAN.md -- Service orchestration, result_fen computation, router endpoint with tests
 
 ### Phase 13: Frontend Move Explorer Component
 **Goal**: Users can see and navigate next moves for any position, click a move row to advance the board, and the explorer refreshes automatically with the new position's continuations.
@@ -176,9 +180,19 @@ Plans:
 | 9. Game Cards, Username Import, Pagination | v1.0 | 8/8 | Complete | 2026-03-15 |
 | 10. Auto-Generate Position Bookmarks | v1.0 | 4/4 | Complete | 2026-03-15 |
 | 11. Schema and Import Pipeline | 1/1 | Complete    | 2026-03-16 | - |
-| 12. Backend Next-Moves Endpoint | v1.1 | 0/? | Not started | - |
+| 12. Backend Next-Moves Endpoint | v1.1 | 0/2 | Not started | - |
 | 13. Frontend Move Explorer Component | v1.1 | 0/? | Not started | - |
 | 14. UI Restructuring | v1.1 | 0/? | Not started | - |
+
+### Phase 15: Consolidation - remove unnecessary code, rename endpoints/modules, update CLAUDE.md and README.md
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 14
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 15 to break down)
 
 ---
 *Created: 2026-03-11*
