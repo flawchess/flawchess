@@ -59,6 +59,7 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions for querying pieces on specific squares
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match
 - **GamesTab pagination offset survival**: Phase 14 planning should decide whether page offset survives tab switches (lift to OpeningsPage state)
+- **Track user account creation and last login timestamps** (auth) — Add created_at and last_login columns to users table
 
 ### Blockers/Concerns
 None.
