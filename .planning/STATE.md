@@ -87,6 +87,7 @@ None.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260317-ppo | Fix piece filter interaction with games and moves tables | 2026-03-17 | aa21696 | [260317-ppo-fix-piece-filter-interaction-with-games-](./quick/260317-ppo-fix-piece-filter-interaction-with-games-/) |
+| 260317-qe1 | Move Suggest bookmarks below list, full-width buttons, right-align Piece filter | 2026-03-17 | 23e1a6c | [260317-qe1-move-suggest-bookmarks-below-list-full-w](./quick/260317-qe1-move-suggest-bookmarks-below-list-full-w/) |
 
 ---
-Last activity: 2026-03-17 - Completed quick task 260317-ppo: Fix piece filter interaction with games and moves tables
+Last activity: 2026-03-17 - Completed quick task 260317-qe1: Move Suggest bookmarks below list, full-width buttons
