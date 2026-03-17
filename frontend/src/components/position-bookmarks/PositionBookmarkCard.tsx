@@ -100,28 +100,36 @@ export function PositionBookmarkCard({ bookmark, onLoad }: Props) {
 
       {/* Label + piece filter stacked */}
       <div className="flex-1 min-w-0 flex flex-col gap-1">
-        {/* Editable label */}
-        {isEditing ? (
-          <input
-            autoFocus
-            value={labelValue}
-            onChange={(e) => setLabelValue(e.target.value)}
-            onBlur={handleLabelBlur}
-            onKeyDown={handleLabelKeyDown}
-            data-testid={`bookmark-label-input-${bookmark.id}`}
-            className="min-w-0 bg-transparent text-sm font-medium outline-none border-b border-primary focus:border-primary"
-          />
-        ) : (
-          <button
-            className="min-w-0 cursor-text text-sm font-medium truncate text-left bg-transparent border-none p-0"
-            onClick={handleLabelClick}
-            title={bookmark.label}
-            data-testid={`bookmark-label-${bookmark.id}`}
-            aria-label={`Edit bookmark label: ${bookmark.label}`}
-          >
-            {bookmark.label}
-          </button>
-        )}
+        {/* Editable label with color circle */}
+        <div className="flex items-center gap-1.5">
+          {bookmark.color && (
+            <span
+              className={`inline-block h-3 w-3 rounded-full border border-muted-foreground shrink-0 ${bookmark.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`}
+              data-testid={`bookmark-color-${bookmark.id}`}
+            />
+          )}
+          {isEditing ? (
+            <input
+              autoFocus
+              value={labelValue}
+              onChange={(e) => setLabelValue(e.target.value)}
+              onBlur={handleLabelBlur}
+              onKeyDown={handleLabelKeyDown}
+              data-testid={`bookmark-label-input-${bookmark.id}`}
+              className="min-w-0 bg-transparent text-sm font-medium outline-none border-b border-primary focus:border-primary"
+            />
+          ) : (
+            <button
+              className="min-w-0 cursor-text text-sm font-medium truncate text-left bg-transparent border-none p-0"
+              onClick={handleLabelClick}
+              title={bookmark.label}
+              data-testid={`bookmark-label-${bookmark.id}`}
+              aria-label={`Edit bookmark label: ${bookmark.label}`}
+            >
+              {bookmark.label}
+            </button>
+          )}
+        </div>
 
         {/* Piece filter toggle */}
         <ToggleGroup

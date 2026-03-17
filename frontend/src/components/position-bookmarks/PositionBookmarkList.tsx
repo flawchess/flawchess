@@ -71,6 +71,7 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad }: Props) {
 
       <Button
         variant="outline"
+        size="lg"
         className="w-full mt-2"
         onClick={() => setSuggestionsOpen(true)}
         data-testid="btn-suggest-bookmarks"
