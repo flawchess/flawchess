@@ -318,7 +318,7 @@ export function OpeningsPage() {
             </Tooltip>
           </div>
 
-          <div className={pieceFilterDisabled ? 'opacity-50' : ''}>
+          <div className={`ml-auto ${pieceFilterDisabled ? 'opacity-50' : ''}`}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <div>
@@ -355,6 +355,7 @@ export function OpeningsPage() {
         <Button
           variant="outline"
           size="lg"
+          className="w-full"
           onClick={openBookmarkDialog}
           data-testid="btn-bookmark"
         >
