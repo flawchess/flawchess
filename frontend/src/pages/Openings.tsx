@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -81,6 +82,10 @@ export function OpeningsPage() {
     setPrevTab(activeTab);
     setGamesOffset(0);
   }
+
+  // ── Tab-aware filter disabling ─────────────────────────────────────────────
+  const pieceFilterDisabled = activeTab === 'explorer' || activeTab === 'statistics';
+  const playedAsDisabled = activeTab === 'statistics';
 
   // ── Bookmarks ───────────────────────────────────────────────────────────────
   const { data: bookmarks = [] } = usePositionBookmarks();
@@ -274,49 +279,76 @@ export function OpeningsPage() {
       />
 
       {/* Played as + Piece filter */}
-      <div className="flex flex-wrap gap-x-4 gap-y-3">
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">Played as</p>
-          <ToggleGroup
-            type="single"
-            value={filters.color}
-            onValueChange={(v) => {
-              if (!v) return;
-              const color = v as Color;
-              setFilters(prev => ({ ...prev, color }));
-              setBoardFlipped(color === 'black');
-            }}
-            variant="outline"
-            size="sm"
-            data-testid="filter-played-as"
-          >
-            <ToggleGroupItem value="white" data-testid="filter-played-as-white">
-              <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
-              White
-            </ToggleGroupItem>
-            <ToggleGroupItem value="black" data-testid="filter-played-as-black">
-              <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
-              Black
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </div>
+      <TooltipProvider>
+        <div className="flex flex-wrap gap-x-4 gap-y-3">
+          <div className={playedAsDisabled ? 'opacity-50' : ''}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <p className="mb-1 text-xs text-muted-foreground">Played as</p>
+                  <ToggleGroup
+                    type="single"
+                    value={filters.color}
+                    onValueChange={(v) => {
+                      if (playedAsDisabled || !v) return;
+                      const color = v as Color;
+                      setFilters(prev => ({ ...prev, color }));
+                      setBoardFlipped(color === 'black');
+                    }}
+                    variant="outline"
+                    size="sm"
+                    disabled={playedAsDisabled}
+                    data-testid="filter-played-as"
+                    aria-disabled={playedAsDisabled}
+                  >
+                    <ToggleGroupItem value="white" data-testid="filter-played-as-white" disabled={playedAsDisabled}>
+                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
+                      White
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="black" data-testid="filter-played-as-black" disabled={playedAsDisabled}>
+                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
+                      Black
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+              </TooltipTrigger>
+              {playedAsDisabled && (
+                <TooltipContent>Not applicable for this tab</TooltipContent>
+              )}
+            </Tooltip>
+          </div>
 
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">Piece filter</p>
-          <ToggleGroup
-            type="single"
-            value={filters.matchSide}
-            onValueChange={(v) => v && setFilters(prev => ({ ...prev, matchSide: v as MatchSide }))}
-            variant="outline"
-            size="sm"
-            data-testid="filter-piece-filter"
-          >
-            <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
-            <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
-            <ToggleGroupItem value="both" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
-          </ToggleGroup>
+          <div className={pieceFilterDisabled ? 'opacity-50' : ''}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <p className="mb-1 text-xs text-muted-foreground">Piece filter</p>
+                  <ToggleGroup
+                    type="single"
+                    value={filters.matchSide}
+                    onValueChange={(v) => {
+                      if (pieceFilterDisabled || !v) return;
+                      setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
+                    }}
+                    variant="outline"
+                    size="sm"
+                    disabled={pieceFilterDisabled}
+                    data-testid="filter-piece-filter"
+                    aria-disabled={pieceFilterDisabled}
+                  >
+                    <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine" disabled={pieceFilterDisabled}>Mine</ToggleGroupItem>
+                    <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent" disabled={pieceFilterDisabled}>Opponent</ToggleGroupItem>
+                    <ToggleGroupItem value="both" data-testid="filter-piece-filter-both" disabled={pieceFilterDisabled}>Both</ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+              </TooltipTrigger>
+              {pieceFilterDisabled && (
+                <TooltipContent>Not applicable for this tab</TooltipContent>
+              )}
+            </Tooltip>
+          </div>
         </div>
-      </div>
+      </TooltipProvider>
 
       {/* Bookmark button */}
       <div>
