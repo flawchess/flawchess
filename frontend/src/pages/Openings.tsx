@@ -50,10 +50,7 @@ export function OpeningsPage() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Redirect /openings (bare) to /openings/explorer
-  if (location.pathname === '/openings' || location.pathname === '/openings/') {
-    return <Navigate to="/openings/explorer" replace />;
-  }
+  const needsRedirect = location.pathname === '/openings' || location.pathname === '/openings/';
 
   const activeTab = location.pathname.includes('/games')
     ? 'games'
@@ -93,7 +90,7 @@ export function OpeningsPage() {
   const [bookmarkDialogOpen, setBookmarkDialogOpen] = useState(false);
   const [bookmarkLabel, setBookmarkLabel] = useState('');
 
-  // ── Move Explorer data ──────────────────────────────────────────────────────
+  // ── Moves data ──────────────────────────────────────────────────────
   const nextMoves = useNextMoves(chess.hashes.fullHash, debouncedFilters);
 
   // Board arrows derived from next move frequencies
@@ -384,14 +381,19 @@ export function OpeningsPage() {
   // ── Tab content ─────────────────────────────────────────────────────────────
 
   const moveExplorerContent = (
-    <MoveExplorer
-      moves={nextMoves.data?.moves ?? []}
-      isLoading={nextMoves.isLoading}
-      isError={nextMoves.isError}
-      position={chess.position}
-      onMoveClick={(from, to) => chess.makeMove(from, to)}
-      onMoveHover={setHoveredMove}
-    />
+    <div className="flex flex-col gap-4">
+      {gamesQuery.data && gamesQuery.data.matched_count > 0 && (
+        <WDLBar stats={gamesQuery.data.stats} />
+      )}
+      <MoveExplorer
+        moves={nextMoves.data?.moves ?? []}
+        isLoading={nextMoves.isLoading}
+        isError={nextMoves.isError}
+        position={chess.position}
+        onMoveClick={(from, to) => chess.makeMove(from, to)}
+        onMoveHover={setHoveredMove}
+      />
+    </div>
   );
 
   const hasNoGames = gameCount !== null && gameCount === 0;
@@ -453,6 +455,10 @@ export function OpeningsPage() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
+  if (needsRedirect) {
+    return <Navigate to="/openings/explorer" replace />;
+  }
+
   return (
     <div data-testid="openings-page" className="flex min-h-0 flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-6">
@@ -463,7 +469,7 @@ export function OpeningsPage() {
             <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
               <TabsList className="w-full" data-testid="openings-tabs">
                 <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
-                  Move Explorer
+                  Moves
                 </TabsTrigger>
                 <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
                   Games
@@ -490,7 +496,7 @@ export function OpeningsPage() {
         <div className="mt-6 md:hidden">
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
             <TabsList className="w-full">
-              <TabsTrigger value="explorer" className="flex-1">Move Explorer</TabsTrigger>
+              <TabsTrigger value="explorer" className="flex-1">Moves</TabsTrigger>
               <TabsTrigger value="games" className="flex-1">Games</TabsTrigger>
               <TabsTrigger value="statistics" className="flex-1">Statistics</TabsTrigger>
             </TabsList>

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -12,7 +12,21 @@ import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
 import { OpeningsPage } from '@/pages/Openings';
 import { RatingPage } from '@/pages/Rating';
 import { GlobalStatsPage } from '@/pages/GlobalStats';
-import { ImportProgress } from '@/components/import/ImportProgress';
+import { useImportPolling } from '@/hooks/useImport';
+
+// ─── Non-visual job completion watcher ────────────────────────────────────────
+
+function ImportJobWatcher({ jobId, onDone }: { jobId: string; onDone: (jobId: string) => void }) {
+  const { data } = useImportPolling(jobId);
+
+  useEffect(() => {
+    if (data?.status === 'completed' || data?.status === 'failed') {
+      onDone(jobId);
+    }
+  }, [data?.status, jobId, onDone]);
+
+  return null;
+}
 
 // ─── Query client ─────────────────────────────────────────────────────────────
 
@@ -123,7 +137,9 @@ function AppRoutes() {
         {/* Catch-all redirects to openings */}
         <Route path="*" element={<Navigate to="/openings" replace />} />
       </Routes>
-      <ImportProgress jobIds={activeJobIds} onJobDone={handleJobDone} />
+      {activeJobIds.map((id) => (
+        <ImportJobWatcher key={id} jobId={id} onDone={handleJobDone} />
+      ))}
     </>
   );
 }

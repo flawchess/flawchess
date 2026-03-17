@@ -39,11 +39,7 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
   };
 
   return (
-    <div data-testid="move-explorer" className="p-4">
-      <h2 data-testid="move-explorer-heading" className="text-base font-semibold mb-3">
-        Move Explorer
-      </h2>
-
+    <div data-testid="move-explorer">
       {isLoading ? (
         <div data-testid="move-explorer-loading" className="flex flex-col gap-2">
           <div className="h-8 bg-muted animate-pulse rounded" />
