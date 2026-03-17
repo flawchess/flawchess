@@ -14,11 +14,8 @@ import {
   verticalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable';
-import { Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 import { PositionBookmarkCard } from './PositionBookmarkCard';
-import { SuggestionsModal } from './SuggestionsModal';
 
 interface Props {
   bookmarks: PositionBookmarkResponse[];
@@ -28,7 +25,6 @@ interface Props {
 
 export function PositionBookmarkList({ bookmarks, onReorder, onLoad }: Props) {
   const [items, setItems] = useState(bookmarks);
-  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
 
   // Sync when server data refreshes (e.g., after delete or label edit)
   useEffect(() => {
@@ -55,7 +51,7 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad }: Props) {
     <>
       {items.length === 0 ? (
         <p className="px-2 text-xs text-muted-foreground break-words">
-          No position bookmarks yet. Use the &apos;Bookmark&apos; button above to save positions, or use &apos;Suggest bookmarks&apos; to auto-generate from your most-played openings.
+          No position bookmarks yet. Use the &apos;Bookmark&apos; button to save positions, or use &apos;Suggest&apos; to auto-generate from your most-played openings.
         </p>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -68,19 +64,6 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad }: Props) {
           </SortableContext>
         </DndContext>
       )}
-
-      <Button
-        variant="outline"
-        size="lg"
-        className="w-full mt-2"
-        onClick={() => setSuggestionsOpen(true)}
-        data-testid="btn-suggest-bookmarks"
-      >
-        <Sparkles className="h-4 w-4 mr-1" />
-        Suggest bookmarks
-      </Button>
-
-      <SuggestionsModal open={suggestionsOpen} onOpenChange={setSuggestionsOpen} />
     </>
   );
 }

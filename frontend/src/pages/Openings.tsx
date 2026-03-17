@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronUp, ChevronDown, Bookmark } from 'lucide-react';
+import { ChevronUp, ChevronDown, Bookmark, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
@@ -34,6 +34,7 @@ import { MoveList } from '@/components/board/MoveList';
 import { BoardControls } from '@/components/board/BoardControls';
 import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import { PositionBookmarkList } from '@/components/position-bookmarks/PositionBookmarkList';
+import { SuggestionsModal } from '@/components/position-bookmarks/SuggestionsModal';
 import { WDLBar } from '@/components/results/WDLBar';
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLBarChart } from '@/components/charts/WDLBarChart';
@@ -93,6 +94,7 @@ export function OpeningsPage() {
   const reorder = useReorderPositionBookmarks();
   const [bookmarkDialogOpen, setBookmarkDialogOpen] = useState(false);
   const [bookmarkLabel, setBookmarkLabel] = useState('');
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
 
   // ── Moves data ──────────────────────────────────────────────────────
   const nextMoves = useNextMoves(chess.hashes.fullHash, debouncedFilters);
@@ -278,6 +280,8 @@ export function OpeningsPage() {
         canGoForward={chess.currentPly < chess.moveHistory.length}
       />
 
+      <div className="border-t border-border/40" />
+
       {/* Played as + Piece filter */}
       <TooltipProvider>
         <div className="flex flex-wrap gap-x-4 gap-y-3">
@@ -350,19 +354,7 @@ export function OpeningsPage() {
         </div>
       </TooltipProvider>
 
-      {/* Bookmark button */}
-      <div>
-        <Button
-          variant="outline"
-          size="lg"
-          className="w-full"
-          onClick={openBookmarkDialog}
-          data-testid="btn-bookmark"
-        >
-          <Bookmark className="h-4 w-4" />
-          Bookmark
-        </Button>
-      </div>
+      <div className="border-t border-border/40" />
 
       {/* Position bookmarks collapsible */}
       <Collapsible open={positionBookmarksOpen} onOpenChange={setPositionBookmarksOpen}>
@@ -379,6 +371,28 @@ export function OpeningsPage() {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="pt-2">
+            <div className="flex gap-2 mb-2">
+              <Button
+                size="lg"
+                className="flex-1"
+                style={{ backgroundColor: '#0a3d6b', color: 'white' }}
+                onClick={openBookmarkDialog}
+                data-testid="btn-bookmark"
+              >
+                <Bookmark className="h-4 w-4" />
+                Bookmark
+              </Button>
+              <Button
+                size="lg"
+                className="flex-1"
+                style={{ backgroundColor: '#0a3d6b', color: 'white' }}
+                onClick={() => setSuggestionsOpen(true)}
+                data-testid="btn-suggest-bookmarks"
+              >
+                <Sparkles className="h-4 w-4" />
+                Suggest
+              </Button>
+            </div>
             <PositionBookmarkList
               bookmarks={bookmarks}
               onReorder={handleReorder}
@@ -387,6 +401,8 @@ export function OpeningsPage() {
           </div>
         </CollapsibleContent>
       </Collapsible>
+
+      <div className="border-t border-border/40" />
 
       {/* More filters collapsible */}
       <Collapsible open={moreFiltersOpen} onOpenChange={setMoreFiltersOpen}>
@@ -575,6 +591,8 @@ export function OpeningsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SuggestionsModal open={suggestionsOpen} onOpenChange={setSuggestionsOpen} />
     </div>
   );
 }
