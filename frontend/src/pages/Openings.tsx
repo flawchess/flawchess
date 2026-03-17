@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronUp, ChevronDown, Bookmark, Sparkles } from 'lucide-react';
+import { ChevronUp, ChevronDown, Save, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
@@ -374,18 +374,16 @@ export function OpeningsPage() {
             <div className="flex gap-2 mb-2">
               <Button
                 size="lg"
-                className="flex-1"
-                style={{ backgroundColor: '#0a3d6b', color: 'white' }}
+                className="flex-1 bg-[#0a3d6b] hover:bg-[#072d50] text-white"
                 onClick={openBookmarkDialog}
                 data-testid="btn-bookmark"
               >
-                <Bookmark className="h-4 w-4" />
-                Bookmark
+                <Save className="h-4 w-4" />
+                Save
               </Button>
               <Button
                 size="lg"
-                className="flex-1"
-                style={{ backgroundColor: '#0a3d6b', color: 'white' }}
+                className="flex-1 bg-[#0a3d6b] hover:bg-[#072d50] text-white"
                 onClick={() => setSuggestionsOpen(true)}
                 data-testid="btn-suggest-bookmarks"
               >
