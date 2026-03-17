@@ -68,7 +68,9 @@ async def fetch_chesscom_games(
     Raises:
         ValueError: If ``username`` is not found on chess.com (HTTP 404).
     """
-    archives_url = f"{BASE_URL}/{username}/games/archives"
+    # chess.com API requires lowercase usernames (returns 301 for mixed case)
+    api_username = username.lower()
+    archives_url = f"{BASE_URL}/{api_username}/games/archives"
     archives_resp = await client.get(archives_url, headers=_HEADERS)
 
     if archives_resp.status_code == 404:
