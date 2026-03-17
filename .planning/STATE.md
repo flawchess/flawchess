@@ -91,6 +91,7 @@ None.
 | 260317-qjf | Match Suggest bookmarks button size, add color circles to bookmark cards | 2026-03-17 | 22609e8 | [260317-qjf-match-suggest-bookmarks-button-size-add-](./quick/260317-qjf-match-suggest-bookmarks-button-size-add-/) |
 | 260317-qsf | Fix bookmark delete not updating UI until page refresh | 2026-03-17 | 9ce0453 | [260317-qsf-fix-bookmark-delete-not-updating-ui-unti](./quick/260317-qsf-fix-bookmark-delete-not-updating-ui-unti/) |
 | 260317-qyx | Style action buttons with dark blue, move into collapsible, add dividers | 2026-03-17 | 13b127b | [260317-qyx-style-action-buttons-with-distinct-color](./quick/260317-qyx-style-action-buttons-with-distinct-color/) |
+| 260317-rac | Relabel Bookmark to Save and add hover darkening | 2026-03-17 | 49c6bbd | [260317-rac-relabel-bookmark-to-save-add-hover-darke](./quick/260317-rac-relabel-bookmark-to-save-add-hover-darke/) |
 
 ---
-Last activity: 2026-03-17 - Completed quick task 260317-qyx: Style action buttons with distinct color
+Last activity: 2026-03-17 - Completed quick task 260317-rac: Relabel Bookmark to Save and add hover darkening
