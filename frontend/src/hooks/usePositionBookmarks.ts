@@ -26,11 +26,24 @@ export function useUpdatePositionBookmarkLabel() {
   });
 }
 
+type DeleteContext = { prev: unknown };
+
 export function useDeletePositionBookmark() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation<void, Error, number, DeleteContext>({
     mutationFn: (id: number) => positionBookmarksApi.remove(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['position-bookmarks'] }),
+    onMutate: async (id: number): Promise<DeleteContext> => {
+      await qc.cancelQueries({ queryKey: ['position-bookmarks'] });
+      const prev = qc.getQueryData(['position-bookmarks']);
+      qc.setQueryData(['position-bookmarks'], (old: unknown) =>
+        (old as PositionBookmarkResponse[])?.filter((b) => b.id !== id)
+      );
+      return { prev };
+    },
+    onError: (_: Error, __: number, ctx: DeleteContext | undefined) => {
+      qc.setQueryData(['position-bookmarks'], ctx?.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['position-bookmarks'] }),
   });
 }
 
