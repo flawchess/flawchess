@@ -90,6 +90,7 @@ None.
 | 260317-qe1 | Move Suggest bookmarks below list, full-width buttons, right-align Piece filter | 2026-03-17 | 23e1a6c | [260317-qe1-move-suggest-bookmarks-below-list-full-w](./quick/260317-qe1-move-suggest-bookmarks-below-list-full-w/) |
 | 260317-qjf | Match Suggest bookmarks button size, add color circles to bookmark cards | 2026-03-17 | 22609e8 | [260317-qjf-match-suggest-bookmarks-button-size-add-](./quick/260317-qjf-match-suggest-bookmarks-button-size-add-/) |
 | 260317-qsf | Fix bookmark delete not updating UI until page refresh | 2026-03-17 | 9ce0453 | [260317-qsf-fix-bookmark-delete-not-updating-ui-unti](./quick/260317-qsf-fix-bookmark-delete-not-updating-ui-unti/) |
+| 260317-qyx | Style action buttons with dark blue, move into collapsible, add dividers | 2026-03-17 | 13b127b | [260317-qyx-style-action-buttons-with-distinct-color](./quick/260317-qyx-style-action-buttons-with-distinct-color/) |
 
 ---
-Last activity: 2026-03-17 - Completed quick task 260317-qsf: Fix bookmark delete not updating UI until page refresh
+Last activity: 2026-03-17 - Completed quick task 260317-qyx: Style action buttons with distinct color
