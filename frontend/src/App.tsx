@@ -107,18 +107,38 @@ function ProtectedLayout() {
 
 function AppRoutes() {
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
+  const [completedJobIds, setCompletedJobIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
 
   const handleImportStarted = useCallback((jobId: string) => {
     setActiveJobIds((ids) => [...ids, jobId]);
   }, []);
 
+  // Called when a job finishes (completed or failed) — invalidate queries but keep in list
   const handleJobDone = useCallback((jobId: string) => {
-    setActiveJobIds((ids) => ids.filter((id) => id !== jobId));
+    setCompletedJobIds((prev) => {
+      if (prev.has(jobId)) return prev;
+      const next = new Set(prev);
+      next.add(jobId);
+      return next;
+    });
     queryClient.invalidateQueries({ queryKey: ['games'] });
     queryClient.invalidateQueries({ queryKey: ['gameCount'] });
     queryClient.invalidateQueries({ queryKey: ['userProfile'] });
   }, [queryClient]);
+
+  // Called when user dismisses a completed progress bar
+  const handleJobDismissed = useCallback((jobId: string) => {
+    setActiveJobIds((ids) => ids.filter((id) => id !== jobId));
+    setCompletedJobIds((prev) => {
+      const next = new Set(prev);
+      next.delete(jobId);
+      return next;
+    });
+  }, []);
+
+  // Only watch jobs that haven't completed yet
+  const watchableJobIds = activeJobIds.filter((id) => !completedJobIds.has(id));
 
   return (
     <>
@@ -129,7 +149,7 @@ function AppRoutes() {
         {/* Protected layout wraps all authenticated pages */}
         <Route element={<ProtectedLayout />}>
           <Route path="/" element={<Navigate to="/openings" replace />} />
-          <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} />} />
+          <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />
           <Route path="/openings/*" element={<OpeningsPage />} />
           <Route path="/rating" element={<RatingPage />} />
           <Route path="/global-stats" element={<GlobalStatsPage />} />
@@ -137,7 +157,7 @@ function AppRoutes() {
         {/* Catch-all redirects to openings */}
         <Route path="*" element={<Navigate to="/openings" replace />} />
       </Routes>
-      {activeJobIds.map((id) => (
+      {watchableJobIds.map((id) => (
         <ImportJobWatcher key={id} jobId={id} onDone={handleJobDone} />
       ))}
     </>

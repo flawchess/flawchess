@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -19,9 +20,10 @@ import type { UserProfile } from '@/types/users';
 interface ImportPageProps {
   onImportStarted: (jobId: string) => void;
   activeJobIds: string[];
+  onJobDismissed: (jobId: string) => void;
 }
 
-function ImportProgressBar({ jobId }: { jobId: string }) {
+function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jobId: string) => void }) {
   const { data } = useImportPolling(jobId);
 
   if (!data) return null;
@@ -29,9 +31,8 @@ function ImportProgressBar({ jobId }: { jobId: string }) {
   const isDone = data.status === 'completed';
   const isError = data.status === 'failed';
   const isActive = !isDone && !isError;
+  const canDismiss = isDone || isError;
 
-  // Estimate progress: use games_fetched as proxy (no total available)
-  // Show indeterminate while active, 100% when done
   const progressText = isDone
     ? `Imported ${data.games_imported} games from ${data.platform}`
     : isError
@@ -39,15 +40,27 @@ function ImportProgressBar({ jobId }: { jobId: string }) {
       : `Importing ${data.username} (${data.platform})... ${data.games_fetched} fetched, ${data.games_imported} saved`;
 
   return (
-    <div className="space-y-1">
-      <p className={`text-sm ${isError ? 'text-destructive' : isDone ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
-        {progressText}
-      </p>
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className={`text-sm ${isError ? 'text-destructive' : isDone ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+          {progressText}
+        </p>
+        {canDismiss && (
+          <button
+            onClick={() => onDismiss(jobId)}
+            className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
+            aria-label="Dismiss"
+            data-testid={`btn-dismiss-progress-${jobId}`}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
         {isActive ? (
-          <div className="h-full w-full animate-pulse rounded-full bg-primary" />
+          <div className="h-full w-full origin-left animate-progress-indeterminate rounded-full bg-primary" />
         ) : isDone ? (
-          <div className="h-full w-full rounded-full bg-green-600 dark:bg-green-500" />
+          <div className="h-full w-full rounded-full bg-green-600 dark:bg-green-500 transition-all duration-500" />
         ) : (
           <div className="h-full w-full rounded-full bg-destructive" />
         )}
@@ -56,7 +69,7 @@ function ImportProgressBar({ jobId }: { jobId: string }) {
   );
 }
 
-export function ImportPage({ onImportStarted, activeJobIds }: ImportPageProps) {
+export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: ImportPageProps) {
   const { data: profile, isLoading: profileLoading } = useUserProfile();
   const trigger = useImportTrigger();
   const queryClient = useQueryClient();
@@ -64,6 +77,10 @@ export function ImportPage({ onImportStarted, activeJobIds }: ImportPageProps) {
   // Username state — always editable, synced from profile
   const [chessComUsername, setChessComUsername] = useState('');
   const [lichessUsername, setLichessUsername] = useState('');
+
+  // Per-platform error state
+  const [chessComError, setChessComError] = useState<string | null>(null);
+  const [lichessError, setLichessError] = useState<string | null>(null);
 
   // Track previous profile to detect changes and sync input fields (derived state pattern)
   const [prevProfile, setPrevProfile] = useState<UserProfile | undefined>(undefined);
@@ -82,11 +99,18 @@ export function ImportPage({ onImportStarted, activeJobIds }: ImportPageProps) {
   const handleSync = async (platform: 'chess.com' | 'lichess') => {
     const username = platform === 'chess.com' ? chessComUsername.trim() : lichessUsername.trim();
     if (!username) return;
+
+    // Clear previous error for this platform
+    if (platform === 'chess.com') setChessComError(null);
+    else setLichessError(null);
+
     try {
       const result = await trigger.mutateAsync({ platform, username });
       onImportStarted(result.job_id);
-    } catch {
-      // Error handled by axios interceptor
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Import failed. Please check the username and try again.';
+      if (platform === 'chess.com') setChessComError(message);
+      else setLichessError(message);
     }
   };
 
@@ -122,61 +146,71 @@ export function ImportPage({ onImportStarted, activeJobIds }: ImportPageProps) {
           {/* chess.com platform row */}
           <div
             data-testid="import-platform-chess-com"
-            className="flex items-center gap-3 rounded-md border px-3 py-2"
+            className="space-y-2 rounded-md border px-3 py-2"
           >
-            <div className="flex-1 space-y-1">
-              <Label htmlFor="chess-com-username" className="text-sm font-medium">chess.com</Label>
-              <Input
-                id="chess-com-username"
-                type="text"
-                placeholder="chess.com username"
-                value={chessComUsername}
-                onChange={(e) => setChessComUsername(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSync('chess.com')}
-                autoComplete="off"
-                className="h-8 text-sm"
-                data-testid="import-username-chess-com"
-              />
+            <div className="flex items-center gap-3">
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="chess-com-username" className="text-sm font-medium">chess.com</Label>
+                <Input
+                  id="chess-com-username"
+                  type="text"
+                  placeholder="chess.com username"
+                  value={chessComUsername}
+                  onChange={(e) => { setChessComUsername(e.target.value); setChessComError(null); }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSync('chess.com')}
+                  autoComplete="off"
+                  className="h-8 text-sm"
+                  data-testid="import-username-chess-com"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={() => handleSync('chess.com')}
+                disabled={trigger.isPending || !chessComUsername.trim()}
+                data-testid="btn-sync-chess-com"
+                className="self-end"
+              >
+                Sync
+              </Button>
             </div>
-            <Button
-              size="sm"
-              onClick={() => handleSync('chess.com')}
-              disabled={trigger.isPending || !chessComUsername.trim()}
-              data-testid="btn-sync-chess-com"
-              className="self-end"
-            >
-              Sync
-            </Button>
+            {chessComError && (
+              <p className="text-sm text-destructive" data-testid="import-error-chess-com">{chessComError}</p>
+            )}
           </div>
 
           {/* lichess platform row */}
           <div
             data-testid="import-platform-lichess"
-            className="flex items-center gap-3 rounded-md border px-3 py-2"
+            className="space-y-2 rounded-md border px-3 py-2"
           >
-            <div className="flex-1 space-y-1">
-              <Label htmlFor="lichess-username" className="text-sm font-medium">lichess</Label>
-              <Input
-                id="lichess-username"
-                type="text"
-                placeholder="lichess username"
-                value={lichessUsername}
-                onChange={(e) => setLichessUsername(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSync('lichess')}
-                autoComplete="off"
-                className="h-8 text-sm"
-                data-testid="import-username-lichess"
-              />
+            <div className="flex items-center gap-3">
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="lichess-username" className="text-sm font-medium">lichess</Label>
+                <Input
+                  id="lichess-username"
+                  type="text"
+                  placeholder="lichess username"
+                  value={lichessUsername}
+                  onChange={(e) => { setLichessUsername(e.target.value); setLichessError(null); }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSync('lichess')}
+                  autoComplete="off"
+                  className="h-8 text-sm"
+                  data-testid="import-username-lichess"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={() => handleSync('lichess')}
+                disabled={trigger.isPending || !lichessUsername.trim()}
+                data-testid="btn-sync-lichess"
+                className="self-end"
+              >
+                Sync
+              </Button>
             </div>
-            <Button
-              size="sm"
-              onClick={() => handleSync('lichess')}
-              disabled={trigger.isPending || !lichessUsername.trim()}
-              data-testid="btn-sync-lichess"
-              className="self-end"
-            >
-              Sync
-            </Button>
+            {lichessError && (
+              <p className="text-sm text-destructive" data-testid="import-error-lichess">{lichessError}</p>
+            )}
           </div>
         </div>
       )}
@@ -185,7 +219,7 @@ export function ImportPage({ onImportStarted, activeJobIds }: ImportPageProps) {
       {activeJobIds.length > 0 && (
         <section data-testid="import-progress-section" className="space-y-3">
           {activeJobIds.map((id) => (
-            <ImportProgressBar key={id} jobId={id} />
+            <ImportProgressBar key={id} jobId={id} onDismiss={onJobDismissed} />
           ))}
         </section>
       )}

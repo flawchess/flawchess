@@ -127,3 +127,14 @@
     @apply font-sans;
     }
 }
+
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(50%); }
+  100% { transform: translateX(200%); }
+}
+
+.animate-progress-indeterminate {
+  width: 40%;
+  animation: progress-indeterminate 1.5s ease-in-out infinite;
+}
