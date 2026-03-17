@@ -1,16 +1,32 @@
+import { useState, useCallback, useEffect } from 'react';
 import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
 import { Link } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/sonner';
 import { Button } from '@/components/ui/button';
 
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { AuthPage } from '@/pages/Auth';
-import { DashboardPage } from '@/pages/Dashboard';
+import { ImportPage } from '@/pages/Import';
 import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
 import { OpeningsPage } from '@/pages/Openings';
 import { RatingPage } from '@/pages/Rating';
 import { GlobalStatsPage } from '@/pages/GlobalStats';
+import { useImportPolling } from '@/hooks/useImport';
+
+// ─── Non-visual job completion watcher ────────────────────────────────────────
+
+function ImportJobWatcher({ jobId, onDone }: { jobId: string; onDone: (jobId: string) => void }) {
+  const { data } = useImportPolling(jobId);
+
+  useEffect(() => {
+    if (data?.status === 'completed' || data?.status === 'failed') {
+      onDone(jobId);
+    }
+  }, [data?.status, jobId, onDone]);
+
+  return null;
+}
 
 // ─── Query client ─────────────────────────────────────────────────────────────
 
@@ -26,7 +42,7 @@ const queryClient = new QueryClient({
 // ─── Nav header ───────────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Games' },
+  { to: '/import', label: 'Import' },
   { to: '/openings', label: 'Openings' },
   { to: '/rating', label: 'Rating' },
   { to: '/global-stats', label: 'Global Stats' },
@@ -35,6 +51,11 @@ const NAV_ITEMS = [
 function NavHeader() {
   const location = useLocation();
   const { logout } = useAuth();
+
+  const isActive = (to: string) =>
+    to === '/openings'
+      ? location.pathname.startsWith('/openings')
+      : location.pathname === to;
 
   return (
     <header className="border-b border-border bg-background px-6 py-3">
@@ -49,7 +70,7 @@ function NavHeader() {
                 variant="ghost"
                 size="sm"
                 className={
-                  location.pathname === to
+                  isActive(to)
                     ? 'border-b-2 border-primary rounded-none font-medium'
                     : 'rounded-none text-muted-foreground'
                 }
@@ -85,21 +106,61 @@ function ProtectedLayout() {
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 function AppRoutes() {
+  const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
+  const [completedJobIds, setCompletedJobIds] = useState<Set<string>>(new Set());
+  const queryClient = useQueryClient();
+
+  const handleImportStarted = useCallback((jobId: string) => {
+    setActiveJobIds((ids) => [...ids, jobId]);
+  }, []);
+
+  // Called when a job finishes (completed or failed) — invalidate queries but keep in list
+  const handleJobDone = useCallback((jobId: string) => {
+    setCompletedJobIds((prev) => {
+      if (prev.has(jobId)) return prev;
+      const next = new Set(prev);
+      next.add(jobId);
+      return next;
+    });
+    queryClient.invalidateQueries({ queryKey: ['games'] });
+    queryClient.invalidateQueries({ queryKey: ['gameCount'] });
+    queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+  }, [queryClient]);
+
+  // Called when user dismisses a completed progress bar
+  const handleJobDismissed = useCallback((jobId: string) => {
+    setActiveJobIds((ids) => ids.filter((id) => id !== jobId));
+    setCompletedJobIds((prev) => {
+      const next = new Set(prev);
+      next.delete(jobId);
+      return next;
+    });
+  }, []);
+
+  // Only watch jobs that haven't completed yet
+  const watchableJobIds = activeJobIds.filter((id) => !completedJobIds.has(id));
+
   return (
-    <Routes>
-      <Route path="/login" element={<AuthPage />} />
-      {/* Google OAuth callback — reads token from URL fragment */}
-      <Route path="/auth/callback" element={<OAuthCallbackPage />} />
-      {/* Protected layout wraps all authenticated pages */}
-      <Route element={<ProtectedLayout />}>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/openings" element={<OpeningsPage />} />
-        <Route path="/rating" element={<RatingPage />} />
-        <Route path="/global-stats" element={<GlobalStatsPage />} />
-      </Route>
-      {/* Catch-all redirects to dashboard (auth guard handles the rest) */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/login" element={<AuthPage />} />
+        {/* Google OAuth callback — reads token from URL fragment */}
+        <Route path="/auth/callback" element={<OAuthCallbackPage />} />
+        {/* Protected layout wraps all authenticated pages */}
+        <Route element={<ProtectedLayout />}>
+          <Route path="/" element={<Navigate to="/openings" replace />} />
+          <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />
+          <Route path="/openings/*" element={<OpeningsPage />} />
+          <Route path="/rating" element={<RatingPage />} />
+          <Route path="/global-stats" element={<GlobalStatsPage />} />
+        </Route>
+        {/* Catch-all redirects to openings */}
+        <Route path="*" element={<Navigate to="/openings" replace />} />
+      </Routes>
+      {watchableJobIds.map((id) => (
+        <ImportJobWatcher key={id} jobId={id} onDone={handleJobDone} />
+      ))}
+    </>
   );
 }
 
