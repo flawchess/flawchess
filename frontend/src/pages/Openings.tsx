@@ -38,7 +38,6 @@ import { GameCardList } from '@/components/results/GameCardList';
 import { WDLBarChart } from '@/components/charts/WDLBarChart';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
-import { hashToString } from '@/lib/zobrist';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
 import { resolveMatchSide } from '@/types/api';
@@ -129,7 +128,7 @@ export function OpeningsPage() {
   }, [nextMoves.data, chess.position, hoveredMove]);
 
   // ── Games tab data ──────────────────────────────────────────────────────────
-  const targetHash = hashToString(chess.hashes.fullHash);
+  const targetHash = chess.getHashForAnalysis(filters.matchSide, filters.color);
   const gamesQuery = usePositionAnalysisQuery({
     targetHash,
     filters: debouncedFilters,
