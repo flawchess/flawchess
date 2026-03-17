@@ -82,5 +82,11 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 ### Blockers/Concerns
 None.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260317-ppo | Fix piece filter interaction with games and moves tables | 2026-03-17 | aa21696 | [260317-ppo-fix-piece-filter-interaction-with-games-](./quick/260317-ppo-fix-piece-filter-interaction-with-games-/) |
+
 ---
-Last activity: 2026-03-17 — Completed 14-02-PLAN.md (OpeningsPage tabbed hub with 3 URL-based sub-tabs, shared sidebar, auto-fetch on all tabs)
+Last activity: 2026-03-17 - Completed quick task 260317-ppo: Fix piece filter interaction with games and moves tables
