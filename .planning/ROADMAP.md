@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 Initial Platform** - Phases 1-10 (shipped 2026-03-15)
-- 🚧 **v1.1 Opening Explorer & UI Restructuring** - Phases 11-14 (in progress)
+- 🚧 **v1.1 Opening Explorer & UI Restructuring** - Phases 11-15 (in progress)
 
 ## Phases
 
@@ -172,6 +172,16 @@ Plans:
 - [ ] 14-02-PLAN.md -- OpeningsPage tabbed hub with sidebar and 3 sub-tabs (Move Explorer, Games, Statistics)
 - [ ] 14-03-PLAN.md -- Human verification of all UIRS requirements
 
+### Phase 15: Chart Consolidation and Polish
+**Goal:** Merge Rating tab into Global Stats tab (rating charts above Results by Time Control), add platform filter (chess.com/lichess), use consistent aggregation time buckets across all time-series charts, and add chart titles to the Statistics sub-tab of the Openings tab.
+**Requirements**: CHRT-01, CHRT-02, CHRT-03, CHRT-04, CHRT-05
+**Depends on:** Phase 14
+**Plans:** 2 plans
+
+Plans:
+- [ ] 15-01-PLAN.md -- Backend platform filter + merge Rating into Global Stats + nav update
+- [ ] 15-02-PLAN.md -- RatingChart monthly bucketing + Openings Statistics chart titles
+
 ---
 
 ## Progress
@@ -192,18 +202,9 @@ Plans:
 | 12. Backend Next-Moves Endpoint | 2/2 | Complete    | 2026-03-16 | - |
 | 13. Frontend Move Explorer Component | 2/2 | Complete    | 2026-03-16 | - |
 | 14. UI Restructuring | 3/3 | Complete    | 2026-03-17 | - |
-
-### Phase 15: Consolidation - remove unnecessary code, rename endpoints/modules, update CLAUDE.md and README.md
-
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 14
-**Plans:** 3/3 plans complete
-
-Plans:
-- [ ] TBD (run /gsd:plan-phase 15 to break down)
+| 15. Chart Consolidation and Polish | v1.1 | 0/2 | Planned | - |
 
 ---
 *Created: 2026-03-11*
 *v1.0 phases 1-10 shipped: 2026-03-15*
-*v1.1 phases 11-14 added: 2026-03-16*
+*v1.1 phases 11-15 added: 2026-03-16*

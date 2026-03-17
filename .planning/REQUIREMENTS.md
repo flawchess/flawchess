@@ -38,6 +38,14 @@ Requirements for milestone v1.1: Opening Explorer & UI Restructuring.
 - [x] **UIRS-03**: Dedicated Import page replaces the import modal, showing import controls, username management, and sync functionality
 - [x] **UIRS-04**: Navigation updated: Import | Openings | Rating | Global Stats
 
+### Chart Consolidation and Polish
+
+- [ ] **CHRT-01**: Rating tab removed from nav; rating charts appear above Results by Time Control on Global Stats page
+- [ ] **CHRT-02**: Platform filter (chess.com / lichess) added to Global Stats page, filtering both rating and WDL charts
+- [ ] **CHRT-03**: Rating charts show one chart per platform; each chart shows per-time-control lines (conditionally hidden when platform filter excludes it)
+- [ ] **CHRT-04**: Consistent monthly aggregation across all time-series charts (RatingChart uses monthly buckets like WinRateChart)
+- [ ] **CHRT-05**: Chart titles added to Statistics sub-tab of Openings tab (WDLBarChart and WinRateChart)
+
 ## Future Requirements
 
 ### Move Explorer Enhancements
@@ -84,12 +92,17 @@ Requirements for milestone v1.1: Opening Explorer & UI Restructuring.
 | UIRS-02 | Phase 14 | Complete |
 | UIRS-03 | Phase 14 | Complete |
 | UIRS-04 | Phase 14 | Complete |
+| CHRT-01 | Phase 15 | Planned |
+| CHRT-02 | Phase 15 | Planned |
+| CHRT-03 | Phase 15 | Planned |
+| CHRT-04 | Phase 15 | Planned |
+| CHRT-05 | Phase 15 | Planned |
 
 **Coverage:**
-- v1.1 requirements: 14 total
-- Mapped to phases: 14
-- Unmapped: 0 ✓
+- v1.1 requirements: 19 total
+- Mapped to phases: 19
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-16 after milestone v1.1 roadmap creation*
+*Last updated: 2026-03-17 after Phase 15 planning*
