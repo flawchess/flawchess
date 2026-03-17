@@ -53,18 +53,6 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad }: Props) {
 
   return (
     <>
-      <div className="flex justify-end mb-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setSuggestionsOpen(true)}
-          data-testid="btn-suggest-bookmarks"
-        >
-          <Sparkles className="h-4 w-4 mr-1" />
-          Suggest bookmarks
-        </Button>
-      </div>
-
       {items.length === 0 ? (
         <p className="px-2 text-xs text-muted-foreground break-words">
           No position bookmarks yet. Use the &apos;Bookmark&apos; button above to save positions, or use &apos;Suggest bookmarks&apos; to auto-generate from your most-played openings.
@@ -80,6 +68,16 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad }: Props) {
           </SortableContext>
         </DndContext>
       )}
+
+      <Button
+        variant="outline"
+        className="w-full mt-2"
+        onClick={() => setSuggestionsOpen(true)}
+        data-testid="btn-suggest-bookmarks"
+      >
+        <Sparkles className="h-4 w-4 mr-1" />
+        Suggest bookmarks
+      </Button>
 
       <SuggestionsModal open={suggestionsOpen} onOpenChange={setSuggestionsOpen} />
     </>
