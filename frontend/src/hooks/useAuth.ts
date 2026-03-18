@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useState } from 'react';
 import { queryClient } from '@/lib/queryClient';
 import { apiClient } from '@/api/client';
 import type { LoginResponse, UserResponse } from '@/types/api';
@@ -10,6 +10,7 @@ interface AuthState {
   token: string | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithToken: (token: string) => void;
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
 }
@@ -51,6 +52,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loginWithToken = useCallback((externalToken: string): void => {
+    queryClient.clear();
+    localStorage.setItem('auth_token', externalToken);
+    setToken(externalToken);
+    setUser(null);
+  }, []);
+
   const register = async (email: string, password: string): Promise<void> => {
     setIsLoading(true);
     try {
@@ -70,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.href = '/login';
   };
 
-  const value: AuthState = { user, token, isLoading, login, register, logout };
+  const value: AuthState = { user, token, isLoading, login, loginWithToken, register, logout };
 
   return React.createElement(AuthContext.Provider, { value }, children);
 }
