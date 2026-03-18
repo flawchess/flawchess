@@ -44,14 +44,19 @@ export function LoginForm() {
     }
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = async (attempt = 0) => {
     setGoogleLoading(true);
     try {
       const response = await apiClient.get<{ authorization_url: string }>(
         '/auth/google/authorize',
       );
       window.location.href = response.data.authorization_url;
-    } catch {
+    } catch (error) {
+      console.error('Google sign-in failed:', error);
+      if (attempt < 1) {
+        await new Promise((r) => setTimeout(r, 500));
+        return handleGoogleSignIn(attempt + 1);
+      }
       toast.error('Could not start Google sign-in. Please try again.');
       setGoogleLoading(false);
     }
@@ -71,7 +76,7 @@ export function LoginForm() {
               type="button"
               variant="outline"
               className="mb-4 w-full"
-              onClick={handleGoogleSignIn}
+              onClick={() => handleGoogleSignIn()}
               disabled={googleLoading}
               data-testid="btn-login-google"
             >
