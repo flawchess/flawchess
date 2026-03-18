@@ -14,9 +14,9 @@ interface WDLCategoryChartProps {
 }
 
 const chartConfig = {
-  win_pct: { label: 'Wins', color: 'oklch(0.55 0.18 145)' },
+  win_pct: { label: 'Wins', color: 'oklch(0.45 0.16 145)' },
   draw_pct: { label: 'Draws', color: 'oklch(0.65 0.01 260)' },
-  loss_pct: { label: 'Losses', color: 'oklch(0.55 0.2 25)' },
+  loss_pct: { label: 'Losses', color: 'oklch(0.45 0.17 25)' },
 };
 
 function WDLCategoryChart({ data, title, testId }: WDLCategoryChartProps) {
@@ -67,9 +67,9 @@ function WDLCategoryChart({ data, title, testId }: WDLCategoryChartProps) {
               return (
                 <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
                   <div className="font-medium">{d.label}</div>
-                  <div className="text-green-500">Wins: {d.wins} ({d.win_pct.toFixed(1)}%)</div>
+                  <div className="text-green-600">Wins: {d.wins} ({d.win_pct.toFixed(1)}%)</div>
                   <div className="text-gray-400">Draws: {d.draws} ({d.draw_pct.toFixed(1)}%)</div>
-                  <div className="text-red-500">Losses: {d.losses} ({d.loss_pct.toFixed(1)}%)</div>
+                  <div className="text-red-600">Losses: {d.losses} ({d.loss_pct.toFixed(1)}%)</div>
                   <div className="text-muted-foreground pt-0.5 border-t border-border/50">Total: {d.total} games</div>
                 </div>
               );
