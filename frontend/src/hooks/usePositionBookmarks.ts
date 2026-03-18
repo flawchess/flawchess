@@ -31,7 +31,7 @@ type DeleteContext = { prev: unknown };
 export function useDeletePositionBookmark() {
   const qc = useQueryClient();
   return useMutation<void, Error, number, DeleteContext>({
-    mutationFn: (id: number) => positionBookmarksApi.remove(id),
+    mutationFn: (id: number) => positionBookmarksApi.remove(id).then(() => undefined),
     onMutate: async (id: number): Promise<DeleteContext> => {
       await qc.cancelQueries({ queryKey: ['position-bookmarks'] });
       const prev = qc.getQueryData(['position-bookmarks']);

@@ -76,16 +76,20 @@ async def get_latest_for_user_platform(
     session: AsyncSession,
     user_id: int,
     platform: str,
+    username: str,
 ) -> ImportJob | None:
-    """Return the most recent completed ImportJob for a user+platform combination.
+    """Return the most recent completed ImportJob for a user+platform+username combination.
 
     Used for incremental sync: the returned job's last_synced_at provides
-    the 'since' timestamp for fetching only new games.
+    the 'since' timestamp for fetching only new games. Scoped to username so
+    that importing a second username on the same platform starts a full fetch
+    independently.
 
     Args:
         session: AsyncSession to use.
         user_id: Internal user ID.
         platform: 'chess.com' or 'lichess'.
+        username: Platform username (case-sensitive as stored in ImportJob).
 
     Returns:
         The most recent completed ImportJob or None if no completed jobs exist.
@@ -95,6 +99,7 @@ async def get_latest_for_user_platform(
         .where(
             ImportJob.user_id == user_id,
             ImportJob.platform == platform,
+            ImportJob.username == username,
             ImportJob.status == "completed",
         )
         .order_by(ImportJob.completed_at.desc())

@@ -127,9 +127,9 @@ async def run_import(job_id: str) -> None:
 
     try:
         async with async_session_maker() as session:
-            # Determine since parameter for incremental sync
+            # Determine since parameter for incremental sync (scoped to username)
             previous_job = await import_job_repository.get_latest_for_user_platform(
-                session, job.user_id, job.platform
+                session, job.user_id, job.platform, job.username
             )
 
             # Create the DB record for this import job
@@ -307,12 +307,12 @@ async def _flush_batch(
         if not pgn:
             continue
         try:
-            hash_tuples = hashes_for_game(pgn)
+            hash_tuples, result_fen = hashes_for_game(pgn)
         except Exception:
             logger.warning("Failed to compute hashes for game_id=%s", game_id)
             continue
 
-        for ply, white_hash, black_hash, full_hash, move_san in hash_tuples:
+        for ply, white_hash, black_hash, full_hash, move_san, clock_seconds in hash_tuples:
             position_rows.append(
                 {
                     "game_id": game_id,
@@ -322,10 +322,11 @@ async def _flush_batch(
                     "black_hash": black_hash,
                     "full_hash": full_hash,
                     "move_san": move_san,
+                    "clock_seconds": clock_seconds,
                 }
             )
 
-        # Compute and persist move_count for this new game
+        # Compute and persist move_count and result_fen for this new game
         try:
             from sqlalchemy import update as sa_update
             game_obj = chess.pgn.read_game(io.StringIO(pgn))
@@ -333,7 +334,10 @@ async def _flush_batch(
                 ply_count = len(list(game_obj.mainline_moves()))
                 move_count = (ply_count + 1) // 2
                 await session.execute(
-                    sa_update(Game).where(Game.id == game_id).values(move_count=move_count)
+                    sa_update(Game).where(Game.id == game_id).values(
+                        move_count=move_count,
+                        result_fen=result_fen,
+                    )
                 )
         except Exception:
             logger.warning("Failed to compute move_count for game_id=%s", game_id)

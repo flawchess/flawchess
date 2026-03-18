@@ -9,6 +9,17 @@ import re
 from app.services.opening_lookup import find_opening
 
 
+def _normalize_tc_str(tc_str: str) -> str | None:
+    """Normalize time control string: drop +0 suffix when increment is 0."""
+    if not tc_str or tc_str == "-":
+        return None
+    if "+" in tc_str:
+        base, inc = tc_str.split("+", 1)
+        if inc == "0":
+            return base
+    return tc_str
+
+
 def parse_time_control(tc_str: str) -> tuple[str | None, int | None]:
     """Parse a time control string into (bucket, estimated_seconds).
 
@@ -46,7 +57,7 @@ def parse_time_control(tc_str: str) -> tuple[str | None, int | None]:
 
     estimated = base + increment * 40
 
-    if estimated <= 180:
+    if estimated < 180:
         return "bullet", estimated
     elif estimated <= 600:
         return "blitz", estimated
@@ -55,6 +66,36 @@ def parse_time_control(tc_str: str) -> tuple[str | None, int | None]:
     else:
         return "classical", estimated
 
+
+# chess.com termination string mapping (losing player's result -> normalized termination)
+_CHESSCOM_TERMINATION_MAP = {
+    "checkmated": "checkmate",
+    "resigned": "resignation",
+    "timeout": "timeout",
+    "timevsinsufficient": "draw",
+    "agreed": "draw",
+    "stalemate": "draw",
+    "insufficient": "draw",
+    "repetition": "draw",
+    "50move": "draw",
+    "abandoned": "abandoned",
+}
+
+# lichess game status -> normalized termination
+_LICHESS_STATUS_MAP = {
+    "mate": "checkmate",
+    "resign": "resignation",
+    "outoftime": "timeout",
+    "draw": "draw",
+    "stalemate": "draw",
+    "threefoldRepetition": "draw",
+    "fiftyMoves": "draw",
+    "unknownFinish": "draw",
+    "aborted": "abandoned",
+    "timeout": "abandoned",
+    "noStart": "abandoned",
+    "cheat": "unknown",
+}
 
 # chess.com PGN Event tag values that indicate a game against a computer
 _CHESSCOM_COMPUTER_EVENTS = {"Play vs Coach", "Play vs Computer"}
@@ -137,7 +178,18 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | N
             is_computer_game = True
 
     # Normalize result
-    result = _normalize_chesscom_result(white.get("result", ""), black.get("result", ""))
+    white_result_str = white.get("result", "")
+    black_result_str = black.get("result", "")
+    result = _normalize_chesscom_result(white_result_str, black_result_str)
+
+    # Determine termination from the losing side's result string
+    if result == "1/2-1/2":
+        termination_raw = white_result_str  # both sides have same draw string
+    elif result == "1-0":
+        termination_raw = black_result_str  # loser's result describes termination
+    else:  # 0-1
+        termination_raw = white_result_str
+    termination = _CHESSCOM_TERMINATION_MAP.get(termination_raw, "unknown")
 
     # Time control
     tc_str = game.get("time_control", "")
@@ -161,7 +213,9 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | N
         "variant": "Standard",
         "result": result,
         "user_color": user_color,
-        "time_control_str": tc_str if tc_str else None,
+        "termination_raw": termination_raw,
+        "termination": termination,
+        "time_control_str": _normalize_tc_str(tc_str),
         "time_control_bucket": tc_bucket,
         "time_control_seconds": tc_seconds,
         "rated": bool(game.get("rated", True)),
@@ -227,13 +281,19 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
     else:
         result = "1/2-1/2"
 
+    # Termination from status field
+    status = game.get("status", "unknown")
+    termination_raw = status
+    termination = _LICHESS_STATUS_MAP.get(status, "unknown")
+
     # Time control from clock
     clock = game.get("clock")
     if clock:
         clock_initial = clock.get("initial", 0)
         clock_increment = clock.get("increment", 0)
-        tc_str = f"{clock_initial}+{clock_increment}"
-        tc_bucket, tc_seconds = parse_time_control(tc_str)
+        tc_str_raw = f"{clock_initial}+{clock_increment}"
+        tc_bucket, tc_seconds = parse_time_control(tc_str_raw)
+        tc_str = _normalize_tc_str(tc_str_raw)
     else:
         tc_str = None
         tc_bucket = None
@@ -263,6 +323,8 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
         "variant": "Standard",
         "result": result,
         "user_color": user_color,
+        "termination_raw": termination_raw,
+        "termination": termination,
         "time_control_str": tc_str,
         "time_control_bucket": tc_bucket,
         "time_control_seconds": tc_seconds,

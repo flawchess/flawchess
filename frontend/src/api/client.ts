@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { queryClient } from '@/lib/queryClient';
 import type {
   PositionBookmarkResponse, PositionBookmarkCreate, PositionBookmarkUpdate,
   PositionBookmarkReorderRequest, TimeSeriesRequest, TimeSeriesResponse,
@@ -39,6 +40,7 @@ apiClient.interceptors.response.use(
       axios.isAxiosError(error) &&
       error.response?.status === 401
     ) {
+      queryClient.clear();
       localStorage.removeItem('auth_token');
       window.location.href = '/login';
     }
@@ -75,12 +77,12 @@ export const timeSeriesApi = {
 // ─── Stats API ────────────────────────────────────────────────────────────────
 
 export const statsApi = {
-  getRatingHistory: (recency: string | null) =>
+  getRatingHistory: (recency: string | null, platform: string | null) =>
     apiClient.get<RatingHistoryResponse>('/stats/rating-history', {
-      params: recency ? { recency } : {},
+      params: { ...(recency ? { recency } : {}), ...(platform ? { platform } : {}) },
     }).then(r => r.data),
-  getGlobalStats: (recency: string | null) =>
+  getGlobalStats: (recency: string | null, platform: string | null) =>
     apiClient.get<GlobalStatsResponse>('/stats/global', {
-      params: recency ? { recency } : {},
+      params: { ...(recency ? { recency } : {}), ...(platform ? { platform } : {}) },
     }).then(r => r.data),
 };

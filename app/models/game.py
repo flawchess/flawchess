@@ -28,6 +28,8 @@ class Game(Base):
     # Result
     result: Mapped[str] = mapped_column(String(10), nullable=False)    # "1-0" | "0-1" | "1/2-1/2"
     user_color: Mapped[str] = mapped_column(String(5), nullable=False)  # "white" | "black"
+    termination_raw: Mapped[str | None] = mapped_column(String(50))    # platform's original string
+    termination: Mapped[str | None] = mapped_column(String(20))        # normalized: checkmate|resignation|timeout|draw|abandoned|unknown
 
     # Time control
     time_control_str: Mapped[str | None] = mapped_column(String(50))   # raw string e.g. "600+0"
@@ -50,6 +52,9 @@ class Game(Base):
 
     # Move count (total full moves in the game)
     move_count: Mapped[int | None] = mapped_column(nullable=True)
+
+    # Final position FEN (piece placement only, from board.board_fen())
+    result_fen: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Timestamps
     played_at: Mapped[datetime.datetime | None]

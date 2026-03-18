@@ -156,7 +156,7 @@ SIMPLE_PGN = "1. e4 e5 2. Nf3 *"
 
 def test_hashes_for_game_includes_ply_zero():
     """PGN '1. e4 e5 2. Nf3 *' has 3 half-moves, so 4 entries (ply 0 through 3)."""
-    results = hashes_for_game(SIMPLE_PGN)
+    results, _ = hashes_for_game(SIMPLE_PGN)
     assert len(results) == 4
     plies = [r[0] for r in results]
     assert plies == [0, 1, 2, 3]
@@ -164,7 +164,7 @@ def test_hashes_for_game_includes_ply_zero():
 
 def test_hashes_for_game_ply_zero_is_starting_position():
     """Ply 0 entry matches compute_hashes on a fresh Board()."""
-    results = hashes_for_game(SIMPLE_PGN)
+    results, _ = hashes_for_game(SIMPLE_PGN)
     ply0_wh, ply0_bh, ply0_fh = results[0][1], results[0][2], results[0][3]
     expected_wh, expected_bh, expected_fh = compute_hashes(chess.Board())
     assert ply0_wh == expected_wh
@@ -173,18 +173,23 @@ def test_hashes_for_game_ply_zero_is_starting_position():
 
 
 def test_hashes_for_game_empty_pgn():
-    """Empty string returns empty list."""
-    assert hashes_for_game("") == []
+    """Empty string returns ([], None)."""
+    result, fen = hashes_for_game("")
+    assert result == []
+    assert fen is None
 
 
 def test_hashes_for_game_invalid_pgn():
-    """Garbage string returns empty list."""
-    assert hashes_for_game("not a pgn at all !!!") == []
+    """Garbage string returns ([], None)."""
+    result, fen = hashes_for_game("not a pgn at all !!!")
+    assert result == []
+    assert fen is None
 
 
 def test_hashes_for_game_returns_int64_values():
     """All hash values in the returned list are within BIGINT range."""
-    for _, wh, bh, fh, _ in hashes_for_game(SIMPLE_PGN):
+    tuples, _ = hashes_for_game(SIMPLE_PGN)
+    for _, wh, bh, fh, _, _ in tuples:
         assert INT64_MIN <= wh <= INT64_MAX
         assert INT64_MIN <= bh <= INT64_MAX
         assert INT64_MIN <= fh <= INT64_MAX
@@ -192,10 +197,10 @@ def test_hashes_for_game_returns_int64_values():
 
 def test_hashes_for_game_returns_move_san():
     """For PGN '1. e4 e5 2. Nf3 *', result has 4 entries with correct move_san values."""
-    results = hashes_for_game(SIMPLE_PGN)
+    results, _ = hashes_for_game(SIMPLE_PGN)
     assert len(results) == 4
-    # Each entry is a 5-tuple
-    assert all(len(r) == 5 for r in results)
+    # Each entry is a 6-tuple
+    assert all(len(r) == 6 for r in results)
     # move_san values: e4, e5, Nf3, None (final position)
     assert results[0][4] == "e4"
     assert results[1][4] == "e5"
@@ -205,20 +210,20 @@ def test_hashes_for_game_returns_move_san():
 
 def test_hashes_for_game_move_san_null_on_final_ply():
     """For PGN '1. e4 *', result has 2 entries; final position has move_san=None."""
-    results = hashes_for_game("1. e4 *")
+    results, _ = hashes_for_game("1. e4 *")
     assert len(results) == 2
     assert results[1][4] is None
 
 
 def test_hashes_for_game_move_san_ply_zero():
     """For PGN '1. e4 e5 *', ply-0 has move_san='e4' (first move SAN, not None)."""
-    results = hashes_for_game("1. e4 e5 *")
+    results, _ = hashes_for_game("1. e4 e5 *")
     assert results[0][4] == "e4"
 
 
 def test_hashes_for_game_preserves_hash_values():
     """Ply-0 hashes match compute_hashes(chess.Board()); ply-1 hashes match board after e4."""
-    results = hashes_for_game(SIMPLE_PGN)
+    results, _ = hashes_for_game(SIMPLE_PGN)
     # ply-0 hashes = starting position
     expected_wh, expected_bh, expected_fh = compute_hashes(chess.Board())
     assert results[0][1] == expected_wh
@@ -231,6 +236,23 @@ def test_hashes_for_game_preserves_hash_values():
     assert results[1][1] == exp_wh
     assert results[1][2] == exp_bh
     assert results[1][3] == exp_fh
+
+
+def test_hashes_for_game_returns_result_fen():
+    """hashes_for_game returns a non-None result_fen for a valid PGN."""
+    pgn = "1. e4 e5 2. Nf3 *"
+    tuples, result_fen = hashes_for_game(pgn)
+    assert result_fen is not None
+    # After 1. e4 e5 2. Nf3, the board FEN should have the knight on f3
+    assert "N" in result_fen  # White knight present
+    assert "/" in result_fen  # Valid FEN format with rank separators
+
+
+def test_hashes_for_game_empty_returns_none_fen():
+    """Empty PGN returns ([], None) — result_fen is None."""
+    tuples, result_fen = hashes_for_game("")
+    assert tuples == []
+    assert result_fen is None
 
 
 # ---------------------------------------------------------------------------
@@ -251,3 +273,47 @@ def test_transposition_produces_same_hashes():
         b2.push_san(san)
 
     assert compute_hashes(b1) == compute_hashes(b2)
+
+
+# ---------------------------------------------------------------------------
+# hashes_for_game — clock extraction
+# ---------------------------------------------------------------------------
+
+PGN_WITH_CLK = '[Event "?"]\n\n1. e4 {[%clk 0:09:58.3]} e5 {[%clk 0:09:56.1]} *'
+PGN_WITHOUT_CLK = "1. e4 e5 2. Nf3 *"
+
+
+def test_hashes_for_game_with_clk_returns_6_tuples():
+    """PGN with %clk annotations returns 6-tuples."""
+    results, _ = hashes_for_game(PGN_WITH_CLK)
+    assert all(len(r) == 6 for r in results)
+
+
+def test_hashes_for_game_with_clk_clock_seconds_are_floats():
+    """PGN with %clk: clock_seconds for non-final positions are floats."""
+    results, _ = hashes_for_game(PGN_WITH_CLK)
+    # 3 entries: ply 0 (before e4), ply 1 (before e5), ply 2 (final)
+    # ply 0 clock = 9*60 + 58.3 = 598.3
+    assert results[0][5] == pytest.approx(598.3, abs=0.01)
+    # ply 1 clock = 9*60 + 56.1 = 596.1
+    assert results[1][5] == pytest.approx(596.1, abs=0.01)
+
+
+def test_hashes_for_game_with_clk_final_position_clock_is_none():
+    """PGN with %clk: final position row always has clock_seconds=None."""
+    results, _ = hashes_for_game(PGN_WITH_CLK)
+    # Last entry is final position
+    assert results[-1][5] is None
+
+
+def test_hashes_for_game_without_clk_returns_6_tuples():
+    """PGN without %clk still returns 6-tuples."""
+    results, _ = hashes_for_game(PGN_WITHOUT_CLK)
+    assert all(len(r) == 6 for r in results)
+
+
+def test_hashes_for_game_without_clk_clock_seconds_are_none():
+    """PGN without %clk: all clock_seconds are None."""
+    results, _ = hashes_for_game(PGN_WITHOUT_CLK)
+    for r in results:
+        assert r[5] is None

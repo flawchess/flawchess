@@ -50,11 +50,18 @@ class TestParseTimeControl:
         assert seconds is None
 
     def test_bullet_boundary(self):
-        """Exactly 180s -> bullet."""
+        """Exactly 180s -> blitz (180 is not < 180, so falls to blitz bucket)."""
         from app.services.normalization import parse_time_control
         bucket, seconds = parse_time_control("180+0")
-        assert bucket == "bullet"
+        assert bucket == "blitz"
         assert seconds == 180
+
+    def test_179_is_bullet(self):
+        """179+0 -> bullet (179 < 180)."""
+        from app.services.normalization import parse_time_control
+        bucket, seconds = parse_time_control("179+0")
+        assert bucket == "bullet"
+        assert seconds == 179
 
     def test_blitz_boundary(self):
         """Exactly 600s -> blitz."""
@@ -234,7 +241,8 @@ class TestNormalizeChesscomGame:
         game = self._make_chesscom_game(time_control="600+0")
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["time_control_str"] == "600+0"
+        # "+0" suffix is normalized away
+        assert result["time_control_str"] == "600"
         assert result["time_control_bucket"] == "blitz"
         assert result["time_control_seconds"] == 600
 
@@ -513,6 +521,228 @@ class TestNormalizeLichessGame:
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
         assert result["is_computer_game"] is True
+
+
+class TestChesscomTermination:
+    """Tests for termination extraction from chess.com games."""
+
+    def _make_chesscom_game(self, white_result="win", black_result="checkmated"):
+        return {
+            "uuid": "test-uuid",
+            "url": "https://www.chess.com/game/live/test-uuid",
+            "pgn": '[Event "Live Chess"]\n[White "Alice"]\n[Black "Bob"]\n[Result "1-0"]\n\n1. e4 e5 *',
+            "rules": "chess",
+            "time_control": "600+0",
+            "rated": True,
+            "end_time": 1700000000,
+            "white": {"username": "Alice", "rating": 1500, "result": white_result},
+            "black": {"username": "Bob", "rating": 1500, "result": black_result},
+        }
+
+    def test_checkmate_termination(self):
+        """white_result='win', black_result='checkmated' -> termination='checkmate'."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game(white_result="win", black_result="checkmated")
+        result = normalize_chesscom_game(game, "Alice", user_id=1)
+        assert result is not None
+        assert result["termination_raw"] == "checkmated"
+        assert result["termination"] == "checkmate"
+
+    def test_resignation_termination(self):
+        """black_result='resigned' -> termination='resignation'."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game(white_result="win", black_result="resigned")
+        result = normalize_chesscom_game(game, "Alice", user_id=1)
+        assert result is not None
+        assert result["termination_raw"] == "resigned"
+        assert result["termination"] == "resignation"
+
+    def test_draw_agreed_termination(self):
+        """Both results='agreed' -> termination='draw'."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game(white_result="agreed", black_result="agreed")
+        result = normalize_chesscom_game(game, "Alice", user_id=1)
+        assert result is not None
+        assert result["termination_raw"] == "agreed"
+        assert result["termination"] == "draw"
+
+    def test_timeout_termination(self):
+        """black_result='timeout' -> termination='timeout'."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game(white_result="win", black_result="timeout")
+        result = normalize_chesscom_game(game, "Alice", user_id=1)
+        assert result is not None
+        assert result["termination_raw"] == "timeout"
+        assert result["termination"] == "timeout"
+
+
+class TestLichessTermination:
+    """Tests for termination extraction from lichess games."""
+
+    def _make_lichess_game(self, status="mate", winner="white"):
+        game = {
+            "id": "testgame1",
+            "rated": True,
+            "variant": {"key": "standard", "name": "Standard"},
+            "speed": "blitz",
+            "perf": "blitz",
+            "createdAt": 1700000000000,
+            "lastMoveAt": 1700000600000,
+            "status": status,
+            "players": {
+                "white": {"user": {"name": "Alice", "id": "alice"}, "rating": 1500},
+                "black": {"user": {"name": "Bob", "id": "bob"}, "rating": 1500},
+            },
+            "pgn": '[Event "?"]\n[White "Alice"]\n[Black "Bob"]\n\n1. e4 e5 *',
+            "clock": {"initial": 600, "increment": 0, "totalTime": 600},
+        }
+        if winner is not None:
+            game["winner"] = winner
+        return game
+
+    def test_checkmate_termination(self):
+        """status='mate' -> termination='checkmate'."""
+        from app.services.normalization import normalize_lichess_game
+        game = self._make_lichess_game(status="mate", winner="white")
+        result = normalize_lichess_game(game, "Alice", user_id=1)
+        assert result is not None
+        assert result["termination_raw"] == "mate"
+        assert result["termination"] == "checkmate"
+
+    def test_resignation_termination(self):
+        """status='resign' -> termination='resignation'."""
+        from app.services.normalization import normalize_lichess_game
+        game = self._make_lichess_game(status="resign", winner="white")
+        result = normalize_lichess_game(game, "Alice", user_id=1)
+        assert result is not None
+        assert result["termination_raw"] == "resign"
+        assert result["termination"] == "resignation"
+
+    def test_timeout_termination(self):
+        """status='outoftime' -> termination='timeout'."""
+        from app.services.normalization import normalize_lichess_game
+        game = self._make_lichess_game(status="outoftime", winner="white")
+        result = normalize_lichess_game(game, "Alice", user_id=1)
+        assert result is not None
+        assert result["termination_raw"] == "outoftime"
+        assert result["termination"] == "timeout"
+
+    def test_draw_termination(self):
+        """status='draw' -> termination='draw'."""
+        from app.services.normalization import normalize_lichess_game
+        game = self._make_lichess_game(status="draw", winner=None)
+        result = normalize_lichess_game(game, "Alice", user_id=1)
+        assert result is not None
+        assert result["termination_raw"] == "draw"
+        assert result["termination"] == "draw"
+
+
+class TestNormalizeTcStr:
+    """Tests for _normalize_tc_str helper."""
+
+    def test_drops_plus_zero_suffix(self):
+        from app.services.normalization import _normalize_tc_str
+        assert _normalize_tc_str("600+0") == "600"
+
+    def test_keeps_nonzero_increment(self):
+        from app.services.normalization import _normalize_tc_str
+        assert _normalize_tc_str("600+5") == "600+5"
+
+    def test_no_increment_passthrough(self):
+        from app.services.normalization import _normalize_tc_str
+        assert _normalize_tc_str("180") == "180"
+
+    def test_empty_string_returns_none(self):
+        from app.services.normalization import _normalize_tc_str
+        assert _normalize_tc_str("") is None
+
+    def test_dash_returns_none(self):
+        from app.services.normalization import _normalize_tc_str
+        assert _normalize_tc_str("-") is None
+
+
+class TestTcStrConsistency:
+    """Integration tests ensuring no '+0' suffix on either platform for zero-increment games."""
+
+    def test_chesscom_zero_increment_no_plus_zero(self):
+        """chess.com game with '180+0' time_control -> time_control_str = '180'."""
+        from app.services.normalization import normalize_chesscom_game
+        game = {
+            "uuid": "test-uuid",
+            "url": "https://chess.com/test",
+            "pgn": '[Event "Live Chess"]\n[White "Alice"]\n[Black "Bob"]\n[Result "1-0"]\n\n1. e4 e5 *',
+            "rules": "chess",
+            "time_control": "180+0",
+            "rated": True,
+            "end_time": 1700000000,
+            "white": {"username": "Alice", "rating": 1500, "result": "win"},
+            "black": {"username": "Bob", "rating": 1500, "result": "checkmated"},
+        }
+        result = normalize_chesscom_game(game, "Alice", user_id=1)
+        assert result is not None
+        assert result["time_control_str"] == "180"
+        assert "+" not in result["time_control_str"]
+
+    def test_lichess_zero_increment_no_plus_zero(self):
+        """lichess game with clock_increment=0 -> time_control_str has no '+0' suffix."""
+        from app.services.normalization import normalize_lichess_game
+        game = {
+            "id": "testgame1",
+            "rated": True,
+            "variant": {"key": "standard", "name": "Standard"},
+            "speed": "blitz",
+            "perf": "blitz",
+            "createdAt": 1700000000000,
+            "lastMoveAt": 1700000600000,
+            "status": "mate",
+            "winner": "white",
+            "players": {
+                "white": {"user": {"name": "Alice", "id": "alice"}, "rating": 1500},
+                "black": {"user": {"name": "Bob", "id": "bob"}, "rating": 1500},
+            },
+            "pgn": '[Event "?"]\n[White "Alice"]\n[Black "Bob"]\n\n1. e4 e5 *',
+            "clock": {"initial": 600, "increment": 0, "totalTime": 600},
+        }
+        result = normalize_lichess_game(game, "Alice", user_id=1)
+        assert result is not None
+        assert result["time_control_str"] == "600"
+        assert "+" not in result["time_control_str"]
+
+    def test_chesscom_and_lichess_consistent_for_same_time_control(self):
+        """Both platforms produce same time_control_str for equivalent zero-increment games."""
+        from app.services.normalization import normalize_chesscom_game, normalize_lichess_game
+        chesscom_game = {
+            "uuid": "test-uuid",
+            "url": "https://chess.com/test",
+            "pgn": '[Event "Live Chess"]\n[White "Alice"]\n[Black "Bob"]\n[Result "1-0"]\n\n1. e4 e5 *',
+            "rules": "chess",
+            "time_control": "600+0",
+            "rated": True,
+            "end_time": 1700000000,
+            "white": {"username": "Alice", "rating": 1500, "result": "win"},
+            "black": {"username": "Bob", "rating": 1500, "result": "checkmated"},
+        }
+        lichess_game = {
+            "id": "testgame1",
+            "rated": True,
+            "variant": {"key": "standard", "name": "Standard"},
+            "speed": "blitz",
+            "perf": "blitz",
+            "createdAt": 1700000000000,
+            "lastMoveAt": 1700000600000,
+            "status": "mate",
+            "winner": "white",
+            "players": {
+                "white": {"user": {"name": "Alice", "id": "alice"}, "rating": 1500},
+                "black": {"user": {"name": "Bob", "id": "bob"}, "rating": 1500},
+            },
+            "pgn": '[Event "?"]\n[White "Alice"]\n[Black "Bob"]\n\n1. e4 e5 *',
+            "clock": {"initial": 600, "increment": 0, "totalTime": 600},
+        }
+        cc = normalize_chesscom_game(chesscom_game, "Alice", user_id=1)
+        li = normalize_lichess_game(lichess_game, "Alice", user_id=1)
+        assert cc is not None and li is not None
+        assert cc["time_control_str"] == li["time_control_str"] == "600"
 
 
 class TestNormalizeChesscomResult:

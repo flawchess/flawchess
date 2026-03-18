@@ -53,10 +53,12 @@ async def query_results_by_time_control(
     session: AsyncSession,
     user_id: int,
     recency_cutoff: datetime.datetime | None,
+    platform: str | None = None,
 ) -> list[tuple]:
     """Return (time_control_bucket, result, user_color) tuples for all games.
 
     Excludes games where time_control_bucket is NULL.
+    Optionally filtered by platform (chess.com or lichess).
     """
     stmt = (
         select(
@@ -73,6 +75,9 @@ async def query_results_by_time_control(
     if recency_cutoff is not None:
         stmt = stmt.where(Game.played_at >= recency_cutoff)
 
+    if platform is not None:
+        stmt = stmt.where(Game.platform == platform)
+
     result = await session.execute(stmt)
     return list(result.fetchall())
 
@@ -81,10 +86,12 @@ async def query_results_by_color(
     session: AsyncSession,
     user_id: int,
     recency_cutoff: datetime.datetime | None,
+    platform: str | None = None,
 ) -> list[tuple]:
     """Return (user_color, result) tuples for all games.
 
     Excludes games where user_color is NULL.
+    Optionally filtered by platform (chess.com or lichess).
     """
     stmt = (
         select(
@@ -99,6 +106,9 @@ async def query_results_by_color(
 
     if recency_cutoff is not None:
         stmt = stmt.where(Game.played_at >= recency_cutoff)
+
+    if platform is not None:
+        stmt = stmt.where(Game.platform == platform)
 
     result = await session.execute(stmt)
     return list(result.fetchall())

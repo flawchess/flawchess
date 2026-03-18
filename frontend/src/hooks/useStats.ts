@@ -1,19 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
 import { statsApi } from '@/api/client';
-import type { Recency } from '@/types/api';
+import type { Platform, Recency } from '@/types/api';
 
-export function useRatingHistory(recency: Recency | null) {
+export function useRatingHistory(recency: Recency | null, platforms: Platform[] | null) {
   const normalizedRecency = recency === 'all' ? null : recency;
+  const platform = platforms && platforms.length === 1 ? platforms[0] : null;
   return useQuery({
-    queryKey: ['ratingHistory', normalizedRecency],
-    queryFn: () => statsApi.getRatingHistory(normalizedRecency),
+    queryKey: ['ratingHistory', normalizedRecency, platform],
+    queryFn: () => statsApi.getRatingHistory(normalizedRecency, platform),
   });
 }
 
-export function useGlobalStats(recency: Recency | null) {
+export function useGlobalStats(recency: Recency | null, platforms: Platform[] | null) {
   const normalizedRecency = recency === 'all' ? null : recency;
+  const platform = platforms && platforms.length === 1 ? platforms[0] : null;
   return useQuery({
-    queryKey: ['globalStats', normalizedRecency],
-    queryFn: () => statsApi.getGlobalStats(normalizedRecency),
+    queryKey: ['globalStats', normalizedRecency, platform],
+    queryFn: () => statsApi.getGlobalStats(normalizedRecency, platform),
   });
 }

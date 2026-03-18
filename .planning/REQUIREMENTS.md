@@ -40,11 +40,30 @@ Requirements for milestone v1.1: Opening Explorer & UI Restructuring.
 
 ### Chart Consolidation and Polish
 
-- [ ] **CHRT-01**: Rating tab removed from nav; rating charts appear above Results by Time Control on Global Stats page
-- [ ] **CHRT-02**: Platform filter (chess.com / lichess) added to Global Stats page, filtering both rating and WDL charts
-- [ ] **CHRT-03**: Rating charts show one chart per platform; each chart shows per-time-control lines (conditionally hidden when platform filter excludes it)
-- [ ] **CHRT-04**: Consistent monthly aggregation across all time-series charts (RatingChart uses monthly buckets like WinRateChart)
-- [ ] **CHRT-05**: Chart titles added to Statistics sub-tab of Openings tab (WDLBarChart and WinRateChart)
+- [x] **CHRT-01**: Rating tab removed from nav; rating charts appear above Results by Time Control on Global Stats page
+- [x] **CHRT-02**: Platform filter (chess.com / lichess) added to Global Stats page, filtering both rating and WDL charts
+- [x] **CHRT-03**: Rating charts show one chart per platform; each chart shows per-time-control lines (conditionally hidden when platform filter excludes it)
+- [x] **CHRT-04**: Consistent monthly aggregation across all time-series charts (RatingChart uses monthly buckets like WinRateChart)
+- [x] **CHRT-05**: Chart titles added to Statistics sub-tab of Openings tab (WDLBarChart and WinRateChart)
+
+### Enhanced Game Import Data
+
+- [x] **EIGD-01**: game_positions table has a `clock_seconds` column storing seconds remaining from PGN `%clk` annotations (NULL when not present)
+- [x] **EIGD-02**: games table has `termination_raw` (platform string) and `termination` (normalized bucket: checkmate, resignation, timeout, draw, abandoned, unknown) columns
+- [x] **EIGD-03**: Time control bucket boundary fixed: 180+0 classified as blitz (not bullet), matching chess.com/lichess conventions
+- [x] **EIGD-04**: Import sync boundary scoped by username — importing a second username on the same platform fetches full history independently
+- [x] **EIGD-05**: Data isolation between users — logging out clears TanStack Query cache so another user sees only their own data
+- [x] **EIGD-06**: Google SSO login updates `last_login` timestamp on the User record
+- [x] **EIGD-07**: Analysis API `GameRecord` response includes `termination` and `time_control_str` fields
+- [x] **EIGD-08**: Game cards display normalized termination reason and exact time control (e.g. "Blitz · 10+5")
+
+### Game Card UI Improvements
+
+- **GCUI-01**: `result_fen` column added to games table, computed at import time from `board.board_fen()` at end of PGN replay
+- **GCUI-02**: `result_fen` included in `GameRecord` API response schema (backend and frontend types)
+- **GCUI-03**: Game cards display 3-row layout: Row 1 (result badge + players + platform), Row 2 (opening name with BookOpen icon), Row 3 (metadata with Clock/Calendar/Swords/Hash icons)
+- **GCUI-04**: Null metadata fields omitted entirely (no NaN for daily games, no dash placeholders) — opening null shows "Unknown Opening"
+- **GCUI-05**: Game cards show hover minimap (120px MiniBoard) on desktop and tap-to-expand inline minimap on mobile, oriented from user perspective
 
 ## Future Requirements
 
@@ -92,17 +111,30 @@ Requirements for milestone v1.1: Opening Explorer & UI Restructuring.
 | UIRS-02 | Phase 14 | Complete |
 | UIRS-03 | Phase 14 | Complete |
 | UIRS-04 | Phase 14 | Complete |
-| CHRT-01 | Phase 15 | Planned |
-| CHRT-02 | Phase 15 | Planned |
-| CHRT-03 | Phase 15 | Planned |
-| CHRT-04 | Phase 15 | Planned |
-| CHRT-05 | Phase 15 | Planned |
+| CHRT-01 | Phase 15 (old) | Complete |
+| CHRT-02 | Phase 15 (old) | Complete |
+| CHRT-03 | Phase 15 (old) | Complete |
+| CHRT-04 | Phase 15 (old) | Complete |
+| CHRT-05 | Phase 15 (old) | Complete |
+| EIGD-01 | Phase 15 | Complete |
+| EIGD-02 | Phase 15 | Complete |
+| EIGD-03 | Phase 15 | Complete |
+| EIGD-04 | Phase 15 | Complete |
+| EIGD-05 | Phase 15 | Complete |
+| EIGD-06 | Phase 15 | Complete |
+| EIGD-07 | Phase 15 | Complete |
+| EIGD-08 | Phase 15 | Complete |
+| GCUI-01 | Phase 16 | Planned |
+| GCUI-02 | Phase 16 | Planned |
+| GCUI-03 | Phase 16 | Planned |
+| GCUI-04 | Phase 16 | Planned |
+| GCUI-05 | Phase 16 | Planned |
 
 **Coverage:**
-- v1.1 requirements: 19 total
-- Mapped to phases: 19
+- v1.1 requirements: 32 total
+- Mapped to phases: 32
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-17 after Phase 15 planning*
+*Last updated: 2026-03-18 after Phase 16 planning (Game Card UI Improvements)*

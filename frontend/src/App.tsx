@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
 import { Link } from 'react-router-dom';
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { queryClient } from '@/lib/queryClient';
 import { Toaster } from '@/components/ui/sonner';
 import { Button } from '@/components/ui/button';
 
@@ -10,7 +11,6 @@ import { AuthPage } from '@/pages/Auth';
 import { ImportPage } from '@/pages/Import';
 import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
 import { OpeningsPage } from '@/pages/Openings';
-import { RatingPage } from '@/pages/Rating';
 import { GlobalStatsPage } from '@/pages/GlobalStats';
 import { useImportPolling } from '@/hooks/useImport';
 
@@ -28,23 +28,11 @@ function ImportJobWatcher({ jobId, onDone }: { jobId: string; onDone: (jobId: st
   return null;
 }
 
-// ─── Query client ─────────────────────────────────────────────────────────────
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      staleTime: 30_000,
-    },
-  },
-});
-
 // ─── Nav header ───────────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
   { to: '/import', label: 'Import' },
   { to: '/openings', label: 'Openings' },
-  { to: '/rating', label: 'Rating' },
   { to: '/global-stats', label: 'Global Stats' },
 ] as const;
 
@@ -151,7 +139,7 @@ function AppRoutes() {
           <Route path="/" element={<Navigate to="/openings" replace />} />
           <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />
           <Route path="/openings/*" element={<OpeningsPage />} />
-          <Route path="/rating" element={<RatingPage />} />
+          <Route path="/rating" element={<Navigate to="/global-stats" replace />} />
           <Route path="/global-stats" element={<GlobalStatsPage />} />
         </Route>
         {/* Catch-all redirects to openings */}

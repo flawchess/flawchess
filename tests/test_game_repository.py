@@ -281,13 +281,13 @@ class TestImportJobRepository:
                                  completed_at=now, last_synced_at=now)
 
         # Should return the most recent completed job
-        latest = await get_latest_for_user_platform(db_session, user_id=user_id, platform="lichess")
+        latest = await get_latest_for_user_platform(db_session, user_id=user_id, platform="lichess", username="myuser")
         assert latest is not None
         assert latest.id == job_id_2
 
     async def test_get_latest_returns_none_if_no_jobs(self, db_session):
         from app.repositories.import_job_repository import get_latest_for_user_platform
-        result = await get_latest_for_user_platform(db_session, user_id=99999, platform="chess.com")
+        result = await get_latest_for_user_platform(db_session, user_id=99999, platform="chess.com", username="nobody")
         assert result is None
 
     async def test_get_latest_returns_none_for_different_platform(self, db_session):
@@ -305,5 +305,5 @@ class TestImportJobRepository:
                                  completed_at=now, last_synced_at=now)
 
         # Query for chess.com should return None (only lichess job exists)
-        result = await get_latest_for_user_platform(db_session, user_id=user_id, platform="chess.com")
+        result = await get_latest_for_user_platform(db_session, user_id=user_id, platform="chess.com", username="myuser")
         assert result is None

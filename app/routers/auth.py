@@ -10,8 +10,11 @@ from fastapi_users.exceptions import UserAlreadyExists
 from fastapi_users.jwt import decode_jwt, generate_jwt
 from httpx_oauth.integrations.fastapi import OAuth2AuthorizeCallback
 from httpx_oauth.oauth2 import OAuth2Token
+from sqlalchemy import func, update as sa_update
 
 from app.core.config import settings
+from app.core.database import async_session_maker
+from app.models.user import User
 from app.users import UserManager, auth_backend, fastapi_users, get_user_manager, google_oauth_client
 
 router = APIRouter()
@@ -147,6 +150,13 @@ async def google_callback(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User account is not active",
         )
+
+    # Update last_login — on_after_login is not called for OAuth flow
+    async with async_session_maker() as session:
+        await session.execute(
+            sa_update(User).where(User.id == user.id).values(last_login=func.now())
+        )
+        await session.commit()
 
     strategy = auth_backend.get_strategy()
     access_token = await strategy.write_token(user)

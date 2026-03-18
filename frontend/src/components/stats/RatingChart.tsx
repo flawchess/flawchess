@@ -17,71 +17,13 @@ const chartConfig = {
   classical: { label: 'Classical', color: 'oklch(0.60 0.22 310)' },
 };
 
-const DAY_MS = 1000 * 60 * 60 * 24;
-
-/** Compute equally-spaced tick timestamps across the data range, adapting to span. */
-function computeXTicks(minTs: number, maxTs: number): { ticks: number[]; mode: 'daily' | 'weekly' | 'monthly' } {
-  const spanDays = (maxTs - minTs) / DAY_MS;
-
-  // Daily ticks for spans up to ~10 days (past week filter)
-  if (spanDays <= 10) {
-    const ticks: number[] = [];
-    const start = new Date(minTs);
-    let cur = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
-    const end = maxTs + DAY_MS; // include the last day
-    while (cur <= end) {
-      ticks.push(cur);
-      cur += DAY_MS;
-    }
-    return { ticks, mode: 'daily' };
-  }
-
-  // Weekly ticks for spans up to ~5 weeks (past month filter)
-  if (spanDays <= 35) {
-    const ticks: number[] = [];
-    const start = new Date(minTs);
-    // Start at the Monday at or before minTs
-    const startDate = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()));
-    const dayOfWeek = startDate.getUTCDay(); // 0=Sun, 1=Mon
-    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    let cur = startDate.getTime() - mondayOffset * DAY_MS;
-    const end = maxTs + DAY_MS;
-    while (cur <= end) {
-      ticks.push(cur);
-      cur += 7 * DAY_MS;
-    }
-    return { ticks, mode: 'weekly' };
-  }
-
-  // Monthly and longer intervals
-  const spanMonths = spanDays / 30.44;
-  let intervalMonths: number;
-  if (spanMonths <= 6) {
-    intervalMonths = 1;
-  } else if (spanMonths <= 18) {
-    intervalMonths = 2;
-  } else if (spanMonths <= 36) {
-    intervalMonths = 3;
-  } else if (spanMonths <= 72) {
-    intervalMonths = 6;
-  } else {
-    intervalMonths = 12;
-  }
-
-  const minDate = new Date(minTs);
-  let cur = new Date(Date.UTC(minDate.getUTCFullYear(), minDate.getUTCMonth(), 1));
-
-  const ticks: number[] = [];
-  const maxDate = new Date(maxTs);
-  const endTs = Date.UTC(maxDate.getUTCFullYear(), maxDate.getUTCMonth() + 1, 1);
-
-  while (cur.getTime() <= endTs) {
-    ticks.push(cur.getTime());
-    cur = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth() + intervalMonths, 1));
-  }
-
-  return { ticks, mode: 'monthly' };
-}
+const formatMonth = (m: string) => {
+  const [year, month] = m.split('-');
+  return new Date(Number(year), Number(month) - 1).toLocaleDateString('en-US', {
+    month: 'short',
+    year: '2-digit',
+  });
+};
 
 export function RatingChart({ data, platform }: RatingChartProps) {
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
@@ -102,16 +44,17 @@ export function RatingChart({ data, platform }: RatingChartProps) {
 
   const chartData = useMemo(() => {
     if (data.length === 0) return [];
-
-    // Build a flat array where each entry is { date, dateTs, [tc]: rating }
-    // One row per data point (each game is its own data point)
-    const rows: Record<string, string | number>[] = data.map((point) => ({
-      date: point.date,
-      dateTs: new Date(point.date).getTime(),
-      [point.time_control_bucket]: point.rating,
-    }));
-
-    return rows;
+    // data is sorted by played_at (backend guarantees chronological order)
+    // Group by month, keep last rating per (month, time_control_bucket)
+    const map = new Map<string, Record<string, string | number>>();
+    for (const pt of data) {
+      const month = pt.date.slice(0, 7); // "YYYY-MM"
+      const row = map.get(month) ?? { month };
+      row[pt.time_control_bucket] = pt.rating; // last game in month wins
+      map.set(month, row);
+    }
+    return Array.from(map.values());
+    // Already sorted because source data is sorted by played_at
   }, [data]);
 
   const { yDomain, yTicks } = useMemo(() => {
@@ -167,21 +110,6 @@ export function RatingChart({ data, platform }: RatingChartProps) {
     };
   }, [chartData, hiddenKeys]);
 
-  const { xTicks, xDomain, xTickMode } = useMemo(() => {
-    if (chartData.length === 0) {
-      return { xTicks: undefined, xDomain: undefined, xTickMode: 'monthly' as const };
-    }
-    const timestamps = chartData.map((row) => row.dateTs as number);
-    const minTs = Math.min(...timestamps);
-    const maxTs = Math.max(...timestamps);
-    const { ticks, mode } = computeXTicks(minTs, maxTs);
-    return {
-      xTicks: ticks,
-      xDomain: [minTs, maxTs] as [number, number],
-      xTickMode: mode,
-    };
-  }, [chartData]);
-
   if (data.length === 0) {
     return (
       <div
@@ -198,34 +126,15 @@ export function RatingChart({ data, platform }: RatingChartProps) {
       <LineChart data={chartData}>
         <CartesianGrid vertical={false} />
         <XAxis
-          dataKey="dateTs"
-          type="number"
-          scale="time"
-          domain={xDomain}
-          ticks={xTicks}
-          tickFormatter={(ts: number) => {
-            const d = new Date(ts);
-            if (xTickMode === 'daily') {
-              return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            }
-            if (xTickMode === 'weekly') {
-              return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            }
-            return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-          }}
+          dataKey="month"
+          tickFormatter={formatMonth}
           tick={{ fontSize: 12 }}
-          allowDuplicatedCategory={false}
         />
         <YAxis domain={yDomain} ticks={yTicks} />
         <ChartTooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
-            // label is dateTs (number); format it to a readable date
-            const dateLabel = new Date(label as number).toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric',
-            });
+            const dateLabel = formatMonth(label as string);
             return (
               <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
                 <div className="font-medium">{dateLabel}</div>

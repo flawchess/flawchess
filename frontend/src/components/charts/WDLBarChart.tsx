@@ -27,8 +27,10 @@ export function WDLBarChart({ bookmarks, wdlStatsMap }: WDLBarChartProps) {
     .map((b) => {
       const s = wdlStatsMap[b.id];
       const t = s.total;
+      const colorPrefix = b.color === 'white' ? '● ' : b.color === 'black' ? '○ ' : '';
       return {
-        label: b.label,
+        label: colorPrefix + b.label,
+        color: b.color,
         win_pct: t > 0 ? (s.wins / t) * 100 : 0,
         draw_pct: t > 0 ? (s.draws / t) * 100 : 0,
         loss_pct: t > 0 ? (s.losses / t) * 100 : 0,
@@ -81,7 +83,7 @@ export function WDLBarChart({ bookmarks, wdlStatsMap }: WDLBarChartProps) {
             const d = payload[0].payload;
             return (
               <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
-                <div className="font-medium">{d.label}</div>
+                <div className="font-medium">{d.label.replace(/^[○●] /, '')}</div>
                 <div className="text-green-500">Wins: {d.wins} ({d.win_pct.toFixed(1)}%)</div>
                 <div className="text-gray-400">Draws: {d.draws} ({d.draw_pct.toFixed(1)}%)</div>
                 <div className="text-red-500">Losses: {d.losses} ({d.loss_pct.toFixed(1)}%)</div>

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { GameCard } from '@/components/results/GameCard';
 import type { GameRecord } from '@/types/api';

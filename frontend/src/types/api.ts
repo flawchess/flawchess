@@ -77,6 +77,9 @@ export interface GameRecord {
   black_username: string | null;
   white_rating: number | null;
   black_rating: number | null;
+  termination: string | null;
+  time_control_str: string | null;
+  result_fen: string | null;
 }
 
 export interface AnalysisResponse {

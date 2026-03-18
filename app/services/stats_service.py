@@ -31,20 +31,36 @@ async def get_rating_history(
     session: AsyncSession,
     user_id: int,
     recency: str | None,
+    platform: str | None = None,
 ) -> RatingHistoryResponse:
     """Return per-platform per-game rating data points.
 
     Calls recency_cutoff() to resolve the optional recency filter, queries
     both platforms in sequence, and maps rows to RatingDataPoint lists.
+
+    When platform is "chess.com", only chess.com data is queried; lichess is empty.
+    When platform is "lichess", only lichess data is queried; chess.com is empty.
+    When platform is None, both platforms are queried.
     """
     cutoff = recency_cutoff(recency)
 
-    chesscom_rows = await query_rating_history(
-        session, user_id=user_id, platform="chess.com", recency_cutoff=cutoff
-    )
-    lichess_rows = await query_rating_history(
-        session, user_id=user_id, platform="lichess", recency_cutoff=cutoff
-    )
+    if platform == "chess.com":
+        chesscom_rows = await query_rating_history(
+            session, user_id=user_id, platform="chess.com", recency_cutoff=cutoff
+        )
+        lichess_rows: list = []
+    elif platform == "lichess":
+        chesscom_rows = []
+        lichess_rows = await query_rating_history(
+            session, user_id=user_id, platform="lichess", recency_cutoff=cutoff
+        )
+    else:
+        chesscom_rows = await query_rating_history(
+            session, user_id=user_id, platform="chess.com", recency_cutoff=cutoff
+        )
+        lichess_rows = await query_rating_history(
+            session, user_id=user_id, platform="lichess", recency_cutoff=cutoff
+        )
 
     def rows_to_points(rows: list) -> list[RatingDataPoint]:
         points = []
@@ -122,20 +138,23 @@ async def get_global_stats(
     session: AsyncSession,
     user_id: int,
     recency: str | None,
+    platform: str | None = None,
 ) -> GlobalStatsResponse:
     """Return global W/D/L breakdowns by time control and by color.
 
     Calls recency_cutoff() to resolve the optional recency filter, queries
     results by time control and by color, aggregates using derive_user_result(),
     and returns a GlobalStatsResponse.
+
+    When platform is provided, only games from that platform are included.
     """
     cutoff = recency_cutoff(recency)
 
     tc_rows = await query_results_by_time_control(
-        session, user_id=user_id, recency_cutoff=cutoff
+        session, user_id=user_id, recency_cutoff=cutoff, platform=platform
     )
     color_rows = await query_results_by_color(
-        session, user_id=user_id, recency_cutoff=cutoff
+        session, user_id=user_id, recency_cutoff=cutoff, platform=platform
     )
 
     by_time_control = _aggregate_wdl(

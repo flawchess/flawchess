@@ -19,12 +19,14 @@ async def get_rating_history(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
     recency: str | None = Query(default=None),
+    platform: str | None = Query(default=None),
 ) -> RatingHistoryResponse:
     """Return per-platform per-game rating data points.
 
-    Optionally filtered by recency (week, month, 3months, 6months, year).
+    Optionally filtered by recency (week, month, 3months, 6months, year)
+    and by platform (chess.com or lichess).
     """
-    return await stats_service.get_rating_history(session, user.id, recency)
+    return await stats_service.get_rating_history(session, user.id, recency, platform)
 
 
 @router.get("/stats/global", response_model=GlobalStatsResponse)
@@ -32,9 +34,11 @@ async def get_global_stats(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
     recency: str | None = Query(default=None),
+    platform: str | None = Query(default=None),
 ) -> GlobalStatsResponse:
     """Return global W/D/L breakdowns by time control and by color.
 
-    Optionally filtered by recency (week, month, 3months, 6months, year).
+    Optionally filtered by recency (week, month, 3months, 6months, year)
+    and by platform (chess.com or lichess).
     """
-    return await stats_service.get_global_stats(session, user.id, recency)
+    return await stats_service.get_global_stats(session, user.id, recency, platform)

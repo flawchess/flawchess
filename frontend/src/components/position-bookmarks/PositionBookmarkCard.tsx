@@ -95,7 +95,7 @@ export function PositionBookmarkCard({ bookmark, onLoad }: Props) {
         data-testid={`bookmark-mini-board-${bookmark.id}`}
         style={{ opacity: updateMatchSide.isPending ? 0.6 : 1, transition: 'opacity 0.15s' }}
       >
-        <MiniBoard fen={bookmark.fen} flipped={bookmark.is_flipped} size={60} />
+        <MiniBoard fen={bookmark.fen} flipped={bookmark.is_flipped} size={80} />
       </div>
 
       {/* Label + piece filter stacked */}

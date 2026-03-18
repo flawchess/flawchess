@@ -168,6 +168,9 @@ async def analyze(
             opening_eco=g.opening_eco,
             user_color=g.user_color,
             move_count=g.move_count,
+            termination=g.termination,
+            time_control_str=g.time_control_str,
+            result_fen=g.result_fen,
         )
         for g in games
     ]

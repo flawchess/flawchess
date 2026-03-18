@@ -1,6 +1,6 @@
 from typing import Optional
 
-from sqlalchemy import ForeignKey, Index, String
+from sqlalchemy import Float, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -31,5 +31,8 @@ class GamePosition(Base):
 
     # SAN of the move played FROM this position (leading to ply+1); None on final position
     move_san: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+
+    # Clock seconds remaining from %clk PGN annotation; None if not present or final position
+    clock_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     game: Mapped["Game"] = relationship(back_populates="positions")  # type: ignore[name-defined]

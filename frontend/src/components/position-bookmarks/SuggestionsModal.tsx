@@ -129,7 +129,7 @@ export function SuggestionsModal({ open, onOpenChange }: SuggestionsModalProps) 
         <MiniBoard
           fen={suggestion.fen}
           flipped={suggestion.color === 'black'}
-          size={80}
+          size={100}
         />
         <div className="flex flex-col gap-1 flex-1 min-w-0">
           <span className="font-medium text-sm truncate">

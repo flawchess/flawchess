@@ -423,7 +423,7 @@ class TestRunImport:
             ),
             patch(
                 "app.services.import_service.hashes_for_game",
-                return_value=[(0, 1, 2, 3, "e4"), (1, 4, 5, 6, None)],
+                return_value=([(0, 1, 2, 3, "e4", None), (1, 4, 5, 6, None, None)], "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR"),
             ) as mock_hashes,
         ):
             mock_http_ctx = AsyncMock()
@@ -490,7 +490,7 @@ class TestRunImport:
             ),
             patch(
                 "app.services.import_service.hashes_for_game",
-                return_value=[(0, 100, 200, 300, "e4"), (1, 400, 500, 600, "e5"), (2, 700, 800, 900, None)],
+                return_value=([(0, 100, 200, 300, "e4", None), (1, 400, 500, 600, "e5", None), (2, 700, 800, 900, None, None)], "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR"),
             ),
         ):
             mock_http_ctx = AsyncMock()
@@ -609,7 +609,7 @@ class TestRunImport:
             ),
             patch(
                 "app.services.import_service.hashes_for_game",
-                return_value=[(0, 1, 2, 3, "e4"), (1, 4, 5, 6, None)],
+                return_value=([(0, 1, 2, 3, "e4", None), (1, 4, 5, 6, None, None)], "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR"),
             ),
             patch(
                 "app.services.import_service.user_repository.update_platform_username",

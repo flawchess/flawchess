@@ -6,46 +6,109 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useGlobalStats } from '@/hooks/useStats';
+import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
-import type { Recency } from '@/types/api';
+import { RatingChart } from '@/components/stats/RatingChart';
+import { cn } from '@/lib/utils';
+import type { Platform, Recency } from '@/types/api';
 
 export function GlobalStatsPage() {
   const [recency, setRecency] = useState<Recency | null>(null);
-  const { data: globalStats, isLoading } = useGlobalStats(recency);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[] | null>(null);
+
+  const { data: ratingData, isLoading: ratingLoading } = useRatingHistory(recency, selectedPlatforms);
+  const { data: globalStats, isLoading: statsLoading } = useGlobalStats(recency, selectedPlatforms);
+
+  const isLoading = ratingLoading || statsLoading;
 
   return (
     <div data-testid="global-stats-page" className="mx-auto max-w-4xl space-y-6 p-6">
       <h1 className="text-2xl font-semibold">Global Stats</h1>
 
-      {/* Recency filter */}
-      <div>
-        <p className="mb-1 text-xs text-muted-foreground">Recency</p>
-        <Select
-          value={recency ?? 'all'}
-          onValueChange={(v) => setRecency(v === 'all' ? null : (v as Recency))}
-        >
-          <SelectTrigger size="sm" data-testid="filter-recency">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All time</SelectItem>
-            <SelectItem value="week">Past week</SelectItem>
-            <SelectItem value="month">Past month</SelectItem>
-            <SelectItem value="3months">3 months</SelectItem>
-            <SelectItem value="6months">6 months</SelectItem>
-            <SelectItem value="year">1 year</SelectItem>
-          </SelectContent>
-        </Select>
+      {/* Filters */}
+      <div className="flex flex-wrap items-end gap-4">
+        {/* Recency filter */}
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">Recency</p>
+          <Select
+            value={recency ?? 'all'}
+            onValueChange={(v) => setRecency(v === 'all' ? null : (v as Recency))}
+          >
+            <SelectTrigger size="sm" data-testid="filter-recency">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All time</SelectItem>
+              <SelectItem value="week">Past week</SelectItem>
+              <SelectItem value="month">Past month</SelectItem>
+              <SelectItem value="3months">3 months</SelectItem>
+              <SelectItem value="6months">6 months</SelectItem>
+              <SelectItem value="year">1 year</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Platform filter */}
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">Platform</p>
+          <div className="flex gap-1">
+            {(['chess.com', 'lichess'] as Platform[]).map((p) => {
+              const isActive = selectedPlatforms === null || selectedPlatforms.includes(p);
+              return (
+                <button
+                  key={p}
+                  onClick={() => {
+                    setSelectedPlatforms((prev) => {
+                      if (prev === null) return [p === 'chess.com' ? 'lichess' : 'chess.com'] as Platform[];
+                      if (prev.length === 1 && prev[0] === p) return null; // re-select = show all
+                      if (prev.includes(p)) return prev.filter((x) => x !== p) as Platform[];
+                      return null; // both selected = all
+                    });
+                  }}
+                  data-testid={`filter-platform-${p === 'chess.com' ? 'chess-com' : p}`}
+                  aria-label={`${p} platform`}
+                  aria-pressed={isActive}
+                  className={cn(
+                    'rounded border px-2 py-0.5 text-xs transition-colors',
+                    isActive
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
+                  )}
+                >
+                  {p === 'chess.com' ? 'Chess.com' : 'Lichess'}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {isLoading ? (
         <div className="text-muted-foreground">Loading...</div>
       ) : (
-        <GlobalStatsCharts
-          byTimeControl={globalStats?.by_time_control ?? []}
-          byColor={globalStats?.by_color ?? []}
-        />
+        <>
+          {/* Chess.com Rating section */}
+          {(selectedPlatforms === null || selectedPlatforms.includes('chess.com')) && (
+            <section data-testid="rating-section-chess-com" className="space-y-3">
+              <h2 className="text-lg font-medium">Chess.com Rating</h2>
+              <RatingChart data={ratingData?.chess_com ?? []} platform="Chess.com" />
+            </section>
+          )}
+
+          {/* Lichess Rating section */}
+          {(selectedPlatforms === null || selectedPlatforms.includes('lichess')) && (
+            <section data-testid="rating-section-lichess" className="space-y-3">
+              <h2 className="text-lg font-medium">Lichess Rating</h2>
+              <RatingChart data={ratingData?.lichess ?? []} platform="Lichess" />
+            </section>
+          )}
+
+          {/* WDL charts — always shown */}
+          <GlobalStatsCharts
+            byTimeControl={globalStats?.by_time_control ?? []}
+            byColor={globalStats?.by_color ?? []}
+          />
+        </>
       )}
     </div>
   );

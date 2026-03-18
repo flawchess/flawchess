@@ -1,5 +1,7 @@
 """Pydantic v2 schemas for user profile API."""
 
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -8,6 +10,8 @@ class UserProfileResponse(BaseModel):
 
     chess_com_username: str | None
     lichess_username: str | None
+    created_at: datetime
+    last_login: datetime | None
 
 
 class UserProfileUpdate(BaseModel):

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState } from 'react';
+import { queryClient } from '@/lib/queryClient';
 import { apiClient } from '@/api/client';
 import type { LoginResponse, UserResponse } from '@/types/api';
 
@@ -29,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string): Promise<void> => {
     setIsLoading(true);
     try {
+      queryClient.clear();
       // FastAPI-Users JWT login uses form-encoded body with `username` field
       const params = new URLSearchParams();
       params.set('username', email);
@@ -61,6 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = (): void => {
+    queryClient.clear();
     localStorage.removeItem('auth_token');
     setToken(null);
     setUser(null);

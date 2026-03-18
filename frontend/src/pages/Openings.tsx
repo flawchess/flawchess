@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronUp, ChevronDown, Save, Sparkles } from 'lucide-react';
+import { ChevronUp, ChevronDown, Save, Sparkles, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
@@ -83,10 +83,6 @@ export function OpeningsPage() {
     setPrevTab(activeTab);
     setGamesOffset(0);
   }
-
-  // ── Tab-aware filter disabling ─────────────────────────────────────────────
-  const pieceFilterDisabled = activeTab === 'explorer' || activeTab === 'statistics';
-  const playedAsDisabled = activeTab === 'statistics';
 
   // ── Bookmarks ───────────────────────────────────────────────────────────────
   const { data: bookmarks = [] } = usePositionBookmarks();
@@ -283,76 +279,66 @@ export function OpeningsPage() {
       <div className="border-t border-border/40" />
 
       {/* Played as + Piece filter */}
-      <TooltipProvider>
-        <div className="flex flex-wrap gap-x-4 gap-y-3">
-          <div className={playedAsDisabled ? 'opacity-50' : ''}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div>
-                  <p className="mb-1 text-xs text-muted-foreground">Played as</p>
-                  <ToggleGroup
-                    type="single"
-                    value={filters.color}
-                    onValueChange={(v) => {
-                      if (playedAsDisabled || !v) return;
-                      const color = v as Color;
-                      setFilters(prev => ({ ...prev, color }));
-                      setBoardFlipped(color === 'black');
-                    }}
-                    variant="outline"
-                    size="sm"
-                    disabled={playedAsDisabled}
-                    data-testid="filter-played-as"
-                    aria-disabled={playedAsDisabled}
-                  >
-                    <ToggleGroupItem value="white" data-testid="filter-played-as-white" disabled={playedAsDisabled}>
-                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
-                      White
-                    </ToggleGroupItem>
-                    <ToggleGroupItem value="black" data-testid="filter-played-as-black" disabled={playedAsDisabled}>
-                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
-                      Black
-                    </ToggleGroupItem>
-                  </ToggleGroup>
-                </div>
-              </TooltipTrigger>
-              {playedAsDisabled && (
-                <TooltipContent>Not applicable for this tab</TooltipContent>
-              )}
-            </Tooltip>
-          </div>
-
-          <div className={`ml-auto ${pieceFilterDisabled ? 'opacity-50' : ''}`}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div>
-                  <p className="mb-1 text-xs text-muted-foreground">Piece filter</p>
-                  <ToggleGroup
-                    type="single"
-                    value={filters.matchSide}
-                    onValueChange={(v) => {
-                      if (pieceFilterDisabled || !v) return;
-                      setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
-                    }}
-                    variant="outline"
-                    size="sm"
-                    disabled={pieceFilterDisabled}
-                    data-testid="filter-piece-filter"
-                    aria-disabled={pieceFilterDisabled}
-                  >
-                    <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine" disabled={pieceFilterDisabled}>Mine</ToggleGroupItem>
-                    <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent" disabled={pieceFilterDisabled}>Opponent</ToggleGroupItem>
-                    <ToggleGroupItem value="both" data-testid="filter-piece-filter-both" disabled={pieceFilterDisabled}>Both</ToggleGroupItem>
-                  </ToggleGroup>
-                </div>
-              </TooltipTrigger>
-              {pieceFilterDisabled && (
-                <TooltipContent>Not applicable for this tab</TooltipContent>
-              )}
-            </Tooltip>
-          </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-3">
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">Played as</p>
+          <ToggleGroup
+            type="single"
+            value={filters.color}
+            onValueChange={(v) => {
+              if (!v) return;
+              const color = v as Color;
+              setFilters(prev => ({ ...prev, color }));
+              setBoardFlipped(color === 'black');
+            }}
+            variant="outline"
+            size="sm"
+            data-testid="filter-played-as"
+          >
+            <ToggleGroupItem value="white" data-testid="filter-played-as-white">
+              <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
+              White
+            </ToggleGroupItem>
+            <ToggleGroupItem value="black" data-testid="filter-played-as-black">
+              <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
+              Black
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
-      </TooltipProvider>
+
+        <div className="ml-auto">
+          <div className="mb-1 flex items-center gap-1">
+            <p className="text-xs text-muted-foreground">Piece filter</p>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button type="button" className="text-muted-foreground hover:text-foreground" aria-label="Piece filter info" data-testid="piece-filter-info">
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-sm">
+                  Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+          <ToggleGroup
+            type="single"
+            value={filters.matchSide}
+            onValueChange={(v) => {
+              if (!v) return;
+              setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
+            }}
+            variant="outline"
+            size="sm"
+            data-testid="filter-piece-filter"
+          >
+            <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
+            <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
+            <ToggleGroupItem value="both" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+      </div>
 
       <div className="border-t border-border/40" />
 
@@ -492,8 +478,14 @@ export function OpeningsPage() {
         </div>
       ) : tsData ? (
         <>
-          <WDLBarChart bookmarks={bookmarks} wdlStatsMap={wdlStatsMap} />
-          <WinRateChart bookmarks={bookmarks} series={tsData.series} />
+          <div>
+            <h2 className="text-lg font-medium mb-3">Results by Opening</h2>
+            <WDLBarChart bookmarks={bookmarks} wdlStatsMap={wdlStatsMap} />
+          </div>
+          <div>
+            <h2 className="text-lg font-medium mb-3">Win Rate Over Time</h2>
+            <WinRateChart bookmarks={bookmarks} series={tsData.series} />
+          </div>
         </>
       ) : null}
     </div>

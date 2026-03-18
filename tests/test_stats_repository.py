@@ -263,6 +263,33 @@ class TestQueryResultsByTimeControl:
         assert len(rows) == 1
         assert rows[0][0] == "blitz"
 
+    @pytest.mark.asyncio
+    async def test_filters_by_platform_chess_com(self, db_session: AsyncSession) -> None:
+        """Only chess.com games are returned when platform='chess.com'."""
+        await _seed_game(db_session, platform="chess.com", time_control_bucket="blitz")
+        await _seed_game(db_session, platform="lichess", time_control_bucket="rapid")
+
+        rows = await query_results_by_time_control(
+            db_session, user_id=99999, recency_cutoff=None, platform="chess.com"
+        )
+
+        assert len(rows) == 1
+        assert rows[0][0] == "blitz"
+
+    @pytest.mark.asyncio
+    async def test_filters_by_platform_none_returns_all(self, db_session: AsyncSession) -> None:
+        """All games are returned when platform=None (default behavior)."""
+        await _seed_game(db_session, platform="chess.com", time_control_bucket="blitz")
+        await _seed_game(db_session, platform="lichess", time_control_bucket="rapid")
+
+        rows = await query_results_by_time_control(
+            db_session, user_id=99999, recency_cutoff=None, platform=None
+        )
+
+        assert len(rows) == 2
+        buckets = {r[0] for r in rows}
+        assert buckets == {"blitz", "rapid"}
+
 
 # ---------------------------------------------------------------------------
 # TestQueryResultsByColor
@@ -321,3 +348,26 @@ class TestQueryResultsByColor:
 
         assert len(rows) == 1
         assert rows[0][0] == "white"
+
+    @pytest.mark.asyncio
+    async def test_filters_by_platform_lichess(self, db_session: AsyncSession) -> None:
+        """Only lichess games are returned when platform='lichess'."""
+        await _seed_game(db_session, platform="chess.com", user_color="white")
+        await _seed_game(db_session, platform="lichess", user_color="black")
+
+        rows = await query_results_by_color(db_session, user_id=99999, recency_cutoff=None, platform="lichess")
+
+        assert len(rows) == 1
+        assert rows[0][0] == "black"
+
+    @pytest.mark.asyncio
+    async def test_filters_by_platform_none_returns_all(self, db_session: AsyncSession) -> None:
+        """All games are returned when platform=None (default behavior)."""
+        await _seed_game(db_session, platform="chess.com", user_color="white")
+        await _seed_game(db_session, platform="lichess", user_color="black")
+
+        rows = await query_results_by_color(db_session, user_id=99999, recency_cutoff=None, platform=None)
+
+        assert len(rows) == 2
+        colors = {r[0] for r in rows}
+        assert colors == {"white", "black"}

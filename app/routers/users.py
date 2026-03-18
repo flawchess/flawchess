@@ -27,6 +27,8 @@ async def get_profile(
     return UserProfileResponse(
         chess_com_username=profile.chess_com_username,
         lichess_username=profile.lichess_username,
+        created_at=profile.created_at,
+        last_login=profile.last_login,
     )
 
 
@@ -41,4 +43,6 @@ async def update_profile(
     return UserProfileResponse(
         chess_com_username=updated.chess_com_username,
         lichess_username=updated.lichess_username,
+        created_at=updated.created_at,
+        last_login=updated.last_login,
     )

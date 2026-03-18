@@ -119,6 +119,41 @@ class TestGetRatingHistory:
                 assert isinstance(pt["rating"], int)
                 assert isinstance(pt["date"], str)
 
+    @pytest.mark.asyncio
+    async def test_platform_chess_com_returns_empty_lichess(self, auth_headers: dict[str, str]) -> None:
+        """?platform=chess.com returns populated chess_com structure and empty lichess list."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/stats/rating-history?platform=chess.com", headers=auth_headers
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "chess_com" in data
+        assert "lichess" in data
+        # For the test user with no games, both should be empty lists
+        assert isinstance(data["chess_com"], list)
+        assert isinstance(data["lichess"], list)
+        # lichess must be empty when filtering for chess.com
+        assert data["lichess"] == []
+
+    @pytest.mark.asyncio
+    async def test_platform_lichess_param_accepted(self, auth_headers: dict[str, str]) -> None:
+        """?platform=lichess query param is accepted without error and returns 200."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/stats/rating-history?platform=lichess", headers=auth_headers
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # chess.com must be empty when filtering for lichess
+        assert data["chess_com"] == []
+
 
 # ---------------------------------------------------------------------------
 # GET /stats/global
@@ -192,3 +227,31 @@ class TestGetGlobalStats:
                 assert isinstance(cat["draws"], int)
                 assert isinstance(cat["losses"], int)
                 assert isinstance(cat["total"], int)
+
+    @pytest.mark.asyncio
+    async def test_platform_lichess_param_accepted(self, auth_headers: dict[str, str]) -> None:
+        """?platform=lichess query param is accepted and returns filtered results."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/stats/global?platform=lichess", headers=auth_headers
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "by_time_control" in data
+        assert "by_color" in data
+
+    @pytest.mark.asyncio
+    async def test_no_platform_param_returns_full_results(self, auth_headers: dict[str, str]) -> None:
+        """No platform param returns results from all platforms (backward compatibility)."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/stats/global", headers=auth_headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data["by_time_control"], list)
+        assert isinstance(data["by_color"], list)

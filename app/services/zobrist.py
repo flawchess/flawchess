@@ -74,52 +74,63 @@ def compute_hashes(board: chess.Board) -> tuple[int, int, int]:
     return white_hash, black_hash, full_hash
 
 
-def hashes_for_game(pgn_text: str) -> list[tuple[int, int, int, int, str | None]]:
+def hashes_for_game(
+    pgn_text: str,
+) -> tuple[list[tuple[int, int, int, int, str | None, float | None]], str | None]:
     """Parse *pgn_text* and return hashes for every half-move including ply 0.
 
-    Each entry is a 5-tuple ``(ply, white_hash, black_hash, full_hash, move_san)``
+    Each entry is a 6-tuple ``(ply, white_hash, black_hash, full_hash, move_san, clock_seconds)``
     where ``ply`` starts at 0 (the initial position before any move is played).
 
     ``move_san`` is the SAN of the move played FROM position at ``ply`` (leading
     to ply+1).  The final position row always has ``move_san=None`` because no
     move is played from it.  Ply-0 has the SAN of the first move for games with moves.
 
+    ``clock_seconds`` is the clock time remaining (in seconds) extracted from
+    ``%clk`` PGN annotations on the move node, or ``None`` if not present.
+    The final position row always has ``clock_seconds=None``.
+
     For PGN ``"1. e4 e5 2. Nf3 *"`` the function returns 4 entries (ply 0-3):
-        - (0, wh, bh, fh, "e4")
-        - (1, wh, bh, fh, "e5")
-        - (2, wh, bh, fh, "Nf3")
-        - (3, wh, bh, fh, None)
+        - (0, wh, bh, fh, "e4", None)
+        - (1, wh, bh, fh, "e5", None)
+        - (2, wh, bh, fh, "Nf3", None)
+        - (3, wh, bh, fh, None, None)
 
     Args:
         pgn_text: A PGN-formatted string.  May contain a single game.
 
     Returns:
-        A list of ``(ply, white_hash, black_hash, full_hash, move_san)`` tuples,
-        or an empty list when *pgn_text* is empty, unparseable, or contains no moves.
+        A 2-tuple ``(hash_tuples, result_fen)`` where ``hash_tuples`` is a list of
+        ``(ply, white_hash, black_hash, full_hash, move_san, clock_seconds)`` tuples
+        and ``result_fen`` is the piece-placement FEN of the final position
+        (``board.board_fen()``).  Both are ``([], None)`` when *pgn_text* is empty,
+        unparseable, or contains no moves.
     """
     try:
         game = chess.pgn.read_game(io.StringIO(pgn_text))
     except Exception:
-        return []
+        return [], None
 
     if game is None:
-        return []
+        return [], None
 
-    moves = list(game.mainline_moves())
-    if not moves:
-        return []
+    nodes = list(game.mainline())
+    if not nodes:
+        return [], None
 
-    results: list[tuple[int, int, int, int, str | None]] = []
+    results: list[tuple[int, int, int, int, str | None, float | None]] = []
     board = game.board()
 
-    for ply, move in enumerate(moves):
-        move_san: str = board.san(move)  # BEFORE push: board must be in pre-move position
+    for ply, node in enumerate(nodes):
+        move_san: str = board.san(node.move)  # BEFORE push: board must be in pre-move position
+        clock_seconds: float | None = node.clock()
         wh, bh, fh = compute_hashes(board)
-        results.append((ply, wh, bh, fh, move_san))
-        board.push(move)
+        results.append((ply, wh, bh, fh, move_san, clock_seconds))
+        board.push(node.move)
 
     # Final position: no move is played from here
     wh, bh, fh = compute_hashes(board)
-    results.append((len(moves), wh, bh, fh, None))
+    results.append((len(nodes), wh, bh, fh, None, None))
+    result_fen = board.board_fen()
 
-    return results
+    return results, result_fen

@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 Initial Platform** - Phases 1-10 (shipped 2026-03-15)
-- 🚧 **v1.1 Opening Explorer & UI Restructuring** - Phases 11-15 (in progress)
+- 🚧 **v1.1 Opening Explorer & UI Restructuring** - Phases 11-15 (in progress, Phase 15 replaced)
 
 ## Phases
 
@@ -172,15 +172,27 @@ Plans:
 - [ ] 14-02-PLAN.md -- OpeningsPage tabbed hub with sidebar and 3 sub-tabs (Move Explorer, Games, Statistics)
 - [ ] 14-03-PLAN.md -- Human verification of all UIRS requirements
 
-### Phase 15: Chart Consolidation and Polish
-**Goal:** Merge Rating tab into Global Stats tab (rating charts above Results by Time Control), add platform filter (chess.com/lichess), use consistent aggregation time buckets across all time-series charts, and add chart titles to the Statistics sub-tab of the Openings tab.
-**Requirements**: CHRT-01, CHRT-02, CHRT-03, CHRT-04, CHRT-05
+### Phase 15: Enhanced Game Import Data
+**Goal:** Enrich game import pipeline with clock data, termination reason, time control fix, multi-username sync fix, and bug fixes for data isolation and Google SSO last_login.
 **Depends on:** Phase 14
-**Plans:** 2 plans
+**Requirements**: EIGD-01, EIGD-02, EIGD-03, EIGD-04, EIGD-05, EIGD-06, EIGD-07, EIGD-08
+**Plans:** 3/3 plans complete
 
 Plans:
-- [ ] 15-01-PLAN.md -- Backend platform filter + merge Rating into Global Stats + nav update
-- [ ] 15-02-PLAN.md -- RatingChart monthly bucketing + Openings Statistics chart titles
+- [ ] 15-01-PLAN.md -- Backend models, migration, clock extraction, termination normalization, time control fix, username sync fix
+- [ ] 15-02-PLAN.md -- Bug fixes (data isolation, SSO last_login), API schema enrichment, GameCard display
+- [ ] 15-03-PLAN.md -- Gap closure: time control display formatting, 401 interceptor cache clearing
+
+### Phase 16: Improve game cards UI — icons, layout, hover minimap
+**Goal:** Restructure game cards to a 3-row layout with lucide-react icons for metadata, null-safe rendering, and an on-demand hover/tap minimap showing the game's final position.
+**Depends on:** Phase 15
+**Requirements**: GCUI-01, GCUI-02, GCUI-03, GCUI-04, GCUI-05
+**Plans:** 3/3 plans complete
+
+Plans:
+- [ ] 16-01-PLAN.md -- Backend result_fen column, zobrist extraction, import pipeline, API schema update, test fixes
+- [ ] 16-02-PLAN.md -- Frontend GameCard 3-row rebuild with icons, null handling, hover/tap minimap
+- [ ] 16-03-PLAN.md -- Gap closure: Alembic migration for result_fen column
 
 ---
 
@@ -198,11 +210,12 @@ Plans:
 | 8. Games and Bookmark Tab Rework | v1.0 | 3/3 | Complete | 2026-03-14 |
 | 9. Game Cards, Username Import, Pagination | v1.0 | 8/8 | Complete | 2026-03-15 |
 | 10. Auto-Generate Position Bookmarks | v1.0 | 4/4 | Complete | 2026-03-15 |
-| 11. Schema and Import Pipeline | 1/1 | Complete    | 2026-03-16 | - |
-| 12. Backend Next-Moves Endpoint | 2/2 | Complete    | 2026-03-16 | - |
-| 13. Frontend Move Explorer Component | 2/2 | Complete    | 2026-03-16 | - |
-| 14. UI Restructuring | 3/3 | Complete    | 2026-03-17 | - |
-| 15. Chart Consolidation and Polish | v1.1 | 0/2 | Planned | - |
+| 11. Schema and Import Pipeline | v1.1 | 1/1 | Complete | 2026-03-16 |
+| 12. Backend Next-Moves Endpoint | v1.1 | 2/2 | Complete | 2026-03-16 |
+| 13. Frontend Move Explorer Component | v1.1 | 2/2 | Complete | 2026-03-16 |
+| 14. UI Restructuring | v1.1 | 3/3 | Complete | 2026-03-17 |
+| 15. Enhanced Game Import Data | v1.1 | 3/3 | Complete | 2026-03-18 |
+| 16. Game Card UI Improvements | 3/3 | Complete   | 2026-03-18 | - |
 
 ---
 *Created: 2026-03-11*

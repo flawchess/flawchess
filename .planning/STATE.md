@@ -2,26 +2,26 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Opening Explorer & UI Restructuring
-status: completed
-last_updated: "2026-03-17T06:28:47.040Z"
-last_activity: 2026-03-17 — Completed 14-02-PLAN.md (OpeningsPage tabbed hub with 3 URL-based sub-tabs)
+status: executing
+last_updated: "2026-03-18T21:15:19.677Z"
+last_activity: "2026-03-18 — Completed 16-03: result_fen Alembic migration gap closure"
 progress:
-  total_phases: 5
-  completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
-  percent: 88
+  total_phases: 6
+  completed_phases: 6
+  total_plans: 14
+  completed_plans: 14
+  percent: 100
 ---
 
 # Project State: Chessalytics
 
 ## Current Phase
-Phase: 14 of 14 (UI Restructuring)
-Plan: 2 of 2 complete
-Status: Phase 14 complete — ready for Phase 15 (Consolidation)
-Last activity: 2026-03-17 — Completed 14-02-PLAN.md (OpeningsPage tabbed hub with 3 URL-based sub-tabs)
+Phase: 16 of 16 (Improve game cards UI — icons, layout, hover minimap)
+Plan: 3 of 3 complete
+Status: Complete
+Last activity: 2026-03-18 — Completed 16-03: result_fen Alembic migration gap closure (GCUI-01 fully satisfied)
 
-Progress: [█████████░] 88%
+Progress: [██████████] 100%
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-16)
@@ -35,7 +35,8 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 | 12 | Backend Next-Moves Endpoint | Complete (2/2 plans complete) | 2 |
 | 13 | Frontend Move Explorer Component | Complete (2/2 plans complete) | 2 |
 | 14 | UI Restructuring | Complete (2/2 plans complete) | 2 |
-| 15 | Consolidation | Planned | ? |
+| 15 | Enhanced game import data | Complete (3/3 plans complete) | 3 |
+| 16 | Improve game cards UI — icons, layout, hover minimap | Complete (3/3 plans complete) | 3 |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
@@ -68,16 +69,34 @@ Current focus: v1.1 — Opening Explorer & UI Restructuring
 - **OpeningsPage tabbed hub**: all shared state (chess, filters, boardFlipped, bookmarks, gamesOffset) in parent component — never inside TabsContent children — for tab-switch persistence (UIRS-02)
 - **No positionFilterActive gate on Games tab**: usePositionAnalysisQuery always auto-fetches from initial position — cleaner UX than Dashboard's manual Filter button flow
 - **Tab JSX content as variables**: moveExplorerContent/gamesContent/statisticsContent defined before return and reused in both desktop and mobile Tabs instances
+- **selectedPlatforms state is null (all) or Platform[] array**: single-element array maps to platform query param in hooks; clicking only active platform resets to null (show all) — settled in 15-01
+- **Rating page merged into Global Stats**: /rating redirects to /global-stats; nav reduced to 3 items (Import, Openings, Global Stats) — settled in 15-01
+- **RatingChart monthly categorical axis**: uses YYYY-MM string keys (not timestamps) with formatMonth tickFormatter — matches WinRateChart approach, removes adaptive computeXTicks complexity — settled in 15-02
+- **Openings Statistics chart headings**: text-lg font-medium mb-3 wrapping divs with h2 titles match GlobalStatsCharts pattern — settled in 15-02
+- **180s time control is blitz**: strict `< 180` for bullet boundary so 3+0 (180s) is blitz; matches chess.com/lichess conventions — settled in 15-01 (EIGD-03)
+- **clock_seconds as Float nullable**: stored on game_positions for future use; None when PGN lacks %clk or for final position row — settled in 15-01 (EIGD-01)
+- **Termination from loser's result (chess.com)**: termination_raw = loser's result string; for draws both sides have same string — settled in 15-01 (EIGD-02)
+- **username-scoped sync boundary**: get_latest_for_user_platform filters by username so second-username imports start full fetch — settled in 15-01 (EIGD-04)
+- **Google SSO last_login via direct sa_update in google_callback**: on_after_login is not called for OAuth flow in FastAPI-Users — fix must be in the callback handler — settled in 15-02 (EIGD-06)
+- **queryClient.clear() before localStorage.removeItem on logout**: clears all TanStack Query cache before auth state removal to prevent data leakage to next user on same browser — settled in 15-02 (EIGD-05)
+- **_normalize_tc_str helper**: drops +0 suffix for zero-increment time controls — both chess.com (raw API string) and lichess (constructed f"{initial}+{increment}") call this helper for consistent storage — settled in 15-03 (EIGD-07)
+- **QueryClient extracted to lib/queryClient.ts**: required because api/client.ts is a plain module (not React component) so useQueryClient hook is unavailable; shared singleton allows 401 interceptor and login() to call queryClient.clear() — settled in 15-03 (EIGD-05)
+- **result_fen stored at import time via hashes_for_game()**: board.board_fen() captured after final push in PGN replay loop, returned as 2nd element of (hash_tuples, result_fen) tuple; stored in games table alongside move_count — settled in 16-01 (GCUI-01)
+- **Single TooltipProvider in GameCardList**: wraps all game cards to avoid 50x context overhead; TooltipContent uses hidden sm:block for desktop-only hover — settled in 16-02 (GCUI-03)
+- **Mobile game card expand via isExpanded/onToggle**: expandedGameId state in GameCardList; only one card expanded at a time; reset on page change — settled in 16-02 (GCUI-04)
+- **GameCard null-safe metadata**: time_control_bucket, played_at, move_count, termination each have guard clauses; null fields omitted entirely (no dash placeholders) — settled in 16-02 (GCUI-05)
+- **result_fen migration gap closure**: migration file was generated during 16-01 execution but left untracked in git; 16-03 committed it and fixed test call sites for get_latest_for_user_platform missing username arg — settled in 16-03 (GCUI-01)
 
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions for querying pieces on specific squares
 - **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match
 - **GamesTab pagination offset**: offset is in OpeningsPage state and resets to 0 on tab switch — decided in 14-02 execution
-- **Track user account creation and last login timestamps** (auth) — Add created_at and last_login columns to users table
 
 ### Roadmap Evolution
 - Phase 15 added: Consolidation - remove unnecessary code, rename endpoints/modules, update CLAUDE.md and README.md
+- Phase 15 replaced: removed "Chart Consolidation and Polish" (completed), renumbered Phase 16 "Enhanced game import data" to Phase 15
+- Phase 16 added: Improve game cards UI — icons, layout, hover minimap
 
 ### Blockers/Concerns
 None.
@@ -92,6 +111,9 @@ None.
 | 260317-qsf | Fix bookmark delete not updating UI until page refresh | 2026-03-17 | 9ce0453 | [260317-qsf-fix-bookmark-delete-not-updating-ui-unti](./quick/260317-qsf-fix-bookmark-delete-not-updating-ui-unti/) |
 | 260317-qyx | Style action buttons with dark blue, move into collapsible, add dividers | 2026-03-17 | 13b127b | [260317-qyx-style-action-buttons-with-distinct-color](./quick/260317-qyx-style-action-buttons-with-distinct-color/) |
 | 260317-rac | Relabel Bookmark to Save and add hover darkening | 2026-03-17 | 49c6bbd | [260317-rac-relabel-bookmark-to-save-add-hover-darke](./quick/260317-rac-relabel-bookmark-to-save-add-hover-darke/) |
+| 260318-pp5 | Add hover info icon to Piece filter, remove tab-based filter disabling | 2026-03-18 | 679a315 | [260318-pp5-add-hover-info-icon-to-piece-filter-with](./quick/260318-pp5-add-hover-info-icon-to-piece-filter-with/) |
+| 260318-pz3 | Show played-as color circle in Results by Opening bar chart labels | 2026-03-18 | 05dee09 | [260318-pz3-show-played-as-color-circle-in-results-b](./quick/260318-pz3-show-played-as-color-circle-in-results-b/) |
+| 260318-qtt | Store created_at and last_login timestamps on user accounts | 2026-03-18 | 60a88cc | [260318-qtt-store-the-date-time-when-a-user-account-](./quick/260318-qtt-store-the-date-time-when-a-user-account-/) |
 
 ---
-Last activity: 2026-03-17 - Completed quick task 260317-rac: Relabel Bookmark to Save and add hover darkening
+Last activity: 2026-03-18 - Completed 16-03: result_fen Alembic migration gap closure — GCUI-01 fully satisfied (model + pipeline + migration)

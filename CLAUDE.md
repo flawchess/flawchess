@@ -86,6 +86,14 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
 - Not a frontend specialist but comfortable with React
 - Wants to approve tech decisions before they're locked in
 
+## Communication Style
+
+- **No sycophancy** — never open with hollow praise ("Great question!", "That's a great idea!"). Get straight to substance.
+- **Challenge ideas constructively** — if an instruction or approach has flaws, trade-offs, or better alternatives, say so directly with reasoning. Don't just agree and execute.
+- **Flag over-engineering and scope creep** — push back when a request adds unnecessary complexity or drifts from the goal.
+- **Be honest about uncertainty** — say "I'm not sure" or "this might not work because…" rather than presenting guesses as facts.
+- **Disagree and commit** — after raising concerns, respect the user's final call and execute fully.
+
 ## Critical Constraints
 
 - Always use `httpx.AsyncClient` for external HTTP calls — `requests` blocks the event loop
