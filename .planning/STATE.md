@@ -114,6 +114,7 @@ None.
 | 260318-pp5 | Add hover info icon to Piece filter, remove tab-based filter disabling | 2026-03-18 | 679a315 | [260318-pp5-add-hover-info-icon-to-piece-filter-with](./quick/260318-pp5-add-hover-info-icon-to-piece-filter-with/) |
 | 260318-pz3 | Show played-as color circle in Results by Opening bar chart labels | 2026-03-18 | 05dee09 | [260318-pz3-show-played-as-color-circle-in-results-b](./quick/260318-pz3-show-played-as-color-circle-in-results-b/) |
 | 260318-qtt | Store created_at and last_login timestamps on user accounts | 2026-03-18 | 60a88cc | [260318-qtt-store-the-date-time-when-a-user-account-](./quick/260318-qtt-store-the-date-time-when-a-user-account-/) |
+| 260318-vux | Darken WDL chart win/loss colors to match board arrow tone | 2026-03-18 | 30833d9 | [260318-vux-darken-wdl-chart-red-green-colors-to-mat](./quick/260318-vux-darken-wdl-chart-red-green-colors-to-mat/) |
 
 ---
 Last activity: 2026-03-18 - Completed 16-03: result_fen Alembic migration gap closure — GCUI-01 fully satisfied (model + pipeline + migration)
