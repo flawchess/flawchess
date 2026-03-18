@@ -117,4 +117,4 @@ None.
 | 260318-vux | Darken WDL chart win/loss colors to match board arrow tone | 2026-03-18 | 30833d9 | [260318-vux-darken-wdl-chart-red-green-colors-to-mat](./quick/260318-vux-darken-wdl-chart-red-green-colors-to-mat/) |
 
 ---
-Last activity: 2026-03-18 - Completed 16-03: result_fen Alembic migration gap closure — GCUI-01 fully satisfied (model + pipeline + migration)
+Last activity: 2026-03-18 - Completed quick task 260318-vux: Darken WDL chart red/green colors to match board arrow blue brightness
