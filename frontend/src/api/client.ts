@@ -40,9 +40,14 @@ apiClient.interceptors.response.use(
       axios.isAxiosError(error) &&
       error.response?.status === 401
     ) {
-      queryClient.clear();
-      localStorage.removeItem('auth_token');
-      window.location.href = '/login';
+      const onLoginPage = window.location.pathname === '/login';
+      const isAuthRoute = (error.config?.url ?? '').startsWith('/auth/');
+
+      if (!onLoginPage && !isAuthRoute) {
+        queryClient.clear();
+        localStorage.removeItem('auth_token');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   },
