@@ -117,6 +117,7 @@ None.
 | 260318-vux | Darken WDL chart win/loss colors to match board arrow tone | 2026-03-18 | 30833d9 | [260318-vux-darken-wdl-chart-red-green-colors-to-mat](./quick/260318-vux-darken-wdl-chart-red-green-colors-to-mat/) |
 | 260318-w15 | Fix Google SSO requiring double-click to sign in | 2026-03-18 | f277957 | [260318-w15-fix-google-sso-requiring-double-click-to](./quick/260318-w15-fix-google-sso-requiring-double-click-to/) |
 | 260319-owl | Darken WDL draw color to match win/loss brightness | 2026-03-19 | pending | [260319-owl-make-draw-color-darker-grey-in-wdl-so-it](./quick/260319-owl-make-draw-color-darker-grey-in-wdl-so-it/) |
+| 260319-p80 | Color-code move arrows by win rate using oklch gradient | 2026-03-19 | efb2764 | [260319-p80-color-code-move-arrows-by-win-rate-using](./quick/260319-p80-color-code-move-arrows-by-win-rate-using/) |
 
 ---
-Last activity: 2026-03-19 - Completed quick task 260319-owl: Darken WDL draw color to match win/loss brightness
+Last activity: 2026-03-19 - Completed quick task 260319-p80: Color-code move arrows by win rate using oklch gradient
