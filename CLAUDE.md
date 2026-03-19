@@ -76,6 +76,10 @@ WHERE gp.white_hash = :hash AND g.user_id = :uid
   AND g.time_control IN (...) -- optional filters
 ```
 
+## Version Control
+
+- Always create a pull request before merging a feature or phase branch into main. Squash and merge the pull request into main only when approved or requested by the user.
+
 ## Project Management
 
 This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/get-shit-done). All features and work are planned through GSD phases and roadmap. Do not add unplanned features, refactors, or improvements outside the current GSD phase scope. If something seems needed but isn't in the plan, flag it rather than implementing it.
