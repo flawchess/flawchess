@@ -343,7 +343,28 @@ export function OpeningsPage() {
             className="w-full justify-between px-2 text-sm font-medium"
             data-testid="section-position-bookmarks"
           >
-            Position bookmarks
+            <span className="flex items-center gap-1">
+              Position bookmarks
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      role="button"
+                      tabIndex={-1}
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label="Position bookmarks info"
+                      data-testid="position-bookmarks-info"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs text-sm">
+                    Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </span>
             {positionBookmarksOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
         </CollapsibleTrigger>
@@ -406,6 +427,21 @@ export function OpeningsPage() {
 
   const moveExplorerContent = (
     <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-1 mb-1">
+        <p className="text-xs text-muted-foreground">Move arrows</p>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" className="text-muted-foreground hover:text-foreground" aria-label="Move arrows info" data-testid="move-arrows-info">
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs text-sm">
+              Arrows on the board show moves from your games. Thicker arrows mean more games played. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
       {gamesQuery.data && gamesQuery.data.matched_count > 0 && (
         <WDLBar stats={gamesQuery.data.stats} />
       )}
