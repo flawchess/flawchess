@@ -76,18 +76,17 @@ export function DashboardPage() {
 
     const moves = nextMoves.data.moves;
     const maxCount = Math.max(...moves.map(m => m.game_count), 1);
-    const MIN_OPACITY = 0.15;
 
     return moves
       .map(entry => {
         const squares = moveMap.get(entry.move_san);
         if (!squares) return null;
         const isHovered = entry.move_san === hoveredMove;
-        const opacity = MIN_OPACITY + (1 - MIN_OPACITY) * (entry.game_count / maxCount);
+        const frequency = entry.game_count / maxCount;
         return {
           startSquare: squares.from,
           endSquare: squares.to,
-          color: getArrowColor(entry.win_pct, opacity, isHovered),
+          color: getArrowColor(entry.win_pct, entry.game_count, frequency, isHovered),
         };
       })
       .filter((a): a is NonNullable<typeof a> => a !== null);

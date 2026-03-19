@@ -1,63 +1,49 @@
-// Arrow color utility — maps win percentage to oklch color string.
+// Arrow color utility — maps win percentage to one of three discrete oklch colors.
 //
-// Anchor colors match the WDL chart (WDLBar.tsx):
-//   green = oklch(0.45 0.16 145)
-//   grey  = oklch(0.55 0.01 260)
-//   red   = oklch(0.45 0.17 25)
+// Colors match the WDL chart (WDLBar.tsx):
+//   green = oklch(0.45 0.16 145)   — win rate >= 60%
+//   grey  = oklch(0.55 0.01 260)   — win rate 40–60%
+//   red   = oklch(0.45 0.17 25)    — win rate <= 40%
+//
+// Frequency (game count) is encoded as opacity:
+//   rarely played → transparent, frequently played → opaque.
 
-interface OklchColor {
-  L: number;
-  C: number;
-  H: number;
-}
+const GREEN = 'oklch(0.45 0.16 145)';
+const GREY = 'oklch(0.55 0.01 260)';
+const RED = 'oklch(0.45 0.17 25)';
 
-const GREEN: OklchColor = { L: 0.45, C: 0.16, H: 145 };
-const GREY: OklchColor = { L: 0.55, C: 0.01, H: 260 };
-const RED: OklchColor = { L: 0.45, C: 0.17, H: 25 };
+// Hovered arrows use boosted lightness for visibility
+const GREEN_HOVER = 'oklch(0.6 0.16 145)';
+const GREY_HOVER = 'oklch(0.7 0.01 260)';
+const RED_HOVER = 'oklch(0.6 0.17 25)';
 
-const LIGHTNESS_HOVER_BOOST = 0.15;
+const MIN_OPACITY = 0.45;
 
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
+const MIN_GAMES_FOR_COLOR = 10;
 
-function lerpColor(from: OklchColor, to: OklchColor, t: number): OklchColor {
-  return {
-    L: lerp(from.L, to.L, t),
-    C: lerp(from.C, to.C, t),
-    H: lerp(from.H, to.H, t),
-  };
-}
-
-function winPctToColor(winPct: number): OklchColor {
-  if (winPct >= 66) return GREEN;
-  if (winPct <= 33) return RED;
-
-  if (winPct <= 50) {
-    // Interpolate red -> grey (winPct 33..50)
-    const t = (winPct - 33) / 17;
-    return lerpColor(RED, GREY, t);
-  } else {
-    // Interpolate grey -> green (winPct 50..66)
-    const t = (winPct - 50) / 16;
-    return lerpColor(GREY, GREEN, t);
-  }
+function winPctToColor(winPct: number, gameCount: number, isHovered: boolean): string {
+  if (gameCount < MIN_GAMES_FOR_COLOR) return isHovered ? GREY_HOVER : GREY;
+  if (winPct >= 60) return isHovered ? GREEN_HOVER : GREEN;
+  if (winPct <= 40) return isHovered ? RED_HOVER : RED;
+  return isHovered ? GREY_HOVER : GREY;
 }
 
 /**
  * Returns an oklch CSS color string for a board arrow.
  *
- * @param winPct   Win percentage, 0–100
- * @param opacity  Frequency-based opacity, 0–1 (ignored when isHovered=true)
+ * @param winPct    Win percentage, 0–100
+ * @param gameCount Absolute game count for this move
+ * @param frequency Normalized frequency 0–1 (game_count / maxCount)
  * @param isHovered Whether this arrow is currently hovered
  */
-export function getArrowColor(winPct: number, opacity: number, isHovered: boolean): string {
-  const color = winPctToColor(winPct);
+export function getArrowColor(winPct: number, gameCount: number, frequency: number, isHovered: boolean): string {
+  const color = winPctToColor(winPct, gameCount, isHovered);
 
   if (isHovered) {
-    const L = Math.min(1, color.L + LIGHTNESS_HOVER_BOOST);
-    return `oklch(${L} ${color.C} ${color.H})`;
+    return color;
   }
 
-  return `oklch(${color.L} ${color.C} ${color.H} / ${opacity})`;
+  const opacity = MIN_OPACITY + (1 - MIN_OPACITY) * frequency;
+  // Insert alpha before closing paren: oklch(L C H) → oklch(L C H / alpha)
+  return color.replace(')', ` / ${opacity})`);
 }
