@@ -121,4 +121,4 @@ None.
 | 260319-rj3 | Persist import job status across login | 2026-03-19 | 9824bf6 | [260319-rj3-persist-import-job-status-across-login-a](./quick/260319-rj3-persist-import-job-status-across-login-a/) |
 
 ---
-Last activity: 2026-03-19 - Completed quick task 260319-p80: Color-code move arrows by win rate using oklch gradient
+Last activity: 2026-03-19 - Completed quick task 260319-rj3: Persist import job status across login and live-update game count during import
