@@ -115,7 +115,7 @@ export function OpeningsPage() {
         return {
           startSquare: squares.from,
           endSquare: squares.to,
-          color: getArrowColor(entry.win_pct, entry.game_count, isHovered),
+          color: getArrowColor(entry.win_pct, entry.loss_pct, entry.game_count, isHovered),
           width: entry.game_count / maxCount,
         };
       })

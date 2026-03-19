@@ -84,6 +84,11 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
 - **Be honest about uncertainty** — say "I'm not sure" or "this might not work because…" rather than presenting guesses as facts.
 - **Disagree and commit** — after raising concerns, respect the user's final call and execute fully.
 
+## Coding Guidelines
+
+- **No magic numbers** — extract thresholds, limits, and configuration values into named constants. Example: `const MIN_GAMES_FOR_COLOR = 10` not a bare `10` in a conditional.
+- **Type safety** — leverage TypeScript's type system and Python type hints fully. Avoid `any`, prefer explicit types for function signatures, props, and return values. Use discriminated unions over loose string types. On the backend, use Pydantic models for validation and typed dataclasses/TypedDicts where appropriate.
+
 ## Critical Constraints
 
 - Always use `httpx.AsyncClient` for external HTTP calls — `requests` blocks the event loop
