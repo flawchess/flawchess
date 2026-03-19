@@ -104,6 +104,25 @@ def find_active_job(user_id: int, platform: str) -> JobState | None:
     return None
 
 
+def find_active_jobs_for_user(user_id: int) -> list[JobState]:
+    """Return all PENDING or IN_PROGRESS jobs for the given user.
+
+    Used to restore active job visibility after page refresh or re-login.
+
+    Args:
+        user_id: Internal database user ID.
+
+    Returns:
+        List of active JobState entries (may be empty).
+    """
+    return [
+        job
+        for job in _jobs.values()
+        if job.user_id == user_id
+        and job.status in (JobStatus.PENDING, JobStatus.IN_PROGRESS)
+    ]
+
+
 async def run_import(job_id: str) -> None:
     """Background import orchestrator — launched via asyncio.create_task.
 

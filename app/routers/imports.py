@@ -52,6 +52,31 @@ async def start_import(
     return ImportStartedResponse(job_id=job_id, status="pending")
 
 
+@router.get("/active", response_model=list[ImportStatusResponse])
+async def get_active_imports(
+    user: Annotated[User, Depends(current_active_user)],
+) -> list[ImportStatusResponse]:
+    """Return all active (PENDING or IN_PROGRESS) import jobs for the authenticated user.
+
+    Only checks in-memory registry — completed/failed jobs are not returned.
+    After a server restart in-memory jobs are gone, which is correct (background
+    tasks are also gone at that point).
+    """
+    jobs = import_service.find_active_jobs_for_user(user.id)
+    return [
+        ImportStatusResponse(
+            job_id=job.job_id,
+            platform=job.platform,
+            username=job.username,
+            status=job.status.value,
+            games_fetched=job.games_fetched,
+            games_imported=job.games_imported,
+            error=job.error,
+        )
+        for job in jobs
+    ]
+
+
 @router.get("/{job_id}", response_model=ImportStatusResponse)
 async def get_import_status(
     job_id: str,
