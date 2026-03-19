@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Opening Explorer & UI Restructuring
 status: executing
-last_updated: "2026-03-18T21:15:19.677Z"
-last_activity: "2026-03-18 — Completed 16-03: result_fen Alembic migration gap closure"
+last_updated: "2026-03-19T16:57:58Z"
+last_activity: "2026-03-19 — Completed quick task 260319-owl: Darken WDL draw color"
 progress:
   total_phases: 6
   completed_phases: 6
@@ -116,6 +116,7 @@ None.
 | 260318-qtt | Store created_at and last_login timestamps on user accounts | 2026-03-18 | 60a88cc | [260318-qtt-store-the-date-time-when-a-user-account-](./quick/260318-qtt-store-the-date-time-when-a-user-account-/) |
 | 260318-vux | Darken WDL chart win/loss colors to match board arrow tone | 2026-03-18 | 30833d9 | [260318-vux-darken-wdl-chart-red-green-colors-to-mat](./quick/260318-vux-darken-wdl-chart-red-green-colors-to-mat/) |
 | 260318-w15 | Fix Google SSO requiring double-click to sign in | 2026-03-18 | f277957 | [260318-w15-fix-google-sso-requiring-double-click-to](./quick/260318-w15-fix-google-sso-requiring-double-click-to/) |
+| 260319-owl | Darken WDL draw color to match win/loss brightness | 2026-03-19 | pending | [260319-owl-make-draw-color-darker-grey-in-wdl-so-it](./quick/260319-owl-make-draw-color-darker-grey-in-wdl-so-it/) |
 
 ---
-Last activity: 2026-03-18 - Completed quick task 260318-w15: Fix Google SSO requiring double-click to sign in
+Last activity: 2026-03-19 - Completed quick task 260319-owl: Darken WDL draw color to match win/loss brightness

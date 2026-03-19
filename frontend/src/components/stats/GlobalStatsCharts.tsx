@@ -15,7 +15,7 @@ interface WDLCategoryChartProps {
 
 const chartConfig = {
   win_pct: { label: 'Wins', color: 'oklch(0.45 0.16 145)' },
-  draw_pct: { label: 'Draws', color: 'oklch(0.65 0.01 260)' },
+  draw_pct: { label: 'Draws', color: 'oklch(0.55 0.01 260)' },
   loss_pct: { label: 'Losses', color: 'oklch(0.45 0.17 25)' },
 };
 
