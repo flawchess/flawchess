@@ -1,11 +1,22 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import analysis, position_bookmarks, imports, auth
 from app.routers.stats import router as stats_router
 from app.routers.users import router as users_router
+from app.services.import_service import cleanup_orphaned_jobs
 
-app = FastAPI(title="Chessalytics", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    await cleanup_orphaned_jobs()
+    yield
+
+
+app = FastAPI(title="Chessalytics", version="0.1.0", lifespan=lifespan)
 
 # CORS — allow the Vite dev server
 app.add_middleware(

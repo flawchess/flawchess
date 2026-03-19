@@ -1,6 +1,8 @@
 """Import job repository: CRUD for the import_jobs table."""
 
-from sqlalchemy import select
+from datetime import datetime, timezone
+
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.import_job import ImportJob
@@ -106,3 +108,22 @@ async def get_latest_for_user_platform(
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def fail_orphaned_jobs(session: AsyncSession) -> int:
+    """Mark any pending/in_progress jobs as failed (orphaned after server restart).
+
+    Returns:
+        Number of jobs marked as failed.
+    """
+    result = await session.execute(
+        update(ImportJob)
+        .where(ImportJob.status.in_(["pending", "in_progress"]))
+        .values(
+            status="failed",
+            error_message="Server restarted while import was in progress",
+            completed_at=datetime.now(timezone.utc),
+        )
+    )
+    await session.flush()
+    return result.rowcount

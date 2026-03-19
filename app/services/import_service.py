@@ -52,6 +52,19 @@ class JobState:
 _jobs: dict[str, JobState] = {}
 
 
+async def cleanup_orphaned_jobs() -> None:
+    """Mark any DB jobs stuck in pending/in_progress as failed.
+
+    Called at startup — no in-memory tasks survive a restart, so any
+    non-terminal DB jobs are orphaned.
+    """
+    async with async_session_maker() as session:
+        count = await import_job_repository.fail_orphaned_jobs(session)
+        await session.commit()
+        if count:
+            logger.info("Marked %d orphaned import job(s) as failed", count)
+
+
 def create_job(user_id: int, platform: str, username: str) -> str:
     """Create a new import job and register it in memory.
 
