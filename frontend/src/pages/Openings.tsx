@@ -427,21 +427,6 @@ export function OpeningsPage() {
 
   const moveExplorerContent = (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-1 mb-1">
-        <p className="text-xs text-muted-foreground">Move arrows</p>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button type="button" className="text-muted-foreground hover:text-foreground" aria-label="Move arrows info" data-testid="move-arrows-info">
-                <Info className="h-3.5 w-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs text-sm">
-              Arrows on the board show moves from your games. Thicker arrows mean more games played. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
       {gamesQuery.data && gamesQuery.data.matched_count > 0 && (
         <WDLBar stats={gamesQuery.data.stats} />
       )}

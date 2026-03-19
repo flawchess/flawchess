@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Chess } from 'chess.js';
-import { ArrowLeftRight } from 'lucide-react';
+import { ArrowLeftRight, Info } from 'lucide-react';
 import { WDL_WIN, WDL_DRAW, WDL_LOSS } from '@/components/results/WDLBar';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import type { NextMoveEntry } from '@/types/api';
@@ -64,7 +64,24 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
         <table data-testid="move-explorer-table" className="w-full text-sm">
           <thead>
             <tr>
-              <th className="w-[3rem] text-left text-xs text-muted-foreground font-normal pb-1">Move</th>
+              <th className="w-[3rem] text-left text-xs text-muted-foreground font-normal pb-1">
+                <span className="inline-flex items-center gap-1">
+                  Move
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" className="text-muted-foreground hover:text-foreground" aria-label="Move arrows info" data-testid="move-arrows-info">
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-sm">
+                        These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings.<br/><br/>
+                        The arrows on the board correspond to the listed moves. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey. This helps you identify strengths and weaknesses in your openings.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </span>
+              </th>
               <th className="w-[4rem] text-right text-xs text-muted-foreground font-normal pb-1">Games</th>
               <th className="text-left text-xs text-muted-foreground font-normal pb-1 pl-2">Results</th>
             </tr>
