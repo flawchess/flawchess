@@ -57,29 +57,14 @@ services/         # Business logic (import, analysis)
 repositories/     # DB access (no SQL in services)
 ```
 
-### Key Tables
-
-- `games` — game metadata, PGN, result, time control, platform info
-- `game_positions` — the hot table: `(game_id, ply, white_hash, black_hash, full_hash, user_id)`. `user_id` is denormalized for query performance.
-- Unique constraint on `(platform, platform_game_id)` prevents duplicates
-
 ### Import Pipeline
 
 Background async tasks (not blocking the API). chess.com fetches monthly archives sequentially with rate-limit delays. lichess streams NDJSON line-by-line. Both normalize to a unified schema before storage.
 
-### Analysis Query Pattern
-
-```sql
-SELECT g.* FROM game_positions gp
-JOIN games g ON g.id = gp.game_id
-WHERE gp.white_hash = :hash AND g.user_id = :uid
-  AND g.time_control IN (...) -- optional filters
-```
-
 ## Version Control
 
 - Always create a pull request before merging a feature or phase branch into main. Squash and merge the pull request into main only when approved or requested by the user.
-- When working on the main branch (e.g. with /gsd:quick), don't commit the changes unless the user explicitly asks for it.
+- When working on the main branch (e.g. with /gsd:quick), don't commit the changes unless the user explicitly asks for it. When workingon a feature branch, you can commit as often as you like.
 
 ## Project Management
 
