@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -12,7 +12,7 @@ import { ImportPage } from '@/pages/Import';
 import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
 import { OpeningsPage } from '@/pages/Openings';
 import { GlobalStatsPage } from '@/pages/GlobalStats';
-import { useImportPolling } from '@/hooks/useImport';
+import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
 
 // ─── Non-visual job completion watcher ────────────────────────────────────────
 
@@ -97,6 +97,30 @@ function AppRoutes() {
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
   const [completedJobIds, setCompletedJobIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
+  const { token } = useAuth();
+
+  // Restore active jobs from server on mount (and after re-login when token changes)
+  const hasRestoredRef = useRef(false);
+  // Track which token restoration has been performed for — reset guard on re-login
+  const restoredForTokenRef = useRef<string | null>(null);
+  if (restoredForTokenRef.current !== token) {
+    restoredForTokenRef.current = token;
+    hasRestoredRef.current = false;
+  }
+
+  const activeJobsQuery = useActiveJobs(!!token);
+  useEffect(() => {
+    if (hasRestoredRef.current) return;
+    if (!activeJobsQuery.data) return;
+    hasRestoredRef.current = true;
+    const serverJobIds = activeJobsQuery.data.map((j) => j.job_id);
+    setActiveJobIds((ids) => {
+      const existing = new Set(ids);
+      const newIds = serverJobIds.filter((id) => !existing.has(id));
+      if (newIds.length === 0) return ids;
+      return [...ids, ...newIds];
+    });
+  }, [activeJobsQuery.data]);
 
   const handleImportStarted = useCallback((jobId: string) => {
     setActiveJobIds((ids) => [...ids, jobId]);

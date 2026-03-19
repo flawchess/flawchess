@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import {
   Dialog,
@@ -17,6 +17,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import type { UserProfile } from '@/types/users';
 
+const GAME_COUNT_REFRESH_INTERVAL_MS = 5000;
+
 interface ImportPageProps {
   onImportStarted: (jobId: string) => void;
   activeJobIds: string[];
@@ -25,12 +27,24 @@ interface ImportPageProps {
 
 function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jobId: string) => void }) {
   const { data } = useImportPolling(jobId);
+  const queryClient = useQueryClient();
+
+  const isDone = data?.status === 'completed';
+  const isError = data?.status === 'failed';
+  const isActive = !!data && !isDone && !isError;
+
+  // Periodically refresh game counts while import is active
+  useEffect(() => {
+    if (!isActive) return;
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+      queryClient.invalidateQueries({ queryKey: ['gameCount'] });
+    }, GAME_COUNT_REFRESH_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [isActive, queryClient]);
 
   if (!data) return null;
 
-  const isDone = data.status === 'completed';
-  const isError = data.status === 'failed';
-  const isActive = !isDone && !isError;
   const canDismiss = isDone || isError;
 
   const progressText = isDone

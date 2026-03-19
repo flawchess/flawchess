@@ -2,6 +2,24 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import type { ImportRequest, ImportStartedResponse, ImportStatusResponse } from '@/types/api';
 
+/** Fetch all active (PENDING or IN_PROGRESS) import jobs for the authenticated user.
+ *
+ * One-shot on mount (staleTime: 0, refetchInterval: false). Gate with enabled: !!token
+ * to prevent 401s when the user is not logged in.
+ */
+export function useActiveJobs(enabled: boolean) {
+  return useQuery<ImportStatusResponse[], Error>({
+    queryKey: ['imports', 'active'],
+    queryFn: async () => {
+      const response = await apiClient.get<ImportStatusResponse[]>('/imports/active');
+      return response.data;
+    },
+    enabled,
+    staleTime: 0,
+    refetchInterval: false,
+  });
+}
+
 /** Trigger a new import job. Returns ImportStartedResponse (with job_id). */
 export function useImportTrigger() {
   return useMutation<ImportStartedResponse, Error, ImportRequest>({
