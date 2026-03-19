@@ -8,10 +8,13 @@ from pydantic import BaseModel
 class UserProfileResponse(BaseModel):
     """Response for GET/PUT /users/me/profile."""
 
+    email: str
     chess_com_username: str | None
     lichess_username: str | None
     created_at: datetime
     last_login: datetime | None
+    chess_com_game_count: int
+    lichess_game_count: int
 
 
 class UserProfileUpdate(BaseModel):

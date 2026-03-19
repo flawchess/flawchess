@@ -90,31 +90,7 @@ auth_backend = AuthenticationBackend(
 fastapi_users = FastAPIUsers[User, int](get_user_manager, [auth_backend])
 
 # ---------------------------------------------------------------------------
-# Current user dependency — supports dev-mode auth bypass
+# Current user dependency
 # ---------------------------------------------------------------------------
 
-# Original JWT-based dependency
-_jwt_current_active_user = fastapi_users.current_user(active=True)
-
-
-async def _dev_bypass_user(
-    session: AsyncSession = Depends(get_async_session),
-) -> User:
-    """In development mode, return the first active user without requiring JWT auth."""
-    from sqlalchemy import select as sa_select
-
-    result = await session.execute(
-        sa_select(User).where(User.is_active == True).order_by(User.id).limit(1)  # noqa: E712
-    )
-    user = result.unique().scalar_one_or_none()
-    if user is None:
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=401, detail="No active user found (dev mode)")
-    return user
-
-
-if settings.ENVIRONMENT == "development":
-    current_active_user = _dev_bypass_user
-else:
-    current_active_user = _jwt_current_active_user
+current_active_user = fastapi_users.current_user(active=True)

@@ -58,6 +58,16 @@ async def delete_all_games_for_user(session: AsyncSession, user_id: int) -> int:
     return len(result.fetchall())
 
 
+async def count_games_by_platform(session: AsyncSession, user_id: int) -> dict[str, int]:
+    """Return game counts grouped by platform for the given user."""
+    result = await session.execute(
+        select(Game.platform, func.count()).select_from(Game)
+        .where(Game.user_id == user_id)
+        .group_by(Game.platform)
+    )
+    return {row[0]: row[1] for row in result.all()}
+
+
 async def bulk_insert_positions(session: AsyncSession, position_rows: list[dict]) -> None:
     """Bulk insert GamePosition rows for the given game.
 

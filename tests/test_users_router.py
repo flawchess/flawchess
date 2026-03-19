@@ -135,3 +135,37 @@ class TestPutProfile:
             )
 
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# User isolation — profile returns the authenticated user's own data
+# ---------------------------------------------------------------------------
+
+
+class TestProfileUserIsolation:
+    @pytest.mark.asyncio
+    async def test_profile_returns_own_email(self):
+        """Each user's GET /users/me/profile must return their own email, not another user's."""
+        email_a = unique_email("iso_a")
+        email_b = unique_email("iso_b")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            token_a = await _register_and_login(client, email_a, password)
+            token_b = await _register_and_login(client, email_b, password)
+
+            profile_a = await client.get(
+                "/users/me/profile",
+                headers={"Authorization": f"Bearer {token_a}"},
+            )
+            profile_b = await client.get(
+                "/users/me/profile",
+                headers={"Authorization": f"Bearer {token_b}"},
+            )
+
+        assert profile_a.status_code == 200
+        assert profile_b.status_code == 200
+        assert profile_a.json()["email"] == email_a
+        assert profile_b.json()["email"] == email_b

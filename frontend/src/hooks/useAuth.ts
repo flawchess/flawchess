@@ -31,7 +31,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string): Promise<void> => {
     setIsLoading(true);
     try {
-      queryClient.clear();
       // FastAPI-Users JWT login uses form-encoded body with `username` field
       const params = new URLSearchParams();
       params.set('username', email);
@@ -45,6 +44,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const { access_token } = response.data;
       localStorage.setItem('auth_token', access_token);
+      // Clear AFTER storing new token so any refetches triggered by the clear
+      // use the new user's token, not the previous user's token.
+      queryClient.clear();
       setToken(access_token);
       setUser(null); // user details fetched lazily if needed
     } finally {
@@ -53,8 +55,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const loginWithToken = useCallback((externalToken: string): void => {
-    queryClient.clear();
     localStorage.setItem('auth_token', externalToken);
+    // Clear AFTER storing new token so any refetches triggered by the clear
+    // use the new user's token, not the previous user's token.
+    queryClient.clear();
     setToken(externalToken);
     setUser(null);
   }, []);

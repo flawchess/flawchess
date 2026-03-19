@@ -143,6 +143,12 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
         <p className="text-sm text-muted-foreground">Loading profile...</p>
       ) : (
         <div className="space-y-4">
+          {profile && (
+            <p className="text-sm text-muted-foreground" data-testid="import-user-email">
+              Logged in as {profile.email}
+            </p>
+          )}
+
           {/* chess.com platform row */}
           <div
             data-testid="import-platform-chess-com"
@@ -150,7 +156,14 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
           >
             <div className="flex items-center gap-3">
               <div className="flex-1 space-y-1">
-                <Label htmlFor="chess-com-username" className="text-sm font-medium">chess.com</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="chess-com-username" className="text-sm font-medium">chess.com</Label>
+                  {profile && (
+                    <span className="text-xs text-muted-foreground" data-testid="import-game-count-chess-com">
+                      {profile.chess_com_game_count} games
+                    </span>
+                  )}
+                </div>
                 <Input
                   id="chess-com-username"
                   type="text"
@@ -185,7 +198,14 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
           >
             <div className="flex items-center gap-3">
               <div className="flex-1 space-y-1">
-                <Label htmlFor="lichess-username" className="text-sm font-medium">lichess</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="lichess-username" className="text-sm font-medium">lichess</Label>
+                  {profile && (
+                    <span className="text-xs text-muted-foreground" data-testid="import-game-count-lichess">
+                      {profile.lichess_game_count} games
+                    </span>
+                  )}
+                </div>
                 <Input
                   id="lichess-username"
                   type="text"
