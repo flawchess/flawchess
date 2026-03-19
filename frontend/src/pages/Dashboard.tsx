@@ -31,6 +31,7 @@ import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import { PositionBookmarkList } from '@/components/position-bookmarks/PositionBookmarkList';
 import { WDLBar } from '@/components/results/WDLBar';
 import { GameCardList } from '@/components/results/GameCardList';
+import { getArrowColor } from '@/lib/arrowColor';
 import { ImportModal } from '@/components/import/ImportModal';
 import { ImportProgress } from '@/components/import/ImportProgress';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -82,19 +83,11 @@ export function DashboardPage() {
         const squares = moveMap.get(entry.move_san);
         if (!squares) return null;
         const isHovered = entry.move_san === hoveredMove;
-        if (isHovered) {
-          return {
-            startSquare: squares.from,
-            endSquare: squares.to,
-            color: '#0a3d6b',
-          };
-        }
         const opacity = MIN_OPACITY + (1 - MIN_OPACITY) * (entry.game_count / maxCount);
-        const alpha = Math.round(opacity * 255).toString(16).padStart(2, '0');
         return {
           startSquare: squares.from,
           endSquare: squares.to,
-          color: `#1d6ab1${alpha}`,
+          color: getArrowColor(entry.win_pct, opacity, isHovered),
         };
       })
       .filter((a): a is NonNullable<typeof a> => a !== null);
