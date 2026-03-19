@@ -79,6 +79,7 @@ WHERE gp.white_hash = :hash AND g.user_id = :uid
 ## Version Control
 
 - Always create a pull request before merging a feature or phase branch into main. Squash and merge the pull request into main only when approved or requested by the user.
+- When working on the main branch (e.g. with /gsd:quick), don't commit the changes unless the user explicitly asks for it.
 
 ## Project Management
 
