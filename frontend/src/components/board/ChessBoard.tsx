@@ -1,10 +1,12 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Chessboard } from 'react-chessboard';
 
-interface BoardArrow {
+export interface BoardArrow {
   startSquare: string;
   endSquare: string;
   color: string;
+  /** Normalized width 0–1 (0 = thinnest, 1 = thickest) */
+  width: number;
 }
 
 interface ChessBoardProps {
@@ -13,7 +15,7 @@ interface ChessBoardProps {
   flipped?: boolean;
   /** Highlight: { from: "e2", to: "e4" } for the last move */
   lastMove?: { from: string; to: string } | null;
-  /** Arrows to render on the board (react-chessboard arrow format) */
+  /** Arrows to render on the board */
   arrows?: BoardArrow[];
 }
 
@@ -23,6 +25,105 @@ const PIECE_NAMES: Record<string, string> = {
   wP: 'white pawn', wR: 'white rook', wN: 'white knight', wB: 'white bishop', wQ: 'white queen', wK: 'white king',
   bP: 'black pawn', bR: 'black rook', bN: 'black knight', bB: 'black bishop', bQ: 'black queen', bK: 'black king',
 };
+
+// Shaft width range as fraction of square size
+const MIN_SHAFT_WIDTH = 0.06;
+const MAX_SHAFT_WIDTH = 0.26;
+// Arrowhead dimensions as fraction of square size
+const MIN_HEAD_WIDTH = 0.25;
+const MAX_HEAD_WIDTH = 0.65;
+const HEAD_LENGTH_RATIO = 0.7; // head length = head width * this
+const ARROW_OPACITY = 0.75;
+// How far past target square center the arrow tip extends (fraction of square size)
+const ARROW_TIP_OVERSHOOT = 0.15;
+
+const FILES = 'abcdefgh';
+
+function squareToCoords(square: string, flipped: boolean): [number, number] {
+  const file = FILES.indexOf(square[0]);
+  const rank = parseInt(square[1], 10) - 1;
+  const x = flipped ? 7 - file + 0.5 : file + 0.5;
+  const y = flipped ? rank + 0.5 : 7 - rank + 0.5;
+  return [x, y];
+}
+
+function buildArrowPolygon(
+  x1: number, y1: number, x2: number, y2: number,
+  shaftHalf: number, headHalf: number, headLen: number,
+): string {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  // Unit vectors: along arrow and perpendicular
+  const ux = dx / len;
+  const uy = dy / len;
+  const px = -uy; // perpendicular
+  const py = ux;
+
+  // Arrowhead base point (where shaft meets head)
+  const bx = x2 - ux * headLen;
+  const by = y2 - uy * headLen;
+
+  // 7 vertices: shaft start left, shaft-head junction left, head left,
+  // tip, head right, shaft-head junction right, shaft start right
+  const points = [
+    [x1 + px * shaftHalf, y1 + py * shaftHalf],
+    [bx + px * shaftHalf, by + py * shaftHalf],
+    [bx + px * headHalf, by + py * headHalf],
+    [x2, y2],
+    [bx - px * headHalf, by - py * headHalf],
+    [bx - px * shaftHalf, by - py * shaftHalf],
+    [x1 - px * shaftHalf, y1 - py * shaftHalf],
+  ];
+
+  return points.map(([x, y]) => `${x},${y}`).join(' ');
+}
+
+function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; boardWidth: number; flipped: boolean }) {
+  if (arrows.length === 0) return null;
+
+  const sqSize = boardWidth / 8;
+
+  return (
+    <svg
+      width={boardWidth}
+      height={boardWidth}
+      style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
+      data-testid="arrow-overlay"
+    >
+      {arrows.map((arrow, i) => {
+        const [x1, y1] = squareToCoords(arrow.startSquare, flipped);
+        const [cx2, cy2] = squareToCoords(arrow.endSquare, flipped);
+
+        // Extend tip past target center
+        const adx = cx2 - x1;
+        const ady = cy2 - y1;
+        const alen = Math.sqrt(adx * adx + ady * ady);
+        const x2 = cx2 + (adx / alen) * ARROW_TIP_OVERSHOOT;
+        const y2 = cy2 + (ady / alen) * ARROW_TIP_OVERSHOOT;
+
+        const w = arrow.width; // 0–1 normalized frequency
+        const shaftHalf = ((MIN_SHAFT_WIDTH + (MAX_SHAFT_WIDTH - MIN_SHAFT_WIDTH) * w) * sqSize) / 2;
+        const headWidth = (MIN_HEAD_WIDTH + (MAX_HEAD_WIDTH - MIN_HEAD_WIDTH) * w) * sqSize;
+        const headLen = headWidth * HEAD_LENGTH_RATIO;
+
+        const points = buildArrowPolygon(
+          x1 * sqSize, y1 * sqSize, x2 * sqSize, y2 * sqSize,
+          shaftHalf, headWidth / 2, headLen,
+        );
+
+        return (
+          <polygon
+            key={i}
+            points={points}
+            fill={arrow.color}
+            opacity={ARROW_OPACITY}
+          />
+        );
+      })}
+    </svg>
+  );
+}
 
 export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, arrows = [] }: ChessBoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -98,39 +199,41 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
 
   return (
     <div ref={containerRef} className="w-full" data-testid="chessboard">
-      <Chessboard
-        options={{
-          position,
-          boardOrientation: flipped ? 'black' : 'white',
-          boardStyle: { width: boardWidth, height: boardWidth },
-          darkSquareStyle: { backgroundColor: '#4a5568' },
-          lightSquareStyle: { backgroundColor: '#718096' },
-          darkSquareNotationStyle: BRIGHT_NOTATION,
-          lightSquareNotationStyle: BRIGHT_NOTATION,
-          id: 'chessboard',
-          arrows: arrows,
-          clearArrowsOnPositionChange: false,
-          squareStyles,
-          squareRenderer: ({ piece, square, children }) => {
-            const pieceName = piece ? PIECE_NAMES[piece.pieceType] : undefined;
-            const label = pieceName ? `${square} ${pieceName}` : square;
-            return (
-              <div
-                style={{ width: '100%', height: '100%', ...squareStyles[square] }}
-                aria-label={label}
-                data-testid={`square-${square}`}
-              >
-                {children}
-              </div>
-            );
-          },
-          onSquareClick: handleSquareClick,
-          onPieceDrop: ({ sourceSquare, targetSquare }) => {
-            if (!targetSquare) return false;
-            return onPieceDrop(sourceSquare, targetSquare);
-          },
-        }}
-      />
+      <div style={{ position: 'relative', width: boardWidth, height: boardWidth }}>
+        <Chessboard
+          options={{
+            position,
+            boardOrientation: flipped ? 'black' : 'white',
+            boardStyle: { width: boardWidth, height: boardWidth },
+            darkSquareStyle: { backgroundColor: '#4a5568' },
+            lightSquareStyle: { backgroundColor: '#718096' },
+            darkSquareNotationStyle: BRIGHT_NOTATION,
+            lightSquareNotationStyle: BRIGHT_NOTATION,
+            id: 'chessboard',
+            clearArrowsOnPositionChange: false,
+            squareStyles,
+            squareRenderer: ({ piece, square, children }) => {
+              const pieceName = piece ? PIECE_NAMES[piece.pieceType] : undefined;
+              const label = pieceName ? `${square} ${pieceName}` : square;
+              return (
+                <div
+                  style={{ width: '100%', height: '100%', ...squareStyles[square] }}
+                  aria-label={label}
+                  data-testid={`square-${square}`}
+                >
+                  {children}
+                </div>
+              );
+            },
+            onSquareClick: handleSquareClick,
+            onPieceDrop: ({ sourceSquare, targetSquare }) => {
+              if (!targetSquare) return false;
+              return onPieceDrop(sourceSquare, targetSquare);
+            },
+          }}
+        />
+        <ArrowOverlay arrows={arrows} boardWidth={boardWidth} flipped={flipped} />
+      </div>
     </div>
   );
 }

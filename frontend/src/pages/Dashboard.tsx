@@ -82,11 +82,11 @@ export function DashboardPage() {
         const squares = moveMap.get(entry.move_san);
         if (!squares) return null;
         const isHovered = entry.move_san === hoveredMove;
-        const frequency = entry.game_count / maxCount;
         return {
           startSquare: squares.from,
           endSquare: squares.to,
-          color: getArrowColor(entry.win_pct, entry.game_count, frequency, isHovered),
+          color: getArrowColor(entry.win_pct, entry.game_count, isHovered),
+          width: entry.game_count / maxCount,
         };
       })
       .filter((a): a is NonNullable<typeof a> => a !== null);
