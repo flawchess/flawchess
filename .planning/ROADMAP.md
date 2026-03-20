@@ -56,7 +56,9 @@
   3. API routes (analysis, games, imports) are never served from cache — network tab shows no ServiceWorker source for API calls
   4. App shows chess-themed icons (not Vite default) in the home screen shortcut and browser tab
   5. Developer can expose the Vite dev server over HTTPS to a phone on a different network using a documented one-command tunnel
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 17-01-PLAN.md — PWA setup with icons, manifest, service worker, and dev workflow scripts
 
 ### Phase 18: Mobile Navigation
 **Goal**: Users on mobile viewports can navigate the full app through a hamburger drawer menu
@@ -101,7 +103,7 @@
 | 14. UI Restructuring | v1.1 | 3/3 | Complete | 2026-03-17 |
 | 15. Enhanced Import | v1.1 | 3/3 | Complete | 2026-03-18 |
 | 16. Game Card UI | v1.1 | 3/3 | Complete | 2026-03-18 |
-| 17. PWA Foundation + Dev Workflow | v1.2 | 0/TBD | Not started | - |
+| 17. PWA Foundation + Dev Workflow | v1.2 | 0/1 | Not started | - |
 | 18. Mobile Navigation | v1.2 | 0/TBD | Not started | - |
 | 19. Mobile UX Polish + Install Prompt | v1.2 | 0/TBD | Not started | - |
 
