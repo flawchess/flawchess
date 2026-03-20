@@ -242,6 +242,10 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
             lightSquareNotationStyle: BRIGHT_NOTATION,
             id: 'chessboard',
             clearArrowsOnPositionChange: false,
+            // Disable drag-and-drop — it causes a black screen on mobile (TouchSensor/dnd-kit
+            // conflict with iOS/Android WebView). Click-to-move via onSquareClick is the
+            // primary interaction on touch devices.
+            allowDragging: false,
             squareStyles,
             squareRenderer: ({ piece, square, children }) => {
               const pieceName = piece ? PIECE_NAMES[piece.pieceType] : undefined;
