@@ -32,6 +32,7 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Game cards with 3-row layout, icons, hover minimap — v1.1
 - ✓ PWA setup (manifest, service worker, installable, chess knight icons) — v1.2
 - ✓ Dev workflow for phone testing (LAN + Cloudflare tunnel) — v1.2
+- ✓ Mobile-first navigation with bottom bar, "More" drawer, responsive header — v1.2
 
 ### Active
 
@@ -53,7 +54,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ## Context
 
-- **Current state:** v1.2 in progress. Phase 17 (PWA foundation) complete. ~11,800 Python LOC, ~4,500 TypeScript LOC (excluding node_modules). 17 phases complete across 3 milestones.
+- **Current state:** v1.2 in progress. Phase 18 (mobile navigation) complete. ~11,800 Python LOC, ~4,500 TypeScript LOC (excluding node_modules). 18 phases complete across 3 milestones.
 - **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui
 - **Auth:** FastAPI-Users (JWT + Google SSO)
 - **Core algorithm:** Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import for indexed integer equality lookups
@@ -85,4 +86,4 @@ Users can determine their success rate for any opening position they specify, fi
 | QueryClient singleton in lib/ | Shared across 401 interceptor and auth transitions | ✓ Good |
 
 ---
-*Last updated: 2026-03-20 after Phase 17 (PWA foundation) complete*
+*Last updated: 2026-03-20 after Phase 18 (mobile navigation) complete*

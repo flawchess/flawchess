@@ -3,23 +3,21 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Mobile & PWA
 status: unknown
-stopped_at: Completed 17-01-PLAN.md
-last_updated: "2026-03-20T14:25:15.202Z"
+last_updated: "2026-03-20T15:49:36.409Z"
 last_activity: 2026-03-20
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  completed_phases: 2
+  total_plans: 2
+  completed_plans: 2
 ---
 
 # Project State: Chessalytics
 
 ## Current Position
 
-Phase: 17 (pwa-foundation-dev-workflow) — COMPLETE
-Plan: 1 of 1 (all plans complete)
-Stopped at: Completed 17-01-PLAN.md
+Phase: 18 (mobile-navigation) — COMPLETE
+Plan: 1 of 1 (all complete)
 
 ## Project Reference
 
@@ -32,7 +30,7 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. PWA Foundation + Dev Workflow | 1/1 | Complete | 2026-03-20 |
-| 18. Mobile Navigation | 0/TBD | Not started | - |
+| 18. Mobile Navigation | 1/1 | Complete | 2026-03-20 |
 | 19. Mobile UX Polish + Install Prompt | 0/TBD | Not started | - |
 
 ## Key Context
@@ -53,6 +51,9 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 - Disable `arePiecesDraggable` on touch devices — HTML5 DnD absent on iOS Safari; click-to-move fallback
 - iOS PWA requires re-login after install — WKWebView storage isolation; manifest `scope: "/"` keeps OAuth in PWA
 - `allowedHosts: true` (boolean, not string 'all') — Vite 7 uses correct typed value; TUNNEL env guard keeps it secure
+- vaul (via shadcn) for bottom drawer — handles scroll lock, backdrop, iOS momentum without manual DOM manipulation
+- tailwindcss-safe-area plugin for pb-safe/pt-safe — avoids hardcoded pixel offsets for notch/home-indicator clearance
+- Pure Tailwind sm: breakpoints for mobile/desktop switching — no JS-based detection to avoid hydration mismatches
 
 ### Pending Todos
 
@@ -68,3 +69,4 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 
 ---
 Last activity: 2026-03-20
+Last session: 2026-03-20T15:42:37Z — Completed 18-01-PLAN.md (mobile navigation)

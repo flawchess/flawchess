@@ -17,9 +17,9 @@ Requirements for Mobile & PWA milestone. Each maps to roadmap phases.
 
 ### Mobile Navigation
 
-- [ ] **NAV-01**: User sees a hamburger menu on mobile screens that opens a slide-in drawer with all nav links and logout
-- [ ] **NAV-02**: Drawer closes on link tap and highlights the active route
-- [ ] **NAV-03**: App content respects safe-area insets on notched iPhones in standalone PWA mode
+- [x] **NAV-01**: User sees a hamburger menu on mobile screens that opens a slide-in drawer with all nav links and logout
+- [x] **NAV-02**: Drawer closes on link tap and highlights the active route
+- [x] **NAV-03**: App content respects safe-area insets on notched iPhones in standalone PWA mode
 
 ### Mobile UX
 
@@ -68,9 +68,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PWA-03 | Phase 17 | Complete |
 | PWA-04 | Phase 19 | Pending |
 | PWA-05 | Phase 19 | Pending |
-| NAV-01 | Phase 18 | Pending |
-| NAV-02 | Phase 18 | Pending |
-| NAV-03 | Phase 18 | Pending |
+| NAV-01 | Phase 18 | Complete |
+| NAV-02 | Phase 18 | Complete |
+| NAV-03 | Phase 18 | Complete |
 | UX-01 | Phase 19 | Pending |
 | UX-02 | Phase 19 | Pending |
 | UX-03 | Phase 19 | Pending |
