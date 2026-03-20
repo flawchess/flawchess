@@ -219,7 +219,9 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
 
 function ProtectedLayout() {
   const { token } = useAuth();
+  const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
+  const isOpeningsRoute = location.pathname.startsWith('/openings');
 
   if (!token) {
     return <Navigate to="/login" replace />;
@@ -227,7 +229,7 @@ function ProtectedLayout() {
   return (
     <>
       <NavHeader />
-      <MobileHeader />
+      {!isOpeningsRoute && <MobileHeader />}
       <main className="pb-16 sm:pb-0">
         <Outlet />
       </main>

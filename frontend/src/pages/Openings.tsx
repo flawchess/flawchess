@@ -526,14 +526,189 @@ export function OpeningsPage() {
           </div>
         </div>
 
-        {/* Mobile: single column */}
-        <div className="md:hidden">{sidebar}</div>
-        <div className="mt-6 md:hidden">
+        {/* Mobile: single column with sticky board */}
+        <div className="md:hidden flex flex-col gap-2 min-w-0">
+          {/* Sticky board — sticks to top of viewport while scrolling content below */}
+          <div className="sticky top-0 z-10 bg-background pb-2">
+            <ChessBoard
+              position={chess.position}
+              onPieceDrop={chess.makeMove}
+              flipped={boardFlipped}
+              lastMove={chess.lastMove}
+              arrows={boardArrows}
+            />
+          </div>
+
+          {/* Opening name + info icon */}
+          <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
+            {chess.openingName ? (
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
+                <span className="text-foreground">{chess.openingName.name}</span>
+              </div>
+            ) : (
+              <div />
+            )}
+            <span className="ml-auto flex-shrink-0">
+              <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="top">
+                Play moves on the board by tapping squares (tap a piece to select, then tap destination).
+                <br /><br />
+                The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
+              </InfoPopover>
+            </span>
+          </div>
+
+          {/* Board controls */}
+          <BoardControls
+            onBack={chess.goBack}
+            onForward={chess.goForward}
+            onReset={() => { chess.reset(); setGamesOffset(0); }}
+            onFlip={() => setBoardFlipped((f) => !f)}
+            canGoBack={chess.currentPly > 0}
+            canGoForward={chess.currentPly < chess.moveHistory.length}
+          />
+
+          {/* Move list */}
+          <MoveList
+            moveHistory={chess.moveHistory}
+            currentPly={chess.currentPly}
+            onMoveClick={chess.goToMove}
+          />
+
+          {/* Played as + Piece filter */}
+          <div className="flex flex-wrap gap-x-4 gap-y-3">
+            <div>
+              <p className="mb-1 text-xs text-muted-foreground">Played as</p>
+              <ToggleGroup
+                type="single"
+                value={filters.color}
+                onValueChange={(v) => {
+                  if (!v) return;
+                  const color = v as Color;
+                  setFilters(prev => ({ ...prev, color }));
+                  setBoardFlipped(color === 'black');
+                }}
+                variant="outline"
+                size="sm"
+                data-testid="filter-played-as-mobile"
+              >
+                <ToggleGroupItem value="white" data-testid="filter-played-as-white-mobile" className="min-h-11 sm:min-h-0">
+                  <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
+                  White
+                </ToggleGroupItem>
+                <ToggleGroupItem value="black" data-testid="filter-played-as-black-mobile" className="min-h-11 sm:min-h-0">
+                  <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
+                  Black
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+
+            <div className="ml-auto">
+              <div className="mb-1 flex items-center gap-1">
+                <p className="text-xs text-muted-foreground">Piece filter</p>
+                <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info-mobile" side="top">
+                  Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
+                </InfoPopover>
+              </div>
+              <ToggleGroup
+                type="single"
+                value={filters.matchSide}
+                onValueChange={(v) => {
+                  if (!v) return;
+                  setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
+                }}
+                variant="outline"
+                size="sm"
+                data-testid="filter-piece-filter-mobile"
+              >
+                <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-mobile" className="min-h-11 sm:min-h-0">Mine</ToggleGroupItem>
+                <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-mobile" className="min-h-11 sm:min-h-0">Opponent</ToggleGroupItem>
+                <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-mobile" className="min-h-11 sm:min-h-0">Both</ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+          </div>
+
+          <div className="border-t border-border/40" />
+
+          {/* More filters — collapsed by default on mobile */}
+          <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-between px-2 text-sm font-medium"
+                data-testid="section-more-filters-mobile"
+              >
+                More filters
+                {mobileFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="pt-2">
+                <FilterPanel filters={filters} onChange={handleFiltersChange} />
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          {/* Position bookmarks — collapsed by default */}
+          <Collapsible open={positionBookmarksOpen} onOpenChange={setPositionBookmarksOpen}>
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-between px-2 text-sm font-medium"
+                data-testid="section-position-bookmarks-mobile"
+              >
+                <span className="flex items-center gap-1">
+                  Position bookmarks
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info-mobile" side="top">
+                      Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                    </InfoPopover>
+                  </span>
+                </span>
+                {positionBookmarksOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="pt-2">
+                <div className="flex gap-2 mb-2">
+                  <Button
+                    size="lg"
+                    className="flex-1 bg-[#0a3d6b] hover:bg-[#072d50] text-white"
+                    onClick={openBookmarkDialog}
+                    data-testid="btn-bookmark-mobile"
+                  >
+                    <Save className="h-4 w-4" />
+                    Save
+                  </Button>
+                  <Button
+                    size="lg"
+                    className="flex-1 bg-[#0a3d6b] hover:bg-[#072d50] text-white"
+                    onClick={() => setSuggestionsOpen(true)}
+                    data-testid="btn-suggest-bookmarks-mobile"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Suggest
+                  </Button>
+                </div>
+                <PositionBookmarkList
+                  bookmarks={bookmarks}
+                  onReorder={handleReorder}
+                  onLoad={handleLoadBookmark}
+                />
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          <div className="border-t border-border/40" />
+
+          {/* Tabs: Moves / Games / Statistics */}
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
-            <TabsList className="w-full">
-              <TabsTrigger value="explorer" className="flex-1">Moves</TabsTrigger>
-              <TabsTrigger value="games" className="flex-1">Games</TabsTrigger>
-              <TabsTrigger value="statistics" className="flex-1">Statistics</TabsTrigger>
+            <TabsList className="w-full" data-testid="openings-tabs-mobile">
+              <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">Moves</TabsTrigger>
+              <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">Games</TabsTrigger>
+              <TabsTrigger value="statistics" className="flex-1" data-testid="tab-statistics-mobile">Statistics</TabsTrigger>
             </TabsList>
             <TabsContent value="explorer" className="mt-4">
               {moveExplorerContent}
