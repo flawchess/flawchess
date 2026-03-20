@@ -120,6 +120,7 @@ None.
 | 260319-p80 | Color-code move arrows by win rate using oklch gradient | 2026-03-19 | efb2764 | [260319-p80-color-code-move-arrows-by-win-rate-using](./quick/260319-p80-color-code-move-arrows-by-win-rate-using/) |
 | 260319-rj3 | Persist import job status across login | 2026-03-19 | 9824bf6 | [260319-rj3-persist-import-job-status-across-login-a](./quick/260319-rj3-persist-import-job-status-across-login-a/) |
 | 260319-t3x | Add tooltip info hover icons for move arrows and position bookmarks | 2026-03-19 | 5eb3c22 | [260319-t3x-add-tooltip-info-hover-icons-to-explain-](./quick/260319-t3x-add-tooltip-info-hover-icons-to-explain-/) |
+| 260320-cit | Adaptive granularity in RatingChart (daily/weekly/monthly) | 2026-03-20 | 5c7fa4a | [260320-cit-use-daily-datapoints-in-global-stats-rat](./quick/260320-cit-use-daily-datapoints-in-global-stats-rat/) |
 
 ---
-Last activity: 2026-03-19 - Completed quick task 260319-t3x: Add tooltip info hover icons to explain move arrows and position bookmarks
+Last activity: 2026-03-20 - Completed quick task 260320-cit: Adaptive granularity in RatingChart
