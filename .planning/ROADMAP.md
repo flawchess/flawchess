@@ -82,8 +82,12 @@ Plans:
   2. All buttons, filters, and controls have tap targets of at least 44x44px on mobile
   3. Moving chess pieces via click-to-click works correctly on iOS Safari and Android Chrome
   4. The Openings page sidebar (board + filters) and main content area are both usable on mobile without excessive scrolling
-  5. Android Chrome users see an in-app install prompt after interacting with the app; iOS Safari users see a dismissible banner with "Share → Add to Home Screen" instructions
-**Plans**: TBD
+  5. Android Chrome users see an in-app install prompt after interacting with the app; iOS Safari users see a dismissible banner with "Share > Add to Home Screen" instructions
+**Plans:** 3 plans
+Plans:
+- [ ] 19-01-PLAN.md — Chessboard touch fix and Openings sticky mobile layout
+- [ ] 19-02-PLAN.md — 44px touch targets and horizontal overflow fixes
+- [ ] 19-03-PLAN.md — PWA install prompts for Android and iOS
 
 ## Progress
 
@@ -105,9 +109,9 @@ Plans:
 | 14. UI Restructuring | v1.1 | 3/3 | Complete | 2026-03-17 |
 | 15. Enhanced Import | v1.1 | 3/3 | Complete | 2026-03-18 |
 | 16. Game Card UI | v1.1 | 3/3 | Complete | 2026-03-18 |
-| 17. PWA Foundation + Dev Workflow | 1/1 | Complete    | 2026-03-20 | - |
-| 18. Mobile Navigation | 1/1 | Complete    | 2026-03-20 | - |
-| 19. Mobile UX Polish + Install Prompt | v1.2 | 0/TBD | Not started | - |
+| 17. PWA Foundation + Dev Workflow | v1.2 | 1/1 | Complete | 2026-03-20 |
+| 18. Mobile Navigation | v1.2 | 1/1 | Complete | 2026-03-20 |
+| 19. Mobile UX Polish + Install Prompt | v1.2 | 0/3 | Not started | - |
 
 ---
 *Created: 2026-03-11*
