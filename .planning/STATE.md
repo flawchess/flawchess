@@ -67,6 +67,12 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 - [Phase 17]: Google SSO OAuth in PWA standalone on iOS needs physical device testing
 - [Phase 19]: react-chessboard touch drag on Android Chrome unverified — click-to-move is confirmed fallback
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260320-nku | Fix lichess import: games fetched but not saved when lichess username was previously imported by another user | 2026-03-20 | 08d7016 | [260320-nku-fix-lichess-import-games-fetched-but-not](./quick/260320-nku-fix-lichess-import-games-fetched-but-not/) |
+
 ---
-Last activity: 2026-03-20
+Last activity: 2026-03-20 - Completed quick task 260320-nku: Fix lichess import
 Last session: 2026-03-20T16:04:35.342Z
