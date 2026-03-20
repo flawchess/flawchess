@@ -121,6 +121,7 @@ None.
 | 260319-rj3 | Persist import job status across login | 2026-03-19 | 9824bf6 | [260319-rj3-persist-import-job-status-across-login-a](./quick/260319-rj3-persist-import-job-status-across-login-a/) |
 | 260319-t3x | Add tooltip info hover icons for move arrows and position bookmarks | 2026-03-19 | 5eb3c22 | [260319-t3x-add-tooltip-info-hover-icons-to-explain-](./quick/260319-t3x-add-tooltip-info-hover-icons-to-explain-/) |
 | 260320-cit | Adaptive granularity in RatingChart (daily/weekly/monthly) | 2026-03-20 | 5c7fa4a | [260320-cit-use-daily-datapoints-in-global-stats-rat](./quick/260320-cit-use-daily-datapoints-in-global-stats-rat/) |
+| 260320-d5b | Smarter win rate over time chart with rolling windows | 2026-03-20 | 79ce0e8 | [260320-d5b-smarter-win-rate-over-time-chart-with-ro](./quick/260320-d5b-smarter-win-rate-over-time-chart-with-ro/) |
 
 ---
-Last activity: 2026-03-20 - Completed quick task 260320-cit: Adaptive granularity in RatingChart
+Last activity: 2026-03-20 - Completed quick task 260320-d5b: Smarter win rate over time chart with rolling windows
