@@ -4,8 +4,8 @@ milestone: v1.2
 milestone_name: Mobile & PWA
 status: unknown
 stopped_at: Completed 17-01-PLAN.md
-last_updated: "2026-03-20T14:22:37.789Z"
-last_activity: "2026-03-20 — Phase 17 Plan 01 complete: all 3 tasks done; user verified PWA manifest, service worker, cache storage, and API NetworkOnly routing in Chrome DevTools"
+last_updated: "2026-03-20T14:25:15.202Z"
+last_activity: 2026-03-20
 progress:
   total_phases: 3
   completed_phases: 1
@@ -67,4 +67,4 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 - [Phase 19]: react-chessboard touch drag on Android Chrome unverified — click-to-move is confirmed fallback
 
 ---
-Last activity: 2026-03-20 — Phase 17 Plan 01 complete: all 3 tasks done; user verified PWA manifest, service worker, cache storage, and API NetworkOnly routing in Chrome DevTools
+Last activity: 2026-03-20
