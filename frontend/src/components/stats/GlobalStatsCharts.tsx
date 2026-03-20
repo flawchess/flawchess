@@ -1,3 +1,5 @@
+import { Info } from 'lucide-react';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import type { WDLByCategory } from '@/types/stats';
@@ -11,6 +13,7 @@ interface WDLCategoryChartProps {
   data: WDLByCategory[];
   title: string;
   testId: string;
+  infoTooltip: string;
 }
 
 const chartConfig = {
@@ -19,11 +22,33 @@ const chartConfig = {
   loss_pct: { label: 'Losses', color: 'oklch(0.45 0.17 25)' },
 };
 
-function WDLCategoryChart({ data, title, testId }: WDLCategoryChartProps) {
+function ChartTitle({ title, infoTooltip, testId }: { title: string; infoTooltip: string; testId: string }) {
+  return (
+    <h2 className="text-lg font-medium mb-3">
+      <span className="inline-flex items-center gap-1">
+        {title}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" className="text-muted-foreground hover:text-foreground" aria-label={`${title} info`} data-testid={`${testId}-info`}>
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs text-sm">
+              {infoTooltip}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </span>
+    </h2>
+  );
+}
+
+function WDLCategoryChart({ data, title, testId, infoTooltip }: WDLCategoryChartProps) {
   if (data.length === 0) {
     return (
       <div>
-        <h2 className="text-lg font-medium mb-3">{title}</h2>
+        <ChartTitle title={title} infoTooltip={infoTooltip} testId={testId} />
         <div
           data-testid={testId}
           className="text-center text-muted-foreground py-8"
@@ -36,7 +61,7 @@ function WDLCategoryChart({ data, title, testId }: WDLCategoryChartProps) {
 
   return (
     <div>
-      <h2 className="text-lg font-medium mb-3">{title}</h2>
+      <ChartTitle title={title} infoTooltip={infoTooltip} testId={testId} />
       <ChartContainer
         config={chartConfig}
         className="w-full"
@@ -92,11 +117,13 @@ export function GlobalStatsCharts({ byTimeControl, byColor }: GlobalStatsChartsP
         data={byTimeControl}
         title="Results by Time Control"
         testId="global-stats-by-tc"
+        infoTooltip="Your win/draw/loss breakdown for each time control: bullet, blitz, rapid, and classical."
       />
       <WDLCategoryChart
         data={byColor}
         title="Results by Color"
         testId="global-stats-by-color"
+        infoTooltip="Your win/draw/loss breakdown when playing as white vs black."
       />
     </div>
   );

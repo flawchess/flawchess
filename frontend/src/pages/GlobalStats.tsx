@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Info } from 'lucide-react';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import {
   Select,
   SelectContent,
@@ -90,7 +92,23 @@ export function GlobalStatsPage() {
           {/* Chess.com Rating section */}
           {(selectedPlatforms === null || selectedPlatforms.includes('chess.com')) && (
             <section data-testid="rating-section-chess-com" className="space-y-3">
-              <h2 className="text-lg font-medium">Chess.com Rating</h2>
+              <h2 className="text-lg font-medium">
+                <span className="inline-flex items-center gap-1">
+                  Chess.com Rating
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" className="text-muted-foreground hover:text-foreground" aria-label="Chess.com rating info" data-testid="rating-chess-com-info">
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-sm">
+                        Your Chess.com rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </span>
+              </h2>
               <RatingChart data={ratingData?.chess_com ?? []} platform="Chess.com" />
             </section>
           )}
@@ -98,7 +116,23 @@ export function GlobalStatsPage() {
           {/* Lichess Rating section */}
           {(selectedPlatforms === null || selectedPlatforms.includes('lichess')) && (
             <section data-testid="rating-section-lichess" className="space-y-3">
-              <h2 className="text-lg font-medium">Lichess Rating</h2>
+              <h2 className="text-lg font-medium">
+                <span className="inline-flex items-center gap-1">
+                  Lichess Rating
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" className="text-muted-foreground hover:text-foreground" aria-label="Lichess rating info" data-testid="rating-lichess-info">
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-sm">
+                        Your Lichess rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones. Lichess uses Glicko-2 ratings which start at 1500 and tend to run 200-400 points higher than Chess.com, so the two are not directly comparable.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </span>
+              </h2>
               <RatingChart data={ratingData?.lichess ?? []} platform="Lichess" />
             </section>
           )}
