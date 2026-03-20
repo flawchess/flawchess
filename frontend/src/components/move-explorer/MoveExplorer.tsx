@@ -75,8 +75,7 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-xs text-sm">
-                        These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings.<br/><br/>
-                        The arrows on the board correspond to the listed moves. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey. This helps you identify strengths and weaknesses in your openings.
+                        These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings.
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>

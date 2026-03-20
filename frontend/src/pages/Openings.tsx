@@ -236,15 +236,31 @@ export function OpeningsPage() {
         arrows={boardArrows}
       />
 
-      {/* Opening name */}
-      {chess.openingName ? (
-        <div className="flex items-baseline gap-2 px-1 text-sm">
-          <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
-          <span className="text-foreground">{chess.openingName.name}</span>
-        </div>
-      ) : (
-        <div className="h-5" />
-      )}
+      {/* Opening name + chessboard info icon */}
+      <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
+        {chess.openingName ? (
+          <div className="flex items-baseline gap-2">
+            <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
+            <span className="text-foreground">{chess.openingName.name}</span>
+          </div>
+        ) : (
+          <div />
+        )}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" className="ml-auto text-muted-foreground hover:text-foreground flex-shrink-0" aria-label="Chessboard info" data-testid="chessboard-info">
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs text-sm">
+              Play moves on the board by dragging pieces or clicking source and target squares.
+              <br/><br/>
+              The arrows show the next moves from your games. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
 
       {/* Move list */}
       <MoveList
