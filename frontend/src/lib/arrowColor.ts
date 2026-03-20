@@ -7,14 +7,14 @@
 //
 // Frequency is encoded as arrow thickness (handled by ChessBoard).
 
-const GREEN = 'oklch(0.45 0.16 145)';
-const GREY = 'oklch(0.75 0.01 260)';
-const RED = 'oklch(0.45 0.17 25)';
+export const GREEN = 'oklch(0.45 0.16 145)';
+export const GREY = 'oklch(0.75 0.01 260)';
+export const RED = 'oklch(0.45 0.17 25)';
 
 // Hovered arrows use boosted lightness for visibility
-const GREEN_HOVER = 'oklch(0.6 0.16 145)';
-const GREY_HOVER = 'oklch(0.9 0.01 260)';
-const RED_HOVER = 'oklch(0.6 0.17 25)';
+export const GREEN_HOVER = 'oklch(0.6 0.16 145)';
+export const GREY_HOVER = 'oklch(0.9 0.01 260)';
+export const RED_HOVER = 'oklch(0.6 0.17 25)';
 
 const MIN_GAMES_FOR_COLOR = 10;
 const GREEN_THRESHOLD = 60;

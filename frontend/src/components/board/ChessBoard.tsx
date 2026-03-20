@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Chessboard } from 'react-chessboard';
+import { GREEN, GREEN_HOVER, RED, RED_HOVER, GREY, GREY_HOVER } from '../../lib/arrowColor';
 
 export interface BoardArrow {
   startSquare: string;
@@ -81,10 +82,25 @@ function buildArrowPolygon(
   return points.map(([x, y]) => `${x},${y}`).join(' ');
 }
 
+// Render priority: grey/grey_hover = 0 (bottom), red/red_hover = 1 (middle), green/green_hover = 2 (top).
+// Grey arrows are drawn first so they never obscure red or green arrows.
+const ARROW_COLOR_PRIORITY: Record<string, number> = {
+  [GREY]: 0,
+  [GREY_HOVER]: 0,
+  [RED]: 1,
+  [RED_HOVER]: 1,
+  [GREEN]: 2,
+  [GREEN_HOVER]: 2,
+};
+
 function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; boardWidth: number; flipped: boolean }) {
   if (arrows.length === 0) return null;
 
   const sqSize = boardWidth / 8;
+
+  const sortedArrows = [...arrows].sort(
+    (a, b) => (ARROW_COLOR_PRIORITY[a.color] ?? 0) - (ARROW_COLOR_PRIORITY[b.color] ?? 0),
+  );
 
   return (
     <svg
@@ -93,7 +109,7 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
       style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
       data-testid="arrow-overlay"
     >
-      {arrows.map((arrow, i) => {
+      {sortedArrows.map((arrow, i) => {
         const [x1, y1] = squareToCoords(arrow.startSquare, flipped);
         const [cx2, cy2] = squareToCoords(arrow.endSquare, flipped);
 
