@@ -169,32 +169,32 @@ export function PositionBookmarkCard({ bookmark, onLoad }: Props) {
         </ToggleGroup>
       </div>
 
-      {/* Load button */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 shrink-0"
-        onMouseDown={() => { isDirtyRef.current = true; }}
-        onClick={handleLoad}
-        data-testid={`bookmark-btn-load-${bookmark.id}`}
-        aria-label="Load bookmark"
-      >
-        <Upload size={15} />
-      </Button>
-
-      {/* Delete button */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
-        onMouseDown={() => { isDirtyRef.current = true; }}
-        onClick={handleDelete}
-        disabled={deleteBookmark.isPending}
-        data-testid={`bookmark-btn-delete-${bookmark.id}`}
-        aria-label={`Delete bookmark: ${bookmark.label}`}
-      >
-        <Trash2 size={15} />
-      </Button>
+      {/* Load & Delete buttons stacked */}
+      <div className="flex flex-col justify-between self-stretch shrink-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onMouseDown={() => { isDirtyRef.current = true; }}
+          onClick={handleLoad}
+          data-testid={`bookmark-btn-load-${bookmark.id}`}
+          aria-label="Load bookmark"
+        >
+          <Upload size={15} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+          onMouseDown={() => { isDirtyRef.current = true; }}
+          onClick={handleDelete}
+          disabled={deleteBookmark.isPending}
+          data-testid={`bookmark-btn-delete-${bookmark.id}`}
+          aria-label={`Delete bookmark: ${bookmark.label}`}
+        >
+          <Trash2 size={15} />
+        </Button>
+      </div>
     </div>
   );
 }
