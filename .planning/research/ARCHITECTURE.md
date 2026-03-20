@@ -1,343 +1,299 @@
 # Architecture Research
 
-**Domain:** Chess analysis platform — move explorer and UI restructuring (v1.1)
-**Researched:** 2026-03-16
-**Confidence:** HIGH (based on direct codebase analysis of v1.0 implementation)
+**Domain:** Chess analysis platform — Mobile PWA support (v1.2)
+**Researched:** 2026-03-20
+**Confidence:** HIGH (direct codebase analysis of v1.1 + verified library docs)
 
 ## Standard Architecture
 
 ### System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         FRONTEND (React 19)                          │
-├──────────────────┬───────────────────────────────┬──────────────────┤
-│  /import (NEW)   │  /openings (RESTRUCTURED)      │  / (Dashboard)   │
-│  ImportPage      │  OpeningsPage                  │  DashboardPage   │
-│  (full page)     │  ├─ Board + shared filters      │  (unchanged      │
-│                  │  ├─ MoveExplorerTab (NEW)        │   except import  │
-│                  │  ├─ GamesTab (extracted)         │   button links   │
-│                  │  └─ StatisticsTab (existing)     │   to /import)    │
-├──────────────────┴───────────────────────────────┴──────────────────┤
-│               TanStack Query (cache / server state)                  │
-│  useAnalysis  useNextMoves(NEW)  useImport  usePositionBookmarks     │
-├─────────────────────────────────────────────────────────────────────┤
-│                   API Client (axios / apiClient)                     │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │ HTTP/JSON
-┌────────────────────────────▼────────────────────────────────────────┐
-│                        BACKEND (FastAPI)                             │
-├─────────────────────────────────────────────────────────────────────┤
-│  routers/analysis.py                                                 │
-│    POST /analysis/positions       (existing)                         │
-│    POST /analysis/time-series     (existing)                         │
-│    POST /analysis/next-moves      (NEW)                              │
-│    GET  /games/count              (existing)                         │
-├─────────────────────────────────────────────────────────────────────┤
-│  services/analysis_service.py                                        │
-│    analyze()           get_time_series()    get_next_moves() (NEW)   │
-│                                                                      │
-│  services/import_service.py                                          │
-│    _flush_batch()      MODIFY to populate move_san                   │
-├─────────────────────────────────────────────────────────────────────┤
-│  repositories/analysis_repository.py                                 │
-│    query_all_results()  query_matching_games()  query_time_series()  │
-│    query_next_moves()   (NEW)                                        │
-├─────────────────────────────────────────────────────────────────────┤
-│  models/game_position.py                                             │
-│    ADD  move_san: Mapped[str | None]                                 │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────────────┐
-│                         PostgreSQL                                   │
-│                                                                      │
-│  game_positions                                                      │
-│    id, game_id, user_id, ply                                         │
-│    full_hash, white_hash, black_hash                                 │
-│    move_san  VARCHAR(10)   ← ADD (NULL at ply 0)                     │
-│                                                                      │
-│  Existing indexes:                                                   │
-│    ix_gp_user_full_hash   (user_id, full_hash)                       │
-│    ix_gp_user_white_hash  (user_id, white_hash)                      │
-│    ix_gp_user_black_hash  (user_id, black_hash)                      │
-│                                                                      │
-│  New index:                                                          │
-│    ix_gp_user_full_hash_move_san  (user_id, full_hash, move_san)     │
-│    (covering index — eliminates heap fetch for next-moves GROUP BY)  │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                    FRONTEND (React 19 + Vite 5)                       │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  NavHeader (MODIFIED)                                             │ │
+│  │  ┌────────────────────────┐  ┌─────────────────────────────────┐ │ │
+│  │  │  Desktop (md:)          │  │  Mobile (<md)                   │ │ │
+│  │  │  Horizontal link bar   │  │  Hamburger → Sheet (NEW)        │ │ │
+│  │  └────────────────────────┘  └─────────────────────────────────┘ │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+│                                                                        │
+│  Pages: Import | Openings (Moves/Games/Statistics) | GlobalStats       │
+│  (pages unchanged structurally; mobile layout already single-column)  │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  PWA Layer (NEW)                                                  │ │
+│  │  vite-plugin-pwa ─► Service Worker (Workbox)                     │ │
+│  │    precache: JS/CSS bundles (content-hashed, CacheFirst)         │ │
+│  │    runtime: API routes (NetworkOnly — never cache auth/data)     │ │
+│  │    runtime: static fonts/icons (CacheFirst, long TTL)            │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  Web App Manifest (NEW) — public/manifest.webmanifest            │ │
+│  │  name, short_name, icons (192/512 PNG), theme_color,             │ │
+│  │  display: "standalone", start_url: "/", scope: "/"               │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────┬───────────────────────────┘
+                                           │ HTTP/JSON
+┌──────────────────────────────────────────▼───────────────────────────┐
+│  FastAPI Backend (unchanged for this milestone)                        │
+│  All API routes: /auth /analysis /games /imports /stats /users        │
+└───────────────────────────────────────────────────────────────────────┘
+
+Dev Workflow Addition:
+  ngrok / Cloudflare Tunnel → HTTPS public URL → phone browser
+  Vite config: server.host = true, server.hmr.clientPort = 443
 ```
 
 ### Component Responsibilities
 
 | Component | Responsibility | Status |
 |-----------|----------------|--------|
-| `game_positions` table | Position fingerprints per half-move | ADD `move_san` column + covering index |
-| `hashes_for_game()` in `zobrist.py` | Compute hashes for every ply | MODIFY to also return SAN per ply |
-| `import_service._flush_batch()` | Build position rows for bulk insert | MODIFY to populate `move_san` |
-| `analysis_repository` | DB queries for position lookups | ADD `query_next_moves()` |
-| `analysis_service` | Orchestrate queries, compute WDL | ADD `get_next_moves()` |
-| `analysis` router | HTTP surface for analysis | ADD `POST /analysis/next-moves` |
-| `OpeningsPage` | Openings analysis tab | RESTRUCTURE with board + sub-tabs |
-| `DashboardPage` | Position filter + game list | REMOVE import modal, link to `/import` |
-| `ImportPage` (new) | Dedicated import / sync page | NEW |
-| `MoveExplorerTab` (new) | Next-move table with W/D/L | NEW |
-| `GamesTab` (new) | Game list extracted from Dashboard | NEW |
-| `StatisticsTab` (new) | Charts extracted from current Openings | NEW |
-| `useNextMoves` (new) | TanStack Query wrapper | NEW |
+| `NavHeader` in `App.tsx` | Top navigation bar | MODIFY: add hamburger + Sheet for mobile |
+| `MobileNav` (new component) | Sheet-based slide-out nav for mobile | NEW |
+| `vite-plugin-pwa` | Generates service worker + manifest at build time | NEW (dev dep) |
+| `public/manifest.webmanifest` | PWA install metadata | NEW (auto-generated or manual) |
+| `public/icons/` | PWA icon set (192px, 512px PNG) | NEW (assets) |
+| `vite.config.ts` | Build configuration | MODIFY: add VitePWA plugin, server.host |
+| `index.html` | HTML entry point | MODIFY: theme-color meta, apple-touch-icon |
+| Existing pages | Import, Openings, GlobalStats | UNCHANGED structurally; mobile polish only |
+| `ChessBoard.tsx` | Responsive board via ResizeObserver | UNCHANGED (already mobile-adaptive) |
+| `FilterPanel.tsx` | Collapsible filter controls | UNCHANGED (already in Collapsible) |
 
 ## Recommended Project Structure
-
-### Backend additions
-
-```
-app/
-├── models/
-│   └── game_position.py        # ADD move_san: Mapped[str | None]
-├── services/
-│   ├── zobrist.py              # MODIFY hashes_for_game() → 5-tuples
-│   ├── import_service.py       # MODIFY _flush_batch() — unpack move_san
-│   └── analysis_service.py     # ADD get_next_moves()
-├── repositories/
-│   └── analysis_repository.py  # ADD query_next_moves()
-├── routers/
-│   └── analysis.py             # ADD POST /analysis/next-moves
-└── schemas/
-    └── analysis.py             # ADD NextMovesRequest, NextMoveRecord, NextMovesResponse
-```
 
 ### Frontend additions
 
 ```
-frontend/src/
-├── pages/
-│   ├── Openings.tsx            # RESTRUCTURE with Tabs + sub-tab routing
-│   └── Import.tsx              # NEW — full page for import/sync
-├── components/
-│   └── openings/
-│       ├── MoveExplorerTab.tsx  # NEW — next-move table with W/D/L per move
-│       ├── GamesTab.tsx         # NEW — game list (logic from Dashboard)
-│       └── StatisticsTab.tsx    # NEW — charts from current OpeningsPage
-├── hooks/
-│   └── useNextMoves.ts          # NEW — TanStack Query for /analysis/next-moves
-└── types/
-    └── api.ts                   # ADD NextMovesRequest, NextMoveRecord, NextMovesResponse
+frontend/
+├── vite.config.ts              # MODIFY — add VitePWA plugin, server.host: true
+├── index.html                  # MODIFY — theme-color meta, apple-touch-icon link
+├── public/
+│   ├── manifest.webmanifest    # NEW — or auto-generated by vite-plugin-pwa
+│   └── icons/
+│       ├── icon-192.png        # NEW — required for Android install prompt
+│       └── icon-512.png        # NEW — required for Android install prompt
+└── src/
+    ├── App.tsx                 # MODIFY — NavHeader: add mobile hamburger + Sheet
+    └── components/
+        └── nav/
+            └── MobileNav.tsx   # NEW — Sheet-based mobile drawer navigation
 ```
+
+### Structure Rationale
+
+- **`public/icons/`:** PWA icons must be at a stable public URL, not hashed by Vite. The `public/` directory serves files verbatim — correct placement.
+- **`src/components/nav/`:** New directory keeps navigation concerns grouped and separates `MobileNav` from the growing `App.tsx`. If nav complexity grows (e.g., active state badges, import progress indicators), it isolates the change surface.
+- **`vite.config.ts` modification:** PWA plugin must be registered in the Vite plugin array. `server.host: true` exposes the dev server on all network interfaces, enabling phone access on the same LAN (no tunnel needed for basic testing).
 
 ## Architectural Patterns
 
-### Pattern 1: move_san stored at the origin position ply
+### Pattern 1: PWA with vite-plugin-pwa (generateSW mode)
 
-**What:** The `move_san` column on a `game_positions` row holds the SAN of the move played FROM that position (ply N → ply N+1). The initial position (ply 0) has `move_san = NULL` — no move was played to reach the starting position.
+**What:** `vite-plugin-pwa` wraps Workbox's `generateSW` approach — at build time it emits a service worker file pre-populated with the asset manifest. The app auto-registers it. No hand-written service worker code is required.
 
-**Why this is correct for move explorer:** The query is "what moves were played FROM position X?" That means: `WHERE full_hash = hash(X) AND move_san IS NOT NULL GROUP BY move_san`. Each matching row's `move_san` is exactly the move played from position X. If move_san were stored on the destination row, you would need to know destination hashes in advance — a circular dependency.
+**When to use:** This project has no offline-first requirements and no custom push notification or background sync needs. `generateSW` is the right mode — minimal configuration, automatic precaching of Vite output bundles.
 
-**Trade-offs:** move_san is derivable from PGN + ply at any time, so this is storage redundancy (~4-6 bytes per row). At 200k position rows per user, overhead is negligible. Eliminates costly PGN re-parsing at query time.
+**Trade-offs:** `generateSW` is simpler but less flexible. `injectManifest` allows a custom service worker file — needed only if custom caching logic is required (not the case here).
 
-**Example:**
-```
-ply=0  full_hash=<start>   move_san=NULL     (initial position; no move yet)
-ply=1  full_hash=<after e4> move_san="e5"    (White played e4 to reach this pos)
-ply=2  full_hash=<after e5> move_san="Nf3"   (Black played e5 to reach this pos)
-```
+**Configuration:**
+```typescript
+// vite.config.ts
+import { VitePWA } from 'vite-plugin-pwa'
 
-When querying moves FROM the starting position: `WHERE full_hash = <start> → move_san = "e4"` (from the ply=0 row... wait — ply=0 has `move_san=NULL`). Correction: the ply=0 row has `move_san=NULL`. The ply=1 row's `full_hash` is hash(after e4). The move "e4" was played at ply=0 so `move_san="e4"` belongs on the ply=0 row. Clarification:
-
-```
-ply=0  full_hash=<start>     move_san="e4"   (the move played FROM the start position)
-ply=1  full_hash=<after e4>  move_san="e5"   (the move played FROM after-e4 position)
-ply=2  full_hash=<after e5>  move_san="Nf3"
-...
-ply=N  full_hash=<last pos>  move_san=NULL   (final position; no move played from it)
-```
-
-So move_san is NULL on the LAST position in a game (the game-ending position), not on ply 0.
-
-**Implementation in `hashes_for_game()`:**
-```python
-# ply 0 — initial position; capture the move that will be played from it
-board = game.board()
-moves = list(game.mainline_moves())
-
-for ply, move in enumerate(moves):
-    move_san = board.san(move)      # SAN before push — while move is legal on this board
-    wh, bh, fh = compute_hashes(board)
-    results.append((ply, wh, bh, fh, move_san))  # ply=0 gets move_san of first move
-    board.push(move)
-
-# Final position (no move played from it)
-wh, bh, fh = compute_hashes(board)
-results.append((len(moves), wh, bh, fh, None))
-```
-
-### Pattern 2: Composite covering index for next-move aggregation
-
-**What:** The existing `ix_gp_user_full_hash` index (on `user_id, full_hash`) already covers the WHERE clause for next-moves queries. Adding `move_san` as a third column creates a covering index that eliminates heap lookups for the GROUP BY.
-
-**Recommended index:**
-```python
-# In game_position.py __table_args__:
-Index("ix_gp_user_full_hash_move_san", "user_id", "full_hash", "move_san"),
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      devOptions: { enabled: true },   // test SW behavior in dev
+      manifest: {
+        name: 'Chessalytics',
+        short_name: 'Chessalytics',
+        description: 'Chess opening analysis by position',
+        theme_color: '#0a0a0a',        // matches --background
+        background_color: '#0a0a0a',
+        display: 'standalone',
+        start_url: '/',
+        scope: '/',
+        icons: [
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+        ],
+      },
+      workbox: {
+        // All API routes must bypass the service worker — data is dynamic and authenticated
+        navigateFallback: '/index.html',
+        runtimeCaching: [
+          {
+            urlPattern: /^\/(?:auth|analysis|games|imports|position-bookmarks|stats|users|health)\//,
+            handler: 'NetworkOnly',
+          },
+        ],
+      },
+    }),
+  ],
+  // ... rest of config
+})
 ```
 
-This is the only new index needed. The same index serves: `WHERE user_id = :uid AND full_hash = :h AND move_san IS NOT NULL GROUP BY move_san`.
+**Version note:** Use `vite-plugin-pwa` v1.2.0+ — this version supports Vite 7 (the current Vite version in this project is v7.x per `package.json`). Confidence: HIGH (verified against release notes and npm).
 
-The same white_hash / black_hash patterns are covered by existing indexes — no additional indexes needed for white/black match_side filtering in next-moves.
+### Pattern 2: Mobile Navigation via shadcn Sheet
 
-**No standalone index on `move_san`** — it is never queried in isolation.
+**What:** On mobile viewports (`< md` breakpoint), the horizontal `NavHeader` nav links are hidden and replaced by a hamburger `Menu` icon. Clicking it opens a `Sheet` (slide-out panel from the left) containing the same nav links as large vertical touch targets, plus the logout button.
 
-### Pattern 3: next-moves query — GROUP BY in repository, WDL in service
+**When to use:** Sheet is the idiomatic shadcn/ui pattern for mobile navigation drawers — it uses Radix UI Dialog primitives with proper focus trapping, keyboard escape, and ARIA roles. The existing project already uses `Dialog` and `Collapsible` from shadcn, so `Sheet` follows the same pattern.
 
-**What:** Single aggregating SQL query in the repository. Service computes loss count and percentages. This mirrors the existing `query_all_results` → `analyze()` separation.
+**Trade-offs:** Sheet requires adding the `sheet` component to the shadcn install (`npx shadcn add sheet`). Bottom-drawer pattern (Vaul-based `Drawer`) is more native-feeling on iOS but is better suited for actions, not navigation. Left-slide Sheet matches user mental model for navigation drawers.
 
-**SQLAlchemy query structure:**
-```python
-async def query_next_moves(
-    session: AsyncSession,
-    user_id: int,
-    hash_column: Any,
-    target_hash: int,
-    # ... same filter params as _build_base_query
-) -> list[tuple]:
-    """Return (move_san, game_count, wins, draws) per move from target position."""
-    wins_expr = func.sum(
-        case(
-            (and_(Game.result == "1-0", Game.user_color == "white"), 1),
-            (and_(Game.result == "0-1", Game.user_color == "black"), 1),
-            else_=0,
-        )
-    ).label("wins")
-    draws_expr = func.sum(
-        case((Game.result == "1/2-1/2", 1), else_=0)
-    ).label("draws")
-
-    stmt = (
-        select(
-            GamePosition.move_san,
-            func.count(Game.id.distinct()).label("game_count"),
-            wins_expr,
-            draws_expr,
-        )
-        .join(Game, Game.id == GamePosition.game_id)
-        .where(
-            GamePosition.user_id == user_id,
-            hash_column == target_hash,
-            GamePosition.move_san.isnot(None),
-        )
-        .group_by(GamePosition.move_san)
-        .order_by(func.count(Game.id.distinct()).desc())
-    )
-    # ... apply same optional filters (time_control, platform, rated, etc.)
-    rows = await session.execute(stmt)
-    return list(rows.all())
-```
-
-**DISTINCT on game_id** (`func.count(Game.id.distinct())`) is required. A transposition can cause the same position to appear at multiple plies in the same game, which would double-count that game without DISTINCT.
-
-### Pattern 4: Sub-tabs with shared filter state in OpeningsPage
-
-**What:** `OpeningsPage` owns both the chess board state (position, move history) and the filter state. These are passed as props to three sub-tabs. The `Tabs` component from `@/components/ui/tabs` is already installed and used throughout the project.
-
-**Tab values:** `"explorer"`, `"games"`, `"statistics"`
-
-**Query gating:** Each sub-tab enables its query only when it is the active tab. This prevents three simultaneous requests on page load.
-
+**Implementation in NavHeader:**
 ```tsx
-// MoveExplorerTab receives: { position_hash, match_side, filters }
-// GamesTab receives: { position_hash, match_side, filters }
-// StatisticsTab receives: { filters } (bookmarks-based, no board position needed)
+// Mobile: hidden md:flex pattern inverted for hamburger button
+// Desktop: hidden on mobile, visible md+
+<nav className="hidden md:flex items-center gap-1">
+  {NAV_ITEMS.map(...)}  {/* existing desktop links */}
+</nav>
+
+{/* Mobile hamburger — visible only below md breakpoint */}
+<div className="md:hidden">
+  <MobileNav />
+</div>
 ```
 
-**Filter state ownership:** `OpeningsPage` holds a single `filters` state object (same shape as `FilterState` from `FilterPanel`). The existing `FilterPanel` component is reused as a shared sidebar. Filters are NOT duplicated into each sub-tab — they flow down as read-only props.
+**MobileNav component structure:**
+```tsx
+// src/components/nav/MobileNav.tsx
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import { Menu } from 'lucide-react'
 
-### Pattern 5: ImportPage as a lifted ImportModal
+export function MobileNav() {
+  const [open, setOpen] = useState(false)
+  const location = useLocation()
+  const { logout } = useAuth()
 
-**What:** The `ImportModal` component contains all the import logic (first-time view, sync view, edit mode, add-platform flow). For the dedicated `ImportPage`, this content is rendered as a full page rather than inside a `Dialog` wrapper.
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Open navigation menu" data-testid="nav-mobile-menu">
+          <Menu className="h-5 w-5" />
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="left" className="w-64 pt-8" data-testid="mobile-nav-sheet">
+        <nav className="flex flex-col gap-1">
+          {NAV_ITEMS.map(({ to, label }) => (
+            <Button key={to} asChild variant="ghost" className="justify-start text-base h-12"
+              onClick={() => setOpen(false)}>
+              <Link to={to} data-testid={`mobile-nav-${label.toLowerCase()}`}>{label}</Link>
+            </Button>
+          ))}
+        </nav>
+        <div className="absolute bottom-6 left-4 right-4">
+          <Button variant="ghost" className="w-full justify-start text-base h-12"
+            onClick={() => { logout(); setOpen(false); }} data-testid="mobile-nav-logout">
+            Logout
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+```
 
-**Implementation approach:** Either:
-1. Extract `ImportModal`'s body into a separate `ImportForm` component used by both modal and page.
-2. Or simply render the existing `ImportModal` content directly in `ImportPage` without the `Dialog` wrapper.
+### Pattern 3: Dev Workflow for Phone Testing
 
-Option 2 is simpler — lift the inner `<form>` and sync view JSX into a standalone page component. The `ImportModal` can be removed entirely or kept temporarily while `DashboardPage` still references it (remove as part of the UI restructuring).
+**What:** Two approaches, choose based on need:
 
-**DashboardPage change:** The import button (`btn-import`) changes from `onClick={() => setImportOpen(true)}` to a React Router `<Link to="/import">`. Remove `ImportModal` and `ImportProgress` from `DashboardPage` — these move to `ImportPage`.
+1. **LAN access (simplest):** Set `server.host: true` in `vite.config.ts`. Vite prints the LAN IP (e.g., `http://192.168.1.5:5173`). Open on phone when on same WiFi. No tunnel needed for basic layout testing.
+
+2. **HTTPS tunnel (for PWA install testing):** PWA install requires HTTPS. Use `cloudflared tunnel --url http://localhost:5173` (Cloudflare Tunnel, free, no account needed for one-off sessions) or ngrok. Configure Vite HMR for tunnel:
+
+```typescript
+// vite.config.ts additions for tunnel compatibility
+server: {
+  host: true,
+  hmr: {
+    clientPort: 443,  // required when behind HTTPS tunnel
+  },
+  // ... existing proxy config
+}
+```
+
+**When to use:** Use LAN for day-to-day layout iteration. Use HTTPS tunnel specifically when testing PWA install prompt, service worker registration, or Safari PWA behavior. The tunnel URL is temporary — it is not needed for production (production already runs with HTTPS).
+
+**Trade-offs:** ngrok free tier limits to one tunnel with a random subdomain that changes per session. Cloudflare Tunnel (`cloudflared`) is faster (5.8 MB/s vs ngrok's 1.1 MB/s per 2025 benchmarks), completely free, no account required for ephemeral URLs, and supports concurrent tunnels. Recommended: `cloudflared` for this project.
+
+**iOS Safari note:** iOS does not show an install prompt — users must manually use Share → "Add to Home Screen". This is a browser limitation, not a code issue. The PWA will still install and run in standalone mode.
+
+### Pattern 4: Touch Target Sizing for Mobile Polish
+
+**What:** WCAG 2.5.5 (AA) recommends 44×44px minimum touch targets. Apple HIG recommends 44pt. Existing shadcn buttons with `size="sm"` render at 32px height — too small for reliable touch.
+
+**When to apply:** Any interactive element on mobile that is currently `size="sm"`: filter toggle buttons in `FilterPanel`, board control buttons in `BoardControls`, move list items in `MoveList`.
+
+**Pattern:** Use responsive size classes where feasible:
+```tsx
+// Before: size="sm" everywhere
+// After: sm size on desktop, default (44px) on mobile
+<Button size="sm" className="h-8 md:h-8 touch-manipulation" ...>
+// Or for elements that can be taller:
+<Button className="h-11 md:h-8 px-3" ...>
+```
+
+The `touch-manipulation` CSS class disables double-tap zoom on interactive elements — important for the chess board and filter controls.
+
+**ChessBoard:** Already handles touch correctly via drag-drop and click-to-click. ResizeObserver gives it full container width on mobile. No changes needed to board interaction.
 
 ## Data Flow
 
-### Next-Moves Request Flow
+### PWA Asset Caching Flow
 
 ```
-User navigates board to position X in MoveExplorerTab
-    ↓
-MoveExplorerTab calls useNextMoves({ hash, match_side, ...filters })
-    ↓
-TanStack Query (enabled when tab is active):
-    POST /analysis/next-moves
-    { full_hash, match_side, time_control, platform, rated, opponent_type, recency, color }
-    ↓
-analysis router → analysis_service.get_next_moves()
-    ↓
-analysis_repository.query_next_moves()
-    SELECT move_san, COUNT(DISTINCT g.id) AS game_count, SUM(wins), SUM(draws)
-    FROM game_positions gp JOIN games g ON g.id = gp.game_id
-    WHERE gp.user_id = :uid AND gp.full_hash = :hash AND gp.move_san IS NOT NULL
-    GROUP BY move_san ORDER BY game_count DESC
-    ↓
-Service: loss = game_count - wins - draws; compute percentages
-    ↓
-NextMovesResponse: [{ move_san, game_count, wins, draws, losses, win_pct, ... }]
-    ↓
-MoveExplorerTab renders table: Move | Games | W% | D% | L%
-Click on a row → board advances that move → new hash → new next-moves fetch
+First visit (or after SW update):
+  Browser → Fetch index.html (network)
+      ↓
+  Service Worker registers + precaches all Vite output bundles
+  (JS/CSS with content hashes → CacheFirst forever)
+      ↓
+Subsequent visits:
+  index.html → NetworkFirst (SPA shell must be fresh for routing)
+  /assets/*.js → CacheFirst (content-hashed, never stale)
+  /assets/*.css → CacheFirst (content-hashed, never stale)
+  /icons/* → CacheFirst (rarely change)
+  /api/* → NetworkOnly (auth-protected data, must not be cached)
 ```
 
-### Import Pipeline Change (move_san population)
+### Mobile Nav State Flow
 
 ```
-_flush_batch() calls hashes_for_game(pgn)
+User taps hamburger icon
     ↓
-hashes_for_game() returns 5-tuples: (ply, wh, bh, fh, move_san)
+Sheet open=true → slides in from left, focus trapped inside
     ↓
-position_rows dicts include "move_san" key
+User taps nav link
     ↓
-game_repository.bulk_insert_positions() writes move_san to DB
-    (no change to bulk_insert_positions beyond the extra column in dicts)
+setOpen(false) → Sheet closes, React Router navigates
+    ↓
+NavHeader isActive() re-runs → active link highlighted
+    (both desktop and mobile nav use same isActive() function)
 ```
 
-### UI Routing Change
+### PWA Service Worker Update Flow
 
 ```
-Current:
-  /             DashboardPage  (board + game list + import modal)
-  /openings     OpeningsPage   (bookmarks + WDL charts + win-rate chart)
-
-After v1.1:
-  /             DashboardPage  (board + game list; import button links to /import)
-  /openings     OpeningsPage   (board + shared filters + sub-tabs)
-                   sub-tab: explorer  → MoveExplorerTab
-                   sub-tab: games     → GamesTab
-                   sub-tab: statistics → StatisticsTab
-  /import       ImportPage     (full-page import/sync UI)
-```
-
-### Filter and Board State in Restructured OpeningsPage
-
-```
-OpeningsPage
-  │  owns: filters state, chess board state (position, move history)
-  │
-  ├─► ChessBoard + MoveList + BoardControls  (interactive board — same as Dashboard)
-  │
-  ├─► FilterPanel  (existing component, receives filters + onChange)
-  │
-  └─► <Tabs>
-        ├─► MoveExplorerTab (props: hash, match_side, filters)
-        │     useNextMoves({ hash, match_side, ...filters }, enabled: activeTab==='explorer')
-        │
-        ├─► GamesTab (props: hash, match_side, filters)
-        │     useAnalysis() mutation (same as Dashboard's handleAnalyze)
-        │
-        └─► StatisticsTab (props: filters)
-              useTimeSeries() (same as current OpeningsPage)
+User returns to app after new deployment
+    ↓
+Service Worker detects updated bundle (new content hash)
+    ↓
+registerType: 'autoUpdate' → SW updates immediately
+    (no manual user action required — appropriate for a data tool
+     where users don't need to "save" in-flight work)
+    ↓
+Page reloads with new assets
 ```
 
 ## New vs. Modified: Explicit Accounting
@@ -346,109 +302,106 @@ OpeningsPage
 
 | Item | Type | Location |
 |------|------|----------|
-| `move_san` column | DB column | `game_positions` table |
-| `ix_gp_user_full_hash_move_san` | DB index | `game_positions` |
-| `query_next_moves()` | Repository function | `analysis_repository.py` |
-| `get_next_moves()` | Service function | `analysis_service.py` |
-| `NextMovesRequest`, `NextMoveRecord`, `NextMovesResponse` | Pydantic schemas | `schemas/analysis.py` |
-| `POST /analysis/next-moves` | API endpoint | `analysis` router |
-| `useNextMoves` | React hook | `hooks/useNextMoves.ts` |
-| `MoveExplorerTab` | React component | `components/openings/MoveExplorerTab.tsx` |
-| `GamesTab` | React component | `components/openings/GamesTab.tsx` |
-| `StatisticsTab` | React component | `components/openings/StatisticsTab.tsx` |
-| `ImportPage` | React page | `pages/Import.tsx` |
-| `/import` route + nav item | Router + nav | `App.tsx` |
+| `vite-plugin-pwa` | npm dev dependency | `package.json` |
+| `VitePWA()` plugin config | Vite plugin | `vite.config.ts` |
+| `server.host: true`, `hmr.clientPort` | Vite server config | `vite.config.ts` |
+| `public/icons/icon-192.png` | PWA icon asset | `frontend/public/icons/` |
+| `public/icons/icon-512.png` | PWA icon asset | `frontend/public/icons/` |
+| `MobileNav` | React component | `src/components/nav/MobileNav.tsx` |
+| Sheet shadcn component | UI component | `src/components/ui/sheet.tsx` |
+| `mobile-nav-menu` testid | Browser automation | on hamburger button |
+| `mobile-nav-sheet` testid | Browser automation | on Sheet content |
+| `mobile-nav-{page}` testids | Browser automation | on Sheet nav links |
 
 ### Modified
 
 | Item | Change | Location |
 |------|--------|----------|
-| `hashes_for_game()` | Returns 5-tuples with `move_san` | `services/zobrist.py` |
-| `import_service._flush_batch()` | Unpacks 5-tuples, adds `move_san` to position row dicts | `services/import_service.py` |
-| `GamePosition` model | ADD `move_san: Mapped[str \| None]` | `models/game_position.py` |
-| `OpeningsPage` | Restructure: add board, shared filters, Tabs container | `pages/Openings.tsx` |
-| `App.tsx` | Add `/import` route and nav item | `App.tsx` |
-| `DashboardPage` | Import button links to `/import`; remove ImportModal + ImportProgress | `pages/Dashboard.tsx` |
+| `NavHeader` | Add mobile hamburger + `MobileNav`; hide desktop nav below `md:` | `App.tsx` |
+| `index.html` | Add `theme-color` meta, `apple-touch-icon` link, correct favicon | `index.html` |
+| `vite.config.ts` | Add VitePWA plugin and server.host | `vite.config.ts` |
+| Touch-target sizing | Increase interactive element height on mobile viewports (min 44px) | `BoardControls.tsx`, `FilterPanel.tsx`, possibly `MoveList.tsx` |
 
-### Unchanged / Reused As-Is
+### Unchanged
 
 | Item | Why unchanged |
 |------|---------------|
-| `_build_base_query()` | `query_next_moves()` mirrors its filter parameter pattern |
-| Existing hash indexes | `ix_gp_user_full_hash` covers the WHERE for next-moves |
-| `analysis_service.analyze()` | GamesTab reuses this endpoint unchanged |
-| `useAnalysis` / `useGamesQuery` hooks | Reused by GamesTab as-is |
-| `FilterPanel` component | Reused as shared filter sidebar in OpeningsPage |
-| `ChessBoard`, `MoveList`, `BoardControls` | Reused in OpeningsPage (same as Dashboard) |
+| `ChessBoard.tsx` | ResizeObserver already gives full-width board on mobile; drag + click-to-click both work on touch |
+| Page components | Single-column layout at mobile breakpoints is already implemented in `Openings.tsx` |
+| `FilterPanel` + Collapsible | Already collapsible on mobile; no structural changes needed |
+| FastAPI backend | PWA is entirely a frontend concern; no backend changes required |
+| Auth flow | JWT + Google SSO unchanged; PWA standalone mode does not affect cookie/token behavior |
 
 ## Build Order (Dependency-Aware)
 
 ```
-Step 1 — DB schema + import pipeline (blocks everything)
-  1a. Add move_san to GamePosition model + covering index
-  1b. Modify hashes_for_game() to return 5-tuples with move_san
-  1c. Modify _flush_batch() to unpack 5-tuples and include move_san in position rows
-  1d. DB wipe + fresh import to validate move_san populates correctly
+Step 1 — PWA foundation (no deps, do first)
+  1a. Install vite-plugin-pwa (npm install -D vite-plugin-pwa)
+  1b. Add VitePWA() to vite.config.ts with manifest config
+  1c. Create icon assets (icon-192.png, icon-512.png) in public/icons/
+  1d. Update index.html: theme-color meta, apple-touch-icon, favicon
+  1e. Verify: npm run build → check dist/ for sw.js and manifest.webmanifest
+  1f. Verify: npm run preview → Lighthouse PWA audit passes install criteria
 
-Step 2 — Backend endpoint (blocks frontend next-moves)
-  2a. Add Pydantic schemas: NextMovesRequest, NextMoveRecord, NextMovesResponse
-  2b. Add query_next_moves() to analysis_repository.py
-  2c. Add get_next_moves() to analysis_service.py
-  2d. Add POST /analysis/next-moves to analysis router
-  2e. Write test for query_next_moves() and get_next_moves()
+Step 2 — Dev workflow setup (independent of Step 1)
+  2a. Set server.host: true in vite.config.ts
+  2b. Set server.hmr.clientPort: 443 for tunnel compatibility
+  2c. Document: LAN URL for daily testing, cloudflared for HTTPS/install testing
 
-Step 3 — Frontend: move explorer (depends on Step 2)
-  3a. Add NextMovesRequest/Response types to types/api.ts
-  3b. Add useNextMoves hook
-  3c. Build MoveExplorerTab component
+Step 3 — Mobile navigation (independent of Steps 1-2)
+  3a. npx shadcn add sheet
+  3b. Create MobileNav component with Sheet, hamburger trigger, nav links
+  3c. Modify NavHeader: hide desktop nav below md:, add MobileNav for mobile
+  3d. Verify: desktop nav unchanged, mobile shows hamburger + functional Sheet
+  3e. Add all required data-testid attributes
 
-Step 4 — Frontend: UI restructuring (independent of Steps 2-3, can parallel)
-  4a. Create ImportPage (lift ImportModal content into full page)
-  4b. Add /import route to App.tsx, add Import to nav
-  4c. Update DashboardPage: change import button to link, remove ImportModal
-  4d. Create GamesTab (extract game list + analysis from Dashboard logic)
-  4e. Create StatisticsTab (extract charts from current OpeningsPage)
-  4f. Restructure OpeningsPage: add board state, shared FilterPanel, Tabs
-  4g. Wire all three sub-tabs into OpeningsPage
+Step 4 — Mobile UX polish (after Step 3, can be incremental)
+  4a. Audit touch target sizes: BoardControls, FilterPanel toggle buttons, MoveList items
+  4b. Add touch-manipulation to interactive elements where needed
+  4c. Test on actual phone via LAN URL or tunnel
+  4d. Fix any overflow / scroll issues on Openings page (board + tabs on small screen)
+  4e. Verify iOS Safari: app installs to home screen, runs in standalone mode
 
-Step 5 — Integration
-  5a. Connect MoveExplorerTab into OpeningsPage (merge Steps 3 + 4)
-  5b. End-to-end test: play moves → explorer shows next moves with WDL
+Step 5 — Integration verification
+  5a. Full Lighthouse PWA audit in production build (npm run preview)
+  5b. Test install on Android Chrome (automatic prompt) and iOS Safari (manual Share menu)
+  5c. Verify API calls are NetworkOnly (no cached stale auth responses)
+  5d. Verify SW auto-updates correctly after a code change
 ```
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Querying move_san without DISTINCT on game_id
+### Anti-Pattern 1: Caching API routes in the service worker
 
-**What people do:** `COUNT(*)` instead of `COUNT(DISTINCT g.id)` in the next-moves GROUP BY.
+**What people do:** Omit the `runtimeCaching` config with `NetworkOnly` for API routes, letting the service worker cache `/analysis/*`, `/auth/*`, etc.
 
-**Why it's wrong:** Transpositions cause the same position hash to appear at multiple plies in one game. Without DISTINCT, a single game contributes multiple rows and inflates counts. The existing `_build_base_query` already uses `.distinct(Game.id)` for this exact reason. The next-moves query must apply the same discipline.
+**Why it's wrong:** This is an authenticated app with user-specific data. Cached API responses would serve stale game data or, worse, serve one user's data to another after a session change. Auth headers would not be re-checked.
 
-**Do this instead:** `COUNT(DISTINCT g.id)` in the aggregation. Or use a subquery to deduplicate by game_id before grouping — but the DISTINCT aggregate is simpler and performs well.
+**Do this instead:** Explicitly match all backend API paths with `handler: 'NetworkOnly'`. Only static assets (content-hashed bundles, icons) should be cached.
 
-### Anti-Pattern 2: Putting move_san on the destination position row
+### Anti-Pattern 2: Using `prompt` registerType without an update UI
 
-**What people do:** Attach move_san to the position row for the position REACHED by the move (ply N+1) instead of the position FROM which the move was played (ply N).
+**What people do:** Set `registerType: 'prompt'` to get fine-grained control over SW updates, but then never implement the update prompt UI.
 
-**Why it's wrong:** The move explorer query asks "what moves are available FROM position X?" This requires `WHERE full_hash = hash(X)` and reading `move_san` on those rows. If move_san were on destination rows, you would need to know destination hashes — which is the answer you are trying to find.
+**Why it's wrong:** The user gets a stale app silently until they hard-refresh. For a data analysis tool (not a document editor), there is no in-flight work to lose. `autoUpdate` is the correct choice — it silently updates and reloads, which is acceptable behavior for this app.
 
-**Do this instead:** Store move_san on the row for the position FROM which the move was played. The final game position (no move played from it) has `move_san = NULL`.
+**Do this instead:** `registerType: 'autoUpdate'`. If future features need to warn before reload (e.g., a game analysis in progress), revisit then.
 
-### Anti-Pattern 3: Each sub-tab fires queries independently on mount
+### Anti-Pattern 3: Replacing the desktop nav entirely for a hamburger on all viewports
 
-**What people do:** All three sub-tabs use `enabled: true` in their query hooks, triggering three DB queries simultaneously on page load.
+**What people do:** Remove the horizontal nav and use a hamburger menu universally to simplify code.
 
-**Why it's wrong:** Wasted DB hits, degraded load time, and potentially inconsistent intermediate states as tabs render with stale data.
+**Why it's wrong:** Desktop users lose a persistent navigation pattern they are used to. The existing horizontal nav with 3 items fits comfortably on any screen wider than 400px. Adding hamburger-only navigation on desktop degrades UX.
 
-**Do this instead:** Gate each query with `enabled: activeTab === 'explorer'` (or `'games'`, `'statistics'`). TanStack Query caches results — switching back to a previously active tab with unchanged filters is instant (no re-fetch unless `staleTime` has passed).
+**Do this instead:** Keep desktop nav intact (`hidden md:flex`). Add hamburger exclusively for mobile (`md:hidden`). Use Tailwind breakpoints — `md` (768px) is the right cutoff for this layout.
 
-### Anti-Pattern 4: Duplicating filter state into sub-tabs
+### Anti-Pattern 4: PWA icon as SVG only
 
-**What people do:** Each sub-tab manages its own copy of filter controls (time control, platform, rated, etc.).
+**What people do:** Use the existing `vite.svg` as the PWA icon.
 
-**Why it's wrong:** Three sources of truth for the same filter state. Filter changes in one tab don't reflect in others. The existing Openings page already has inline filter widgets — multiplying them by 3 is confusing.
+**Why it's wrong:** iOS requires PNG icons for home screen icons. Android requires PNG for the install prompt. SVG icons in the manifest are not universally supported. The `purpose: 'maskable'` option on the 512px icon is important for Android adaptive icons — it requires a PNG with sufficient padding so the OS can crop it to any shape.
 
-**Do this instead:** Filter state lives in `OpeningsPage`. The existing `FilterPanel` component is rendered once as a shared sidebar and passes state down via props. Sub-tabs receive `filters` as a read-only prop.
+**Do this instead:** Create dedicated 192×512 PNG files. Use a simple chess piece or pawn silhouette. Ensure the 512px icon has a safe zone (content within the central 80% of the image) for maskable icon cropping.
 
 ## Integration Points
 
@@ -456,42 +409,42 @@ Step 5 — Integration
 
 | Service | Integration Pattern | Notes |
 |---------|---------------------|-------|
-| chess.com API | `chesscom_client.py` — unchanged | move_san comes from PGN parsing, not the API |
-| lichess API | `lichess_client.py` — unchanged | Same — PGN already fetched and stored |
+| chess.com API | Unchanged — backend only | PWA has no effect on import pipeline |
+| lichess API | Unchanged — backend only | Same |
+| iOS Safari | Manual "Add to Home Screen" only | No beforeinstallprompt event on iOS; no code needed |
+| Android Chrome | Automatic install prompt via beforeinstallprompt | Triggers if manifest + SW criteria met |
 
 ### Internal Boundaries
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| `hashes_for_game()` → `_flush_batch()` | Return type extends from 4-tuple to 5-tuple | Single call site — update together |
-| `analysis_repository` → `analysis_service` | New `query_next_moves()` mirrors `query_all_results()` pattern | Reuse `HASH_COLUMN_MAP` and filter helpers |
-| `OpeningsPage` → sub-tabs | Props: `{ filters, position_hash, match_side }` | Sub-tabs are presentational; query logic lives in hooks |
-| `ImportPage` / `DashboardPage` → import flow | `ImportPage` owns the import UI; Dashboard links to it | `ImportProgress` component may stay in Dashboard or move to a layout-level component |
+| `NavHeader` ↔ `MobileNav` | `MobileNav` is a self-contained component; `NavHeader` renders it conditionally for mobile | Share `NAV_ITEMS` constant and `isActive()` function to avoid duplication |
+| `vite-plugin-pwa` ↔ Vite build | Plugin integrates at build time via `plugins[]` array | No runtime JS surface — the output is `sw.js` and `manifest.webmanifest` |
+| Service Worker ↔ API client | SW must not intercept Axios requests to backend routes | `NetworkOnly` matcher covers all `/auth /analysis /games /imports /position-bookmarks /stats /users /health` paths |
+| PWA Manifest ↔ `index.html` | vite-plugin-pwa injects manifest link tag automatically | Manual `<link rel="apple-touch-icon">` still needed in `index.html` for iOS (not covered by manifest link) |
 
 ## Scaling Considerations
 
 | Scale | Architecture Adjustments |
 |-------|--------------------------|
-| 0-10k games/user | Indexed GROUP BY is sub-10ms; no adjustments needed |
-| 10k-100k games/user | Covering index `(user_id, full_hash, move_san)` eliminates heap fetches |
-| 100k+ games/user | Consider materialised view for move aggregates if GROUP BY latency becomes noticeable (not expected for this user base) |
-
-### Scaling Priorities
-
-1. **First bottleneck:** next-moves GROUP BY on large `game_positions` tables — mitigated by the covering index added in this milestone.
-2. **Second bottleneck:** GamesTab pagination in Openings reuses the existing optimised `query_matching_games()` path — no additional work needed.
+| Current (single server, ~10 users) | PWA caching reduces repeat-visit load times; no scaling impact |
+| Multi-user growth | PWA is client-side; backend unchanged; no scaling impact from this milestone |
+| Offline use case (future) | Current `NetworkOnly` API strategy means offline = blank data; if offline support wanted later, would need IndexedDB caching layer — out of scope for v1.2 |
 
 ## Sources
 
-- Direct analysis of `app/models/game_position.py` — existing schema
-- Direct analysis of `app/repositories/analysis_repository.py` — existing query patterns (DISTINCT, filter helpers, HASH_COLUMN_MAP)
-- Direct analysis of `app/services/zobrist.py` — `hashes_for_game()` current return type
-- Direct analysis of `app/services/import_service.py` — `_flush_batch()` position row construction
-- Direct analysis of `frontend/src/pages/Openings.tsx` — existing filter state and chart components
-- Direct analysis of `frontend/src/pages/Dashboard.tsx` — ImportModal usage, board state, game list
-- Direct analysis of `frontend/src/App.tsx` — existing routes and nav items
-- `.planning/PROJECT.md` — v1.1 scope and settled decisions (DB wipe confirmed)
+- Direct analysis of `frontend/src/App.tsx` — NavHeader structure, NAV_ITEMS, ProtectedLayout
+- Direct analysis of `frontend/src/pages/Openings.tsx` — existing mobile single-column layout at `md:hidden`
+- Direct analysis of `frontend/src/components/board/ChessBoard.tsx` — ResizeObserver mobile sizing
+- Direct analysis of `frontend/vite.config.ts` — existing plugins, proxy config
+- Direct analysis of `frontend/package.json` — current Vite v7.x, React 19, Tailwind v4
+- [vite-plugin-pwa official docs](https://vite-pwa-org.netlify.app/guide/) — installation, generateSW mode, workbox config
+- [vite-plugin-pwa releases](https://github.com/vite-pwa/vite-plugin-pwa/releases) — v1.2.0 current; Vite 7 support confirmed in v1.0.1+ (MEDIUM confidence — from release metadata)
+- [shadcn/ui Sheet pattern for mobile nav](https://www.shadcn.io/patterns/sheet-navigation-1) — Sheet component for left-side drawer navigation
+- [Cloudflare Tunnel vs ngrok 2025 benchmark](https://www.localcan.com/blog/ngrok-vs-cloudflare-tunnel-vs-localcan-speed-test-2025) — Cloudflare faster and free (MEDIUM confidence — third-party benchmark)
+- [PWA iOS limitations 2026](https://www.magicbell.com/blog/pwa-ios-limitations-safari-support-complete-guide) — iOS install is manual; no beforeinstallprompt (HIGH confidence — consistent across sources)
+- `.planning/PROJECT.md` — v1.2 milestone scope
 
 ---
-*Architecture research for: Chessalytics v1.1 — Move Explorer + UI Restructuring*
-*Researched: 2026-03-16*
+*Architecture research for: Chessalytics v1.2 — Mobile PWA Support*
+*Researched: 2026-03-20*

@@ -1,229 +1,190 @@
 # Pitfalls Research
 
-**Domain:** Chess analysis platform — adding move explorer and UI restructuring to existing system
-**Researched:** 2026-03-16
-**Confidence:** HIGH (based on direct codebase inspection + verified patterns)
-
-This file covers pitfalls specific to v1.1: adding `move_san` to `game_positions`, the move
-explorer aggregation queries, and the UI restructuring from flat pages to a tabbed Openings page
-with shared filter sidebar.
+**Domain:** Adding PWA, mobile navigation, and responsive polish to existing Vite 5 + React 19 SPA with interactive chessboard
+**Researched:** 2026-03-20
+**Confidence:** HIGH (service worker/Vite behavior, iOS storage isolation), MEDIUM (react-chessboard touch specifics, iOS auth OAuth edge cases)
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: DISTINCT ON Breaks the GROUP BY Aggregation for Next-Move Stats
+### Pitfall 1: Service Worker Caches API Responses, Breaking Real-Time Analysis Data
 
 **What goes wrong:**
-The existing `_build_base_query` uses `DISTINCT ON (game_id)` to deduplicate games that contain
-the target position at multiple plies. When you need to aggregate next moves (GROUP BY move_san
-with counts and W/D/L sums), adding `DISTINCT ON` inside a subquery before the GROUP BY is not
-straightforward — the optimizer cannot simply combine them. Writing the aggregation as a single
-query with both `DISTINCT ON` and `GROUP BY` causes a PostgreSQL syntax error or wrong counts
-because `DISTINCT ON` and `GROUP BY` cannot coexist directly in the same SELECT.
+The default `generateSW` strategy in vite-plugin-pwa precaches all built assets and, if runtime caching is configured carelessly, intercepts and caches API responses. Users see stale win/draw/loss stats, position data, or game lists after importing new games — with no indication the data is outdated. TanStack Query's invalidation fires correctly but the service worker silently serves the old response from cache before TanStack Query can compare ETags.
 
 **Why it happens:**
-Developers copy the existing analysis pattern for stats and try to bolt on `GROUP BY gp.move_san`
-without realising that `DISTINCT ON (game_id)` must be resolved first (to avoid counting a game
-twice when the position appears at ply 4 AND ply 6 in that same game) before the GROUP BY can
-aggregate correctly.
+Developers configure runtime caching broadly to make the app "offline capable" without distinguishing between cacheable static assets and dynamic REST API data. A `StaleWhileRevalidate` strategy applied to all routes looks correct — it serves fast and updates in the background — but for analysis data that changes after every import, serving stale content is a correctness bug, not a performance trade-off.
 
 **How to avoid:**
-Use a two-level query:
-1. **Inner CTE/subquery:** join `game_positions` (filtered by `parent_hash`) to `games` (filtered
-   by all active filters), apply `DISTINCT ON (game_id)` so each game appears at most once per
-   move_san that leads to the target position. Select `(game_id, move_san, result)`.
-2. **Outer query:** GROUP BY `move_san`, SUM wins/draws/losses, COUNT(*).
-
-The key insight is that "next moves" means rows at ply N+1 where the *parent* position (ply N) is
-the current board position. The join is on `parent_hash` (the hash stored at ply N, which is the
-hash at ply N+1 minus one move). This requires either storing `parent_hash` per row in
-`game_positions`, or doing a self-join: find all `game_id + ply` combos where ply N matches the
-target hash, then fetch ply N+1's `move_san` from the same `game_positions` table.
-
-The self-join approach avoids a schema change to add `parent_hash` but adds query complexity.
-The stored `parent_hash` approach adds a column but makes queries clean. Given that the project
-accepts a DB wipe for v1.1, adding `parent_hash` (or simply querying ply+1) is the cleaner path.
+Explicitly exclude all API routes from caching using the `denylist` or `urlPattern` options in workbox runtime caching. Use `NetworkOnly` for every `/api/` route:
+```js
+runtimeCaching: [
+  {
+    urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
+    handler: 'NetworkOnly',
+  },
+]
+```
+Cache only: static assets (JS/CSS bundles with content-hashed filenames), the app shell (`index.html`), and chess piece images. Everything from the FastAPI backend must bypass the service worker entirely.
 
 **Warning signs:**
-- SQL errors mentioning `DISTINCT ON` and `GROUP BY` in the same level
-- Move counts that sum to more than the total matched game count (double-counting)
-- Correct move SAN returned but W/D/L totals wrong (aggregated before dedup)
+- Opening Openings page shows data from a previous session after a game import
+- TanStack Query invalidation fires (confirmed via devtools) but UI does not update
+- Network tab shows fetch requests served from `ServiceWorker` with `(from cache)` for `/api/` endpoints
 
-**Phase to address:** The schema phase (adding move_san) — design the aggregation query pattern
-before writing the Alembic migration so the column set is sufficient.
+**Phase to address:**
+PWA setup phase — define the caching strategy exhaustively before writing any service worker configuration. This is easier to get right upfront than to diagnose and fix post-deployment.
 
 ---
 
-### Pitfall 2: Storing move_san at Ply 0 (Starting Position Has No Move)
+### Pitfall 2: Users Stuck on Old App Version After Deployment
 
 **What goes wrong:**
-`hashes_for_game()` in `zobrist.py` inserts a row at `ply=0` representing the initial position
-before any move is played. This row has no associated move — it is the position *before* the first
-move. If `move_san` is added as a NOT NULL column, the ply-0 row requires a placeholder value
-(e.g., an empty string `""` or `NULL`). Forgetting this causes import failures with NOT NULL
-constraint violations.
-
-Beyond the constraint, the ply-0 row with `move_san=""` or `move_san=NULL` should be excluded
-from move-explorer aggregations — it represents the starting position node, not a move.
+A new deployment ships updated JS/CSS bundles with bug fixes or new features. The service worker serves the old precached assets indefinitely. Users who installed the PWA to their home screen see the old UI until they manually clear the browser cache and re-add to home screen. The new service worker registers in the background and enters `waiting` state, but never activates because the old service worker stays active as long as any tab with the app is open.
 
 **Why it happens:**
-The current `hashes_for_game()` logic is clean: ply 0 = before move 1, ply 1 = after move 1, etc.
-When developers add `move_san` they naturally populate it from the `move` variable in the loop
-`for ply, move in enumerate(moves, start=1)` — but the ply-0 row is inserted *before* the loop and
-has no corresponding move in scope.
+Service workers only activate after all tabs using the old version are closed. In an installed PWA opened from the home screen, the tab is rarely closed fully. Without an explicit update flow, the new service worker waits forever.
 
 **How to avoid:**
-Make `move_san` nullable (VARCHAR or TEXT, nullable). Ply-0 rows store NULL. The move-explorer
-aggregation query always filters `WHERE gp.move_san IS NOT NULL` or `WHERE gp.ply > 0`. This is
-semantically correct: the move_san at ply N is the move that *led to* the position at ply N.
+Use `workbox-window` with vite-plugin-pwa's built-in `ReloadPrompt` pattern. On `onNeedRefresh`, show a toast notification ("Update available") with a "Reload" button that calls `updateServiceWorker(true)`. This posts a `SKIP_WAITING` message to the waiting service worker and reloads the page.
+
+Do not auto-reload silently — this breaks in-progress analysis sessions where the user has a position and filters set.
+
+At the server/hosting level, set `Cache-Control: no-cache` on the `sw.js` response so browsers always check for a new service worker on every page load rather than serving a cached copy of the old one.
 
 **Warning signs:**
-- Import failures with NOT NULL violations during the first test import after schema change
-- Move explorer showing a blank/null move entry with very high game counts (all games start from
-  ply 0, so the null-move entry would match every game)
+- Deployed a bug fix but users report the bug persists
+- Chrome DevTools Application > Service Workers shows status "waiting to activate"
+- No update notification appears in the installed PWA after deploying
 
-**Phase to address:** Schema migration phase — define nullability explicitly in the model before
-writing any migration.
+**Phase to address:**
+PWA setup phase — build the update notification flow before shipping the first PWA version. Retrofitting it later requires users to manually clear their cache to escape the stale version.
 
 ---
 
-### Pitfall 3: move_san Missing the Composite Index with user_id and hash
+### Pitfall 3: Vite Dev Server Blocks Requests from ngrok Tunnel
 
 **What goes wrong:**
-Adding a standalone index on `game_positions.move_san` does not help the move-explorer query.
-The query pattern is: `WHERE gp.user_id = :uid AND gp.full_hash = :current_position_hash`. The
-existing indexes are `(user_id, full_hash)`, `(user_id, white_hash)`, `(user_id, black_hash)`.
-The move_san lookup is not a *filter* — it is a *projection* after the hash lookup. No extra index
-on `move_san` alone is needed.
+When exposing the Vite dev server through ngrok for phone testing, the app completely fails to load on the phone. The browser shows a Vite error page: "Blocked request. This host is not allowed." Even if that is resolved, HMR does not work — code changes on the desktop do not trigger live reloads on the phone.
 
-The pitfall is adding an unnecessary composite index like `(user_id, full_hash, move_san)` thinking
-it helps, when the existing `ix_gp_user_full_hash` already covers the lookup and PostgreSQL can
-fetch `move_san` from the heap after the index scan. On a hot table with millions of rows, adding
-extra indexes slows writes without proportional read benefit.
+**Why it happens:**
+Since Vite 5.4.12+ / 6.0+, Vite checks the `Host` header against an allowlist as a DNS rebinding attack protection. The ngrok subdomain (e.g., `abc123.ngrok-free.app`) is not in the default allowlist. Separately, Vite's HMR websocket client defaults to connecting back to `localhost:5173`, which is unreachable from the phone via ngrok — the HMR client must be told to use the tunnel's port (443 for HTTPS tunnels) instead.
 
-A related pitfall: forgetting to also store `move_san` for the *current* ply (the move that led to
-the current position, stored on the current row) vs. the *next* ply. The move explorer shows "what
-moves were played *from* this position" — that is the `move_san` at ply N+1 where ply N is the
-current board position. The existing ply model stores `move_san` at the ply it was *played* (after
-the move). Make sure this is consistent throughout the codebase.
+Note: `allowedHosts: true` has a known bug in Vite 6.0.9 where it is silently ignored — use the string `'all'` or an explicit list of hostnames.
 
 **How to avoid:**
-Use the existing hash indexes for lookup. Read `move_san` as a plain column in the SELECT. Do not
-add a new composite index for move_san unless EXPLAIN ANALYZE on real data shows it helps. Document
-in the model comment whether `move_san` at ply N is "the move that led to this position" (correct)
-or "the move played from this position" (would require fetching ply N+1).
+Add to `vite.config.ts` (conditionally, via env variable):
+```ts
+server: {
+  host: true,                    // listen on all interfaces, not just localhost
+  hmr: { clientPort: 443 },     // HTTPS ngrok tunnels terminate at port 443
+  allowedHosts: 'all',          // or list the specific *.ngrok-free.app domain
+}
+```
+Never commit `allowedHosts: 'all'` as the default — use an environment variable (`NGROK_TUNNEL=true`) to activate this config only during phone testing sessions.
 
 **Warning signs:**
-- Slow migration due to building a large unnecessary index
-- Aggregation queries returning moves for the wrong ply (off-by-one in the explorer)
+- Phone browser shows "Blocked request" Vite error page at the ngrok URL
+- Page loads on phone but code edits on desktop do not trigger page reload
+- Browser console on phone shows `WebSocket connection failed: ws://localhost:5173`
 
-**Phase to address:** Schema migration phase — document the ply/move_san semantic clearly in the
-model before the migration runs.
+**Phase to address:**
+Dev workflow / phone testing setup phase — must be working before any mobile UX testing begins. Wasted time is the primary cost.
 
 ---
 
-### Pitfall 4: Aggregation Query Fetches the Entire Matching Game Set Before Grouping
+### Pitfall 4: react-chessboard Drag-and-Drop Broken on iOS Safari
 
 **What goes wrong:**
-A naive implementation of the next-move aggregation joins `game_positions` to `games` and then
-calls Python-level GROUP BY (e.g., using `Counter` in the service layer) instead of pushing the
-aggregation to PostgreSQL. For a user with 10,000 games × 40 plies = 400,000 rows, fetching all
-matching position rows to Python and aggregating there produces massive result sets over the network
-and is orders of magnitude slower than `GROUP BY` in SQL.
+Users on iPhone cannot drag chess pieces. The board responds to taps (squares highlight) but dragging a piece does nothing — the piece snaps back immediately or the gesture is interpreted as a page scroll instead.
 
 **Why it happens:**
-The existing service layer already does lightweight Python aggregation for W/D/L (counting `result`
-values from the `query_all_results()` tuples). Developers extend this pattern for move aggregation
-without realising the cardinality is much higher (one row per matching game per move, not one row
-per game).
+HTML5 Drag-and-Drop API (`dragstart`/`dragover`/`drop` events) is not implemented in iOS Safari. This is a fundamental platform limitation. react-chessboard v5 uses HTML5 DnD for piece dragging. The library is advertised as "responsive" but responsive layout and touch DnD support are separate concerns — the former is present, the latter is not via HTML5 DnD.
 
 **How to avoid:**
-Push `GROUP BY gp.move_san, g.result` entirely to PostgreSQL. The aggregation query should return
-at most ~30 rows (number of legal moves from any position is ≤ 30 in practice) regardless of how
-many games match. Use `COUNT(DISTINCT g.id)` or the two-level CTE approach from Pitfall 1 to
-avoid double-counting.
+Disable drag entirely on touch devices and rely on click-to-move (two taps: source square then destination square). react-chessboard supports this natively via `onSquareClick`. Implement a two-click selection pattern in the parent component: first tap selects the piece (apply a highlight to the source square), second tap on a valid destination moves it. This is the standard mobile chess interface pattern used by chess.com and lichess.
+
+```tsx
+<Chessboard
+  arePiecesDraggable={!isTouchDevice()}
+  onSquareClick={handleSquareClick}
+/>
+```
+
+Do not add a touch DnD polyfill — these add meaningful bundle size and complexity for minimal gain when click-to-move already works.
+
+The project's known existing workaround (`clearArrowsOnPositionChange: false`) must continue to work alongside the mobile click-to-move implementation. Test arrow behavior after adding the click-to-move state.
 
 **Warning signs:**
-- Move explorer endpoint response time scales with game count instead of being O(1) for a given
-  position
-- Memory spikes in the FastAPI process during move explorer queries
+- Pieces do not move on iPhone/iPad in Safari
+- No `dragstart` events fire in Safari mobile devtools
+- Android Chrome works but iOS Safari does not (confirms the platform gap, not a library bug)
 
-**Phase to address:** Backend aggregation endpoint phase — write the SQL query in EXPLAIN ANALYZE
-against test data before wiring it to the API.
+**Phase to address:**
+Mobile UX polish phase — this is the single most critical chessboard interaction fix for mobile users.
 
 ---
 
-### Pitfall 5: Shared Filter State Not Propagated When Switching Sub-Tabs
+### Pitfall 5: iOS PWA Standalone Mode Has Isolated Storage — Auth Does Not Transfer from Safari
 
 **What goes wrong:**
-The v1.1 design has a shared filter sidebar across Move Explorer / Games / Statistics sub-tabs.
-If filter state lives inside each sub-tab's local component state, switching tabs resets the
-filters. If the filters are lifted to the parent Openings page component, React unmounts the
-sub-tab component on tab switch — resetting any sub-tab-local state (e.g., the board position in
-the move explorer, the games page offset, the expanded statistics section). The symptoms are:
-user sets filters → navigates to Move Explorer → plays a few moves → switches to Games tab →
-switches back → move explorer board is reset and filters are still correct. Or worse: the
-sub-tab re-fetches data with stale filters because the query key didn't include the filter params.
+A user visits the app in Safari, logs in, then installs the PWA via "Add to Home Screen." When they open the PWA from the home screen icon, they are not logged in — the login page appears again. JWT tokens stored in `localStorage` in Safari are not visible to the PWA standalone `WKWebView`. These are completely isolated storage contexts.
+
+A secondary issue: if the app redirects to Google SSO for authentication, iOS drops out of standalone mode and opens the OAuth provider in full Safari. After the OAuth callback, the user is returned to Safari (not the standalone PWA), and the token is in Safari's storage, not the PWA's.
 
 **Why it happens:**
-React unmounts components when they are not rendered. Sub-tab routing via conditional rendering
-(`activeTab === 'explorer' ? <ExplorerTab /> : null`) causes full unmount/remount cycles. The
-developer puts `const [filters, setFilters] = useState(DEFAULT_FILTERS)` inside each sub-tab
-thinking it's self-contained.
+On iOS, the installed PWA runs in an isolated `WKWebView` that shares no cookies, `localStorage`, `sessionStorage`, or service worker instance with Safari. This has been a fundamental iOS architectural limitation since PWA support was introduced, and remains true as of iOS 18 (2025).
+
+The project uses JWT tokens stored in `localStorage` (inferred from `useAuth` hook and `ProtectedLayout` token check in `App.tsx`). This storage does not cross the Safari-to-PWA boundary.
 
 **How to avoid:**
-Lift ALL shared filter state to the parent `OpeningsPage` component and pass it down as props.
-Sub-tab-local state (board position in the explorer, scroll position in the games list) is
-acceptable as local state. For the move explorer board position specifically, consider whether it
-should survive tab switches — if yes, lift it to the parent too, or use a hidden-not-unmounted
-pattern (`display: none` instead of conditional render).
-
-React TanStack Query handles the re-fetch correctly as long as the `queryKey` includes all filter
-params. Verify the query keys include filters when implementing the hooks.
+- Accept that first-time login is required in standalone mode even if the user is logged in on Safari. Document this in any installation instructions.
+- Test the Google SSO OAuth flow specifically in standalone mode on a physical iPhone. Ensure the OAuth callback URL (`/auth/callback`) is within the PWA manifest's `scope` — if the callback navigates outside scope, iOS drops into full Safari and the session is lost.
+- Set manifest `scope: "/"` and `start_url: "/"` to keep all navigation within standalone mode.
+- Verify the OAuth redirect URI registered with Google matches the production HTTPS domain, not localhost.
 
 **Warning signs:**
-- Switching tabs resets filter chip selections
-- Games list jumps to page 1 when you switch away and back
-- Move explorer board resets to starting position when switching away and back
+- User installs PWA, opens it, sees login page despite being logged in on Safari
+- Google SSO redirects open a new Safari tab instead of staying within the PWA
+- After OAuth, the redirect returns to `https://yourdomain.com/auth/callback` but the page opens in Safari rather than the standalone PWA
 
-**Phase to address:** UI restructuring phase — design the state architecture on paper before
-writing any component code.
+**Phase to address:**
+PWA setup phase — manifest `scope` must be correct from day one. Auth flow testing on a physical iPhone is required. Desktop browser PWA testing does not reproduce iOS storage isolation.
 
 ---
 
-### Pitfall 6: Import Page Breaks the positionFilterActive Pattern
+### Pitfall 6: Missing `viewport-fit=cover` Leaves Notch Gaps on iPhone
 
 **What goes wrong:**
-The current `DashboardPage` embeds import logic alongside the position filter. The `positionFilterActive`
-flag controls whether the default games list or the filtered results list is shown. When import is
-moved to a dedicated `/import` page (or to the new sub-tab structure), the `handleJobDone`
-callback currently calls `queryClient.invalidateQueries(['games'])` and `refetchGameCount()` —
-both of which are wired to the dashboard state. Moving import breaks these invalidations unless
-the same query keys are invalidated from the new import page context.
-
-A secondary issue: after a successful import on the Import page, the user navigates back to Games.
-If TanStack Query's `staleTime` is 30,000ms, the games list may not reflect the newly imported
-games if the user returns within 30 seconds.
+On iPhones with a notch or Dynamic Island (iPhone X through iPhone 16), the app shows a colored gap at the top (status bar area) or content is hidden under the home indicator at the bottom when running as a standalone PWA. The navigation header and bottom spacing look wrong.
 
 **Why it happens:**
-The import side effects (invalidate `['games']`, `['gameCount']`, `['userProfile']`) are currently
-co-located with the `DashboardPage`. When import moves to its own page, developers forget to carry
-forward the post-import invalidation logic.
+Without `viewport-fit=cover`, iOS constrains the viewport to the "safe area," leaving the device's OS chrome colors visible outside it. With `viewport-fit=cover` but without `env(safe-area-inset-*)` padding applied to layout elements, content bleeds under the notch or Dynamic Island.
 
 **How to avoid:**
-Use TanStack Query's global `queryClient` (accessible via `useQueryClient()`) in the Import page
-component, and invalidate the same keys (`['games']`, `['gameCount']`, `['userProfile']`) on job
-completion. Set `staleTime: 0` on the `['games']` query if you want immediate refresh after import,
-or call `queryClient.invalidateQueries` explicitly from `handleJobDone` on the Import page.
+Set the viewport meta tag in `index.html`:
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+```
+Then apply safe area insets in global CSS (`index.css`):
+```css
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+```
+Or apply specifically to the nav header (`padding-top: env(safe-area-inset-top)`) and any bottom navigation element. The safe area values are `0` in regular browser mode, so this CSS is harmless on desktop and Android.
+
+With Tailwind, use arbitrary value utilities: `pt-[env(safe-area-inset-top)]` or define a CSS custom property in `:root`.
 
 **Warning signs:**
-- Games list doesn't update after import completes on the new Import page
-- Game count badge shows stale number after import
-- `userProfile` (platform usernames) doesn't refresh after first-ever import
+- The nav header overlaps the notch/Dynamic Island in PWA standalone mode on iPhone 12+
+- A colored gap appears below the nav header or above any bottom navigation
+- Safe area appears only in standalone mode, not in Safari (this is expected and correct behavior)
 
-**Phase to address:** Import page migration phase — checklist item: "verify all post-import query
-invalidations transferred from Dashboard to Import page."
+**Phase to address:**
+Mobile navigation / viewport setup phase — fix the viewport meta tag before building the responsive nav. This is a one-line HTML change with significant visual impact on notched iPhones.
 
 ---
 
@@ -231,109 +192,106 @@ invalidations transferred from Dashboard to Import page."
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Python-level move aggregation (Counter) | Reuses existing pattern | O(N) network transfer for N matching positions; slow at scale | Never — push to SQL from the start |
-| Hardcoding `move_san` as NOT NULL with empty string default | Avoids null handling in frontend | Blank-string entries pollute aggregation queries; requires filtering `!= ''` everywhere | Never — use nullable |
-| Storing `move_san` only on the `game_positions` table without documenting ply semantics | Fast to implement | Off-by-one in explorer (showing "move that led here" vs "moves from here") causes subtle wrong results | Acceptable if documented clearly |
-| Sub-tab state via URL query params (`?tab=explorer`) | Bookmarkable, shareable links | Adds complexity to state sync; URL updates can be laggy in React Router | Acceptable only if simple — avoid for complex board state |
-| Keeping import modal alongside new Import page during transition | Reduces merge conflicts | Dead code; two import entry points confuse users | Only during phased migration, must be removed in same milestone |
-
----
+| `allowedHosts: 'all'` committed as default in vite.config.ts | ngrok works without setup | DNS rebinding vulnerability in shared or CI environments | Never — use env variable or separate config override |
+| Skip update notification UI for PWA | Faster initial shipping | Users stuck on stale versions indefinitely after any deployment | Never — defeats the core benefit of service worker versioning |
+| Hard-code `arePiecesDraggable={true}` with no mobile fallback | Simpler code | Broken chess piece interaction on all iOS devices | Never for a chess analysis app |
+| Cache API responses with StaleWhileRevalidate | Faster perceived loads, offline read support | Users see wrong analysis stats after importing games | Never for analysis data; acceptable only for user profile metadata |
+| Single 512x512 PNG icon in manifest | Less asset work | PWA install prompt suppressed on some Android versions; ugly pixelated home screen icon | Never — generating icon sizes is 30 minutes of work |
+| Implementing body scroll lock without `position: fixed` | Simpler CSS | On iOS Safari, `overflow: hidden` alone does not prevent background scroll | Never on iOS — must combine `overflow: hidden` + `position: fixed` |
 
 ## Integration Gotchas
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| `hashes_for_game()` → `move_san` | Adding move_san inside the existing `for ply, move` loop but forgetting ply-0 row | Insert ply-0 with `move_san=None`, then set `move_san=board.san(move)` **before** `board.push(move)` for each subsequent ply |
-| chess.js (frontend) → SAN display | Using `move.san` from chess.js which includes check symbols (`Nf3+`) | SAN stored in backend via python-chess `board.san(move)` also includes check/checkmate symbols — consistent, no transformation needed |
-| react-chessboard v5 `customArrows` / move highlights | Passing arrow data as flat props instead of inside the `boardOptions` object | All visual customisation goes through the `options` prop object (confirmed v5 API) |
-| TanStack Query cache + sub-tabs | Different sub-tabs using different query keys for the same filter state | Define a single `queryKey` factory function shared across all sub-tab hooks so cache is shared |
-| Alembic migration on `game_positions` | Running `ALTER TABLE ADD COLUMN` on a table that may have millions of rows blocks reads in old PostgreSQL | Adding a nullable column with no default in modern PostgreSQL (≥11) is a metadata-only operation (no table rewrite) — this is safe and fast |
-
----
+| ngrok + Vite HMR | Default config, expect HMR to work through tunnel | Set `server.hmr.clientPort: 443` and `server.host: true`; add ngrok domain to `allowedHosts` |
+| ngrok + FastAPI backend | Assume Vite's `/api` proxy forwards correctly through ngrok | The Vite proxy forwards to `localhost:8000` regardless of ngrok — the backend is reached via the local network, not through ngrok. Phone must reach the Vite dev server via ngrok; the Vite server then proxies to the local FastAPI. This works if both are on the same machine. |
+| vite-plugin-pwa + TanStack Query | Assume the two caches don't conflict | They are independent layers. SW precache serves static assets; TanStack Query manages API data. Explicitly exclude all `/api/*` from SW caching. |
+| iOS Safari + Google SSO in standalone mode | Expect OAuth redirect to return to PWA | Test OAuth on physical iPhone in standalone mode; ensure `/auth/callback` is within manifest `scope`; accept that first login requires separate session in standalone context |
+| Service worker + Vite dev server (devOptions enabled) | Register SW in dev and expect same behavior as production | Dev SW has empty precache and behaves differently. Disable runtime caching in dev with `disableRuntimeConfig: true`. Prefer testing the production build for service worker behavior. |
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Full table scan for move aggregation | Move explorer response >2s | Push GROUP BY to SQL; use existing `(user_id, full_hash)` index | ~5,000+ games per user |
-| Fetching all sub-tab data on Openings page mount | Initial page load slow; unnecessary API calls when no position is set | Only fetch move explorer data when a position is actually selected (`enabled: positionFilterActive`) | Always — wasteful even at small scale |
-| Redundant re-renders when filter state is in parent | Every filter change re-renders all sub-tabs | Use `React.memo` on sub-tab components; pass only the props each tab needs | Medium complexity apps — becomes noticeable with chart components |
-| `COUNT(DISTINCT game_id)` in aggregation query | Slow on large tables (requires dedup before counting) | Use the two-level CTE: dedup first, then COUNT(*) on the outer level | ~50,000+ position rows |
-| Missing `user_id` in move-explorer WHERE clause | Returns moves from all users' games | Always include `WHERE gp.user_id = :uid` — the `game_positions` table is multi-user | Day 1 — data isolation bug, not a scale issue |
-
----
+| Precaching large or unnecessary assets | First PWA install takes 10+ seconds on mobile; blank screen during install | Inspect the generated precache manifest in `sw.js` after build; exclude large files not needed for initial render | Any slow mobile connection |
+| Awaiting service worker registration before first render | App hangs 2-3 seconds before showing anything; poor LCP score | Never `await navigator.serviceWorker.register()` before mounting React; registration is a background task | Every first load |
+| Board re-rendering on mobile filter changes | Board flickers or resets arrow state when filter chips are tapped | Memoize `position` and `boardOrientation` props; the existing `clearArrowsOnPositionChange: false` workaround must be preserved | Already partially mitigated in v1.1; verify with mobile testing |
+| Mobile menu keeping body scroll locked after navigation | Scrolling broken after closing menu via nav link | Use `useEffect(() => setMenuOpen(false), [location.pathname])` to close menu on route change; remove `overflow: hidden` + `position: fixed` from body in the same cleanup | iOS Safari specifically — this trap is iOS-only |
 
 ## Security Mistakes
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Exposing move aggregation endpoint without user scoping | User A can query move stats for User B's games | Always filter `game_positions.user_id = current_user.id`; existing analysis router pattern already does this — replicate exactly |
-| Returning `move_san` directly from DB without validation | Theoretically correct since it was stored from python-chess output; not a risk | No action needed — python-chess SAN output is safe |
-
----
+| Committing `allowedHosts: 'all'` or `allowedHosts: true` to main vite.config.ts | DNS rebinding attack exposes source code to attacker-controlled pages | Activate via env variable only: `allowedHosts: process.env.VITE_NGROK ? 'all' : []` |
+| Caching authenticated API responses in service worker | User A's analysis data served from cache if User B logs in on the same device | Enforce `NetworkOnly` for all `/api/` routes; never cache JWT-protected responses |
+| Overly broad manifest `scope` allowing attacker-controlled subpaths | Attacker-controlled page within scope can masquerade as the PWA | Set `scope: "/"` — intentionally broad for a SPA. This is acceptable since the entire origin is controlled. |
 
 ## UX Pitfalls
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| Move explorer shows moves at starting position before user plays any moves | Confusing "all possible openings" list with hundreds of entries | Only show the move explorer when the board has at least 1 move played, or when a bookmark is loaded |
-| Sub-tab switching loses the user's position in the Games list | User pages to page 3, switches to Explorer, comes back and is on page 1 | Preserve `offset` as state in the parent `OpeningsPage` component, not in the Games sub-tab |
-| "Analyze" button on the new Openings page required before move explorer loads | Extra friction; user expects explorer to auto-load when position changes | Auto-trigger move explorer query when `positionFilterActive=true`, matching the existing auto-analyze pattern on Dashboard |
-| Import page lacks the same import-progress toasts as the old modal | User can't tell if import is running | Reuse `ImportProgress` component on the Import page with the same `activeJobIds` pattern |
-| Move explorer move buttons (e.g., "e4 — 58%") not clickable to advance the board | Explorer exists but can't navigate the position | Every move row must call `chess.loadMoves([...currentMoves, san])` on click; this is the core interactive value proposition |
-
----
+| Touch targets smaller than 44x44px | Frequent mis-taps on filter chips, nav items, board controls on mobile | Enforce `min-h-11 min-w-11` (Tailwind = 44px) on all interactive elements; use `touch-action: manipulation` to eliminate 300ms tap delay |
+| Hamburger menu opens but no backdrop overlay | Users tap the chessboard area intending to close the menu and accidentally move a piece | Full-screen semi-transparent overlay behind the slide-out menu; close on overlay tap |
+| No PWA install prompt or instructions on iOS | Users never discover the app can be installed; worse experience than necessary | Add a persistent but dismissible "Add to Home Screen" banner on iOS Safari; implement the `beforeinstallprompt` flow for Android |
+| Page scroll conflict when finger is on chessboard | Attempting to scroll the page while touching the board scrolls the board's container instead | Set `touch-action: none` on the board container element; test by placing a finger on the board and attempting to scroll the page |
+| Hamburger menu stays open after navigating | Menu appears on top of destination page; user must close it manually | Close menu on route change via `useEffect(() => setMenuOpen(false), [location.pathname])` |
+| Horizontal overflow from chessboard on narrow screens | Entire page gains horizontal scroll; layout breaks below the board | Never set a fixed pixel width for the board; use `min(100vw - 2rem, 600px)` or a percentage-based constraint |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **move_san migration:** Verify ply-0 rows have `move_san = NULL` after migration, not empty string
-- [ ] **Move aggregation:** Confirm total W+D+L in move explorer equals total matched games (no double-counting from multi-ply positions)
-- [ ] **user_id scoping:** Verify move-explorer endpoint returns 0 results for a position from another user's games
-- [ ] **Shared filters:** Confirm changing time control filter while on Games sub-tab, then switching to Explorer sub-tab, shows explorer data with the same filter applied
-- [ ] **Import page invalidations:** After completing an import on the Import page, navigate to Games — verify game count and games list update without manual refresh
-- [ ] **positionFilterActive flag:** Verify the Openings page's Explorer sub-tab shows "no position selected" state (not empty results) when the board is at the starting position
-- [ ] **data-testid coverage:** All move-explorer move rows, sub-tab buttons, and the dedicated Import page controls have `data-testid` attributes per CLAUDE.md conventions
-- [ ] **Mobile layout:** Shared filter sidebar collapses correctly on small screens; sub-tabs stack vertically or scroll horizontally without horizontal overflow
-
----
+- [ ] **PWA installable:** Passes Lighthouse PWA audit — verify icons at 192x192 and 512x512 with `purpose: "any maskable"`, HTTPS, service worker registered, valid manifest
+- [ ] **iOS standalone auth:** Tested on physical iPhone in standalone mode (not Safari DevTools emulation) — emulation does not reproduce iOS storage isolation or OAuth redirect behavior
+- [ ] **Chessboard touch:** Pieces move via click-to-move on actual iPhone and Android, not just desktop browser with touch emulation enabled in DevTools
+- [ ] **Service worker update flow:** Deploy a visible UI change, reload the installed PWA, confirm update notification toast appears and the "Reload" button activates the new version
+- [ ] **API routes bypass SW:** After service worker installs, verify in Network tab that `/api/` requests show server timing, not `(from cache)` or `(ServiceWorker)`
+- [ ] **Safe area insets:** Check on iPhone 12+ in standalone mode — nav header clears the notch/Dynamic Island; no content hidden under home indicator
+- [ ] **Hamburger scroll lock:** Open mobile menu on iPhone, attempt to scroll the background page — confirm background does not scroll
+- [ ] **ngrok HMR:** Edit a component text on desktop, confirm the change hot-reloads on the phone within 3 seconds
+- [ ] **Manifest scope and OAuth:** Confirm Google SSO OAuth callback lands back in the PWA standalone mode on iOS (does not jump to Safari)
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Wrong ply semantics for move_san (off-by-one) | HIGH — requires re-importing all games | Wipe DB (already accepted for v1.1), fix `hashes_for_game()`, re-run migration, re-import |
-| Double-counting in move aggregation | MEDIUM — SQL fix only | Fix the aggregation query in `analysis_repository.py`; no schema change needed |
-| Filter state not shared across sub-tabs | LOW — React refactor | Lift state to parent component; no backend changes needed |
-| Import page missing post-import invalidations | LOW — one-line fix | Add `queryClient.invalidateQueries` calls to `handleJobDone` in Import page |
-| Missing `user_id` scope in move-explorer query | HIGH — data isolation bug | Immediate hotfix; add `WHERE gp.user_id = :uid`; audit all new repository functions |
-
----
+| SW caching API responses (discovered post-ship) | MEDIUM | Add `NetworkOnly` config for `/api/`, rebuild, deploy; existing cached responses expire on next network request or user can clear app cache |
+| Users stuck on stale version (no update notification shipped) | HIGH | Deploy a "poison pill" service worker that immediately unregisters itself; users get the fix on next browser check; notify users to refresh |
+| iOS PWA auth broken (manifest scope misconfigured) | LOW | Update `manifest.webmanifest` scope, redeploy; existing installs need to re-add to home screen to pick up manifest change |
+| Vite blocks ngrok requests (discovered during testing session) | LOW | Add `allowedHosts` and `hmr.clientPort` config, restart dev server; no code changes needed |
+| Chessboard drag broken on iOS (missed in desktop testing) | LOW | Set `arePiecesDraggable={false}` conditionally or unconditionally; redeploy |
+| Missing safe-area-inset CSS (discovered on device) | LOW | Add one-line CSS to `index.css` and one attribute to `index.html` viewport meta; redeploy |
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| DISTINCT ON + GROUP BY conflict | Schema + aggregation query phase | EXPLAIN ANALYZE the move aggregation query; check totals sum correctly |
-| Ply-0 move_san nullability | Schema migration phase | `SELECT COUNT(*) FROM game_positions WHERE ply = 0 AND move_san IS NOT NULL` = 0 |
-| Wrong index strategy for move_san | Schema migration phase | No new index added beyond existing hash indexes; EXPLAIN shows index scan on existing ix_gp_user_full_hash |
-| Python-level aggregation anti-pattern | Backend explorer endpoint phase | Response time < 200ms for a user with 5,000 games |
-| Shared filter state isolation | UI restructuring phase | Switch tabs, verify filter chips retain their state |
-| Import page broken invalidations | Import page migration phase | Import completes → navigate to Games → count updates without refresh |
-| Missing user_id scope | Backend explorer endpoint phase | Unit test: query with another user's position hash returns 0 moves |
-
----
+| SW caches API responses | PWA setup | Lighthouse audit + Network tab inspection after SW installs |
+| Stale app shell after deploy | PWA setup | Deploy a visible change, reload installed PWA, confirm update notification |
+| ngrok HMR blocked | Dev workflow setup | Edit a component on desktop, verify live reload fires on phone |
+| react-chessboard drag broken on iOS | Mobile UX polish | Tap and drag a piece on physical iPhone — piece must move or click-to-move must work |
+| iOS PWA auth session isolation | PWA setup | Install PWA on iPhone, open from home screen, verify login state and OAuth flow |
+| Missing viewport-fit / safe-area insets | Mobile nav / responsive layout | Open app on iPhone 12+ in standalone mode, inspect nav header and bottom edge |
+| Touch targets too small | Mobile UX polish | Chrome DevTools accessibility audit + physical thumb testing on narrow phone |
+| Body scroll lock on iOS hamburger menu | Mobile navigation | Open hamburger menu on iPhone, attempt to scroll page behind it |
 
 ## Sources
 
-- Direct codebase inspection: `app/models/game_position.py`, `app/repositories/analysis_repository.py`,
-  `app/services/zobrist.py`, `frontend/src/pages/Dashboard.tsx`, `frontend/src/pages/Openings.tsx`,
-  `frontend/src/App.tsx`
-- Existing v1.0 pitfalls in this file (chess.com/lichess API, PGN parsing, position representation)
-- PostgreSQL documentation on DISTINCT ON ORDER BY constraint (known issue from v1.0 `analysis_repository.py`
-  comments — the two-subquery pattern is already in place)
-- PostgreSQL `ALTER TABLE ADD COLUMN` metadata-only for nullable columns with no default (PostgreSQL ≥11)
-- TanStack Query staleTime and invalidation patterns
+- [Vite PWA development mode — official docs](https://vite-pwa-org.netlify.app/guide/development)
+- [Vite server.allowedHosts — ngrok discussion](https://github.com/vitejs/vite/discussions/5399)
+- [Vite blocked request host not allowed — GitHub discussion](https://github.com/vitejs/vite/discussions/19426)
+- [Vite server options reference](https://vite.dev/config/server-options)
+- [iOS Safari PWA storage isolation — Netguru](https://www.netguru.com/blog/how-to-share-session-cookie-or-state-between-pwa-in-standalone-mode-and-safari-on-ios)
+- [PWA iOS limitations 2025/2026 — MagicBell](https://www.magicbell.com/blog/pwa-ios-limitations-safari-support-complete-guide)
+- [iOS safe-area-inset and viewport-fit — WebKit blog](https://webkit.org/blog/7929/designing-websites-for-iphone-x/)
+- [PWA update strategy — web.dev](https://web.dev/learn/pwa/update)
+- [React SPA service worker update handling — Medium](https://medium.com/@leybov.anton/how-to-control-and-handle-last-app-updates-in-pwa-with-react-and-vite-cfb98499b500)
+- [react-chessboard — GitHub (Clariity)](https://github.com/Clariity/react-chessboard)
+- [HTML5 DnD not supported on iOS — known platform limitation, MDN](https://developer.mozilla.org/en-US/docs/Web/API/HTML_Drag_and_Drop_API)
+- [PWA bugs tracker — pwa-police/pwa-bugs](https://github.com/PWA-POLICE/pwa-bugs)
+- [PWA installability checklist — MDN](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable)
+- [iOS body scroll lock with overflow:hidden — Medium](https://medium.com/@rio.alexandre33/css-burger-menu-for-mobile-devices-with-blocked-body-scrolling-dbbd2eaa37c7)
+- [Tailwind/headlessui body scroll discussion — GitHub](https://github.com/tailwindlabs/headlessui/discussions/744)
+- [Codebase inspection: frontend/src/App.tsx, frontend/src/pages/, CLAUDE.md]
 
 ---
-*Pitfalls research for: Chessalytics v1.1 — Move Explorer + UI Restructuring*
-*Researched: 2026-03-16*
+*Pitfalls research for: Chessalytics v1.2 — Mobile PWA, responsive navigation, and phone dev workflow*
+*Researched: 2026-03-20*
