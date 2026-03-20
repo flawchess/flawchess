@@ -9,9 +9,9 @@ Requirements for Mobile & PWA milestone. Each maps to roadmap phases.
 
 ### PWA
 
-- [ ] **PWA-01**: App has a web manifest with name, icons, theme color, and display:standalone
-- [ ] **PWA-02**: Service worker precaches static assets for fast repeat loads (NetworkOnly for API routes)
-- [ ] **PWA-03**: App has custom chess-themed icons (192px + 512px PNG) replacing default Vite favicon
+- [x] **PWA-01**: App has a web manifest with name, icons, theme color, and display:standalone
+- [x] **PWA-02**: Service worker precaches static assets for fast repeat loads (NetworkOnly for API routes)
+- [x] **PWA-03**: App has custom chess-themed icons (192px + 512px PNG) replacing default Vite favicon
 - [ ] **PWA-04**: User sees an in-app install prompt on Chromium browsers after engagement
 - [ ] **PWA-05**: iOS users see manual "Add to Home Screen" instructions since beforeinstallprompt is unavailable
 
@@ -30,8 +30,8 @@ Requirements for Mobile & PWA milestone. Each maps to roadmap phases.
 
 ### Dev Workflow
 
-- [ ] **DEV-01**: npm script exposes Vite dev server on LAN for same-network phone testing
-- [ ] **DEV-02**: Documented one-command Cloudflare Tunnel setup for HTTPS phone testing
+- [x] **DEV-01**: npm script exposes Vite dev server on LAN for same-network phone testing
+- [x] **DEV-02**: Documented one-command Cloudflare Tunnel setup for HTTPS phone testing
 
 ## Future Requirements
 
@@ -63,9 +63,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PWA-01 | Phase 17 | Pending |
-| PWA-02 | Phase 17 | Pending |
-| PWA-03 | Phase 17 | Pending |
+| PWA-01 | Phase 17 | Complete |
+| PWA-02 | Phase 17 | Complete |
+| PWA-03 | Phase 17 | Complete |
 | PWA-04 | Phase 19 | Pending |
 | PWA-05 | Phase 19 | Pending |
 | NAV-01 | Phase 18 | Pending |
@@ -75,8 +75,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UX-02 | Phase 19 | Pending |
 | UX-03 | Phase 19 | Pending |
 | UX-04 | Phase 19 | Pending |
-| DEV-01 | Phase 17 | Pending |
-| DEV-02 | Phase 17 | Pending |
+| DEV-01 | Phase 17 | Complete |
+| DEV-02 | Phase 17 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 14 total
