@@ -1,5 +1,22 @@
 # Milestones: Chessalytics
 
+## v1.1 — Opening Explorer & UI Restructuring
+
+**Shipped:** 2026-03-20
+**Phases:** 11–16 (6 phases, 15 plans)
+
+Added interactive move explorer with W/D/L stats per position, restructured UI with tabbed Openings hub and dedicated Import page, enriched game import data, and redesigned game cards.
+
+**Key accomplishments:**
+- Move explorer with next-move W/D/L stats, click-to-navigate, transposition handling
+- Chessboard arrows showing next moves with win-rate color coding
+- UI restructured: tabbed Openings hub (Moves/Games/Statistics) + dedicated Import page
+- Enhanced import: clock data, termination reason, time control fix, multi-username sync
+- Game cards redesigned: 3-row layout with icons, hover/tap minimap showing final position
+- Data isolation fixes, Google SSO last_login, cache clearing on auth transitions
+
+---
+
 ## v1.0 — Initial Platform
 
 **Shipped:** 2026-03-15

@@ -2,28 +2,15 @@
 
 ## What This Is
 
-A multi-user chess analysis platform that lets players import their games from chess.com and lichess, then analyze win/draw/loss rates for specific board positions. It solves the problem of inconsistent opening categorization on existing platforms — instead of relying on opening names, users define positions visually and filter by actual piece placement.
+A multi-user chess analysis platform that lets players import their games from chess.com and lichess, then analyze win/draw/loss rates for specific board positions. It solves the problem of inconsistent opening categorization on existing platforms — instead of relying on opening names, users define positions visually and filter by actual piece placement. Includes an interactive move explorer showing next moves with W/D/L stats per position.
 
 ## Core Value
 
 Users can determine their success rate for any opening position they specify, filtering by their own pieces only, regardless of how platforms categorize the opening.
 
-## Current Milestone: v1.1 Opening Explorer & UI Restructuring
-
-**Goal:** Add an interactive move explorer (inspired by openingtree.com) showing next moves with W/D/L stats for every position, and restructure the UI with a dedicated Import page and merged Openings tab with sub-tabs.
-
-**Target features:**
-- Move explorer: next moves with W/D/L stats per move, click-to-navigate
-- Store move SAN in game_positions for performant lookups
-- Dedicated Import page (replaces modal)
-- Merged Openings tab with Move Explorer / Games / Statistics sub-tabs
-- Shared filter sidebar across all sub-tabs
-
 ## Requirements
 
 ### Validated
-
-<!-- Shipped in v1.0 and confirmed working -->
 
 - ✓ Import games from chess.com and lichess via API by username — v1.0
 - ✓ On-demand re-sync to fetch latest games — v1.0
@@ -36,50 +23,56 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Multi-user support with data isolation — v1.0
 - ✓ Position bookmarks with auto-suggestions, mini boards, drag-reorder — v1.0
 - ✓ Rating history and global stats pages — v1.0
+- ✓ Move explorer showing next moves with W/D/L stats per move — v1.1
+- ✓ Store move SAN in game_positions with index for performant lookups — v1.1
+- ✓ Dedicated Import page replacing import modal — v1.1
+- ✓ Merged Openings tab with Move Explorer / Games / Statistics sub-tabs — v1.1
+- ✓ Shared filter sidebar across Openings sub-tabs — v1.1
+- ✓ Enhanced game import: clock data, termination, time control fix — v1.1
+- ✓ Game cards with 3-row layout, icons, hover minimap — v1.1
 
 ### Active
 
-<!-- v1.1 scope — building toward these -->
-
-- [ ] Move explorer showing next moves with W/D/L stats per move
-- [ ] Store move SAN in game_positions with index for performant lookups
-- [ ] Dedicated Import page replacing import modal
-- [ ] Merged Openings tab with Move Explorer / Games / Statistics sub-tabs
-- [ ] Shared filter sidebar across Openings sub-tabs
+(None — next milestone requirements to be defined via `/gsd:new-milestone`)
 
 ### Out of Scope
 
 - Manual PGN file upload — API import only
 - In-app game viewer — link to chess.com/lichess instead
-- Mobile app — web-first
 - Human-like engine analysis — future: engine evaluation filtered by human move plausibility at target Elo (see Maia Chess approach)
 
 ## Context
 
-- The problem: lichess categorizes the same moves as different openings (e.g., Pirc Defense vs Czech Defense) even when the user plays identical moves. Existing tools don't let you group games by your own piece positions while ignoring opponent moves.
-- Chess.com and lichess both have public APIs for fetching games by username.
-- python-chess is the established library for chess logic in Python.
-- Data volume: thousands of games per user, needs efficient querying.
+- **Current state:** v1.1 shipped. ~11,800 Python LOC, ~4,500 TypeScript LOC (excluding node_modules). 16 phases complete across 2 milestones.
+- **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui
+- **Auth:** FastAPI-Users (JWT + Google SSO)
+- **Core algorithm:** Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import for indexed integer equality lookups
+- **Known issues:** react-chessboard v5 arrow clearing workaround (clearArrowsOnPositionChange: false), BoardArrow local type definition
 
 ## Constraints
 
 - **Tech stack**: Python backend (FastAPI), uv for package management
-- **Database**: Must support efficient position-based queries across thousands of games
+- **Database**: PostgreSQL with asyncpg — must support efficient position-based queries across thousands of games
 - **Deployment**: Must work locally and be deployable to a server
 - **Libraries**: Use established open-source libraries (python-chess, etc.) rather than reinventing
+- **HTTP client**: httpx async only — never use requests or berserk
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| FastAPI for backend | User expertise, async support, modern Python | Settled |
-| API-only import (no PGN upload) | Simpler v1, covers primary use case | Settled |
-| Interactive board over FEN input | Better UX for target users | Settled |
-| uv for package management | Fast, modern Python tooling | Settled |
-| React 19 + TypeScript + Vite 5 | react-chessboard 5.x requires React 19; TanStack Query supports it | Settled |
-| PostgreSQL (no SQLite) | Multi-user concurrent writes, BIGINT index performance, asyncpg | Settled |
-
-| DB wipe for v1.1 | No migration needed — reimport after schema change | Settled |
+| FastAPI for backend | User expertise, async support, modern Python | ✓ Good |
+| API-only import (no PGN upload) | Simpler v1, covers primary use case | ✓ Good |
+| Interactive board over FEN input | Better UX for target users | ✓ Good |
+| uv for package management | Fast, modern Python tooling | ✓ Good |
+| React 19 + TypeScript + Vite 5 | react-chessboard 5.x requires React 19 | ✓ Good |
+| PostgreSQL (no SQLite) | Multi-user concurrent writes, BIGINT index, asyncpg | ✓ Good |
+| DB wipe for v1.1 | No migration needed — reimport after schema change | ✓ Good |
+| Zobrist hash position matching | 64-bit integer equality vs FEN string comparison | ✓ Good |
+| move_san ply semantics | SAN on ply N = move played FROM that position | ✓ Good |
+| DISTINCT + GROUP BY for transpositions | COUNT(DISTINCT g.id) prevents double-counting | ✓ Good |
+| Filter state in OpeningsPage parent | Survives tab switches without reset | ✓ Good |
+| QueryClient singleton in lib/ | Shared across 401 interceptor and auth transitions | ✓ Good |
 
 ---
-*Last updated: 2026-03-16 after milestone v1.1 start*
+*Last updated: 2026-03-20 after v1.1 milestone*
