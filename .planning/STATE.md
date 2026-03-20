@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Mobile & PWA
-status: requirements
+status: roadmap_ready
 last_updated: "2026-03-20T12:00:00Z"
-last_activity: "2026-03-20 — Milestone v1.2 started"
+last_activity: "2026-03-20 — Roadmap created; phases 17-19 defined"
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,34 +17,51 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 17 of 19 (PWA Foundation + Dev Workflow)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-20 — Milestone v1.2 started
+Status: Ready to plan
+Last activity: 2026-03-20 — Roadmap created; phases 17-19 defined
+
+Progress: [░░░░░░░░░░] 0% (v1.2)
 
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-20)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: v1.2 Mobile & PWA
+Current focus: Phase 17 — PWA Foundation + Dev Workflow
 
 ## Phase Progress
-(No phases yet — roadmap pending)
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 17. PWA Foundation + Dev Workflow | 0/TBD | Not started | - |
+| 18. Mobile Navigation | 0/TBD | Not started | - |
+| 19. Mobile UX Polish + Install Prompt | 0/TBD | Not started | - |
 
 ## Key Context
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
 - ORM: SQLAlchemy 2.x async + Alembic
 - Auth: FastAPI-Users 15.0.4 (JWT, integer user IDs)
 - Core algorithm: Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import
+- v1.2 scope: frontend-only — no backend changes, no new API routes
 
 ## Accumulated Context
 
+### Key Decisions (v1.2)
+- Use `vite-plugin-pwa ^1.2.0` with `generateSW` mode — zero-config, Vite 7 compatible
+- `NetworkOnly` strategy mandatory for all API routes — prevents stale analysis data
+- Cloudflare Tunnel preferred over ngrok — faster, free, no session time limit
+- Disable `arePiecesDraggable` on touch devices — HTML5 DnD absent on iOS Safari; click-to-move fallback
+- iOS PWA requires re-login after install — WKWebView storage isolation; manifest `scope: "/"` keeps OAuth in PWA
+
 ### Pending Todos
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
-- **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions for querying pieces on specific squares
-- **Display opening name from lichess chess-openings database** (ui) — Show ECO code + opening name on interactive board via prefix-match
+- **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
+- **Display opening name from lichess chess-openings database** (ui) — ECO code + opening name via prefix-match
 
 ### Blockers/Concerns
-None.
+- [Phase 17]: Cloudflare Tunnel + Vite proxy compatibility not yet verified end-to-end
+- [Phase 17]: Google SSO OAuth in PWA standalone on iOS needs physical device testing
+- [Phase 19]: react-chessboard touch drag on Android Chrome unverified — click-to-move is confirmed fallback
 
 ---
-Last activity: 2026-03-20 — Milestone v1.2 started
+Last activity: 2026-03-20 — Roadmap created; phases 17-19 defined

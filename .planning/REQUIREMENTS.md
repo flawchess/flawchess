@@ -63,13 +63,26 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated during roadmap creation) | | |
+| PWA-01 | Phase 17 | Pending |
+| PWA-02 | Phase 17 | Pending |
+| PWA-03 | Phase 17 | Pending |
+| PWA-04 | Phase 19 | Pending |
+| PWA-05 | Phase 19 | Pending |
+| NAV-01 | Phase 18 | Pending |
+| NAV-02 | Phase 18 | Pending |
+| NAV-03 | Phase 18 | Pending |
+| UX-01 | Phase 19 | Pending |
+| UX-02 | Phase 19 | Pending |
+| UX-03 | Phase 19 | Pending |
+| UX-04 | Phase 19 | Pending |
+| DEV-01 | Phase 17 | Pending |
+| DEV-02 | Phase 17 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 14 total
-- Mapped to phases: 0
-- Unmapped: 14 ⚠️
+- Mapped to phases: 14
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-20*
-*Last updated: 2026-03-20 after initial definition*
+*Last updated: 2026-03-20 after roadmap creation*
