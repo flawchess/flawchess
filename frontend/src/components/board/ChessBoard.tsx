@@ -50,7 +50,7 @@ function squareToCoords(square: string, flipped: boolean): [number, number] {
   return [x, y];
 }
 
-function buildArrowPolygon(
+function buildArrowPath(
   x1: number, y1: number, x2: number, y2: number,
   shaftHalf: number, headHalf: number, headLen: number,
 ): string {
@@ -67,23 +67,31 @@ function buildArrowPolygon(
   const bx = x2 - ux * headLen;
   const by = y2 - uy * headLen;
 
-  // 7 vertices: shaft start left, shaft-head junction left, head left,
-  // tip, head right, shaft-head junction right, shaft start right
-  const points = [
-    [x1 + px * shaftHalf, y1 + py * shaftHalf],
-    [bx + px * shaftHalf, by + py * shaftHalf],
-    [bx + px * headHalf, by + py * headHalf],
-    [x2, y2],
-    [bx - px * headHalf, by - py * headHalf],
-    [bx - px * shaftHalf, by - py * shaftHalf],
-    [x1 - px * shaftHalf, y1 - py * shaftHalf],
-  ];
+  // Key points
+  const startLeft = [x1 + px * shaftHalf, y1 + py * shaftHalf];
+  const junctionLeft = [bx + px * shaftHalf, by + py * shaftHalf];
+  const headLeft = [bx + px * headHalf, by + py * headHalf];
+  const tip = [x2, y2];
+  const headRight = [bx - px * headHalf, by - py * headHalf];
+  const junctionRight = [bx - px * shaftHalf, by - py * shaftHalf];
+  const startRight = [x1 - px * shaftHalf, y1 - py * shaftHalf];
 
-  return points.map(([x, y]) => `${x},${y}`).join(' ');
+  // SVG path: straight edges with a semicircular arc at the shaft start
+  return [
+    `M ${startLeft[0]},${startLeft[1]}`,
+    `L ${junctionLeft[0]},${junctionLeft[1]}`,
+    `L ${headLeft[0]},${headLeft[1]}`,
+    `L ${tip[0]},${tip[1]}`,
+    `L ${headRight[0]},${headRight[1]}`,
+    `L ${junctionRight[0]},${junctionRight[1]}`,
+    `L ${startRight[0]},${startRight[1]}`,
+    `A ${shaftHalf},${shaftHalf} 0 0,0 ${startLeft[0]},${startLeft[1]}`,
+    'Z',
+  ].join(' ');
 }
 
-// Render priority: grey/grey_hover = 0 (bottom), red/red_hover = 1 (middle), green/green_hover = 2 (top).
-// Grey arrows are drawn first so they never obscure red or green arrows.
+// Render priority: grey = 0 (bottom), red = 1 (middle), green = 2 (top).
+// Within each color, thick arrows are drawn first so thin arrows stay visible.
 const ARROW_COLOR_PRIORITY: Record<string, number> = {
   [GREY]: 0,
   [GREY_HOVER]: 0,
@@ -99,7 +107,9 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
   const sqSize = boardWidth / 8;
 
   const sortedArrows = [...arrows].sort(
-    (a, b) => (ARROW_COLOR_PRIORITY[a.color] ?? 0) - (ARROW_COLOR_PRIORITY[b.color] ?? 0),
+    (a, b) =>
+      (ARROW_COLOR_PRIORITY[a.color] ?? 0) - (ARROW_COLOR_PRIORITY[b.color] ?? 0)
+      || b.width - a.width,
   );
 
   return (
@@ -125,15 +135,15 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
         const headWidth = (MIN_HEAD_WIDTH + (MAX_HEAD_WIDTH - MIN_HEAD_WIDTH) * w) * sqSize;
         const headLen = headWidth * HEAD_LENGTH_RATIO;
 
-        const points = buildArrowPolygon(
+        const d = buildArrowPath(
           x1 * sqSize, y1 * sqSize, x2 * sqSize, y2 * sqSize,
           shaftHalf, headWidth / 2, headLen,
         );
 
         return (
-          <polygon
+          <path
             key={i}
-            points={points}
+            d={d}
             fill={arrow.color}
             opacity={ARROW_OPACITY}
             stroke={ARROW_OUTLINE_COLOR}
