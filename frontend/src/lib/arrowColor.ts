@@ -2,18 +2,18 @@
 //
 // Colors match the WDL chart (WDLBar.tsx):
 //   green = oklch(0.45 0.16 145)   — win rate >= 60%
-//   grey  = oklch(0.65 0.01 260)   — neither threshold met
+//   grey  = oklch(0.55 0.01 260)   — neither threshold met
 //   red   = oklch(0.45 0.17 25)    — loss rate >= 60%
 //
 // Frequency is encoded as arrow thickness (handled by ChessBoard).
 
 const GREEN = 'oklch(0.45 0.16 145)';
-const GREY = 'oklch(0.65 0.01 260)';
+const GREY = 'oklch(0.75 0.01 260)';
 const RED = 'oklch(0.45 0.17 25)';
 
 // Hovered arrows use boosted lightness for visibility
 const GREEN_HOVER = 'oklch(0.6 0.16 145)';
-const GREY_HOVER = 'oklch(0.8 0.01 260)';
+const GREY_HOVER = 'oklch(0.9 0.01 260)';
 const RED_HOVER = 'oklch(0.6 0.17 25)';
 
 const MIN_GAMES_FOR_COLOR = 10;
