@@ -1,5 +1,4 @@
-import { Info } from 'lucide-react';
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import type { WDLByCategory } from '@/types/stats';
@@ -27,18 +26,9 @@ function ChartTitle({ title, infoTooltip, testId }: { title: string; infoTooltip
     <h2 className="text-lg font-medium mb-3">
       <span className="inline-flex items-center gap-1">
         {title}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button type="button" className="text-muted-foreground hover:text-foreground" aria-label={`${title} info`} data-testid={`${testId}-info`}>
-                <Info className="h-3.5 w-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs text-sm">
-              {infoTooltip}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <InfoPopover ariaLabel={`${title} info`} testId={`${testId}-info`} side="top">
+          {infoTooltip}
+        </InfoPopover>
       </span>
     </h2>
   );

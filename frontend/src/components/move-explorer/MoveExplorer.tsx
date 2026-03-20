@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { Chess } from 'chess.js';
-import { ArrowLeftRight, Info } from 'lucide-react';
+import { ArrowLeftRight } from 'lucide-react';
 import { WDL_WIN, WDL_DRAW, WDL_LOSS } from '@/components/results/WDLBar';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
+import { InfoPopover } from '@/components/ui/info-popover';
 import type { NextMoveEntry } from '@/types/api';
 
 interface MoveExplorerProps {
@@ -67,18 +68,9 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
               <th className="w-[3rem] text-left text-xs text-muted-foreground font-normal pb-1">
                 <span className="inline-flex items-center gap-1">
                   Move
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button type="button" className="text-muted-foreground hover:text-foreground" aria-label="Move arrows info" data-testid="move-arrows-info">
-                          <Info className="h-3.5 w-3.5" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs text-sm">
-                        These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings.
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <InfoPopover ariaLabel="Move arrows info" testId="move-arrows-info" side="top">
+                    These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings.
+                  </InfoPopover>
                 </span>
               </th>
               <th className="w-[4rem] text-right text-xs text-muted-foreground font-normal pb-1">Games</th>

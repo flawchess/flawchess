@@ -2,12 +2,12 @@ import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronUp, ChevronDown, Save, Sparkles, Info } from 'lucide-react';
+import { ChevronUp, ChevronDown, Save, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -246,20 +246,13 @@ export function OpeningsPage() {
         ) : (
           <div />
         )}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button type="button" className="ml-auto text-muted-foreground hover:text-foreground flex-shrink-0" aria-label="Chessboard info" data-testid="chessboard-info">
-                <Info className="h-3.5 w-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs text-sm">
-              Play moves on the board by dragging pieces, or by clicking on the moves in the Moves tab.
-              <br/><br/>
-              The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <span className="ml-auto flex-shrink-0">
+          <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
+            Play moves on the board by dragging pieces, or by clicking on the moves in the Moves tab.
+            <br/><br/>
+            The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
+          </InfoPopover>
+        </span>
       </div>
 
       {/* Move list */}
@@ -315,18 +308,9 @@ export function OpeningsPage() {
         <div className="ml-auto">
           <div className="mb-1 flex items-center gap-1">
             <p className="text-xs text-muted-foreground">Piece filter</p>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button type="button" className="text-muted-foreground hover:text-foreground" aria-label="Piece filter info" data-testid="piece-filter-info">
-                    <Info className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-xs text-sm">
-                  Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info" side="top">
+              Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
+            </InfoPopover>
           </div>
           <ToggleGroup
             type="single"
@@ -359,25 +343,11 @@ export function OpeningsPage() {
           >
             <span className="flex items-center gap-1">
               Position bookmarks
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      role="button"
-                      tabIndex={-1}
-                      className="text-muted-foreground hover:text-foreground"
-                      aria-label="Position bookmarks info"
-                      data-testid="position-bookmarks-info"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Info className="h-3.5 w-3.5" />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-xs text-sm">
-                    Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <span onClick={(e) => e.stopPropagation()}>
+                <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info" side="top">
+                  Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                </InfoPopover>
+              </span>
             </span>
             {positionBookmarksOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>

@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Info } from 'lucide-react';
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
@@ -100,18 +99,9 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
       <h2 className="text-lg font-medium mb-3">
         <span className="inline-flex items-center gap-1">
           Win Rate Over Time
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button type="button" className="text-muted-foreground hover:text-foreground" aria-label="Win rate chart info" data-testid="win-rate-chart-info">
-                  <Info className="h-3.5 w-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs text-sm">
-                Shows your win rate for each saved position over time. Each point is the win rate over your last 30 games through that position. This helps you track and compare your success rate for each opening.
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <InfoPopover ariaLabel="Win rate chart info" testId="win-rate-chart-info" side="top">
+            Shows your win rate for each saved position over time. Each point is the win rate over your last 30 games through that position. This helps you track and compare your success rate for each opening.
+          </InfoPopover>
         </span>
       </h2>
     <ChartContainer config={chartConfig} className="w-full h-72">
