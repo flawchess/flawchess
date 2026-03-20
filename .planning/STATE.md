@@ -3,11 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Mobile & PWA
 status: executing
-last_updated: "2026-03-20T13:39:05Z"
-last_activity: 2026-03-20 — Phase 17 Plan 01 executed (Tasks 1-2 complete, checkpoint awaiting human verify)
+stopped_at: Completed 17-01-PLAN.md
+last_updated: "2026-03-20T14:06:12Z"
+last_activity: "2026-03-20 — Phase 17 Plan 01 complete (all 3 tasks done, user verified PWA in Chrome DevTools)"
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 1
   completed_plans: 1
 ---
@@ -16,9 +17,9 @@ progress:
 
 ## Current Position
 
-Phase: 17 (pwa-foundation-dev-workflow) — CHECKPOINT (awaiting human verify)
-Plan: 1 of 1
-Stopped at: Task 3 (human-verify checkpoint) — user must verify PWA in Chrome DevTools
+Phase: 17 (pwa-foundation-dev-workflow) — COMPLETE
+Plan: 1 of 1 (all plans complete)
+Stopped at: Completed 17-01-PLAN.md
 
 ## Project Reference
 
@@ -30,7 +31,7 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 17. PWA Foundation + Dev Workflow | 1/1 | Checkpoint | - |
+| 17. PWA Foundation + Dev Workflow | 1/1 | Complete | 2026-03-20 |
 | 18. Mobile Navigation | 0/TBD | Not started | - |
 | 19. Mobile UX Polish + Install Prompt | 0/TBD | Not started | - |
 
@@ -66,4 +67,4 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 - [Phase 19]: react-chessboard touch drag on Android Chrome unverified — click-to-move is confirmed fallback
 
 ---
-Last activity: 2026-03-20 — Phase 17 Plan 01: Tasks 1-2 complete; checkpoint awaiting user Chrome DevTools PWA verification
+Last activity: 2026-03-20 — Phase 17 Plan 01 complete: all 3 tasks done; user verified PWA manifest, service worker, cache storage, and API NetworkOnly routing in Chrome DevTools

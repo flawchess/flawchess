@@ -47,7 +47,7 @@ patterns-established:
 requirements-completed: [PWA-01, PWA-02, PWA-03, DEV-01, DEV-02]
 
 # Metrics
-duration: 4min
+duration: ~20min (including human-verify checkpoint)
 completed: 2026-03-20
 ---
 
@@ -57,10 +57,10 @@ completed: 2026-03-20
 
 ## Performance
 
-- **Duration:** 4 min
+- **Duration:** ~20 min (including human-verify checkpoint)
 - **Started:** 2026-03-20T13:34:20Z
-- **Completed:** 2026-03-20T13:39:05Z
-- **Tasks:** 2 of 3 complete (Task 3 is a human-verify checkpoint)
+- **Completed:** 2026-03-20T14:06:12Z
+- **Tasks:** 3 of 3 complete
 - **Files modified:** 5
 
 ## Accomplishments
@@ -77,7 +77,7 @@ Each task was committed atomically:
 
 1. **Task 1: Create chess knight PWA icons** - `dd48c3b` (feat)
 2. **Task 2: Configure vite-plugin-pwa, update index.html, add dev scripts** - `843059c` (feat)
-3. **Task 3: Verify PWA build and manifest** - checkpoint:human-verify (awaiting user verification)
+3. **Task 3: Verify PWA build and manifest** - checkpoint:human-verify (approved by user)
 
 ## Files Created/Modified
 - `frontend/public/icons/icon-192.png` - 192x192 chess knight icon (dark bg, light knight silhouette)
@@ -115,8 +115,9 @@ None - no external service configuration required.
 
 ## Next Phase Readiness
 - PWA infrastructure complete: manifest, service worker, icons, meta tags all in place
-- Awaiting user verification of PWA in Chrome DevTools (Task 3 checkpoint)
-- After verification, ready for Phase 18: Mobile Navigation
+- User verified PWA in Chrome DevTools: manifest, service worker, cache storage, API NetworkOnly routing all confirmed working
+- Google SSO redirect mismatch on vite preview port is expected (OAuth redirect URIs configured for dev port 5173 and prod — preview port 4173 is not a registered redirect)
+- Ready for Phase 18: Mobile Navigation
 - Cloudflare Tunnel: user must install `cloudflared` CLI if not already present; dev:tunnel script is ready
 
 ---
