@@ -41,7 +41,7 @@
 **Milestone Goal:** Make the application work great on smartphones as an installable PWA, with mobile-optimized navigation and dev workflow for phone testing.
 
 - [x] **Phase 17: PWA Foundation + Dev Workflow** - Installable PWA with service worker, custom icons, and phone testing workflow (completed 2026-03-20)
-- [ ] **Phase 18: Mobile Navigation** - Bottom navigation bar with direct tabs and "More" drawer for mobile viewports with safe-area support
+- [x] **Phase 18: Mobile Navigation** - Bottom navigation bar with direct tabs and "More" drawer for mobile viewports with safe-area support (completed 2026-03-20)
 - [ ] **Phase 19: Mobile UX Polish + Install Prompt** - Touch targets, overflow fixes, iOS/Android install prompts, mobile chessboard
 
 ## Phase Details
@@ -69,7 +69,7 @@ Plans:
   2. Tapping "More" opens a bottom sheet drawer containing all nav links and a logout button
   3. Tapping any nav link in the drawer navigates to that route and closes the drawer
   4. On notched iPhones in standalone PWA mode the header and content do not overlap the notch or Dynamic Island
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 - [ ] 18-01-PLAN.md — Mobile bottom bar, More drawer, mobile header, safe-area insets
 
@@ -106,7 +106,7 @@ Plans:
 | 15. Enhanced Import | v1.1 | 3/3 | Complete | 2026-03-18 |
 | 16. Game Card UI | v1.1 | 3/3 | Complete | 2026-03-18 |
 | 17. PWA Foundation + Dev Workflow | 1/1 | Complete    | 2026-03-20 | - |
-| 18. Mobile Navigation | v1.2 | 0/1 | Not started | - |
+| 18. Mobile Navigation | 1/1 | Complete   | 2026-03-20 | - |
 | 19. Mobile UX Polish + Install Prompt | v1.2 | 0/TBD | Not started | - |
 
 ---
