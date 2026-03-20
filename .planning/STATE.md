@@ -3,21 +3,21 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Mobile & PWA
 status: unknown
-last_updated: "2026-03-20T17:23:47.049Z"
-last_activity: "2026-03-20 - Completed quick task 260320-ouo: Fix mobile tooltip info icons flashing"
+last_updated: "2026-03-20T17:56:34.015Z"
+last_activity: 2026-03-20
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 5
+  completed_plans: 3
 ---
 
 # Project State: Chessalytics
 
 ## Current Position
 
-Phase: 18 (mobile-navigation) — COMPLETE
-Plan: 1 of 1 (all complete)
+Phase: 19 (mobile-ux-polish-install-prompt) — EXECUTING
+Plan: 2 of 3
 
 ## Project Reference
 
@@ -31,7 +31,7 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 |-------|----------------|--------|-----------|
 | 17. PWA Foundation + Dev Workflow | 1/1 | Complete | 2026-03-20 |
 | 18. Mobile Navigation | 1/1 | Complete | 2026-03-20 |
-| 19. Mobile UX Polish + Install Prompt | 0/TBD | Not started | - |
+| 19. Mobile UX Polish + Install Prompt | 2/3 | In Progress | - |
 
 ## Key Context
 
@@ -54,6 +54,8 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 - vaul (via shadcn) for bottom drawer — handles scroll lock, backdrop, iOS momentum without manual DOM manipulation
 - tailwindcss-safe-area plugin for pb-safe/pt-safe — avoids hardcoded pixel offsets for notch/home-indicator clearance
 - Pure Tailwind sm: breakpoints for mobile/desktop switching — no JS-based detection to avoid hydration mismatches
+- min-h-11 sm:min-h-0 on ToggleGroupItems individually (not ToggleGroup wrapper) for per-item 44px height on mobile
+- h-11 w-11 sm:h-8 sm:w-8 on icon Buttons for 44px mobile touch targets, 32px desktop
 
 ### Pending Todos
 
@@ -76,5 +78,5 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 | 260320-ouo | Replace all info icon tooltips with click-based InfoPopover (Radix Popover) to fix mobile tap flash-close | 2026-03-20 | 76b998e | [260320-ouo-fix-mobile-tooltip-info-icons-flashing-a](./quick/260320-ouo-fix-mobile-tooltip-info-icons-flashing-a/) |
 
 ---
-Last activity: 2026-03-20 - Completed quick task 260320-ouo: Fix mobile tooltip info icons flashing
-Last session: 2026-03-20T17:23:47.047Z
+Last activity: 2026-03-20
+Last session: 2026-03-20T17:56:34.013Z

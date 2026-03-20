@@ -83,7 +83,7 @@ Plans:
   3. Moving chess pieces via click-to-click works correctly on iOS Safari and Android Chrome
   4. The Openings page sidebar (board + filters) and main content area are both usable on mobile without excessive scrolling
   5. Android Chrome users see an in-app install prompt after interacting with the app; iOS Safari users see a dismissible banner with "Share > Add to Home Screen" instructions
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 Plans:
 - [ ] 19-01-PLAN.md — Chessboard touch fix and Openings sticky mobile layout
 - [ ] 19-02-PLAN.md — 44px touch targets and horizontal overflow fixes
@@ -111,7 +111,7 @@ Plans:
 | 16. Game Card UI | v1.1 | 3/3 | Complete | 2026-03-18 |
 | 17. PWA Foundation + Dev Workflow | v1.2 | 1/1 | Complete | 2026-03-20 |
 | 18. Mobile Navigation | v1.2 | 1/1 | Complete | 2026-03-20 |
-| 19. Mobile UX Polish + Install Prompt | v1.2 | 0/3 | Not started | - |
+| 19. Mobile UX Polish + Install Prompt | 1/3 | In Progress|  | - |
 
 ---
 *Created: 2026-03-11*
