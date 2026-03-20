@@ -69,17 +69,19 @@ export interface TimeSeriesRequest {
 }
 
 export interface TimeSeriesPoint {
-  month: string;       // "2025-01"
-  win_rate: number;    // 0.0 - 1.0
-  game_count: number;
-  wins: number;
-  draws: number;
-  losses: number;
+  date: string;          // "2025-01-15"
+  win_rate: number;      // 0.0 - 1.0
+  game_count: number;    // games in rolling window (1..window_size)
+  window_size: number;   // configured window size (ROLLING_WINDOW_SIZE)
 }
 
 export interface BookmarkTimeSeries {
   bookmark_id: number;
   data: TimeSeriesPoint[];
+  total_wins: number;
+  total_draws: number;
+  total_losses: number;
+  total_games: number;
 }
 
 export interface TimeSeriesResponse {

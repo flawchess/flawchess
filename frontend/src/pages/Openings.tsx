@@ -162,18 +162,16 @@ export function OpeningsPage() {
 
   const { data: tsData } = useTimeSeries(timeSeriesRequest);
 
-  // Derive WDL stats per bookmark
+  // Derive WDL stats per bookmark using aggregate fields (not rolling sub-counts)
   const wdlStatsMap = useMemo(() => {
     const map: Record<number, { wins: number; draws: number; losses: number; total: number }> = {};
     for (const s of tsData?.series ?? []) {
-      let wins = 0, draws = 0, losses = 0;
-      for (const p of s.data) {
-        wins += p.wins;
-        draws += p.draws;
-        losses += p.losses;
-      }
-      const total = wins + draws + losses;
-      map[s.bookmark_id] = { wins, draws, losses, total };
+      map[s.bookmark_id] = {
+        wins: s.total_wins,
+        draws: s.total_draws,
+        losses: s.total_losses,
+        total: s.total_games,
+      };
     }
     return map;
   }, [tsData]);

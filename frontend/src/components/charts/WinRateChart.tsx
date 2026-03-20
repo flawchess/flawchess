@@ -21,10 +21,8 @@ const CHART_COLORS = [
   'oklch(0.70 0.15 110)',   // lime
 ];
 
-const MIN_GAMES = 5;
-
-const formatMonth = (m: string) => {
-  const [year, month] = m.split('-');
+const formatDate = (d: string) => {
+  const [year, month] = d.split('-');
   return new Date(Number(year), Number(month) - 1).toLocaleDateString('en-US', {
     month: 'short',
     year: '2-digit',
@@ -46,12 +44,12 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
     });
   }, []);
 
-  // Empty state: no series data or all series have empty data
-  const hasData = series.some((s) => s.data.some((p) => p.game_count >= MIN_GAMES));
+  // Empty state: no series data
+  const hasData = series.some((s) => s.data.length > 0);
   if (!hasData) {
     return (
       <div className="text-center text-muted-foreground py-8">
-        No game history available for saved positions yet (minimum {MIN_GAMES} games per month).
+        No game history available for saved positions yet.
       </div>
     );
   }
@@ -64,24 +62,22 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
     ]),
   );
 
-  // Collect all unique months across series (only months with >= MIN_GAMES for at least one bookmark)
-  const allMonths = [
+  // Collect all unique dates across series, sorted chronologically
+  const allDates = [
     ...new Set(
-      series.flatMap((s) =>
-        s.data.filter((p) => p.game_count >= MIN_GAMES).map((p) => p.month)
-      )
+      series.flatMap((s) => s.data.map((p) => p.date))
     ),
   ].sort();
 
-  // Build data array with win_rate and game_count per bookmark
-  const data = allMonths.map((month) => {
-    const point: Record<string, string | number | undefined> = { month };
+  // Build data array with win_rate, game_count and window_size per bookmark
+  const data = allDates.map((date) => {
+    const point: Record<string, string | number | undefined> = { date };
     for (const s of series) {
-      const found = s.data.find((p) => p.month === month);
-      // Only include data point if at least MIN_GAMES games
-      if (found && found.game_count >= MIN_GAMES) {
+      const found = s.data.find((p) => p.date === date);
+      if (found) {
         point[`bkm_${s.bookmark_id}`] = found.win_rate;
-        point[`bkm_${s.bookmark_id}_games`] = found.game_count;
+        point[`bkm_${s.bookmark_id}_game_count`] = found.game_count;
+        point[`bkm_${s.bookmark_id}_window_size`] = found.window_size;
       }
       // undefined produces a gap in the line
     }
@@ -92,19 +88,20 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
     <ChartContainer config={chartConfig} className="w-full h-72">
       <LineChart data={data}>
         <CartesianGrid vertical={false} />
-        <XAxis dataKey="month" tickFormatter={formatMonth} />
+        <XAxis dataKey="date" tickFormatter={formatDate} />
         <YAxis domain={[0, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
         <ChartTooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
             return (
               <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
-                <div className="font-medium">{formatMonth(label as string)}</div>
+                <div className="font-medium">{formatDate(label as string)}</div>
                 {payload
                   .filter((item) => item.value !== undefined)
                   .map((item) => {
                     const cfg = chartConfig[item.dataKey as string];
-                    const games = item.payload[`${item.dataKey}_games`];
+                    const gameCount = item.payload[`${item.dataKey}_game_count`] as number;
+                    const windowSize = item.payload[`${item.dataKey}_window_size`] as number;
                     return (
                       <div key={item.dataKey} className="flex items-center gap-1.5">
                         <div
@@ -113,7 +110,7 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
                         />
                         <span>
                           {cfg?.label ?? item.dataKey}: {Math.round((item.value as number) * 100)}%
-                          <span className="text-muted-foreground ml-1">({games} games)</span>
+                          <span className="text-muted-foreground ml-1">({gameCount}/{windowSize} games)</span>
                         </span>
                       </div>
                     );
