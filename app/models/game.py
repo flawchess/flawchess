@@ -10,7 +10,7 @@ from app.models.base import Base
 class Game(Base):
     __tablename__ = "games"
     __table_args__ = (
-        UniqueConstraint("platform", "platform_game_id", name="uq_games_platform_game_id"),
+        UniqueConstraint("user_id", "platform", "platform_game_id", name="uq_games_user_platform_game_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

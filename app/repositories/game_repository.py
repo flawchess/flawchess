@@ -11,7 +11,7 @@ from app.models.game_position import GamePosition
 async def bulk_insert_games(session: AsyncSession, game_rows: list[dict]) -> list[int]:
     """Insert games, skipping duplicates. Returns list of newly inserted game IDs.
 
-    Uses ON CONFLICT DO NOTHING on the unique constraint (platform, platform_game_id).
+    Uses ON CONFLICT DO NOTHING on the unique constraint (user_id, platform, platform_game_id).
     Only returns IDs for rows that were actually inserted (not skipped).
 
     Args:
@@ -27,7 +27,7 @@ async def bulk_insert_games(session: AsyncSession, game_rows: list[dict]) -> lis
     stmt = (
         pg_insert(Game)
         .values(game_rows)
-        .on_conflict_do_nothing(constraint="uq_games_platform_game_id")
+        .on_conflict_do_nothing(constraint="uq_games_user_platform_game_id")
         .returning(Game.id)
     )
     result = await session.execute(stmt)

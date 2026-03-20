@@ -87,6 +87,33 @@ class TestBulkInsertGames:
         assert len(ids) == 1
         assert ids[0] > 0
 
+    async def test_different_users_can_import_same_game(self, db_session):
+        from app.repositories.game_repository import bulk_insert_games
+        platform_game_id = "shared-game-123"
+
+        # User 1 inserts the game
+        ids_user1 = await bulk_insert_games(db_session, [self._make_game_row(platform_game_id, user_id=1)])
+        assert len(ids_user1) == 1, "User 1 should have their game inserted"
+
+        # User 2 inserts the same platform_game_id — should NOT be blocked by user 1's row
+        ids_user2 = await bulk_insert_games(db_session, [self._make_game_row(platform_game_id, user_id=2)])
+        assert len(ids_user2) == 1, "User 2 should also get their own copy of the game"
+
+        # Both IDs should be distinct
+        assert ids_user1[0] != ids_user2[0]
+
+    async def test_same_user_duplicate_still_skipped(self, db_session):
+        from app.repositories.game_repository import bulk_insert_games
+        platform_game_id = "dup-game-456"
+
+        # First insert for user 1
+        ids_first = await bulk_insert_games(db_session, [self._make_game_row(platform_game_id, user_id=1)])
+        assert len(ids_first) == 1
+
+        # Second insert of the same game for the same user — should be skipped
+        ids_second = await bulk_insert_games(db_session, [self._make_game_row(platform_game_id, user_id=1)])
+        assert len(ids_second) == 0, "Same user importing same game twice should be deduplicated"
+
 
 class TestBulkInsertPositions:
     """Tests for bulk_insert_positions."""
