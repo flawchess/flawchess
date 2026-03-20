@@ -23,6 +23,7 @@ export function BoardControls({
       <Button
         variant="ghost"
         size="icon"
+        className="h-11 w-11 sm:h-8 sm:w-8"
         onClick={onReset}
         disabled={!canGoBack}
         title="Reset to start"
@@ -34,6 +35,7 @@ export function BoardControls({
       <Button
         variant="ghost"
         size="icon"
+        className="h-11 w-11 sm:h-8 sm:w-8"
         onClick={onBack}
         disabled={!canGoBack}
         title="Previous move"
@@ -45,6 +47,7 @@ export function BoardControls({
       <Button
         variant="ghost"
         size="icon"
+        className="h-11 w-11 sm:h-8 sm:w-8"
         onClick={onForward}
         disabled={!canGoForward}
         title="Next move"
@@ -56,6 +59,7 @@ export function BoardControls({
       <Button
         variant="ghost"
         size="icon"
+        className="h-11 w-11 sm:h-8 sm:w-8"
         onClick={onFlip}
         title="Flip board"
         aria-label="Flip board"

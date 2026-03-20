@@ -74,6 +74,8 @@ export function OpeningsPage() {
   // ── Collapsible section state ───────────────────────────────────────────────
   const [positionBookmarksOpen, setPositionBookmarksOpen] = useState(false);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  // Mobile-only collapsible state — filters start collapsed on mobile (separate from desktop sidebar state)
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // ── Games tab pagination ────────────────────────────────────────────────────
   const [gamesOffset, setGamesOffset] = useState(0);
@@ -294,11 +296,11 @@ export function OpeningsPage() {
             size="sm"
             data-testid="filter-played-as"
           >
-            <ToggleGroupItem value="white" data-testid="filter-played-as-white">
+            <ToggleGroupItem value="white" data-testid="filter-played-as-white" className="min-h-11 sm:min-h-0">
               <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
               White
             </ToggleGroupItem>
-            <ToggleGroupItem value="black" data-testid="filter-played-as-black">
+            <ToggleGroupItem value="black" data-testid="filter-played-as-black" className="min-h-11 sm:min-h-0">
               <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
               Black
             </ToggleGroupItem>
@@ -323,9 +325,9 @@ export function OpeningsPage() {
             size="sm"
             data-testid="filter-piece-filter"
           >
-            <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
-            <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
-            <ToggleGroupItem value="both" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
+            <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine" className="min-h-11 sm:min-h-0">Mine</ToggleGroupItem>
+            <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent" className="min-h-11 sm:min-h-0">Opponent</ToggleGroupItem>
+            <ToggleGroupItem value="both" data-testid="filter-piece-filter-both" className="min-h-11 sm:min-h-0">Both</ToggleGroupItem>
           </ToggleGroup>
         </div>
       </div>
@@ -494,7 +496,7 @@ export function OpeningsPage() {
 
   return (
     <div data-testid="openings-page" className="flex min-h-0 flex-1 flex-col bg-background">
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-6">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
         {/* Desktop: two-column layout */}
         <div className="hidden md:grid md:grid-cols-[350px_1fr] md:gap-8 xl:grid-cols-[400px_1fr]">
           <div className="min-w-0">{sidebar}</div>

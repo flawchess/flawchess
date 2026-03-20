@@ -99,7 +99,7 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
               aria-label={`${TIME_CONTROL_LABELS[tc]} time control`}
               aria-pressed={isTimeControlActive(tc)}
               className={cn(
-                'rounded border px-2 py-0.5 text-xs transition-colors',
+                'rounded border px-3 py-2 sm:px-2 sm:py-0.5 text-xs transition-colors min-h-11 sm:min-h-0',
                 isTimeControlActive(tc)
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
@@ -123,7 +123,7 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
               aria-label={`${PLATFORM_LABELS[p]} platform`}
               aria-pressed={isPlatformActive(p)}
               className={cn(
-                'rounded border px-2 py-0.5 text-xs transition-colors',
+                'rounded border px-3 py-2 sm:px-2 sm:py-0.5 text-xs transition-colors min-h-11 sm:min-h-0',
                 isPlatformActive(p)
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
@@ -149,9 +149,9 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
           size="sm"
           data-testid="filter-rated"
         >
-          <ToggleGroupItem value="all" data-testid="filter-rated-all">All</ToggleGroupItem>
-          <ToggleGroupItem value="rated" data-testid="filter-rated-rated">Rated</ToggleGroupItem>
-          <ToggleGroupItem value="casual" data-testid="filter-rated-casual">Casual</ToggleGroupItem>
+          <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0">All</ToggleGroupItem>
+          <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0">Rated</ToggleGroupItem>
+          <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0">Casual</ToggleGroupItem>
         </ToggleGroup>
       </div>
 
@@ -169,9 +169,9 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
           size="sm"
           data-testid="filter-opponent"
         >
-          <ToggleGroupItem value="human" data-testid="filter-opponent-human">Human</ToggleGroupItem>
-          <ToggleGroupItem value="bot" data-testid="filter-opponent-bot">Bot</ToggleGroupItem>
-          <ToggleGroupItem value="both" data-testid="filter-opponent-both">Both</ToggleGroupItem>
+          <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0">Human</ToggleGroupItem>
+          <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0">Bot</ToggleGroupItem>
+          <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0">Both</ToggleGroupItem>
         </ToggleGroup>
       </div>
 
