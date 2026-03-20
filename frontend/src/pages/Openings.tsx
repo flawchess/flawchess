@@ -490,7 +490,6 @@ export function OpeningsPage() {
       ) : tsData ? (
         <>
           <div>
-            <h2 className="text-lg font-medium mb-3">Results by Opening</h2>
             <WDLBarChart bookmarks={bookmarks} wdlStatsMap={wdlStatsMap} />
           </div>
           <div>

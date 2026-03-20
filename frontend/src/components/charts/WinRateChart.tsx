@@ -108,7 +108,7 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
                 </button>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs text-sm">
-                Shows your win rate for each saved position over time. Each point is the win rate over your last 30 games through that position, so the line stays smooth even for openings you don't play often.
+                Shows your win rate for each saved position over time. Each point is the win rate over your last 30 games through that position. This helps you track and compare your success rate for each opening.
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

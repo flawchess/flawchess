@@ -1,3 +1,5 @@
+import { Info } from 'lucide-react';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
@@ -52,6 +54,24 @@ export function WDLBarChart({ bookmarks, wdlStatsMap }: WDLBarChartProps) {
   }
 
   return (
+    <div>
+      <h2 className="text-lg font-medium mb-3">
+        <span className="inline-flex items-center gap-1">
+          Results by Opening
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-muted-foreground hover:text-foreground" aria-label="Results by opening info" data-testid="wdl-bar-chart-info">
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-sm">
+                Shows your win, draw, and loss percentages for each saved position, based on the games that match the current filter settings. The length of the grey bar indicates game count relative to other openings. Hover/tap a bar for exact numbers.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </span>
+      </h2>
     <ChartContainer config={chartConfig} className="w-full" style={{ height: Math.max(120, data.length * 64 + 60) }}>
       <BarChart data={data} layout="vertical" margin={{ left: 8, right: 16 }}>
         <CartesianGrid horizontal={false} />
@@ -111,5 +131,6 @@ export function WDLBarChart({ bookmarks, wdlStatsMap }: WDLBarChartProps) {
         />
       </BarChart>
     </ChartContainer>
+    </div>
   );
 }
