@@ -34,7 +34,7 @@ from app.schemas.analysis import (
 )
 
 # Rolling window size for win-rate time series computation.
-ROLLING_WINDOW_SIZE = 20
+ROLLING_WINDOW_SIZE = 30
 
 # Maps recency filter strings to timedelta offsets.
 RECENCY_DELTAS: dict[str, datetime.timedelta] = {

@@ -1,4 +1,6 @@
 import { useState, useCallback } from 'react';
+import { Info } from 'lucide-react';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
@@ -22,10 +24,19 @@ const CHART_COLORS = [
 ];
 
 const formatDate = (d: string) => {
-  const [year, month] = d.split('-');
-  return new Date(Number(year), Number(month) - 1).toLocaleDateString('en-US', {
+  const [year, month, day] = d.split('-');
+  return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-US', {
     month: 'short',
-    year: '2-digit',
+    day: 'numeric',
+  });
+};
+
+const formatDateWithYear = (d: string) => {
+  const [year, month, day] = d.split('-');
+  return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
   });
 };
 
@@ -85,6 +96,24 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
   });
 
   return (
+    <div>
+      <h2 className="text-lg font-medium mb-3">
+        <span className="inline-flex items-center gap-1">
+          Win Rate Over Time
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-muted-foreground hover:text-foreground" aria-label="Win rate chart info" data-testid="win-rate-chart-info">
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-sm">
+                Shows your win rate for each saved position over time. Each point is the win rate over your last 30 games through that position, so the line stays smooth even for openings you don't play often.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </span>
+      </h2>
     <ChartContainer config={chartConfig} className="w-full h-72">
       <LineChart data={data}>
         <CartesianGrid vertical={false} />
@@ -95,7 +124,7 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
             if (!active || !payload?.length) return null;
             return (
               <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
-                <div className="font-medium">{formatDate(label as string)}</div>
+                <div className="font-medium">{formatDateWithYear(label as string)}</div>
                 {payload
                   .filter((item) => item.value !== undefined)
                   .map((item) => {
@@ -132,12 +161,13 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
               stroke={`var(--color-${key})`}
               strokeWidth={2}
               dot={false}
-              connectNulls={false}
+              connectNulls={true}
               hide={hiddenKeys.has(key)}
             />
           );
         })}
       </LineChart>
     </ChartContainer>
+    </div>
   );
 }

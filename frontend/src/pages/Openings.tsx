@@ -494,7 +494,6 @@ export function OpeningsPage() {
             <WDLBarChart bookmarks={bookmarks} wdlStatsMap={wdlStatsMap} />
           </div>
           <div>
-            <h2 className="text-lg font-medium mb-3">Win Rate Over Time</h2>
             <WinRateChart bookmarks={bookmarks} series={tsData.series} />
           </div>
         </>
