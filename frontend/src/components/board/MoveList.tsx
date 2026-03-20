@@ -17,7 +17,7 @@ export function MoveList({ moveHistory, currentPly, onMoveClick }: MoveListProps
 
   if (moveHistory.length === 0) {
     return (
-      <div className="h-24 overflow-y-auto rounded border border-border bg-muted/30 p-2 text-sm text-muted-foreground">
+      <div className="h-18 overflow-y-auto rounded border border-border bg-muted/30 p-2 text-sm text-muted-foreground">
         No moves yet
       </div>
     );
@@ -30,7 +30,7 @@ export function MoveList({ moveHistory, currentPly, onMoveClick }: MoveListProps
   }
 
   return (
-    <div className="h-24 overflow-y-auto rounded border border-border bg-muted/30 p-2 text-sm">
+    <div className="h-18 overflow-y-auto rounded border border-border bg-muted/30 p-2 text-sm">
       <div className="flex flex-wrap gap-x-1 gap-y-0.5">
         {movePairs.map((pair, pairIdx) => {
           const whitePly = pairIdx * 2 + 1;
