@@ -33,7 +33,15 @@ Users can determine their success rate for any opening position they specify, fi
 
 ### Active
 
-(None — next milestone requirements to be defined via `/gsd:new-milestone`)
+## Current Milestone: v1.2 Mobile & PWA
+
+**Goal:** Make the application work great on smartphones as an installable PWA, with mobile-optimized navigation and dev workflow for phone testing.
+
+**Target features:**
+- Responsive mobile navigation (hamburger menu)
+- PWA setup (manifest, service worker, installable, caching for fast loads)
+- Mobile UX polish (touch targets, spacing, component adjustments)
+- Dev workflow for phone testing (ngrok or similar)
 
 ### Out of Scope
 
@@ -75,4 +83,4 @@ Users can determine their success rate for any opening position they specify, fi
 | QueryClient singleton in lib/ | Shared across 401 interceptor and auth transitions | ✓ Good |
 
 ---
-*Last updated: 2026-03-20 after v1.1 milestone*
+*Last updated: 2026-03-20 after v1.2 milestone started*
