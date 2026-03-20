@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/drawer';
 
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { AuthPage } from '@/pages/Auth';
 import { ImportPage } from '@/pages/Import';
@@ -235,6 +236,7 @@ function ProtectedLayout() {
       </main>
       <MobileBottomBar onMoreClick={() => setMoreOpen(true)} />
       <MobileMoreDrawer open={moreOpen} onOpenChange={setMoreOpen} />
+      <InstallPromptBanner />
     </>
   );
 }
