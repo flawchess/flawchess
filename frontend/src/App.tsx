@@ -5,8 +5,14 @@ import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { Toaster } from '@/components/ui/sonner';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { DownloadIcon, LayoutGridIcon, BarChart3Icon, MenuIcon, LogOutIcon } from 'lucide-react';
+import {
+  Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
+} from '@/components/ui/drawer';
 
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { AuthPage } from '@/pages/Auth';
 import { ImportPage } from '@/pages/Import';
 import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
@@ -28,7 +34,7 @@ function ImportJobWatcher({ jobId, onDone }: { jobId: string; onDone: (jobId: st
   return null;
 }
 
-// ─── Nav header ───────────────────────────────────────────────────────────────
+// ─── Nav items ────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
   { to: '/import', label: 'Import' },
@@ -36,17 +42,34 @@ const NAV_ITEMS = [
   { to: '/global-stats', label: 'Global Stats' },
 ] as const;
 
+const BOTTOM_NAV_ITEMS = [
+  { to: '/import', label: 'Import', Icon: DownloadIcon },
+  { to: '/openings', label: 'Openings', Icon: LayoutGridIcon },
+  { to: '/global-stats', label: 'Global Stats', Icon: BarChart3Icon },
+] as const;
+
+const ROUTE_TITLES: Record<string, string> = {
+  '/import': 'Import',
+  '/openings': 'Openings',
+  '/global-stats': 'Global Stats',
+};
+
+// ─── Active route helper ───────────────────────────────────────────────────────
+
+function isActive(to: string, pathname: string): boolean {
+  return to === '/openings'
+    ? pathname.startsWith('/openings')
+    : pathname === to;
+}
+
+// ─── Nav header (desktop) ─────────────────────────────────────────────────────
+
 function NavHeader() {
   const location = useLocation();
   const { logout } = useAuth();
 
-  const isActive = (to: string) =>
-    to === '/openings'
-      ? location.pathname.startsWith('/openings')
-      : location.pathname === to;
-
   return (
-    <header className="border-b border-border bg-background px-6 py-3">
+    <header className="hidden sm:block border-b border-border bg-background px-6 py-3">
       <div className="mx-auto flex max-w-7xl items-center justify-between">
         <div className="flex items-center gap-1">
           <span className="mr-3 text-lg font-bold tracking-tight text-foreground">Chessalytics</span>
@@ -58,7 +81,7 @@ function NavHeader() {
                 variant="ghost"
                 size="sm"
                 className={
-                  isActive(to)
+                  isActive(to, location.pathname)
                     ? 'border-b-2 border-primary rounded-none font-medium'
                     : 'rounded-none text-muted-foreground'
                 }
@@ -76,17 +99,140 @@ function NavHeader() {
   );
 }
 
+// ─── Mobile header ────────────────────────────────────────────────────────────
+
+function MobileHeader() {
+  const location = useLocation();
+  const pageTitle = Object.entries(ROUTE_TITLES).find(
+    ([path]) => location.pathname.startsWith(path),
+  )?.[1] ?? '';
+
+  return (
+    <header
+      data-testid="mobile-header"
+      className="block sm:hidden pt-safe flex items-center justify-between px-4 py-3 border-b border-border bg-background"
+    >
+      <span
+        data-testid="mobile-header-brand"
+        className="text-xl font-semibold tracking-tight text-foreground"
+      >
+        Chessalytics
+      </span>
+      <span
+        data-testid="mobile-header-page-title"
+        className="text-sm text-muted-foreground"
+      >
+        {pageTitle}
+      </span>
+    </header>
+  );
+}
+
+// ─── Mobile bottom bar ────────────────────────────────────────────────────────
+
+function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
+  const location = useLocation();
+
+  return (
+    <nav
+      aria-label="Mobile navigation"
+      data-testid="mobile-bottom-bar"
+      className="fixed bottom-0 inset-x-0 flex sm:hidden z-40 bg-background border-t border-border pb-safe"
+    >
+      {BOTTOM_NAV_ITEMS.map(({ to, label, Icon }) => (
+        <Link
+          key={to}
+          to={to}
+          data-testid={`mobile-nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
+          className={cn(
+            'flex flex-1 flex-col items-center gap-1 py-2',
+            isActive(to, location.pathname) ? 'text-primary' : 'text-muted-foreground',
+          )}
+        >
+          <Icon className="h-5 w-5" aria-hidden="true" />
+          <span className="text-xs">{label}</span>
+        </Link>
+      ))}
+      <button
+        onClick={onMoreClick}
+        data-testid="mobile-nav-more"
+        aria-label="More navigation options"
+        className="flex flex-1 flex-col items-center gap-1 py-2 text-muted-foreground"
+      >
+        <MenuIcon className="h-5 w-5" aria-hidden="true" />
+        <span className="text-xs">More</span>
+      </button>
+    </nav>
+  );
+}
+
+// ─── Mobile more drawer ───────────────────────────────────────────────────────
+
+function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const location = useLocation();
+  const { logout } = useAuth();
+  const { data: profile } = useUserProfile();
+
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange} direction="bottom">
+      <DrawerContent data-testid="mobile-more-drawer">
+        <DrawerHeader>
+          <DrawerTitle className="text-sm font-medium text-foreground">
+            {profile?.email ?? 'Account'}
+          </DrawerTitle>
+        </DrawerHeader>
+        <div className="px-4 pb-4">
+          <nav className="flex flex-col gap-1">
+            {NAV_ITEMS.map(({ to, label }) => (
+              <DrawerClose key={to} asChild>
+                <Link
+                  to={to}
+                  data-testid={`drawer-nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
+                  className={cn(
+                    'rounded-md px-3 py-2 text-base',
+                    isActive(to, location.pathname) ? 'text-primary font-medium' : 'text-foreground',
+                  )}
+                >
+                  {label}
+                </Link>
+              </DrawerClose>
+            ))}
+          </nav>
+          <div className="my-2 border-t border-border" />
+          <DrawerClose asChild>
+            <button
+              onClick={logout}
+              data-testid="drawer-logout"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-base text-destructive"
+            >
+              <LogOutIcon className="h-4 w-4" />
+              Logout
+            </button>
+          </DrawerClose>
+        </div>
+      </DrawerContent>
+    </Drawer>
+  );
+}
+
 // ─── Layout (protected pages) ─────────────────────────────────────────────────
 
 function ProtectedLayout() {
   const { token } = useAuth();
+  const [moreOpen, setMoreOpen] = useState(false);
+
   if (!token) {
     return <Navigate to="/login" replace />;
   }
   return (
     <>
       <NavHeader />
-      <Outlet />
+      <MobileHeader />
+      <main className="pb-16 sm:pb-0">
+        <Outlet />
+      </main>
+      <MobileBottomBar onMoreClick={() => setMoreOpen(true)} />
+      <MobileMoreDrawer open={moreOpen} onOpenChange={setMoreOpen} />
     </>
   );
 }
