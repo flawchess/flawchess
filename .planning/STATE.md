@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Mobile & PWA
 status: unknown
-last_updated: "2026-03-20T17:56:34.015Z"
+last_updated: "2026-03-20T17:58:15.790Z"
 last_activity: 2026-03-20
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State: Chessalytics
@@ -56,6 +56,9 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 - Pure Tailwind sm: breakpoints for mobile/desktop switching — no JS-based detection to avoid hydration mismatches
 - min-h-11 sm:min-h-0 on ToggleGroupItems individually (not ToggleGroup wrapper) for per-item 44px height on mobile
 - h-11 w-11 sm:h-8 sm:w-8 on icon Buttons for 44px mobile touch targets, 32px desktop
+- `allowDragging: false` on react-chessboard — disables drag globally to fix black screen on mobile; click-to-move via onSquareClick fires natively on touch (no onPointerUp fallback needed)
+- Mobile Openings layout duplicates sidebar JSX intentionally — sticky board structure incompatible with sidebar's flat flex-column
+- isOpeningsRoute = pathname.startsWith('/openings') in ProtectedLayout hides MobileHeader on Openings route only
 
 ### Pending Todos
 
@@ -79,4 +82,4 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 
 ---
 Last activity: 2026-03-20
-Last session: 2026-03-20T17:56:34.013Z
+Last session: 2026-03-20T17:58:15.788Z

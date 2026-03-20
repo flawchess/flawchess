@@ -25,8 +25,8 @@ Requirements for Mobile & PWA milestone. Each maps to roadmap phases.
 
 - [x] **UX-01**: All interactive elements (buttons, filters, controls) meet 44x44px minimum touch target
 - [x] **UX-02**: No page shows horizontal scroll at 375px viewport width
-- [ ] **UX-03**: Chessboard drag-and-drop and click-to-click moves work correctly on mobile devices
-- [ ] **UX-04**: Sidebar (chessboard + filters) and main content (Moves/Games/Statistics) are both usable on mobile without excessive scrolling
+- [x] **UX-03**: Chessboard drag-and-drop and click-to-click moves work correctly on mobile devices
+- [x] **UX-04**: Sidebar (chessboard + filters) and main content (Moves/Games/Statistics) are both usable on mobile without excessive scrolling
 
 ### Dev Workflow
 
@@ -73,8 +73,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | NAV-03 | Phase 18 | Complete |
 | UX-01 | Phase 19 | Complete |
 | UX-02 | Phase 19 | Complete |
-| UX-03 | Phase 19 | Pending |
-| UX-04 | Phase 19 | Pending |
+| UX-03 | Phase 19 | Complete |
+| UX-04 | Phase 19 | Complete |
 | DEV-01 | Phase 17 | Complete |
 | DEV-02 | Phase 17 | Complete |
 
