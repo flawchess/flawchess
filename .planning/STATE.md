@@ -73,7 +73,8 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 |---|-------------|------|--------|-----------|
 | 260320-nku | Fix lichess import: games fetched but not saved when lichess username was previously imported by another user | 2026-03-20 | 08d7016 | [260320-nku-fix-lichess-import-games-fetched-but-not](./quick/260320-nku-fix-lichess-import-games-fetched-but-not/) |
 | 260320-oiu | Sort board arrows grey->red->green so win/loss arrows are never hidden beneath neutral grey arrows | 2026-03-20 | 69d2bab | [260320-oiu-draw-grey-arrows-first-then-red-then-gre](./quick/260320-oiu-draw-grey-arrows-first-then-red-then-gre/) |
+| 260320-ouo | Replace all info icon tooltips with click-based InfoPopover (Radix Popover) to fix mobile tap flash-close | 2026-03-20 | 76b998e | [260320-ouo-fix-mobile-tooltip-info-icons-flashing-a](./quick/260320-ouo-fix-mobile-tooltip-info-icons-flashing-a/) |
 
 ---
-Last activity: 2026-03-20 - Completed quick task 260320-oiu: Draw grey arrows first then red then green
-Last session: 2026-03-20T16:15:00.000Z
+Last activity: 2026-03-20 - Completed quick task 260320-ouo: Fix mobile tooltip info icons flashing
+Last session: 2026-03-20T17:00:45Z
