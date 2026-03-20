@@ -103,7 +103,7 @@ Plans:
 | 14. UI Restructuring | v1.1 | 3/3 | Complete | 2026-03-17 |
 | 15. Enhanced Import | v1.1 | 3/3 | Complete | 2026-03-18 |
 | 16. Game Card UI | v1.1 | 3/3 | Complete | 2026-03-18 |
-| 17. PWA Foundation + Dev Workflow | 1/1 | Complete   | 2026-03-20 | - |
+| 17. PWA Foundation + Dev Workflow | 1/1 | Complete    | 2026-03-20 | - |
 | 18. Mobile Navigation | v1.2 | 0/TBD | Not started | - |
 | 19. Mobile UX Polish + Install Prompt | v1.2 | 0/TBD | Not started | - |
 
