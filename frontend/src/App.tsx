@@ -237,6 +237,17 @@ function ProtectedLayout() {
   );
 }
 
+// ─── Home redirect (0 games → import, otherwise → openings) ──────────────────
+
+function HomeRedirect() {
+  const { data: profile, isLoading } = useUserProfile();
+
+  if (isLoading) return null;
+
+  const totalGames = (profile?.chess_com_game_count ?? 0) + (profile?.lichess_game_count ?? 0);
+  return <Navigate to={totalGames === 0 ? '/import' : '/openings'} replace />;
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 function AppRoutes() {
@@ -306,7 +317,7 @@ function AppRoutes() {
         <Route path="/auth/callback" element={<OAuthCallbackPage />} />
         {/* Protected layout wraps all authenticated pages */}
         <Route element={<ProtectedLayout />}>
-          <Route path="/" element={<Navigate to="/openings" replace />} />
+          <Route path="/" element={<HomeRedirect />} />
           <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />
           <Route path="/openings/*" element={<OpeningsPage />} />
           <Route path="/rating" element={<Navigate to="/global-stats" replace />} />
