@@ -89,20 +89,16 @@ async def query_time_series(
     opponent_type: str = "human",
     recency_cutoff: datetime.datetime | None = None,
 ) -> list[tuple]:
-    """Return (month_dt, result, user_color) tuples for matching games, grouped by month.
+    """Return (played_at, result, user_color) tuples for matching games, ordered chronologically.
 
-    Uses DATE_TRUNC("month", played_at) so the service can aggregate win rates
-    per calendar month without knowing about individual game dates.
+    Returns per-game rows ordered by played_at ASC so the service can compute
+    rolling window win rates over trailing games.
 
     DISTINCT by Game.id prevents games with the target hash at multiple plies
     from being counted more than once.  Games without played_at are excluded.
     """
-    # AT TIME ZONE 'UTC' on a timestamptz column yields a naive UTC timestamp,
-    # ensuring date_trunc truncates in UTC regardless of the PostgreSQL session timezone.
-    played_at_utc = func.timezone("UTC", Game.played_at)
-    month_col = func.date_trunc("month", played_at_utc).label("month")
     stmt = (
-        select(month_col, Game.result, Game.user_color)
+        select(Game.played_at, Game.result, Game.user_color)
         .join(GamePosition, GamePosition.game_id == Game.id)
         .where(
             GamePosition.user_id == user_id,
@@ -110,6 +106,7 @@ async def query_time_series(
             Game.played_at.isnot(None),
         )
         .distinct(Game.id)
+        .order_by(Game.id, Game.played_at)
     )
     if color is not None:
         stmt = stmt.where(Game.user_color == color)
@@ -126,7 +123,10 @@ async def query_time_series(
     if recency_cutoff is not None:
         stmt = stmt.where(Game.played_at >= recency_cutoff)
 
-    rows = await session.execute(stmt)
+    # Wrap in subquery so outer query can order by played_at ASC after DISTINCT ON Game.id
+    subq = stmt.subquery()
+    ordered = select(subq).order_by(subq.c.played_at.asc())
+    rows = await session.execute(ordered)
     return list(rows.all())
 
 

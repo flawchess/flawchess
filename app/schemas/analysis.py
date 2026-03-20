@@ -118,21 +118,23 @@ class TimeSeriesRequest(BaseModel):
 
 
 class TimeSeriesPoint(BaseModel):
-    """Win-rate data for a single calendar month."""
+    """Win-rate data for a single rolling-window datapoint."""
 
-    month: str       # "2025-01"
-    win_rate: float  # wins / (wins + draws + losses); 0.0 if only draws/losses
-    game_count: int
-    wins: int
-    draws: int
-    losses: int
+    date: str           # "2025-01-15" (ISO date of the game)
+    win_rate: float     # wins / total in trailing window
+    game_count: int     # total games in the window (1..window_size)
+    window_size: int    # the configured window size (always ROLLING_WINDOW_SIZE)
 
 
 class BookmarkTimeSeries(BaseModel):
-    """Monthly time-series data for one bookmark."""
+    """Rolling-window time-series data for one bookmark."""
 
     bookmark_id: int
     data: list[TimeSeriesPoint]
+    total_wins: int
+    total_draws: int
+    total_losses: int
+    total_games: int
 
 
 class TimeSeriesResponse(BaseModel):

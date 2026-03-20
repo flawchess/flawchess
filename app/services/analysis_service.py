@@ -33,6 +33,9 @@ from app.schemas.analysis import (
     WDLStats,
 )
 
+# Rolling window size for win-rate time series computation.
+ROLLING_WINDOW_SIZE = 20
+
 # Maps recency filter strings to timedelta offsets.
 RECENCY_DELTAS: dict[str, datetime.timedelta] = {
     "week": datetime.timedelta(days=7),
@@ -189,11 +192,12 @@ async def get_time_series(
     user_id: int,
     request: TimeSeriesRequest,
 ) -> TimeSeriesResponse:
-    """Return monthly win-rate time series for each bookmark in the request.
+    """Return rolling-window win-rate time series for each bookmark in the request.
 
     Processes all bookmarks in a single service call — no N+1 HTTP calls.
-    Months with zero games for a bookmark are absent (gap, not 0.0).
-    win_rate = wins / (wins + draws + losses) per month.
+    Each datapoint represents the win rate over the trailing ROLLING_WINDOW_SIZE
+    games (or all games so far if fewer than ROLLING_WINDOW_SIZE have been played).
+    Partial windows (games 1 to ROLLING_WINDOW_SIZE-1) are included from the start.
     """
     cutoff = recency_cutoff(request.recency)
 
@@ -213,38 +217,50 @@ async def get_time_series(
             recency_cutoff=cutoff,
         )
 
-        # Group raw (month_dt, result, user_color) tuples by calendar month string.
-        monthly: dict[str, dict[str, int]] = {}
-        for month_dt, result, user_color in rows:
-            key = month_dt.strftime("%Y-%m")
-            if key not in monthly:
-                monthly[key] = {"wins": 0, "draws": 0, "losses": 0}
-            if result == "1/2-1/2":
-                monthly[key]["draws"] += 1
-            elif (result == "1-0" and user_color == "white") or (
-                result == "0-1" and user_color == "black"
-            ):
-                monthly[key]["wins"] += 1
-            else:
-                monthly[key]["losses"] += 1
-
+        # Build rolling-window datapoints from chronological per-game rows.
+        # rows: (played_at, result, user_color) tuples ordered by played_at ASC.
+        results_so_far: list[str] = []  # "win", "draw", or "loss" per game
+        total_wins = total_draws = total_losses = 0
         data: list[TimeSeriesPoint] = []
-        for month_str in sorted(monthly.keys()):
-            counts = monthly[month_str]
-            total = counts["wins"] + counts["draws"] + counts["losses"]
-            win_rate = counts["wins"] / total if total > 0 else 0.0
+
+        for played_at, result, user_color in rows:
+            outcome = derive_user_result(result, user_color)
+            results_so_far.append(outcome)
+
+            # Accumulate overall totals
+            if outcome == "win":
+                total_wins += 1
+            elif outcome == "draw":
+                total_draws += 1
+            else:
+                total_losses += 1
+
+            # Rolling window: trailing ROLLING_WINDOW_SIZE results
+            window = results_so_far[-ROLLING_WINDOW_SIZE:]
+            window_wins = window.count("win")
+            window_total = len(window)
+            win_rate = window_wins / window_total if window_total > 0 else 0.0
+
             data.append(
                 TimeSeriesPoint(
-                    month=month_str,
+                    date=played_at.strftime("%Y-%m-%d"),
                     win_rate=round(win_rate, 4),
-                    game_count=total,
-                    wins=counts["wins"],
-                    draws=counts["draws"],
-                    losses=counts["losses"],
+                    game_count=window_total,
+                    window_size=ROLLING_WINDOW_SIZE,
                 )
             )
 
-        series.append(BookmarkTimeSeries(bookmark_id=bkm.bookmark_id, data=data))
+        total_games = total_wins + total_draws + total_losses
+        series.append(
+            BookmarkTimeSeries(
+                bookmark_id=bkm.bookmark_id,
+                data=data,
+                total_wins=total_wins,
+                total_draws=total_draws,
+                total_losses=total_losses,
+                total_games=total_games,
+            )
+        )
 
     return TimeSeriesResponse(series=series)
 
