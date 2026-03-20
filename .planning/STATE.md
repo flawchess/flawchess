@@ -123,6 +123,7 @@ None.
 | 260320-cit | Adaptive granularity in RatingChart (daily/weekly/monthly) | 2026-03-20 | 5c7fa4a | [260320-cit-use-daily-datapoints-in-global-stats-rat](./quick/260320-cit-use-daily-datapoints-in-global-stats-rat/) |
 | 260320-d5b | Smarter win rate over time chart with rolling windows | 2026-03-20 | 79ce0e8 | [260320-d5b-smarter-win-rate-over-time-chart-with-ro](./quick/260320-d5b-smarter-win-rate-over-time-chart-with-ro/) |
 | 260320-eeo | Move arrow explanation from Move tooltip to chessboard info icon | 2026-03-20 | 6ae1562 | [260320-eeo-remove-arrow-explanation-from-move-toolt](./quick/260320-eeo-remove-arrow-explanation-from-move-toolt/) |
+| 260320-epc | Add thin outlines to the move arrows | 2026-03-20 | pending | [260320-epc-add-thin-outlines-to-the-move-arrows](./quick/260320-epc-add-thin-outlines-to-the-move-arrows/) |
 
 ---
-Last activity: 2026-03-20 - Completed quick task 260320-eeo: Move arrow explanation from Move tooltip to chessboard info icon
+Last activity: 2026-03-20 - Completed quick task 260320-epc: Add thin outlines to the move arrows

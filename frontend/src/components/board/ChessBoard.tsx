@@ -34,6 +34,8 @@ const MIN_HEAD_WIDTH = 0.25;
 const MAX_HEAD_WIDTH = 0.65;
 const HEAD_LENGTH_RATIO = 0.7; // head length = head width * this
 const ARROW_OPACITY = 0.75;
+const ARROW_OUTLINE_COLOR = 'rgba(0, 0, 0, 0.5)';
+const ARROW_OUTLINE_WIDTH = 1;
 // How far past target square center the arrow tip extends (fraction of square size)
 const ARROW_TIP_OVERSHOOT = 0.15;
 
@@ -118,6 +120,9 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
             points={points}
             fill={arrow.color}
             opacity={ARROW_OPACITY}
+            stroke={ARROW_OUTLINE_COLOR}
+            strokeWidth={ARROW_OUTLINE_WIDTH}
+            strokeLinejoin="round"
           />
         );
       })}

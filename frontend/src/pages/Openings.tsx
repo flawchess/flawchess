@@ -254,8 +254,6 @@ export function OpeningsPage() {
               </button>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs text-sm">
-              Play moves on the board by dragging pieces or clicking source and target squares.
-              <br/><br/>
               The arrows show the next moves from your games. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
             </TooltipContent>
           </Tooltip>
