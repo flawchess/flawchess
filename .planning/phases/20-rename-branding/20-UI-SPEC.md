@@ -1,7 +1,8 @@
 ---
 phase: 20
 slug: rename-branding
-status: draft
+status: approved
+reviewed_at: 2026-03-21
 shadcn_initialized: true
 preset: radix-nova / neutral / dark
 created: 2026-03-21
