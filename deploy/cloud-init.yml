@@ -1,0 +1,90 @@
+#cloud-config
+# FlawChess — Hetzner VPS cloud-init
+# Phase 21: Docker & Deployment
+#
+# Usage: paste into Hetzner Cloud Console → "Cloud config" when creating a server
+# Recommended: Ubuntu 24.04, CPX22 (2 vCPU, 4 GB RAM) or larger
+#
+# What this does:
+#   1. Creates a 'deploy' user with SSH access (no root login)
+#   2. Installs Docker + Docker Compose plugin
+#   3. Configures UFW firewall (SSH + HTTP + HTTPS only)
+#   4. Creates /opt/flawchess directory structure and .env template
+#   5. Hardens SSH (key-only, no root)
+
+users:
+  - name: deploy
+    groups: [sudo, docker]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBggVmh/kPvOKAi9emlrj7itc8goOT+hw2vCezsupy4w
+
+package_update: true
+package_upgrade: true
+
+write_files:
+  - path: /opt/flawchess/.env
+    owner: root:root
+    permissions: '0600'
+    content: |
+      # FlawChess production environment
+      # Fill in all values before running docker compose up
+      ENVIRONMENT=production
+      # PostgreSQL
+      POSTGRES_USER=flawchess
+      POSTGRES_PASSWORD=CHANGE_ME_STRONG_PASSWORD
+      POSTGRES_DB=flawchess
+      DATABASE_URL=postgresql+asyncpg://flawchess:CHANGE_ME_STRONG_PASSWORD@db:5432/flawchess
+      # App secrets
+      SECRET_KEY=CHANGE_ME_GENERATE_WITH_openssl_rand_hex_32
+      # URLs (update domain if different)
+      BACKEND_URL=https://flawchess.com
+      FRONTEND_URL=https://flawchess.com
+      # Google OAuth (from Google Cloud Console)
+      GOOGLE_OAUTH_CLIENT_ID=
+      GOOGLE_OAUTH_CLIENT_SECRET=
+
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - ufw
+  - fail2ban
+  - unattended-upgrades
+
+runcmd:
+  # --- Docker ---
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+  # --- Firewall ---
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp    # SSH
+  - ufw allow 80/tcp    # HTTP (Caddy redirect)
+  - ufw allow 443/tcp   # HTTPS
+  - ufw --force enable
+
+  # --- App directory + fix .env ownership (write_files runs before user creation) ---
+  - mkdir -p /opt/flawchess
+  - chown -R deploy:deploy /opt/flawchess
+
+  # --- Harden SSH ---
+  - sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+  - sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+  - systemctl restart sshd
+
+  # --- Enable auto-updates for security patches ---
+  - systemctl enable unattended-upgrades
+  - systemctl start unattended-upgrades
+
+  # --- Done ---
+  - 'echo "FlawChess server ready. SSH in as: ssh deploy@<server-ip>"'
+
+reboot: true

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.config import settings
 from app.routers import analysis, position_bookmarks, imports, auth
 from app.routers.stats import router as stats_router
 from app.routers.users import router as users_router
@@ -18,14 +19,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="FlawChess", version="0.1.0", lifespan=lifespan)
 
-# CORS — allow the Vite dev server
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS only needed in development — Caddy provides same-origin routing in production
+if settings.ENVIRONMENT == "development":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(auth.router)
 app.include_router(imports.router)
