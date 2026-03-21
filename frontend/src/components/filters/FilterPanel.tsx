@@ -99,7 +99,7 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
               aria-label={`${TIME_CONTROL_LABELS[tc]} time control`}
               aria-pressed={isTimeControlActive(tc)}
               className={cn(
-                'rounded border px-3 py-2 sm:px-2 sm:py-0.5 text-xs transition-colors',
+                'rounded border px-3 py-2 sm:px-2 sm:py-0.5 text-xs transition-colors min-h-11 sm:min-h-0',
                 isTimeControlActive(tc)
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
@@ -123,7 +123,7 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
               aria-label={`${PLATFORM_LABELS[p]} platform`}
               aria-pressed={isPlatformActive(p)}
               className={cn(
-                'rounded border px-3 py-2 sm:px-2 sm:py-0.5 text-xs transition-colors',
+                'rounded border px-3 py-2 sm:px-2 sm:py-0.5 text-xs transition-colors min-h-11 sm:min-h-0',
                 isPlatformActive(p)
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
