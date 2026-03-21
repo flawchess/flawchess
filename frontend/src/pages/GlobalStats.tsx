@@ -24,7 +24,7 @@ export function GlobalStatsPage() {
 
   return (
     <div data-testid="global-stats-page" className="mx-auto max-w-4xl space-y-6 px-6 py-6">
-      <h1 className="text-2xl font-semibold">Global Stats</h1>
+      <h1 className="text-2xl font-semibold">Statistics</h1>
 
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-4">

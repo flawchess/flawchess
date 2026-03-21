@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronUp, ChevronDown, Save, Sparkles } from 'lucide-react';
+import { ChevronUp, ChevronDown, Save, Sparkles, ListTree, Gamepad2, BarChartHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
@@ -53,11 +53,13 @@ export function OpeningsPage() {
   const navigate = useNavigate();
 
   const needsRedirect = location.pathname === '/openings' || location.pathname === '/openings/';
+  // Redirect old /openings/statistics URL to /openings/compare after tab rename
+  const needsStatisticsRedirect = location.pathname.endsWith('/statistics');
 
   const activeTab = location.pathname.includes('/games')
     ? 'games'
-    : location.pathname.includes('/statistics')
-      ? 'statistics'
+    : location.pathname.includes('/compare')
+      ? 'compare'
       : 'explorer';
 
   // ── Board state ─────────────────────────────────────────────────────────────
@@ -144,7 +146,7 @@ export function OpeningsPage() {
   });
   const gameCount = gameCountData?.count ?? null;
 
-  // ── Statistics tab data ─────────────────────────────────────────────────────
+  // ── Compare tab data ────────────────────────────────────────────────────────
   const timeSeriesRequest: TimeSeriesRequest | null = useMemo(() => {
     if (bookmarks.length === 0) return null;
     return {
@@ -347,7 +349,7 @@ export function OpeningsPage() {
               Position bookmarks
               <span onClick={(e) => e.stopPropagation()}>
                 <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info" side="top">
-                  Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                  Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Compare tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
                 </InfoPopover>
               </span>
             </span>
@@ -494,6 +496,10 @@ export function OpeningsPage() {
     return <Navigate to="/openings/explorer" replace />;
   }
 
+  if (needsStatisticsRedirect) {
+    return <Navigate to="/openings/compare" replace />;
+  }
+
   return (
     <div data-testid="openings-page" className="flex min-h-0 flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
@@ -504,13 +510,16 @@ export function OpeningsPage() {
             <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
               <TabsList className="w-full" data-testid="openings-tabs">
                 <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
+                  <ListTree className="mr-1.5 h-4 w-4" />
                   Moves
                 </TabsTrigger>
                 <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
+                  <Gamepad2 className="mr-1.5 h-4 w-4" />
                   Games
                 </TabsTrigger>
-                <TabsTrigger value="statistics" data-testid="tab-statistics" className="flex-1">
-                  Statistics
+                <TabsTrigger value="compare" data-testid="tab-compare" className="flex-1">
+                  <BarChartHorizontal className="mr-1.5 h-4 w-4" />
+                  Compare
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="explorer" className="mt-4">
@@ -519,7 +528,7 @@ export function OpeningsPage() {
               <TabsContent value="games" className="mt-4">
                 {gamesContent}
               </TabsContent>
-              <TabsContent value="statistics" className="mt-4">
+              <TabsContent value="compare" className="mt-4">
                 {statisticsContent}
               </TabsContent>
             </Tabs>
@@ -668,7 +677,7 @@ export function OpeningsPage() {
                   Position bookmarks
                   <span onClick={(e) => e.stopPropagation()}>
                     <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info-mobile" side="top">
-                      Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                      Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Compare tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
                     </InfoPopover>
                   </span>
                 </span>
@@ -708,12 +717,21 @@ export function OpeningsPage() {
 
           <div className="border-t border-border/40" />
 
-          {/* Tabs: Moves / Games / Statistics */}
+          {/* Tabs: Moves / Games / Compare */}
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
             <TabsList className="w-full" data-testid="openings-tabs-mobile">
-              <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">Moves</TabsTrigger>
-              <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">Games</TabsTrigger>
-              <TabsTrigger value="statistics" className="flex-1" data-testid="tab-statistics-mobile">Statistics</TabsTrigger>
+              <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
+                <ListTree className="mr-1.5 h-4 w-4" />
+                Moves
+              </TabsTrigger>
+              <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
+                <Gamepad2 className="mr-1.5 h-4 w-4" />
+                Games
+              </TabsTrigger>
+              <TabsTrigger value="compare" className="flex-1" data-testid="tab-compare-mobile">
+                <BarChartHorizontal className="mr-1.5 h-4 w-4" />
+                Compare
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="explorer" className="mt-4">
               {moveExplorerContent}
@@ -721,7 +739,7 @@ export function OpeningsPage() {
             <TabsContent value="games" className="mt-4">
               {gamesContent}
             </TabsContent>
-            <TabsContent value="statistics" className="mt-4">
+            <TabsContent value="compare" className="mt-4">
               {statisticsContent}
             </TabsContent>
           </Tabs>
