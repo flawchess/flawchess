@@ -13,7 +13,7 @@ import httpx
 
 from app.services.normalization import normalize_chesscom_game
 
-USER_AGENT = "Chessalytics/1.0 (github.com/chessalytics)"
+USER_AGENT = "FlawChess/1.0 (github.com/flawchess/flawchess)"
 BASE_URL = "https://api.chess.com/pub/player"
 
 _HEADERS = {"User-Agent": USER_AGENT}

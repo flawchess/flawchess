@@ -140,7 +140,7 @@ class TestFetchChesscomGames:
         call_kwargs = mock_client.get.call_args_list[0][1]
         headers = call_kwargs.get("headers", {})
         assert "User-Agent" in headers
-        assert "Chessalytics" in headers["User-Agent"]
+        assert "FlawChess" in headers["User-Agent"]
 
     @pytest.mark.asyncio
     async def test_incremental_sync_skips_old_months(self):

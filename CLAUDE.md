@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Chessalytics — a multi-user chess analysis platform. Users import games from chess.com/lichess and analyze win/draw/loss rates by board position using Zobrist hashes, solving inconsistent opening categorization on existing platforms.
+FlawChess — a multi-user chess analysis platform. Users import games from chess.com/lichess and analyze win/draw/loss rates by board position using Zobrist hashes, solving inconsistent opening categorization on existing platforms.
 
 ## Tech Stack
 

@@ -1,190 +1,274 @@
 # Pitfalls Research
 
-**Domain:** Adding PWA, mobile navigation, and responsive polish to existing Vite 5 + React 19 SPA with interactive chessboard
-**Researched:** 2026-03-20
-**Confidence:** HIGH (service worker/Vite behavior, iOS storage isolation), MEDIUM (react-chessboard touch specifics, iOS auth OAuth edge cases)
+**Domain:** Production deployment + monitoring + analytics + SEO + launch infrastructure for FastAPI + React SPA + PostgreSQL
+**Researched:** 2026-03-21
+**Confidence:** HIGH (critical pitfalls verified via official docs + community postmortems); MEDIUM (scale thresholds from community experience)
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Service Worker Caches API Responses, Breaking Real-Time Analysis Data
+### Pitfall 1: Caddy Directive Ordering Breaks API Routing
 
 **What goes wrong:**
-The default `generateSW` strategy in vite-plugin-pwa precaches all built assets and, if runtime caching is configured carelessly, intercepts and caches API responses. Users see stale win/draw/loss stats, position data, or game lists after importing new games — with no indication the data is outdated. TanStack Query's invalidation fires correctly but the service worker silently serves the old response from cache before TanStack Query can compare ETags.
+When Caddy serves the React SPA (static files + `try_files` fallback) and also proxies `/api/*` to FastAPI, the `try_files` directive has a higher internal priority than `reverse_proxy`. Without explicit ordering control, all requests — including API calls — get rewritten to `/index.html` before `reverse_proxy` can match. API calls return the HTML shell instead of JSON, and the app silently fails to load any data.
 
 **Why it happens:**
-Developers configure runtime caching broadly to make the app "offline capable" without distinguishing between cacheable static assets and dynamic REST API data. A `StaleWhileRevalidate` strategy applied to all routes looks correct — it serves fast and updates in the background — but for analysis data that changes after every import, serving stale content is a correctness bug, not a performance trade-off.
+Caddyfile directive ordering is implicit and non-obvious. Developers configure directives in logical reading order (proxy first, then SPA fallback), but Caddy sorts them by its own internal priority table, not declaration order.
 
 **How to avoid:**
-Explicitly exclude all API routes from caching using the `denylist` or `urlPattern` options in workbox runtime caching. Use `NetworkOnly` for every `/api/` route:
-```js
-runtimeCaching: [
-  {
-    urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
-    handler: 'NetworkOnly',
-  },
-]
+Wrap all directives in a `route {}` block, or use two `handle` blocks: one for `/api*` targeting `reverse_proxy`, one as a catch-all fallback with `file_server` + `try_files`. The `route` block preserves declaration order:
 ```
-Cache only: static assets (JS/CSS bundles with content-hashed filenames), the app shell (`index.html`), and chess piece images. Everything from the FastAPI backend must bypass the service worker entirely.
-
-**Warning signs:**
-- Opening Openings page shows data from a previous session after a game import
-- TanStack Query invalidation fires (confirmed via devtools) but UI does not update
-- Network tab shows fetch requests served from `ServiceWorker` with `(from cache)` for `/api/` endpoints
-
-**Phase to address:**
-PWA setup phase — define the caching strategy exhaustively before writing any service worker configuration. This is easier to get right upfront than to diagnose and fix post-deployment.
-
----
-
-### Pitfall 2: Users Stuck on Old App Version After Deployment
-
-**What goes wrong:**
-A new deployment ships updated JS/CSS bundles with bug fixes or new features. The service worker serves the old precached assets indefinitely. Users who installed the PWA to their home screen see the old UI until they manually clear the browser cache and re-add to home screen. The new service worker registers in the background and enters `waiting` state, but never activates because the old service worker stays active as long as any tab with the app is open.
-
-**Why it happens:**
-Service workers only activate after all tabs using the old version are closed. In an installed PWA opened from the home screen, the tab is rarely closed fully. Without an explicit update flow, the new service worker waits forever.
-
-**How to avoid:**
-Use `workbox-window` with vite-plugin-pwa's built-in `ReloadPrompt` pattern. On `onNeedRefresh`, show a toast notification ("Update available") with a "Reload" button that calls `updateServiceWorker(true)`. This posts a `SKIP_WAITING` message to the waiting service worker and reloads the page.
-
-Do not auto-reload silently — this breaks in-progress analysis sessions where the user has a position and filters set.
-
-At the server/hosting level, set `Cache-Control: no-cache` on the `sw.js` response so browsers always check for a new service worker on every page load rather than serving a cached copy of the old one.
-
-**Warning signs:**
-- Deployed a bug fix but users report the bug persists
-- Chrome DevTools Application > Service Workers shows status "waiting to activate"
-- No update notification appears in the installed PWA after deploying
-
-**Phase to address:**
-PWA setup phase — build the update notification flow before shipping the first PWA version. Retrofitting it later requires users to manually clear their cache to escape the stale version.
-
----
-
-### Pitfall 3: Vite Dev Server Blocks Requests from ngrok Tunnel
-
-**What goes wrong:**
-When exposing the Vite dev server through ngrok for phone testing, the app completely fails to load on the phone. The browser shows a Vite error page: "Blocked request. This host is not allowed." Even if that is resolved, HMR does not work — code changes on the desktop do not trigger live reloads on the phone.
-
-**Why it happens:**
-Since Vite 5.4.12+ / 6.0+, Vite checks the `Host` header against an allowlist as a DNS rebinding attack protection. The ngrok subdomain (e.g., `abc123.ngrok-free.app`) is not in the default allowlist. Separately, Vite's HMR websocket client defaults to connecting back to `localhost:5173`, which is unreachable from the phone via ngrok — the HMR client must be told to use the tunnel's port (443 for HTTPS tunnels) instead.
-
-Note: `allowedHosts: true` has a known bug in Vite 6.0.9 where it is silently ignored — use the string `'all'` or an explicit list of hostnames.
-
-**How to avoid:**
-Add to `vite.config.ts` (conditionally, via env variable):
-```ts
-server: {
-  host: true,                    // listen on all interfaces, not just localhost
-  hmr: { clientPort: 443 },     // HTTPS ngrok tunnels terminate at port 443
-  allowedHosts: 'all',          // or list the specific *.ngrok-free.app domain
+route {
+  reverse_proxy /api/* localhost:8000
+  file_server
+  try_files {path} /index.html
 }
 ```
-Never commit `allowedHosts: 'all'` as the default — use an environment variable (`NGROK_TUNNEL=true`) to activate this config only during phone testing sessions.
 
 **Warning signs:**
-- Phone browser shows "Blocked request" Vite error page at the ngrok URL
-- Page loads on phone but code edits on desktop do not trigger page reload
-- Browser console on phone shows `WebSocket connection failed: ws://localhost:5173`
+- API calls return HTTP 200 with `Content-Type: text/html` instead of `application/json`
+- React app loads but all TanStack Query requests fail with JSON parse errors
 
-**Phase to address:**
-Dev workflow / phone testing setup phase — must be working before any mobile UX testing begins. Wasted time is the primary cost.
+**Phase to address:** Docker + Caddy deployment phase (phase 1)
 
 ---
 
-### Pitfall 4: react-chessboard Drag-and-Drop Broken on iOS Safari
+### Pitfall 2: PostgreSQL Data Loss via Missing Named Volume
 
 **What goes wrong:**
-Users on iPhone cannot drag chess pieces. The board responds to taps (squares highlight) but dragging a piece does nothing — the piece snaps back immediately or the gesture is interpreted as a page scroll instead.
+`docker compose down` followed by `docker compose up --build` destroys all PostgreSQL data. If the `db` service uses an anonymous volume or no volume, data lives only in the container's writable layer — removed with the container. All user games and position data wiped on every redeploy.
 
 **Why it happens:**
-HTML5 Drag-and-Drop API (`dragstart`/`dragover`/`drop` events) is not implemented in iOS Safari. This is a fundamental platform limitation. react-chessboard v5 uses HTML5 DnD for piece dragging. The library is advertised as "responsive" but responsive layout and touch DnD support are separate concerns — the former is present, the latter is not via HTML5 DnD.
+Docker containers are ephemeral by design. Tutorials frequently omit volume declarations for brevity. The `postgres` image stores data at `/var/lib/postgresql/data` inside the container — without a named volume mounted there, data does not persist.
 
 **How to avoid:**
-Disable drag entirely on touch devices and rely on click-to-move (two taps: source square then destination square). react-chessboard supports this natively via `onSquareClick`. Implement a two-click selection pattern in the parent component: first tap selects the piece (apply a highlight to the source square), second tap on a valid destination moves it. This is the standard mobile chess interface pattern used by chess.com and lichess.
+Declare a named volume in `docker-compose.yml`:
+```yaml
+volumes:
+  postgres_data:
 
-```tsx
-<Chessboard
-  arePiecesDraggable={!isTouchDevice()}
-  onSquareClick={handleSquareClick}
-/>
+services:
+  db:
+    image: postgres:17
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 ```
-
-Do not add a touch DnD polyfill — these add meaningful bundle size and complexity for minimal gain when click-to-move already works.
-
-The project's known existing workaround (`clearArrowsOnPositionChange: false`) must continue to work alongside the mobile click-to-move implementation. Test arrow behavior after adding the click-to-move state.
+Use `docker compose down` (without `-v`) in all deployment scripts. Never run `docker compose down -v` in production automation.
 
 **Warning signs:**
-- Pieces do not move on iPhone/iPad in Safari
-- No `dragstart` events fire in Safari mobile devtools
-- Android Chrome works but iOS Safari does not (confirms the platform gap, not a library bug)
+- Volume declaration uses a relative host path with no top-level `volumes:` entry (brittle)
+- Deploy script runs `docker compose down` without confirming named volume exists first
 
-**Phase to address:**
-Mobile UX polish phase — this is the single most critical chessboard interaction fix for mobile users.
+**Phase to address:** Docker + Caddy deployment phase (phase 1)
 
 ---
 
-### Pitfall 5: iOS PWA Standalone Mode Has Isolated Storage — Auth Does Not Transfer from Safari
+### Pitfall 3: Alembic Migrations Race Condition at Container Startup
 
 **What goes wrong:**
-A user visits the app in Safari, logs in, then installs the PWA via "Add to Home Screen." When they open the PWA from the home screen icon, they are not logged in — the login page appears again. JWT tokens stored in `localStorage` in Safari are not visible to the PWA standalone `WKWebView`. These are completely isolated storage contexts.
-
-A secondary issue: if the app redirects to Google SSO for authentication, iOS drops out of standalone mode and opens the OAuth provider in full Safari. After the OAuth callback, the user is returned to Safari (not the standalone PWA), and the token is in Safari's storage, not the PWA's.
+The FastAPI app container starts and immediately tries to connect to PostgreSQL before the database is ready to accept connections (PG needs 3-10s to initialize on first run). Either the app crashes on startup, or — if `alembic upgrade head` runs from within FastAPI's lifespan — multiple replicas attempt migrations simultaneously, causing schema corruption.
 
 **Why it happens:**
-On iOS, the installed PWA runs in an isolated `WKWebView` that shares no cookies, `localStorage`, `sessionStorage`, or service worker instance with Safari. This has been a fundamental iOS architectural limitation since PWA support was introduced, and remains true as of iOS 18 (2025).
-
-The project uses JWT tokens stored in `localStorage` (inferred from `useAuth` hook and `ProtectedLayout` token check in `App.tsx`). This storage does not cross the Safari-to-PWA boundary.
+`depends_on: db` in Docker Compose only waits for the container process to start, not for PostgreSQL to be ready. The `pg_isready` health check is the correct gate but is frequently omitted. Running migrations from within `asyncio` lifespan also has a known issue: the Alembic context variable is sometimes `None` when using an async engine.
 
 **How to avoid:**
-- Accept that first-time login is required in standalone mode even if the user is logged in on Safari. Document this in any installation instructions.
-- Test the Google SSO OAuth flow specifically in standalone mode on a physical iPhone. Ensure the OAuth callback URL (`/auth/callback`) is within the PWA manifest's `scope` — if the callback navigates outside scope, iOS drops into full Safari and the session is lost.
-- Set manifest `scope: "/"` and `start_url: "/"` to keep all navigation within standalone mode.
-- Verify the OAuth redirect URI registered with Google matches the production HTTPS domain, not localhost.
+1. Add a `healthcheck` to the `db` service and `depends_on: condition: service_healthy` for the app.
+2. Run `alembic upgrade head` as a one-off step before the app starts (e.g., `command: sh -c "alembic upgrade head && uvicorn app.main:app ..."`), not inside the FastAPI lifespan.
+```yaml
+db:
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER"]
+    interval: 5s
+    retries: 5
+
+app:
+  depends_on:
+    db:
+      condition: service_healthy
+```
 
 **Warning signs:**
-- User installs PWA, opens it, sees login page despite being logged in on Safari
-- Google SSO redirects open a new Safari tab instead of staying within the PWA
-- After OAuth, the redirect returns to `https://yourdomain.com/auth/callback` but the page opens in Safari rather than the standalone PWA
+- App container restarts once, then succeeds — masks the race condition
+- `sqlalchemy.exc.OperationalError: could not connect to server` in early logs
 
-**Phase to address:**
-PWA setup phase — manifest `scope` must be correct from day one. Auth flow testing on a physical iPhone is required. Desktop browser PWA testing does not reproduce iOS storage isolation.
+**Phase to address:** Docker + Caddy deployment phase (phase 1)
 
 ---
 
-### Pitfall 6: Missing `viewport-fit=cover` Leaves Notch Gaps on iPhone
+### Pitfall 4: Service Worker Serves Stale App After Deployment
 
 **What goes wrong:**
-On iPhones with a notch or Dynamic Island (iPhone X through iPhone 16), the app shows a colored gap at the top (status bar area) or content is hidden under the home indicator at the bottom when running as a standalone PWA. The navigation header and bottom spacing look wrong.
+This project already uses `vite-plugin-pwa` with Workbox. After a new deployment, returning users continue to run the old app version — including stale API request shapes that may be incompatible with the updated FastAPI backend. The user sees no error; the app silently fails or returns wrong data because the old JS bundle sends requests the new API no longer recognizes.
 
 **Why it happens:**
-Without `viewport-fit=cover`, iOS constrains the viewport to the "safe area," leaving the device's OS chrome colors visible outside it. With `viewport-fit=cover` but without `env(safe-area-inset-*)` padding applied to layout elements, content bleeds under the notch or Dynamic Island.
+Workbox precaches all assets at build time. The service worker update cycle requires: (1) browser detects a new `sw.js`, (2) new SW installs, (3) user closes all tabs or accepts a prompt. Step 3 often never happens in an installed PWA where the tab is never fully closed.
 
 **How to avoid:**
-Set the viewport meta tag in `index.html`:
-```html
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-```
-Then apply safe area insets in global CSS (`index.css`):
-```css
-body {
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-}
-```
-Or apply specifically to the nav header (`padding-top: env(safe-area-inset-top)`) and any bottom navigation element. The safe area values are `0` in regular browser mode, so this CSS is harmless on desktop and Android.
-
-With Tailwind, use arbitrary value utilities: `pt-[env(safe-area-inset-top)]` or define a CSS custom property in `:root`.
+- Implement the `onNeedRefresh` callback from `vite-plugin-pwa`'s `useRegisterSW` hook to show a "New version available — reload?" banner.
+- Do not use `skipWaiting: true` silently — this interrupts in-progress analysis sessions.
+- Set `Cache-Control: no-cache` on `index.html` in Caddy (assets in `/assets/` with content-hashed filenames can use `immutable` caching safely).
 
 **Warning signs:**
-- The nav header overlaps the notch/Dynamic Island in PWA standalone mode on iPhone 12+
-- A colored gap appears below the nav header or above any bottom navigation
-- Safe area appears only in standalone mode, not in Safari (this is expected and correct behavior)
+- Users report seeing old UI after a deploy
+- Sentry shows API errors affecting only a subset of users (those on cached version)
+- `sw.js` gets a new hash in the deploy but affected users do not reload
 
-**Phase to address:**
-Mobile navigation / viewport setup phase — fix the viewport meta tag before building the responsive nav. This is a one-line HTML change with significant visual impact on notched iPhones.
+**Phase to address:** Docker + Caddy deployment phase (cache headers for `index.html`); also part of CI/CD phase (update banner verification)
+
+---
+
+### Pitfall 5: GDPR Violation — Analytics Fires Before Consent
+
+**What goes wrong:**
+Google Analytics (or any tracking script) initializes on page load before the consent banner is shown or accepted. The banner's presence does not constitute consent — under GDPR, data collection must not begin until explicit user consent is given. Firing GA before consent is a violation regardless of whether a banner exists.
+
+**Why it happens:**
+The most natural implementation puts `gtag` initialization in `index.html` or a top-level React `useEffect`. Both fire immediately on every page load, including first visits where no consent has been given.
+
+**How to avoid:**
+- Gate `gtag` initialization behind stored consent state: only initialize after the user explicitly accepts analytics cookies.
+- On subsequent visits, check the stored consent flag on app load and re-initialize GA if previously accepted (so returning users who consented are tracked without seeing the banner again).
+- Implement Google Consent Mode v2 — mandatory since March 2024 for EU users of Google services. Without it, Google stops processing conversion data from EEA users.
+- Alternatively: use Plausible Analytics or Umami (privacy-friendly, no cookies, no PII). These do not require a consent banner at all, eliminating this pitfall category entirely. Recommended given this project's developer audience.
+
+**Warning signs:**
+- Network tab shows `google-analytics.com` requests on first page load before any user interaction
+- Analytics consent cookie is absent when analytics network requests fire
+
+**Phase to address:** Analytics + privacy policy phase
+
+---
+
+### Pitfall 6: GitHub Actions Secrets Leaked via Third-Party Actions
+
+**What goes wrong:**
+CI/CD workflows using third-party GitHub Actions run with the same permissions as the workflow. In 2025, multiple supply-chain incidents compromised widely-used actions by rewriting mutable version tags (`@v3`, `@v4`) to serve malicious code that exfiltrates secrets from the runner — including `DATABASE_URL`, `SSH_PRIVATE_KEY`, and Docker registry tokens.
+
+**Why it happens:**
+Version tags like `@v3` are mutable. An attacker who compromises the action maintainer's account can reassign the tag to a different commit. Pinning to `@v3` provides no integrity guarantee.
+
+**How to avoid:**
+- Pin all third-party actions to a full commit SHA: `uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683` (not `@v4`).
+- Minimize secret scope: use environment-scoped secrets rather than repository-wide where possible.
+- Use `--password-stdin` for Docker registry login rather than inline token arguments (process args can be visible via `ps` on a self-hosted runner).
+- Never run `echo $SECRET` in `run:` steps — GitHub's automatic redaction is not guaranteed after all transformations.
+
+**Warning signs:**
+- Workflow files use `@v3` or `@main` style action references
+- `DATABASE_URL` or `SSH_PRIVATE_KEY` passed as environment variables without review of the action's source
+
+**Phase to address:** CI/CD pipeline phase
+
+---
+
+### Pitfall 7: Import Queue Starvation Under Concurrent Users
+
+**What goes wrong:**
+Currently each user import is a FastAPI `BackgroundTask`. Under concurrent users, multiple imports run simultaneously — each making sequential HTTP requests to chess.com/lichess with embedded rate-limit delays. Chess.com enforces roughly 3-4 concurrent connections per server IP; the fourth concurrent import receives HTTP 429 and either silently fails or triggers a temporary IP-level ban. With 5+ simultaneous importing users, the platform can ban the server's IP for 24 hours.
+
+**Why it happens:**
+`BackgroundTasks` has no global concurrency limit or coordination across user sessions. Each import is an independent async task with no awareness of other running imports.
+
+**How to avoid:**
+- Implement a global `asyncio.Semaphore` limiting concurrent outbound import tasks (e.g., `asyncio.Semaphore(3)` for chess.com, separate one for lichess).
+- Return an immediate "queued" status to the frontend; poll for progress via a status endpoint.
+- Persist import state in the DB (queued / running / complete / failed) so status survives app restarts.
+- Do not introduce Celery — it adds Redis + worker infrastructure disproportionate to this use case. A semaphore-based asyncio queue is sufficient at current scale.
+
+**Warning signs:**
+- Import works for solo testing but fails when two users import simultaneously
+- Chess.com 429 errors in logs with no retry logic
+- Users see no feedback after clicking "Import" — task silently dropped
+
+**Phase to address:** Import queue phase
+
+---
+
+### Pitfall 8: Sentry Initialization Order Silently Breaks Error Capture
+
+**What goes wrong:**
+If `sentry_sdk.init()` is called after the FastAPI app is instantiated or after middleware is added, the ASGI integration hooks are never registered. Errors occur and are logged, but nothing appears in the Sentry dashboard. The app appears to be working normally while errors go untracked.
+
+**Why it happens:**
+Sentry is often added as an afterthought and dropped inside a function or after `app = FastAPI()`. The `FastApiIntegration` must hook into the app at construction time; late initialization misses the middleware chain. A known GitHub issue (`sentry-python #2353`) documents exactly this: "When initialized before FastAPI app, sentry doesn't capture errors" — the fix is initialization at module top-level, unconditionally before `app = FastAPI()`.
+
+**How to avoid:**
+Call `sentry_sdk.init(...)` at module top-level in `main.py`, unconditionally, before `app = FastAPI(...)`. Use `FastApiIntegration` and `AsyncioIntegration` (the latter required for correct async task context propagation). Verify with a deliberate test route.
+
+**Warning signs:**
+- Sentry dashboard shows zero events despite confirmed unhandled exceptions in logs
+- Test route `GET /api/debug/sentry-test` raises but no event appears in Sentry within 60 seconds
+
+**Phase to address:** Monitoring + Sentry phase
+
+---
+
+### Pitfall 9: SEO — SPA Returns Empty HTML Shell to Crawlers
+
+**What goes wrong:**
+Googlebot fetches `index.html` and receives `<div id="root"></div>` — nothing. React has not run. There are no `<meta>` description tags, no `<title>`, no visible text. The app is invisible to search engines for all routes, including the About/landing page that is critical for organic discovery.
+
+**Why it happens:**
+Client-side rendering defers all content to JavaScript execution. Google's crawl pipeline does execute JavaScript, but with delays of days to weeks and no guaranteed success rate. Even when Google does render the page, dynamic meta tags set via React are often missed on the first crawl pass.
+
+**How to avoid:**
+For a chess analysis tool whose primary SEO value is the landing/About page (not per-user analysis pages), the pragmatic approach is:
+- Use `react-helmet-async` to set `<title>` and `<meta description>` on the About, Login, and root pages.
+- Pre-render the About/landing page as static HTML at build time — either a simple `/about.html` served by Caddy, or using `vite-ssg` for selective pre-rendering. This gives crawlers real content without full SSR infrastructure.
+- Generate a `sitemap.xml` and `robots.txt` served as static files.
+- Do not add Next.js or full SSR for this milestone — complexity is disproportionate. Focus on the marketing pages only.
+
+**Warning signs:**
+- `curl https://flawchess.com/about` returns `<div id="root"></div>` with no visible text in `<body>`
+- Google Search Console shows pages as "Discovered — currently not indexed" after weeks
+
+**Phase to address:** SEO fundamentals phase
+
+---
+
+### Pitfall 10: Rename Leaves Stale References Causing Silent Mismatches
+
+**What goes wrong:**
+Renaming Chessalytics to FlawChess is easy in visible branding (HTML title, README) but incomplete in code. Old names persist in: Python `pyproject.toml` metadata, environment variable names (e.g., `CHESSALYTICS_SECRET_KEY` in deployment scripts), Alembic migration comment headers, Docker image tags, GitHub Actions workflow names, Sentry project DSN configuration, and `package.json` `name` field. These rarely cause immediate failures but create confusion and silent mismatches — Sentry events tagged to the wrong project, CI alerts referencing the wrong app name.
+
+**Why it happens:**
+Renames are treated as a visible-strings find-and-replace, but structural references baked into deployment scripts, env var names, CI secrets, and container registry paths are missed.
+
+**How to avoid:**
+- Before declaring the rename PR complete, run `grep -ri chessalytics . --include="*.py" --include="*.ts" --include="*.json" --include="*.yml"` and resolve all hits.
+- Update explicitly: `package.json` `name`, `pyproject.toml` `[project] name`, any env vars with the old name, Docker image tag in compose and CI scripts, Sentry project name, GitHub repo name (creates automatic redirects for ~1 year — still update your local remote immediately with `git remote set-url`).
+
+**Warning signs:**
+- `grep -ri chessalytics` returns hits after the rename PR merges
+- Sentry events land in a project named "chessalytics" post-launch
+
+**Phase to address:** Rename/rebrand phase — should be the first or a standalone phase before other phases introduce new references to the new name
+
+---
+
+### Pitfall 11: FastAPI Docs Endpoint Exposed in Production
+
+**What goes wrong:**
+FastAPI's auto-generated `/docs` (Swagger UI) and `/redoc` endpoints are enabled by default. In production, these expose the full API schema, all endpoint signatures, request/response models, and authentication flows to any visitor. This enables targeted enumeration and attack construction.
+
+**Why it happens:**
+Default FastAPI configuration enables docs for developer convenience. There is no framework-level nudge to disable them in production.
+
+**How to avoid:**
+Configure the app with docs disabled in production:
+```python
+app = FastAPI(
+    docs_url=None if settings.environment == "production" else "/docs",
+    redoc_url=None if settings.environment == "production" else "/redoc",
+)
+```
+
+**Warning signs:**
+- `GET https://flawchess.com/docs` returns a Swagger UI page in production
+- `/openapi.json` endpoint returns the full schema publicly
+
+**Phase to address:** Docker + Caddy deployment phase (production config)
 
 ---
 
@@ -192,106 +276,137 @@ Mobile navigation / viewport setup phase — fix the viewport meta tag before bu
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| `allowedHosts: 'all'` committed as default in vite.config.ts | ngrok works without setup | DNS rebinding vulnerability in shared or CI environments | Never — use env variable or separate config override |
-| Skip update notification UI for PWA | Faster initial shipping | Users stuck on stale versions indefinitely after any deployment | Never — defeats the core benefit of service worker versioning |
-| Hard-code `arePiecesDraggable={true}` with no mobile fallback | Simpler code | Broken chess piece interaction on all iOS devices | Never for a chess analysis app |
-| Cache API responses with StaleWhileRevalidate | Faster perceived loads, offline read support | Users see wrong analysis stats after importing games | Never for analysis data; acceptable only for user profile metadata |
-| Single 512x512 PNG icon in manifest | Less asset work | PWA install prompt suppressed on some Android versions; ugly pixelated home screen icon | Never — generating icon sizes is 30 minutes of work |
-| Implementing body scroll lock without `position: fixed` | Simpler CSS | On iOS Safari, `overflow: hidden` alone does not prevent background scroll | Never on iOS — must combine `overflow: hidden` + `position: fixed` |
+| No Docker health check — rely on `depends_on` service name only | Simpler compose file | Intermittent startup failures; app crashes before DB is ready | Never in production |
+| Run `alembic upgrade head` inside FastAPI async lifespan | Single deployment artifact | Race condition with multiple replicas; async engine context bugs | Never |
+| Hardcode `DATABASE_URL` in `docker-compose.yml` | No secrets setup required | Credentials in VCS history | Never |
+| GA without Consent Mode v2 | Simpler implementation | GDPR violation; Google stops processing EEA conversions | Never for EU-accessible apps |
+| `BackgroundTasks` for concurrent imports with no semaphore | No extra infrastructure | chess.com IP ban at 4+ concurrent users | MVP only if max concurrent users is known to be < 3 |
+| No PWA `onNeedRefresh` update banner | One fewer UI component | Users run stale version indefinitely after deploys | Never — app has API contract coupling between frontend and backend versions |
+| Pin GitHub Actions to `@v3` tags instead of commit SHA | Readable workflow files | Supply-chain attack vector (multiple incidents in 2025) | Never for workflows handling production secrets |
+| Leave `/docs` and `/redoc` enabled in production | Convenient for debugging | API schema enumeration by attackers | Never in production |
+
+---
 
 ## Integration Gotchas
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| ngrok + Vite HMR | Default config, expect HMR to work through tunnel | Set `server.hmr.clientPort: 443` and `server.host: true`; add ngrok domain to `allowedHosts` |
-| ngrok + FastAPI backend | Assume Vite's `/api` proxy forwards correctly through ngrok | The Vite proxy forwards to `localhost:8000` regardless of ngrok — the backend is reached via the local network, not through ngrok. Phone must reach the Vite dev server via ngrok; the Vite server then proxies to the local FastAPI. This works if both are on the same machine. |
-| vite-plugin-pwa + TanStack Query | Assume the two caches don't conflict | They are independent layers. SW precache serves static assets; TanStack Query manages API data. Explicitly exclude all `/api/*` from SW caching. |
-| iOS Safari + Google SSO in standalone mode | Expect OAuth redirect to return to PWA | Test OAuth on physical iPhone in standalone mode; ensure `/auth/callback` is within manifest `scope`; accept that first login requires separate session in standalone context |
-| Service worker + Vite dev server (devOptions enabled) | Register SW in dev and expect same behavior as production | Dev SW has empty precache and behaves differently. Disable runtime caching in dev with `disableRuntimeConfig: true`. Prefer testing the production build for service worker behavior. |
+| Caddy + React SPA | `try_files` rewrites API calls to `/index.html` | Wrap in `route {}` block; put `reverse_proxy /api/*` first |
+| Caddy + `index.html` | Long `Cache-Control: max-age` on `index.html` | `Cache-Control: no-cache` on `index.html`; `immutable` caching safe only for `/assets/` content-hashed files |
+| Sentry + FastAPI | `sentry_sdk.init()` called after `app = FastAPI()` | Init at module top-level before app instantiation; use `FastApiIntegration` + `AsyncioIntegration` |
+| Sentry + React | Using `SENTRY_DSN` env var (not exposed by Vite) | Use `VITE_SENTRY_DSN` (public prefix required for Vite to expose to browser bundle) |
+| Google Analytics + GDPR | `gtag` in `<head>` fires before consent | Gate initialization on consent state; implement Consent Mode v2; or use Plausible to skip consent entirely |
+| chess.com API + concurrent users | Multiple simultaneous imports hit 429 or trigger IP ban | Global `asyncio.Semaphore(3)` shared across all user import tasks |
+| Docker + PostgreSQL | Container data in writable layer — lost on `down` | Named volume in `docker-compose.yml` top-level `volumes:` |
+| Docker + json-file logging | Unbounded log file growth exhausts disk | Set `logging: driver: local` or `--log-opt max-size=10m max-file=3` |
+| GitHub Actions + Docker registry | `--password` argument visible in `ps` output | Use `--password-stdin` with piped input |
+| vite-plugin-pwa + deployments | No update notification — users stay on old version | Implement `useRegisterSW` with `onNeedRefresh` reload banner |
+
+---
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Precaching large or unnecessary assets | First PWA install takes 10+ seconds on mobile; blank screen during install | Inspect the generated precache manifest in `sw.js` after build; exclude large files not needed for initial render | Any slow mobile connection |
-| Awaiting service worker registration before first render | App hangs 2-3 seconds before showing anything; poor LCP score | Never `await navigator.serviceWorker.register()` before mounting React; registration is a background task | Every first load |
-| Board re-rendering on mobile filter changes | Board flickers or resets arrow state when filter chips are tapped | Memoize `position` and `boardOrientation` props; the existing `clearArrowsOnPositionChange: false` workaround must be preserved | Already partially mitigated in v1.1; verify with mobile testing |
-| Mobile menu keeping body scroll locked after navigation | Scrolling broken after closing menu via nav link | Use `useEffect(() => setMenuOpen(false), [location.pathname])` to close menu on route change; remove `overflow: hidden` + `position: fixed` from body in the same cleanup | iOS Safari specifically — this trap is iOS-only |
+| No DB connection pool config | App works in dev, timeouts under load in prod | Set `pool_size`, `max_overflow`, `pool_timeout` in SQLAlchemy async engine | ~20 concurrent requests |
+| Docker json-file log driver, no rotation | Host disk exhausts; app becomes unresponsive | `logging: driver: local` in compose, or `--log-opt max-size=10m` | After days of moderate traffic |
+| No Hetzner volume for PostgreSQL | Data in container layer — lost on VM restart | Mount Hetzner volume at `/mnt/data`, bind-mount into container | Any VM restart |
+| `index.html` cached by CDN or browser with long TTL | New deployments not picked up by returning users | `Cache-Control: no-cache` on `index.html` specifically in Caddy | Any deployment after the first |
+| Import task state not persisted | User import disappears with no status if app restarts | Store import state (queued / running / done / failed) in DB | Any app restart during an active import |
+
+---
 
 ## Security Mistakes
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Committing `allowedHosts: 'all'` or `allowedHosts: true` to main vite.config.ts | DNS rebinding attack exposes source code to attacker-controlled pages | Activate via env variable only: `allowedHosts: process.env.VITE_NGROK ? 'all' : []` |
-| Caching authenticated API responses in service worker | User A's analysis data served from cache if User B logs in on the same device | Enforce `NetworkOnly` for all `/api/` routes; never cache JWT-protected responses |
-| Overly broad manifest `scope` allowing attacker-controlled subpaths | Attacker-controlled page within scope can masquerade as the PWA | Set `scope: "/"` — intentionally broad for a SPA. This is acceptable since the entire origin is controlled. |
+| `SECRET_KEY` or `DATABASE_URL` committed to `.env` in VCS | Credential exposure in public repo | `.env` in `.gitignore`; use `.env.example` with placeholders; pass secrets via GitHub Actions secrets |
+| FastAPI `/docs` and `/redoc` enabled in production | API schema enumeration; targeted attacks | `docs_url=None, redoc_url=None` in production config |
+| No rate limiting on `/auth/login` | Brute-force credential stuffing | Add `slowapi` or Caddy rate limiting on auth endpoints |
+| Docker container port bound to `0.0.0.0:8000` | FastAPI directly reachable, bypassing Caddy | Bind to `127.0.0.1:8000`; only Caddy faces the internet |
+| Frontend `VITE_SENTRY_DSN` treated as secret | Unnecessary secret management overhead | Frontend DSN is intentionally public; only the backend DSN needs protection. Use separate Sentry projects for frontend and backend. |
+| Third-party GitHub Actions at mutable version tags | Supply-chain attack exfiltrates production secrets | Pin all actions to full commit SHA |
+
+---
 
 ## UX Pitfalls
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| Touch targets smaller than 44x44px | Frequent mis-taps on filter chips, nav items, board controls on mobile | Enforce `min-h-11 min-w-11` (Tailwind = 44px) on all interactive elements; use `touch-action: manipulation` to eliminate 300ms tap delay |
-| Hamburger menu opens but no backdrop overlay | Users tap the chessboard area intending to close the menu and accidentally move a piece | Full-screen semi-transparent overlay behind the slide-out menu; close on overlay tap |
-| No PWA install prompt or instructions on iOS | Users never discover the app can be installed; worse experience than necessary | Add a persistent but dismissible "Add to Home Screen" banner on iOS Safari; implement the `beforeinstallprompt` flow for Android |
-| Page scroll conflict when finger is on chessboard | Attempting to scroll the page while touching the board scrolls the board's container instead | Set `touch-action: none` on the board container element; test by placing a finger on the board and attempting to scroll the page |
-| Hamburger menu stays open after navigating | Menu appears on top of destination page; user must close it manually | Close menu on route change via `useEffect(() => setMenuOpen(false), [location.pathname])` |
-| Horizontal overflow from chessboard on narrow screens | Entire page gains horizontal scroll; layout breaks below the board | Never set a fixed pixel width for the board; use `min(100vw - 2rem, 600px)` or a percentage-based constraint |
+| No import queue status — "Import" click gives no feedback | User clicks multiple times; duplicate imports queued | Immediate "queued" status response; disable button while running; poll for completion |
+| Cookie consent banner blocks the entire viewport on mobile | First-time mobile users cannot see the app at all | Compact bottom banner; "Accept" + "Manage" buttons only; never full-screen overlay |
+| PWA update banner fires aggressively during active session | Users are interrupted mid-analysis | Show banner only when user is idle or navigates; allow dismissal |
+| Privacy policy linked only in footer on desktop | Mobile users never find it; GDPR requires accessible link | Link in the consent banner itself; also in the mobile "More" drawer |
+
+---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **PWA installable:** Passes Lighthouse PWA audit — verify icons at 192x192 and 512x512 with `purpose: "any maskable"`, HTTPS, service worker registered, valid manifest
-- [ ] **iOS standalone auth:** Tested on physical iPhone in standalone mode (not Safari DevTools emulation) — emulation does not reproduce iOS storage isolation or OAuth redirect behavior
-- [ ] **Chessboard touch:** Pieces move via click-to-move on actual iPhone and Android, not just desktop browser with touch emulation enabled in DevTools
-- [ ] **Service worker update flow:** Deploy a visible UI change, reload the installed PWA, confirm update notification toast appears and the "Reload" button activates the new version
-- [ ] **API routes bypass SW:** After service worker installs, verify in Network tab that `/api/` requests show server timing, not `(from cache)` or `(ServiceWorker)`
-- [ ] **Safe area insets:** Check on iPhone 12+ in standalone mode — nav header clears the notch/Dynamic Island; no content hidden under home indicator
-- [ ] **Hamburger scroll lock:** Open mobile menu on iPhone, attempt to scroll the background page — confirm background does not scroll
-- [ ] **ngrok HMR:** Edit a component text on desktop, confirm the change hot-reloads on the phone within 3 seconds
-- [ ] **Manifest scope and OAuth:** Confirm Google SSO OAuth callback lands back in the PWA standalone mode on iOS (does not jump to Safari)
+- [ ] **Docker volume:** Named volume declared AND verified to survive `docker compose down` + `up` — check with `docker volume ls` and query row count post-cycle
+- [ ] **Caddy SPA routing:** Deep-link URL (e.g., `/openings`) works on hard refresh — not just root navigation
+- [ ] **Caddy SSL:** Certificate auto-renewed — check Caddy logs for ACME challenge success; verify with `curl -I https://flawchess.com`
+- [ ] **Alembic on deploy:** Migrations complete before app starts (confirmed via `docker compose logs` ordering)
+- [ ] **Sentry FastAPI:** Test exception route raises — event appears in Sentry dashboard within 60 seconds
+- [ ] **Sentry React:** Frontend JS error triggered — stack trace appears sourcemapped (not minified) in Sentry
+- [ ] **Analytics GDPR:** Network tab on first visit shows zero requests to `google-analytics.com` before the consent "Accept" action
+- [ ] **PWA update banner:** Deploy a visible change, reload the installed PWA — update notification appears within one background check cycle
+- [ ] **SEO:** `curl https://flawchess.com/about` returns non-empty visible text in `<body>` (not just `<div id="root">`)
+- [ ] **Rename complete:** `grep -ri chessalytics . --include="*.py" --include="*.ts" --include="*.json" --include="*.yml"` returns zero hits
+- [ ] **Import queue:** Two simultaneous imports from different browser sessions complete without chess.com 429 errors
+- [ ] **FastAPI docs disabled:** `GET /docs` returns 404 in production
+
+---
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| SW caching API responses (discovered post-ship) | MEDIUM | Add `NetworkOnly` config for `/api/`, rebuild, deploy; existing cached responses expire on next network request or user can clear app cache |
-| Users stuck on stale version (no update notification shipped) | HIGH | Deploy a "poison pill" service worker that immediately unregisters itself; users get the fix on next browser check; notify users to refresh |
-| iOS PWA auth broken (manifest scope misconfigured) | LOW | Update `manifest.webmanifest` scope, redeploy; existing installs need to re-add to home screen to pick up manifest change |
-| Vite blocks ngrok requests (discovered during testing session) | LOW | Add `allowedHosts` and `hmr.clientPort` config, restart dev server; no code changes needed |
-| Chessboard drag broken on iOS (missed in desktop testing) | LOW | Set `arePiecesDraggable={false}` conditionally or unconditionally; redeploy |
-| Missing safe-area-inset CSS (discovered on device) | LOW | Add one-line CSS to `index.css` and one attribute to `index.html` viewport meta; redeploy |
+| PostgreSQL data loss (no volume) | HIGH | Restore from Hetzner snapshot if configured; otherwise ask users to re-import; set up named volume immediately |
+| Service worker serving stale version | LOW-MEDIUM | Deploy a self-destroying service worker that immediately unregisters; users get fix on next browser check; add `onNeedRefresh` banner going forward |
+| chess.com IP ban from concurrent imports | MEDIUM | Wait out the ban (typically 24 hours); implement semaphore immediately; consider Hetzner floating IP as emergency alternative |
+| Sentry not capturing errors (wrong init order) | LOW | Fix init order, redeploy; only cost is a gap in error history |
+| GA firing before consent (GDPR) | HIGH | Immediate: disable GA entirely; medium-term: reimplement behind consent gate or switch to Plausible |
+| GitHub Actions secret leaked via compromised action | HIGH | Rotate all exposed secrets immediately; audit action versions; pin all actions to SHA; review recent workflow run logs for unauthorized commands |
+
+---
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| SW caches API responses | PWA setup | Lighthouse audit + Network tab inspection after SW installs |
-| Stale app shell after deploy | PWA setup | Deploy a visible change, reload installed PWA, confirm update notification |
-| ngrok HMR blocked | Dev workflow setup | Edit a component on desktop, verify live reload fires on phone |
-| react-chessboard drag broken on iOS | Mobile UX polish | Tap and drag a piece on physical iPhone — piece must move or click-to-move must work |
-| iOS PWA auth session isolation | PWA setup | Install PWA on iPhone, open from home screen, verify login state and OAuth flow |
-| Missing viewport-fit / safe-area insets | Mobile nav / responsive layout | Open app on iPhone 12+ in standalone mode, inspect nav header and bottom edge |
-| Touch targets too small | Mobile UX polish | Chrome DevTools accessibility audit + physical thumb testing on narrow phone |
-| Body scroll lock on iOS hamburger menu | Mobile navigation | Open hamburger menu on iPhone, attempt to scroll page behind it |
+| Caddy directive ordering breaks API routing | Docker + Caddy deployment | `curl /api/health` returns JSON; `/openings` hard-refresh returns SPA |
+| PostgreSQL data loss (no volume) | Docker + Caddy deployment | `docker compose down && docker compose up` preserves all rows |
+| Alembic startup race condition | Docker + Caddy deployment | Clean deploy from scratch completes without container restart loops |
+| Stale PWA after deployment | Docker + Caddy (cache headers) + CI/CD (update banner) | Redeploy while PWA is open; update notification appears |
+| FastAPI docs exposed in production | Docker + Caddy deployment | `GET /docs` returns 404 in production |
+| Analytics fires before GDPR consent | Analytics + privacy policy phase | Network tab shows zero GA requests before consent action |
+| GitHub Actions secrets supply-chain risk | CI/CD pipeline phase | All third-party actions pinned to commit SHA in workflow files |
+| Import queue starvation (chess.com 429) | Import queue phase | Concurrent 3-user import test completes without 429 errors |
+| Sentry init order | Monitoring + Sentry phase | Test exception route triggers Sentry event within 60s |
+| SPA invisible to crawlers | SEO fundamentals phase | `curl /about` returns meaningful text content in response body |
+| Stale rename references | Rename/rebrand phase (first) | `grep -ri chessalytics` returns zero hits after PR merges |
+
+---
 
 ## Sources
 
-- [Vite PWA development mode — official docs](https://vite-pwa-org.netlify.app/guide/development)
-- [Vite server.allowedHosts — ngrok discussion](https://github.com/vitejs/vite/discussions/5399)
-- [Vite blocked request host not allowed — GitHub discussion](https://github.com/vitejs/vite/discussions/19426)
-- [Vite server options reference](https://vite.dev/config/server-options)
-- [iOS Safari PWA storage isolation — Netguru](https://www.netguru.com/blog/how-to-share-session-cookie-or-state-between-pwa-in-standalone-mode-and-safari-on-ios)
-- [PWA iOS limitations 2025/2026 — MagicBell](https://www.magicbell.com/blog/pwa-ios-limitations-safari-support-complete-guide)
-- [iOS safe-area-inset and viewport-fit — WebKit blog](https://webkit.org/blog/7929/designing-websites-for-iphone-x/)
-- [PWA update strategy — web.dev](https://web.dev/learn/pwa/update)
-- [React SPA service worker update handling — Medium](https://medium.com/@leybov.anton/how-to-control-and-handle-last-app-updates-in-pwa-with-react-and-vite-cfb98499b500)
-- [react-chessboard — GitHub (Clariity)](https://github.com/Clariity/react-chessboard)
-- [HTML5 DnD not supported on iOS — known platform limitation, MDN](https://developer.mozilla.org/en-US/docs/Web/API/HTML_Drag_and_Drop_API)
-- [PWA bugs tracker — pwa-police/pwa-bugs](https://github.com/PWA-POLICE/pwa-bugs)
-- [PWA installability checklist — MDN](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable)
-- [iOS body scroll lock with overflow:hidden — Medium](https://medium.com/@rio.alexandre33/css-burger-menu-for-mobile-devices-with-blocked-body-scrolling-dbbd2eaa37c7)
-- [Tailwind/headlessui body scroll discussion — GitHub](https://github.com/tailwindlabs/headlessui/discussions/744)
-- [Codebase inspection: frontend/src/App.tsx, frontend/src/pages/, CLAUDE.md]
+- [Caddy: route directive preserving declaration order](https://caddyserver.com/docs/caddyfile/directives/route)
+- [Caddy community: React Router + reverse_proxy 404 issue](https://caddy.community/t/caddy-reverse-proxy-and-react-router/13013)
+- [Configuring Client-Side Routing for React SPA with Caddy](https://blog.metters.dev/posts/caddy-routing-and-reload-safety-with-csr-on-spa/)
+- [Docker: stop losing PostgreSQL data on container restart](https://dev.to/teguh_coding/docker-volumes-explained-stop-losing-data-every-time-you-restart-a-container-254g)
+- [Solving the FastAPI, Alembic, Docker startup problem](https://hackernoon.com/solving-the-fastapi-alembic-docker-problem)
+- [Sentry FastAPI integration — official docs](https://docs.sentry.io/platforms/python/integrations/fastapi/)
+- [Sentry: initialized before FastAPI app — issue #2353](https://github.com/getsentry/sentry-python/issues/2353)
+- [vite-plugin-pwa: automatic reload / update handling](https://vite-pwa-org.netlify.app/guide/auto-update.html)
+- [GDPR cookie consent — what developers get wrong](https://dev.to/andreashatlem/gdpr-cookie-consent-implementation-what-most-developers-get-wrong-and-how-to-fix-it-1jpl)
+- [Your cookie consent banner is probably breaking your analytics](https://dev.to/anjab/your-cookie-consent-banner-is-probably-breaking-your-analytics-5c4h)
+- [Google Analytics GDPR compliance 2025](https://gdprlocal.com/google-analytics-gdpr-compliance/)
+- [GitHub Actions: top 10 security pitfalls](https://arctiq.com/blog/top-10-github-actions-security-pitfalls-the-ultimate-guide-to-bulletproof-workflows)
+- [FastAPI async task management pitfalls](https://leapcell.io/blog/understanding-pitfalls-of-async-task-management-in-fastapi-requests)
+- [Why SPAs still struggle with SEO in 2025](https://dev.to/arkhan/why-spas-still-struggle-with-seo-and-what-developers-can-actually-do-in-2025-237b)
+- [Docker logging driver disk exhaustion prevention](https://betterstack.com/community/guides/scaling-python/fastapi-docker-best-practices/)
+- [Vite SPA PWA stale cache — vite-plugin-pwa issue #33](https://github.com/vite-pwa/vite-plugin-pwa/issues/33)
 
 ---
-*Pitfalls research for: Chessalytics v1.2 — Mobile PWA, responsive navigation, and phone dev workflow*
-*Researched: 2026-03-20*
+*Pitfalls research for: FlawChess / Chessalytics v1.3 — Production deployment, monitoring, analytics, SEO, and public launch*
+*Researched: 2026-03-21*

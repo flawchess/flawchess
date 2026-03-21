@@ -16,7 +16,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="Chessalytics", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="FlawChess", version="0.1.0", lifespan=lifespan)
 
 # CORS — allow the Vite dev server
 app.add_middleware(

@@ -70,10 +70,11 @@ function NavHeader() {
   const { logout } = useAuth();
 
   return (
-    <header className="hidden sm:block border-b border-border bg-background px-6 py-3">
-      <div className="mx-auto flex max-w-7xl items-center justify-between">
+    <header className="hidden sm:block border-b border-border bg-background px-6 overflow-hidden">
+      <div className="mx-auto flex max-w-7xl items-center justify-between py-1">
         <div className="flex items-center gap-1">
-          <span className="mr-3 text-lg font-bold tracking-tight text-foreground">Chessalytics</span>
+          <img src="/icons/logo-128.png" alt="" className="h-11 w-11 self-end -mb-1" aria-hidden="true" />
+          <span className="mr-3 text-lg tracking-tight text-foreground font-brand">FlawChess</span>
           <nav aria-label="Main navigation">
             {NAV_ITEMS.map(({ to, label, Icon }) => (
               <Button
@@ -114,13 +115,14 @@ function MobileHeader() {
   return (
     <header
       data-testid="mobile-header"
-      className="block sm:hidden pt-safe flex items-center justify-between px-4 py-3 border-b border-border bg-background"
+      className="block sm:hidden pt-safe flex items-center justify-between px-4 py-1 border-b border-border bg-background overflow-hidden"
     >
       <span
         data-testid="mobile-header-brand"
-        className="text-xl font-semibold tracking-tight text-foreground"
+        className="flex items-center gap-1.5 text-xl tracking-tight text-foreground font-brand"
       >
-        Chessalytics
+        <img src="/icons/logo-128.png" alt="" className="h-11 w-11 self-end -mb-1" aria-hidden="true" />
+        FlawChess
       </span>
       <span
         data-testid="mobile-header-page-title"

@@ -1,5 +1,5 @@
 /**
- * Zobrist hash computation for Chessalytics — JavaScript port of the Python backend.
+ * Zobrist hash computation for FlawChess — JavaScript port of the Python backend.
  *
  * Computes three deterministic 64-bit signed integer hashes for any chess position:
  *   - whiteHash: hash of white pieces only (matches app/services/zobrist._color_hash(board, WHITE))

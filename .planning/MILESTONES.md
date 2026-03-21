@@ -1,4 +1,4 @@
-# Milestones: Chessalytics
+# Milestones: FlawChess
 
 ## v1.2 Mobile & PWA (Shipped: 2026-03-21)
 

@@ -15,7 +15,7 @@ def test_engine():
     """Create an async engine for the test DB and run Alembic migrations.
 
     Session-scoped: created once per test session, disposed at teardown.
-    Runs alembic upgrade head against chessalytics_test to ensure schema is current.
+    Runs alembic upgrade head against flawchess_test to ensure schema is current.
     Alembic uses a sync URL (postgresql://) because alembic.command.upgrade is synchronous.
     """
     # Temporarily patch settings.DATABASE_URL so env.py's config.set_main_option
@@ -44,7 +44,7 @@ def override_get_async_session(test_engine):
 
     Session-scoped autouse: active for the entire test session.
     Overrides get_async_session so that ASGITransport-based tests (auth, etc.)
-    write to chessalytics_test instead of the dev DB.
+    write to flawchess_test instead of the dev DB.
 
     Uses commit-after-yield (same as production) so auth tests work correctly
     with real DB writes to the test DB.
@@ -83,7 +83,7 @@ def empty_board() -> chess.Board:
 async def db_session(test_engine) -> AsyncSession:
     """Provide an AsyncSession wrapped in a transaction that is rolled back after each test.
 
-    Uses the test DB engine (chessalytics_test) bound by the test_engine fixture.
+    Uses the test DB engine (flawchess_test) bound by the test_engine fixture.
     Each test runs inside a transaction that is always rolled back, so tests
     do not pollute each other even without cleanup code.
     """

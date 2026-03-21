@@ -1,37 +1,38 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Mobile & PWA
-status: shipped
-last_updated: "2026-03-21T12:30:00.000Z"
-last_activity: "2026-03-21 - Shipped v1.2 Mobile & PWA milestone"
+milestone: v1.3
+milestone_name: Project Launch
+status: unknown
+last_updated: "2026-03-21T16:07:54.320Z"
+last_activity: 2026-03-21
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
+  total_phases: 4
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
 ---
 
-# Project State: Chessalytics
+# Project State: FlawChess
 
 ## Current Position
 
-Milestone v1.2 (Mobile & PWA) — SHIPPED 2026-03-21
-Next milestone: not yet planned
+Phase: 20 (rename-branding) — EXECUTING
+Plan: 1 of 2
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-03-21)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Planning next milestone
+Current focus: Phase 20 — Rename & Branding
 
 ## Phase Progress
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 17. PWA Foundation + Dev Workflow | 1/1 | Complete | 2026-03-20 |
-| 18. Mobile Navigation | 1/1 | Complete | 2026-03-20 |
-| 19. Mobile UX Polish + Install Prompt | 3/3 | Complete | 2026-03-21 |
+| Phase | Status |
+|-------|--------|
+| 20. Rename & Branding | Not started |
+| 21. Docker & Deployment | Not started |
+| 22. CI/CD & Monitoring | Not started |
+| 23. Launch Readiness | Not started |
 
 ## Key Context
 
@@ -43,17 +44,28 @@ Current focus: Planning next milestone
 
 ## Accumulated Context
 
+### Decisions
+
+- [v1.3 roadmap]: Plausible Cloud chosen over Google Analytics — no cookie consent required, eliminates GDPR complexity
+- [v1.3 roadmap]: Single Hetzner VPS (CX32) with Docker Compose + Caddy — no orchestration overhead for solo dev
+- [v1.3 roadmap]: Rename must be Phase 20 — Sentry/Plausible project names embed at creation time and are hard to change
+- [v1.3 roadmap]: BRAND-05 (README) in Phase 23 — screenshots need live domain and final branding in place
+- [Phase 20]: CSRF cookie renamed from chessalytics_oauth_csrf to flawchess_oauth_csrf — pre-production, acceptable
+- [Phase 20]: apple-touch-icon.png is a copy of icon-192.png as placeholder — user will provide final 180x180 asset
+
+### Blockers/Concerns
+
+- [Phase 21]: Confirm Hetzner CX32 pricing at hetzner.com before provisioning
+- [Phase 21]: Hosting platform decision deferred to phase planning (Hetzner CX32 recommended)
+- [Phase 23]: Analytics tool final decision in phase planning — affects privacy policy wording (Plausible recommended)
+- [Phase 22]: GitHub Actions secrets require VPS to exist (Phase 21 prerequisite)
+- [Research]: chess.com rate-limit threshold ~3-4 concurrent (community-reported, unverified) — tune semaphore post-launch
+
 ### Pending Todos
 
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
 - **Display opening name from lichess chess-openings database** (ui) — ECO code + opening name via prefix-match
-
-### Blockers/Concerns
-
-- Cloudflare Tunnel + Vite proxy compatibility not yet verified end-to-end
-- Google SSO OAuth in PWA standalone on iOS needs physical device testing
-- react-chessboard touch drag on Android Chrome unverified — click-to-move is confirmed fallback
 
 ### Quick Tasks Completed
 
@@ -69,5 +81,5 @@ Current focus: Planning next milestone
 | 260321-gy2 | Bookmark saves position at current ply instead of final position | 2026-03-21 | 72b6637 | [260321-gy2-bookmark-saves-position-at-current-ply-i](./quick/260321-gy2-bookmark-saves-position-at-current-ply-i/) |
 
 ---
-Last activity: 2026-03-21 - Completed quick task 260321-gy2: Bookmark saves displayed position
-Last session: 2026-03-21T12:30:00.000Z
+Last activity: 2026-03-21
+Last session: 2026-03-21T14:12:34.047Z

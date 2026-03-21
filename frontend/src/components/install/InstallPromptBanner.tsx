@@ -14,7 +14,7 @@ export function InstallPromptBanner() {
       <Drawer open={showAndroidPrompt} onOpenChange={(open) => { if (!open) dismissAndroid(); }} direction="bottom">
         <DrawerContent data-testid="install-prompt-android">
           <DrawerHeader>
-            <DrawerTitle>Install Chessalytics</DrawerTitle>
+            <DrawerTitle>Install FlawChess</DrawerTitle>
           </DrawerHeader>
           <div className="px-4 pb-6">
             <p className="text-sm text-muted-foreground mb-4">
