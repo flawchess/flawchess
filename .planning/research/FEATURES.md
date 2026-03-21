@@ -1,14 +1,14 @@
 # Feature Research
 
-**Domain:** Mobile PWA — data-heavy chess analysis SPA
-**Researched:** 2026-03-20
-**Confidence:** HIGH (PWA mechanics, nav patterns), MEDIUM (chess-specific mobile touch UX)
+**Domain:** Production deployment, monitoring, analytics, SEO, and public launch for FastAPI + React SPA (FlawChess v1.3)
+**Researched:** 2026-03-21
+**Confidence:** HIGH (Docker/Caddy/Sentry mechanics); MEDIUM (GDPR requirements, import queue design, CI/CD patterns); LOW (exact chess.com/lichess rate-limit thresholds — community-reported, not officially documented)
 
 ---
 
-> This file covers features for v1.2: Mobile & PWA.
-> v1.0 and v1.1 features are already shipped (import, analysis, bookmarks, move explorer, openings hub, game cards).
-> Core layouts already collapse to single-column on mobile. Chessboard scales via ResizeObserver. Nav header has no mobile menu.
+> This file covers features for v1.3: Project Launch.
+> v1.0–v1.2 features are already shipped (import, analysis, bookmarks, move explorer, game cards, PWA, mobile nav).
+> Focus: Docker deployment, Caddy, Hetzner, CI/CD, Sentry, About page, SEO, analytics, privacy policy, import queue, rename.
 
 ---
 
@@ -16,98 +16,147 @@
 
 ### Table Stakes (Users Expect These)
 
-Features users assume exist for a mobile-installable app. Missing these makes it feel unfinished.
+Features that a publicly launched web app must have. Missing these = product feels unfinished or legally non-compliant.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Hamburger / mobile nav menu | Horizontal nav bar is invisible or overflows at <640px. Users expect a drawer on phones. | LOW | shadcn Sheet is the canonical pattern. Trigger: hamburger icon button. Slides from left. Closes on link tap. Active route highlighted. Logout in sheet. |
-| PWA manifest (installable) | "Add to Home Screen" requires a valid manifest. Without it, Chrome/Safari show no install option. | LOW | `vite-plugin-pwa` generates manifest + injects it automatically. Required: `name`, `short_name`, `start_url`, `display: standalone`, `theme_color`, `background_color`, icon set (192×192 + 512×512 PNG). Need custom chess icons — current favicon is vite.svg. |
-| Service worker (fast repeat load) | Repeat visits on mobile networks should feel instant. Without SW, every load re-fetches all JS/CSS. | MEDIUM | `vite-plugin-pwa` generates SW via Workbox `generateSW` strategy (zero config for this use case). Precaches all built assets. API routes must be excluded from interception (network-first or bypass). |
-| Touch-friendly tap targets | iOS/Android: minimum 44×44px tap targets. Filter pills and board control buttons may be undersized. | LOW | Audit all interactive elements. Tailwind `min-h-11 min-w-11` = 44px. shadcn `size="sm"` is 36px — bump affected controls. 8px gap between adjacent targets. |
-| No horizontal scroll | Mobile users expect content within viewport. Wide filter panels or move tables cause horizontal scroll. | LOW | Wrap tables in `overflow-x-auto`. Verify OpeningsPage filter sidebar and move explorer table on narrow screen. Game cards already use 3-row layout. |
-| Dev tunnel for phone testing | Devs must test on real device during iteration. Vite proxy routes complicate LAN-only approaches. | LOW | One command: `npx cloudflared tunnel --url http://localhost:5173`. Free, no account, HTTPS automatic, stable. Cloudflare Tunnel is the strongest free option in 2025. |
+| Docker Compose deployment | Standard production packaging; reproducible across environments | MEDIUM | Separate services: FastAPI backend, PostgreSQL, Caddy (serves React dist + proxies /api). Multi-stage Dockerfiles: backend (Python slim), frontend (Node build stage → Caddy/nginx copy). |
+| Caddy reverse proxy with auto-TLS | HTTPS non-negotiable for any public app; Caddy provisions Let's Encrypt certs automatically with no cert management overhead | LOW | Single `Caddyfile`. Routes `/api/*` to uvicorn. Serves React `dist/` as static files with SPA fallback (`try_files {path} /index.html`). Auto-HTTPS on domain. |
+| Environment variable configuration | Production must not hardcode secrets or API DSNs in source | LOW | `.env` on server injected at compose runtime. `VITE_*` vars at frontend build time (baked into bundle). Pydantic `BaseSettings` already supports env on backend. |
+| PostgreSQL volume persistence | DB data must survive container restarts and redeploys | LOW | Named Docker volume, not bind mount. `pg_data` volume in `docker-compose.yml`. |
+| Alembic migrations on startup | Schema must be current before app accepts traffic — especially important for zero-downtime redeploys | LOW | Backend entrypoint: `alembic upgrade head && uvicorn app.main:app ...`. Idempotent, safe to run on every start. |
+| GitHub Actions CI/CD | Automated deploy on push to main; eliminates risky manual SSH deploys over time | MEDIUM | Workflow: run tests → build images → push to GHCR → SSH into Hetzner → `docker compose pull && docker compose up -d`. SSH private key and secrets stored in GitHub Secrets. |
+| Sentry error monitoring (backend) | Unhandled exceptions in production must be captured with request context and stack traces | LOW | `sentry-sdk[fastapi]` auto-instruments FastAPI. One `sentry_sdk.init(dsn=..., traces_sample_rate=0.1)` call. DSN from environment variable. |
+| Sentry error monitoring (frontend) | JS errors and unhandled promise rejections must surface with component stack | LOW | `@sentry/react` with `Sentry.init()` and `<ErrorBoundary>` wrapping the app. React Router integration for transaction names. |
+| About / landing page | New visitors must understand what FlawChess does before registering; the only SEO-indexable page | MEDIUM | Explains Zobrist-hash position matching USP vs chess.com/lichess categorization. FAQ covering: what is it, how does it work, data sources, privacy. CTA: Register / Log in. Fully public (no auth required). |
+| Professional README | GitHub visitors judge project quality and credibility by the README | LOW | Project name + description, feature list, screenshots, tech stack badges, quick local setup (Docker Compose), links to live app. |
+| Privacy policy page | GDPR legally requires disclosing what data is collected and how it's used whenever collecting personal data or using third-party analytics | MEDIUM | Static page at `/privacy`. Covers: auth data, imported game data (stored server-side), Sentry error tracking, Plausible analytics (no cookies, no PII), user rights (deletion), contact. |
+| SEO fundamentals | About page must be discoverable in search engines for FlawChess to grow organically | MEDIUM | `react-helmet-async` for per-route `<title>` and `<meta description>`. Open Graph tags on About page. `robots.txt` (allow all, point to sitemap). `sitemap.xml` listing `/` and `/about` with lastmod. Canonical URL tag. |
+| FlawChess rename / branding | Consistent brand identity before public launch; "Chessalytics" is a working title | LOW | Update: repo name, all code string references, PWA manifest (`name`, `short_name`), About page copy, README, Sentry project name, Plausible site name, `CLAUDE.md`. |
 
 ### Differentiators (Competitive Advantage)
 
-Features that make mobile experience meaningfully better than competitors' mobile web apps.
+Features that go beyond table stakes and improve quality, trust, or stability at launch.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| PWA install prompt (custom UI) | In-app "Install App" button after user engagement beats relying on browser's dismissable prompt. | MEDIUM | Listen for `beforeinstallprompt` (Chromium only). Store event, show button in nav or post-login. Call `prompt()` on gesture. Safari has no API — show a tooltip with manual "Share → Add to Home Screen" instructions on iOS. vite-plugin-pwa's `useRegisterSW` handles SW updates; install prompt is separate custom logic. |
-| Offline-capable shell (app shell pattern) | UI appears immediately even on flaky connections, then data loads. Matches native app feel. | LOW | This is free from Workbox precaching. No extra code once SW is configured with the correct asset scope. |
-| Chessboard click-to-click on mobile | Drag-and-drop piece movement is unreliable on touch. Click-source then click-target is already configured and works reliably on mobile. | DONE | react-chessboard v5 advertises "Mobile support". Existing project uses `clearArrowsOnPositionChange: false` workaround. Verify drag works on touch; click-to-click is the confirmed fallback and already works. |
+| Import queue with per-platform serialization | Prevents 429 errors when multiple users import simultaneously. chess.com enforces ~3 concurrent connections; lichess recommends 1 request at a time. Without a queue, concurrent users will get rate-limited and see import failures. | MEDIUM | Two options: (1) `asyncio.Queue` singleton in FastAPI process — simple, zero dependencies, lost on restart but imports are re-triggerable; (2) ARQ + Redis — durable, restartable, adds Redis container. Recommend starting with asyncio.Queue. Two separate queues: one per platform (chess.com, lichess). Each worker drains its queue sequentially with the existing per-platform delay logic. |
+| Plausible analytics (privacy-first) | Understand real usage without cookie consent banner, Google data sharing, or GDPR complexity. Plausible uses no cookies and collects no PII, making it exempt from ePrivacy cookie consent requirements. | LOW | Plausible Cloud: $9/mo for 10K pageviews. Single `<script>` tag in `index.html`. SPA-compatible: tracks `pushState` navigation automatically. Recommended over Google Analytics for this project's scale and privacy posture. |
+| Sentry session replay (error-only mode) | When a frontend error occurs, a replay shows exactly what the user did — invaluable for debugging chess board interactions and position state. | LOW | Set `replaysOnErrorSampleRate: 1.0`, `replaysSessionSampleRate: 0.0`. Capture replay only on errors — zero cost when no errors occur. Sentry masks all DOM text/images by default, so game data does not leak. |
+| Import status + queue position in UI | Users know whether their import is queued, running, or complete — prevents "is this broken?" confusion when many users import simultaneously | MEDIUM | Backend: import status response includes `queued_position` field. Frontend: poll `/imports/status`, show "Queued (#N)" state with estimated wait. Builds on existing Import page polling. |
+| Structured JSON logging | Correlate Sentry error reports with server-side logs across container restarts | LOW | Python `logging` with JSON formatter or `structlog`. Include Sentry trace ID in log records. Docker Compose log driver collects stdout JSON. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Offline API data caching | "Works offline" sounds compelling | Chess data is user-specific + authenticated. Caching API responses risks stale analysis after logout/user-switch. IndexedDB-based sync adds major complexity. Users need network to import games anyway — offline analysis provides marginal value. | Cache only static assets (JS, CSS, icons). TanStack Query's in-memory stale-while-revalidate handles session-level caching. |
-| Push notifications for import completion | "Tell me when my import finishes" | Requires Web Push API backend (VAPID keys), background SW messaging, permission prompts. Import jobs already show progress bars and poll via TanStack Query. | Existing polling + progress bar on Import page is sufficient. Flag for v2 if user demand is clear. |
-| Background sync for imports | Retry failed imports when back online | Web Background Sync API has limited support. Import jobs run server-side — SW retrying is redundant. | Server-side jobs persist. User refreshes Import page to resume. |
-| Swipe-to-navigate between tabs | Native-feeling navigation | Conflicts with chessboard drag-and-drop. Horizontal swipe on a touch chess board will misfire when users intend to drag pieces. | Standard tap navigation. |
-| Full offline mode | Native app parity | Architecturally incompatible. Position analysis requires PostgreSQL Zobrist hash queries. Cannot replicate the DB client-side. | App shell + graceful error state informing user that analysis requires connectivity. |
-| Bottom navigation bar | Thumb-reach ergonomics on large phones | Conflicts with existing top header pattern, adds layout complexity, and requires moving logout. The hamburger sheet is simpler and less disruptive. | Hamburger Sheet covers the same nav needs. Revisit in v2 only if UX testing reveals top-nav is a pain point. |
+| Google Analytics (with cookie consent banner) | Industry default, familiar reports | Requires GDPR-compliant cookie consent UI — banner must give equal prominence to "Accept" and "Reject". Adds frontend complexity, risks GDPR fines if misconfigured, data goes to Google. Overkill for a small app. | Plausible: no cookies, no consent banner required, GDPR-compliant by design. |
+| Celery for import queue | Familiar Python task queue | Requires broker (Redis/RabbitMQ) + result backend + worker process + beat scheduler. For the simple "serialize outbound API calls" use case, this is 10x the complexity needed. | `asyncio.Queue` in the FastAPI process for v1.3. Migrate to ARQ + Redis only if queue durability proves necessary after launch. |
+| SSR / Next.js for SEO | SPAs have SEO limitations | Complete rewrite of all existing React code. The only SEO-critical page is the About/landing page. Authenticated analysis pages don't need indexing. | `react-helmet-async` for meta tags on About page. Googlebot handles modern SPAs (Vite + React Router) adequately for this use case. |
+| Kubernetes / container orchestration | "Production-grade" framing | Catastrophically over-engineered for a single Hetzner VPS with low initial traffic. Adds enormous operational complexity. | Docker Compose on a single server is the correct level. Upgrade path to Swarm or K8s exists if demand grows. |
+| Separate staging environment | Best practice | Doubles Hetzner cost and deployment complexity for a solo developer. | Test with local Docker Compose before pushing. Feature branches with local testing are sufficient for this project's risk profile. |
+| Email notifications for import completion | Good UX for long imports | Requires transactional email service (SendGrid/SES), email templates, unsubscribe handling — significant scope creep for v1.3. | In-app polling on the Import page is sufficient. Queue position display closes the feedback gap. |
+| Full cookie consent manager (CookieHub, OneTrust) | GDPR compliance | If using Plausible (no cookies) and Sentry (functional, not tracking cookies), no cookie consent banner is legally required. Third-party consent managers are expensive ($50-200/mo), add JS weight, and are unnecessary here. | Plausible replaces tracking cookies entirely. Privacy policy page covers the remaining disclosure requirements. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-PWA installable
-    └──requires──> Web App Manifest (name, icons, theme, display)
-    └──requires──> Service Worker (registered + active fetch handler)
-    └──requires──> HTTPS (localhost exempt for dev; tunnel provides HTTPS automatically)
+Docker Compose deployment
+    └──requires──> Multi-stage Dockerfiles (backend + frontend)
+    └──requires──> Environment variable config (.env on server)
+    └──requires──> Alembic migrations on startup
 
-Custom install prompt
-    └──requires──> PWA manifest + SW (browser will not fire beforeinstallprompt otherwise)
-    └──platform split──> Chromium: beforeinstallprompt event
-                         Safari/iOS: manual "Share → Add to Home Screen" instructions
+Caddy reverse proxy
+    └──requires──> Docker Compose deployment
+    └──requires──> Domain DNS pointing to Hetzner IP
 
-Mobile nav (hamburger Sheet)
-    └──requires──> shadcn Sheet (already in project via shadcn/ui)
-    └──enhances──> touch targets (Sheet menu items need adequate tap size)
+GitHub Actions CI/CD
+    └──requires──> Docker Compose deployment
+    └──requires──> Container registry (GHCR, free for public repos)
+    └──requires──> SSH key in GitHub Secrets
+    └──enhances──> All deployment features (automates them)
 
-Dev tunnel workflow
-    └──requires──> Vite dev server running on localhost:5173 (already works)
-    └──independent from all other features
+Sentry (frontend)
+    └──requires──> FlawChess rename (consistent project naming in DSN)
+    └──enhances──> About page (ErrorBoundary wraps whole app including landing)
 
-Touch target audit
-    └──independent──> Can be done in any order relative to nav or PWA work
+Sentry session replay
+    └──requires──> Sentry frontend (same SDK, additional config)
+
+Plausible analytics
+    └──requires──> About page deployed (page views to track)
+    └──conflicts──> Google Analytics + cookie consent (pick one)
+
+Privacy policy page
+    └──requires──> Plausible analytics chosen (policy covers what data is collected)
+    └──requires──> Sentry listed as error tracking third-party
+
+SEO fundamentals
+    └──requires──> About page (only public page worth indexing)
+    └──requires──> react-helmet-async installed
+
+About page
+    └──requires──> FlawChess rename (correct brand name in copy)
+
+Import queue
+    └──requires──> asyncio.Queue or ARQ worker setup
+    └──requires──> Existing per-platform delay constants (already in codebase)
+    └──enhances──> Import status UI (queue position data)
+
+Import status UI
+    └──requires──> Import queue (queue position field in status response)
+    └──requires──> Existing Import page polling (already implemented)
+
+FlawChess rename
+    └──requires──> Update PWA manifest (name, short_name)
+    └──requires──> Update all "chessalytics" string references in code/config
+    └──must precede──> About page copy, README, Sentry/Plausible project setup
 ```
 
 ### Dependency Notes
 
-- **Installability criteria (Chrome):** valid manifest with 192px+ icon, registered SW with fetch handler, served over HTTPS. All three required simultaneously. Lighthouse PWA audit validates this.
-- **beforeinstallprompt is Chromium-only:** Safari/iOS uses its own flow with no JS event. Design install UI with platform detection — show native instructions on Safari. Do not assume the event fires.
-- **HTTPS for SW on real device:** All tunnel options (Cloudflare, ngrok, localtunnel) provide HTTPS automatically. localhost is SW-exempt in dev. No extra config needed.
-- **Vite proxy routes must be excluded from SW interception:** The `vite.config.ts` proxies `/auth`, `/analysis`, `/games`, `/imports`, `/position-bookmarks`, `/stats`, `/users`, `/health` to the FastAPI backend. These must not be intercepted by the Workbox SW (use `navigateFallbackDenylist` or runtime cache patterns with `networkOnly` strategy). Otherwise the SW intercepts API calls and serves stale cached responses — a hard-to-debug failure mode.
-- **react-chessboard touch:** Library advertises mobile support. Click-to-click (two-click) move entry already works and is reliable. Drag-and-drop on touch should be tested on a real device but click-to-click is the confirmed fallback.
+- **Import queue: asyncio.Queue vs ARQ:** `asyncio.Queue` lives in the FastAPI process — if the server restarts during an import, that job is lost. Users can re-trigger imports, so this is acceptable for v1.3. ARQ + Redis adds durability but also a Redis container and worker management. Start simple.
+- **CI/CD requires GHCR:** GitHub Container Registry is free for public repos. Use `ghcr.io/[owner]/[repo]-backend:latest` and `ghcr.io/[owner]/[repo]-frontend:latest`. Avoids Docker Hub rate limits and account management.
+- **Plausible must be chosen before privacy policy is written:** The privacy policy must accurately describe what analytics data is collected. Lock in the analytics tool first.
+- **rename must happen before Sentry/Plausible setup:** Both services have a site/project name configured at creation time. Creating them as "FlawChess" from the start avoids a rename step later.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v1.2)
+### Launch With (v1.3)
 
-Minimum to deliver a working mobile PWA experience.
+All of the following are required for a credible public launch. None are optional.
 
-- [ ] Mobile nav — hamburger Sheet with all nav links + logout, closes on tap, active route highlighted
-- [ ] PWA manifest — app name "Chessalytics", custom icons (192px + 512px PNG), theme color, `display: standalone`
-- [ ] Service worker — Workbox precache of static assets; API routes bypass SW (network-first or excluded)
-- [ ] Touch target audit — all buttons, filter pills, and board controls meet 44×44px minimum
-- [ ] No horizontal scroll on any page at 375px viewport width (iPhone SE baseline)
-- [ ] Dev tunnel doc/script — one command to expose Vite dev server to phone
+- [ ] FlawChess rename (code, manifest, README, CLAUDE.md)
+- [ ] Multi-stage Dockerfiles for backend and frontend
+- [ ] Docker Compose with Caddy, FastAPI, PostgreSQL services
+- [ ] Alembic migrations on container startup
+- [ ] Environment variable config (.env, no hardcoded secrets)
+- [ ] GitHub Actions CI/CD (test → build → push GHCR → SSH deploy)
+- [ ] Sentry backend (sentry-sdk[fastapi], DSN from env)
+- [ ] Sentry frontend (@sentry/react, ErrorBoundary)
+- [ ] About page with FlawChess USPs, FAQ, and CTA
+- [ ] Professional README with screenshots and setup instructions
+- [ ] Privacy policy page (/privacy)
+- [ ] SEO: react-helmet-async, meta tags on About, robots.txt, sitemap.xml
+- [ ] Plausible analytics (script tag, site registered)
+- [ ] Import queue (asyncio.Queue per platform, serialized outbound calls)
 
 ### Add After Validation (v1.x)
 
-- [ ] Custom install prompt — show in-app "Install" button after confirming Lighthouse PWA audit passes in production
-- [ ] Safari install instructions tooltip — for iOS users who cannot receive the beforeinstallprompt event
+- [ ] Import queue UI feedback (queue position on Import page) — add after queue is live and users report confusion
+- [ ] Sentry session replay (error-only) — enable after confirming error capture is working in production
+- [ ] Structured JSON logging — add if debugging production issues without log correlation proves painful
+- [ ] Blog or changelog page — only if SEO strategy expands
 
 ### Future Consideration (v2+)
 
-- [ ] TanStack Query persistence adapter — persist query cache to localStorage/IndexedDB for faster re-renders on slow mobile connections (only if analysis queries create noticeable latency)
-- [ ] Bottom navigation bar — only if UX testing shows hamburger is a persistent pain point
-- [ ] Push notifications for import completion — only if user demand is explicit
+- [ ] ARQ + Redis for durable import queue — only if lost-on-restart jobs become a real user complaint
+- [ ] Social sharing (shareable position analysis links) — requires public/anonymous URL design
+- [ ] Horizontal scaling (Docker Swarm, K8s) — only if VPS capacity is demonstrably insufficient
 
 ---
 
@@ -115,65 +164,58 @@ Minimum to deliver a working mobile PWA experience.
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Mobile nav (hamburger Sheet) | HIGH | LOW | P1 |
-| PWA manifest | HIGH | LOW | P1 |
-| Service worker (Workbox precache) | HIGH | MEDIUM | P1 |
-| Touch target audit | MEDIUM | LOW | P1 |
-| Horizontal overflow fixes | MEDIUM | LOW | P1 |
-| Dev tunnel workflow | MEDIUM (dev only) | LOW | P1 |
-| Custom install prompt | MEDIUM | MEDIUM | P2 |
-| Safari install instructions | LOW | LOW | P2 |
-| Bottom navigation bar | LOW | MEDIUM | P3 |
-| Offline API caching | LOW | HIGH | Anti-feature |
-| Push notifications | LOW | HIGH | Anti-feature |
-| Background sync | LOW | HIGH | Anti-feature |
+| FlawChess rename | MEDIUM | LOW | P1 |
+| Docker + Caddy deployment | HIGH | MEDIUM | P1 |
+| Alembic on startup | HIGH | LOW | P1 |
+| Environment variable config | HIGH | LOW | P1 |
+| GitHub Actions CI/CD | HIGH | MEDIUM | P1 |
+| Sentry backend | HIGH | LOW | P1 |
+| Sentry frontend | HIGH | LOW | P1 |
+| About page | HIGH | MEDIUM | P1 |
+| README | MEDIUM | LOW | P1 |
+| Privacy policy | HIGH (legal) | LOW | P1 |
+| SEO fundamentals | MEDIUM | LOW | P1 |
+| Plausible analytics | MEDIUM | LOW | P1 |
+| Import queue | HIGH (stability) | MEDIUM | P1 |
+| Import queue UI feedback | MEDIUM | MEDIUM | P2 |
+| Sentry session replay | MEDIUM | LOW | P2 |
+| Structured JSON logging | LOW | LOW | P2 |
 
 **Priority key:**
-- P1: Must have for v1.2 launch
-- P2: Should have, add when possible
+- P1: Must have for v1.3 launch
+- P2: Should have, add when time permits
 - P3: Nice to have, future consideration
 
 ---
 
-## Competitor Feature Analysis
+## Ecosystem Comparison
 
-| Feature | Lichess mobile web | Chess.com mobile web | Chessalytics v1.2 plan |
-|---------|-------------------|---------------------|------------------------|
-| Mobile nav | Hamburger slide-in | Bottom tab bar | Hamburger Sheet (shadcn) |
-| PWA installable | Yes (manifest + SW) | Redirects to native app | vite-plugin-pwa |
-| Offline capability | Partial (puzzles) | None | App shell only (static assets) |
-| Touch targets | Good (large buttons) | Good | Audit + fix to 44px min |
-| Install prompt | Native browser prompt | Push to App Store | Custom beforeinstallprompt + Safari fallback instructions |
-| Dev testing workflow | n/a | n/a | Cloudflare Tunnel one-liner |
-
----
-
-## Implementation Notes (Phasing Guidance)
-
-**Phase 1 — Nav + PWA foundation:** Mobile nav hamburger + manifest + SW setup. These are independent and can be done in parallel within the same phase. Nav is frontend-only. PWA setup is `vite.config.ts` + `package.json`.
-
-**Phase 2 — Polish:** Touch target audit across all pages (Import, Openings filter sidebar, board controls, Global Stats). Horizontal overflow fixes. Test on real device via tunnel.
-
-**Phase 3 — Install prompt:** After Phase 1 confirms PWA is installable (Lighthouse PWA audit passing in CI or production). beforeinstallprompt + Safari instructions.
-
-**Icon generation note:** Need to create 192×192 and 512×512 PNG icons from scratch (or generate from an SVG). Vite's current favicon is `vite.svg` — must be replaced with a chess-themed icon or at minimum a styled Chessalytics icon.
+| Feature | chess.com Insights | lichess Analysis | FlawChess approach |
+|---------|-------------------|------------------|--------------------|
+| Opening analysis | By ECO name, not position | By opening name/moves | By exact board position (Zobrist hash) — handles transpositions |
+| Analytics | Google Analytics | Self-hosted Matomo | Plausible (no cookies, GDPR-compliant) |
+| Deployment | Cloud SaaS | Open source / self-hosted | Single Hetzner VPS, Docker Compose |
+| Error monitoring | Not visible | Not visible | Sentry (backend + frontend) |
+| Mobile | Native apps | PWA + native apps | PWA (already shipped in v1.2) |
 
 ---
 
 ## Sources
 
-- [vite-plugin-pwa Official Guide](https://vite-pwa-org.netlify.app/guide/) — HIGH confidence
-- [vite-plugin-pwa GitHub](https://github.com/vite-pwa/vite-plugin-pwa) — HIGH confidence
-- [MDN: Making PWAs Installable](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable) — HIGH confidence
-- [MDN: beforeinstallprompt](https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeinstallprompt_event) — HIGH confidence
-- [MDN: PWA Caching](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Caching) — HIGH confidence
-- [shadcn Sheet / Mobile Menu Pattern](https://www.shadcn.io/patterns/sheet-navigation-1) — HIGH confidence
-- [react-chessboard GitHub (Clariity)](https://github.com/Clariity/react-chessboard) — MEDIUM confidence (mobile specifics from README only)
-- [Cloudflare Tunnel / ngrok Alternatives 2025](https://pinggy.io/blog/best_ngrok_alternatives/) — MEDIUM confidence
-- [Touch Target UX Best Practices 2025](https://edesignify.com/blogs/tap-targets-and-touch-zones-mobile-ux-that-works) — MEDIUM confidence
-- Existing codebase: `frontend/src/App.tsx`, `frontend/vite.config.ts`, `frontend/package.json` — HIGH confidence
+- [FastAPI Deployment Concepts](https://fastapi.tiangolo.com/deployment/concepts/) — HIGH confidence
+- [FastAPI Docker Guide](https://fastapi.tiangolo.com/deployment/docker/) — HIGH confidence
+- [Caddy + FastAPI Docker Compose](https://github.com/GrantBirki/caddy-fastapi) — MEDIUM confidence
+- [Sentry FastAPI Integration](https://docs.sentry.io/platforms/python/integrations/fastapi/) — HIGH confidence
+- [Sentry React SDK + Session Replay](https://docs.sentry.io/platforms/javascript/guides/react/session-replay/) — HIGH confidence
+- [Plausible Privacy-Focused Analytics](https://plausible.io/privacy-focused-web-analytics) — HIGH confidence
+- [ARQ + FastAPI background tasks](https://davidmuraya.com/blog/fastapi-background-tasks-arq-vs-built-in/) — MEDIUM confidence
+- [GDPR Cookie Consent Requirements 2025](https://secureprivacy.ai/blog/gdpr-cookie-consent-requirements-2025) — MEDIUM confidence
+- [React + Vite SEO with react-helmet-async](https://dev.to/ali_dz/optimizing-seo-in-a-react-vite-project-the-ultimate-guide-3mbh) — MEDIUM confidence
+- [GitHub Actions + Hetzner SSH Deploy](https://infocusdata.com/blog/devops/ci-cd-docker-github-actions-hetzner-deployment) — MEDIUM confidence
+- [chess.com API rate limiting](https://www.chess.com/clubs/forum/view/rate-limiting) — LOW confidence (community forum, not official API docs)
+- [Lichess API tips](https://lichess.org/page/api-tips) — MEDIUM confidence (official Lichess page)
 
 ---
 
-*Feature research for: Chessalytics v1.2 — Mobile & PWA*
-*Researched: 2026-03-20*
+*Feature research for: FlawChess v1.3 — production deployment, monitoring, analytics, SEO, public launch*
+*Researched: 2026-03-21*

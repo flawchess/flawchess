@@ -1,450 +1,581 @@
 # Architecture Research
 
-**Domain:** Chess analysis platform — Mobile PWA support (v1.2)
-**Researched:** 2026-03-20
-**Confidence:** HIGH (direct codebase analysis of v1.1 + verified library docs)
+**Domain:** Production deployment — Docker, Caddy, CI/CD, monitoring, analytics for FastAPI + React SPA
+**Researched:** 2026-03-21
+**Confidence:** HIGH
 
 ## Standard Architecture
 
 ### System Overview
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                    FRONTEND (React 19 + Vite 5)                       │
-│                                                                        │
-│  ┌──────────────────────────────────────────────────────────────────┐ │
-│  │  NavHeader (MODIFIED)                                             │ │
-│  │  ┌────────────────────────┐  ┌─────────────────────────────────┐ │ │
-│  │  │  Desktop (md:)          │  │  Mobile (<md)                   │ │ │
-│  │  │  Horizontal link bar   │  │  Hamburger → Sheet (NEW)        │ │ │
-│  │  └────────────────────────┘  └─────────────────────────────────┘ │ │
-│  └──────────────────────────────────────────────────────────────────┘ │
-│                                                                        │
-│  Pages: Import | Openings (Moves/Games/Statistics) | GlobalStats       │
-│  (pages unchanged structurally; mobile layout already single-column)  │
-│                                                                        │
-│  ┌──────────────────────────────────────────────────────────────────┐ │
-│  │  PWA Layer (NEW)                                                  │ │
-│  │  vite-plugin-pwa ─► Service Worker (Workbox)                     │ │
-│  │    precache: JS/CSS bundles (content-hashed, CacheFirst)         │ │
-│  │    runtime: API routes (NetworkOnly — never cache auth/data)     │ │
-│  │    runtime: static fonts/icons (CacheFirst, long TTL)            │ │
-│  └──────────────────────────────────────────────────────────────────┘ │
-│                                                                        │
-│  ┌──────────────────────────────────────────────────────────────────┐ │
-│  │  Web App Manifest (NEW) — public/manifest.webmanifest            │ │
-│  │  name, short_name, icons (192/512 PNG), theme_color,             │ │
-│  │  display: "standalone", start_url: "/", scope: "/"               │ │
-│  └──────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────┬───────────────────────────┘
-                                           │ HTTP/JSON
-┌──────────────────────────────────────────▼───────────────────────────┐
-│  FastAPI Backend (unchanged for this milestone)                        │
-│  All API routes: /auth /analysis /games /imports /stats /users        │
-└───────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    Hetzner Cloud VPS                         │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │              Caddy (port 80/443)                     │    │
+│  │  - Auto-SSL via Let's Encrypt                        │    │
+│  │  - Serves /dist static files (SPA + PWA assets)     │    │
+│  │  - Proxies API routes → backend:8000                 │    │
+│  │  - SPA fallback: try_files → /index.html            │    │
+│  └──────────┬───────────────────────────────────────────┘   │
+│             │ /auth /analysis /games /imports etc.           │
+│  ┌──────────▼──────────┐   ┌──────────────────────────┐    │
+│  │  FastAPI + Uvicorn  │   │     PostgreSQL 16         │    │
+│  │  (backend:8000)     │──▶│  (db:5432)               │    │
+│  │  - 4 Uvicorn workers│   │  - asyncpg driver         │    │
+│  │  - Alembic on start │   │  - named volume           │    │
+│  └─────────────────────┘   └──────────────────────────┘    │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │            Docker volumes (persistent)               │   │
+│  │   caddy_data (Let's Encrypt certs)                   │   │
+│  │   postgres_data (DB files)                           │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
 
-Dev Workflow Addition:
-  ngrok / Cloudflare Tunnel → HTTPS public URL → phone browser
-  Vite config: server.host = true, server.hmr.clientPort = 443
+             ┌──────────────────────────────┐
+             │  GitHub Actions (CI/CD)      │
+             │  1. test + lint              │
+             │  2. build images → push GHCR │
+             │  3. SSH → VPS               │
+             │     docker compose pull      │
+             │     docker compose up -d     │
+             └──────────────────────────────┘
+
+             ┌──────────────────────────────┐
+             │  External Services           │
+             │  - Sentry (errors + perf)    │
+             │  - Plausible (analytics)     │
+             └──────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
-| Component | Responsibility | Status |
-|-----------|----------------|--------|
-| `NavHeader` in `App.tsx` | Top navigation bar | MODIFY: add hamburger + Sheet for mobile |
-| `MobileNav` (new component) | Sheet-based slide-out nav for mobile | NEW |
-| `vite-plugin-pwa` | Generates service worker + manifest at build time | NEW (dev dep) |
-| `public/manifest.webmanifest` | PWA install metadata | NEW (auto-generated or manual) |
-| `public/icons/` | PWA icon set (192px, 512px PNG) | NEW (assets) |
-| `vite.config.ts` | Build configuration | MODIFY: add VitePWA plugin, server.host |
-| `index.html` | HTML entry point | MODIFY: theme-color meta, apple-touch-icon |
-| Existing pages | Import, Openings, GlobalStats | UNCHANGED structurally; mobile polish only |
-| `ChessBoard.tsx` | Responsive board via ResizeObserver | UNCHANGED (already mobile-adaptive) |
-| `FilterPanel.tsx` | Collapsible filter controls | UNCHANGED (already in Collapsible) |
+| Component | Responsibility | Notes |
+|-----------|----------------|-------|
+| Caddy | TLS termination, reverse proxy, static file serving | Serves pre-built `/srv` directly; auto-renews Let's Encrypt certs stored in `caddy_data` volume |
+| FastAPI backend | API logic, auth, chess game import, analysis | uv multi-stage Docker build; Alembic runs migrations before app starts |
+| PostgreSQL | Persistent data store | `postgres:16-alpine`; named volume; healthcheck gates backend startup |
+| GitHub Actions | CI: test + lint; CD: build images, push to GHCR, SSH-deploy | Secrets: `GHCR_TOKEN`, `VPS_SSH_KEY`, `VPS_HOST` |
+| Sentry | Error tracking + performance monitoring | Python SDK in FastAPI; `@sentry/react` in React; single project, two DSNs |
+| Plausible / GA | Page view tracking | Script tag in `index.html`; no build-time code changes needed |
+
+---
 
 ## Recommended Project Structure
 
-### Frontend additions
+New files to add to the existing repo:
 
 ```
-frontend/
-├── vite.config.ts              # MODIFY — add VitePWA plugin, server.host: true
-├── index.html                  # MODIFY — theme-color meta, apple-touch-icon link
-├── public/
-│   ├── manifest.webmanifest    # NEW — or auto-generated by vite-plugin-pwa
-│   └── icons/
-│       ├── icon-192.png        # NEW — required for Android install prompt
-│       └── icon-512.png        # NEW — required for Android install prompt
-└── src/
-    ├── App.tsx                 # MODIFY — NavHeader: add mobile hamburger + Sheet
-    └── components/
-        └── nav/
-            └── MobileNav.tsx   # NEW — Sheet-based mobile drawer navigation
+flawchess/                          # repo root (after rename)
+├── Dockerfile                      # NEW: backend multi-stage build (uv)
+├── docker-compose.yml              # NEW: production services
+├── .env.example                    # NEW: template for production secrets
+├── caddy/
+│   └── Caddyfile                   # NEW: reverse proxy + SPA config
+├── frontend/
+│   ├── Dockerfile                  # NEW: frontend multi-stage → Caddy image
+│   └── ...                         # existing files
+└── .github/
+    └── workflows/
+        └── deploy.yml              # NEW: CI/CD pipeline
 ```
 
 ### Structure Rationale
 
-- **`public/icons/`:** PWA icons must be at a stable public URL, not hashed by Vite. The `public/` directory serves files verbatim — correct placement.
-- **`src/components/nav/`:** New directory keeps navigation concerns grouped and separates `MobileNav` from the growing `App.tsx`. If nav complexity grows (e.g., active state badges, import progress indicators), it isolates the change surface.
-- **`vite.config.ts` modification:** PWA plugin must be registered in the Vite plugin array. `server.host: true` exposes the dev server on all network interfaces, enabling phone access on the same LAN (no tunnel needed for basic testing).
+- **`Dockerfile` at repo root** — builds the backend; stays next to `pyproject.toml` and `uv.lock` for clean COPY paths
+- **`frontend/Dockerfile`** — separate from backend; builds the React SPA into `/dist` then into a Caddy image
+- **`caddy/Caddyfile`** — isolated from compose; mounted as a bind-mount so Caddy config can be updated without rebuilding any image
+- **`docker-compose.yml`** — single production compose file; no dev overrides needed
+- **`.env.example`** — documents all required env vars; `.env` on VPS is gitignored
+
+---
 
 ## Architectural Patterns
 
-### Pattern 1: PWA with vite-plugin-pwa (generateSW mode)
+### Pattern 1: Caddy Serving SPA + API on Same Domain
 
-**What:** `vite-plugin-pwa` wraps Workbox's `generateSW` approach — at build time it emits a service worker file pre-populated with the asset manifest. The app auto-registers it. No hand-written service worker code is required.
+**What:** Caddy serves pre-built React static files from `/srv` and reverse-proxies all API route prefixes to the FastAPI container. SPA client-side routing is handled via `try_files` fallback to `/index.html`.
 
-**When to use:** This project has no offline-first requirements and no custom push notification or background sync needs. `generateSW` is the right mode — minimal configuration, automatic precaching of Vite output bundles.
+**When to use:** Always for this deployment — same-domain SPA + API eliminates CORS entirely in production. Browser makes API calls to the same origin it loaded the app from.
 
-**Trade-offs:** `generateSW` is simpler but less flexible. `injectManifest` allows a custom service worker file — needed only if custom caching logic is required (not the case here).
+**Trade-offs:** Routing table in Caddyfile must stay in sync with FastAPI route prefixes. The Vite dev proxy (`vite.config.ts`) mirrors this same routing table for local development.
 
-**Configuration:**
-```typescript
-// vite.config.ts
-import { VitePWA } from 'vite-plugin-pwa'
-
-export default defineConfig({
-  plugins: [
-    react(),
-    tailwindcss(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      devOptions: { enabled: true },   // test SW behavior in dev
-      manifest: {
-        name: 'Chessalytics',
-        short_name: 'Chessalytics',
-        description: 'Chess opening analysis by position',
-        theme_color: '#0a0a0a',        // matches --background
-        background_color: '#0a0a0a',
-        display: 'standalone',
-        start_url: '/',
-        scope: '/',
-        icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
-        ],
-      },
-      workbox: {
-        // All API routes must bypass the service worker — data is dynamic and authenticated
-        navigateFallback: '/index.html',
-        runtimeCaching: [
-          {
-            urlPattern: /^\/(?:auth|analysis|games|imports|position-bookmarks|stats|users|health)\//,
-            handler: 'NetworkOnly',
-          },
-        ],
-      },
-    }),
-  ],
-  // ... rest of config
-})
+**Caddyfile:**
 ```
+flawchess.com {
+    encode gzip
 
-**Version note:** Use `vite-plugin-pwa` v1.2.0+ — this version supports Vite 7 (the current Vite version in this project is v7.x per `package.json`). Confidence: HIGH (verified against release notes and npm).
+    # API routes — proxy to backend (must match vite.config.ts proxy config)
+    handle /auth/* {
+        reverse_proxy backend:8000
+    }
+    handle /analysis/* {
+        reverse_proxy backend:8000
+    }
+    handle /games/* {
+        reverse_proxy backend:8000
+    }
+    handle /imports/* {
+        reverse_proxy backend:8000
+    }
+    handle /position-bookmarks/* {
+        reverse_proxy backend:8000
+    }
+    handle /stats/* {
+        reverse_proxy backend:8000
+    }
+    handle /users/* {
+        reverse_proxy backend:8000
+    }
+    handle /health {
+        reverse_proxy backend:8000
+    }
 
-### Pattern 2: Mobile Navigation via shadcn Sheet
-
-**What:** On mobile viewports (`< md` breakpoint), the horizontal `NavHeader` nav links are hidden and replaced by a hamburger `Menu` icon. Clicking it opens a `Sheet` (slide-out panel from the left) containing the same nav links as large vertical touch targets, plus the logout button.
-
-**When to use:** Sheet is the idiomatic shadcn/ui pattern for mobile navigation drawers — it uses Radix UI Dialog primitives with proper focus trapping, keyboard escape, and ARIA roles. The existing project already uses `Dialog` and `Collapsible` from shadcn, so `Sheet` follows the same pattern.
-
-**Trade-offs:** Sheet requires adding the `sheet` component to the shadcn install (`npx shadcn add sheet`). Bottom-drawer pattern (Vaul-based `Drawer`) is more native-feeling on iOS but is better suited for actions, not navigation. Left-slide Sheet matches user mental model for navigation drawers.
-
-**Implementation in NavHeader:**
-```tsx
-// Mobile: hidden md:flex pattern inverted for hamburger button
-// Desktop: hidden on mobile, visible md+
-<nav className="hidden md:flex items-center gap-1">
-  {NAV_ITEMS.map(...)}  {/* existing desktop links */}
-</nav>
-
-{/* Mobile hamburger — visible only below md breakpoint */}
-<div className="md:hidden">
-  <MobileNav />
-</div>
-```
-
-**MobileNav component structure:**
-```tsx
-// src/components/nav/MobileNav.tsx
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
-import { Menu } from 'lucide-react'
-
-export function MobileNav() {
-  const [open, setOpen] = useState(false)
-  const location = useLocation()
-  const { logout } = useAuth()
-
-  return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Open navigation menu" data-testid="nav-mobile-menu">
-          <Menu className="h-5 w-5" />
-        </Button>
-      </SheetTrigger>
-      <SheetContent side="left" className="w-64 pt-8" data-testid="mobile-nav-sheet">
-        <nav className="flex flex-col gap-1">
-          {NAV_ITEMS.map(({ to, label }) => (
-            <Button key={to} asChild variant="ghost" className="justify-start text-base h-12"
-              onClick={() => setOpen(false)}>
-              <Link to={to} data-testid={`mobile-nav-${label.toLowerCase()}`}>{label}</Link>
-            </Button>
-          ))}
-        </nav>
-        <div className="absolute bottom-6 left-4 right-4">
-          <Button variant="ghost" className="w-full justify-start text-base h-12"
-            onClick={() => { logout(); setOpen(false); }} data-testid="mobile-nav-logout">
-            Logout
-          </Button>
-        </div>
-      </SheetContent>
-    </Sheet>
-  )
+    # SPA fallback — serve static assets with index.html fallback for client-side routing
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
 }
 ```
 
-### Pattern 3: Dev Workflow for Phone Testing
+**CORS change needed:** Because frontend and API share the same origin in production, CORS is only needed for development. `app/main.py` currently hardcodes `allow_origins=["http://localhost:5173"]`. This needs to read from `Settings` so production can configure it via env var.
 
-**What:** Two approaches, choose based on need:
+### Pattern 2: uv Multi-Stage Backend Dockerfile
 
-1. **LAN access (simplest):** Set `server.host: true` in `vite.config.ts`. Vite prints the LAN IP (e.g., `http://192.168.1.5:5173`). Open on phone when on same WiFi. No tunnel needed for basic layout testing.
+**What:** Two-stage Docker build. Builder stage installs deps with uv. Runtime stage copies only `.venv` and app source. No uv, pip, or build tools in the final image.
 
-2. **HTTPS tunnel (for PWA install testing):** PWA install requires HTTPS. Use `cloudflared tunnel --url http://localhost:5173` (Cloudflare Tunnel, free, no account needed for one-off sessions) or ngrok. Configure Vite HMR for tunnel:
+**When to use:** Always — the official uv Docker recommendation. Layer caching on `uv.lock` + `pyproject.toml` means the deps layer is only re-built when dependencies change, not on every code commit.
 
+**Backend `Dockerfile`:**
+```dockerfile
+# --- Builder ---
+FROM python:3.13-slim AS builder
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
+
+WORKDIR /app
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+
+# Deps layer (cached until uv.lock or pyproject.toml changes)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-dev --no-install-project
+
+# App source
+COPY . /app
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev
+
+# --- Runtime ---
+FROM python:3.13-slim
+WORKDIR /app
+COPY --from=builder /app /app
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Entrypoint: run migrations then start server
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"]
+```
+
+### Pattern 3: Frontend Multi-Stage Build Into Caddy Image
+
+**What:** Two-stage frontend Dockerfile. Stage 1: Node.js runs `npm ci && npm run build`. Stage 2: Caddy image with the built `/dist` copied to `/srv` and the Caddyfile copied in.
+
+**When to use:** This approach bundles the static assets and Caddy config into a single versioned image — clean rollbacks, no separate `rsync` step.
+
+**`VITE_` vars are baked in at build time.** The API URL is not needed as a `VITE_` var because the SPA and API are same-origin (Caddy proxies both). Only public-safe values belong in `VITE_`: Sentry DSN (public key), analytics domain.
+
+**`frontend/Dockerfile`:**
+```dockerfile
+# Stage 1: Build SPA
+FROM node:22-alpine AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+ARG VITE_SENTRY_DSN
+ARG VITE_PLAUSIBLE_DOMAIN
+RUN npm run build
+
+# Stage 2: Caddy serves the built output
+FROM caddy:2-alpine
+COPY --from=builder /app/dist /srv
+COPY caddy/Caddyfile /etc/caddy/Caddyfile
+```
+
+### Pattern 4: PostgreSQL Healthcheck Gates Backend Start
+
+**What:** `depends_on: condition: service_healthy` ensures PostgreSQL is accepting connections before the backend container starts. The backend entrypoint runs `alembic upgrade head` — this needs a live database.
+
+**When to use:** Always. Without this, the backend container starts immediately, `alembic upgrade head` fails with a connection error, and the app never comes up on first boot.
+
+**`docker-compose.yml` excerpt:**
+```yaml
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  backend:
+    image: ghcr.io/${GITHUB_OWNER}/flawchess-backend:${IMAGE_TAG}
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  caddy:
+    image: ghcr.io/${GITHUB_OWNER}/flawchess-caddy:${IMAGE_TAG}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  caddy_data:
+```
+
+### Pattern 5: Sentry Integration — Minimal Touch Points
+
+**What:** Sentry SDK initialized once in `app/main.py` (backend) and `frontend/src/main.tsx` (frontend). FastAPI integration is automatic when `sentry-sdk` is installed and `sentry_sdk.init()` is called. React integration adds browser tracing.
+
+**When to use:** Both integrations are guarded by a null check on `SENTRY_DSN` — development runs without Sentry noise.
+
+**Backend — modify `app/main.py`:**
+```python
+import sentry_sdk
+from app.core.config import settings
+
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.ENVIRONMENT,
+        traces_sample_rate=0.1,  # 10% sampling; raise to 1.0 for debugging
+    )
+```
+
+**Add to `app/core/config.py`:**
+```python
+SENTRY_DSN: str = ""
+CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]
+```
+
+**Update CORS in `app/main.py`:**
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+**Frontend — modify `frontend/src/main.tsx`:**
 ```typescript
-// vite.config.ts additions for tunnel compatibility
-server: {
-  host: true,
-  hmr: {
-    clientPort: 443,  // required when behind HTTPS tunnel
-  },
-  // ... existing proxy config
+import * as Sentry from "@sentry/react";
+
+if (import.meta.env.VITE_SENTRY_DSN) {
+  Sentry.init({
+    dsn: import.meta.env.VITE_SENTRY_DSN,
+    environment: import.meta.env.MODE,
+    integrations: [Sentry.browserTracingIntegration()],
+    tracesSampleRate: 0.1,
+  });
 }
 ```
 
-**When to use:** Use LAN for day-to-day layout iteration. Use HTTPS tunnel specifically when testing PWA install prompt, service worker registration, or Safari PWA behavior. The tunnel URL is temporary — it is not needed for production (production already runs with HTTPS).
+**Install:**
+```bash
+# Backend
+uv add sentry-sdk
 
-**Trade-offs:** ngrok free tier limits to one tunnel with a random subdomain that changes per session. Cloudflare Tunnel (`cloudflared`) is faster (5.8 MB/s vs ngrok's 1.1 MB/s per 2025 benchmarks), completely free, no account required for ephemeral URLs, and supports concurrent tunnels. Recommended: `cloudflared` for this project.
-
-**iOS Safari note:** iOS does not show an install prompt — users must manually use Share → "Add to Home Screen". This is a browser limitation, not a code issue. The PWA will still install and run in standalone mode.
-
-### Pattern 4: Touch Target Sizing for Mobile Polish
-
-**What:** WCAG 2.5.5 (AA) recommends 44×44px minimum touch targets. Apple HIG recommends 44pt. Existing shadcn buttons with `size="sm"` render at 32px height — too small for reliable touch.
-
-**When to apply:** Any interactive element on mobile that is currently `size="sm"`: filter toggle buttons in `FilterPanel`, board control buttons in `BoardControls`, move list items in `MoveList`.
-
-**Pattern:** Use responsive size classes where feasible:
-```tsx
-// Before: size="sm" everywhere
-// After: sm size on desktop, default (44px) on mobile
-<Button size="sm" className="h-8 md:h-8 touch-manipulation" ...>
-// Or for elements that can be taller:
-<Button className="h-11 md:h-8 px-3" ...>
+# Frontend
+npm install @sentry/react
+npm install -D @sentry/vite-plugin  # optional: for source map upload
 ```
 
-The `touch-manipulation` CSS class disables double-tap zoom on interactive elements — important for the chess board and filter controls.
+### Pattern 6: CI/CD via GitHub Actions with SSH Deploy
 
-**ChessBoard:** Already handles touch correctly via drag-drop and click-to-click. ResizeObserver gives it full container width on mobile. No changes needed to board interaction.
+**What:** GitHub Actions runs tests and lint on every push. On push to `main`, it builds both Docker images, pushes to GitHub Container Registry (GHCR), SSHs into the VPS, pulls the new images, and restarts services.
+
+**When to use:** Standard pattern for single-server deployments. No orchestration layer needed for this scale.
+
+**`.github/workflows/deploy.yml` (outline):**
+```yaml
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    steps:
+      - uv run pytest
+      - uv run ruff check .
+      - npm run lint (frontend)
+
+  build-and-deploy:
+    needs: test
+    steps:
+      - Log in to GHCR
+      - Build backend image with docker build → push to ghcr.io/owner/flawchess-backend:sha
+      - Build frontend (with VITE_SENTRY_DSN build arg) → push to ghcr.io/owner/flawchess-caddy:sha
+      - SSH into VPS:
+          echo "IMAGE_TAG=${sha}" > .env.deploy
+          docker compose --env-file .env --env-file .env.deploy pull
+          docker compose --env-file .env --env-file .env.deploy up -d
+```
+
+**GitHub Secrets required:**
+- `GHCR_TOKEN` — GitHub personal access token with `write:packages`
+- `VPS_SSH_KEY` — private key for the deploy user on the VPS
+- `VPS_HOST` — IP or hostname of the Hetzner VPS
+- `VITE_SENTRY_DSN` — public Sentry DSN for frontend bundle (safe to put in CI)
+
+---
 
 ## Data Flow
 
-### PWA Asset Caching Flow
+### Production Request Flow
 
 ```
-First visit (or after SW update):
-  Browser → Fetch index.html (network)
-      ↓
-  Service Worker registers + precaches all Vite output bundles
-  (JS/CSS with content hashes → CacheFirst forever)
-      ↓
-Subsequent visits:
-  index.html → NetworkFirst (SPA shell must be fresh for routing)
-  /assets/*.js → CacheFirst (content-hashed, never stale)
-  /assets/*.css → CacheFirst (content-hashed, never stale)
-  /icons/* → CacheFirst (rarely change)
-  /api/* → NetworkOnly (auth-protected data, must not be cached)
+Browser
+  │
+  ▼
+Caddy:443 (TLS termination, gzip)
+  │
+  ├─ /auth /analysis /games /imports /stats /users /health
+  │     ──▶ FastAPI:8000 ──▶ PostgreSQL:5432
+  │              │
+  │         (async response with JSON)
+  │
+  └─ all other paths (/, /openings, /bookmarks, etc.)
+        ──▶ /srv/index.html  (React Router handles client routing)
+              │
+         /srv/assets/*.js|css|png  (static, content-hashed, cached by browser)
 ```
 
-### Mobile Nav State Flow
+### Deploy Flow
 
 ```
-User taps hamburger icon
-    ↓
-Sheet open=true → slides in from left, focus trapped inside
-    ↓
-User taps nav link
-    ↓
-setOpen(false) → Sheet closes, React Router navigates
-    ↓
-NavHeader isActive() re-runs → active link highlighted
-    (both desktop and mobile nav use same isActive() function)
+git push main
+  │
+  ▼
+GitHub Actions CI: uv run pytest → uv run ruff → npm run lint
+  │ (pass)
+  ▼
+docker build backend → push ghcr.io/owner/flawchess-backend:${sha}
+docker build frontend (with VITE_SENTRY_DSN) → push ghcr.io/owner/flawchess-caddy:${sha}
+  │
+  ▼
+SSH into VPS
+  │  docker compose pull   (pulls new images)
+  │  docker compose up -d  (restarts changed services)
+  ▼
+backend entrypoint: alembic upgrade head → uvicorn start (4 workers)
 ```
 
-### PWA Service Worker Update Flow
+### Environment Variable Flow
 
 ```
-User returns to app after new deployment
-    ↓
-Service Worker detects updated bundle (new content hash)
-    ↓
-registerType: 'autoUpdate' → SW updates immediately
-    (no manual user action required — appropriate for a data tool
-     where users don't need to "save" in-flight work)
-    ↓
-Page reloads with new assets
+VPS: /root/flawchess/.env  (gitignored, manually provisioned once)
+  │
+  ▼ (docker-compose env_file)
+  ├─▶ backend: DATABASE_URL, SECRET_KEY, GOOGLE_OAUTH_CLIENT_ID,
+  │             GOOGLE_OAUTH_CLIENT_SECRET, SENTRY_DSN, ENVIRONMENT=production,
+  │             CORS_ALLOWED_ORIGINS=["https://flawchess.com"]
+  └─▶ db: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+
+Build-time (GitHub Actions secrets → docker build --build-arg):
+  VITE_SENTRY_DSN → baked into JS bundle (public key, not secret)
+  VITE_PLAUSIBLE_DOMAIN → baked into JS bundle (optional, for self-hosted Plausible)
 ```
 
-## New vs. Modified: Explicit Accounting
+---
 
-### New
+## New vs Modified Components
 
-| Item | Type | Location |
-|------|------|----------|
-| `vite-plugin-pwa` | npm dev dependency | `package.json` |
-| `VitePWA()` plugin config | Vite plugin | `vite.config.ts` |
-| `server.host: true`, `hmr.clientPort` | Vite server config | `vite.config.ts` |
-| `public/icons/icon-192.png` | PWA icon asset | `frontend/public/icons/` |
-| `public/icons/icon-512.png` | PWA icon asset | `frontend/public/icons/` |
-| `MobileNav` | React component | `src/components/nav/MobileNav.tsx` |
-| Sheet shadcn component | UI component | `src/components/ui/sheet.tsx` |
-| `mobile-nav-menu` testid | Browser automation | on hamburger button |
-| `mobile-nav-sheet` testid | Browser automation | on Sheet content |
-| `mobile-nav-{page}` testids | Browser automation | on Sheet nav links |
+| Component | New or Modified | What Changes |
+|-----------|----------------|--------------|
+| `Dockerfile` | **New** | Backend uv multi-stage build |
+| `frontend/Dockerfile` | **New** | Node multi-stage build → Caddy image |
+| `docker-compose.yml` | **New** | Orchestrates backend, db, caddy |
+| `caddy/Caddyfile` | **New** | Reverse proxy + SPA + API routing |
+| `.env.example` | **New** | Documents all required env vars |
+| `.github/workflows/deploy.yml` | **New** | CI/CD pipeline |
+| `app/main.py` | **Modified** | Add Sentry init; read CORS origins from settings |
+| `app/core/config.py` | **Modified** | Add `SENTRY_DSN`, `CORS_ALLOWED_ORIGINS` fields |
+| `frontend/src/main.tsx` | **Modified** | Add Sentry init |
+| `frontend/vite.config.ts` | **Modified** | FlawChess branding in PWA manifest |
+| `frontend/index.html` | **Modified** | Add analytics script tag (Plausible or GA) |
+| `pyproject.toml` | **Modified** | Add `sentry-sdk` dependency |
+| `frontend/package.json` | **Modified** | Add `@sentry/react` |
 
-### Modified
-
-| Item | Change | Location |
-|------|--------|----------|
-| `NavHeader` | Add mobile hamburger + `MobileNav`; hide desktop nav below `md:` | `App.tsx` |
-| `index.html` | Add `theme-color` meta, `apple-touch-icon` link, correct favicon | `index.html` |
-| `vite.config.ts` | Add VitePWA plugin and server.host | `vite.config.ts` |
-| Touch-target sizing | Increase interactive element height on mobile viewports (min 44px) | `BoardControls.tsx`, `FilterPanel.tsx`, possibly `MoveList.tsx` |
-
-### Unchanged
+### What Does NOT Change
 
 | Item | Why unchanged |
 |------|---------------|
-| `ChessBoard.tsx` | ResizeObserver already gives full-width board on mobile; drag + click-to-click both work on touch |
-| Page components | Single-column layout at mobile breakpoints is already implemented in `Openings.tsx` |
-| `FilterPanel` + Collapsible | Already collapsible on mobile; no structural changes needed |
-| FastAPI backend | PWA is entirely a frontend concern; no backend changes required |
-| Auth flow | JWT + Google SSO unchanged; PWA standalone mode does not affect cookie/token behavior |
+| SQLAlchemy models / Alembic migrations | No schema changes in this milestone |
+| FastAPI routers, services, repositories | Business logic untouched |
+| React page components | No new pages except About; SEO is meta tags in `index.html` |
+| TanStack Query / Axios setup | API URL is same-origin in production; no `baseURL` needed |
+| PWA service worker config | Workbox `NetworkOnly` patterns already correct |
 
-## Build Order (Dependency-Aware)
-
-```
-Step 1 — PWA foundation (no deps, do first)
-  1a. Install vite-plugin-pwa (npm install -D vite-plugin-pwa)
-  1b. Add VitePWA() to vite.config.ts with manifest config
-  1c. Create icon assets (icon-192.png, icon-512.png) in public/icons/
-  1d. Update index.html: theme-color meta, apple-touch-icon, favicon
-  1e. Verify: npm run build → check dist/ for sw.js and manifest.webmanifest
-  1f. Verify: npm run preview → Lighthouse PWA audit passes install criteria
-
-Step 2 — Dev workflow setup (independent of Step 1)
-  2a. Set server.host: true in vite.config.ts
-  2b. Set server.hmr.clientPort: 443 for tunnel compatibility
-  2c. Document: LAN URL for daily testing, cloudflared for HTTPS/install testing
-
-Step 3 — Mobile navigation (independent of Steps 1-2)
-  3a. npx shadcn add sheet
-  3b. Create MobileNav component with Sheet, hamburger trigger, nav links
-  3c. Modify NavHeader: hide desktop nav below md:, add MobileNav for mobile
-  3d. Verify: desktop nav unchanged, mobile shows hamburger + functional Sheet
-  3e. Add all required data-testid attributes
-
-Step 4 — Mobile UX polish (after Step 3, can be incremental)
-  4a. Audit touch target sizes: BoardControls, FilterPanel toggle buttons, MoveList items
-  4b. Add touch-manipulation to interactive elements where needed
-  4c. Test on actual phone via LAN URL or tunnel
-  4d. Fix any overflow / scroll issues on Openings page (board + tabs on small screen)
-  4e. Verify iOS Safari: app installs to home screen, runs in standalone mode
-
-Step 5 — Integration verification
-  5a. Full Lighthouse PWA audit in production build (npm run preview)
-  5b. Test install on Android Chrome (automatic prompt) and iOS Safari (manual Share menu)
-  5c. Verify API calls are NetworkOnly (no cached stale auth responses)
-  5d. Verify SW auto-updates correctly after a code change
-```
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Caching API routes in the service worker
-
-**What people do:** Omit the `runtimeCaching` config with `NetworkOnly` for API routes, letting the service worker cache `/analysis/*`, `/auth/*`, etc.
-
-**Why it's wrong:** This is an authenticated app with user-specific data. Cached API responses would serve stale game data or, worse, serve one user's data to another after a session change. Auth headers would not be re-checked.
-
-**Do this instead:** Explicitly match all backend API paths with `handler: 'NetworkOnly'`. Only static assets (content-hashed bundles, icons) should be cached.
-
-### Anti-Pattern 2: Using `prompt` registerType without an update UI
-
-**What people do:** Set `registerType: 'prompt'` to get fine-grained control over SW updates, but then never implement the update prompt UI.
-
-**Why it's wrong:** The user gets a stale app silently until they hard-refresh. For a data analysis tool (not a document editor), there is no in-flight work to lose. `autoUpdate` is the correct choice — it silently updates and reloads, which is acceptable behavior for this app.
-
-**Do this instead:** `registerType: 'autoUpdate'`. If future features need to warn before reload (e.g., a game analysis in progress), revisit then.
-
-### Anti-Pattern 3: Replacing the desktop nav entirely for a hamburger on all viewports
-
-**What people do:** Remove the horizontal nav and use a hamburger menu universally to simplify code.
-
-**Why it's wrong:** Desktop users lose a persistent navigation pattern they are used to. The existing horizontal nav with 3 items fits comfortably on any screen wider than 400px. Adding hamburger-only navigation on desktop degrades UX.
-
-**Do this instead:** Keep desktop nav intact (`hidden md:flex`). Add hamburger exclusively for mobile (`md:hidden`). Use Tailwind breakpoints — `md` (768px) is the right cutoff for this layout.
-
-### Anti-Pattern 4: PWA icon as SVG only
-
-**What people do:** Use the existing `vite.svg` as the PWA icon.
-
-**Why it's wrong:** iOS requires PNG icons for home screen icons. Android requires PNG for the install prompt. SVG icons in the manifest are not universally supported. The `purpose: 'maskable'` option on the 512px icon is important for Android adaptive icons — it requires a PNG with sufficient padding so the OS can crop it to any shape.
-
-**Do this instead:** Create dedicated 192×512 PNG files. Use a simple chess piece or pawn silhouette. Ensure the 512px icon has a safe zone (content within the central 80% of the image) for maskable icon cropping.
+---
 
 ## Integration Points
 
-### External Services
+### External Service Integration
 
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| chess.com API | Unchanged — backend only | PWA has no effect on import pipeline |
-| lichess API | Unchanged — backend only | Same |
-| iOS Safari | Manual "Add to Home Screen" only | No beforeinstallprompt event on iOS; no code needed |
-| Android Chrome | Automatic install prompt via beforeinstallprompt | Triggers if manifest + SW criteria met |
+| Service | Integration Point | What to Add | Notes |
+|---------|-------------------|-------------|-------|
+| Sentry (backend) | `app/main.py` | `sentry_sdk.init()` call | Auto-detects FastAPI; no per-route changes needed |
+| Sentry (frontend) | `frontend/src/main.tsx` | `Sentry.init()` + `browserTracingIntegration()` | Source maps: add `@sentry/vite-plugin` to `vite.config.ts` (optional but recommended) |
+| Let's Encrypt | `caddy/Caddyfile` | Domain name in Caddyfile | Zero config; Caddy handles cert issuance and renewal; `caddy_data` volume must persist |
+| Plausible analytics | `frontend/index.html` | `<script>` tag | Cookie-free, GDPR compliant, ~1KB script; add to `<head>` |
+| GHCR | `.github/workflows/deploy.yml` | `docker/login-action` + push step | Free for public repos; `ghcr.io/[owner]/[repo]` naming |
+| Hetzner VPS | `.github/workflows/deploy.yml` | SSH deploy step | Deploy key (not personal SSH key) added to VPS `~/.ssh/authorized_keys` |
 
-### Internal Boundaries
+### Internal Boundaries After This Milestone
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| `NavHeader` ↔ `MobileNav` | `MobileNav` is a self-contained component; `NavHeader` renders it conditionally for mobile | Share `NAV_ITEMS` constant and `isActive()` function to avoid duplication |
-| `vite-plugin-pwa` ↔ Vite build | Plugin integrates at build time via `plugins[]` array | No runtime JS surface — the output is `sw.js` and `manifest.webmanifest` |
-| Service Worker ↔ API client | SW must not intercept Axios requests to backend routes | `NetworkOnly` matcher covers all `/auth /analysis /games /imports /position-bookmarks /stats /users /health` paths |
-| PWA Manifest ↔ `index.html` | vite-plugin-pwa injects manifest link tag automatically | Manual `<link rel="apple-touch-icon">` still needed in `index.html` for iOS (not covered by manifest link) |
+| Boundary | Communication | Change Required |
+|----------|---------------|-----------------|
+| Frontend → Backend (prod) | Same-origin HTTP via Caddy | No `baseURL` needed; relative `/auth/...` paths work |
+| Frontend → Backend (dev) | Vite proxy to `localhost:8000` | No change — dev workflow unchanged |
+| Backend → PostgreSQL | `asyncpg` TCP on Docker internal network | `DATABASE_URL` host changes from `localhost` to `db` (Docker service name) |
+| Caddy → Backend | HTTP on Docker internal network | Backend port `8000` not published externally — Caddy is the only ingress |
+| GitHub Actions → VPS | SSH with deploy key | New deploy key pair; public key on VPS, private key in GitHub secrets |
+
+---
 
 ## Scaling Considerations
 
 | Scale | Architecture Adjustments |
 |-------|--------------------------|
-| Current (single server, ~10 users) | PWA caching reduces repeat-visit load times; no scaling impact |
-| Multi-user growth | PWA is client-side; backend unchanged; no scaling impact from this milestone |
-| Offline use case (future) | Current `NetworkOnly` API strategy means offline = blank data; if offline support wanted later, would need IndexedDB caching layer — out of scope for v1.2 |
+| 0-1k users | Current single-VPS monolith is fine; Hetzner CX22 (2 vCPU / 4GB RAM) sufficient |
+| 1k-10k users | Increase Uvicorn workers; upgrade VPS size; add PgBouncer for connection pooling |
+| 10k+ users | Move DB to managed PostgreSQL (Hetzner Managed DB or Neon); CDN for static assets (Cloudflare free tier); Redis for import queue |
+
+### Scaling Priorities
+
+1. **First bottleneck:** PostgreSQL connection pool — `pool_size=10, max_overflow=20` is conservative; add PgBouncer before scaling worker count
+2. **Second bottleneck:** Import pipeline CPU (Zobrist hash computation per half-move) — move to background worker (Celery + Redis) if import times degrade under concurrent users
+
+---
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Building Frontend Inside the Backend Docker Image
+
+**What people do:** Copy all frontend source into the backend image, run `npm run build` there, and serve `/dist` from FastAPI static files.
+
+**Why it's wrong:** Makes the backend image enormous (node_modules), conflates two independent build pipelines, prevents independent deployment and rollback of frontend vs backend.
+
+**Do this instead:** Separate `Dockerfile` for frontend. Serve pre-built `/dist` from Caddy. FastAPI serves only API routes — it should never serve static files in production.
+
+### Anti-Pattern 2: Hardcoding `allow_origins=["http://localhost:5173"]` in Production
+
+**What people do:** The current `app/main.py` hardcodes the dev origin. Many projects leave this unchanged when deploying.
+
+**Why it's wrong:** In production all requests are same-origin (no CORS needed), but the hardcoded localhost origin is useless and leaks dev infrastructure detail. If `allow_credentials=True` is combined with `allow_origins=["*"]`, browsers reject it as insecure.
+
+**Do this instead:** Read `CORS_ALLOWED_ORIGINS` from `Settings`. In production, set it to `["https://flawchess.com"]`. The existing `Settings` pattern in `app/core/config.py` already supports this.
+
+### Anti-Pattern 3: Running Alembic Migrations in the FastAPI Lifespan
+
+**What people do:** Call `alembic upgrade head` inside the FastAPI `lifespan` async context. Seems convenient — the app migrates on every start.
+
+**Why it's wrong:** If two containers start simultaneously (even two rapid restarts), they race to acquire Alembic's version lock. Also, `lifespan` is async — Alembic's upgrade command is synchronous and should not block the event loop.
+
+**Do this instead:** Run `alembic upgrade head` in the Docker `CMD` before starting uvicorn: `sh -c "alembic upgrade head && uvicorn app.main:app ..."`. Synchronous, sequential, correct.
+
+### Anti-Pattern 4: Deleting the `caddy_data` Volume
+
+**What people do:** Run `docker compose down -v` to "clean up" before redeploying.
+
+**Why it's wrong:** The `caddy_data` volume stores Let's Encrypt TLS certificates. Let's Encrypt rate-limits issuance to 5 certs per domain per week. Losing the volume and immediately reprovisioning will hit the rate limit quickly.
+
+**Do this instead:** Use `docker compose down` (without `-v`) for all deployments. Document explicitly: `down -v` only for intentional full reprovisioning from scratch.
+
+### Anti-Pattern 5: Storing OAuth Client Secret in VITE_ Variables
+
+**What people do:** Accidentally put `VITE_GOOGLE_OAUTH_CLIENT_SECRET=...` in a GitHub Actions build arg.
+
+**Why it's wrong:** Anything prefixed `VITE_` is embedded in the JavaScript bundle and is visible to anyone who visits the site. There is no runtime access control on it.
+
+**Do this instead:** Only public-safe values in `VITE_`: Sentry DSN (public key only, safe by design), analytics tracking domain, feature flags. `GOOGLE_OAUTH_CLIENT_SECRET` lives only in the backend `.env` file, never near the frontend build. The existing architecture already handles OAuth server-side via FastAPI-Users — no change needed.
+
+---
+
+## Build Order for This Milestone
+
+Dependencies between components:
+
+```
+1. FlawChess rename (code + branding)
+   └─ Foundation: all subsequent work uses the new name
+
+2. Docker + Caddy + PostgreSQL stack
+   └─ Proves the deployment end-to-end; required before:
+      - OAuth redirect URLs (need production domain)
+      - Sentry (needs production environment)
+      - CI/CD (needs images to build and deploy)
+
+3. Backend config hardening (CORS from env, SENTRY_DSN field)
+   └─ Required for: correct production behavior
+
+4. Sentry integration (both SDKs)
+   └─ Depends on: working deployment URL for Sentry project config
+
+5. Analytics + SEO + About page
+   └─ Depends on: live production domain
+
+6. CI/CD automation (GitHub Actions)
+   └─ Depends on: Docker images buildable, VPS accessible, secrets configured
+
+7. Import queue (concurrent rate-limit safety)
+   └─ Independent of infra — can be done at any point
+```
+
+Recommended phase grouping:
+- **Phase A:** Rename + Docker + Caddy + PostgreSQL (infra foundation)
+- **Phase B:** Backend hardening + Sentry backend + CI/CD
+- **Phase C:** Frontend Sentry + analytics + SEO + About page + privacy/cookie
+- **Phase D:** Import queue
+
+---
 
 ## Sources
 
-- Direct analysis of `frontend/src/App.tsx` — NavHeader structure, NAV_ITEMS, ProtectedLayout
-- Direct analysis of `frontend/src/pages/Openings.tsx` — existing mobile single-column layout at `md:hidden`
-- Direct analysis of `frontend/src/components/board/ChessBoard.tsx` — ResizeObserver mobile sizing
-- Direct analysis of `frontend/vite.config.ts` — existing plugins, proxy config
-- Direct analysis of `frontend/package.json` — current Vite v7.x, React 19, Tailwind v4
-- [vite-plugin-pwa official docs](https://vite-pwa-org.netlify.app/guide/) — installation, generateSW mode, workbox config
-- [vite-plugin-pwa releases](https://github.com/vite-pwa/vite-plugin-pwa/releases) — v1.2.0 current; Vite 7 support confirmed in v1.0.1+ (MEDIUM confidence — from release metadata)
-- [shadcn/ui Sheet pattern for mobile nav](https://www.shadcn.io/patterns/sheet-navigation-1) — Sheet component for left-side drawer navigation
-- [Cloudflare Tunnel vs ngrok 2025 benchmark](https://www.localcan.com/blog/ngrok-vs-cloudflare-tunnel-vs-localcan-speed-test-2025) — Cloudflare faster and free (MEDIUM confidence — third-party benchmark)
-- [PWA iOS limitations 2026](https://www.magicbell.com/blog/pwa-ios-limitations-safari-support-complete-guide) — iOS install is manual; no beforeinstallprompt (HIGH confidence — consistent across sources)
-- `.planning/PROJECT.md` — v1.2 milestone scope
+- [Caddy Caddyfile Patterns — Official Docs](https://caddyserver.com/docs/caddyfile/patterns) — `try_files` + `handle` blocks for SPA + API — HIGH confidence
+- [Serving SPAs and API With Caddy v2](https://haykot.dev/blog/serving-spas-and-api-with-caddy-v2/) — exact `handle @proxied` + `try_files` pattern — HIGH confidence
+- [uv Docker Integration — Official Docs](https://docs.astral.sh/uv/guides/integration/docker/) — multi-stage Dockerfile, `UV_COMPILE_BYTECODE`, `.venv` copy pattern — HIGH confidence
+- [FastAPI Sentry Integration — Official Docs](https://docs.sentry.io/platforms/python/integrations/fastapi/) — auto-detection, `sentry_sdk.init()` placement — HIGH confidence
+- [Sentry React + Vite Docs](https://docs.sentry.io/platforms/javascript/guides/react/) — `@sentry/react`, `@sentry/vite-plugin`, `browserTracingIntegration()` — HIGH confidence
+- [Docker Compose Healthchecks — Official Docs](https://docs.docker.com/compose/how-tos/startup-order/) — `service_healthy` condition for PostgreSQL readiness — HIGH confidence
+- [Vite env variables — Official Docs](https://vite.dev/guide/env-and-mode) — `VITE_` prefix baked at build time, not runtime — HIGH confidence
+- [Plausible vs Umami 2025](https://vemetric.com/blog/plausible-vs-umami) — Umami Docker self-hosting viable; Plausible CE is heavier (Elixir + ClickHouse) — MEDIUM confidence
+- [CI/CD to Hetzner with GitHub Actions](https://infocusdata.com/blog/devops/ci-cd-docker-github-actions-hetzner-deployment) — SSH deploy pattern, GHCR image push — MEDIUM confidence
+- Direct codebase analysis: `app/main.py`, `app/core/config.py`, `frontend/vite.config.ts`, `pyproject.toml`, `frontend/package.json` — HIGH confidence
 
 ---
-*Architecture research for: Chessalytics v1.2 — Mobile PWA Support*
-*Researched: 2026-03-20*
+*Architecture research for: Chessalytics v1.3 Production Deployment*
+*Researched: 2026-03-21*
