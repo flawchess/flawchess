@@ -245,7 +245,9 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
             // react-chessboard v5 animation state machine causes black screen on mobile
             // when position prop updates — disable animations on touch devices only
             showAnimations: !('ontouchstart' in window),
-            clearArrowsOnPositionChange: false,
+            // Disable library's built-in arrow drawing — we use our own ArrowOverlay
+            // which avoids NaN path errors from the library's same-square division-by-zero bug
+            allowDrawingArrows: false,
             squareStyles,
             squareRenderer: ({ piece, square, children }) => {
               const pieceName = piece ? PIECE_NAMES[piece.pieceType] : undefined;
