@@ -529,7 +529,8 @@ export function OpeningsPage() {
         {/* Mobile: single column with sticky board */}
         <div className="md:hidden flex flex-col gap-2 min-w-0">
           {/* Sticky board + controls — sticks to top of viewport while scrolling content below */}
-          <div className="sticky top-0 z-10 bg-background pb-2">
+          {/* z-20 to stay above ToggleGroupItem's focus:z-10 */}
+          <div className="sticky top-0 z-20 bg-background pb-2">
             <div className="flex items-stretch gap-1">
               <div className="flex-1 min-w-0">
                 <ChessBoard
