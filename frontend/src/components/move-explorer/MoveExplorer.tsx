@@ -82,10 +82,15 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
               <tr
                 key={entry.move_san}
                 data-testid={`move-explorer-row-${entry.move_san}`}
-                className="cursor-pointer hover:bg-accent min-h-[44px]"
+                // Desktop: rows are clickable to play moves, with hover highlight.
+                // Mobile: disabled — no hover affordance, and tap conflicts with
+                // transposition tooltips. Users play moves via the board instead.
+                className="sm:cursor-pointer sm:hover:bg-accent min-h-[44px]"
                 role="button"
                 tabIndex={0}
-                onClick={() => handleRowClick(entry)}
+                onClick={() => {
+                  if (window.matchMedia('(pointer: fine)').matches) handleRowClick(entry);
+                }}
                 onKeyDown={(e) => handleRowKeyDown(e, entry)}
                 onMouseEnter={() => onMoveHover?.(entry.move_san)}
                 onMouseLeave={() => onMoveHover?.(null)}
