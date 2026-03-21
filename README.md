@@ -1,4 +1,4 @@
-# Chessalytics
+# FlawChess
 
 A chess analysis platform. Import games from chess.com and lichess, then analyze win/draw/loss rates by board position using Zobrist hashes — solving inconsistent opening categorization on existing platforms.
 

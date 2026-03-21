@@ -1,8 +1,8 @@
-# Chessalytics
+# FlawChess
 
 ## What This Is
 
-FlawChess (formerly Chessalytics) — a multi-user chess analysis platform that lets players import their games from chess.com and lichess, then analyze win/draw/loss rates for specific board positions. It solves the problem of inconsistent opening categorization on existing platforms — instead of relying on opening names, users define positions visually and filter by actual piece placement. Includes an interactive move explorer showing next moves with W/D/L stats per position. Works as an installable PWA on mobile with touch-optimized UI.
+FlawChess — a multi-user chess analysis platform that lets players import their games from chess.com and lichess, then analyze win/draw/loss rates for specific board positions. It solves the problem of inconsistent opening categorization on existing platforms — instead of relying on opening names, users define positions visually and filter by actual piece placement. Includes an interactive move explorer showing next moves with W/D/L stats per position. Works as an installable PWA on mobile with touch-optimized UI.
 
 ## Core Value
 

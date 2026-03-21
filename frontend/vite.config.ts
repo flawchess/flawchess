@@ -13,8 +13,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       devOptions: { enabled: true },
       manifest: {
-        name: 'Chessalytics',
-        short_name: 'Chessalytics',
+        name: 'FlawChess',
+        short_name: 'FlawChess',
         description: 'Chess opening analysis by position',
         theme_color: '#0a0a0a',
         background_color: '#0a0a0a',

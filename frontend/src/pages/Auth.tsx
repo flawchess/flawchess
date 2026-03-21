@@ -27,7 +27,7 @@ export function AuthPage() {
   return (
     <div data-testid="auth-page" className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
       <div className="mb-8 text-center">
-        <h1 className="text-4xl font-bold tracking-tight text-foreground">Chessalytics</h1>
+        <h1 className="text-4xl font-bold tracking-tight text-foreground">FlawChess</h1>
         <p className="mt-2 text-muted-foreground">Analyze your opening positions</p>
       </div>
 

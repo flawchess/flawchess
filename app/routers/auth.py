@@ -45,7 +45,7 @@ router.include_router(
 
 _CALLBACK_ROUTE_NAME = "google-oauth-callback"
 _OAUTH_STATE_AUDIENCE = "fastapi-users:oauth-state"
-_CSRF_COOKIE = "chessalytics_oauth_csrf"
+_CSRF_COOKIE = "flawchess_oauth_csrf"
 
 oauth2_callback_dep = OAuth2AuthorizeCallback(
     google_oauth_client,

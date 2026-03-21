@@ -1,5 +1,5 @@
 [project]
-name = "chessalytics"
+name = "flawchess"
 version = "0.1.0"
 description = "Multi-user chess analysis platform with Zobrist hash position matching"
 requires-python = ">=3.13"

@@ -73,7 +73,7 @@ function NavHeader() {
     <header className="hidden sm:block border-b border-border bg-background px-6 py-3">
       <div className="mx-auto flex max-w-7xl items-center justify-between">
         <div className="flex items-center gap-1">
-          <span className="mr-3 text-lg font-bold tracking-tight text-foreground">Chessalytics</span>
+          <span className="mr-3 text-lg font-bold tracking-tight text-foreground">FlawChess</span>
           <nav aria-label="Main navigation">
             {NAV_ITEMS.map(({ to, label, Icon }) => (
               <Button
@@ -120,7 +120,7 @@ function MobileHeader() {
         data-testid="mobile-header-brand"
         className="text-xl font-semibold tracking-tight text-foreground"
       >
-        Chessalytics
+        FlawChess
       </span>
       <span
         data-testid="mobile-header-page-title"

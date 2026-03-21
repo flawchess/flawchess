@@ -1,4 +1,4 @@
-"""Zobrist hash computation module for Chessalytics.
+"""Zobrist hash computation module for FlawChess.
 
 Provides three deterministic 64-bit hashes for any chess position:
 
