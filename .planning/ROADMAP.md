@@ -79,13 +79,14 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. `docker compose up` on a fresh machine starts all services and the app is reachable at the configured domain
   2. Visiting flawchess.com serves the app over HTTPS with a valid Let's Encrypt certificate
-  3. `curl https://flawchess.com/api/health` returns JSON (not HTML), confirming Caddy routes API calls correctly
+  3. `curl https://flawchess.com/health` returns JSON (not HTML), confirming Caddy routes correctly
   4. Restarting containers after `docker compose down && docker compose up` preserves all user data
   5. No secrets or credentials exist in code or Docker images — all config comes from `.env` on the server
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 21-01: TBD
+- [ ] 21-01-PLAN.md — Docker infrastructure: Dockerfiles, Compose, Caddyfile, entrypoint, CORS conditional, .env.example
+- [ ] 21-02-PLAN.md — Cloud-init cleanup + deploy to Hetzner VPS (checkpoint)
 
 ### Phase 22: CI/CD & Monitoring
 **Goal**: Deploys are automated and errors in production are captured before users report them
@@ -140,7 +141,7 @@ Plans:
 | 18. Mobile Navigation | v1.2 | 1/1 | Complete | 2026-03-20 |
 | 19. Mobile UX Polish + Install Prompt | v1.2 | 3/3 | Complete | 2026-03-21 |
 | 20. Rename & Branding | 1/2 | In Progress|  | - |
-| 21. Docker & Deployment | v1.3 | 0/TBD | Not started | - |
+| 21. Docker & Deployment | v1.3 | 0/2 | Not started | - |
 | 22. CI/CD & Monitoring | v1.3 | 0/TBD | Not started | - |
 | 23. Launch Readiness | v1.3 | 0/TBD | Not started | - |
 
