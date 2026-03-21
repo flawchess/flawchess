@@ -69,7 +69,7 @@ async def google_authorize(request: Request) -> dict:
 
     # Build callback URL explicitly — request.url_for() picks up the Vite proxy host (port 5173)
     # which doesn't match Google's authorized redirect URI (port 8000)
-    redirect_url = f"{settings.BACKEND_URL}/auth/google/callback"
+    redirect_url = f"{settings.BACKEND_URL}/api/auth/google/callback"
     authorization_url = await google_oauth_client.get_authorization_url(
         redirect_url,
         state,
@@ -101,7 +101,7 @@ async def google_callback(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code or state")
 
     # Exchange code for token using the same redirect_uri as the authorize step
-    redirect_url = f"{settings.BACKEND_URL}/auth/google/callback"
+    redirect_url = f"{settings.BACKEND_URL}/api/auth/google/callback"
     token = await google_oauth_client.get_access_token(code, redirect_url)
 
     if state is None:

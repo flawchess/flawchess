@@ -29,14 +29,14 @@ if settings.ENVIRONMENT == "development":
         allow_headers=["*"],
     )
 
-app.include_router(auth.router)
-app.include_router(imports.router)
-app.include_router(analysis.router)
-app.include_router(position_bookmarks.router)
-app.include_router(stats_router)
-app.include_router(users_router)
+app.include_router(auth.router, prefix="/api")
+app.include_router(imports.router, prefix="/api")
+app.include_router(analysis.router, prefix="/api")
+app.include_router(position_bookmarks.router, prefix="/api")
+app.include_router(stats_router, prefix="/api")
+app.include_router(users_router, prefix="/api")
 
 
-@app.get("/health")
+@app.get("/api/health")
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}
