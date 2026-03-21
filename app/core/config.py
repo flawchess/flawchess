@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "production"
     SENTRY_DSN: str = ""  # Empty string = Sentry disabled (dev default)
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()
