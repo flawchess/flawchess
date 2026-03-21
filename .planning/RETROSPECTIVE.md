@@ -2,6 +2,48 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v1.2 — Mobile & PWA
+
+**Shipped:** 2026-03-21
+**Phases:** 3 | **Plans:** 5
+
+### What Was Built
+- PWA with service worker, chess-themed icons, Workbox caching (NetworkOnly for API)
+- Mobile bottom navigation bar with direct tabs + "More" drawer (vaul-based)
+- Click-to-move chessboard on touch devices with sticky board on Openings page
+- 44px touch targets on all interactive elements, overflow fixes at 375px
+- Android/iOS in-app install prompts (beforeinstallprompt + manual iOS banner)
+- Dev workflow: LAN hosting + Cloudflare Tunnel for HTTPS phone testing
+- 7 quick tasks: lichess import fix, arrow sorting, tooltip→popover, mobile card layouts, board controls reorder, tab renaming, filter height consistency
+
+### What Worked
+- Frontend-only milestone scope (no backend/API changes) kept complexity low and iteration fast
+- Pure Tailwind `sm:` breakpoints for mobile/desktop switching — no JS detection needed
+- vaul library for drawer component — handled scroll lock, backdrop, iOS momentum out of the box
+- Quick tasks handled all polish (tab renaming, button heights, card layouts) without phase overhead
+- Duplicating mobile Openings layout (vs trying to make one layout responsive) avoided fighting sticky positioning
+
+### What Was Inefficient
+- react-chessboard drag-and-drop caused persistent black screen on mobile — spent multiple iterations trying to fix before disabling drag entirely
+- Touch target sizing required understanding CSS specificity interactions between component libraries (shadcn's data-attribute selectors) and custom classes — `min-h-11` vs `h-11` vs `h-11!` depending on component
+- summary-extract CLI still returns null for one_liner — SUMMARY.md files lack the expected frontmatter field
+
+### Patterns Established
+- `min-h-11 sm:min-h-0` pattern for ToggleGroupItem/SelectTrigger mobile touch targets (min-height overrides component's fixed height)
+- `h-11 sm:h-7` for custom buttons to match ToggleGroup/Select heights exactly
+- `h-11!` (Tailwind important) when overriding data-attribute-based component styles (e.g., TabsList)
+- `h-11 w-11 sm:h-8 sm:w-8` for icon-only buttons (44px mobile, 32px desktop)
+- `allowDragging: false` + onSquareClick for mobile chessboard interaction
+- `bg-muted/50 hover:bg-muted! border border-border/40` for collapsible trigger styling
+
+### Key Lessons
+1. Disable drag-and-drop early on mobile — HTML5 DnD simply doesn't work on iOS Safari, and react-chessboard's touch handling causes rendering bugs
+2. CSS specificity matters with component libraries — shadcn uses `data-[size=sm]:h-7` which beats plain `h-7`; use `min-h` to override or Tailwind's `!` modifier
+3. Mobile layout duplication is sometimes the right trade-off — fighting CSS to make one responsive layout work everywhere costs more than maintaining two clear layouts
+4. Quick tasks are ideal for mobile polish — button heights, tab names, card layouts are all self-contained changes that don't warrant phase planning
+
+---
+
 ## Milestone: v1.1 — Opening Explorer & UI Restructuring
 
 **Shipped:** 2026-03-20
@@ -46,8 +88,11 @@
 |-----------|--------|-------|------------|
 | v1.0 | 10 | 36 | Established GSD workflow, phase/plan structure |
 | v1.1 | 6 | 15 | Added human verification phases, heavy quick task usage |
+| v1.2 | 3 | 5 | Frontend-only scope, mobile-first patterns, CSS specificity lessons |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. DB wipe for schema changes is worth it in early development — migration complexity slows iteration
 2. Human verification catches integration issues that unit tests miss
+3. Quick tasks are the right tool for UI polish — confirmed across v1.1 (19 tasks) and v1.2 (7 tasks)
+4. CSS specificity with component libraries requires understanding the full chain — min-h/h/important patterns now documented

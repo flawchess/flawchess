@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Mobile & PWA
-status: unknown
-last_updated: "2026-03-21T10:49:43.802Z"
-last_activity: "2026-03-21 - Completed quick task 260321-ftk: Rename Statistics sub-tab to Compare, rename Global Stats tab to Statistics, add icons to desktop tabs"
+status: shipped
+last_updated: "2026-03-21T12:30:00.000Z"
+last_activity: "2026-03-21 - Shipped v1.2 Mobile & PWA milestone"
 progress:
   total_phases: 3
   completed_phases: 3
@@ -16,14 +16,14 @@ progress:
 
 ## Current Position
 
-Phase: 19 (mobile-ux-polish-install-prompt) — COMPLETE
-Plan: 3 of 3
+Milestone v1.2 (Mobile & PWA) — SHIPPED 2026-03-21
+Next milestone: not yet planned
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-20)
+See: .planning/PROJECT.md (updated 2026-03-21)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Phase 17 — PWA Foundation + Dev Workflow
+Current focus: Planning next milestone
 
 ## Phase Progress
 
@@ -39,28 +39,9 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 - ORM: SQLAlchemy 2.x async + Alembic
 - Auth: FastAPI-Users 15.0.4 (JWT, integer user IDs)
 - Core algorithm: Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import
-- v1.2 scope: frontend-only — no backend changes, no new API routes
+- v1.2 was frontend-only — no backend changes, no new API routes
 
 ## Accumulated Context
-
-### Key Decisions (v1.2)
-
-- Use `vite-plugin-pwa ^1.2.0` with `generateSW` mode — zero-config, Vite 7 compatible
-- `NetworkOnly` strategy mandatory for all API routes — prevents stale analysis data
-- Cloudflare Tunnel preferred over ngrok — faster, free, no session time limit
-- Disable `arePiecesDraggable` on touch devices — HTML5 DnD absent on iOS Safari; click-to-move fallback
-- iOS PWA requires re-login after install — WKWebView storage isolation; manifest `scope: "/"` keeps OAuth in PWA
-- `allowedHosts: true` (boolean, not string 'all') — Vite 7 uses correct typed value; TUNNEL env guard keeps it secure
-- vaul (via shadcn) for bottom drawer — handles scroll lock, backdrop, iOS momentum without manual DOM manipulation
-- tailwindcss-safe-area plugin for pb-safe/pt-safe — avoids hardcoded pixel offsets for notch/home-indicator clearance
-- Pure Tailwind sm: breakpoints for mobile/desktop switching — no JS-based detection to avoid hydration mismatches
-- min-h-11 sm:min-h-0 on ToggleGroupItems individually (not ToggleGroup wrapper) for per-item 44px height on mobile
-- h-11 w-11 sm:h-8 sm:w-8 on icon Buttons for 44px mobile touch targets, 32px desktop
-- `allowDragging: false` on react-chessboard — disables drag globally to fix black screen on mobile; click-to-move via onSquareClick fires natively on touch (no onPointerUp fallback needed)
-- Mobile Openings layout duplicates sidebar JSX intentionally — sticky board structure incompatible with sidebar's flat flex-column
-- isOpeningsRoute = pathname.startsWith('/openings') in ProtectedLayout hides MobileHeader on Openings route only
-- isMobile userAgent guard on showAndroidPrompt prevents desktop Chrome install drawer (bug found during verification)
-- Full Android/iOS PWA install testing deferred to post-deployment (HTTPS required for beforeinstallprompt)
 
 ### Pending Todos
 
@@ -70,9 +51,9 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 
 ### Blockers/Concerns
 
-- [Phase 17]: Cloudflare Tunnel + Vite proxy compatibility not yet verified end-to-end
-- [Phase 17]: Google SSO OAuth in PWA standalone on iOS needs physical device testing
-- [Phase 19]: react-chessboard touch drag on Android Chrome unverified — click-to-move is confirmed fallback
+- Cloudflare Tunnel + Vite proxy compatibility not yet verified end-to-end
+- Google SSO OAuth in PWA standalone on iOS needs physical device testing
+- react-chessboard touch drag on Android Chrome unverified — click-to-move is confirmed fallback
 
 ### Quick Tasks Completed
 
@@ -87,5 +68,5 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 | 260321-gdd | Add min-h-11 sm:min-h-0 to Time Control and Platform filter buttons for uniform 44px mobile touch targets | 2026-03-21 | 389b8e9 | [260321-gdd-make-filter-toggle-buttons-same-height-a](./quick/260321-gdd-make-filter-toggle-buttons-same-height-a/) |
 
 ---
-Last activity: 2026-03-21 - Completed quick task 260321-gdd: Make filter toggle buttons same height
-Last session: 2026-03-21T10:49:43.800Z
+Last activity: 2026-03-21 - Shipped v1.2 Mobile & PWA milestone
+Last session: 2026-03-21T12:30:00.000Z

@@ -4,7 +4,7 @@
 
 - ✅ **v1.0 Initial Platform** — Phases 1-10 (shipped 2026-03-15)
 - ✅ **v1.1 Opening Explorer & UI Restructuring** — Phases 11-16 (shipped 2026-03-20)
-- 🚧 **v1.2 Mobile & PWA** — Phases 17-19 (in progress)
+- ✅ **v1.2 Mobile & PWA** — Phases 17-19 (shipped 2026-03-21)
 
 ## Phases
 
@@ -36,58 +36,14 @@
 
 </details>
 
-### 🚧 v1.2 Mobile & PWA (In Progress)
+<details>
+<summary>✅ v1.2 Mobile & PWA (Phases 17-19) — SHIPPED 2026-03-21</summary>
 
-**Milestone Goal:** Make the application work great on smartphones as an installable PWA, with mobile-optimized navigation and dev workflow for phone testing.
+- [x] Phase 17: PWA Foundation + Dev Workflow (1/1 plan) — completed 2026-03-20
+- [x] Phase 18: Mobile Navigation (1/1 plan) — completed 2026-03-20
+- [x] Phase 19: Mobile UX Polish + Install Prompt (3/3 plans) — completed 2026-03-21
 
-- [x] **Phase 17: PWA Foundation + Dev Workflow** - Installable PWA with service worker, custom icons, and phone testing workflow (completed 2026-03-20)
-- [x] **Phase 18: Mobile Navigation** - Bottom navigation bar with direct tabs and "More" drawer for mobile viewports with safe-area support (completed 2026-03-20)
-- [x] **Phase 19: Mobile UX Polish + Install Prompt** - Touch targets, overflow fixes, iOS/Android install prompts, mobile chessboard (completed 2026-03-21)
-
-## Phase Details
-
-### Phase 17: PWA Foundation + Dev Workflow
-**Goal**: App is installable as a PWA with correct service worker caching and a usable phone testing setup
-**Depends on**: Phase 16
-**Requirements**: PWA-01, PWA-02, PWA-03, DEV-01, DEV-02
-**Success Criteria** (what must be TRUE):
-  1. User can install the app from Android Chrome via "Add to Home Screen" and it opens in standalone mode (no browser chrome)
-  2. Repeat visits on mobile load static assets from service worker cache without network requests
-  3. API routes (analysis, games, imports) are never served from cache — network tab shows no ServiceWorker source for API calls
-  4. App shows chess-themed icons (not Vite default) in the home screen shortcut and browser tab
-  5. Developer can expose the Vite dev server over HTTPS to a phone on a different network using a documented one-command tunnel
-**Plans:** 1/1 plans complete
-Plans:
-- [ ] 17-01-PLAN.md — PWA setup with icons, manifest, service worker, and dev workflow scripts
-
-### Phase 18: Mobile Navigation
-**Goal**: Users on mobile viewports navigate the full app through a bottom navigation bar with direct tabs and a "More" drawer
-**Depends on**: Phase 17
-**Requirements**: NAV-01, NAV-02, NAV-03
-**Success Criteria** (what must be TRUE):
-  1. At viewport widths below 640px the horizontal nav bar is hidden and a bottom navigation bar with 3 tabs + More button is visible
-  2. Tapping "More" opens a bottom sheet drawer containing all nav links and a logout button
-  3. Tapping any nav link in the drawer navigates to that route and closes the drawer
-  4. On notched iPhones in standalone PWA mode the header and content do not overlap the notch or Dynamic Island
-**Plans:** 1/1 plans complete
-Plans:
-- [ ] 18-01-PLAN.md — Mobile bottom bar, More drawer, mobile header, safe-area insets
-
-### Phase 19: Mobile UX Polish + Install Prompt
-**Goal**: All app interactions work correctly on mobile touch devices with in-app install prompts for iOS and Android
-**Depends on**: Phase 18
-**Requirements**: UX-01, UX-02, UX-03, UX-04, PWA-04, PWA-05
-**Success Criteria** (what must be TRUE):
-  1. No page displays a horizontal scrollbar at 375px viewport width (iPhone SE baseline)
-  2. All buttons, filters, and controls have tap targets of at least 44x44px on mobile
-  3. Moving chess pieces via click-to-click works correctly on iOS Safari and Android Chrome
-  4. The Openings page sidebar (board + filters) and main content area are both usable on mobile without excessive scrolling
-  5. Android Chrome users see an in-app install prompt after interacting with the app; iOS Safari users see a dismissible banner with "Share > Add to Home Screen" instructions
-**Plans:** 3/3 plans complete
-Plans:
-- [ ] 19-01-PLAN.md — Chessboard touch fix and Openings sticky mobile layout
-- [ ] 19-02-PLAN.md — 44px touch targets and horizontal overflow fixes
-- [ ] 19-03-PLAN.md — PWA install prompts for Android and iOS
+</details>
 
 ## Progress
 
@@ -111,10 +67,10 @@ Plans:
 | 16. Game Card UI | v1.1 | 3/3 | Complete | 2026-03-18 |
 | 17. PWA Foundation + Dev Workflow | v1.2 | 1/1 | Complete | 2026-03-20 |
 | 18. Mobile Navigation | v1.2 | 1/1 | Complete | 2026-03-20 |
-| 19. Mobile UX Polish + Install Prompt | 3/3 | Complete    | 2026-03-21 | - |
+| 19. Mobile UX Polish + Install Prompt | v1.2 | 3/3 | Complete | 2026-03-21 |
 
 ---
 *Created: 2026-03-11*
 *v1.0 shipped: 2026-03-15*
 *v1.1 shipped: 2026-03-20*
-*v1.2 roadmap added: 2026-03-20*
+*v1.2 shipped: 2026-03-21*

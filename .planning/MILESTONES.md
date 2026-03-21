@@ -1,5 +1,22 @@
 # Milestones: Chessalytics
 
+## v1.2 Mobile & PWA (Shipped: 2026-03-21)
+
+**Phases:** 17–19 (3 phases, 5 plans)
+
+Made the application work great on smartphones as an installable PWA with mobile-optimized navigation, touch interactions, and dev workflow for phone testing.
+
+**Key accomplishments:**
+
+- Installable PWA with service worker, chess-themed icons, and Workbox caching (NetworkOnly for API routes)
+- Mobile bottom navigation bar with direct tabs and slide-up "More" drawer (vaul-based)
+- Click-to-move chessboard on touch devices with sticky board layout on Openings page
+- 44px touch targets on all interactive elements, no horizontal scroll at 375px
+- Android/iOS in-app install prompts (beforeinstallprompt + manual iOS instructions)
+- Cloudflare Tunnel dev workflow for HTTPS phone testing
+
+---
+
 ## v1.1 — Opening Explorer & UI Restructuring
 
 **Shipped:** 2026-03-20
@@ -8,6 +25,7 @@
 Added interactive move explorer with W/D/L stats per position, restructured UI with tabbed Openings hub and dedicated Import page, enriched game import data, and redesigned game cards.
 
 **Key accomplishments:**
+
 - Move explorer with next-move W/D/L stats, click-to-navigate, transposition handling
 - Chessboard arrows showing next moves with win-rate color coding
 - UI restructured: tabbed Openings hub (Moves/Games/Statistics) + dedicated Import page
@@ -25,6 +43,7 @@ Added interactive move explorer with W/D/L stats per position, restructured UI w
 Built the complete multi-user chess analysis platform: game import from chess.com/lichess, Zobrist hash position matching, interactive board with W/D/L analysis, position bookmarks with auto-suggestions, game cards, rating/stats pages, and browser automation optimization.
 
 **Key capabilities:**
+
 - Import pipeline with incremental sync (chess.com + lichess)
 - Position analysis via precomputed Zobrist hashes (white/black/full)
 - Position bookmarks with drag-reorder, mini boards, piece filter
