@@ -25,7 +25,7 @@ from app.repositories.position_bookmark_repository import (
     update_bookmark,
     update_match_side,
 )
-from app.schemas.position_bookmarks import PositionBookmarkCreate, PositionBookmarkReorderRequest, PositionBookmarkUpdate
+from app.schemas.position_bookmarks import PositionBookmarkCreate, PositionBookmarkUpdate
 from app.services.zobrist import compute_hashes
 
 import chess

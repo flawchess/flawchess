@@ -5,11 +5,9 @@ Revises: 7eb7ce83cdb9
 Create Date: 2026-03-14 16:42:03.837592
 
 """
-import io
 import logging
 from typing import Sequence, Union
 
-import chess.pgn
 from alembic import op
 import sqlalchemy as sa
 

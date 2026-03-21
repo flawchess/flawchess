@@ -8,7 +8,6 @@ from fastapi.responses import RedirectResponse
 from fastapi_users import schemas as fapi_schemas
 from fastapi_users.exceptions import UserAlreadyExists
 from fastapi_users.jwt import decode_jwt, generate_jwt
-from httpx_oauth.oauth2 import OAuth2Token
 from sqlalchemy import func, update as sa_update
 
 from app.core.config import settings
