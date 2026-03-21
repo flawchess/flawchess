@@ -530,29 +530,34 @@ export function OpeningsPage() {
         <div className="md:hidden flex flex-col gap-2 min-w-0">
           {/* Sticky board + controls — sticks to top of viewport while scrolling content below */}
           <div className="sticky top-0 z-10 bg-background pb-2">
-            <ChessBoard
-              position={chess.position}
-              onPieceDrop={chess.makeMove}
-              flipped={boardFlipped}
-              lastMove={chess.lastMove}
-              arrows={boardArrows}
-            />
-            {/* Board controls inside sticky container so they stick with the board */}
-            <BoardControls
-              onBack={chess.goBack}
-              onForward={chess.goForward}
-              onReset={() => { chess.reset(); setGamesOffset(0); }}
-              onFlip={() => setBoardFlipped((f) => !f)}
-              canGoBack={chess.currentPly > 0}
-              canGoForward={chess.currentPly < chess.moveHistory.length}
-              infoSlot={
-                <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="top">
-                  Play moves on the board by tapping squares or dragging pieces.
-                  <br /><br />
-                  The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
-                </InfoPopover>
-              }
-            />
+            <div className="flex items-stretch gap-1">
+              <div className="flex-1 min-w-0">
+                <ChessBoard
+                  position={chess.position}
+                  onPieceDrop={chess.makeMove}
+                  flipped={boardFlipped}
+                  lastMove={chess.lastMove}
+                  arrows={boardArrows}
+                />
+              </div>
+              {/* Vertical board controls beside the board on mobile */}
+              <BoardControls
+                vertical
+                onBack={chess.goBack}
+                onForward={chess.goForward}
+                onReset={() => { chess.reset(); setGamesOffset(0); }}
+                onFlip={() => setBoardFlipped((f) => !f)}
+                canGoBack={chess.currentPly > 0}
+                canGoForward={chess.currentPly < chess.moveHistory.length}
+                infoSlot={
+                  <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="left">
+                    Play moves on the board by tapping squares or dragging pieces.
+                    <br /><br />
+                    The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
+                  </InfoPopover>
+                }
+              />
+            </div>
           </div>
 
           {/* Opening name */}
