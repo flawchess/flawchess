@@ -1,6 +1,13 @@
 flawchess.com {
     encode gzip
 
+    # /auth/callback is a frontend SPA route — serve index.html, not backend
+    handle /auth/callback {
+        root * /srv
+        try_files /index.html
+        file_server
+    }
+
     # Backend API routes — proxy each prefix individually
     # (no /api/* prefix in this codebase — routes are /auth/*, /analysis/*, etc.)
     handle /auth/* {
