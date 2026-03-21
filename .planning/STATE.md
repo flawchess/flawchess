@@ -3,22 +3,22 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project Launch
 status: unknown
-stopped_at: Phase 22 context gathered
-last_updated: "2026-03-21T21:12:01.003Z"
+stopped_at: Completed 22-01-PLAN.md (GitHub Actions CI/CD workflow)
+last_updated: "2026-03-21T21:32:01.072Z"
 last_activity: 2026-03-21
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 3
+  total_plans: 6
+  completed_plans: 4
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 21 (docker-deployment) — EXECUTING
-Plan: 2 of 2
+Phase: 22 (ci-cd-monitoring) — EXECUTING
+Plan: 1 of 2
 
 ## Project Reference
 
@@ -56,6 +56,8 @@ Current focus: Phase 20 — Rename & Branding
 - [Phase 21]: Backend expose-only (no ports) — Caddy is sole internet-facing entry point, no direct backend access from host
 - [Phase 21]: CORS disabled in production — Caddy routes frontend and API on same origin (flawchess.com)
 - [Phase 21]: Caddy build context is project root with dockerfile: frontend/Dockerfile so COPY deploy/Caddyfile paths work
+- [Phase 22-ci-cd-monitoring]: pip install uv in CI over astral-sh/setup-uv action — simpler, avoids third-party action uncertainty
+- [Phase 22-ci-cd-monitoring]: command_timeout: 10m on SSH deploy action — cold docker builds take 3-5 min and need headroom
 
 ### Blockers/Concerns
 
@@ -87,5 +89,5 @@ Current focus: Phase 20 — Rename & Branding
 
 ---
 Last activity: 2026-03-21
-Last session: 2026-03-21T21:12:01.002Z
-Stopped at: Phase 22 context gathered
+Last session: 2026-03-21T21:32:01.070Z
+Stopped at: Completed 22-01-PLAN.md (GitHub Actions CI/CD workflow)
