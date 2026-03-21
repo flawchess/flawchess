@@ -254,6 +254,15 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
                   style={{ width: '100%', height: '100%', ...squareStyles[square] }}
                   aria-label={label}
                   data-testid={`square-${square}`}
+                  // react-chessboard v5 mobile tap detection is broken: dnd-kit's
+                  // TouchSensor starts a drag on minimal finger movement, which resets
+                  // the library's isClickingOnMobile flag before onTouchEnd fires.
+                  // This onPointerUp bypasses that flow to make tap-to-move work.
+                  onPointerUp={(e) => {
+                    if (e.pointerType === 'touch') {
+                      handleSquareClick({ square, piece: piece ?? null });
+                    }
+                  }}
                 >
                   {children}
                 </div>
