@@ -340,7 +340,7 @@ export function OpeningsPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-2 text-sm font-medium"
+            className="w-full justify-between px-2 text-sm font-medium bg-muted/50 border border-border/40 rounded"
             data-testid="section-position-bookmarks"
           >
             <span className="flex items-center gap-1">
@@ -393,7 +393,7 @@ export function OpeningsPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-2 text-sm font-medium"
+            className="w-full justify-between px-2 text-sm font-medium bg-muted/50 border border-border/40 rounded"
             data-testid="section-more-filters"
           >
             More filters
