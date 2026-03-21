@@ -22,7 +22,7 @@ flawchess.com {
         reverse_proxy backend:8000
     }
 
-    handle /imports/* {
+    handle /imports* {
         reverse_proxy backend:8000
     }
 
