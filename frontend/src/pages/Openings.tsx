@@ -188,7 +188,8 @@ export function OpeningsPage() {
   }, []);
 
   const openBookmarkDialog = useCallback(() => {
-    const defaultLabel = chess.openingName?.name ?? `Position (${chess.moveHistory.length} moves)`;
+    // Use currentPly, not full moveHistory length — user may have navigated back
+    const defaultLabel = chess.openingName?.name ?? `Position (${chess.currentPly} moves)`;
     setBookmarkLabel(defaultLabel);
     setBookmarkDialogOpen(true);
   }, [chess]);
@@ -203,7 +204,8 @@ export function OpeningsPage() {
       label,
       target_hash: targetHash,
       fen: chess.position,
-      moves: chess.moveHistory,
+      // Truncate to currentPly — bookmark saves the displayed position, not moves played after it
+      moves: chess.moveHistory.slice(0, chess.currentPly),
       color: filters.color,
       match_side: matchSide,
       is_flipped: boardFlipped,
