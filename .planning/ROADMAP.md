@@ -1,10 +1,11 @@
-# Roadmap: Chessalytics
+# Roadmap: FlawChess
 
 ## Milestones
 
 - ✅ **v1.0 Initial Platform** — Phases 1-10 (shipped 2026-03-15)
 - ✅ **v1.1 Opening Explorer & UI Restructuring** — Phases 11-16 (shipped 2026-03-20)
 - ✅ **v1.2 Mobile & PWA** — Phases 17-19 (shipped 2026-03-21)
+- 🚧 **v1.3 Project Launch** — Phases 20-23 (in progress)
 
 ## Phases
 
@@ -45,6 +46,75 @@
 
 </details>
 
+### 🚧 v1.3 Project Launch (In Progress)
+
+**Milestone Goal:** Rebrand to FlawChess, deploy to production on Hetzner, and ship everything needed for a public launch.
+
+- [ ] **Phase 20: Rename & Branding** — Rename codebase to FlawChess, create logo, update PWA manifest, transfer repo
+- [ ] **Phase 21: Docker & Deployment** — Containerize app, deploy to Hetzner with Caddy auto-TLS, configure env
+- [ ] **Phase 22: CI/CD & Monitoring** — Automate deploys via GitHub Actions, add Sentry error tracking (backend + frontend)
+- [ ] **Phase 23: Launch Readiness** — Analytics, About page, SEO, privacy policy, import queue, README
+
+## Phase Details
+
+### Phase 20: Rename & Branding
+**Goal**: FlawChess brand is fully established — name, logo, and identity consistent everywhere before any external services are created
+**Depends on**: Phase 19
+**Requirements**: BRAND-01, BRAND-02, BRAND-03, BRAND-04
+**Success Criteria** (what must be TRUE):
+  1. No instance of "Chessalytics" remains in code, config, docs, or git remotes (`grep -ri chessalytics` returns no matches in tracked files)
+  2. The FlawChess logo appears as favicon, PWA icon, and in the app header
+  3. Installing the PWA on a phone shows "FlawChess" as the app name with the new logo icon
+  4. Git remote points to the flawchess GitHub organization
+**Plans**: TBD
+
+Plans:
+- [ ] 20-01: TBD
+
+### Phase 21: Docker & Deployment
+**Goal**: FlawChess runs in production at flawchess.com — containerized, TLS-terminated, with persistent data and migrations-on-startup
+**Depends on**: Phase 20
+**Requirements**: DEPLOY-01, DEPLOY-02, DEPLOY-03, DEPLOY-04, DEPLOY-05, DEPLOY-06
+**Success Criteria** (what must be TRUE):
+  1. `docker compose up` on a fresh machine starts all services and the app is reachable at the configured domain
+  2. Visiting flawchess.com serves the app over HTTPS with a valid Let's Encrypt certificate
+  3. `curl https://flawchess.com/api/health` returns JSON (not HTML), confirming Caddy routes API calls correctly
+  4. Restarting containers after `docker compose down && docker compose up` preserves all user data
+  5. No secrets or credentials exist in code or Docker images — all config comes from `.env` on the server
+**Plans**: TBD
+
+Plans:
+- [ ] 21-01: TBD
+
+### Phase 22: CI/CD & Monitoring
+**Goal**: Deploys are automated and errors in production are captured before users report them
+**Depends on**: Phase 21
+**Requirements**: DEPLOY-07, MON-01, MON-02
+**Success Criteria** (what must be TRUE):
+  1. Pushing to `main` triggers a GitHub Actions run that tests, builds a Docker image, pushes to GHCR, and deploys to the Hetzner VPS via SSH — all without manual steps
+  2. An unhandled exception in the FastAPI backend appears in the Sentry dashboard within 60 seconds
+  3. A JavaScript error thrown in the React frontend appears in the Sentry dashboard within 60 seconds
+**Plans**: TBD
+
+Plans:
+- [ ] 22-01: TBD
+
+### Phase 23: Launch Readiness
+**Goal**: FlawChess is ready for public users — analytics running, content complete, rate-limit protection in place, README polished
+**Depends on**: Phase 22
+**Requirements**: MON-03, CONT-01, CONT-02, CONT-03, STAB-01, BRAND-05
+**Success Criteria** (what must be TRUE):
+  1. Visiting flawchess.com/about shows an About page explaining the Zobrist-hash position-matching USP, a FAQ, and a visible register/login CTA
+  2. The About page title and meta description appear correctly when the URL is shared on social media (Open Graph preview)
+  3. A sitemap.xml and robots.txt are served at the correct paths and the About page is indexed by search crawlers
+  4. A privacy policy page exists at /privacy and accurately names all data processors (Sentry, analytics tool, auth)
+  5. Two simultaneous import requests (one chess.com, one lichess) complete without either returning a 429 or triggering a rate-limit ban
+  6. Page views are recorded in the analytics dashboard without requiring cookie consent from users
+**Plans**: TBD
+
+Plans:
+- [ ] 23-01: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -68,9 +138,14 @@
 | 17. PWA Foundation + Dev Workflow | v1.2 | 1/1 | Complete | 2026-03-20 |
 | 18. Mobile Navigation | v1.2 | 1/1 | Complete | 2026-03-20 |
 | 19. Mobile UX Polish + Install Prompt | v1.2 | 3/3 | Complete | 2026-03-21 |
+| 20. Rename & Branding | v1.3 | 0/TBD | Not started | - |
+| 21. Docker & Deployment | v1.3 | 0/TBD | Not started | - |
+| 22. CI/CD & Monitoring | v1.3 | 0/TBD | Not started | - |
+| 23. Launch Readiness | v1.3 | 0/TBD | Not started | - |
 
 ---
 *Created: 2026-03-11*
 *v1.0 shipped: 2026-03-15*
 *v1.1 shipped: 2026-03-20*
 *v1.2 shipped: 2026-03-21*
+*v1.3 started: 2026-03-21*

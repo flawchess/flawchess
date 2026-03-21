@@ -75,31 +75,31 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BRAND-01 | — | Pending |
-| BRAND-02 | — | Pending |
-| BRAND-03 | — | Pending |
-| BRAND-04 | — | Pending |
-| BRAND-05 | — | Pending |
-| DEPLOY-01 | — | Pending |
-| DEPLOY-02 | — | Pending |
-| DEPLOY-03 | — | Pending |
-| DEPLOY-04 | — | Pending |
-| DEPLOY-05 | — | Pending |
-| DEPLOY-06 | — | Pending |
-| DEPLOY-07 | — | Pending |
-| MON-01 | — | Pending |
-| MON-02 | — | Pending |
-| MON-03 | — | Pending |
-| CONT-01 | — | Pending |
-| CONT-02 | — | Pending |
-| CONT-03 | — | Pending |
-| STAB-01 | — | Pending |
+| BRAND-01 | Phase 20 | Pending |
+| BRAND-02 | Phase 20 | Pending |
+| BRAND-03 | Phase 20 | Pending |
+| BRAND-04 | Phase 20 | Pending |
+| BRAND-05 | Phase 23 | Pending |
+| DEPLOY-01 | Phase 21 | Pending |
+| DEPLOY-02 | Phase 21 | Pending |
+| DEPLOY-03 | Phase 21 | Pending |
+| DEPLOY-04 | Phase 21 | Pending |
+| DEPLOY-05 | Phase 21 | Pending |
+| DEPLOY-06 | Phase 21 | Pending |
+| DEPLOY-07 | Phase 22 | Pending |
+| MON-01 | Phase 22 | Pending |
+| MON-02 | Phase 22 | Pending |
+| MON-03 | Phase 23 | Pending |
+| CONT-01 | Phase 23 | Pending |
+| CONT-02 | Phase 23 | Pending |
+| CONT-03 | Phase 23 | Pending |
+| STAB-01 | Phase 23 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 19 total
-- Mapped to phases: 0
-- Unmapped: 19 ⚠️
+- Mapped to phases: 19
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-21*
-*Last updated: 2026-03-21 after initial definition*
+*Last updated: 2026-03-21 after roadmap creation*

@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project Launch
 status: active
-last_updated: "2026-03-21T14:00:00.000Z"
-last_activity: "2026-03-21 — Milestone v1.3 started"
+last_updated: "2026-03-21T14:30:00.000Z"
+last_activity: "2026-03-21 — v1.3 roadmap created (4 phases, 19 requirements mapped)"
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -16,20 +16,27 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-21 — Milestone v1.3 started
+Phase: 20 of 23 (Rename & Branding)
+Plan: 0 of TBD in current phase
+Status: Ready to plan
+Last activity: 2026-03-21 — v1.3 roadmap created; 4 phases planned (20-23)
+
+Progress: [████████████░░░░░░░░] 60% (19/23 phases complete across all milestones)
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-03-21)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: v1.3 Project Launch
+Current focus: Phase 20 — Rename & Branding
 
 ## Phase Progress
 
-(No phases yet — roadmap pending)
+| Phase | Status |
+|-------|--------|
+| 20. Rename & Branding | Not started |
+| 21. Docker & Deployment | Not started |
+| 22. CI/CD & Monitoring | Not started |
+| 23. Launch Readiness | Not started |
 
 ## Key Context
 
@@ -41,17 +48,26 @@ Current focus: v1.3 Project Launch
 
 ## Accumulated Context
 
+### Decisions
+
+- [v1.3 roadmap]: Plausible Cloud chosen over Google Analytics — no cookie consent required, eliminates GDPR complexity
+- [v1.3 roadmap]: Single Hetzner VPS (CX32) with Docker Compose + Caddy — no orchestration overhead for solo dev
+- [v1.3 roadmap]: Rename must be Phase 20 — Sentry/Plausible project names embed at creation time and are hard to change
+- [v1.3 roadmap]: BRAND-05 (README) in Phase 23 — screenshots need live domain and final branding in place
+
+### Blockers/Concerns
+
+- [Phase 21]: Confirm Hetzner CX32 pricing at hetzner.com before provisioning
+- [Phase 21]: Hosting platform decision deferred to phase planning (Hetzner CX32 recommended)
+- [Phase 23]: Analytics tool final decision in phase planning — affects privacy policy wording (Plausible recommended)
+- [Phase 22]: GitHub Actions secrets require VPS to exist (Phase 21 prerequisite)
+- [Research]: chess.com rate-limit threshold ~3-4 concurrent (community-reported, unverified) — tune semaphore post-launch
+
 ### Pending Todos
 
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
 - **Display opening name from lichess chess-openings database** (ui) — ECO code + opening name via prefix-match
-
-### Blockers/Concerns
-
-- Cloudflare Tunnel + Vite proxy compatibility not yet verified end-to-end
-- Google SSO OAuth in PWA standalone on iOS needs physical device testing
-- react-chessboard touch drag on Android Chrome unverified — click-to-move is confirmed fallback
 
 ### Quick Tasks Completed
 
@@ -67,5 +83,5 @@ Current focus: v1.3 Project Launch
 | 260321-gy2 | Bookmark saves position at current ply instead of final position | 2026-03-21 | 72b6637 | [260321-gy2-bookmark-saves-position-at-current-ply-i](./quick/260321-gy2-bookmark-saves-position-at-current-ply-i/) |
 
 ---
-Last activity: 2026-03-21 - Completed quick task 260321-gy2: Bookmark saves displayed position
-Last session: 2026-03-21T12:30:00.000Z
+Last activity: 2026-03-21 - v1.3 roadmap created (phases 20-23)
+Last session: 2026-03-21T14:30:00.000Z
