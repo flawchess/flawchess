@@ -5,12 +5,15 @@ A chess analysis platform. Import games from chess.com and lichess, then analyze
 ## Prerequisites
 
 - Python 3.13+
-- PostgreSQL
+- Docker (for PostgreSQL)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ## Getting Started
 
 ```bash
+# Start the dev database (PostgreSQL 18 in Docker)
+docker compose -f docker-compose.dev.yml -p flawchess-dev up -d
+
 # Install dependencies
 uv sync
 

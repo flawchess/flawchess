@@ -20,6 +20,9 @@ FlawChess — a multi-user chess analysis platform. Users import games from ches
 ## Commands
 
 ```bash
+# Dev database (PostgreSQL 18 in Docker — required before running backend or tests)
+docker compose -f docker-compose.dev.yml -p flawchess-dev up -d
+
 # Backend
 uv sync                          # Install dependencies from lockfile
 uv run uvicorn app.main:app --reload  # Run dev server

@@ -1,0 +1,22 @@
+# Local development database only
+# Usage: docker compose -f docker-compose.dev.yml up -d
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - devpgdata:/var/lib/postgresql/data
+      - ./deploy/init-dev-db.sql:/docker-entrypoint-initdb.d/init-dev-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  devpgdata:

@@ -18,41 +18,46 @@ def test_engine():
     Runs alembic upgrade head against flawchess_test to ensure schema is current.
     Alembic uses a sync URL (postgresql://) because alembic.command.upgrade is synchronous.
     """
-    # Temporarily patch settings.DATABASE_URL so env.py's config.set_main_option
-    # call uses the test DB URL (env.py overrides sqlalchemy.url from settings).
-    # Keep postgresql+asyncpg:// — env.py uses async_engine_from_config with asyncpg.
+    # Patch settings.DATABASE_URL for the entire test session so that any code
+    # creating its own DB connections (e.g. on_after_login callback) also hits
+    # the test DB, not the dev DB which may lack tables.
     original_url = settings.DATABASE_URL
     settings.DATABASE_URL = settings.TEST_DATABASE_URL
 
-    try:
-        alembic_cfg = AlembicConfig("alembic.ini")
-        alembic_cfg.set_main_option("sqlalchemy.url", settings.TEST_DATABASE_URL)
-        alembic_command.upgrade(alembic_cfg, "head")
-    finally:
-        settings.DATABASE_URL = original_url
+    alembic_cfg = AlembicConfig("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", settings.TEST_DATABASE_URL)
+    alembic_command.upgrade(alembic_cfg, "head")
 
     # Create the async engine for the rest of the test session
     engine = create_async_engine(settings.TEST_DATABASE_URL, echo=False)
     yield engine
     # Dispose the engine synchronously at teardown
     engine.sync_engine.dispose()
+    settings.DATABASE_URL = original_url
 
 
 @pytest.fixture(autouse=True, scope="session")
 def override_get_async_session(test_engine):
-    """Route all FastAPI dependency-injected sessions to the test DB.
+    """Route all DB sessions to the test DB.
 
     Session-scoped autouse: active for the entire test session.
-    Overrides get_async_session so that ASGITransport-based tests (auth, etc.)
-    write to flawchess_test instead of the dev DB.
-
-    Uses commit-after-yield (same as production) so auth tests work correctly
-    with real DB writes to the test DB.
+    Overrides both the FastAPI DI dependency AND the module-level
+    async_session_maker so that code bypassing DI (e.g. on_after_login)
+    also hits the test DB.
     """
+    import app.core.database as db_module
+    import app.users as users_module
     from app.core.database import get_async_session
     from app.main import app as fastapi_app
 
     test_session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    # Patch async_session_maker everywhere it's imported, so non-DI code
+    # (e.g. UserManager.on_after_login) also uses the test DB.
+    original_db_session_maker = db_module.async_session_maker
+    original_users_session_maker = users_module.async_session_maker
+    db_module.async_session_maker = test_session_maker
+    users_module.async_session_maker = test_session_maker
 
     async def _test_session_generator():
         async with test_session_maker() as session:
@@ -62,6 +67,8 @@ def override_get_async_session(test_engine):
     fastapi_app.dependency_overrides[get_async_session] = _test_session_generator
     yield
     fastapi_app.dependency_overrides.pop(get_async_session, None)
+    db_module.async_session_maker = original_db_session_maker
+    users_module.async_session_maker = original_users_session_maker
 
 
 

@@ -8,6 +8,13 @@ pkill -f "uvicorn app.main:app" 2>/dev/null || true
 pkill -f "vite" 2>/dev/null || true
 sleep 1
 
+# Ensure dev database is running
+echo "Starting dev database..."
+docker compose -f docker-compose.dev.yml -p flawchess-dev up -d
+until docker compose -f docker-compose.dev.yml -p flawchess-dev exec db pg_isready -U postgres -q 2>/dev/null; do
+  sleep 1
+done
+
 # Run database migrations
 echo "Running migrations..."
 uv run alembic upgrade head

@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/flawchess"
+    DATABASE_URL: str = "postgresql+asyncpg://flawchess:flawchess@localhost:5432/flawchess"
     TEST_DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/flawchess_test"
     DB_ECHO: bool = False
     SECRET_KEY: str = "change-me-in-production"
