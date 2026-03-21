@@ -15,7 +15,7 @@ import type { RatingHistoryResponse, GlobalStatsResponse } from '@/types/stats';
  * paths work because the frontend is served from the same origin as the API.
  */
 export const apiClient = axios.create({
-  baseURL: '',
+  baseURL: '/api',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -41,7 +41,7 @@ apiClient.interceptors.response.use(
       error.response?.status === 401
     ) {
       const onLoginPage = window.location.pathname === '/login';
-      const isAuthRoute = (error.config?.url ?? '').startsWith('/auth/');
+      const isAuthRoute = (error.config?.url ?? '').startsWith('/api/auth/');
 
       if (!onLoginPage && !isAuthRoute) {
         queryClient.clear();

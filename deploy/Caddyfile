@@ -1,52 +1,24 @@
 flawchess.com {
     encode gzip
 
-    # /auth/callback is a frontend SPA route — serve index.html, not backend
-    handle /auth/callback {
+    # Frontend SPA — serve static files first
+    # If the file exists on disk (JS, CSS, images, etc.), serve it directly
+    @static file
+    handle @static {
         root * /srv
-        try_files /index.html
         file_server
     }
 
-    # Backend API routes — proxy each prefix individually
-    # (no /api/* prefix in this codebase — routes are /auth/*, /analysis/*, etc.)
-    handle /auth/* {
+    # Backend API — single rule, all backend routes are under /api/
+    handle /api/* {
         reverse_proxy backend:8000
     }
 
-    handle /analysis/* {
-        reverse_proxy backend:8000
-    }
-
-    handle /games/* {
-        reverse_proxy backend:8000
-    }
-
-    handle /imports* {
-        reverse_proxy backend:8000
-    }
-
-    handle /position-bookmarks/* {
-        reverse_proxy backend:8000
-    }
-
-    handle /stats/* {
-        reverse_proxy backend:8000
-    }
-
-    handle /users/* {
-        reverse_proxy backend:8000
-    }
-
-    handle /health {
-        reverse_proxy backend:8000
-    }
-
-    # Frontend SPA — serve static files with index.html fallback
+    # SPA fallback — all remaining paths get index.html
     handle {
         root * /srv
         header /index.html Cache-Control "no-cache"
-        try_files {path} /index.html
+        try_files /index.html
         file_server
     }
 }

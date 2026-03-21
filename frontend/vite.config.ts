@@ -42,7 +42,7 @@ export default defineConfig({
         navigateFallback: null,
         runtimeCaching: [
           {
-            urlPattern: /^\/(?:auth|analysis|games|imports|position-bookmarks|stats|users|health)\//,
+            urlPattern: /^\/api\//,
             handler: 'NetworkOnly',
           },
         ],
@@ -61,20 +61,7 @@ export default defineConfig({
     },
     allowedHosts: process.env.TUNNEL ? true : [],
     proxy: {
-      '/auth': {
-        target: 'http://localhost:8000',
-        // Don't proxy /auth/callback — that's a frontend route for OAuth redirect
-        bypass(req) {
-          if (req.url?.startsWith('/auth/callback')) return req.url
-        },
-      },
-      '/analysis': 'http://localhost:8000',
-      '/games': 'http://localhost:8000',
-      '/imports': 'http://localhost:8000',
-      '/position-bookmarks': 'http://localhost:8000',
-      '/stats': 'http://localhost:8000',
-      '/users': 'http://localhost:8000',
-      '/health': 'http://localhost:8000',
+      '/api': 'http://localhost:8000',
     },
   },
 })
