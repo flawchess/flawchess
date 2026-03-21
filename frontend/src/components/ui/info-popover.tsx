@@ -26,16 +26,18 @@ function InfoPopover({ children, ariaLabel, testId, side = "top" }: InfoPopoverP
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
       <PopoverPrimitive.Trigger asChild>
-        <button
-          type="button"
-          className="text-muted-foreground hover:text-foreground focus:outline-none"
+        {/* Use span instead of button to avoid nested <button> when inside CollapsibleTrigger */}
+        <span
+          role="button"
+          tabIndex={0}
+          className="text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
           aria-label={ariaLabel}
           data-testid={testId}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
           <Info className="h-3.5 w-3.5" />
-        </button>
+        </span>
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
