@@ -8,7 +8,6 @@ from fastapi.responses import RedirectResponse
 from fastapi_users import schemas as fapi_schemas
 from fastapi_users.exceptions import UserAlreadyExists
 from fastapi_users.jwt import decode_jwt, generate_jwt
-from httpx_oauth.integrations.fastapi import OAuth2AuthorizeCallback
 from httpx_oauth.oauth2 import OAuth2Token
 from sqlalchemy import func, update as sa_update
 
@@ -47,11 +46,6 @@ _CALLBACK_ROUTE_NAME = "google-oauth-callback"
 _OAUTH_STATE_AUDIENCE = "fastapi-users:oauth-state"
 _CSRF_COOKIE = "flawchess_oauth_csrf"
 
-oauth2_callback_dep = OAuth2AuthorizeCallback(
-    google_oauth_client,
-    route_name=_CALLBACK_ROUTE_NAME,
-)
-
 
 @router.get("/auth/google/available", tags=["auth"])
 async def google_oauth_available() -> dict:
@@ -89,11 +83,26 @@ async def google_authorize(request: Request) -> dict:
 @router.get("/auth/google/callback", name=_CALLBACK_ROUTE_NAME, tags=["auth"])
 async def google_callback(
     request: Request,
-    access_token_state: tuple[OAuth2Token, str] = Depends(oauth2_callback_dep),
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
     user_manager: UserManager = Depends(get_user_manager),
 ):
-    """Handle Google OAuth callback, issue JWT, and redirect to frontend."""
-    token, state = access_token_state
+    """Handle Google OAuth callback, issue JWT, and redirect to frontend.
+
+    Exchanges the authorization code manually using BACKEND_URL instead of
+    request.url_for() — the latter builds wrong URLs behind reverse proxies
+    even with X-Forwarded headers, causing redirect_uri mismatch errors.
+    """
+    if error is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"OAuth error: {error}")
+
+    if code is None or state is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code or state")
+
+    # Exchange code for token using the same redirect_uri as the authorize step
+    redirect_url = f"{settings.BACKEND_URL}/auth/google/callback"
+    token = await google_oauth_client.get_access_token(code, redirect_url)
 
     if state is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing state")
