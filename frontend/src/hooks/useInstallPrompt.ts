@@ -48,9 +48,10 @@ export function useInstallPrompt() {
 
   const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
   const isStandalone = typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches;
+  const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
   return {
-    showAndroidPrompt: !!promptEvent && !isAndroidDismissed && !isStandalone,
+    showAndroidPrompt: !!promptEvent && !isAndroidDismissed && !isStandalone && isMobile,
     showIOSBanner: isIOS && !isStandalone && !isIOSDismissed,
     triggerInstall,
     dismissAndroid,
