@@ -9,9 +9,9 @@ Requirements for Project Launch milestone. Each maps to roadmap phases.
 
 ### Branding
 
-- [ ] **BRAND-01**: Project renamed from Chessalytics to FlawChess across all code, config, and documentation
-- [ ] **BRAND-02**: PWA manifest updated with FlawChess name, short_name, and new logo/icons
-- [ ] **BRAND-03**: FlawChess logo designed and integrated (favicon, PWA icons, About page, README)
+- [x] **BRAND-01**: Project renamed from Chessalytics to FlawChess across all code, config, and documentation
+- [x] **BRAND-02**: PWA manifest updated with FlawChess name, short_name, and new logo/icons
+- [x] **BRAND-03**: FlawChess logo designed and integrated (favicon, PWA icons, About page, README)
 - [ ] **BRAND-04**: Git repo transferred to flawchess GitHub organization with remotes updated
 - [ ] **BRAND-05**: Professional README with project description, feature screenshots, tech badges, and local setup instructions
 
@@ -75,9 +75,9 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BRAND-01 | Phase 20 | Pending |
-| BRAND-02 | Phase 20 | Pending |
-| BRAND-03 | Phase 20 | Pending |
+| BRAND-01 | Phase 20 | Complete |
+| BRAND-02 | Phase 20 | Complete |
+| BRAND-03 | Phase 20 | Complete |
 | BRAND-04 | Phase 20 | Pending |
 | BRAND-05 | Phase 23 | Pending |
 | DEPLOY-01 | Phase 21 | Pending |

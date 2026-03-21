@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project Launch
 status: unknown
-last_updated: "2026-03-21T14:06:27.361Z"
+last_updated: "2026-03-21T14:12:34.049Z"
 last_activity: 2026-03-21 - v1.3 roadmap created (phases 20-23)
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 2
-  completed_plans: 0
+  completed_plans: 1
 ---
 
 # Project State: FlawChess
@@ -50,6 +50,8 @@ Current focus: Phase 20 — Rename & Branding
 - [v1.3 roadmap]: Single Hetzner VPS (CX32) with Docker Compose + Caddy — no orchestration overhead for solo dev
 - [v1.3 roadmap]: Rename must be Phase 20 — Sentry/Plausible project names embed at creation time and are hard to change
 - [v1.3 roadmap]: BRAND-05 (README) in Phase 23 — screenshots need live domain and final branding in place
+- [Phase 20]: CSRF cookie renamed from chessalytics_oauth_csrf to flawchess_oauth_csrf — pre-production, acceptable
+- [Phase 20]: apple-touch-icon.png is a copy of icon-192.png as placeholder — user will provide final 180x180 asset
 
 ### Blockers/Concerns
 
@@ -80,4 +82,4 @@ Current focus: Phase 20 — Rename & Branding
 
 ---
 Last activity: 2026-03-21 - v1.3 roadmap created (phases 20-23)
-Last session: 2026-03-21T13:49:51.942Z
+Last session: 2026-03-21T14:12:34.047Z
