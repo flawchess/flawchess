@@ -25,9 +25,9 @@ def unique_email(prefix: str = "user") -> str:
 
 async def _register_and_login(client: httpx.AsyncClient, email: str, password: str) -> str:
     """Register a user and return their JWT access token."""
-    await client.post("/auth/register", json={"email": email, "password": password})
+    await client.post("/api/auth/register", json={"email": email, "password": password})
     login_resp = await client.post(
-        "/auth/jwt/login",
+        "/api/auth/jwt/login",
         data={"username": email, "password": password},
     )
     return login_resp.json()["access_token"]
@@ -64,7 +64,7 @@ class TestGetProfile:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/users/me/profile", headers=auth_headers)
+            resp = await client.get("/api/users/me/profile", headers=auth_headers)
 
         assert resp.status_code == 200
         body = resp.json()
@@ -79,7 +79,7 @@ class TestGetProfile:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/users/me/profile")
+            resp = await client.get("/api/users/me/profile")
 
         assert resp.status_code == 401
 
@@ -104,7 +104,7 @@ class TestPutProfile:
 
             # Update both usernames
             put_resp = await client.put(
-                "/users/me/profile",
+                "/api/users/me/profile",
                 json={
                     "chess_com_username": "magnus2024",
                     "lichess_username": "magnus_lichess",
@@ -117,7 +117,7 @@ class TestPutProfile:
             assert put_body["lichess_username"] == "magnus_lichess"
 
             # GET confirms updates persisted
-            get_resp = await client.get("/users/me/profile", headers=headers)
+            get_resp = await client.get("/api/users/me/profile", headers=headers)
             assert get_resp.status_code == 200
             get_body = get_resp.json()
             assert get_body["chess_com_username"] == "magnus2024"
@@ -130,7 +130,7 @@ class TestPutProfile:
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.put(
-                "/users/me/profile",
+                "/api/users/me/profile",
                 json={"chess_com_username": "testuser"},
             )
 
@@ -157,11 +157,11 @@ class TestProfileUserIsolation:
             token_b = await _register_and_login(client, email_b, password)
 
             profile_a = await client.get(
-                "/users/me/profile",
+                "/api/users/me/profile",
                 headers={"Authorization": f"Bearer {token_a}"},
             )
             profile_b = await client.get(
-                "/users/me/profile",
+                "/api/users/me/profile",
                 headers={"Authorization": f"Bearer {token_b}"},
             )
 

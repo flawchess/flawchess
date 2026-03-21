@@ -52,9 +52,9 @@ async def auth_headers() -> dict[str, str]:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        await client.post("/auth/register", json={"email": email, "password": password})
+        await client.post("/api/auth/register", json={"email": email, "password": password})
         login_resp = await client.post(
-            "/auth/jwt/login",
+            "/api/auth/jwt/login",
             data={"username": email, "password": password},
         )
         token = login_resp.json()["access_token"]
@@ -75,7 +75,7 @@ class TestPostImports:
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.post(
-                "/imports",
+                "/api/imports",
                 json={"platform": "chess.com", "username": "testuser"},
                 headers=auth_headers,
             )
@@ -93,7 +93,7 @@ class TestPostImports:
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.post(
-                "/imports",
+                "/api/imports",
                 json={"platform": "lichess", "username": "bobfischer"},
                 headers=auth_headers,
             )
@@ -112,7 +112,7 @@ class TestPostImports:
         ) as client:
             # First import
             resp1 = await client.post(
-                "/imports",
+                "/api/imports",
                 json={"platform": "chess.com", "username": "testuser"},
                 headers=auth_headers,
             )
@@ -121,7 +121,7 @@ class TestPostImports:
 
             # Second import (duplicate)
             resp2 = await client.post(
-                "/imports",
+                "/api/imports",
                 json={"platform": "chess.com", "username": "testuser"},
                 headers=auth_headers,
             )
@@ -139,7 +139,7 @@ class TestPostImports:
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.post(
-                "/imports",
+                "/api/imports",
                 json={"platform": "chess.com", "username": "testuser"},
                 headers=auth_headers,
             )
@@ -155,7 +155,7 @@ class TestPostImports:
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.post(
-                "/imports",
+                "/api/imports",
                 json={"platform": "invalid_platform", "username": "testuser"},
                 headers=auth_headers,
             )
@@ -169,7 +169,7 @@ class TestPostImports:
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.post(
-                "/imports",
+                "/api/imports",
                 json={"platform": "chess.com", "username": ""},
                 headers=auth_headers,
             )
@@ -191,14 +191,14 @@ class TestGetImportStatus:
         ) as client:
             # Create a job first
             create_resp = await client.post(
-                "/imports",
+                "/api/imports",
                 json={"platform": "chess.com", "username": "alice"},
                 headers=auth_headers,
             )
             job_id = create_resp.json()["job_id"]
 
             # Poll it
-            status_resp = await client.get(f"/imports/{job_id}")
+            status_resp = await client.get(f"/api/imports/{job_id}")
 
         assert status_resp.status_code == 200
         data = status_resp.json()
@@ -220,7 +220,7 @@ class TestGetImportStatus:
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="http://test"
             ) as client:
-                resp = await client.get("/imports/00000000-0000-0000-0000-000000000000")
+                resp = await client.get("/api/imports/00000000-0000-0000-0000-000000000000")
 
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"].lower()
@@ -233,7 +233,7 @@ class TestGetImportStatus:
         ) as client:
             # Create a job
             create_resp = await client.post(
-                "/imports",
+                "/api/imports",
                 json={"platform": "lichess", "username": "bob"},
                 headers=auth_headers,
             )
@@ -245,7 +245,7 @@ class TestGetImportStatus:
             job.games_imported = 40
 
             # Poll it
-            status_resp = await client.get(f"/imports/{job_id}")
+            status_resp = await client.get(f"/api/imports/{job_id}")
 
         assert status_resp.status_code == 200
         data = status_resp.json()
@@ -271,7 +271,7 @@ class TestGetImportStatus:
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="http://test"
             ) as client:
-                resp = await client.get("/imports/some-db-job-id")
+                resp = await client.get("/api/imports/some-db-job-id")
 
         assert resp.status_code == 200
         data = resp.json()

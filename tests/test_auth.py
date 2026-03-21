@@ -27,7 +27,7 @@ def unique_email(prefix: str = "test") -> str:
 
 async def register_user(client: httpx.AsyncClient, email: str, password: str) -> httpx.Response:
     resp = await client.post(
-        "/auth/register",
+        "/api/auth/register",
         json={"email": email, "password": password},
     )
     return resp
@@ -35,7 +35,7 @@ async def register_user(client: httpx.AsyncClient, email: str, password: str) ->
 
 async def login_user(client: httpx.AsyncClient, email: str, password: str) -> httpx.Response:
     resp = await client.post(
-        "/auth/jwt/login",
+        "/api/auth/jwt/login",
         data={"username": email, "password": password},
     )
     return resp
@@ -123,7 +123,7 @@ class TestAuthProtection:
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.post(
-                "/analysis/positions",
+                "/api/analysis/positions",
                 json={"target_hash": 0},
             )
 
@@ -136,7 +136,7 @@ class TestAuthProtection:
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.post(
-                "/imports",
+                "/api/imports",
                 json={"platform": "chess.com", "username": "testuser"},
             )
 
@@ -154,7 +154,7 @@ class TestAuthProtection:
             token = login_resp.json()["access_token"]
 
             resp = await client.post(
-                "/analysis/positions",
+                "/api/analysis/positions",
                 json={"target_hash": 0},
                 headers={"Authorization": f"Bearer {token}"},
             )

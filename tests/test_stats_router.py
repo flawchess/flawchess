@@ -35,9 +35,9 @@ async def auth_headers() -> dict[str, str]:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        await client.post("/auth/register", json={"email": email, "password": password})
+        await client.post("/api/auth/register", json={"email": email, "password": password})
         login_resp = await client.post(
-            "/auth/jwt/login",
+            "/api/auth/jwt/login",
             data={"username": email, "password": password},
         )
         token = login_resp.json()["access_token"]
@@ -59,7 +59,7 @@ class TestGetRatingHistory:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/stats/rating-history")
+            resp = await client.get("/api/stats/rating-history")
 
         assert resp.status_code == 401
 
@@ -69,7 +69,7 @@ class TestGetRatingHistory:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/stats/rating-history", headers=auth_headers)
+            resp = await client.get("/api/stats/rating-history", headers=auth_headers)
 
         assert resp.status_code == 200
 
@@ -79,7 +79,7 @@ class TestGetRatingHistory:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/stats/rating-history", headers=auth_headers)
+            resp = await client.get("/api/stats/rating-history", headers=auth_headers)
 
         data = resp.json()
         assert "chess_com" in data
@@ -94,7 +94,7 @@ class TestGetRatingHistory:
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.get(
-                "/stats/rating-history?recency=month", headers=auth_headers
+                "/api/stats/rating-history?recency=month", headers=auth_headers
             )
 
         assert resp.status_code == 200
@@ -107,7 +107,7 @@ class TestGetRatingHistory:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/stats/rating-history", headers=auth_headers)
+            resp = await client.get("/api/stats/rating-history", headers=auth_headers)
 
         data = resp.json()
         # Check structure of any returned data points
@@ -126,7 +126,7 @@ class TestGetRatingHistory:
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.get(
-                "/stats/rating-history?platform=chess.com", headers=auth_headers
+                "/api/stats/rating-history?platform=chess.com", headers=auth_headers
             )
 
         assert resp.status_code == 200
@@ -146,7 +146,7 @@ class TestGetRatingHistory:
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.get(
-                "/stats/rating-history?platform=lichess", headers=auth_headers
+                "/api/stats/rating-history?platform=lichess", headers=auth_headers
             )
 
         assert resp.status_code == 200
@@ -169,7 +169,7 @@ class TestGetGlobalStats:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/stats/global")
+            resp = await client.get("/api/stats/global")
 
         assert resp.status_code == 401
 
@@ -179,7 +179,7 @@ class TestGetGlobalStats:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/stats/global", headers=auth_headers)
+            resp = await client.get("/api/stats/global", headers=auth_headers)
 
         assert resp.status_code == 200
 
@@ -189,7 +189,7 @@ class TestGetGlobalStats:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/stats/global", headers=auth_headers)
+            resp = await client.get("/api/stats/global", headers=auth_headers)
 
         data = resp.json()
         assert "by_time_control" in data
@@ -203,7 +203,7 @@ class TestGetGlobalStats:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/stats/global?recency=year", headers=auth_headers)
+            resp = await client.get("/api/stats/global?recency=year", headers=auth_headers)
 
         assert resp.status_code == 200
 
@@ -215,7 +215,7 @@ class TestGetGlobalStats:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/stats/global", headers=auth_headers)
+            resp = await client.get("/api/stats/global", headers=auth_headers)
 
         data = resp.json()
         required_fields = {"label", "wins", "draws", "losses", "total", "win_pct", "draw_pct", "loss_pct"}
@@ -235,7 +235,7 @@ class TestGetGlobalStats:
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.get(
-                "/stats/global?platform=lichess", headers=auth_headers
+                "/api/stats/global?platform=lichess", headers=auth_headers
             )
 
         assert resp.status_code == 200
@@ -249,7 +249,7 @@ class TestGetGlobalStats:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/stats/global", headers=auth_headers)
+            resp = await client.get("/api/stats/global", headers=auth_headers)
 
         assert resp.status_code == 200
         data = resp.json()
