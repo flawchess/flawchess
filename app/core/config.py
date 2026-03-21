@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5173"
     # Environment: "development" bypasses JWT auth on all endpoints
     ENVIRONMENT: str = "production"
+    SENTRY_DSN: str = ""  # Empty string = Sentry disabled (dev default)
 
     model_config = SettingsConfigDict(env_file=".env")
 

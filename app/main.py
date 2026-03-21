@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -17,6 +18,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await cleanup_orphaned_jobs()
     yield
 
+
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.ENVIRONMENT,
+        traces_sample_rate=0.1,  # 10% of requests traced for performance visibility
+        send_default_pii=False,  # Do not send user PII (emails, IPs)
+    )
 
 app = FastAPI(title="FlawChess", version="0.1.0", lifespan=lifespan)
 
