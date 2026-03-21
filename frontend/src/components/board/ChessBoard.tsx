@@ -118,6 +118,9 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
       data-testid="arrow-overlay"
     >
       {sortedArrows.map((arrow, i) => {
+        // Skip degenerate arrows where start and end are the same square (causes NaN in path)
+        if (arrow.startSquare === arrow.endSquare) return null;
+
         const [x1, y1] = squareToCoords(arrow.startSquare, flipped);
         const [cx2, cy2] = squareToCoords(arrow.endSquare, flipped);
 
