@@ -76,7 +76,6 @@ function buildArrowPath(
   const junctionRight = [bx - px * shaftHalf, by - py * shaftHalf];
   const startRight = [x1 - px * shaftHalf, y1 - py * shaftHalf];
 
-  // SVG path: straight edges with a semicircular arc at the shaft start
   return [
     `M ${startLeft[0]},${startLeft[1]}`,
     `L ${junctionLeft[0]},${junctionLeft[1]}`,
@@ -85,7 +84,6 @@ function buildArrowPath(
     `L ${headRight[0]},${headRight[1]}`,
     `L ${junctionRight[0]},${junctionRight[1]}`,
     `L ${startRight[0]},${startRight[1]}`,
-    `A ${shaftHalf},${shaftHalf} 0 0,0 ${startLeft[0]},${startLeft[1]}`,
     'Z',
   ].join(' ');
 }
