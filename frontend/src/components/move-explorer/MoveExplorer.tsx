@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { Chess } from 'chess.js';
 import { ArrowLeftRight } from 'lucide-react';
+import { Popover as PopoverPrimitive } from 'radix-ui';
 import { WDL_WIN, WDL_DRAW, WDL_LOSS } from '@/components/results/WDLBar';
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { cn } from '@/lib/utils';
 import type { NextMoveEntry } from '@/types/api';
 
 interface MoveExplorerProps {
@@ -15,16 +16,41 @@ interface MoveExplorerProps {
   onMoveHover?: (moveSan: string | null) => void;
 }
 
+const IS_TOUCH = typeof window !== 'undefined' && 'ontouchstart' in window;
+
 export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick, onMoveHover }: MoveExplorerProps) {
+  // Mobile: first tap highlights a row (shows arrow on board), second tap plays the move
+  const [selectedMove, setSelectedMove] = useState<string | null>(null);
+
   const moveMap = useMemo(() => {
     const chess = new Chess(position);
     const legalMoves = chess.moves({ verbose: true });
     return new Map(legalMoves.map(m => [m.san, { from: m.from, to: m.to }]));
   }, [position]);
 
+  // Clear selection when position changes (move was played via board or other source)
+  const [prevPosition, setPrevPosition] = useState(position);
+  if (prevPosition !== position) {
+    setPrevPosition(position);
+    if (selectedMove !== null) setSelectedMove(null);
+  }
+
   const handleRowClick = (entry: NextMoveEntry) => {
     const squares = moveMap.get(entry.move_san);
-    if (squares) {
+    if (!squares) return;
+
+    if (IS_TOUCH) {
+      // Mobile: first tap highlights, second tap on same row plays the move
+      if (selectedMove === entry.move_san) {
+        onMoveClick(squares.from, squares.to);
+        setSelectedMove(null);
+        onMoveHover?.(null);
+      } else {
+        setSelectedMove(entry.move_san);
+        onMoveHover?.(entry.move_san);
+      }
+    } else {
+      // Desktop: single click plays the move
       onMoveClick(squares.from, squares.to);
     }
   };
@@ -82,15 +108,13 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
               <tr
                 key={entry.move_san}
                 data-testid={`move-explorer-row-${entry.move_san}`}
-                // Desktop: rows are clickable to play moves, with hover highlight.
-                // Mobile: disabled — no hover affordance, and tap conflicts with
-                // transposition tooltips. Users play moves via the board instead.
-                className="sm:cursor-pointer sm:hover:bg-accent min-h-[44px]"
+                className={cn(
+                  'cursor-pointer hover:bg-accent min-h-[44px]',
+                  selectedMove === entry.move_san && 'bg-accent',
+                )}
                 role="button"
                 tabIndex={0}
-                onClick={() => {
-                  if (window.matchMedia('(pointer: fine)').matches) handleRowClick(entry);
-                }}
+                onClick={() => handleRowClick(entry)}
                 onKeyDown={(e) => handleRowKeyDown(e, entry)}
                 onMouseEnter={() => onMoveHover?.(entry.move_san)}
                 onMouseLeave={() => onMoveHover?.(null)}
@@ -101,18 +125,11 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
                 <td className="py-1 text-right tabular-nums">
                   <span className="inline-flex items-center justify-end gap-0.5">
                     {entry.transposition_count > entry.game_count && (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span data-testid={`move-explorer-transpose-${entry.move_san}`}>
-                              <ArrowLeftRight className="inline h-4 w-4 text-muted-foreground mr-1" />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Position reached in {entry.transposition_count} total games ({entry.transposition_count - entry.game_count} via other move orders)
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <TranspositionInfo
+                        moveSan={entry.move_san}
+                        transpositionCount={entry.transposition_count}
+                        gameCount={entry.game_count}
+                      />
                     )}
                     {entry.game_count}
                   </span>
@@ -143,5 +160,57 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
         </table>
       )}
     </div>
+  );
+}
+
+/** Tap/hover-friendly transposition info using Popover instead of Tooltip */
+function TranspositionInfo({ moveSan, transpositionCount, gameCount }: {
+  moveSan: string;
+  transpositionCount: number;
+  gameCount: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  return (
+    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+      <PopoverPrimitive.Trigger asChild>
+        <button
+          type="button"
+          data-testid={`move-explorer-transpose-${moveSan}`}
+          aria-label={`Transposition info for ${moveSan}`}
+          className="text-muted-foreground hover:text-foreground focus:outline-none"
+          onClick={(e) => e.stopPropagation()}
+          onMouseEnter={() => {
+            hoverTimeout.current = setTimeout(() => setOpen(true), 100);
+          }}
+          onMouseLeave={() => {
+            if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+            setOpen(false);
+          }}
+        >
+          <ArrowLeftRight className="inline h-4 w-4 mr-1" />
+        </button>
+      </PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          side="top"
+          sideOffset={4}
+          onMouseEnter={() => { if (hoverTimeout.current) clearTimeout(hoverTimeout.current); }}
+          onMouseLeave={() => {
+            if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+            setOpen(false);
+          }}
+          className={cn(
+            'z-50 max-w-xs rounded-md border-0 outline-none bg-foreground px-3 py-1.5 text-xs text-background',
+            'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+            'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
+            'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2',
+          )}
+        >
+          Position reached in {transpositionCount} total games ({transpositionCount - gameCount} via other move orders)
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   );
 }
