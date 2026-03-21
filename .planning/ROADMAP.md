@@ -66,10 +66,11 @@
   2. The FlawChess logo appears as favicon, PWA icon, and in the app header
   3. Installing the PWA on a phone shows "FlawChess" as the app name with the new logo icon
   4. Git remote points to the flawchess GitHub organization
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 20-01: TBD
+- [ ] 20-01-PLAN.md — Rename all code/config/docs from Chessalytics to FlawChess + apple-touch-icon placeholder
+- [ ] 20-02-PLAN.md — GitHub repo transfer to flawchess org + git remote update
 
 ### Phase 21: Docker & Deployment
 **Goal**: FlawChess runs in production at flawchess.com — containerized, TLS-terminated, with persistent data and migrations-on-startup
@@ -138,7 +139,7 @@ Plans:
 | 17. PWA Foundation + Dev Workflow | v1.2 | 1/1 | Complete | 2026-03-20 |
 | 18. Mobile Navigation | v1.2 | 1/1 | Complete | 2026-03-20 |
 | 19. Mobile UX Polish + Install Prompt | v1.2 | 3/3 | Complete | 2026-03-21 |
-| 20. Rename & Branding | v1.3 | 0/TBD | Not started | - |
+| 20. Rename & Branding | v1.3 | 0/2 | Not started | - |
 | 21. Docker & Deployment | v1.3 | 0/TBD | Not started | - |
 | 22. CI/CD & Monitoring | v1.3 | 0/TBD | Not started | - |
 | 23. Launch Readiness | v1.3 | 0/TBD | Not started | - |
