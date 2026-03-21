@@ -238,33 +238,7 @@ export function OpeningsPage() {
         arrows={boardArrows}
       />
 
-      {/* Opening name + chessboard info icon */}
-      <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
-        {chess.openingName ? (
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
-            <span className="text-foreground">{chess.openingName.name}</span>
-          </div>
-        ) : (
-          <span className="text-muted-foreground italic">Play some moves</span>
-        )}
-        <span className="ml-auto flex-shrink-0">
-          <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
-            Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.
-            <br/><br/>
-            The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
-          </InfoPopover>
-        </span>
-      </div>
-
-      {/* Move list */}
-      <MoveList
-        moveHistory={chess.moveHistory}
-        currentPly={chess.currentPly}
-        onMoveClick={chess.goToMove}
-      />
-
-      {/* Board controls */}
+      {/* Board controls — directly below board, with info icon on the right */}
       <BoardControls
         onBack={chess.goBack}
         onForward={chess.goForward}
@@ -275,6 +249,32 @@ export function OpeningsPage() {
         onFlip={() => setBoardFlipped((f) => !f)}
         canGoBack={chess.currentPly > 0}
         canGoForward={chess.currentPly < chess.moveHistory.length}
+        infoSlot={
+          <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
+            Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.
+            <br/><br/>
+            The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
+          </InfoPopover>
+        }
+      />
+
+      {/* Opening name */}
+      <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
+        {chess.openingName ? (
+          <div className="flex items-baseline gap-2">
+            <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
+            <span className="text-foreground">{chess.openingName.name}</span>
+          </div>
+        ) : (
+          <span className="text-muted-foreground italic">Play some moves</span>
+        )}
+      </div>
+
+      {/* Move list */}
+      <MoveList
+        moveHistory={chess.moveHistory}
+        currentPly={chess.currentPly}
+        onMoveClick={chess.goToMove}
       />
 
       <div className="border-t border-border/40" />
@@ -528,7 +528,7 @@ export function OpeningsPage() {
 
         {/* Mobile: single column with sticky board */}
         <div className="md:hidden flex flex-col gap-2 min-w-0">
-          {/* Sticky board — sticks to top of viewport while scrolling content below */}
+          {/* Sticky board + controls — sticks to top of viewport while scrolling content below */}
           <div className="sticky top-0 z-10 bg-background pb-2">
             <ChessBoard
               position={chess.position}
@@ -537,9 +537,25 @@ export function OpeningsPage() {
               lastMove={chess.lastMove}
               arrows={boardArrows}
             />
+            {/* Board controls inside sticky container so they stick with the board */}
+            <BoardControls
+              onBack={chess.goBack}
+              onForward={chess.goForward}
+              onReset={() => { chess.reset(); setGamesOffset(0); }}
+              onFlip={() => setBoardFlipped((f) => !f)}
+              canGoBack={chess.currentPly > 0}
+              canGoForward={chess.currentPly < chess.moveHistory.length}
+              infoSlot={
+                <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="top">
+                  Play moves on the board by tapping squares or dragging pieces.
+                  <br /><br />
+                  The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
+                </InfoPopover>
+              }
+            />
           </div>
 
-          {/* Opening name + info icon */}
+          {/* Opening name */}
           <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
             {chess.openingName ? (
               <div className="flex items-baseline gap-2">
@@ -549,24 +565,7 @@ export function OpeningsPage() {
             ) : (
               <span className="text-muted-foreground italic">Play some moves</span>
             )}
-            <span className="ml-auto flex-shrink-0">
-              <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="top">
-                Play moves on the board by tapping squares or dragging pieces.
-                <br /><br />
-                The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
-              </InfoPopover>
-            </span>
           </div>
-
-          {/* Board controls */}
-          <BoardControls
-            onBack={chess.goBack}
-            onForward={chess.goForward}
-            onReset={() => { chess.reset(); setGamesOffset(0); }}
-            onFlip={() => setBoardFlipped((f) => !f)}
-            canGoBack={chess.currentPly > 0}
-            canGoForward={chess.currentPly < chess.moveHistory.length}
-          />
 
           {/* Move list */}
           <MoveList
