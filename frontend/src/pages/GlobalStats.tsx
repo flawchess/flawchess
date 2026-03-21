@@ -35,7 +35,7 @@ export function GlobalStatsPage() {
             value={recency ?? 'all'}
             onValueChange={(v) => setRecency(v === 'all' ? null : (v as Recency))}
           >
-            <SelectTrigger size="sm" data-testid="filter-recency">
+            <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -70,7 +70,7 @@ export function GlobalStatsPage() {
                   aria-label={`${p} platform`}
                   aria-pressed={isActive}
                   className={cn(
-                    'rounded border px-3 py-2 sm:px-2 sm:py-0.5 text-xs transition-colors',
+                    'rounded border px-3 h-11 sm:h-7 sm:px-2 text-xs transition-colors',
                     isActive
                       ? 'border-primary bg-primary text-primary-foreground'
                       : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
