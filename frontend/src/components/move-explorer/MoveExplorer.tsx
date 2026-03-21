@@ -96,6 +96,8 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
                   Move
                   <InfoPopover ariaLabel="Move arrows info" testId="move-arrows-info" side="top">
                     These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings.
+                    <br /><br />
+                    On desktop, click a move to play it. On mobile, tap to highlight (shows the arrow on the board), then tap again to play.
                   </InfoPopover>
                 </span>
               </th>
