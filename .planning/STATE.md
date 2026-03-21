@@ -3,21 +3,21 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project Launch
 status: unknown
-last_updated: "2026-03-21T17:00:26.744Z"
+last_updated: "2026-03-21T17:46:27.281Z"
 last_activity: 2026-03-21
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 20 (rename-branding) — EXECUTING
-Plan: 1 of 2
+Phase: 21 (docker-deployment) — EXECUTING
+Plan: 2 of 2
 
 ## Project Reference
 
@@ -52,6 +52,9 @@ Current focus: Phase 20 — Rename & Branding
 - [v1.3 roadmap]: BRAND-05 (README) in Phase 23 — screenshots need live domain and final branding in place
 - [Phase 20]: CSRF cookie renamed from chessalytics_oauth_csrf to flawchess_oauth_csrf — pre-production, acceptable
 - [Phase 20]: apple-touch-icon.png is a copy of icon-192.png as placeholder — user will provide final 180x180 asset
+- [Phase 21]: Backend expose-only (no ports) — Caddy is sole internet-facing entry point, no direct backend access from host
+- [Phase 21]: CORS disabled in production — Caddy routes frontend and API on same origin (flawchess.com)
+- [Phase 21]: Caddy build context is project root with dockerfile: frontend/Dockerfile so COPY deploy/Caddyfile paths work
 
 ### Blockers/Concerns
 
@@ -82,4 +85,4 @@ Current focus: Phase 20 — Rename & Branding
 
 ---
 Last activity: 2026-03-21
-Last session: 2026-03-21T17:00:26.742Z
+Last session: 2026-03-21T17:46:27.279Z

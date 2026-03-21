@@ -17,11 +17,11 @@ Requirements for Project Launch milestone. Each maps to roadmap phases.
 
 ### Deployment
 
-- [ ] **DEPLOY-01**: Multi-stage Dockerfiles for backend (Python/uv) and frontend (Node build → Caddy)
-- [ ] **DEPLOY-02**: Docker Compose orchestrating FastAPI, PostgreSQL, and Caddy services with named volumes
-- [ ] **DEPLOY-03**: Caddy reverse proxy serving frontend static files and proxying /api to backend with auto-TLS
-- [ ] **DEPLOY-04**: Alembic migrations run automatically on container startup before accepting traffic
-- [ ] **DEPLOY-05**: Environment variable configuration via .env file with Pydantic BaseSettings (no hardcoded secrets)
+- [x] **DEPLOY-01**: Multi-stage Dockerfiles for backend (Python/uv) and frontend (Node build → Caddy)
+- [x] **DEPLOY-02**: Docker Compose orchestrating FastAPI, PostgreSQL, and Caddy services with named volumes
+- [x] **DEPLOY-03**: Caddy reverse proxy serving frontend static files and proxying /api to backend with auto-TLS
+- [x] **DEPLOY-04**: Alembic migrations run automatically on container startup before accepting traffic
+- [x] **DEPLOY-05**: Environment variable configuration via .env file with Pydantic BaseSettings (no hardcoded secrets)
 - [ ] **DEPLOY-06**: Application deployed and accessible at flawchess.com (hosting platform discussed in phase)
 - [ ] **DEPLOY-07**: GitHub Actions CI/CD pipeline: test → build → push to GHCR → SSH deploy on push to main
 
@@ -80,11 +80,11 @@ Deferred to future release. Tracked but not in current roadmap.
 | BRAND-03 | Phase 20 | Complete |
 | BRAND-04 | Phase 20 | Pending |
 | BRAND-05 | Phase 23 | Pending |
-| DEPLOY-01 | Phase 21 | Pending |
-| DEPLOY-02 | Phase 21 | Pending |
-| DEPLOY-03 | Phase 21 | Pending |
-| DEPLOY-04 | Phase 21 | Pending |
-| DEPLOY-05 | Phase 21 | Pending |
+| DEPLOY-01 | Phase 21 | Complete |
+| DEPLOY-02 | Phase 21 | Complete |
+| DEPLOY-03 | Phase 21 | Complete |
+| DEPLOY-04 | Phase 21 | Complete |
+| DEPLOY-05 | Phase 21 | Complete |
 | DEPLOY-06 | Phase 21 | Pending |
 | DEPLOY-07 | Phase 22 | Pending |
 | MON-01 | Phase 22 | Pending |
