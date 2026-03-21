@@ -82,7 +82,8 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 | 260320-oiu | Sort board arrows grey->red->green so win/loss arrows are never hidden beneath neutral grey arrows | 2026-03-20 | 69d2bab | [260320-oiu-draw-grey-arrows-first-then-red-then-gre](./quick/260320-oiu-draw-grey-arrows-first-then-red-then-gre/) |
 | 260320-ouo | Replace all info icon tooltips with click-based InfoPopover (Radix Popover) to fix mobile tap flash-close | 2026-03-20 | 76b998e | [260320-ouo-fix-mobile-tooltip-info-icons-flashing-a](./quick/260320-ouo-fix-mobile-tooltip-info-icons-flashing-a/) |
 | 260321-erm | Mobile UX: GameCard shows opponent-only on mobile; BookmarkCard shows mini board at all sizes with wrapping label | 2026-03-21 | 2d91c57 | [260321-erm-mobile-ux-hide-player-name-in-game-card-](./quick/260321-erm-mobile-ux-hide-player-name-in-game-card-/) |
+| 260321-f2h | Reorder board controls: move buttons directly below chessboard with bg-muted background, info icon in controls row, sticky on mobile | 2026-03-21 | ab02e1f | [260321-f2h-reorder-chessboard-controls-move-buttons](./quick/260321-f2h-reorder-chessboard-controls-move-buttons/) |
 
 ---
 Last activity: 2026-03-21
-Last session: 2026-03-21T08:55:00.000Z
+Last session: 2026-03-21T09:55:00.000Z
