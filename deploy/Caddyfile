@@ -1,0 +1,45 @@
+flawchess.com {
+    encode gzip
+
+    # Backend API routes — proxy each prefix individually
+    # (no /api/* prefix in this codebase — routes are /auth/*, /analysis/*, etc.)
+    handle /auth/* {
+        reverse_proxy backend:8000
+    }
+
+    handle /analysis/* {
+        reverse_proxy backend:8000
+    }
+
+    handle /games/* {
+        reverse_proxy backend:8000
+    }
+
+    handle /imports/* {
+        reverse_proxy backend:8000
+    }
+
+    handle /position-bookmarks/* {
+        reverse_proxy backend:8000
+    }
+
+    handle /stats/* {
+        reverse_proxy backend:8000
+    }
+
+    handle /users/* {
+        reverse_proxy backend:8000
+    }
+
+    handle /health {
+        reverse_proxy backend:8000
+    }
+
+    # Frontend SPA — serve static files with index.html fallback
+    handle {
+        root * /srv
+        header /index.html Cache-Control "no-cache"
+        try_files {path} /index.html
+        file_server
+    }
+}
