@@ -6,7 +6,7 @@ import { queryClient } from '@/lib/queryClient';
 import { Toaster } from '@/components/ui/sonner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { DownloadIcon, LayoutGridIcon, BarChart3Icon, MenuIcon, LogOutIcon } from 'lucide-react';
+import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
@@ -39,13 +39,13 @@ function ImportJobWatcher({ jobId, onDone }: { jobId: string; onDone: (jobId: st
 
 const NAV_ITEMS = [
   { to: '/import', label: 'Import', Icon: DownloadIcon },
-  { to: '/openings', label: 'Openings', Icon: LayoutGridIcon },
+  { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/global-stats', label: 'Statistics', Icon: BarChart3Icon },
 ] as const;
 
 const BOTTOM_NAV_ITEMS = [
   { to: '/import', label: 'Import', Icon: DownloadIcon },
-  { to: '/openings', label: 'Openings', Icon: LayoutGridIcon },
+  { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/global-stats', label: 'Statistics', Icon: BarChart3Icon },
 ] as const;
 
