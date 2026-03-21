@@ -3,21 +3,21 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Mobile & PWA
 status: unknown
-last_updated: "2026-03-20T17:58:15.790Z"
+last_updated: "2026-03-21T07:57:57.927Z"
 last_activity: 2026-03-20
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State: Chessalytics
 
 ## Current Position
 
-Phase: 19 (mobile-ux-polish-install-prompt) — EXECUTING
-Plan: 2 of 3
+Phase: 19 (mobile-ux-polish-install-prompt) — COMPLETE
+Plan: 3 of 3
 
 ## Project Reference
 
@@ -31,7 +31,7 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 |-------|----------------|--------|-----------|
 | 17. PWA Foundation + Dev Workflow | 1/1 | Complete | 2026-03-20 |
 | 18. Mobile Navigation | 1/1 | Complete | 2026-03-20 |
-| 19. Mobile UX Polish + Install Prompt | 2/3 | In Progress | - |
+| 19. Mobile UX Polish + Install Prompt | 3/3 | Complete | 2026-03-21 |
 
 ## Key Context
 
@@ -59,6 +59,8 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 - `allowDragging: false` on react-chessboard — disables drag globally to fix black screen on mobile; click-to-move via onSquareClick fires natively on touch (no onPointerUp fallback needed)
 - Mobile Openings layout duplicates sidebar JSX intentionally — sticky board structure incompatible with sidebar's flat flex-column
 - isOpeningsRoute = pathname.startsWith('/openings') in ProtectedLayout hides MobileHeader on Openings route only
+- isMobile userAgent guard on showAndroidPrompt prevents desktop Chrome install drawer (bug found during verification)
+- Full Android/iOS PWA install testing deferred to post-deployment (HTTPS required for beforeinstallprompt)
 
 ### Pending Todos
 
@@ -81,5 +83,5 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 | 260320-ouo | Replace all info icon tooltips with click-based InfoPopover (Radix Popover) to fix mobile tap flash-close | 2026-03-20 | 76b998e | [260320-ouo-fix-mobile-tooltip-info-icons-flashing-a](./quick/260320-ouo-fix-mobile-tooltip-info-icons-flashing-a/) |
 
 ---
-Last activity: 2026-03-20
-Last session: 2026-03-20T17:58:15.788Z
+Last activity: 2026-03-21
+Last session: 2026-03-21T07:57:57.925Z
