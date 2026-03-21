@@ -241,6 +241,8 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
             darkSquareNotationStyle: BRIGHT_NOTATION,
             lightSquareNotationStyle: BRIGHT_NOTATION,
             id: 'chessboard',
+            // react-chessboard v5 animation state machine causes black screen on mobile
+            // when position prop updates — disable animations on touch devices only
             showAnimations: !('ontouchstart' in window),
             clearArrowsOnPositionChange: false,
             squareStyles,
