@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Mobile & PWA
 status: unknown
-last_updated: "2026-03-21T08:41:41.435Z"
-last_activity: 2026-03-21
+last_updated: "2026-03-21T10:49:43.802Z"
+last_activity: "2026-03-21 - Completed quick task 260321-ftk: Rename Statistics sub-tab to Compare, rename Global Stats tab to Statistics, add icons to desktop tabs"
 progress:
   total_phases: 3
   completed_phases: 3
@@ -84,7 +84,8 @@ Current focus: Phase 17 — PWA Foundation + Dev Workflow
 | 260321-erm | Mobile UX: GameCard shows opponent-only on mobile; BookmarkCard shows mini board at all sizes with wrapping label | 2026-03-21 | 2d91c57 | [260321-erm-mobile-ux-hide-player-name-in-game-card-](./quick/260321-erm-mobile-ux-hide-player-name-in-game-card-/) |
 | 260321-f2h | Reorder board controls: move buttons directly below chessboard with bg-muted background, info icon in controls row, sticky on mobile | 2026-03-21 | ab02e1f | [260321-f2h-reorder-chessboard-controls-move-buttons](./quick/260321-f2h-reorder-chessboard-controls-move-buttons/) |
 | 260321-ftk | Rename Openings sub-tab Statistics->Compare, Global Stats->Statistics in top nav, add icons to desktop nav and Openings tabs | 2026-03-21 | bf9009b | [260321-ftk-rename-statistics-sub-tab-to-compare-ren](./quick/260321-ftk-rename-statistics-sub-tab-to-compare-ren/) |
+| 260321-gdd | Add min-h-11 sm:min-h-0 to Time Control and Platform filter buttons for uniform 44px mobile touch targets | 2026-03-21 | 389b8e9 | [260321-gdd-make-filter-toggle-buttons-same-height-a](./quick/260321-gdd-make-filter-toggle-buttons-same-height-a/) |
 
 ---
-Last activity: 2026-03-21 - Completed quick task 260321-ftk: Rename Statistics sub-tab to Compare, rename Global Stats tab to Statistics, add icons to desktop tabs
-Last session: 2026-03-21T10:23:28.065Z
+Last activity: 2026-03-21 - Completed quick task 260321-gdd: Make filter toggle buttons same height
+Last session: 2026-03-21T10:49:43.800Z
