@@ -547,7 +547,7 @@ export function OpeningsPage() {
                 <span className="text-foreground">{chess.openingName.name}</span>
               </div>
             ) : (
-              <div />
+              <span className="text-muted-foreground italic">Play some moves</span>
             )}
             <span className="ml-auto flex-shrink-0">
               <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="top">
