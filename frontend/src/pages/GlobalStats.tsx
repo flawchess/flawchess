@@ -23,7 +23,7 @@ export function GlobalStatsPage() {
   const isLoading = ratingLoading || statsLoading;
 
   return (
-    <div data-testid="global-stats-page" className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:px-6">
+    <div data-testid="global-stats-page" className="mx-auto max-w-4xl space-y-6 px-6 py-6">
       <h1 className="text-2xl font-semibold">Global Stats</h1>
 
       {/* Filters */}
@@ -70,7 +70,7 @@ export function GlobalStatsPage() {
                   aria-label={`${p} platform`}
                   aria-pressed={isActive}
                   className={cn(
-                    'rounded border px-3 py-2 sm:px-2 sm:py-0.5 text-xs transition-colors min-h-11 sm:min-h-0',
+                    'rounded border px-2 py-0.5 text-xs transition-colors',
                     isActive
                       ? 'border-primary bg-primary text-primary-foreground'
                       : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
