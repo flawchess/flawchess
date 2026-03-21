@@ -52,7 +52,7 @@
 
 - [x] **Phase 20: Rename & Branding** — Rename codebase to FlawChess, create logo, update PWA manifest, transfer repo
 - [x] **Phase 21: Docker & Deployment** — Containerize app, deploy to Hetzner with Caddy auto-TLS, configure env
-- [ ] **Phase 22: CI/CD & Monitoring** — Automate deploys via GitHub Actions, add Sentry error tracking (backend + frontend)
+- [x] **Phase 22: CI/CD & Monitoring** — Automate deploys via GitHub Actions, add Sentry error tracking (backend + frontend) (completed 2026-03-21)
 - [ ] **Phase 23: Launch Readiness** — Analytics, About page, SEO, privacy policy, import queue, README
 
 ## Phase Details
@@ -143,7 +143,7 @@ Plans:
 | 19. Mobile UX Polish + Install Prompt | v1.2 | 3/3 | Complete | 2026-03-21 |
 | 20. Rename & Branding | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 21. Docker & Deployment | v1.3 | 2/2 | Complete | 2026-03-21 |
-| 22. CI/CD & Monitoring | 1/2 | In Progress|  | - |
+| 22. CI/CD & Monitoring | 2/2 | Complete   | 2026-03-21 | - |
 | 23. Launch Readiness | v1.3 | 0/TBD | Not started | - |
 
 ---
