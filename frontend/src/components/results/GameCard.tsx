@@ -74,6 +74,12 @@ export function GameCard({ game }: GameCardProps) {
   const whiteRating = game.white_rating !== null ? `(${game.white_rating})` : '';
   const blackRating = game.black_rating !== null ? `(${game.black_rating})` : '';
 
+  // Derive opponent info for the mobile-only compact display.
+  const opponentName = game.user_color === 'white' ? blackName : whiteName;
+  const opponentRating = game.user_color === 'white' ? blackRating : whiteRating;
+  // Opponent color is the opposite of the user color.
+  const opponentColorSymbol = game.user_color === 'white' ? '○' : '●';
+
   return (
     <div
       data-testid={`game-card-${game.game_id}`}
@@ -102,7 +108,14 @@ export function GameCard({ game }: GameCardProps) {
           >
             {RESULT_LABELS[game.user_result]}
           </span>
-          <span className="text-sm truncate">
+          {/* Mobile: show opponent only to save horizontal space */}
+          <span className="text-sm truncate sm:hidden">
+            <span className="text-foreground">
+              {opponentColorSymbol} {opponentName} {opponentRating}
+            </span>
+          </span>
+          {/* Desktop: show both players with "vs" separator */}
+          <span className="text-sm truncate hidden sm:inline">
             <span className="text-foreground">
               ● {whiteName} {whiteRating}
             </span>
