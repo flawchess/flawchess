@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
+import * as Sentry from "@sentry/react";
 import { Link } from 'react-router-dom';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
@@ -269,9 +270,10 @@ function AppRoutes() {
   const hasRestoredRef = useRef(false);
   // Track which token restoration has been performed for — reset guard on re-login
   const restoredForTokenRef = useRef<string | null>(null);
+  // eslint-disable-next-line react-hooks/refs -- intentional: reset restoration guard on token change
   if (restoredForTokenRef.current !== token) {
-    restoredForTokenRef.current = token;
-    hasRestoredRef.current = false;
+    restoredForTokenRef.current = token; // eslint-disable-line react-hooks/refs
+    hasRestoredRef.current = false; // eslint-disable-line react-hooks/refs
   }
 
   const activeJobsQuery = useActiveJobs(!!token);
@@ -349,8 +351,23 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <Router>
         <AuthProvider>
-          <AppRoutes />
-          <Toaster richColors />
+          <Sentry.ErrorBoundary
+            fallback={
+              <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+                <p className="text-lg font-medium text-destructive">Something went wrong.</p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
+                  data-testid="btn-error-reload"
+                >
+                  Reload page
+                </button>
+              </div>
+            }
+          >
+            <AppRoutes />
+            <Toaster richColors />
+          </Sentry.ErrorBoundary>
         </AuthProvider>
       </Router>
     </QueryClientProvider>

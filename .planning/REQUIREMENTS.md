@@ -23,12 +23,12 @@ Requirements for Project Launch milestone. Each maps to roadmap phases.
 - [x] **DEPLOY-04**: Alembic migrations run automatically on container startup before accepting traffic
 - [x] **DEPLOY-05**: Environment variable configuration via .env file with Pydantic BaseSettings (no hardcoded secrets)
 - [ ] **DEPLOY-06**: Application deployed and accessible at flawchess.com (hosting platform discussed in phase)
-- [ ] **DEPLOY-07**: GitHub Actions CI/CD pipeline: test → build → push to GHCR → SSH deploy on push to main
+- [x] **DEPLOY-07**: GitHub Actions CI/CD pipeline: test → build → push to GHCR → SSH deploy on push to main
 
 ### Monitoring
 
-- [ ] **MON-01**: Sentry error monitoring on backend capturing unhandled exceptions with request context
-- [ ] **MON-02**: Sentry error monitoring on frontend capturing JS errors with React ErrorBoundary
+- [x] **MON-01**: Sentry error monitoring on backend capturing unhandled exceptions with request context
+- [x] **MON-02**: Sentry error monitoring on frontend capturing JS errors with React ErrorBoundary
 - [ ] **MON-03**: Analytics integration tracking page views and usage patterns (tool choice discussed in phase)
 
 ### Content
@@ -86,9 +86,9 @@ Deferred to future release. Tracked but not in current roadmap.
 | DEPLOY-04 | Phase 21 | Complete |
 | DEPLOY-05 | Phase 21 | Complete |
 | DEPLOY-06 | Phase 21 | Pending |
-| DEPLOY-07 | Phase 22 | Pending |
-| MON-01 | Phase 22 | Pending |
-| MON-02 | Phase 22 | Pending |
+| DEPLOY-07 | Phase 22 | Complete |
+| MON-01 | Phase 22 | Complete |
+| MON-02 | Phase 22 | Complete |
 | MON-03 | Phase 23 | Pending |
 | CONT-01 | Phase 23 | Pending |
 | CONT-02 | Phase 23 | Pending |

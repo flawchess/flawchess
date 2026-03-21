@@ -39,12 +39,14 @@ export function SuggestionsModal({ open, onOpenChange }: SuggestionsModalProps) 
   }, [open, refetch]);
 
   // Reset selection when suggestions load
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional: reset state on new data */
   useEffect(() => {
     if (suggestions.length > 0) {
       setSelected(new Set());
       setSaveProgress(0);
     }
   }, [suggestions]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const whiteSuggestions = suggestions.filter(s => s.color === 'white');
   const blackSuggestions = suggestions.filter(s => s.color === 'black');

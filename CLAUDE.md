@@ -39,6 +39,12 @@ npm install                     # Install dependencies
 npm run dev                     # Dev server
 npm run build                   # Production build
 npm run lint                    # Lint
+
+# CI/CD (GitHub Actions)
+gh run list                     # List recent workflow runs
+gh run view <run-id> --log-failed  # View failed job logs
+gh run watch <run-id>           # Watch a run in progress
+gh pr checks <pr-number>        # Check PR status
 ```
 
 ## Architecture

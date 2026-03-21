@@ -3,7 +3,6 @@
 import json
 from unittest.mock import MagicMock
 
-import pytest
 
 from app.schemas.position_bookmarks import PositionBookmarkResponse
 

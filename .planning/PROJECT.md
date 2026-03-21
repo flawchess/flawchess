@@ -36,6 +36,8 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Click-to-move chessboard on touch devices with sticky mobile layout — v1.2
 - ✓ 44px touch targets on all interactive elements, no horizontal scroll at 375px — v1.2
 - ✓ Android/iOS in-app PWA install prompts — v1.2
+- ✓ CI/CD pipeline (GitHub Actions: test + SSH deploy + health check) — v1.3
+- ✓ Sentry error monitoring (backend + frontend) — v1.3
 
 ### Active
 
@@ -67,7 +69,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ## Context
 
-- **Current state:** v1.2 shipped. 19 phases complete across 3 milestones. ~11,800 Python LOC, ~5,500 TypeScript LOC (excluding node_modules).
+- **Current state:** v1.3 in progress. 22 phases complete across 4 milestones. CI/CD and Sentry monitoring deployed.
 - **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui
 - **Auth:** FastAPI-Users (JWT + Google SSO)
 - **Core algorithm:** Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import for indexed integer equality lookups
@@ -104,4 +106,4 @@ Users can determine their success rate for any opening position they specify, fi
 | Duplicate mobile Openings layout | Sticky board incompatible with sidebar's flex-column | ⚠️ Revisit |
 
 ---
-*Last updated: 2026-03-21 after v1.3 milestone started*
+*Last updated: 2026-03-21 after Phase 22 (CI/CD & Monitoring) complete*

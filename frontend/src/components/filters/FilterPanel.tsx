@@ -19,6 +19,7 @@ export interface FilterState {
   color: Color;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const DEFAULT_FILTERS: FilterState = {
   matchSide: 'both',
   timeControls: null,
