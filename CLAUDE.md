@@ -61,6 +61,35 @@ repositories/     # DB access (no SQL in services)
 
 Background async tasks (not blocking the API). chess.com fetches monthly archives sequentially with rate-limit delays. lichess streams NDJSON line-by-line. Both normalize to a unified schema before storage.
 
+## Production Server
+
+The production server is accessible via `ssh flawchess` (configured in user's SSH config). The deploy user is `deploy`, app lives at `/opt/flawchess`.
+
+```bash
+# SSH into server
+ssh flawchess
+
+# Check services
+ssh flawchess "cd /opt/flawchess && docker compose ps"
+
+# View backend logs
+ssh flawchess "cd /opt/flawchess && docker compose logs --tail=50 backend"
+
+# Deploy latest main
+ssh flawchess "cd /opt/flawchess && git pull origin main && docker compose up -d --build"
+
+# Restart backend only
+ssh flawchess "cd /opt/flawchess && docker compose restart backend"
+
+# Full restart (data persists in named volumes)
+ssh flawchess "cd /opt/flawchess && docker compose down && docker compose up -d"
+```
+
+- Domain: flawchess.com (Caddy handles auto-TLS)
+- Stack: PostgreSQL 16 + FastAPI/Uvicorn + Caddy 2.11.2
+- Alembic migrations run automatically on backend container startup via `deploy/entrypoint.sh`
+- `.env` on server at `/opt/flawchess/.env` — never commit production secrets
+
 ## Version Control
 
 - Always create a pull request before merging a feature or phase branch into main. Squash and merge the pull request into main only when approved or requested by the user.

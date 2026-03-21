@@ -48,6 +48,15 @@ uv run alembic upgrade head                            # Apply all migrations
 uv run alembic revision --autogenerate -m "description"  # Create a new migration
 ```
 
+## Docker Compose
+
+```bash
+cp .env.example .env  # Fill in values
+docker compose up -d --build
+```
+
+Runs three services: PostgreSQL 16, FastAPI backend (with auto-migration), and Caddy reverse proxy with automatic HTTPS. See `deploy/cloud-init.yml` for a production server setup example.
+
 ## Architecture
 
 ### Zobrist Hash Position Matching
