@@ -246,11 +246,11 @@ export function OpeningsPage() {
             <span className="text-foreground">{chess.openingName.name}</span>
           </div>
         ) : (
-          <div />
+          <span className="text-muted-foreground italic">Play some moves</span>
         )}
         <span className="ml-auto flex-shrink-0">
           <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
-            Play moves on the board by dragging pieces, or by clicking on the moves in the Moves tab.
+            Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.
             <br/><br/>
             The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
           </InfoPopover>
@@ -551,7 +551,7 @@ export function OpeningsPage() {
             )}
             <span className="ml-auto flex-shrink-0">
               <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="top">
-                Play moves on the board by tapping squares (tap a piece to select, then tap destination).
+                Play moves on the board by tapping squares or dragging pieces.
                 <br /><br />
                 The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
               </InfoPopover>
