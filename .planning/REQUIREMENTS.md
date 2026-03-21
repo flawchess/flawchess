@@ -1,0 +1,105 @@
+# Requirements: FlawChess
+
+**Defined:** 2026-03-21
+**Core Value:** Users can determine their success rate for any opening position they specify, filtering by their own pieces only, regardless of how platforms categorize the opening.
+
+## v1.3 Requirements
+
+Requirements for Project Launch milestone. Each maps to roadmap phases.
+
+### Branding
+
+- [ ] **BRAND-01**: Project renamed from Chessalytics to FlawChess across all code, config, and documentation
+- [ ] **BRAND-02**: PWA manifest updated with FlawChess name, short_name, and new logo/icons
+- [ ] **BRAND-03**: FlawChess logo designed and integrated (favicon, PWA icons, About page, README)
+- [ ] **BRAND-04**: Git repo transferred to flawchess GitHub organization with remotes updated
+- [ ] **BRAND-05**: Professional README with project description, feature screenshots, tech badges, and local setup instructions
+
+### Deployment
+
+- [ ] **DEPLOY-01**: Multi-stage Dockerfiles for backend (Python/uv) and frontend (Node build → Caddy)
+- [ ] **DEPLOY-02**: Docker Compose orchestrating FastAPI, PostgreSQL, and Caddy services with named volumes
+- [ ] **DEPLOY-03**: Caddy reverse proxy serving frontend static files and proxying /api to backend with auto-TLS
+- [ ] **DEPLOY-04**: Alembic migrations run automatically on container startup before accepting traffic
+- [ ] **DEPLOY-05**: Environment variable configuration via .env file with Pydantic BaseSettings (no hardcoded secrets)
+- [ ] **DEPLOY-06**: Application deployed and accessible at flawchess.com (hosting platform discussed in phase)
+- [ ] **DEPLOY-07**: GitHub Actions CI/CD pipeline: test → build → push to GHCR → SSH deploy on push to main
+
+### Monitoring
+
+- [ ] **MON-01**: Sentry error monitoring on backend capturing unhandled exceptions with request context
+- [ ] **MON-02**: Sentry error monitoring on frontend capturing JS errors with React ErrorBoundary
+- [ ] **MON-03**: Analytics integration tracking page views and usage patterns (tool choice discussed in phase)
+
+### Content
+
+- [ ] **CONT-01**: About page explaining FlawChess USPs, how it works, FAQ section, and register/login CTA
+- [ ] **CONT-02**: SEO fundamentals: per-route titles and meta descriptions, Open Graph tags, robots.txt, sitemap.xml
+- [ ] **CONT-03**: Privacy policy page at /privacy covering data collected, third-party services, and user rights
+
+### Stability
+
+- [ ] **STAB-01**: Import queue serializing outbound API calls per platform (chess.com, lichess) to prevent rate-limit errors under concurrent load
+
+## v1.x Requirements
+
+Deferred to future release. Tracked but not in current roadmap.
+
+### Monitoring
+
+- **MON-04**: Sentry session replay in error-only mode for frontend debugging
+- **MON-05**: Structured JSON logging with Sentry trace ID correlation
+
+### Stability
+
+- **STAB-02**: Import status UI showing queue position and estimated wait time
+- **STAB-03**: Durable import queue with ARQ + Redis replacing asyncio.Queue
+
+### Content
+
+- **CONT-04**: PWA update banner notifying users when a new version is deployed
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| Google Analytics (without evaluation) | Research recommends Plausible for privacy/simplicity; analytics tool will be evaluated during phase planning |
+| Cookie consent banner (preemptive) | Not needed if using Plausible + Sentry (no tracking cookies); revisit if GA chosen |
+| Celery/heavy task queue | asyncio.Queue sufficient for v1.3 import serialization; overkill for current scale |
+| Kubernetes / container orchestration | Over-engineered for single VPS with low initial traffic |
+| Separate staging environment | Doubles cost; local Docker Compose testing sufficient for solo developer |
+| SSR / Next.js for SEO | Complete frontend rewrite; only About page needs indexing |
+| Email notifications | Requires transactional email service; in-app polling sufficient |
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| BRAND-01 | — | Pending |
+| BRAND-02 | — | Pending |
+| BRAND-03 | — | Pending |
+| BRAND-04 | — | Pending |
+| BRAND-05 | — | Pending |
+| DEPLOY-01 | — | Pending |
+| DEPLOY-02 | — | Pending |
+| DEPLOY-03 | — | Pending |
+| DEPLOY-04 | — | Pending |
+| DEPLOY-05 | — | Pending |
+| DEPLOY-06 | — | Pending |
+| DEPLOY-07 | — | Pending |
+| MON-01 | — | Pending |
+| MON-02 | — | Pending |
+| MON-03 | — | Pending |
+| CONT-01 | — | Pending |
+| CONT-02 | — | Pending |
+| CONT-03 | — | Pending |
+| STAB-01 | — | Pending |
+
+**Coverage:**
+- v1.3 requirements: 19 total
+- Mapped to phases: 0
+- Unmapped: 19 ⚠️
+
+---
+*Requirements defined: 2026-03-21*
+*Last updated: 2026-03-21 after initial definition*
