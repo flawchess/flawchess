@@ -719,7 +719,7 @@ export function OpeningsPage() {
 
           {/* Tabs: Moves / Games / Compare */}
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
-            <TabsList className="w-full" data-testid="openings-tabs-mobile">
+            <TabsList className="w-full h-11!" data-testid="openings-tabs-mobile">
               <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
                 <ArrowRight className="mr-1.5 h-4 w-4" />
                 Moves
