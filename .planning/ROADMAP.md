@@ -50,8 +50,8 @@
 
 **Milestone Goal:** Rebrand to FlawChess, deploy to production on Hetzner, and ship everything needed for a public launch.
 
-- [ ] **Phase 20: Rename & Branding** — Rename codebase to FlawChess, create logo, update PWA manifest, transfer repo
-- [ ] **Phase 21: Docker & Deployment** — Containerize app, deploy to Hetzner with Caddy auto-TLS, configure env
+- [x] **Phase 20: Rename & Branding** — Rename codebase to FlawChess, create logo, update PWA manifest, transfer repo
+- [x] **Phase 21: Docker & Deployment** — Containerize app, deploy to Hetzner with Caddy auto-TLS, configure env
 - [ ] **Phase 22: CI/CD & Monitoring** — Automate deploys via GitHub Actions, add Sentry error tracking (backend + frontend)
 - [ ] **Phase 23: Launch Readiness** — Analytics, About page, SEO, privacy policy, import queue, README
 
@@ -69,8 +69,8 @@
 **Plans**: 2 plans
 
 Plans:
-- [ ] 20-01-PLAN.md — Rename all code/config/docs from Chessalytics to FlawChess + apple-touch-icon placeholder
-- [ ] 20-02-PLAN.md — GitHub repo transfer to flawchess org + git remote update
+- [x] 20-01-PLAN.md — Rename all code/config/docs from Chessalytics to FlawChess + apple-touch-icon placeholder
+- [x] 20-02-PLAN.md — GitHub repo transfer to flawchess org + git remote update
 
 ### Phase 21: Docker & Deployment
 **Goal**: FlawChess runs in production at flawchess.com — containerized, TLS-terminated, with persistent data and migrations-on-startup
@@ -85,21 +85,22 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 21-01-PLAN.md — Docker infrastructure: Dockerfiles, Compose, Caddyfile, entrypoint, CORS conditional, .env.example
-- [ ] 21-02-PLAN.md — Cloud-init cleanup + deploy to Hetzner VPS (checkpoint)
+- [x] 21-01-PLAN.md — Docker infrastructure: Dockerfiles, Compose, Caddyfile, entrypoint, CORS conditional, .env.example
+- [x] 21-02-PLAN.md — Cloud-init cleanup + deploy to Hetzner VPS (checkpoint)
 
 ### Phase 22: CI/CD & Monitoring
 **Goal**: Deploys are automated and errors in production are captured before users report them
 **Depends on**: Phase 21
 **Requirements**: DEPLOY-07, MON-01, MON-02
 **Success Criteria** (what must be TRUE):
-  1. Pushing to `main` triggers a GitHub Actions run that tests, builds a Docker image, pushes to GHCR, and deploys to the Hetzner VPS via SSH — all without manual steps
+  1. Pushing to `main` triggers a GitHub Actions run that tests, builds on the server via SSH, and deploys — all without manual steps
   2. An unhandled exception in the FastAPI backend appears in the Sentry dashboard within 60 seconds
   3. A JavaScript error thrown in the React frontend appears in the Sentry dashboard within 60 seconds
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 22-01: TBD
+- [ ] 22-01-PLAN.md — GitHub Actions CI/CD workflow (test + SSH deploy + health check)
+- [ ] 22-02-PLAN.md — Sentry error monitoring (backend sentry-sdk + frontend @sentry/react + Docker build args)
 
 ### Phase 23: Launch Readiness
 **Goal**: FlawChess is ready for public users — analytics running, content complete, rate-limit protection in place, README polished
@@ -140,9 +141,9 @@ Plans:
 | 17. PWA Foundation + Dev Workflow | v1.2 | 1/1 | Complete | 2026-03-20 |
 | 18. Mobile Navigation | v1.2 | 1/1 | Complete | 2026-03-20 |
 | 19. Mobile UX Polish + Install Prompt | v1.2 | 3/3 | Complete | 2026-03-21 |
-| 20. Rename & Branding | 1/2 | In Progress|  | - |
-| 21. Docker & Deployment | 1/2 | In Progress|  | - |
-| 22. CI/CD & Monitoring | v1.3 | 0/TBD | Not started | - |
+| 20. Rename & Branding | v1.3 | 2/2 | Complete | 2026-03-21 |
+| 21. Docker & Deployment | v1.3 | 2/2 | Complete | 2026-03-21 |
+| 22. CI/CD & Monitoring | v1.3 | 0/2 | Not started | - |
 | 23. Launch Readiness | v1.3 | 0/TBD | Not started | - |
 
 ---
