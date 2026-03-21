@@ -270,9 +270,10 @@ function AppRoutes() {
   const hasRestoredRef = useRef(false);
   // Track which token restoration has been performed for — reset guard on re-login
   const restoredForTokenRef = useRef<string | null>(null);
+  // eslint-disable-next-line react-hooks/refs -- intentional: reset restoration guard on token change
   if (restoredForTokenRef.current !== token) {
-    restoredForTokenRef.current = token;
-    hasRestoredRef.current = false;
+    restoredForTokenRef.current = token; // eslint-disable-line react-hooks/refs
+    hasRestoredRef.current = false; // eslint-disable-line react-hooks/refs
   }
 
   const activeJobsQuery = useActiveJobs(!!token);
