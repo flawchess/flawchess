@@ -76,7 +76,6 @@ function buildArrowPath(
   const junctionRight = [bx - px * shaftHalf, by - py * shaftHalf];
   const startRight = [x1 - px * shaftHalf, y1 - py * shaftHalf];
 
-  // SVG path: straight edges with a semicircular arc at the shaft start
   return [
     `M ${startLeft[0]},${startLeft[1]}`,
     `L ${junctionLeft[0]},${junctionLeft[1]}`,
@@ -85,7 +84,6 @@ function buildArrowPath(
     `L ${headRight[0]},${headRight[1]}`,
     `L ${junctionRight[0]},${junctionRight[1]}`,
     `L ${startRight[0]},${startRight[1]}`,
-    `A ${shaftHalf},${shaftHalf} 0 0,0 ${startLeft[0]},${startLeft[1]}`,
     'Z',
   ].join(' ');
 }
@@ -230,7 +228,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
 
   return (
     <div ref={containerRef} className="w-full" data-testid="chessboard">
-      <div style={{ position: 'relative', width: boardWidth, height: boardWidth }}>
+      <div style={{ position: 'relative', width: boardWidth, height: boardWidth, touchAction: 'none' }}>
         <Chessboard
           options={{
             position,
@@ -241,6 +239,9 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
             darkSquareNotationStyle: BRIGHT_NOTATION,
             lightSquareNotationStyle: BRIGHT_NOTATION,
             id: 'chessboard',
+            // react-chessboard v5 animation state machine causes black screen on mobile
+            // when position prop updates — disable animations on touch devices only
+            showAnimations: !('ontouchstart' in window),
             clearArrowsOnPositionChange: false,
             squareStyles,
             squareRenderer: ({ piece, square, children }) => {
@@ -251,6 +252,15 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
                   style={{ width: '100%', height: '100%', ...squareStyles[square] }}
                   aria-label={label}
                   data-testid={`square-${square}`}
+                  // react-chessboard v5 mobile tap detection is broken: dnd-kit's
+                  // TouchSensor starts a drag on minimal finger movement, which resets
+                  // the library's isClickingOnMobile flag before onTouchEnd fires.
+                  // This onPointerUp bypasses that flow to make tap-to-move work.
+                  onPointerUp={(e) => {
+                    if (e.pointerType === 'touch') {
+                      handleSquareClick({ square, piece: piece ?? null });
+                    }
+                  }}
                 >
                   {children}
                 </div>

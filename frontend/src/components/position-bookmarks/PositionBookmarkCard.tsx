@@ -89,13 +89,13 @@ export function PositionBookmarkCard({ bookmark, onLoad }: Props) {
         ☰
       </span>
 
-      {/* Mini board thumbnail — hidden on very small screens */}
+      {/* Mini board thumbnail — always visible; smaller on mobile */}
       <div
-        className="hidden sm:block shrink-0"
+        className="shrink-0"
         data-testid={`bookmark-mini-board-${bookmark.id}`}
         style={{ opacity: updateMatchSide.isPending ? 0.6 : 1, transition: 'opacity 0.15s' }}
       >
-        <MiniBoard fen={bookmark.fen} flipped={bookmark.is_flipped} size={80} />
+        <MiniBoard fen={bookmark.fen} flipped={bookmark.is_flipped} size={60} />
       </div>
 
       {/* Label + piece filter stacked */}
@@ -120,7 +120,7 @@ export function PositionBookmarkCard({ bookmark, onLoad }: Props) {
             />
           ) : (
             <button
-              className="min-w-0 cursor-text text-sm font-medium truncate text-left bg-transparent border-none p-0"
+              className="min-w-0 cursor-text text-sm font-medium break-words text-left bg-transparent border-none p-0"
               onClick={handleLabelClick}
               title={bookmark.label}
               data-testid={`bookmark-label-${bookmark.id}`}

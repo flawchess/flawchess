@@ -6,12 +6,13 @@ import { queryClient } from '@/lib/queryClient';
 import { Toaster } from '@/components/ui/sonner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { DownloadIcon, LayoutGridIcon, BarChart3Icon, MenuIcon, LogOutIcon } from 'lucide-react';
+import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
 
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { AuthPage } from '@/pages/Auth';
 import { ImportPage } from '@/pages/Import';
@@ -37,21 +38,21 @@ function ImportJobWatcher({ jobId, onDone }: { jobId: string; onDone: (jobId: st
 // ─── Nav items ────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
-  { to: '/import', label: 'Import' },
-  { to: '/openings', label: 'Openings' },
-  { to: '/global-stats', label: 'Global Stats' },
+  { to: '/import', label: 'Import', Icon: DownloadIcon },
+  { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
+  { to: '/global-stats', label: 'Statistics', Icon: BarChart3Icon },
 ] as const;
 
 const BOTTOM_NAV_ITEMS = [
   { to: '/import', label: 'Import', Icon: DownloadIcon },
-  { to: '/openings', label: 'Openings', Icon: LayoutGridIcon },
-  { to: '/global-stats', label: 'Global Stats', Icon: BarChart3Icon },
+  { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
+  { to: '/global-stats', label: 'Statistics', Icon: BarChart3Icon },
 ] as const;
 
 const ROUTE_TITLES: Record<string, string> = {
   '/import': 'Import',
   '/openings': 'Openings',
-  '/global-stats': 'Global Stats',
+  '/global-stats': 'Statistics',
 };
 
 // ─── Active route helper ───────────────────────────────────────────────────────
@@ -74,7 +75,7 @@ function NavHeader() {
         <div className="flex items-center gap-1">
           <span className="mr-3 text-lg font-bold tracking-tight text-foreground">Chessalytics</span>
           <nav aria-label="Main navigation">
-            {NAV_ITEMS.map(({ to, label }) => (
+            {NAV_ITEMS.map(({ to, label, Icon }) => (
               <Button
                 key={to}
                 asChild
@@ -86,7 +87,10 @@ function NavHeader() {
                     : 'rounded-none text-muted-foreground'
                 }
               >
-                <Link to={to} data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}>{label}</Link>
+                <Link to={to} data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}>
+                  <Icon className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                  {label}
+                </Link>
               </Button>
             ))}
           </nav>
@@ -219,7 +223,9 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
 
 function ProtectedLayout() {
   const { token } = useAuth();
+  const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
+  const isOpeningsRoute = location.pathname.startsWith('/openings');
 
   if (!token) {
     return <Navigate to="/login" replace />;
@@ -227,12 +233,13 @@ function ProtectedLayout() {
   return (
     <>
       <NavHeader />
-      <MobileHeader />
+      {!isOpeningsRoute && <MobileHeader />}
       <main className="pb-16 sm:pb-0">
         <Outlet />
       </main>
       <MobileBottomBar onMoreClick={() => setMoreOpen(true)} />
       <MobileMoreDrawer open={moreOpen} onOpenChange={setMoreOpen} />
+      <InstallPromptBanner />
     </>
   );
 }

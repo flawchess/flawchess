@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronUp, ChevronDown, Save, Sparkles } from 'lucide-react';
+import { ChevronUp, ChevronDown, Save, Sparkles, ArrowRight, Gamepad2, Scale } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
@@ -53,11 +53,13 @@ export function OpeningsPage() {
   const navigate = useNavigate();
 
   const needsRedirect = location.pathname === '/openings' || location.pathname === '/openings/';
+  // Redirect old /openings/statistics URL to /openings/compare after tab rename
+  const needsStatisticsRedirect = location.pathname.endsWith('/statistics');
 
   const activeTab = location.pathname.includes('/games')
     ? 'games'
-    : location.pathname.includes('/statistics')
-      ? 'statistics'
+    : location.pathname.includes('/compare')
+      ? 'compare'
       : 'explorer';
 
   // ── Board state ─────────────────────────────────────────────────────────────
@@ -74,6 +76,8 @@ export function OpeningsPage() {
   // ── Collapsible section state ───────────────────────────────────────────────
   const [positionBookmarksOpen, setPositionBookmarksOpen] = useState(false);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  // Mobile-only collapsible state — filters start collapsed on mobile (separate from desktop sidebar state)
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // ── Games tab pagination ────────────────────────────────────────────────────
   const [gamesOffset, setGamesOffset] = useState(0);
@@ -142,7 +146,7 @@ export function OpeningsPage() {
   });
   const gameCount = gameCountData?.count ?? null;
 
-  // ── Statistics tab data ─────────────────────────────────────────────────────
+  // ── Compare tab data ────────────────────────────────────────────────────────
   const timeSeriesRequest: TimeSeriesRequest | null = useMemo(() => {
     if (bookmarks.length === 0) return null;
     return {
@@ -236,33 +240,7 @@ export function OpeningsPage() {
         arrows={boardArrows}
       />
 
-      {/* Opening name + chessboard info icon */}
-      <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
-        {chess.openingName ? (
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
-            <span className="text-foreground">{chess.openingName.name}</span>
-          </div>
-        ) : (
-          <div />
-        )}
-        <span className="ml-auto flex-shrink-0">
-          <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
-            Play moves on the board by dragging pieces, or by clicking on the moves in the Moves tab.
-            <br/><br/>
-            The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
-          </InfoPopover>
-        </span>
-      </div>
-
-      {/* Move list */}
-      <MoveList
-        moveHistory={chess.moveHistory}
-        currentPly={chess.currentPly}
-        onMoveClick={chess.goToMove}
-      />
-
-      {/* Board controls */}
+      {/* Board controls — directly below board, with info icon on the right */}
       <BoardControls
         onBack={chess.goBack}
         onForward={chess.goForward}
@@ -273,6 +251,32 @@ export function OpeningsPage() {
         onFlip={() => setBoardFlipped((f) => !f)}
         canGoBack={chess.currentPly > 0}
         canGoForward={chess.currentPly < chess.moveHistory.length}
+        infoSlot={
+          <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
+            Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.
+            <br/><br/>
+            The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
+          </InfoPopover>
+        }
+      />
+
+      {/* Opening name */}
+      <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
+        {chess.openingName ? (
+          <div className="flex items-baseline gap-2">
+            <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
+            <span className="text-foreground">{chess.openingName.name}</span>
+          </div>
+        ) : (
+          <span className="text-muted-foreground italic">Play some moves</span>
+        )}
+      </div>
+
+      {/* Move list */}
+      <MoveList
+        moveHistory={chess.moveHistory}
+        currentPly={chess.currentPly}
+        onMoveClick={chess.goToMove}
       />
 
       <div className="border-t border-border/40" />
@@ -338,14 +342,14 @@ export function OpeningsPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-2 text-sm font-medium"
+            className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
             data-testid="section-position-bookmarks"
           >
             <span className="flex items-center gap-1">
               Position bookmarks
               <span onClick={(e) => e.stopPropagation()}>
                 <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info" side="top">
-                  Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                  Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Compare tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
                 </InfoPopover>
               </span>
             </span>
@@ -391,7 +395,7 @@ export function OpeningsPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-2 text-sm font-medium"
+            className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
             data-testid="section-more-filters"
           >
             More filters
@@ -492,9 +496,13 @@ export function OpeningsPage() {
     return <Navigate to="/openings/explorer" replace />;
   }
 
+  if (needsStatisticsRedirect) {
+    return <Navigate to="/openings/compare" replace />;
+  }
+
   return (
     <div data-testid="openings-page" className="flex min-h-0 flex-1 flex-col bg-background">
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-6">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
         {/* Desktop: two-column layout */}
         <div className="hidden md:grid md:grid-cols-[350px_1fr] md:gap-8 xl:grid-cols-[400px_1fr]">
           <div className="min-w-0">{sidebar}</div>
@@ -502,13 +510,16 @@ export function OpeningsPage() {
             <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
               <TabsList className="w-full" data-testid="openings-tabs">
                 <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
+                  <ArrowRight className="mr-1.5 h-4 w-4" />
                   Moves
                 </TabsTrigger>
                 <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
+                  <Gamepad2 className="mr-1.5 h-4 w-4" />
                   Games
                 </TabsTrigger>
-                <TabsTrigger value="statistics" data-testid="tab-statistics" className="flex-1">
-                  Statistics
+                <TabsTrigger value="compare" data-testid="tab-compare" className="flex-1">
+                  <Scale className="mr-1.5 h-4 w-4" />
+                  Compare
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="explorer" className="mt-4">
@@ -517,21 +528,210 @@ export function OpeningsPage() {
               <TabsContent value="games" className="mt-4">
                 {gamesContent}
               </TabsContent>
-              <TabsContent value="statistics" className="mt-4">
+              <TabsContent value="compare" className="mt-4">
                 {statisticsContent}
               </TabsContent>
             </Tabs>
           </div>
         </div>
 
-        {/* Mobile: single column */}
-        <div className="md:hidden">{sidebar}</div>
-        <div className="mt-6 md:hidden">
+        {/* Mobile: single column with sticky board */}
+        <div className="md:hidden flex flex-col gap-2 min-w-0">
+          {/* Sticky board + controls — sticks to top of viewport while scrolling content below */}
+          {/* z-20 to stay above ToggleGroupItem's focus:z-10 */}
+          <div className="sticky top-0 z-20 bg-background pb-2">
+            <div className="flex items-stretch gap-1">
+              <div className="flex-1 min-w-0">
+                <ChessBoard
+                  position={chess.position}
+                  onPieceDrop={chess.makeMove}
+                  flipped={boardFlipped}
+                  lastMove={chess.lastMove}
+                  arrows={boardArrows}
+                />
+              </div>
+              {/* Vertical board controls beside the board on mobile */}
+              <BoardControls
+                vertical
+                onBack={chess.goBack}
+                onForward={chess.goForward}
+                onReset={() => { chess.reset(); setGamesOffset(0); }}
+                onFlip={() => setBoardFlipped((f) => !f)}
+                canGoBack={chess.currentPly > 0}
+                canGoForward={chess.currentPly < chess.moveHistory.length}
+                infoSlot={
+                  <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="left">
+                    Play moves on the board by tapping squares or dragging pieces.
+                    <br /><br />
+                    The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Colors indicate your results: green for high win rate (60%+), red for high loss rate (60%+), and grey otherwise. Moves with fewer than 10 games are always grey.
+                  </InfoPopover>
+                }
+              />
+            </div>
+          </div>
+
+          {/* Opening name */}
+          <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
+            {chess.openingName ? (
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
+                <span className="text-foreground">{chess.openingName.name}</span>
+              </div>
+            ) : (
+              <span className="text-muted-foreground italic">Play some moves</span>
+            )}
+          </div>
+
+          {/* Move list */}
+          <MoveList
+            moveHistory={chess.moveHistory}
+            currentPly={chess.currentPly}
+            onMoveClick={chess.goToMove}
+          />
+
+          {/* Played as + Piece filter */}
+          <div className="flex flex-wrap gap-x-4 gap-y-3">
+            <div>
+              <p className="mb-1 text-xs text-muted-foreground">Played as</p>
+              <ToggleGroup
+                type="single"
+                value={filters.color}
+                onValueChange={(v) => {
+                  if (!v) return;
+                  const color = v as Color;
+                  setFilters(prev => ({ ...prev, color }));
+                  setBoardFlipped(color === 'black');
+                }}
+                variant="outline"
+                size="sm"
+                data-testid="filter-played-as-mobile"
+              >
+                <ToggleGroupItem value="white" data-testid="filter-played-as-white-mobile" className="min-h-11">
+                  <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
+                  White
+                </ToggleGroupItem>
+                <ToggleGroupItem value="black" data-testid="filter-played-as-black-mobile" className="min-h-11">
+                  <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
+                  Black
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+
+            <div className="ml-auto">
+              <div className="mb-1 flex items-center gap-1">
+                <p className="text-xs text-muted-foreground">Piece filter</p>
+                <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info-mobile" side="top">
+                  Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
+                </InfoPopover>
+              </div>
+              <ToggleGroup
+                type="single"
+                value={filters.matchSide}
+                onValueChange={(v) => {
+                  if (!v) return;
+                  setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
+                }}
+                variant="outline"
+                size="sm"
+                data-testid="filter-piece-filter-mobile"
+              >
+                <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-mobile" className="min-h-11">Mine</ToggleGroupItem>
+                <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-mobile" className="min-h-11">Opponent</ToggleGroupItem>
+                <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-mobile" className="min-h-11">Both</ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+          </div>
+
+          <div className="border-t border-border/40" />
+
+          {/* More filters — collapsed by default on mobile */}
+          <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
+                data-testid="section-more-filters-mobile"
+              >
+                More filters
+                {mobileFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="pt-2">
+                <FilterPanel filters={filters} onChange={handleFiltersChange} />
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          {/* Position bookmarks — collapsed by default */}
+          <Collapsible open={positionBookmarksOpen} onOpenChange={setPositionBookmarksOpen}>
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
+                data-testid="section-position-bookmarks-mobile"
+              >
+                <span className="flex items-center gap-1">
+                  Position bookmarks
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info-mobile" side="top">
+                      Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Compare tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                    </InfoPopover>
+                  </span>
+                </span>
+                {positionBookmarksOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="pt-2">
+                <div className="flex gap-2 mb-2">
+                  <Button
+                    size="lg"
+                    className="flex-1 bg-[#0a3d6b] hover:bg-[#072d50] text-white"
+                    onClick={openBookmarkDialog}
+                    data-testid="btn-bookmark-mobile"
+                  >
+                    <Save className="h-4 w-4" />
+                    Save
+                  </Button>
+                  <Button
+                    size="lg"
+                    className="flex-1 bg-[#0a3d6b] hover:bg-[#072d50] text-white"
+                    onClick={() => setSuggestionsOpen(true)}
+                    data-testid="btn-suggest-bookmarks-mobile"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Suggest
+                  </Button>
+                </div>
+                <PositionBookmarkList
+                  bookmarks={bookmarks}
+                  onReorder={handleReorder}
+                  onLoad={handleLoadBookmark}
+                />
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          <div className="border-t border-border/40" />
+
+          {/* Tabs: Moves / Games / Compare */}
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
-            <TabsList className="w-full">
-              <TabsTrigger value="explorer" className="flex-1">Moves</TabsTrigger>
-              <TabsTrigger value="games" className="flex-1">Games</TabsTrigger>
-              <TabsTrigger value="statistics" className="flex-1">Statistics</TabsTrigger>
+            <TabsList className="w-full h-11!" data-testid="openings-tabs-mobile">
+              <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
+                <ArrowRight className="mr-1.5 h-4 w-4" />
+                Moves
+              </TabsTrigger>
+              <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
+                <Gamepad2 className="mr-1.5 h-4 w-4" />
+                Games
+              </TabsTrigger>
+              <TabsTrigger value="compare" className="flex-1" data-testid="tab-compare-mobile">
+                <Scale className="mr-1.5 h-4 w-4" />
+                Compare
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="explorer" className="mt-4">
               {moveExplorerContent}
@@ -539,7 +739,7 @@ export function OpeningsPage() {
             <TabsContent value="games" className="mt-4">
               {gamesContent}
             </TabsContent>
-            <TabsContent value="statistics" className="mt-4">
+            <TabsContent value="compare" className="mt-4">
               {statisticsContent}
             </TabsContent>
           </Tabs>

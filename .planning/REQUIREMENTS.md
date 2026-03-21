@@ -12,8 +12,8 @@ Requirements for Mobile & PWA milestone. Each maps to roadmap phases.
 - [x] **PWA-01**: App has a web manifest with name, icons, theme color, and display:standalone
 - [x] **PWA-02**: Service worker precaches static assets for fast repeat loads (NetworkOnly for API routes)
 - [x] **PWA-03**: App has custom chess-themed icons (192px + 512px PNG) replacing default Vite favicon
-- [ ] **PWA-04**: User sees an in-app install prompt on Chromium browsers after engagement
-- [ ] **PWA-05**: iOS users see manual "Add to Home Screen" instructions since beforeinstallprompt is unavailable
+- [x] **PWA-04**: User sees an in-app install prompt on Chromium browsers after engagement
+- [x] **PWA-05**: iOS users see manual "Add to Home Screen" instructions since beforeinstallprompt is unavailable
 
 ### Mobile Navigation
 
@@ -23,10 +23,10 @@ Requirements for Mobile & PWA milestone. Each maps to roadmap phases.
 
 ### Mobile UX
 
-- [ ] **UX-01**: All interactive elements (buttons, filters, controls) meet 44x44px minimum touch target
-- [ ] **UX-02**: No page shows horizontal scroll at 375px viewport width
-- [ ] **UX-03**: Chessboard drag-and-drop and click-to-click moves work correctly on mobile devices
-- [ ] **UX-04**: Sidebar (chessboard + filters) and main content (Moves/Games/Statistics) are both usable on mobile without excessive scrolling
+- [x] **UX-01**: All interactive elements (buttons, filters, controls) meet 44x44px minimum touch target
+- [x] **UX-02**: No page shows horizontal scroll at 375px viewport width
+- [x] **UX-03**: Chessboard drag-and-drop and click-to-click moves work correctly on mobile devices
+- [x] **UX-04**: Sidebar (chessboard + filters) and main content (Moves/Games/Statistics) are both usable on mobile without excessive scrolling
 
 ### Dev Workflow
 
@@ -66,15 +66,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PWA-01 | Phase 17 | Complete |
 | PWA-02 | Phase 17 | Complete |
 | PWA-03 | Phase 17 | Complete |
-| PWA-04 | Phase 19 | Pending |
-| PWA-05 | Phase 19 | Pending |
+| PWA-04 | Phase 19 | Complete |
+| PWA-05 | Phase 19 | Complete |
 | NAV-01 | Phase 18 | Complete |
 | NAV-02 | Phase 18 | Complete |
 | NAV-03 | Phase 18 | Complete |
-| UX-01 | Phase 19 | Pending |
-| UX-02 | Phase 19 | Pending |
-| UX-03 | Phase 19 | Pending |
-| UX-04 | Phase 19 | Pending |
+| UX-01 | Phase 19 | Complete |
+| UX-02 | Phase 19 | Complete |
+| UX-03 | Phase 19 | Complete |
+| UX-04 | Phase 19 | Complete |
 | DEV-01 | Phase 17 | Complete |
 | DEV-02 | Phase 17 | Complete |
 
