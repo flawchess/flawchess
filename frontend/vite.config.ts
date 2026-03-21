@@ -36,7 +36,10 @@ export default defineConfig({
         ],
       },
       workbox: {
-        navigateFallback: '/index.html',
+        // Only use navigateFallback for paths that don't hit the backend.
+        // Allowlist approach: only SPA routes get index.html fallback.
+        // Everything else (API, OAuth callbacks) passes through to the server.
+        navigateFallback: null,
         runtimeCaching: [
           {
             urlPattern: /^\/(?:auth|analysis|games|imports|position-bookmarks|stats|users|health)\//,
