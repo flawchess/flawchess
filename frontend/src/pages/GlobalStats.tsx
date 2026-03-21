@@ -70,7 +70,7 @@ export function GlobalStatsPage() {
                   aria-label={`${p} platform`}
                   aria-pressed={isActive}
                   className={cn(
-                    'rounded border px-2 py-0.5 text-xs transition-colors',
+                    'rounded border px-3 py-2 sm:px-2 sm:py-0.5 text-xs transition-colors',
                     isActive
                       ? 'border-primary bg-primary text-primary-foreground'
                       : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',

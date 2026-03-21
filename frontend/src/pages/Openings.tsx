@@ -340,7 +340,7 @@ export function OpeningsPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded"
+            className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
             data-testid="section-position-bookmarks"
           >
             <span className="flex items-center gap-1">
@@ -393,7 +393,7 @@ export function OpeningsPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded"
+            className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
             data-testid="section-more-filters"
           >
             More filters
@@ -592,11 +592,11 @@ export function OpeningsPage() {
                 size="sm"
                 data-testid="filter-played-as-mobile"
               >
-                <ToggleGroupItem value="white" data-testid="filter-played-as-white-mobile">
+                <ToggleGroupItem value="white" data-testid="filter-played-as-white-mobile" className="min-h-11">
                   <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
                   White
                 </ToggleGroupItem>
-                <ToggleGroupItem value="black" data-testid="filter-played-as-black-mobile">
+                <ToggleGroupItem value="black" data-testid="filter-played-as-black-mobile" className="min-h-11">
                   <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
                   Black
                 </ToggleGroupItem>
@@ -621,9 +621,9 @@ export function OpeningsPage() {
                 size="sm"
                 data-testid="filter-piece-filter-mobile"
               >
-                <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-mobile">Mine</ToggleGroupItem>
-                <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-mobile">Opponent</ToggleGroupItem>
-                <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-mobile">Both</ToggleGroupItem>
+                <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-mobile" className="min-h-11">Mine</ToggleGroupItem>
+                <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-mobile" className="min-h-11">Opponent</ToggleGroupItem>
+                <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-mobile" className="min-h-11">Both</ToggleGroupItem>
               </ToggleGroup>
             </div>
           </div>
@@ -636,7 +636,7 @@ export function OpeningsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded"
+                className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
                 data-testid="section-more-filters-mobile"
               >
                 More filters
@@ -656,7 +656,7 @@ export function OpeningsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded"
+                className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
                 data-testid="section-position-bookmarks-mobile"
               >
                 <span className="flex items-center gap-1">
