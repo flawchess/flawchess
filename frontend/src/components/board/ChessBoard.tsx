@@ -241,6 +241,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
             darkSquareNotationStyle: BRIGHT_NOTATION,
             lightSquareNotationStyle: BRIGHT_NOTATION,
             id: 'chessboard',
+            showAnimations: !('ontouchstart' in window),
             clearArrowsOnPositionChange: false,
             squareStyles,
             squareRenderer: ({ piece, square, children }) => {
