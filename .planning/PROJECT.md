@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A multi-user chess analysis platform that lets players import their games from chess.com and lichess, then analyze win/draw/loss rates for specific board positions. It solves the problem of inconsistent opening categorization on existing platforms — instead of relying on opening names, users define positions visually and filter by actual piece placement. Includes an interactive move explorer showing next moves with W/D/L stats per position. Works as an installable PWA on mobile with touch-optimized UI.
+FlawChess (formerly Chessalytics) — a multi-user chess analysis platform that lets players import their games from chess.com and lichess, then analyze win/draw/loss rates for specific board positions. It solves the problem of inconsistent opening categorization on existing platforms — instead of relying on opening names, users define positions visually and filter by actual piece placement. Includes an interactive move explorer showing next moves with W/D/L stats per position. Works as an installable PWA on mobile with touch-optimized UI.
 
 ## Core Value
 
@@ -39,7 +39,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ### Active
 
-(None — next milestone not yet planned)
+<!-- v1.3 Project Launch — see REQUIREMENTS.md for full breakdown -->
 
 ### Out of Scope
 
@@ -48,6 +48,22 @@ Users can determine their success rate for any opening position they specify, fi
 - Human-like engine analysis — future: engine evaluation filtered by human move plausibility at target Elo (see Maia Chess approach)
 - Offline API data caching — chess data is user-specific + authenticated; caching risks stale analysis
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
+
+## Current Milestone: v1.3 Project Launch
+
+**Goal:** Rebrand to FlawChess, deploy to production on Hetzner, and ship everything needed for a public launch — Docker, CI/CD, monitoring, About page, SEO, analytics.
+
+**Target features:**
+- Rename project to FlawChess (code, repo, branding)
+- Dockerized deployment on Hetzner Cloud with Caddy (auto-SSL)
+- Deployment pipeline (CI/CD or scripted)
+- Error/performance monitoring (Sentry or similar)
+- About page with USPs, FAQ
+- Professional README
+- Google Analytics (or privacy-friendly alternative)
+- SEO fundamentals
+- Privacy policy & cookie consent
+- Import queue for concurrent rate-limit safety
 
 ## Context
 
@@ -88,4 +104,4 @@ Users can determine their success rate for any opening position they specify, fi
 | Duplicate mobile Openings layout | Sticky board incompatible with sidebar's flex-column | ⚠️ Revisit |
 
 ---
-*Last updated: 2026-03-21 after v1.2 milestone*
+*Last updated: 2026-03-21 after v1.3 milestone started*

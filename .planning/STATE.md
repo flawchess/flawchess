@@ -1,37 +1,35 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Mobile & PWA
-status: shipped
-last_updated: "2026-03-21T12:30:00.000Z"
-last_activity: "2026-03-21 - Shipped v1.2 Mobile & PWA milestone"
+milestone: v1.3
+milestone_name: Project Launch
+status: active
+last_updated: "2026-03-21T14:00:00.000Z"
+last_activity: "2026-03-21 — Milestone v1.3 started"
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
-# Project State: Chessalytics
+# Project State: FlawChess (formerly Chessalytics)
 
 ## Current Position
 
-Milestone v1.2 (Mobile & PWA) — SHIPPED 2026-03-21
-Next milestone: not yet planned
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-21 — Milestone v1.3 started
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-03-21)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Planning next milestone
+Current focus: v1.3 Project Launch
 
 ## Phase Progress
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 17. PWA Foundation + Dev Workflow | 1/1 | Complete | 2026-03-20 |
-| 18. Mobile Navigation | 1/1 | Complete | 2026-03-20 |
-| 19. Mobile UX Polish + Install Prompt | 3/3 | Complete | 2026-03-21 |
+(No phases yet — roadmap pending)
 
 ## Key Context
 
