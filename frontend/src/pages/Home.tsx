@@ -1,7 +1,9 @@
 import { Navigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { useUserProfile } from '@/hooks/useUserProfile';
+import { apiClient } from '@/api/client';
+import type { UserProfile } from '@/types/users';
 import { PublicHeader } from '@/components/layout/PublicHeader';
 import { Button } from '@/components/ui/button';
 import {
@@ -267,10 +269,17 @@ function HomePageContent() {
 
 export function HomePage() {
   const { token } = useAuth();
-  // useUserProfile is only called when authenticated — hooks must not be
-  // called conditionally, so we always call it but skip the redirect logic
-  // when there is no token.
-  const { data: profile, isLoading } = useUserProfile();
+  // Only fetch profile when authenticated to avoid a 401 that would trigger
+  // the response interceptor's redirect-to-login on the public homepage.
+  const { data: profile, isLoading } = useQuery<UserProfile>({
+    queryKey: ['userProfile'],
+    queryFn: async () => {
+      const res = await apiClient.get<UserProfile>('/users/me/profile');
+      return res.data;
+    },
+    enabled: !!token,
+    staleTime: 300_000,
+  });
 
   if (token) {
     // Wait for profile to load to avoid flashing the wrong page. For returning
