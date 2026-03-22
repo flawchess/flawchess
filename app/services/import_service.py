@@ -27,7 +27,7 @@ from app.services.zobrist import hashes_for_game
 
 logger = logging.getLogger(__name__)
 
-_BATCH_SIZE = 50
+_BATCH_SIZE = 10
 IMPORT_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours per D-24
 
 
