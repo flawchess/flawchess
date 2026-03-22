@@ -53,7 +53,7 @@
 - [x] **Phase 20: Rename & Branding** — Rename codebase to FlawChess, create logo, update PWA manifest, transfer repo
 - [x] **Phase 21: Docker & Deployment** — Containerize app, deploy to Hetzner with Caddy auto-TLS, configure env
 - [x] **Phase 22: CI/CD & Monitoring** — Automate deploys via GitHub Actions, add Sentry error tracking (backend + frontend) (completed 2026-03-21)
-- [ ] **Phase 23: Launch Readiness** — Analytics, About page, SEO, privacy policy, import queue, README
+- [ ] **Phase 23: Launch Readiness** — Public homepage, SEO, privacy policy, import rate-limit protection, README
 - [ ] **Phase 24: Theme Management** — Unified color theme across Tailwind, react-chessboard, charts, and branded buttons
 
 ## Phase Details
@@ -104,20 +104,23 @@ Plans:
 - [ ] 22-02-PLAN.md — Sentry error monitoring (backend sentry-sdk + frontend @sentry/react + Docker build args)
 
 ### Phase 23: Launch Readiness
-**Goal**: FlawChess is ready for public users — analytics running, content complete, rate-limit protection in place, README polished
+**Goal**: FlawChess is ready for public users — homepage explains the product, SEO enables discovery, privacy policy covers compliance, rate-limit protection prevents bans under concurrent load, README polished for GitHub
 **Depends on**: Phase 22
 **Requirements**: MON-03, CONT-01, CONT-02, CONT-03, STAB-01, BRAND-05
 **Success Criteria** (what must be TRUE):
-  1. Visiting flawchess.com/about shows an About page explaining the Zobrist-hash position-matching USP, a FAQ, and a visible register/login CTA
-  2. The About page title and meta description appear correctly when the URL is shared on social media (Open Graph preview)
-  3. A sitemap.xml and robots.txt are served at the correct paths and the About page is indexed by search crawlers
-  4. A privacy policy page exists at /privacy and accurately names all data processors (Sentry, analytics tool, auth)
+  1. Visiting flawchess.com shows a public homepage explaining the Zobrist-hash position-matching USP, a FAQ, and a visible register/login CTA
+  2. The homepage title and meta description appear correctly when the URL is shared on social media (Open Graph preview)
+  3. A sitemap.xml and robots.txt are served at the correct paths and public pages are indexable by search crawlers
+  4. A privacy policy page exists at /privacy and accurately names all data processors (Sentry, Hetzner)
   5. Two simultaneous import requests (one chess.com, one lichess) complete without either returning a 429 or triggering a rate-limit ban
-  6. Page views are recorded in the analytics dashboard without requiring cookie consent from users
-**Plans**: TBD
+  6. MON-03 (analytics) deferred — no analytics integration in this phase
+**Plans**: 4 plans
 
 Plans:
-- [ ] 23-01: TBD
+- [ ] 23-01-PLAN.md — Routing restructure + PublicHeader + Homepage content
+- [ ] 23-02-PLAN.md — Backend rate limiter, import timeout, concurrent importer count
+- [ ] 23-03-PLAN.md — Privacy policy page + SEO meta tags, robots.txt, sitemap.xml
+- [ ] 23-04-PLAN.md — Frontend concurrent import notice + professional README
 
 ## Progress
 
@@ -144,8 +147,8 @@ Plans:
 | 19. Mobile UX Polish + Install Prompt | v1.2 | 3/3 | Complete | 2026-03-21 |
 | 20. Rename & Branding | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 21. Docker & Deployment | v1.3 | 2/2 | Complete | 2026-03-21 |
-| 22. CI/CD & Monitoring | 2/2 | Complete    | 2026-03-21 | - |
-| 23. Launch Readiness | v1.3 | 0/TBD | Not started | - |
+| 22. CI/CD & Monitoring | v1.3 | 2/2 | Complete | 2026-03-21 |
+| 23. Launch Readiness | v1.3 | 0/4 | Not started | - |
 | 24. Theme Management | v1.3 | 0/TBD | Not started | - |
 
 ### Phase 24: Theme Management
