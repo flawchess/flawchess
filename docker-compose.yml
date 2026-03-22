@@ -27,6 +27,19 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-latest
+    environment:
+      DATABASE_URL: postgresql://${UMAMI_DB_USER}:${UMAMI_DB_PASSWORD}@db:5432/umami
+      APP_SECRET: ${UMAMI_APP_SECRET}
+      NODE_OPTIONS: "--max-old-space-size=256"
+    expose:
+      - "3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
   caddy:
     build:
       context: .
@@ -42,6 +55,7 @@ services:
       - caddy_config:/config
     depends_on:
       - backend
+      - umami
     restart: unless-stopped
 
 volumes:

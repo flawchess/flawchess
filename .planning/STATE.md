@@ -2,25 +2,22 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
-status: in_progress
-stopped_at: null
-last_updated: "2026-03-22T00:00:00.000Z"
-last_activity: "2026-03-22 - Started v1.4 Improvements milestone"
+status: unknown
+last_updated: "2026-03-22T17:22:31.905Z"
+last_activity: 2026-03-22
 progress:
   total_phases: 1
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 24 — Web Analytics
-Plan: —
-Status: Not started (phase needs planning)
-Last activity: 2026-03-22 — Milestone v1.4 started
+Phase: 24 (web-analytics) — EXECUTING
+Plan: 2 of 2
 
 ## Project Reference
 
@@ -47,6 +44,7 @@ Current focus: Web Analytics
 ### Decisions
 
 - [v1.4 roadmap]: Analytics tool choice deferred to phase planning — candidates: Plausible, Umami, GoAccess
+- [Phase 24-web-analytics]: Umami shares existing db PostgreSQL container (no separate DB); Node.js heap capped at 256 MB; no Caddy-level auth on analytics subdomain
 
 ### Roadmap Evolution
 

@@ -2,6 +2,10 @@ flawchess.org, www.flawchess.org {
     redir https://flawchess.com{uri} permanent
 }
 
+analytics.flawchess.com {
+    reverse_proxy umami:3000
+}
+
 flawchess.com {
     encode gzip
 
