@@ -21,12 +21,8 @@ import { ImportPage } from '@/pages/Import';
 import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
 import { OpeningsPage } from '@/pages/Openings';
 import { GlobalStatsPage } from '@/pages/GlobalStats';
+import { PrivacyPage } from '@/pages/Privacy';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
-
-// Privacy page placeholder — will be replaced in Plan 03
-function PrivacyPage() {
-  return <div>Privacy Policy</div>;
-}
 
 // ─── Non-visual job completion watcher ────────────────────────────────────────
 
