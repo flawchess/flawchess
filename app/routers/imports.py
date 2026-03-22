@@ -72,6 +72,7 @@ async def get_active_imports(
             games_fetched=job.games_fetched,
             games_imported=job.games_imported,
             error=job.error,
+            other_importers=import_service.count_active_platform_jobs(job.platform, job.user_id),
         )
         for job in jobs
     ]
@@ -98,11 +99,13 @@ async def get_import_status(
             games_fetched=job.games_fetched,
             games_imported=job.games_imported,
             error=job.error,
+            other_importers=import_service.count_active_platform_jobs(job.platform, job.user_id),
         )
 
     # Fall back to DB for historical jobs
     db_job = await import_job_repository.get_import_job(session, job_id)
     if db_job is not None:
+        # other_importers=0 is correct for completed/failed jobs — count is irrelevant
         return ImportStatusResponse(
             job_id=db_job.id,
             platform=db_job.platform,

@@ -3,22 +3,22 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project Launch
 status: unknown
-stopped_at: Completed 22-02-PLAN.md (Sentry integration)
-last_updated: "2026-03-21T21:37:28.470Z"
-last_activity: 2026-03-21
+stopped_at: Completed quick task 260322-ixq
+last_updated: "2026-03-22T12:49:55.959Z"
+last_activity: 2026-03-22
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 5
+  completed_phases: 3
+  total_plans: 10
+  completed_plans: 9
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 22 (ci-cd-monitoring) — EXECUTING
-Plan: 1 of 2
+Phase: 24
+Plan: Not started
 
 ## Project Reference
 
@@ -61,6 +61,20 @@ Current focus: Phase 20 — Rename & Branding
 - [Phase 22-ci-cd-monitoring]: Sentry disabled by default (SENTRY_DSN empty string) — no noise in dev, no console errors
 - [Phase 22-ci-cd-monitoring]: Single Sentry project for backend and frontend — same DSN value for SENTRY_DSN and VITE_SENTRY_DSN
 - [Phase 22-ci-cd-monitoring]: VITE_SENTRY_DSN baked into frontend bundle at Docker build time via ARG/ENV in Dockerfile and args: in docker-compose.yml
+- [Phase 23-02]: Semaphore lazy-init at call time avoids asyncio event loop not started error (Python 3.10+)
+- [Phase 23-02]: TimeoutError caught before Exception in run_import — Python 3.11+ TimeoutError is subclass of Exception, ordering matters
+- [Phase 23-02]: Lichess semaphore held for entire stream duration — limits connections, not individual requests
+- [Phase 23-01]: Inlined feature sections and FAQ items to ensure literal data-testid strings are present in source for grep-based acceptance criteria
+- [Phase 23-01]: Kept useUserProfile import in App.tsx — consumed by MobileMoreDrawer, not only by removed HomeRedirect
+- [Phase 23-03]: Static meta tags in index.html — no head management library (D-09 compliant)
+- [Phase 23-03]: document.title via useEffect in PrivacyPage — no react-helmet dependency needed
+- [Phase 23-03]: robots.txt and sitemap.xml in public/ — served automatically as static files by Vite/Caddy
+- [Phase 23-04]: MON-03 (analytics) acknowledged as deferred — no Plausible/analytics implementation in phase 23
+- [Phase 23-04]: Concurrent importer notice placed inside ImportProgressBar component (per-job, not global)
+
+### Roadmap Evolution
+
+- Phase 24 added: Theme Management — unified color theme across Tailwind, react-chessboard, charts, branded buttons
 
 ### Blockers/Concerns
 
@@ -91,8 +105,9 @@ Current focus: Phase 20 — Rename & Branding
 | 260321-gy2 | Bookmark saves position at current ply instead of final position | 2026-03-21 | 72b6637 | [260321-gy2-bookmark-saves-position-at-current-ply-i](./quick/260321-gy2-bookmark-saves-position-at-current-ply-i/) |
 | 260321-txu | Add /api prefix to all backend routes for single Caddy /api/* reverse proxy rule | 2026-03-21 | 8b7b5a2 | [260321-txu-add-api-prefix-to-all-backend-routes](./quick/260321-txu-add-api-prefix-to-all-backend-routes/) |
 | 260322-c36 | Brown chessboard squares (#8B6914/#D4A843) and warm primary buttons (#8B5E3C) to match detective horse logo branding | 2026-03-22 | 5584500 | [260322-c36-brown-chessboard-and-warm-primary-button](./quick/260322-c36-brown-chessboard-and-warm-primary-button/) |
+| 260322-ixq | Redirect new users (0 games) to /import instead of /openings for onboarding | 2026-03-22 | ceaf8bf | [260322-ixq-fix-new-user-routing-redirect-to-import-](./quick/260322-ixq-fix-new-user-routing-redirect-to-import-/) |
 
 ---
-Last activity: 2026-03-22 - Completed quick task 260322-c36: Brown chessboard and warm primary button colors
-Last session: 2026-03-21T21:34:08.974Z
-Stopped at: Completed 22-02-PLAN.md (Sentry integration)
+Last activity: 2026-03-22
+Last session: 2026-03-22T10:17:04.356Z
+Stopped at: Completed quick task 260322-ixq

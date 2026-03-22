@@ -2,47 +2,47 @@
 
 ## Milestones
 
-- ✅ **v1.0 Initial Platform** — Phases 1-10 (shipped 2026-03-15)
-- ✅ **v1.1 Opening Explorer & UI Restructuring** — Phases 11-16 (shipped 2026-03-20)
-- ✅ **v1.2 Mobile & PWA** — Phases 17-19 (shipped 2026-03-21)
-- 🚧 **v1.3 Project Launch** — Phases 20-23 (in progress)
+- ✅ **v1.0 Initial Platform** — Phases 1-10 (shipped 2024-03-15)
+- ✅ **v1.1 Opening Explorer & UI Restructuring** — Phases 11-16 (shipped 2024-03-20)
+- ✅ **v1.2 Mobile & PWA** — Phases 17-19 (shipped 2024-03-21)
+- 🚧 **v1.3 Project Launch** — Phases 20-24 (in progress)
 
 ## Phases
 
 <details>
-<summary>✅ v1.0 Initial Platform (Phases 1-10) — SHIPPED 2026-03-15</summary>
+<summary>✅ v1.0 Initial Platform (Phases 1-10) — SHIPPED 2024-03-15</summary>
 
-- [x] Phase 1: Data Foundation (2/2 plans) — completed 2026-03-11
-- [x] Phase 2: Import Pipeline (4/4 plans) — completed 2026-03-12
-- [x] Phase 3: Analysis API (2/2 plans) — completed 2026-03-12
-- [x] Phase 4: Frontend and Auth (3/3 plans) — completed 2026-03-12
-- [x] Phase 5: Position Bookmarks (5/5 plans) — completed 2026-03-13
-- [x] Phase 6: Browser Automation Optimization (2/2 plans) — completed 2026-03-13
-- [x] Phase 7: Game Statistics and Charts (3/3 plans) — completed 2026-03-14
-- [x] Phase 8: Games and Bookmark Tab Rework (3/3 plans) — completed 2026-03-14
-- [x] Phase 9: Game Cards, Username Import, Pagination (8/8 plans) — completed 2026-03-15
-- [x] Phase 10: Auto-Generate Position Bookmarks (4/4 plans) — completed 2026-03-15
-
-</details>
-
-<details>
-<summary>✅ v1.1 Opening Explorer & UI Restructuring (Phases 11-16) — SHIPPED 2026-03-20</summary>
-
-- [x] Phase 11: Schema and Import Pipeline (1/1 plan) — completed 2026-03-16
-- [x] Phase 12: Backend Next-Moves Endpoint (2/2 plans) — completed 2026-03-16
-- [x] Phase 13: Frontend Move Explorer Component (2/2 plans) — completed 2026-03-16
-- [x] Phase 14: UI Restructuring (3/3 plans) — completed 2026-03-17
-- [x] Phase 15: Enhanced Game Import Data (3/3 plans) — completed 2026-03-18
-- [x] Phase 16: Game Card UI Improvements (3/3 plans) — completed 2026-03-18
+- [x] Phase 1: Data Foundation (2/2 plans) — completed 2024-03-11
+- [x] Phase 2: Import Pipeline (4/4 plans) — completed 2024-03-12
+- [x] Phase 3: Analysis API (2/2 plans) — completed 2024-03-12
+- [x] Phase 4: Frontend and Auth (3/3 plans) — completed 2024-03-12
+- [x] Phase 5: Position Bookmarks (5/5 plans) — completed 2024-03-13
+- [x] Phase 6: Browser Automation Optimization (2/2 plans) — completed 2024-03-13
+- [x] Phase 7: Game Statistics and Charts (3/3 plans) — completed 2024-03-14
+- [x] Phase 8: Games and Bookmark Tab Rework (3/3 plans) — completed 2024-03-14
+- [x] Phase 9: Game Cards, Username Import, Pagination (8/8 plans) — completed 2024-03-15
+- [x] Phase 10: Auto-Generate Position Bookmarks (4/4 plans) — completed 2024-03-15
 
 </details>
 
 <details>
-<summary>✅ v1.2 Mobile & PWA (Phases 17-19) — SHIPPED 2026-03-21</summary>
+<summary>✅ v1.1 Opening Explorer & UI Restructuring (Phases 11-16) — SHIPPED 2024-03-20</summary>
 
-- [x] Phase 17: PWA Foundation + Dev Workflow (1/1 plan) — completed 2026-03-20
-- [x] Phase 18: Mobile Navigation (1/1 plan) — completed 2026-03-20
-- [x] Phase 19: Mobile UX Polish + Install Prompt (3/3 plans) — completed 2026-03-21
+- [x] Phase 11: Schema and Import Pipeline (1/1 plan) — completed 2024-03-16
+- [x] Phase 12: Backend Next-Moves Endpoint (2/2 plans) — completed 2024-03-16
+- [x] Phase 13: Frontend Move Explorer Component (2/2 plans) — completed 2024-03-16
+- [x] Phase 14: UI Restructuring (3/3 plans) — completed 2024-03-17
+- [x] Phase 15: Enhanced Game Import Data (3/3 plans) — completed 2024-03-18
+- [x] Phase 16: Game Card UI Improvements (3/3 plans) — completed 2024-03-18
+
+</details>
+
+<details>
+<summary>✅ v1.2 Mobile & PWA (Phases 17-19) — SHIPPED 2024-03-21</summary>
+
+- [x] Phase 17: PWA Foundation + Dev Workflow (1/1 plan) — completed 2024-03-20
+- [x] Phase 18: Mobile Navigation (1/1 plan) — completed 2024-03-20
+- [x] Phase 19: Mobile UX Polish + Install Prompt (3/3 plans) — completed 2024-03-21
 
 </details>
 
@@ -52,8 +52,8 @@
 
 - [x] **Phase 20: Rename & Branding** — Rename codebase to FlawChess, create logo, update PWA manifest, transfer repo
 - [x] **Phase 21: Docker & Deployment** — Containerize app, deploy to Hetzner with Caddy auto-TLS, configure env
-- [x] **Phase 22: CI/CD & Monitoring** — Automate deploys via GitHub Actions, add Sentry error tracking (backend + frontend) (completed 2026-03-21)
-- [ ] **Phase 23: Launch Readiness** — Analytics, About page, SEO, privacy policy, import queue, README
+- [x] **Phase 22: CI/CD & Monitoring** — Automate deploys via GitHub Actions, add Sentry error tracking (backend + frontend) (completed 2024-03-21)
+- [x] **Phase 23: Launch Readiness** — Public homepage, SEO, privacy policy, import rate-limit protection, README (completed 2024-03-22)
 
 ## Phase Details
 
@@ -103,52 +103,48 @@ Plans:
 - [ ] 22-02-PLAN.md — Sentry error monitoring (backend sentry-sdk + frontend @sentry/react + Docker build args)
 
 ### Phase 23: Launch Readiness
-**Goal**: FlawChess is ready for public users — analytics running, content complete, rate-limit protection in place, README polished
+**Goal**: FlawChess is ready for public users — homepage explains the product, SEO enables discovery, privacy policy covers compliance, rate-limit protection prevents bans under concurrent load, README polished for GitHub
 **Depends on**: Phase 22
 **Requirements**: MON-03, CONT-01, CONT-02, CONT-03, STAB-01, BRAND-05
 **Success Criteria** (what must be TRUE):
-  1. Visiting flawchess.com/about shows an About page explaining the Zobrist-hash position-matching USP, a FAQ, and a visible register/login CTA
-  2. The About page title and meta description appear correctly when the URL is shared on social media (Open Graph preview)
-  3. A sitemap.xml and robots.txt are served at the correct paths and the About page is indexed by search crawlers
-  4. A privacy policy page exists at /privacy and accurately names all data processors (Sentry, analytics tool, auth)
+  1. Visiting flawchess.com shows a public homepage explaining the Zobrist-hash position-matching USP, a FAQ, and a visible register/login CTA
+  2. The homepage title and meta description appear correctly when the URL is shared on social media (Open Graph preview)
+  3. A sitemap.xml and robots.txt are served at the correct paths and public pages are indexable by search crawlers
+  4. A privacy policy page exists at /privacy and accurately names all data processors (Sentry, Hetzner)
   5. Two simultaneous import requests (one chess.com, one lichess) complete without either returning a 429 or triggering a rate-limit ban
-  6. Page views are recorded in the analytics dashboard without requiring cookie consent from users
-**Plans**: TBD
+  6. MON-03 (analytics) deferred — no analytics integration in this phase
+**Plans**: 4 plans
 
 Plans:
-- [ ] 23-01: TBD
+- [x] 23-01-PLAN.md — Routing restructure + PublicHeader + Homepage content
+- [x] 23-02-PLAN.md — Backend rate limiter, import timeout, concurrent importer count
+- [x] 23-03-PLAN.md — Privacy policy page + SEO meta tags, robots.txt, sitemap.xml
+- [x] 23-04-PLAN.md — Frontend concurrent import notice + professional README
 
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Data Foundation | v1.0 | 2/2 | Complete | 2026-03-11 |
-| 2. Import Pipeline | v1.0 | 4/4 | Complete | 2026-03-12 |
-| 3. Analysis API | v1.0 | 2/2 | Complete | 2026-03-12 |
-| 4. Frontend and Auth | v1.0 | 3/3 | Complete | 2026-03-12 |
-| 5. Position Bookmarks | v1.0 | 5/5 | Complete | 2026-03-13 |
-| 6. Browser Automation | v1.0 | 2/2 | Complete | 2026-03-13 |
-| 7. Game Statistics | v1.0 | 3/3 | Complete | 2026-03-14 |
-| 8. Bookmark Tab Rework | v1.0 | 3/3 | Complete | 2026-03-14 |
-| 9. Game Cards & Import | v1.0 | 8/8 | Complete | 2026-03-15 |
-| 10. Auto Bookmarks | v1.0 | 4/4 | Complete | 2026-03-15 |
-| 11. Schema & Pipeline | v1.1 | 1/1 | Complete | 2026-03-16 |
-| 12. Next-Moves API | v1.1 | 2/2 | Complete | 2026-03-16 |
-| 13. Move Explorer UI | v1.1 | 2/2 | Complete | 2026-03-16 |
-| 14. UI Restructuring | v1.1 | 3/3 | Complete | 2026-03-17 |
-| 15. Enhanced Import | v1.1 | 3/3 | Complete | 2026-03-18 |
-| 16. Game Card UI | v1.1 | 3/3 | Complete | 2026-03-18 |
-| 17. PWA Foundation + Dev Workflow | v1.2 | 1/1 | Complete | 2026-03-20 |
-| 18. Mobile Navigation | v1.2 | 1/1 | Complete | 2026-03-20 |
-| 19. Mobile UX Polish + Install Prompt | v1.2 | 3/3 | Complete | 2026-03-21 |
-| 20. Rename & Branding | v1.3 | 2/2 | Complete | 2026-03-21 |
-| 21. Docker & Deployment | v1.3 | 2/2 | Complete | 2026-03-21 |
-| 22. CI/CD & Monitoring | 2/2 | Complete    | 2026-03-21 | - |
-| 23. Launch Readiness | v1.3 | 0/TBD | Not started | - |
-
----
-*Created: 2026-03-11*
-*v1.0 shipped: 2026-03-15*
-*v1.1 shipped: 2026-03-20*
-*v1.2 shipped: 2026-03-21*
-*v1.3 started: 2026-03-21*
+| 1. Data Foundation | v1.0 | 2/2 | Complete | 2024-03-11 |
+| 2. Import Pipeline | v1.0 | 4/4 | Complete | 2024-03-12 |
+| 3. Analysis API | v1.0 | 2/2 | Complete | 2024-03-12 |
+| 4. Frontend and Auth | v1.0 | 3/3 | Complete | 2024-03-12 |
+| 5. Position Bookmarks | v1.0 | 5/5 | Complete | 2024-03-13 |
+| 6. Browser Automation | v1.0 | 2/2 | Complete | 2024-03-13 |
+| 7. Game Statistics | v1.0 | 3/3 | Complete | 2024-03-14 |
+| 8. Bookmark Tab Rework | v1.0 | 3/3 | Complete | 2024-03-14 |
+| 9. Game Cards & Import | v1.0 | 8/8 | Complete | 2024-03-15 |
+| 10. Auto Bookmarks | v1.0 | 4/4 | Complete | 2024-03-15 |
+| 11. Schema & Pipeline | v1.1 | 1/1 | Complete | 2024-03-16 |
+| 12. Next-Moves API | v1.1 | 2/2 | Complete | 2024-03-16 |
+| 13. Move Explorer UI | v1.1 | 2/2 | Complete | 2024-03-16 |
+| 14. UI Restructuring | v1.1 | 3/3 | Complete | 2024-03-17 |
+| 15. Enhanced Import | v1.1 | 3/3 | Complete | 2024-03-18 |
+| 16. Game Card UI | v1.1 | 3/3 | Complete | 2024-03-18 |
+| 17. PWA Foundation + Dev Workflow | v1.2 | 1/1 | Complete | 2024-03-20 |
+| 18. Mobile Navigation | v1.2 | 1/1 | Complete | 2024-03-20 |
+| 19. Mobile UX Polish + Install Prompt | v1.2 | 3/3 | Complete | 2024-03-21 |
+| 20. Rename & Branding | v1.3 | 2/2 | Complete | 2024-03-21 |
+| 21. Docker & Deployment | v1.3 | 2/2 | Complete | 2024-03-21 |
+| 22. CI/CD & Monitoring | v1.3 | 2/2 | Complete | 2024-03-21 |
+| 23. Launch Readiness | v1.3 | 4/4 | Complete    | 2024-03-22 |

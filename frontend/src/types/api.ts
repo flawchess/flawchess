@@ -147,4 +147,6 @@ export interface ImportStatusResponse {
   games_imported: number;
   /** Error message if status is 'error' */
   error: string | null;
+  /** Count of other users currently importing from the same platform (D-23) */
+  other_importers: number;
 }

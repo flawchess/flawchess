@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Info } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -79,6 +79,17 @@ function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jo
           <div className="h-full w-full rounded-full bg-destructive" />
         )}
       </div>
+      {data.other_importers > 0 && (
+        <div
+          className="bg-muted border border-border rounded-md px-4 py-3 text-sm text-muted-foreground flex items-center gap-2 mt-3"
+          data-testid="import-concurrent-notice"
+        >
+          <Info className="h-4 w-4 shrink-0" />
+          <span>
+            {data.other_importers} other {data.other_importers === 1 ? 'user is' : 'users are'} also importing from {data.platform} — progress may be slower than usual.
+          </span>
+        </div>
+      )}
     </div>
   );
 }

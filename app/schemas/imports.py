@@ -23,6 +23,7 @@ class ImportStatusResponse(BaseModel):
     games_fetched: int
     games_imported: int
     error: str | None = None
+    other_importers: int = 0  # Count of other users importing from same platform (D-23)
 
     @classmethod
     def from_dict(cls, data: dict) -> "ImportStatusResponse":

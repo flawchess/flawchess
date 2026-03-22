@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Callable
 
 import httpx
 
+from app.core.rate_limiters import get_lichess_semaphore
 from app.services.normalization import normalize_lichess_game
 
 LICHESS_API_URL = "https://lichess.org/api/games/user"
@@ -54,24 +55,28 @@ async def fetch_lichess_games(
     url = f"{LICHESS_API_URL}/{username}"
     headers = {"Accept": "application/x-ndjson"}
 
-    async with client.stream(
-        "GET", url, params=params, headers=headers, timeout=300.0
-    ) as response:
-        if response.status_code == 404:
-            raise ValueError(f"lichess user '{username}' not found")
+    # Semaphore held for entire stream duration. Lichess streams in one HTTP
+    # connection per job, so the semaphore limits concurrent connections, not
+    # individual requests.
+    async with get_lichess_semaphore():
+        async with client.stream(
+            "GET", url, params=params, headers=headers, timeout=300.0
+        ) as response:
+            if response.status_code == 404:
+                raise ValueError(f"lichess user '{username}' not found")
 
-        async for line in response.aiter_lines():
-            if not line.strip():
-                continue
+            async for line in response.aiter_lines():
+                if not line.strip():
+                    continue
 
-            try:
-                game = json.loads(line)
-            except json.JSONDecodeError:
-                # Skip malformed lines without aborting the stream
-                continue
+                try:
+                    game = json.loads(line)
+                except json.JSONDecodeError:
+                    # Skip malformed lines without aborting the stream
+                    continue
 
-            normalized = normalize_lichess_game(game, username, user_id)
-            if normalized is not None:
-                yield normalized
-                if on_game_fetched is not None:
-                    on_game_fetched()
+                normalized = normalize_lichess_game(game, username, user_id)
+                if normalized is not None:
+                    yield normalized
+                    if on_game_fetched is not None:
+                        on_game_fetched()
