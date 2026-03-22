@@ -6,13 +6,13 @@ export function PublicHeader() {
   return (
     <header
       data-testid="public-header"
-      className="sticky top-0 z-40 border-b border-border bg-background px-6"
+      className="sticky top-0 z-40 border-b border-border bg-background px-6 overflow-hidden"
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between py-2">
         {/* Logo + brand name */}
-        <Link to="/" className="flex items-center gap-1.5">
-          <img src="/icons/logo-128.png" alt="" className="h-10 w-10" aria-hidden="true" />
-          <span className="text-lg tracking-tight font-brand">FlawChess</span>
+        <Link to="/" className="flex items-end gap-1.5 self-end">
+          <img src="/icons/logo-128.png" alt="" className="h-11 w-11 -mb-2" aria-hidden="true" />
+          <span className="self-center text-lg tracking-tight font-brand">FlawChess</span>
         </Link>
 
         {/* Navigation + auth */}
