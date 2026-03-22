@@ -1,3 +1,7 @@
+flawchess.org, www.flawchess.org {
+    redir https://flawchess.com{uri} permanent
+}
+
 flawchess.com {
     encode gzip
 
