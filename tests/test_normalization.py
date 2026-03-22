@@ -4,10 +4,11 @@
 class TestParseTimeControl:
     """Tests for parse_time_control function."""
 
-    def test_blitz_no_increment(self):
+    def test_rapid_no_increment(self):
+        """600+0 -> rapid (10+0 is standard rapid)."""
         from app.services.normalization import parse_time_control
         bucket, seconds = parse_time_control("600+0")
-        assert bucket == "blitz"
+        assert bucket == "rapid"
         assert seconds == 600
 
     def test_blitz_with_increment(self):
@@ -63,12 +64,19 @@ class TestParseTimeControl:
         assert bucket == "bullet"
         assert seconds == 179
 
-    def test_blitz_boundary(self):
-        """Exactly 600s -> blitz."""
+    def test_600_is_rapid(self):
+        """Exactly 600s -> rapid (10+0 is standard rapid)."""
         from app.services.normalization import parse_time_control
         bucket, seconds = parse_time_control("600+0")
-        assert bucket == "blitz"
+        assert bucket == "rapid"
         assert seconds == 600
+
+    def test_599_is_blitz(self):
+        """599s -> blitz (just below the 600s rapid threshold)."""
+        from app.services.normalization import parse_time_control
+        bucket, seconds = parse_time_control("599+0")
+        assert bucket == "blitz"
+        assert seconds == 599
 
     def test_rapid_boundary(self):
         """Exactly 1800s -> rapid."""
@@ -243,7 +251,7 @@ class TestNormalizeChesscomGame:
         assert result is not None
         # "+0" suffix is normalized away
         assert result["time_control_str"] == "600"
-        assert result["time_control_bucket"] == "blitz"
+        assert result["time_control_bucket"] == "rapid"
         assert result["time_control_seconds"] == 600
 
     def test_opening_eco_from_pgn(self):

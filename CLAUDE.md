@@ -134,7 +134,7 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
 - Always use `httpx.AsyncClient` for external HTTP calls — `requests` blocks the event loop
 - lichess `since`/`until` parameters use millisecond timestamps, not seconds
 - Only import `Standard` variant games — filter out Chess960, crazyhouse, etc.
-- Time control bucketing: <=180s = bullet, <=600s = blitz, <=1800s = rapid, else classical (based on estimated game duration)
+- Time control bucketing: <180s = bullet, <600s = blitz, <=1800s = rapid, else classical (based on estimated game duration)
 - PGN parsing: wrap per-game in try/except, handle `UnicodeDecodeError`, loop `read_game()` until `None` for multi-game strings
 - Use `board.board_fen()` (piece placement only) not `board.fen()` (includes castling/en passant) when comparing positions
 - chess.com requires `User-Agent` header; fetch archives sequentially with 100-300ms delays

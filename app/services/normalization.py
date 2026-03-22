@@ -24,7 +24,7 @@ def parse_time_control(tc_str: str) -> tuple[str | None, int | None]:
     """Parse a time control string into (bucket, estimated_seconds).
 
     Examples:
-        '600+0'   -> ('blitz', 600)
+        '600+0'   -> ('rapid', 600)
         '180+2'   -> ('blitz', 260)   # 180 + 2*40 = 260
         '60+0'    -> ('bullet', 60)
         '900+10'  -> ('rapid', 1300)  # 900 + 10*40 = 1300
@@ -33,8 +33,8 @@ def parse_time_control(tc_str: str) -> tuple[str | None, int | None]:
         ''        -> (None, None)
 
     Thresholds (estimated duration):
-        <= 180s  -> bullet
-        <= 600s  -> blitz
+        < 180s   -> bullet
+        < 600s   -> blitz
         <= 1800s -> rapid
         else     -> classical
     """
@@ -59,7 +59,7 @@ def parse_time_control(tc_str: str) -> tuple[str | None, int | None]:
 
     if estimated < 180:
         return "bullet", estimated
-    elif estimated <= 600:
+    elif estimated < 600:
         return "blitz", estimated
     elif estimated <= 1800:
         return "rapid", estimated
