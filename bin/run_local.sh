@@ -15,6 +15,10 @@ until docker compose -f docker-compose.dev.yml -p flawchess-dev exec db pg_isrea
   sleep 1
 done
 
+# Install backend dependencies
+echo "Installing backend dependencies..."
+uv sync
+
 # Run database migrations
 echo "Running migrations..."
 uv run alembic upgrade head
