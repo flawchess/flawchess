@@ -27,6 +27,10 @@ from app.services.zobrist import hashes_for_game
 
 logger = logging.getLogger(__name__)
 
+# Number of games per DB insert batch. Each game produces ~80 position rows,
+# so batch_size=10 means ~800 position rows per INSERT. Kept low to avoid
+# OOM kills on the 3.7GB production server — batch_size=50 caused PostgreSQL
+# to be killed by the Linux OOM killer during large game_positions INSERTs.
 _BATCH_SIZE = 10
 IMPORT_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours per D-24
 
