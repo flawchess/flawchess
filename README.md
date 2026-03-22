@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://flawchess.com"><strong>flawchess.com</strong></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/flawchess/flawchess/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/flawchess/flawchess/actions/workflows/ci.yml/badge.svg" /></a>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue" />
   <img alt="Python" src="https://img.shields.io/badge/python-3.13-blue" />
