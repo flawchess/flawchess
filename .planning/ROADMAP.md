@@ -63,7 +63,7 @@
   - **Goal:** Add privacy-friendly, low-resource web analytics to track page visits, top routes, and referrer sources
   - **Requirements:** ANLY-01, ANLY-02, ANLY-03, ANLY-04, ANLY-05
   - **Plans:** 2 plans
-    - [ ] 24-01-PLAN.md — Add Umami service to Docker Compose, Caddy subdomain, and env vars
+    - [x] 24-01-PLAN.md — Add Umami service to Docker Compose, Caddy subdomain, and env vars
     - [ ] 24-02-PLAN.md — Deploy Umami, add tracking script to frontend, verify end-to-end
   - **Success criteria:**
     1. Site owner can view a dashboard showing page visit counts and trends
@@ -99,4 +99,4 @@
 | 21. Docker & Deployment | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 22. CI/CD & Monitoring | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 23. Launch Readiness | v1.3 | 4/4 | Complete | 2026-03-22 |
-| 24. Web Analytics | v1.4 | 0/2 | Not started | — |
+| 24. Web Analytics | v1.4 | 1/2 | In Progress|  |
