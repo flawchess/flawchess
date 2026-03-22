@@ -418,8 +418,8 @@ export function OpeningsPage() {
 
   const moveExplorerContent = (
     <div className="flex flex-col gap-4">
-      {gamesQuery.data && gamesQuery.data.matched_count > 0 && (
-        <WDLBar stats={gamesQuery.data.stats} />
+      {nextMoves.data && nextMoves.data.position_stats.total > 0 && (
+        <WDLBar stats={nextMoves.data.position_stats} />
       )}
       <MoveExplorer
         moves={nextMoves.data?.moves ?? []}
