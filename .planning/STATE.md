@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project Launch
 status: unknown
-stopped_at: Completed quick task 260322-jem
-last_updated: "2026-03-22T13:03:08.369Z"
-last_activity: 2026-03-22
+stopped_at: Completed quick task 260322-kpe
+last_updated: "2026-03-22T13:59:27.199Z"
+last_activity: "2026-03-22 - Completed quick task 260322-jem: Professional open-source README"
 progress:
   total_phases: 4
   completed_phases: 3
@@ -107,8 +107,9 @@ Current focus: Phase 20 — Rename & Branding
 | 260322-c36 | Brown chessboard squares (#8B6914/#D4A843) and warm primary buttons (#8B5E3C) to match detective horse logo branding | 2026-03-22 | 5584500 | [260322-c36-brown-chessboard-and-warm-primary-button](./quick/260322-c36-brown-chessboard-and-warm-primary-button/) |
 | 260322-ixq | Redirect new users (0 games) to /import instead of /openings for onboarding | 2026-03-22 | ceaf8bf | [260322-ixq-fix-new-user-routing-redirect-to-import-](./quick/260322-ixq-fix-new-user-routing-redirect-to-import-/) |
 | 260322-jem | Professional open-source README with CI badge, screenshots, self-hosting instructions | 2026-03-22 | fdaa9ca | [260322-jem-professional-open-source-readme-with-ci-](./quick/260322-jem-professional-open-source-readme-with-ci-/) |
+| 260322-kpe | Fix time control bucketing: 10+0 (600s) classified as rapid not blitz; data migration for existing games | 2026-03-22 | 60c0cf8 | [260322-kpe-fix-wrong-time-control-bucket-assignment](./quick/260322-kpe-fix-wrong-time-control-bucket-assignment/) |
 
 ---
-Last activity: 2026-03-22 - Completed quick task 260322-jem: Professional open-source README
-Last session: 2026-03-22T13:03:08.367Z
-Stopped at: Completed quick task 260322-jem
+Last activity: 2026-03-22 - Completed quick task 260322-kpe: Fix time control bucket assignment
+Last session: 2026-03-22T13:59:27.198Z
+Stopped at: Completed quick task 260322-kpe
