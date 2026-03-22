@@ -54,11 +54,13 @@ Exceptions:
 
 All values use the existing project type scale. No new fonts or sizes are introduced.
 
+Scale uses exactly 2 weights: 400 (regular) for body-level roles, 700 (bold) for heading-level roles.
+
 | Role | Size | Weight | Line Height | Usage |
 |------|------|--------|-------------|-------|
 | Body | 16px | 400 (regular) | 1.5 | Feature descriptions, FAQ answers, privacy policy body text |
 | Label | 14px | 400 (regular) | 1.4 | Callout pills ("Open source and free", "Mobile friendly"), nav links, small secondary text |
-| Heading | 20px | 600 (semibold) | 1.3 | Feature section headings (h2), FAQ question triggers |
+| Heading | 20px | 700 (bold) | 1.3 | Feature section headings (h2), FAQ question triggers |
 | Display | 36px (mobile) / 48px (desktop) | 700 (bold) | 1.1 | Hero headline — "Engines are flawless, humans play FlawChess" in `.font-brand` (Fredoka) |
 
 Notes:
@@ -98,7 +100,7 @@ The `PRIMARY_BUTTON_CLASS` constant from `frontend/src/lib/theme.ts` (`bg-[#8B5E
 
 3. **Screenshots section** — 1-2 screenshots provided by user as manual assets (placeholder state acceptable at build time). `max-w-5xl mx-auto`, `px-4 py-12`. Responsive: stacked on mobile, side-by-side on `sm:` if 2 images. `data-testid="screenshots-section"`.
 
-4. **Feature sections** — 5 blocks, each using a `<section>` with `data-testid="feature-{slug}"`. Layout: alternating or grid depending on responsive width. On mobile: stacked (heading + description). On `lg:`: two-column grid (`grid grid-cols-2 gap-8`). Heading: Heading role (20px semibold). Description: Body role (16px regular). No icons required — text-only feature blocks per the locked decision (D-03). Outer container: `max-w-5xl mx-auto px-4 py-12`.
+4. **Feature sections** — 5 blocks, each using a `<section>` with `data-testid="feature-{slug}"`. Layout: alternating or grid depending on responsive width. On mobile: stacked (heading + description). On `lg:`: two-column grid (`grid grid-cols-2 gap-8`). Heading: Heading role (20px bold). Description: Body role (16px regular). No icons required — text-only feature blocks per the locked decision (D-03). Outer container: `max-w-5xl mx-auto px-4 py-12`.
    - `data-testid="feature-weaknesses"`
    - `data-testid="feature-scout"`
    - `data-testid="feature-move-explorer"`
@@ -270,6 +272,7 @@ No third-party registries declared for this phase.
 | Accordion component install | RESEARCH.md Standard Stack | Pre-populated |
 | data-testid naming | CLAUDE.md Browser Automation Rules | Pre-populated |
 | 44px touch target exception | CLAUDE.md + Phase 19 pattern (260321-gdd) | Pre-populated |
+| Typography weight consolidation (400+700) | Checker revision 2026-03-22 — collapsed 3 weights to 2; Heading changed from 600 to 700 to match Fredoka bold pattern in existing app header and Auth page | Revised |
 
 No user questions required — all design contract fields answered by upstream artifacts and codebase inspection.
 
