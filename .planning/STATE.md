@@ -75,6 +75,7 @@ Current focus: Phase 20 — Rename & Branding
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
 - **Display opening name from lichess chess-openings database** (ui) — ECO code + opening name via prefix-match
+- **Refactor button brand colors to CSS variables** (ui) — move PRIMARY_BUTTON_CLASS from theme.ts to @theme inline CSS variables
 
 ### Quick Tasks Completed
 
