@@ -1,6 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { PublicHeader } from '@/components/layout/PublicHeader';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,7 +12,7 @@ import {
 } from '@/components/ui/accordion';
 import { PRIMARY_BUTTON_CLASS } from '@/lib/theme';
 import { cn } from '@/lib/utils';
-import { Target, Eye, ArrowRightLeft, Layers, SlidersHorizontal, Swords } from 'lucide-react';
+import { Target, Eye, ArrowRightLeft, Layers, SlidersHorizontal, Swords, Loader2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // USPs with screenshots — order alternates landscape/portrait for visual rhythm.
@@ -266,6 +267,26 @@ function HomePageContent() {
 
 export function HomePage() {
   const { token } = useAuth();
-  if (token) return <Navigate to="/openings" replace />;
+  // useUserProfile is only called when authenticated — hooks must not be
+  // called conditionally, so we always call it but skip the redirect logic
+  // when there is no token.
+  const { data: profile, isLoading } = useUserProfile();
+
+  if (token) {
+    // Wait for profile to load to avoid flashing the wrong page. For returning
+    // users the cache is warm (staleTime 5 min) so this is near-instant.
+    if (isLoading) {
+      return (
+        <div className="flex min-h-screen items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      );
+    }
+    // New users (0 games on both platforms) land on /import for onboarding.
+    const hasGames =
+      (profile?.chess_com_game_count ?? 0) + (profile?.lichess_game_count ?? 0) > 0;
+    return <Navigate to={hasGames ? '/openings' : '/import'} replace />;
+  }
+
   return <HomePageContent />;
 }
