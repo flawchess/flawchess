@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Allow: /privacy
+Disallow: /import
+Disallow: /openings
+Disallow: /global-stats
+Disallow: /api/
+
+Sitemap: https://flawchess.com/sitemap.xml
