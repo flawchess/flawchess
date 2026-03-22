@@ -11,6 +11,68 @@ import {
 } from '@/components/ui/accordion';
 import { PRIMARY_BUTTON_CLASS } from '@/lib/theme';
 import { cn } from '@/lib/utils';
+import { Target, Eye, ArrowRightLeft, Layers, SlidersHorizontal, Swords } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+
+// USPs with screenshots — order alternates landscape/portrait for visual rhythm.
+// imagePosition alternates right/left so text and image swap sides on desktop.
+const FEATURES: {
+  slug: string;
+  icon: LucideIcon;
+  heading: string;
+  desc: string;
+  screenshot: { src: string; alt: string; orientation: 'landscape' | 'portrait' };
+  imagePosition: 'left' | 'right';
+}[] = [
+  {
+    slug: 'move-explorer',
+    icon: ArrowRightLeft,
+    heading: 'Interactive move explorer',
+    desc: "Step through any opening and see your win/draw/loss rate for every move you\u2019ve played.",
+    screenshot: { src: '/screenshots/board-and-move-explorer.png', alt: 'Board with move explorer showing win/draw/loss bars per move', orientation: 'landscape' },
+    imagePosition: 'right',
+  },
+  {
+    slug: 'scout',
+    icon: Eye,
+    heading: 'Scout your opponents',
+    desc: 'Prepare for a match by exploring their opening weaknesses and tendencies.',
+    screenshot: { src: '/screenshots/chess-board-and-moves.png', alt: 'Chess board with move analysis and opening classification', orientation: 'portrait' },
+    imagePosition: 'left',
+  },
+  {
+    slug: 'weaknesses',
+    icon: Target,
+    heading: 'Find weaknesses in your openings',
+    desc: 'Discover which moves you struggle against, which traps and gambits you fall for or work for you, and how your opening repertoire performs over time.',
+    screenshot: { src: '/screenshots/win-rate-over-time.png', alt: 'Win rate trends over time for multiple openings', orientation: 'landscape' },
+    imagePosition: 'right',
+  },
+  {
+    slug: 'filters',
+    icon: SlidersHorizontal,
+    heading: 'Powerful filters',
+    desc: "Slice your games by color, time control, and recency to find exactly the patterns you\u2019re looking for.",
+    screenshot: { src: '/screenshots/filters.png', alt: 'Filter panel with time control, platform, rating, and opponent options', orientation: 'portrait' },
+    imagePosition: 'left',
+  },
+  {
+    slug: 'system-openings',
+    icon: Swords,
+    heading: 'System opening analysis',
+    desc: "Analyze your performance with system openings like the London, where opponents respond in different ways.",
+    screenshot: { src: '/screenshots/position-bookmarks.png', alt: 'Position bookmarks with Mine/Opponent/Both piece filter', orientation: 'portrait' },
+    imagePosition: 'right',
+  },
+  {
+    slug: 'cross-platform',
+    icon: Layers,
+    heading: 'Cross-platform analysis',
+    desc: "Import games from chess.com and lichess into one place \u2014 analyze your complete history regardless of platform.",
+    screenshot: { src: '/screenshots/game-import.png', alt: 'Import page showing chess.com and lichess with sync buttons', orientation: 'landscape' },
+    imagePosition: 'left',
+  },
+];
 
 // ─── Homepage content (unauthenticated) ───────────────────────────────────────
 
@@ -21,6 +83,11 @@ function HomePageContent() {
 
       {/* Hero */}
       <section data-testid="hero-section" className="max-w-3xl mx-auto px-4 py-16 lg:py-24 text-center">
+        <img
+          src="/icons/logo-384.png"
+          alt="FlawChess logo"
+          className="mx-auto mb-6 h-28 w-28 lg:h-36 lg:w-36"
+        />
         <h1 className="text-4xl lg:text-5xl font-bold leading-tight font-brand">
           Engines are flawless, humans play FlawChess
         </h1>
@@ -47,53 +114,73 @@ function HomePageContent() {
         </div>
       </section>
 
-      {/* Screenshots */}
-      <div data-testid="screenshots-section" className="max-w-5xl mx-auto px-4 py-12">
-        <p className="text-center text-muted-foreground text-sm">Screenshots coming soon</p>
-      </div>
+      {/* Feature sections — alternating image left/right */}
+      <div id="features" data-testid="screenshots-section" className="max-w-5xl mx-auto px-4 py-8 space-y-16 lg:space-y-24 scroll-mt-16">
+        {FEATURES.map(({ slug, icon: Icon, heading, desc, screenshot, imagePosition }) => {
+          const isLandscape = screenshot.orientation === 'landscape';
+          // Landscape: 40% text / 60% image. Portrait: 55% text / 45% image (capped width).
+          const gridCols = isLandscape
+            ? 'lg:grid-cols-[2fr_3fr]'
+            : 'lg:grid-cols-[11fr_9fr]';
+          // Flip the ratio when image is on the left
+          const gridColsFlipped = isLandscape
+            ? 'lg:grid-cols-[3fr_2fr]'
+            : 'lg:grid-cols-[9fr_11fr]';
 
-      {/* Feature sections */}
-      <div className="max-w-5xl mx-auto px-4 py-12">
-        <div className="grid gap-12 lg:grid-cols-2 lg:gap-8">
-          <section data-testid="feature-weaknesses">
-            <h2 className="text-xl font-bold">Find weaknesses in your openings</h2>
-            <p className="mt-2 text-base leading-relaxed text-muted-foreground">
-              Discover which moves you struggle against, which gambits work for you, and how your
-              repertoire performs at different rating levels.
-            </p>
-          </section>
-          <section data-testid="feature-scout">
-            <h2 className="text-xl font-bold">Scout your opponents</h2>
-            <p className="mt-2 text-base leading-relaxed text-muted-foreground">
-              Prepare for a match by exploring their opening weaknesses and tendencies.
-            </p>
-          </section>
-          <section data-testid="feature-move-explorer">
-            <h2 className="text-xl font-bold">Interactive move explorer</h2>
-            <p className="mt-2 text-base leading-relaxed text-muted-foreground">
-              Step through any position and see your win/draw/loss rate for every move
-              you&rsquo;ve played.
-            </p>
-          </section>
-          <section data-testid="feature-cross-platform">
-            <h2 className="text-xl font-bold">Cross-platform analysis</h2>
-            <p className="mt-2 text-base leading-relaxed text-muted-foreground">
-              Import games from chess.com and lichess into one place &mdash; analyze your complete
-              history regardless of platform.
-            </p>
-          </section>
-          <section data-testid="feature-filters">
-            <h2 className="text-xl font-bold">Powerful filters</h2>
-            <p className="mt-2 text-base leading-relaxed text-muted-foreground">
-              Slice your games by time control, rating range, color, opponent type, and time period
-              to find exactly the patterns you&rsquo;re looking for.
-            </p>
-          </section>
-        </div>
+          const textBlock = (
+            <div className="flex flex-col justify-center">
+              <div className="flex gap-4">
+                <div className="shrink-0 mt-1">
+                  <Icon className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold">{heading}</h2>
+                  <p className="mt-3 text-base leading-relaxed text-muted-foreground">{desc}</p>
+                </div>
+              </div>
+            </div>
+          );
+          const imageBlock = (
+            <div className="flex items-center justify-center">
+              <img
+                src={screenshot.src}
+                alt={screenshot.alt}
+                className={cn(
+                  'rounded-lg border border-border shadow-md',
+                  isLandscape ? 'w-full' : 'w-full max-w-xs',
+                )}
+              />
+            </div>
+          );
+          return (
+            <section
+              key={slug}
+              data-testid={`feature-${slug}`}
+              className={cn(
+                'grid gap-8 lg:gap-12 items-center',
+                imagePosition === 'left' ? gridColsFlipped : gridCols,
+              )}
+            >
+              {/* On mobile: always text first, image second.
+                  On desktop: alternate via order classes. */}
+              {imagePosition === 'left' ? (
+                <>
+                  <div className="order-2 lg:order-1">{imageBlock}</div>
+                  <div className="order-1 lg:order-2">{textBlock}</div>
+                </>
+              ) : (
+                <>
+                  <div>{textBlock}</div>
+                  <div>{imageBlock}</div>
+                </>
+              )}
+            </section>
+          );
+        })}
       </div>
 
       {/* FAQ */}
-      <section className="max-w-2xl mx-auto px-4 py-12">
+      <section id="faq" className="max-w-2xl mx-auto px-4 py-12 scroll-mt-16">
         <h2 className="text-xl font-bold mb-6">Frequently asked questions</h2>
         <Accordion type="single" collapsible data-testid="faq-accordion">
           <AccordionItem value="data" data-testid="faq-item-data">

@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronUp, ChevronDown, Save, Sparkles, ArrowRight, Gamepad2, Scale } from 'lucide-react';
+import { ChevronUp, ChevronDown, Save, Sparkles, ArrowRightLeft, Gamepad2, Scale } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
@@ -513,7 +513,7 @@ export function OpeningsPage() {
             <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
               <TabsList className="w-full" data-testid="openings-tabs">
                 <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
-                  <ArrowRight className="mr-1.5 h-4 w-4" />
+                  <ArrowRightLeft className="mr-1.5 h-4 w-4" />
                   Moves
                 </TabsTrigger>
                 <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
@@ -724,7 +724,7 @@ export function OpeningsPage() {
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
             <TabsList className="w-full h-11!" data-testid="openings-tabs-mobile">
               <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
-                <ArrowRight className="mr-1.5 h-4 w-4" />
+                <ArrowRightLeft className="mr-1.5 h-4 w-4" />
                 Moves
               </TabsTrigger>
               <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">

@@ -15,14 +15,20 @@ export function PublicHeader() {
           <span className="text-lg tracking-tight font-brand">FlawChess</span>
         </Link>
 
-        {/* Auth buttons */}
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" asChild data-testid="nav-login">
-            <Link to="/login">Log in</Link>
-          </Button>
-          <Button size="sm" asChild className={PRIMARY_BUTTON_CLASS} data-testid="nav-signup">
-            <Link to="/login?tab=register">Sign up free</Link>
-          </Button>
+        {/* Navigation + auth */}
+        <div className="flex items-center gap-4">
+          <nav className="hidden sm:flex items-center gap-4 text-sm text-muted-foreground">
+            <a href="#features" className="hover:text-foreground transition-colors" data-testid="nav-features">Features</a>
+            <a href="#faq" className="hover:text-foreground transition-colors" data-testid="nav-faq">FAQ</a>
+          </nav>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" asChild data-testid="nav-login">
+              <Link to="/login">Log in</Link>
+            </Button>
+            <Button size="sm" asChild className={PRIMARY_BUTTON_CLASS} data-testid="nav-signup">
+              <Link to="/login?tab=register">Sign up free</Link>
+            </Button>
+          </div>
         </div>
       </div>
     </header>
