@@ -30,6 +30,7 @@ import {
 } from '@/hooks/usePositionBookmarks';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import { MoveExplorer } from '@/components/move-explorer/MoveExplorer';
+import { PRIMARY_BUTTON_CLASS } from '@/lib/theme';
 import { MoveList } from '@/components/board/MoveList';
 import { BoardControls } from '@/components/board/BoardControls';
 import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
@@ -363,7 +364,7 @@ export function OpeningsPage() {
             <div className="flex gap-2 mb-2">
               <Button
                 size="lg"
-                className="flex-1 bg-[#8B5E3C] hover:bg-[#6B4226] text-white"
+                className={`flex-1 ${PRIMARY_BUTTON_CLASS}`}
                 onClick={openBookmarkDialog}
                 data-testid="btn-bookmark"
               >
@@ -372,7 +373,7 @@ export function OpeningsPage() {
               </Button>
               <Button
                 size="lg"
-                className="flex-1 bg-[#8B5E3C] hover:bg-[#6B4226] text-white"
+                className={`flex-1 ${PRIMARY_BUTTON_CLASS}`}
                 onClick={() => setSuggestionsOpen(true)}
                 data-testid="btn-suggest-bookmarks"
               >
@@ -691,7 +692,7 @@ export function OpeningsPage() {
                 <div className="flex gap-2 mb-2">
                   <Button
                     size="lg"
-                    className="flex-1 bg-[#8B5E3C] hover:bg-[#6B4226] text-white"
+                    className={`flex-1 ${PRIMARY_BUTTON_CLASS}`}
                     onClick={openBookmarkDialog}
                     data-testid="btn-bookmark-mobile"
                   >
@@ -700,7 +701,7 @@ export function OpeningsPage() {
                   </Button>
                   <Button
                     size="lg"
-                    className="flex-1 bg-[#8B5E3C] hover:bg-[#6B4226] text-white"
+                    className={`flex-1 ${PRIMARY_BUTTON_CLASS}`}
                     onClick={() => setSuggestionsOpen(true)}
                     data-testid="btn-suggest-bookmarks-mobile"
                   >

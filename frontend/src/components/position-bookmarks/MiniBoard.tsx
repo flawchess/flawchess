@@ -1,4 +1,5 @@
 import { Chessboard } from 'react-chessboard';
+import { darkSquareStyle, lightSquareStyle } from '../../lib/theme';
 
 interface MiniBoardProps {
   fen: string;
@@ -21,8 +22,8 @@ export function MiniBoard({ fen, flipped = false, size = 100 }: MiniBoardProps) 
           position: fen,
           boardOrientation: flipped ? 'black' : 'white',
           boardStyle: { width: size, height: size },
-          darkSquareStyle: { backgroundColor: '#8B6914' },
-          lightSquareStyle: { backgroundColor: '#D4A843' },
+          darkSquareStyle,
+          lightSquareStyle,
           showNotation: false,
           allowDragging: false,
           showAnimations: false,

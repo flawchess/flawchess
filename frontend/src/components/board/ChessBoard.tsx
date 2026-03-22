@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { GREEN, GREEN_HOVER, RED, RED_HOVER, GREY, GREY_HOVER } from '../../lib/arrowColor';
+import { darkSquareStyle, lightSquareStyle } from '../../lib/theme';
 
 export interface BoardArrow {
   startSquare: string;
@@ -237,8 +238,8 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
             position,
             boardOrientation: flipped ? 'black' : 'white',
             boardStyle: { width: boardWidth, height: boardWidth },
-            darkSquareStyle: { backgroundColor: '#8B6914' },
-            lightSquareStyle: { backgroundColor: '#D4A843' },
+            darkSquareStyle,
+            lightSquareStyle,
             darkSquareNotationStyle: BRIGHT_NOTATION,
             lightSquareNotationStyle: BRIGHT_NOTATION,
             id: 'chessboard',
