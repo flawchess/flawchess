@@ -105,8 +105,9 @@ Current focus: Phase 20 — Rename & Branding
 | 260321-gy2 | Bookmark saves position at current ply instead of final position | 2026-03-21 | 72b6637 | [260321-gy2-bookmark-saves-position-at-current-ply-i](./quick/260321-gy2-bookmark-saves-position-at-current-ply-i/) |
 | 260321-txu | Add /api prefix to all backend routes for single Caddy /api/* reverse proxy rule | 2026-03-21 | 8b7b5a2 | [260321-txu-add-api-prefix-to-all-backend-routes](./quick/260321-txu-add-api-prefix-to-all-backend-routes/) |
 | 260322-c36 | Brown chessboard squares (#8B6914/#D4A843) and warm primary buttons (#8B5E3C) to match detective horse logo branding | 2026-03-22 | 5584500 | [260322-c36-brown-chessboard-and-warm-primary-button](./quick/260322-c36-brown-chessboard-and-warm-primary-button/) |
+| 260322-ixq | Redirect new users (0 games) to /import instead of /openings for onboarding | 2026-03-22 | ceaf8bf | [260322-ixq-fix-new-user-routing-redirect-to-import-](./quick/260322-ixq-fix-new-user-routing-redirect-to-import-/) |
 
 ---
 Last activity: 2026-03-22
 Last session: 2026-03-22T10:17:04.356Z
-Stopped at: Completed 23-04-PLAN.md
+Stopped at: Completed quick task 260322-ixq
