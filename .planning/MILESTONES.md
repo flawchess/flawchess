@@ -1,5 +1,21 @@
 # Milestones: FlawChess
 
+## v1.3 Project Launch (Shipped: 2026-03-22)
+
+**Phases completed:** 4 phases, 10 plans, 12 tasks
+
+**Key accomplishments:**
+
+- Full codebase renamed from Chessalytics to FlawChess across 20 files — PWA manifest, logo, GitHub org transfer
+- Complete Docker Compose stack (FastAPI + Caddy 2.11.2 + PostgreSQL) deployed to Hetzner VPS with auto-TLS
+- GitHub Actions CI/CD pipeline: test + lint + SSH deploy + health check polling
+- Sentry error monitoring on backend (sentry-sdk[fastapi]) and frontend (@sentry/react) with Docker build-time DSN injection
+- Public homepage with feature sections, FAQ, and register/login CTA; SEO meta tags, sitemap.xml, robots.txt
+- Per-platform rate limiter (asyncio.Semaphore) protecting chess.com/lichess imports from concurrent bans
+- Privacy policy page at /privacy; professional README with screenshots and self-hosting instructions
+
+---
+
 ## v1.2 Mobile & PWA (Shipped: 2026-03-21)
 
 **Phases:** 17–19 (3 phases, 5 plans)

@@ -5,7 +5,7 @@
 - ✅ **v1.0 Initial Platform** — Phases 1-10 (shipped 2024-03-15)
 - ✅ **v1.1 Opening Explorer & UI Restructuring** — Phases 11-16 (shipped 2024-03-20)
 - ✅ **v1.2 Mobile & PWA** — Phases 17-19 (shipped 2024-03-21)
-- 🚧 **v1.3 Project Launch** — Phases 20-24 (in progress)
+- ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
 
 ## Phases
 
@@ -46,80 +46,15 @@
 
 </details>
 
-### 🚧 v1.3 Project Launch (In Progress)
+<details>
+<summary>✅ v1.3 Project Launch (Phases 20-23) — SHIPPED 2026-03-22</summary>
 
-**Milestone Goal:** Rebrand to FlawChess, deploy to production on Hetzner, and ship everything needed for a public launch.
+- [x] Phase 20: Rename & Branding (2/2 plans) — completed 2026-03-21
+- [x] Phase 21: Docker & Deployment (2/2 plans) — completed 2026-03-21
+- [x] Phase 22: CI/CD & Monitoring (2/2 plans) — completed 2026-03-21
+- [x] Phase 23: Launch Readiness (4/4 plans) — completed 2026-03-22
 
-- [x] **Phase 20: Rename & Branding** — Rename codebase to FlawChess, create logo, update PWA manifest, transfer repo
-- [x] **Phase 21: Docker & Deployment** — Containerize app, deploy to Hetzner with Caddy auto-TLS, configure env
-- [x] **Phase 22: CI/CD & Monitoring** — Automate deploys via GitHub Actions, add Sentry error tracking (backend + frontend) (completed 2024-03-21)
-- [x] **Phase 23: Launch Readiness** — Public homepage, SEO, privacy policy, import rate-limit protection, README (completed 2024-03-22)
-
-## Phase Details
-
-### Phase 20: Rename & Branding
-**Goal**: FlawChess brand is fully established — name, logo, and identity consistent everywhere before any external services are created
-**Depends on**: Phase 19
-**Requirements**: BRAND-01, BRAND-02, BRAND-03, BRAND-04
-**Success Criteria** (what must be TRUE):
-  1. No instance of "Chessalytics" remains in code, config, docs, or git remotes (`grep -ri chessalytics` returns no matches in tracked files)
-  2. The FlawChess logo appears as favicon, PWA icon, and in the app header
-  3. Installing the PWA on a phone shows "FlawChess" as the app name with the new logo icon
-  4. Git remote points to the flawchess GitHub organization
-**Plans**: 2 plans
-
-Plans:
-- [x] 20-01-PLAN.md — Rename all code/config/docs from Chessalytics to FlawChess + apple-touch-icon placeholder
-- [x] 20-02-PLAN.md — GitHub repo transfer to flawchess org + git remote update
-
-### Phase 21: Docker & Deployment
-**Goal**: FlawChess runs in production at flawchess.com — containerized, TLS-terminated, with persistent data and migrations-on-startup
-**Depends on**: Phase 20
-**Requirements**: DEPLOY-01, DEPLOY-02, DEPLOY-03, DEPLOY-04, DEPLOY-05, DEPLOY-06
-**Success Criteria** (what must be TRUE):
-  1. `docker compose up` on a fresh machine starts all services and the app is reachable at the configured domain
-  2. Visiting flawchess.com serves the app over HTTPS with a valid Let's Encrypt certificate
-  3. `curl https://flawchess.com/health` returns JSON (not HTML), confirming Caddy routes correctly
-  4. Restarting containers after `docker compose down && docker compose up` preserves all user data
-  5. No secrets or credentials exist in code or Docker images — all config comes from `.env` on the server
-**Plans**: 2 plans
-
-Plans:
-- [x] 21-01-PLAN.md — Docker infrastructure: Dockerfiles, Compose, Caddyfile, entrypoint, CORS conditional, .env.example
-- [x] 21-02-PLAN.md — Cloud-init cleanup + deploy to Hetzner VPS (checkpoint)
-
-### Phase 22: CI/CD & Monitoring
-**Goal**: Deploys are automated and errors in production are captured before users report them
-**Depends on**: Phase 21
-**Requirements**: DEPLOY-07, MON-01, MON-02
-**Success Criteria** (what must be TRUE):
-  1. Pushing to `main` triggers a GitHub Actions run that tests, builds on the server via SSH, and deploys — all without manual steps
-  2. An unhandled exception in the FastAPI backend appears in the Sentry dashboard within 60 seconds
-  3. A JavaScript error thrown in the React frontend appears in the Sentry dashboard within 60 seconds
-**Plans**: 2 plans
-
-Plans:
-- [ ] 22-01-PLAN.md — GitHub Actions CI/CD workflow (test + SSH deploy + health check)
-- [ ] 22-02-PLAN.md — Sentry error monitoring (backend sentry-sdk + frontend @sentry/react + Docker build args)
-
-### Phase 23: Launch Readiness
-**Goal**: FlawChess is ready for public users — homepage explains the product, SEO enables discovery, privacy policy covers compliance, rate-limit protection prevents bans under concurrent load, README polished for GitHub
-**Depends on**: Phase 22
-**Requirements**: MON-03, CONT-01, CONT-02, CONT-03, STAB-01, BRAND-05
-**Success Criteria** (what must be TRUE):
-  1. Visiting flawchess.com shows a public homepage explaining the Zobrist-hash position-matching USP, a FAQ, and a visible register/login CTA
-  2. The homepage title and meta description appear correctly when the URL is shared on social media (Open Graph preview)
-  3. A sitemap.xml and robots.txt are served at the correct paths and public pages are indexable by search crawlers
-  4. A privacy policy page exists at /privacy and accurately names all data processors (Sentry, Hetzner)
-  5. Two simultaneous import requests (one chess.com, one lichess) complete without either returning a 429 or triggering a rate-limit ban
-  6. MON-03 (analytics) deferred — no analytics integration in this phase
-**Plans**: 4 plans
-
-Plans:
-- [x] 23-01-PLAN.md — Routing restructure + PublicHeader + Homepage content
-- [x] 23-02-PLAN.md — Backend rate limiter, import timeout, concurrent importer count
-- [x] 23-03-PLAN.md — Privacy policy page + SEO meta tags, robots.txt, sitemap.xml
-- [x] 23-04-PLAN.md — Frontend concurrent import notice + professional README
+</details>
 
 ## Progress
 
@@ -144,7 +79,7 @@ Plans:
 | 17. PWA Foundation + Dev Workflow | v1.2 | 1/1 | Complete | 2024-03-20 |
 | 18. Mobile Navigation | v1.2 | 1/1 | Complete | 2024-03-20 |
 | 19. Mobile UX Polish + Install Prompt | v1.2 | 3/3 | Complete | 2024-03-21 |
-| 20. Rename & Branding | v1.3 | 2/2 | Complete | 2024-03-21 |
-| 21. Docker & Deployment | v1.3 | 2/2 | Complete | 2024-03-21 |
-| 22. CI/CD & Monitoring | v1.3 | 2/2 | Complete | 2024-03-21 |
-| 23. Launch Readiness | v1.3 | 4/4 | Complete    | 2024-03-22 |
+| 20. Rename & Branding | v1.3 | 2/2 | Complete | 2026-03-21 |
+| 21. Docker & Deployment | v1.3 | 2/2 | Complete | 2026-03-21 |
+| 22. CI/CD & Monitoring | v1.3 | 2/2 | Complete | 2026-03-21 |
+| 23. Launch Readiness | v1.3 | 4/4 | Complete | 2026-03-22 |

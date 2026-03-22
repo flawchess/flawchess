@@ -2,6 +2,53 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v1.3 — Project Launch
+
+**Shipped:** 2026-03-22
+**Phases:** 4 | **Plans:** 10
+
+### What Was Built
+- Full rebrand from Chessalytics to FlawChess (20 files, PWA manifest, logo, GitHub org transfer)
+- Docker Compose production stack: multi-stage Dockerfiles, Caddy auto-TLS, entrypoint with auto-migrations
+- Deployed to Hetzner VPS (CX32, 2 vCPUs, 3.7GB RAM) at flawchess.com
+- GitHub Actions CI/CD: test + lint + SSH deploy + health check polling
+- Sentry error monitoring on both FastAPI backend and React frontend
+- Public homepage with feature sections, FAQ, register/login CTA
+- SEO fundamentals: meta tags, Open Graph, robots.txt, sitemap.xml
+- Privacy policy page at /privacy
+- Per-platform rate limiter (asyncio.Semaphore) for chess.com/lichess import protection
+- Professional README with screenshots and self-hosting instructions
+- 14 quick tasks: lichess import fix, arrow sorting, tooltip→popover, mobile UX, board controls, tab renaming, filter heights, bookmarks, /api prefix, brown theme, new-user routing, README, time control fix, WDL bar fix
+
+### What Worked
+- Deployment-first ordering (Phase 21 before 22/23) meant CI/CD and launch readiness could be tested against the live server
+- Cloud-init + Docker Compose gave a reproducible single-command server setup
+- Caddy as sole internet-facing entry point simplified TLS and routing (no nginx config)
+- asyncio.Semaphore for rate limiting avoided adding Redis/Celery infrastructure
+- Quick tasks handled all post-launch polish (14 tasks) without disrupting phase work
+- Swap file added reactively when PostgreSQL OOM-killed during large import — proactive monitoring would have been better
+
+### What Was Inefficient
+- Plan 21-02 (cloud-init cleanup + deploy checkpoint) was never formally executed — deployment happened organically during 21-01 and manual setup. Skipped at milestone completion.
+- Some SUMMARY.md files have poor/missing one_liner frontmatter fields — summary-extract continues to return null
+- Phase 22 plan checkboxes in ROADMAP.md were never updated to [x] despite being complete — bookkeeping drift from manual execution
+- OOM kill on production required emergency swap file and batch size reduction — should have configured swap in cloud-init from the start
+
+### Patterns Established
+- `ENVIRONMENT` env var controlling CORS (disabled in production, enabled in dev)
+- Backend `expose` only in docker-compose.yml (no `ports`) — Caddy proxies all traffic
+- Sentry DSN injected at Docker build time via `ARG`/`ENV` for frontend bundle
+- `_BATCH_SIZE = 10` for import to prevent OOM on constrained servers
+- asyncio.Semaphore lazy-init pattern to avoid event loop not started error
+
+### Key Lessons
+1. Production memory constraints matter — 3.7GB RAM with PostgreSQL + FastAPI + Caddy is tight; swap is essential from day one
+2. Human verification checkpoints (deploy steps) don't fit well into automated execution — they should be separate milestone gates, not plans
+3. Caddy is excellent for small deployments — auto-TLS, reverse proxy, static file serving in one config
+4. Rate limiter design should match the bottleneck — per-platform semaphore is simpler than global queue for chess.com/lichess with different rate limits
+
+---
+
 ## Milestone: v1.2 — Mobile & PWA
 
 **Shipped:** 2026-03-21
@@ -89,10 +136,13 @@
 | v1.0 | 10 | 36 | Established GSD workflow, phase/plan structure |
 | v1.1 | 6 | 15 | Added human verification phases, heavy quick task usage |
 | v1.2 | 3 | 5 | Frontend-only scope, mobile-first patterns, CSS specificity lessons |
+| v1.3 | 4 | 10 | First production deployment, CI/CD, monitoring, launch readiness, 14 quick tasks |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. DB wipe for schema changes is worth it in early development — migration complexity slows iteration
 2. Human verification catches integration issues that unit tests miss
-3. Quick tasks are the right tool for UI polish — confirmed across v1.1 (19 tasks) and v1.2 (7 tasks)
+3. Quick tasks are the right tool for UI polish — confirmed across v1.1 (19 tasks), v1.2 (7 tasks), v1.3 (14 tasks)
 4. CSS specificity with component libraries requires understanding the full chain — min-h/h/important patterns now documented
+5. Production memory constraints need upfront planning — swap file and batch size tuning should be in initial deployment config
+6. Human verification checkpoints (manual deploy steps) don't fit automated plan execution — use milestone gates instead

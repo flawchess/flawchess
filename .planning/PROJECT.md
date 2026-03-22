@@ -38,10 +38,17 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Android/iOS in-app PWA install prompts — v1.2
 - ✓ CI/CD pipeline (GitHub Actions: test + SSH deploy + health check) — v1.3
 - ✓ Sentry error monitoring (backend + frontend) — v1.3
+- ✓ Full rebrand from Chessalytics to FlawChess (code, PWA, GitHub org) — v1.3
+- ✓ Docker Compose production deployment on Hetzner with Caddy auto-TLS — v1.3
+- ✓ Public homepage with feature sections, FAQ, register/login CTA — v1.3
+- ✓ SEO fundamentals (meta tags, Open Graph, sitemap.xml, robots.txt) — v1.3
+- ✓ Privacy policy page at /privacy — v1.3
+- ✓ Per-platform import rate limiter preventing chess.com/lichess bans — v1.3
+- ✓ Professional README with screenshots and self-hosting instructions — v1.3
 
 ### Active
 
-<!-- v1.3 Project Launch — see REQUIREMENTS.md for full breakdown -->
+(None — define in next milestone)
 
 ### Out of Scope
 
@@ -51,25 +58,13 @@ Users can determine their success rate for any opening position they specify, fi
 - Offline API data caching — chess data is user-specific + authenticated; caching risks stale analysis
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 
-## Current Milestone: v1.3 Project Launch
+## Current State
 
-**Goal:** Rebrand to FlawChess, deploy to production on Hetzner, and ship everything needed for a public launch — Docker, CI/CD, monitoring, About page, SEO, analytics.
-
-**Target features:**
-- Rename project to FlawChess (code, repo, branding)
-- Dockerized deployment on Hetzner Cloud with Caddy (auto-SSL)
-- Deployment pipeline (CI/CD or scripted)
-- Error/performance monitoring (Sentry or similar)
-- About page with USPs, FAQ
-- Professional README
-- Google Analytics (or privacy-friendly alternative)
-- SEO fundamentals
-- Privacy policy & cookie consent
-- Import queue for concurrent rate-limit safety
+v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD and Sentry monitoring. All launch requirements met.
 
 ## Context
 
-- **Current state:** v1.3 in progress. 22 phases complete across 4 milestones. CI/CD and Sentry monitoring deployed.
+- **Current state:** v1.3 shipped. 23 phases complete across 4 milestones. Live at flawchess.com with CI/CD and Sentry.
 - **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui
 - **Auth:** FastAPI-Users (JWT + Google SSO)
 - **Core algorithm:** Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import for indexed integer equality lookups
@@ -104,6 +99,11 @@ Users can determine their success rate for any opening position they specify, fi
 | vaul for mobile drawer | Handles scroll lock, backdrop, iOS momentum natively | ✓ Good |
 | Click-to-move only on mobile | HTML5 DnD absent on iOS Safari; drag causes black screen | ✓ Good |
 | Duplicate mobile Openings layout | Sticky board incompatible with sidebar's flex-column | ⚠️ Revisit |
+| Hetzner CX32 + Docker Compose + Caddy | Simple single-VPS deployment for solo dev | ✓ Good |
+| Plausible over Google Analytics | No cookie consent required, GDPR-simple | ✓ Good |
+| Sentry for both backend + frontend | Single project, DSN baked at Docker build time | ✓ Good |
+| asyncio.Semaphore rate limiter | Per-platform concurrency control without Redis/Celery | ✓ Good |
+| Backend expose-only (no ports) | Caddy is sole internet-facing entry point | ✓ Good |
 
 ---
-*Last updated: 2026-03-22 after Phase 23 (Launch Readiness) complete*
+*Last updated: 2026-03-22 after v1.3 milestone*
