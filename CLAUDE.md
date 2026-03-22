@@ -4,7 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-FlawChess — a multi-user chess analysis platform. Users import games from chess.com/lichess and analyze win/draw/loss rates by board position using Zobrist hashes, solving inconsistent opening categorization on existing platforms.
+FlawChess — a free, open-source chess analysis platform at flawchess.com. Tagline: "Engines are flawless, humans play FlawChess."
+
+Users import their games from chess.com and/or lichess and analyze win/draw/loss (WDL) rates by board position using Zobrist hashes. This solves inconsistent opening categorization on existing platforms — instead of named openings, FlawChess matches positions exactly.
+
+### Key Features
+
+- **Interactive move explorer** — navigate positions on a chessboard and see WDL rates for each candidate move, based on the user's own game history
+- **Opponent scouting** — explore an opponent's opening weaknesses before a match
+- **Weakness detection** — find positions where the user's win rate drops off
+- **Powerful filters** — filter analysis by color (white/black), time control (bullet/blitz/rapid/classical), and recency
+- **System opening analysis** — analyze named opening systems (e.g. the London) across all games
+- **Cross-platform analysis** — combine chess.com and lichess games into a single unified dataset
+
+### User Flow
+
+1. Sign up (free, no credit card)
+2. Import games from chess.com and/or lichess (background async import)
+3. Explore openings on the interactive board with WDL statistics
+4. Optionally scout opponents or bookmark positions
 
 ## Tech Stack
 
