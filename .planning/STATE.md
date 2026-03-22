@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project Launch
 status: unknown
-stopped_at: Completed 23-02-PLAN.md
-last_updated: "2026-03-22T10:11:08.005Z"
+stopped_at: Completed 23-01-PLAN.md
+last_updated: "2026-03-22T10:13:21.959Z"
 last_activity: 2026-03-22
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 10
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State: FlawChess
@@ -18,7 +18,7 @@ progress:
 ## Current Position
 
 Phase: 23 (launch-readiness) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 
 ## Project Reference
 
@@ -64,6 +64,8 @@ Current focus: Phase 20 — Rename & Branding
 - [Phase 23-02]: Semaphore lazy-init at call time avoids asyncio event loop not started error (Python 3.10+)
 - [Phase 23-02]: TimeoutError caught before Exception in run_import — Python 3.11+ TimeoutError is subclass of Exception, ordering matters
 - [Phase 23-02]: Lichess semaphore held for entire stream duration — limits connections, not individual requests
+- [Phase 23-01]: Inlined feature sections and FAQ items to ensure literal data-testid strings are present in source for grep-based acceptance criteria
+- [Phase 23-01]: Kept useUserProfile import in App.tsx — consumed by MobileMoreDrawer, not only by removed HomeRedirect
 
 ### Roadmap Evolution
 
@@ -101,5 +103,5 @@ Current focus: Phase 20 — Rename & Branding
 
 ---
 Last activity: 2026-03-22
-Last session: 2026-03-22T10:11:08.002Z
-Stopped at: Completed 23-02-PLAN.md
+Last session: 2026-03-22T10:13:21.958Z
+Stopped at: Completed 23-01-PLAN.md

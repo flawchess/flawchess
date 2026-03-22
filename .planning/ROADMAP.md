@@ -117,7 +117,7 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 23-01-PLAN.md — Routing restructure + PublicHeader + Homepage content
+- [x] 23-01-PLAN.md — Routing restructure + PublicHeader + Homepage content
 - [x] 23-02-PLAN.md — Backend rate limiter, import timeout, concurrent importer count
 - [ ] 23-03-PLAN.md — Privacy policy page + SEO meta tags, robots.txt, sitemap.xml
 - [ ] 23-04-PLAN.md — Frontend concurrent import notice + professional README
@@ -148,7 +148,7 @@ Plans:
 | 20. Rename & Branding | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 21. Docker & Deployment | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 22. CI/CD & Monitoring | v1.3 | 2/2 | Complete | 2026-03-21 |
-| 23. Launch Readiness | v1.3 | 1/4 | In Progress|  |
+| 23. Launch Readiness | v1.3 | 2/4 | In Progress|  |
 | 24. Theme Management | v1.3 | 0/TBD | Not started | - |
 
 ### Phase 24: Theme Management
