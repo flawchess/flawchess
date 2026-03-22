@@ -48,7 +48,7 @@ Current focus: Web Analytics
 
 ### Roadmap Evolution
 
-(None yet)
+- Phase 25 added: Add password reset functionality
 
 ### Blockers/Concerns
 

@@ -6,7 +6,7 @@
 - ✅ **v1.1 Opening Explorer & UI Restructuring** — Phases 11-16 (shipped 2024-03-20)
 - ✅ **v1.2 Mobile & PWA** — Phases 17-19 (shipped 2024-03-21)
 - ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
-- **v1.4 Improvements** — Phase 24
+- **v1.4 Improvements** — Phases 24-25
 
 ## Phases
 
@@ -100,3 +100,10 @@
 | 22. CI/CD & Monitoring | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 23. Launch Readiness | v1.3 | 4/4 | Complete | 2026-03-22 |
 | 24. Web Analytics | v1.4 | 2/2 | Complete    | 2026-03-22 |
+| 25. Password Reset | v1.4 | 0/0 | Not started | — |
+
+- [ ] Phase 25: Add Password Reset Functionality — not started
+  - **Goal:** Add forgot-password / reset-password flow using FastAPI-Users built-in password reset support, with frontend pages for requesting and confirming resets
+  - **Requirements:** TBD
+  - **Plans:** 0 plans
+    - [ ] TBD (run /gsd:plan-phase 25 to break down)

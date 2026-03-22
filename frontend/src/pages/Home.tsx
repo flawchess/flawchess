@@ -224,7 +224,15 @@ function HomePageContent() {
           <AccordionItem value="who" data-testid="faq-item-who">
             <AccordionTrigger>Who develops FlawChess?</AccordionTrigger>
             <AccordionContent>
-              FlawChess is an open source project developed independently. Find the code, contribute,
+              FlawChess is an open source project developed independently. Find the code on{' '}
+              <a
+                href="https://github.com/flawchess/flawchess"
+                className="text-primary underline-offset-4 hover:underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                GitHub
+              </a>, contribute,
               or reach out at{' '}
               <a
                 href="mailto:support@flawchess.com"
