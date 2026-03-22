@@ -8,6 +8,7 @@ Manages import jobs from chess.com and lichess, including:
 - Zobrist hash computation and bulk DB persistence
 """
 
+import asyncio
 import io
 import logging
 import uuid
@@ -27,6 +28,7 @@ from app.services.zobrist import hashes_for_game
 logger = logging.getLogger(__name__)
 
 _BATCH_SIZE = 50
+IMPORT_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours per D-24
 
 
 class JobStatus(str, Enum):
@@ -136,6 +138,24 @@ def find_active_jobs_for_user(user_id: int) -> list[JobState]:
     ]
 
 
+def count_active_platform_jobs(platform: str, exclude_user_id: int) -> int:
+    """Return count of active import jobs for a platform from other users.
+
+    Used to show "X other users are importing" (D-23). Excludes the
+    requesting user's own jobs so the count reflects OTHER importers only.
+
+    Args:
+        platform: 'chess.com' or 'lichess'.
+        exclude_user_id: User ID to exclude from the count (the requesting user).
+    """
+    return sum(
+        1 for job in _jobs.values()
+        if job.platform == platform
+        and job.status in (JobStatus.PENDING, JobStatus.IN_PROGRESS)
+        and job.user_id != exclude_user_id
+    )
+
+
 async def run_import(job_id: str) -> None:
     """Background import orchestrator — launched via asyncio.create_task.
 
@@ -158,72 +178,95 @@ async def run_import(job_id: str) -> None:
     job.status = JobStatus.IN_PROGRESS
 
     try:
-        async with async_session_maker() as session:
-            # Determine since parameter for incremental sync (scoped to username)
-            previous_job = await import_job_repository.get_latest_for_user_platform(
-                session, job.user_id, job.platform, job.username
-            )
-
-            # Create the DB record for this import job
-            await import_job_repository.create_import_job(
-                session,
-                job_id=job_id,
-                user_id=job.user_id,
-                platform=job.platform,
-                username=job.username,
-            )
-            await session.commit()
-
-            def _on_game_fetched() -> None:
-                job.games_fetched += 1
-
-            async with httpx.AsyncClient() as client:
-                game_iter = _make_game_iterator(
-                    client, job, previous_job, _on_game_fetched
-                )
-                batch: list[dict[str, Any]] = []
-
-                async for game_dict in game_iter:
-                    batch.append(game_dict)
-                    if len(batch) >= _BATCH_SIZE:
-                        imported = await _flush_batch(session, batch, job.user_id)
-                        job.games_imported += imported
-                        batch = []
-
-                # Flush any remaining games
-                if batch:
-                    imported = await _flush_batch(session, batch, job.user_id)
-                    job.games_imported += imported
-
-            # Mark job complete in DB — only advance last_synced_at when games
-            # were actually imported, otherwise future incremental syncs would
-            # skip the entire history based on a no-op import's timestamp.
-            completion_fields: dict[str, object] = {
-                "status": "completed",
-                "games_fetched": job.games_fetched,
-                "games_imported": job.games_imported,
-                "completed_at": datetime.now(timezone.utc),
-            }
-            if job.games_imported > 0:
-                completion_fields["last_synced_at"] = datetime.now(timezone.utc)
-
-            await import_job_repository.update_import_job(
-                session,
-                job_id=job_id,
-                **completion_fields,
-            )
-            await session.commit()
-
-            # Best-effort: auto-save platform username to user profile
-            try:
-                await user_repository.update_platform_username(
+        async with asyncio.timeout(IMPORT_TIMEOUT_SECONDS):
+            async with async_session_maker() as session:
+                # Determine since parameter for incremental sync (scoped to username)
+                previous_job = await import_job_repository.get_latest_for_user_platform(
                     session, job.user_id, job.platform, job.username
                 )
-                await session.commit()
-            except Exception:
-                logger.warning("Failed to save platform username for job %s", job_id)
 
-        job.status = JobStatus.COMPLETED
+                # Create the DB record for this import job
+                await import_job_repository.create_import_job(
+                    session,
+                    job_id=job_id,
+                    user_id=job.user_id,
+                    platform=job.platform,
+                    username=job.username,
+                )
+                await session.commit()
+
+                def _on_game_fetched() -> None:
+                    job.games_fetched += 1
+
+                async with httpx.AsyncClient() as client:
+                    game_iter = _make_game_iterator(
+                        client, job, previous_job, _on_game_fetched
+                    )
+                    batch: list[dict[str, Any]] = []
+
+                    async for game_dict in game_iter:
+                        batch.append(game_dict)
+                        if len(batch) >= _BATCH_SIZE:
+                            imported = await _flush_batch(session, batch, job.user_id)
+                            job.games_imported += imported
+                            batch = []
+
+                    # Flush any remaining games
+                    if batch:
+                        imported = await _flush_batch(session, batch, job.user_id)
+                        job.games_imported += imported
+
+                # Mark job complete in DB — only advance last_synced_at when games
+                # were actually imported, otherwise future incremental syncs would
+                # skip the entire history based on a no-op import's timestamp.
+                completion_fields: dict[str, object] = {
+                    "status": "completed",
+                    "games_fetched": job.games_fetched,
+                    "games_imported": job.games_imported,
+                    "completed_at": datetime.now(timezone.utc),
+                }
+                if job.games_imported > 0:
+                    completion_fields["last_synced_at"] = datetime.now(timezone.utc)
+
+                await import_job_repository.update_import_job(
+                    session,
+                    job_id=job_id,
+                    **completion_fields,
+                )
+                await session.commit()
+
+                # Best-effort: auto-save platform username to user profile
+                try:
+                    await user_repository.update_platform_username(
+                        session, job.user_id, job.platform, job.username
+                    )
+                    await session.commit()
+                except Exception:
+                    logger.warning("Failed to save platform username for job %s", job_id)
+
+            job.status = JobStatus.COMPLETED
+
+    except TimeoutError:
+        # 3-hour timeout exceeded (D-24). Partial results already persisted
+        # via incremental batch commits — re-sync picks up where it left off.
+        logger.warning("Import job %s timed out after %d seconds", job_id, IMPORT_TIMEOUT_SECONDS)
+        job.status = JobStatus.FAILED
+        job.error = "Import timed out — re-sync to continue where it left off"
+
+        try:
+            async with async_session_maker() as session:
+                await import_job_repository.update_import_job(
+                    session,
+                    job_id=job_id,
+                    status="failed",
+                    games_fetched=job.games_fetched,
+                    games_imported=job.games_imported,
+                    error_message=job.error,
+                    completed_at=datetime.now(timezone.utc),
+                )
+                await session.commit()
+        except Exception:
+            logger.exception("Failed to record timeout for job %s", job_id)
 
     except Exception as exc:
         logger.exception("Import job %s failed: %s", job_id, exc)
