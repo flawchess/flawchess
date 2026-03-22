@@ -363,7 +363,7 @@ export function OpeningsPage() {
             <div className="flex gap-2 mb-2">
               <Button
                 size="lg"
-                className="flex-1 bg-[#0a3d6b] hover:bg-[#072d50] text-white"
+                className="flex-1 bg-[#8B5E3C] hover:bg-[#6B4226] text-white"
                 onClick={openBookmarkDialog}
                 data-testid="btn-bookmark"
               >
@@ -372,7 +372,7 @@ export function OpeningsPage() {
               </Button>
               <Button
                 size="lg"
-                className="flex-1 bg-[#0a3d6b] hover:bg-[#072d50] text-white"
+                className="flex-1 bg-[#8B5E3C] hover:bg-[#6B4226] text-white"
                 onClick={() => setSuggestionsOpen(true)}
                 data-testid="btn-suggest-bookmarks"
               >
@@ -691,7 +691,7 @@ export function OpeningsPage() {
                 <div className="flex gap-2 mb-2">
                   <Button
                     size="lg"
-                    className="flex-1 bg-[#0a3d6b] hover:bg-[#072d50] text-white"
+                    className="flex-1 bg-[#8B5E3C] hover:bg-[#6B4226] text-white"
                     onClick={openBookmarkDialog}
                     data-testid="btn-bookmark-mobile"
                   >
@@ -700,7 +700,7 @@ export function OpeningsPage() {
                   </Button>
                   <Button
                     size="lg"
-                    className="flex-1 bg-[#0a3d6b] hover:bg-[#072d50] text-white"
+                    className="flex-1 bg-[#8B5E3C] hover:bg-[#6B4226] text-white"
                     onClick={() => setSuggestionsOpen(true)}
                     data-testid="btn-suggest-bookmarks-mobile"
                   >
