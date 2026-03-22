@@ -106,8 +106,9 @@ Current focus: Phase 20 — Rename & Branding
 | 260321-txu | Add /api prefix to all backend routes for single Caddy /api/* reverse proxy rule | 2026-03-21 | 8b7b5a2 | [260321-txu-add-api-prefix-to-all-backend-routes](./quick/260321-txu-add-api-prefix-to-all-backend-routes/) |
 | 260322-c36 | Brown chessboard squares (#8B6914/#D4A843) and warm primary buttons (#8B5E3C) to match detective horse logo branding | 2026-03-22 | 5584500 | [260322-c36-brown-chessboard-and-warm-primary-button](./quick/260322-c36-brown-chessboard-and-warm-primary-button/) |
 | 260322-ixq | Redirect new users (0 games) to /import instead of /openings for onboarding | 2026-03-22 | ceaf8bf | [260322-ixq-fix-new-user-routing-redirect-to-import-](./quick/260322-ixq-fix-new-user-routing-redirect-to-import-/) |
+| 260322-jem | Professional open-source README with CI badge, screenshots, self-hosting instructions | 2026-03-22 | fdaa9ca | [260322-jem-professional-open-source-readme-with-ci-](./quick/260322-jem-professional-open-source-readme-with-ci-/) |
 
 ---
-Last activity: 2026-03-22
+Last activity: 2026-03-22 - Completed quick task 260322-jem: Professional open-source README
 Last session: 2026-03-22T13:03:08.367Z
 Stopped at: Completed quick task 260322-jem
