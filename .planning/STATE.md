@@ -62,6 +62,10 @@ Current focus: Phase 20 — Rename & Branding
 - [Phase 22-ci-cd-monitoring]: Single Sentry project for backend and frontend — same DSN value for SENTRY_DSN and VITE_SENTRY_DSN
 - [Phase 22-ci-cd-monitoring]: VITE_SENTRY_DSN baked into frontend bundle at Docker build time via ARG/ENV in Dockerfile and args: in docker-compose.yml
 
+### Roadmap Evolution
+
+- Phase 24 added: Theme Management — unified color theme across Tailwind, react-chessboard, charts, branded buttons
+
 ### Blockers/Concerns
 
 - [Phase 21]: Confirm Hetzner CX32 pricing at hetzner.com before provisioning

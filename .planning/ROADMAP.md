@@ -5,7 +5,7 @@
 - ✅ **v1.0 Initial Platform** — Phases 1-10 (shipped 2026-03-15)
 - ✅ **v1.1 Opening Explorer & UI Restructuring** — Phases 11-16 (shipped 2026-03-20)
 - ✅ **v1.2 Mobile & PWA** — Phases 17-19 (shipped 2026-03-21)
-- 🚧 **v1.3 Project Launch** — Phases 20-23 (in progress)
+- 🚧 **v1.3 Project Launch** — Phases 20-24 (in progress)
 
 ## Phases
 
@@ -54,6 +54,7 @@
 - [x] **Phase 21: Docker & Deployment** — Containerize app, deploy to Hetzner with Caddy auto-TLS, configure env
 - [x] **Phase 22: CI/CD & Monitoring** — Automate deploys via GitHub Actions, add Sentry error tracking (backend + frontend) (completed 2026-03-21)
 - [ ] **Phase 23: Launch Readiness** — Analytics, About page, SEO, privacy policy, import queue, README
+- [ ] **Phase 24: Theme Management** — Unified color theme across Tailwind, react-chessboard, charts, and branded buttons
 
 ## Phase Details
 
@@ -145,6 +146,16 @@ Plans:
 | 21. Docker & Deployment | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 22. CI/CD & Monitoring | 2/2 | Complete    | 2026-03-21 | - |
 | 23. Launch Readiness | v1.3 | 0/TBD | Not started | - |
+| 24. Theme Management | v1.3 | 0/TBD | Not started | - |
+
+### Phase 24: Theme Management
+**Goal**: Define a unified color theme in one place (CSS variables + JS constants) that covers Tailwind utilities, react-chessboard squares, chart colors, and branded buttons — then fine-tune until the palette feels cohesive with the detective horsey logo
+**Depends on**: Phase 23
+**Requirements**: TBD
+**Plans**: 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 24 to break down)
 
 ---
 *Created: 2026-03-11*
