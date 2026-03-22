@@ -3,22 +3,22 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project Launch
 status: unknown
-stopped_at: Phase 23 UI-SPEC approved
-last_updated: "2026-03-22T09:53:05.937Z"
-last_activity: "2026-03-22 - Completed quick task 260322-c36: Brown chessboard and warm primary button colors"
+stopped_at: Completed 23-02-PLAN.md
+last_updated: "2026-03-22T10:11:08.005Z"
+last_activity: 2026-03-22
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 5
+  total_plans: 10
+  completed_plans: 6
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 22 (ci-cd-monitoring) — EXECUTING
-Plan: 1 of 2
+Phase: 23 (launch-readiness) — EXECUTING
+Plan: 2 of 4
 
 ## Project Reference
 
@@ -61,6 +61,9 @@ Current focus: Phase 20 — Rename & Branding
 - [Phase 22-ci-cd-monitoring]: Sentry disabled by default (SENTRY_DSN empty string) — no noise in dev, no console errors
 - [Phase 22-ci-cd-monitoring]: Single Sentry project for backend and frontend — same DSN value for SENTRY_DSN and VITE_SENTRY_DSN
 - [Phase 22-ci-cd-monitoring]: VITE_SENTRY_DSN baked into frontend bundle at Docker build time via ARG/ENV in Dockerfile and args: in docker-compose.yml
+- [Phase 23-02]: Semaphore lazy-init at call time avoids asyncio event loop not started error (Python 3.10+)
+- [Phase 23-02]: TimeoutError caught before Exception in run_import — Python 3.11+ TimeoutError is subclass of Exception, ordering matters
+- [Phase 23-02]: Lichess semaphore held for entire stream duration — limits connections, not individual requests
 
 ### Roadmap Evolution
 
@@ -97,6 +100,6 @@ Current focus: Phase 20 — Rename & Branding
 | 260322-c36 | Brown chessboard squares (#8B6914/#D4A843) and warm primary buttons (#8B5E3C) to match detective horse logo branding | 2026-03-22 | 5584500 | [260322-c36-brown-chessboard-and-warm-primary-button](./quick/260322-c36-brown-chessboard-and-warm-primary-button/) |
 
 ---
-Last activity: 2026-03-22 - Completed quick task 260322-c36: Brown chessboard and warm primary button colors
-Last session: 2026-03-22T09:53:05.934Z
-Stopped at: Phase 23 UI-SPEC approved
+Last activity: 2026-03-22
+Last session: 2026-03-22T10:11:08.002Z
+Stopped at: Completed 23-02-PLAN.md

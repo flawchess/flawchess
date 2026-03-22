@@ -39,7 +39,7 @@ Requirements for Project Launch milestone. Each maps to roadmap phases.
 
 ### Stability
 
-- [ ] **STAB-01**: Import queue serializing outbound API calls per platform (chess.com, lichess) to prevent rate-limit errors under concurrent load
+- [x] **STAB-01**: Import queue serializing outbound API calls per platform (chess.com, lichess) to prevent rate-limit errors under concurrent load
 
 ## v1.x Requirements
 
@@ -93,7 +93,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | CONT-01 | Phase 23 | Pending |
 | CONT-02 | Phase 23 | Pending |
 | CONT-03 | Phase 23 | Pending |
-| STAB-01 | Phase 23 | Pending |
+| STAB-01 | Phase 23 | Complete |
 
 **Coverage:**
 - v1.3 requirements: 19 total
