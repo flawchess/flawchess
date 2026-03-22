@@ -16,11 +16,17 @@ import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { AuthPage } from '@/pages/Auth';
+import { HomePage } from '@/pages/Home';
 import { ImportPage } from '@/pages/Import';
 import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
 import { OpeningsPage } from '@/pages/Openings';
 import { GlobalStatsPage } from '@/pages/GlobalStats';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
+
+// Privacy page placeholder — will be replaced in Plan 03
+function PrivacyPage() {
+  return <div>Privacy Policy</div>;
+}
 
 // ─── Non-visual job completion watcher ────────────────────────────────────────
 
@@ -247,17 +253,6 @@ function ProtectedLayout() {
   );
 }
 
-// ─── Home redirect (0 games → import, otherwise → openings) ──────────────────
-
-function HomeRedirect() {
-  const { data: profile, isLoading } = useUserProfile();
-
-  if (isLoading) return null;
-
-  const totalGames = (profile?.chess_com_game_count ?? 0) + (profile?.lichess_game_count ?? 0);
-  return <Navigate to={totalGames === 0 ? '/import' : '/openings'} replace />;
-}
-
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 function AppRoutes() {
@@ -323,19 +318,21 @@ function AppRoutes() {
   return (
     <>
       <Routes>
+        {/* Public routes */}
+        <Route path="/" element={<HomePage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/login" element={<AuthPage />} />
         {/* Google OAuth callback — reads token from URL fragment */}
         <Route path="/auth/callback" element={<OAuthCallbackPage />} />
         {/* Protected layout wraps all authenticated pages */}
         <Route element={<ProtectedLayout />}>
-          <Route path="/" element={<HomeRedirect />} />
           <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />
           <Route path="/openings/*" element={<OpeningsPage />} />
           <Route path="/rating" element={<Navigate to="/global-stats" replace />} />
           <Route path="/global-stats" element={<GlobalStatsPage />} />
         </Route>
-        {/* Catch-all redirects to openings */}
-        <Route path="*" element={<Navigate to="/openings" replace />} />
+        {/* Catch-all redirects to homepage */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       {watchableJobIds.map((id) => (
         <ImportJobWatcher key={id} jobId={id} onDone={handleJobDone} />
