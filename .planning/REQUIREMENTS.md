@@ -34,8 +34,8 @@ Requirements for Project Launch milestone. Each maps to roadmap phases.
 ### Content
 
 - [x] **CONT-01**: About page explaining FlawChess USPs, how it works, FAQ section, and register/login CTA
-- [ ] **CONT-02**: SEO fundamentals: per-route titles and meta descriptions, Open Graph tags, robots.txt, sitemap.xml
-- [ ] **CONT-03**: Privacy policy page at /privacy covering data collected, third-party services, and user rights
+- [x] **CONT-02**: SEO fundamentals: per-route titles and meta descriptions, Open Graph tags, robots.txt, sitemap.xml
+- [x] **CONT-03**: Privacy policy page at /privacy covering data collected, third-party services, and user rights
 
 ### Stability
 
@@ -91,8 +91,8 @@ Deferred to future release. Tracked but not in current roadmap.
 | MON-02 | Phase 22 | Complete |
 | MON-03 | Phase 23 | Pending |
 | CONT-01 | Phase 23 | Complete |
-| CONT-02 | Phase 23 | Pending |
-| CONT-03 | Phase 23 | Pending |
+| CONT-02 | Phase 23 | Complete |
+| CONT-03 | Phase 23 | Complete |
 | STAB-01 | Phase 23 | Complete |
 
 **Coverage:**

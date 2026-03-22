@@ -53,7 +53,7 @@
 - [x] **Phase 20: Rename & Branding** — Rename codebase to FlawChess, create logo, update PWA manifest, transfer repo
 - [x] **Phase 21: Docker & Deployment** — Containerize app, deploy to Hetzner with Caddy auto-TLS, configure env
 - [x] **Phase 22: CI/CD & Monitoring** — Automate deploys via GitHub Actions, add Sentry error tracking (backend + frontend) (completed 2026-03-21)
-- [ ] **Phase 23: Launch Readiness** — Public homepage, SEO, privacy policy, import rate-limit protection, README
+- [x] **Phase 23: Launch Readiness** — Public homepage, SEO, privacy policy, import rate-limit protection, README (completed 2026-03-22)
 - [ ] **Phase 24: Theme Management** — Unified color theme across Tailwind, react-chessboard, charts, and branded buttons
 
 ## Phase Details
@@ -119,8 +119,8 @@ Plans:
 Plans:
 - [x] 23-01-PLAN.md — Routing restructure + PublicHeader + Homepage content
 - [x] 23-02-PLAN.md — Backend rate limiter, import timeout, concurrent importer count
-- [ ] 23-03-PLAN.md — Privacy policy page + SEO meta tags, robots.txt, sitemap.xml
-- [ ] 23-04-PLAN.md — Frontend concurrent import notice + professional README
+- [x] 23-03-PLAN.md — Privacy policy page + SEO meta tags, robots.txt, sitemap.xml
+- [x] 23-04-PLAN.md — Frontend concurrent import notice + professional README
 
 ## Progress
 
@@ -148,7 +148,7 @@ Plans:
 | 20. Rename & Branding | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 21. Docker & Deployment | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 22. CI/CD & Monitoring | v1.3 | 2/2 | Complete | 2026-03-21 |
-| 23. Launch Readiness | v1.3 | 2/4 | In Progress|  |
+| 23. Launch Readiness | v1.3 | 4/4 | Complete   | 2026-03-22 |
 | 24. Theme Management | v1.3 | 0/TBD | Not started | - |
 
 ### Phase 24: Theme Management
