@@ -8,7 +8,6 @@ Create Date: 2026-03-22 13:58:25.838144+00:00
 from typing import Sequence, Union
 
 from alembic import op
-import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
@@ -17,37 +16,52 @@ down_revision: Union[str, Sequence[str], None] = '9549c5e62259'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-# All time_control_str patterns where estimated = base + increment*40 = 600.
-# These were bucketed as 'blitz' under the old <= 600 threshold but should be
-# 'rapid' under the corrected < 600 threshold.
-_AFFECTED_PATTERNS = [
-    "600",      # 600+0 = 600
-    "560+1",    # 560 + 1*40 = 600
-    "520+2",    # 520 + 2*40 = 600
-    "480+3",    # 480 + 3*40 = 600
-    "440+4",    # 440 + 4*40 = 600
-    "400+5",    # 400 + 5*40 = 600
-    "360+6",    # 360 + 6*40 = 600
-    "320+7",    # 320 + 7*40 = 600
-    "280+8",    # 280 + 8*40 = 600
-    "240+9",    # 240 + 9*40 = 600
-    "200+10",   # 200 + 10*40 = 600
-]
+# Recalculate all time_control_bucket values from time_control_str using the
+# corrected thresholds: <180 bullet, <600 blitz, <=1800 rapid, else classical.
+# This applies the same formula as parse_time_control() in normalization.py:
+#   estimated = base + increment * 40
+_RECALCULATE_SQL = """
+UPDATE games
+SET time_control_bucket = sub.new_bucket
+FROM (
+    SELECT id,
+        CASE
+            WHEN time_control_str IS NULL THEN NULL
+            WHEN time_control_str LIKE '%%/%%' THEN 'classical'
+            WHEN time_control_str LIKE '%%+%%' THEN
+                CASE
+                    WHEN SPLIT_PART(time_control_str, '+', 1)::int
+                       + SPLIT_PART(time_control_str, '+', 2)::int * 40 < 180
+                        THEN 'bullet'
+                    WHEN SPLIT_PART(time_control_str, '+', 1)::int
+                       + SPLIT_PART(time_control_str, '+', 2)::int * 40 < 600
+                        THEN 'blitz'
+                    WHEN SPLIT_PART(time_control_str, '+', 1)::int
+                       + SPLIT_PART(time_control_str, '+', 2)::int * 40 <= 1800
+                        THEN 'rapid'
+                    ELSE 'classical'
+                END
+            ELSE
+                CASE
+                    WHEN time_control_str::int < 180 THEN 'bullet'
+                    WHEN time_control_str::int < 600 THEN 'blitz'
+                    WHEN time_control_str::int <= 1800 THEN 'rapid'
+                    ELSE 'classical'
+                END
+        END AS new_bucket
+    FROM games
+    WHERE time_control_str IS NOT NULL
+) sub
+WHERE games.id = sub.id
+  AND (games.time_control_bucket IS DISTINCT FROM sub.new_bucket)
+"""
 
 
 def upgrade() -> None:
-    """Fix games where estimated duration is exactly 600s from blitz -> rapid."""
-    placeholders = ", ".join(f"'{p}'" for p in _AFFECTED_PATTERNS)
-    op.execute(
-        f"UPDATE games SET time_control_bucket = 'rapid' "
-        f"WHERE time_control_str IN ({placeholders}) AND time_control_bucket = 'blitz'"
-    )
+    """Recalculate all time_control_bucket values using corrected thresholds."""
+    op.execute(_RECALCULATE_SQL)
 
 
 def downgrade() -> None:
-    """Revert: set affected games back to blitz (restores original incorrect behavior)."""
-    placeholders = ", ".join(f"'{p}'" for p in reversed(_AFFECTED_PATTERNS))
-    op.execute(
-        f"UPDATE games SET time_control_bucket = 'blitz' "
-        f"WHERE time_control_str IN ({placeholders}) AND time_control_bucket = 'rapid'"
-    )
+    """No safe downgrade — the old bucketing logic was incorrect."""
+    pass
