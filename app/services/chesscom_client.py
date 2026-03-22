@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from app.core.rate_limiters import get_chesscom_semaphore
 from app.services.normalization import normalize_chesscom_game
 
 USER_AGENT = "FlawChess/1.0 (github.com/flawchess/flawchess)"
@@ -90,24 +91,26 @@ async def fetch_chesscom_games(
         ):
             continue
 
-        # Rate-limit delay between requests
-        await asyncio.sleep(0.15)
+        # Shared rate limiter: limits concurrent archive fetches across all users
+        async with get_chesscom_semaphore():
+            # Rate-limit delay between requests
+            await asyncio.sleep(0.15)
 
-        resp = await client.get(archive_url, headers=_HEADERS)
-
-        # 429 rate-limited: back off 60s and retry once
-        if resp.status_code == 429:
-            await asyncio.sleep(60)
             resp = await client.get(archive_url, headers=_HEADERS)
 
-        # Skip non-200 archive responses rather than crashing on .json()
-        if resp.status_code != 200:
-            continue
+            # 429 rate-limited: back off 60s and retry once
+            if resp.status_code == 429:
+                await asyncio.sleep(60)
+                resp = await client.get(archive_url, headers=_HEADERS)
 
-        games = resp.json().get("games", [])
-        for game in games:
-            normalized = normalize_chesscom_game(game, username, user_id)
-            if normalized is not None:
-                yield normalized
-                if on_game_fetched is not None:
-                    on_game_fetched()
+            # Skip non-200 archive responses rather than crashing on .json()
+            if resp.status_code != 200:
+                continue
+
+            games = resp.json().get("games", [])
+            for game in games:
+                normalized = normalize_chesscom_game(game, username, user_id)
+                if normalized is not None:
+                    yield normalized
+                    if on_game_fetched is not None:
+                        on_game_fetched()
