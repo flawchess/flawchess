@@ -6,6 +6,7 @@
 - ✅ **v1.1 Opening Explorer & UI Restructuring** — Phases 11-16 (shipped 2024-03-20)
 - ✅ **v1.2 Mobile & PWA** — Phases 17-19 (shipped 2024-03-21)
 - ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
+- **v1.4 Improvements** — Phase 24
 
 ## Phases
 
@@ -56,6 +57,18 @@
 
 </details>
 
+### v1.4 Improvements
+
+- [ ] Phase 24: Web Analytics (0/0 plans) — not started
+  - **Goal:** Add privacy-friendly, low-resource web analytics to track page visits, top routes, and referrer sources
+  - **Requirements:** ANLY-01, ANLY-02, ANLY-03, ANLY-04, ANLY-05
+  - **Success criteria:**
+    1. Site owner can view a dashboard showing page visit counts and trends
+    2. Top pages by visit count are visible
+    3. Referrer sources are tracked and displayed
+    4. No cookie consent banner is needed (privacy-friendly solution)
+    5. Analytics adds negligible RAM/CPU overhead to the Hetzner VPS
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -83,3 +96,4 @@
 | 21. Docker & Deployment | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 22. CI/CD & Monitoring | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 23. Launch Readiness | v1.3 | 4/4 | Complete | 2026-03-22 |
+| 24. Web Analytics | v1.4 | 0/0 | Not started | — |
