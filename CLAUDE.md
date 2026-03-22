@@ -113,7 +113,10 @@ ssh flawchess "cd /opt/flawchess && docker compose down && docker compose up -d"
 ```
 
 - Domain: flawchess.com (Caddy handles auto-TLS)
-- Stack: PostgreSQL 16 + FastAPI/Uvicorn + Caddy 2.11.2
+- Stack: PostgreSQL 18 + FastAPI/Uvicorn + Caddy 2.11.2
+- Hetzner Cloud, 2 vCPUs, 3.7 GB RAM + 2 GB swap (`/swapfile`), 75 GB NVMe
+- Swap added 2026-03-22 after PostgreSQL was OOM-killed during a large game import. Import batch size was also reduced from 50 to 10 games (see `_BATCH_SIZE` in `import_service.py`).
+- Hetzner Cloud Firewall configured with inbound TCP 22/80/443 + ICMP from any
 - Alembic migrations run automatically on backend container startup via `deploy/entrypoint.sh`
 - `.env` on server at `/opt/flawchess/.env` — never commit production secrets
 
