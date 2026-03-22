@@ -19,17 +19,17 @@
 
 ## What is FlawChess?
 
-FlawChess is a chess opening analysis platform that matches positions by Zobrist hash — not by opening name. Import your games from chess.com and lichess, then analyze win/draw/loss rates for any exact board position you specify. Stop guessing which "Sicilian line" lost you points; find out which specific positions you actually struggle with.
+Analyze your opening positions by move, not just name. Import games from chess.com and lichess to discover where you really lose — which moves you struggle against, which traps and gambits work for you, and how your opening repertoire performs over time.
 
 ![Board and Move Explorer](frontend/public/screenshots/board-and-move-explorer.png)
 
 ## Features
 
-- **Find weaknesses in your openings** — analyze W/D/L rates for any board position across all your games
-- **Scout your opponents** — load an opponent's username and study their opening tendencies
-- **Interactive move explorer** — play moves on the board to navigate positions; see next-move frequency and W/D/L stats per move
-- **Cross-platform analysis** — import from chess.com and lichess in one place, analyze combined results
-- **Powerful filters** — filter by time control, rating, color, opponent type, platform, recency, and more
+- **Interactive move explorer** — step through any opening and see your win/draw/loss rate for every move you've played
+- **Find weaknesses in your openings** — discover which moves you struggle against and which traps you fall for
+- **System opening analysis** — analyze your performance with system openings like the London, where opponents respond in different ways
+- **Cross-platform analysis** — import from chess.com and lichess into one place, analyze your complete history regardless of platform
+- **Powerful filters** — slice your games by color, time control, recency, and more to find exactly the patterns you're looking for
 - **Mobile-friendly PWA** — installable on Android and iOS, optimized for touch
 - **Open source** — self-hostable, MIT licensed
 
