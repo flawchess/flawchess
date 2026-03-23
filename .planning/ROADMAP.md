@@ -96,10 +96,12 @@
 **Depends on**: Phase 25
 **Requirements**: PMETA-01, PMETA-02, PMETA-03, PMETA-04
 **Success Criteria** (what must be TRUE):
-  1. Alembic migration adds four nullable columns to game_positions (game_phase, material_signature, material_imbalance, endgame_class) and applies cleanly against the production schema
+  1. Alembic migration adds seven nullable columns to game_positions (game_phase, material_signature, material_imbalance, endgame_class, has_bishop_pair_white, has_bishop_pair_black, has_opposite_color_bishops) and applies cleanly against the production schema
   2. position_classifier.py correctly classifies a sample position across all edge cases: early queen trade is not classified as endgame, symmetric material produces the same canonical signature regardless of which color the user played, endgame_class is NULL for non-endgame positions
   3. Unit tests cover all six endgame class categories and the phase boundary heuristic, and all tests pass
-**Plans**: TBD
+**Plans:** 2 plans
+  - [ ] 26-01-PLAN.md — TDD position classifier module (classify_position + unit tests)
+  - [ ] 26-02-PLAN.md — GamePosition model columns, Alembic migration, chunk_size update
 
 ### Phase 27: Import Wiring & Backfill
 **Goal**: All newly imported games populate the four new columns at import time, and all previously imported games have those columns filled without requiring users to re-import
@@ -122,7 +124,7 @@
   3. User can see win rate when materially up and draw/win rate when materially down, each broken down by game phase (opening/middlegame/endgame)
   4. User can filter conversion/recovery stats by time control and the displayed numbers update correctly
   5. Users with no endgame data see a meaningful empty state rather than an error or blank page
-  6. The Endgames tab layout is usable on mobile (375px width) with the same filter and stats structure as the desktop layout
+  6. The Endgame tab layout is usable on mobile (375px width) with the same filter and stats structure as the desktop layout
 **Plans**: TBD
 **UI hint**: yes
 
@@ -165,7 +167,7 @@
 | 23. Launch Readiness | v1.3 | 4/4 | Complete | 2026-03-22 |
 | 24. Web Analytics | v1.4 | 2/2 | Complete | 2026-03-22 |
 | 25. Password Reset | v1.4 | 0/0 | Not started | — |
-| 26. Position Classifier & Schema | v1.5 | 0/0 | Not started | — |
+| 26. Position Classifier & Schema | v1.5 | 0/2 | In progress | — |
 | 27. Import Wiring & Backfill | v1.5 | 0/0 | Not started | — |
 | 28. Endgame Analytics | v1.5 | 0/0 | Not started | — |
 | 29. Engine Analysis Import | v1.5 | 0/0 | Not started | — |
