@@ -102,7 +102,10 @@ ssh flawchess "cd /opt/flawchess && docker compose ps"
 # View backend logs
 ssh flawchess "cd /opt/flawchess && docker compose logs --tail=50 backend"
 
-# Deploy latest main
+# Deploy via GitHub Actions (preferred — runs tests first)
+bin/deploy.sh
+
+# Deploy via SSH (direct — skips CI tests)
 ssh flawchess "cd /opt/flawchess && git pull origin main && docker compose up -d --build"
 
 # Restart backend only
@@ -122,8 +125,10 @@ ssh flawchess "cd /opt/flawchess && docker compose down && docker compose up -d"
 
 ## Version Control
 
+- **`main`** is the production branch. Pushes to main do NOT auto-deploy — deployment is manual via `workflow_dispatch` in GitHub Actions or SSH.
 - Always create a pull request before merging a feature or phase branch into main. Squash and merge the pull request into main only when approved or requested by the user.
-- When working on the main branch (e.g. with /gsd:quick), don't commit the changes unless the user explicitly asks for it. When workingon a feature branch, you can commit as often as you like.
+- When working on the main branch (e.g. with /gsd:quick), don't commit the changes unless the user explicitly asks for it. When working on a feature branch, you can commit as often as you like.
+- **v2 development** will use a long-lived `v2` branch. v1.x work continues on `main` via feature branches.
 
 ## Project Management
 
