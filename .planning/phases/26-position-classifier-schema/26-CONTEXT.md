@@ -6,9 +6,9 @@
 <domain>
 ## Phase Boundary
 
-Compute four metadata fields for every chess position (game phase, material signature, material imbalance, endgame class) and add them to the `game_positions` table via Alembic migration. Pure backend — no frontend, no import wiring (Phase 27), no analytics (Phase 28).
+Compute seven metadata fields for every chess position (game phase, material signature, material imbalance, endgame class, plus three tactical indicators) and add them to the `game_positions` table via Alembic migration. Pure backend — no frontend, no import wiring (Phase 27), no analytics (Phase 28).
 
-Deliverables: `position_classifier.py` module, Alembic migration adding 4 nullable columns, comprehensive unit tests.
+Deliverables: `position_classifier.py` module, Alembic migration adding 7 nullable columns, comprehensive unit tests.
 
 </domain>
 
@@ -76,13 +76,26 @@ Classification priority (evaluated in order):
 
 Store as string enum: `'pawn'`, `'rook'`, `'minor_piece'`, `'queen'`, `'mixed'`, `'pawnless'`, or `NULL`.
 
-### D-05: Database Column Types
+### D-05: Tactical Indicators
 
-Four new nullable columns on `game_positions`:
+Three boolean columns computed per position to avoid a costly second backfill pass later (TACT-01 scope, pulled forward for efficiency). Trivial to compute from `chess.Board` — near-zero marginal cost during the Phase 27 backfill that already replays every position.
+
+- **`has_bishop_pair_white`**: `Boolean` — white has 2+ bishops
+- **`has_bishop_pair_black`**: `Boolean` — black has 2+ bishops
+- **`has_opposite_color_bishops`**: `Boolean` — each side has exactly one bishop and they're on different square colors
+
+**Rationale:** The Phase 27 backfill iterates every position through `chess.Board`. Adding these indicators now costs nothing extra. A separate backfill later would repeat the entire expensive PGN replay + DB write cycle on the 3.7GB production server.
+
+### D-06: Database Column Types
+
+Seven new nullable columns on `game_positions`:
 - `game_phase`: `String(12)` — 'opening', 'middlegame', 'endgame'
 - `material_signature`: `String(20)` — canonical signature string
 - `material_imbalance`: `Integer` — signed centipawns
 - `endgame_class`: `String(12)` — category or NULL for non-endgame positions
+- `has_bishop_pair_white`: `Boolean` — NULL until backfilled
+- `has_bishop_pair_black`: `Boolean` — NULL until backfilled
+- `has_opposite_color_bishops`: `Boolean` — NULL until backfilled
 
 All nullable to support Phase 27's backfill pattern (existing rows start NULL, backfill populates them).
 
@@ -122,8 +135,8 @@ All nullable to support Phase 27's backfill pattern (existing rows start NULL, b
 - Testing: pytest with async fixtures against dev PostgreSQL
 
 ### Integration Points
-- `GamePosition` model in `app/models/game_position.py` — add 4 new columns
-- `bulk_insert_positions()` in `app/repositories/game_repository.py` — chunk_size must decrease from 4000 to ~2730 (12 columns instead of 8: 32767/12 = 2730)
+- `GamePosition` model in `app/models/game_position.py` — add 7 new columns
+- `bulk_insert_positions()` in `app/repositories/game_repository.py` — chunk_size must decrease from 4000 to ~2184 (15 columns instead of 8: 32767/15 = 2184)
 - `hashes_for_game()` return type will need extending in Phase 27 to include classifier output — but Phase 26 only creates the standalone classifier module
 
 </code_context>
@@ -131,7 +144,7 @@ All nullable to support Phase 27's backfill pattern (existing rows start NULL, b
 <specifics>
 ## Specific Ideas
 
-No specific requirements — open to standard approaches. User explicitly delegated all decisions to Claude with "established best practices" guidance.
+- User requested adding tactical indicator columns (bishop pair, opposite-color bishops) now to avoid a second full backfill pass later. Rationale: Phase 27 backfill already replays every position — marginal compute cost is near-zero, but a second backfill would be expensive on the constrained production server.
 
 </specifics>
 
