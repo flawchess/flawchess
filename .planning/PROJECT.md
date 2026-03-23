@@ -48,11 +48,14 @@ Users can determine their success rate for any opening position they specify, fi
 
 ### Active
 
-- [ ] Site owner can view page visit counts and trends over time
-- [ ] Site owner can see top pages/routes by visit count
-- [ ] Site owner can see visitor referrer sources
-- [ ] Analytics collection respects user privacy (no cookie consent banner required)
-- [ ] Analytics solution has minimal server resource footprint (RAM/CPU)
+- [ ] System computes game phase (opening/middlegame/endgame) for every position during import
+- [ ] System computes material signature, material imbalance, and endgame class for every position during import
+- [ ] System imports existing engine analysis data (eval, accuracy, move quality) from chess.com/lichess when available
+- [ ] User can view endgame performance statistics in a dedicated Endgames tab
+- [ ] User can filter endgame stats by endgame type (rook, minor piece, pawn, queen endgames, etc.)
+- [ ] User can filter endgame stats by material configuration (e.g., KRP vs KR)
+- [ ] User can see conversion stats (win rate when up material) broken down by game phase
+- [ ] User can see recovery stats (draw/win rate when down material) broken down by game phase
 
 ### Out of Scope
 
@@ -62,17 +65,19 @@ Users can determine their success rate for any opening position they specify, fi
 - Offline API data caching — chess data is user-specific + authenticated; caching risks stale analysis
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 
-## Current Milestone: v1.4 Improvements
+## Current Milestone: v1.5 Game Statistics & Endgame Analysis
 
-**Goal:** Add web analytics to understand site usage and visitor patterns.
+**Goal:** Enrich imported games with per-position metadata (game phase, material, endgame classification) and surface endgame performance analytics through a new Endgames tab.
 
 **Target features:**
-- Web analytics with privacy-friendly, low-resource solution
-- Page visit counts, top pages, referrer sources
+- Position metadata at import: game phase, material signature, material imbalance, endgame class
+- Import existing engine analysis from chess.com/lichess APIs when available
+- Endgame analytics tab with filters and W/D/L statistics per endgame category
+- Material-based conversion & recovery statistics by game phase
 
 ## Current State
 
-v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD and Sentry monitoring. All launch requirements met.
+v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD and Sentry monitoring. v1.4 (Web Analytics, Password Reset) in progress.
 
 ## Context
 
@@ -118,4 +123,4 @@ v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD
 | Backend expose-only (no ports) | Caddy is sole internet-facing entry point | ✓ Good |
 
 ---
-*Last updated: 2026-03-22 after v1.4 milestone start*
+*Last updated: 2026-03-23 after v1.5 milestone start*
