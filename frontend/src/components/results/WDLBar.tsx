@@ -31,21 +31,18 @@ export function WDLBar({ stats }: WDLBarProps) {
           <div
             className="transition-all"
             style={{ width: `${stats.win_pct}%`, backgroundColor: WDL_WIN, backgroundImage: GLASS_OVERLAY }}
-            title={`Wins: ${stats.wins} (${stats.win_pct.toFixed(1)}%)`}
           />
         )}
         {stats.draw_pct > 0 && (
           <div
             className="transition-all"
             style={{ width: `${stats.draw_pct}%`, backgroundColor: WDL_DRAW, backgroundImage: GLASS_OVERLAY }}
-            title={`Draws: ${stats.draws} (${stats.draw_pct.toFixed(1)}%)`}
           />
         )}
         {stats.loss_pct > 0 && (
           <div
             className="transition-all"
             style={{ width: `${stats.loss_pct}%`, backgroundColor: WDL_LOSS, backgroundImage: GLASS_OVERLAY }}
-            title={`Losses: ${stats.losses} (${stats.loss_pct.toFixed(1)}%)`}
           />
         )}
       </div>
@@ -54,15 +51,15 @@ export function WDLBar({ stats }: WDLBarProps) {
       <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm">
         <span>
           <span className="font-medium" style={{ color: WDL_WIN }}>W:</span>{' '}
-          {stats.wins} ({stats.win_pct.toFixed(1)}%)
+          {stats.wins} ({stats.win_pct.toFixed(0)}%)
         </span>
         <span>
           <span className="font-medium" style={{ color: WDL_DRAW }}>D:</span>{' '}
-          {stats.draws} ({stats.draw_pct.toFixed(1)}%)
+          {stats.draws} ({stats.draw_pct.toFixed(0)}%)
         </span>
         <span>
           <span className="font-medium" style={{ color: WDL_LOSS }}>L:</span>{' '}
-          {stats.losses} ({stats.loss_pct.toFixed(1)}%)
+          {stats.losses} ({stats.loss_pct.toFixed(0)}%)
         </span>
       </div>
     </div>

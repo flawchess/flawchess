@@ -107,61 +107,108 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
           </thead>
           <tbody>
             {moves.map(entry => (
-              <tr
+              <MoveRow
                 key={entry.move_san}
-                data-testid={`move-explorer-row-${entry.move_san}`}
-                className={cn(
-                  'cursor-pointer hover:bg-accent min-h-[44px]',
-                  selectedMove === entry.move_san && 'bg-accent',
-                )}
-                role="button"
-                tabIndex={0}
-                onClick={() => handleRowClick(entry)}
-                onKeyDown={(e) => handleRowKeyDown(e, entry)}
-                onMouseEnter={() => onMoveHover?.(entry.move_san)}
-                onMouseLeave={() => onMoveHover?.(null)}
-              >
-                <td className="py-1 text-sm text-foreground font-normal truncate">
-                  {entry.move_san}
-                </td>
-                <td className="py-1 text-right tabular-nums">
-                  <span className="inline-flex items-center justify-end gap-0.5">
-                    {entry.transposition_count > entry.game_count && (
-                      <TranspositionInfo
-                        moveSan={entry.move_san}
-                        transpositionCount={entry.transposition_count}
-                        gameCount={entry.game_count}
-                      />
-                    )}
-                    {entry.game_count}
-                  </span>
-                </td>
-                <td className="py-1 pl-2">
-                  {entry.win_pct === 0 && entry.draw_pct === 0 && entry.loss_pct === 0 ? (
-                    <div className="flex h-3 w-full overflow-hidden rounded bg-muted" />
-                  ) : (
-                    <div
-                      className="flex h-3 w-full overflow-hidden rounded"
-                      title={`W: ${entry.win_pct.toFixed(0)}% D: ${entry.draw_pct.toFixed(0)}% L: ${entry.loss_pct.toFixed(0)}%`}
-                    >
-                      {entry.win_pct > 0 && (
-                        <div style={{ width: `${entry.win_pct}%`, backgroundColor: WDL_WIN }} />
-                      )}
-                      {entry.draw_pct > 0 && (
-                        <div style={{ width: `${entry.draw_pct}%`, backgroundColor: WDL_DRAW }} />
-                      )}
-                      {entry.loss_pct > 0 && (
-                        <div style={{ width: `${entry.loss_pct}%`, backgroundColor: WDL_LOSS }} />
-                      )}
-                    </div>
-                  )}
-                </td>
-              </tr>
+                entry={entry}
+                selectedMove={selectedMove}
+                onRowClick={handleRowClick}
+                onRowKeyDown={handleRowKeyDown}
+                onMoveHover={onMoveHover}
+              />
             ))}
           </tbody>
         </table>
       )}
     </div>
+  );
+}
+
+/** Move row with WDL popover on row hover */
+function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover }: {
+  entry: NextMoveEntry;
+  selectedMove: string | null;
+  onRowClick: (entry: NextMoveEntry) => void;
+  onRowKeyDown: (e: React.KeyboardEvent, entry: NextMoveEntry) => void;
+  onMoveHover?: (moveSan: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
+
+  const handleMouseEnter = () => {
+    onMoveHover?.(entry.move_san);
+    if (hasWdl) {
+      hoverTimeout.current = setTimeout(() => setOpen(true), 100);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    onMoveHover?.(null);
+    if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+    setOpen(false);
+  };
+
+  return (
+    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+      <PopoverPrimitive.Trigger asChild>
+        <tr
+          data-testid={`move-explorer-row-${entry.move_san}`}
+          className={cn(
+            'cursor-pointer hover:bg-accent min-h-[44px]',
+            selectedMove === entry.move_san && 'bg-accent',
+          )}
+          role="button"
+          tabIndex={0}
+          onClick={() => onRowClick(entry)}
+          onKeyDown={(e) => onRowKeyDown(e, entry)}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          <td className="py-1 text-sm text-foreground font-normal truncate">
+            {entry.move_san}
+          </td>
+          <td className="py-1 text-right tabular-nums">
+            <span className="inline-flex items-center justify-end gap-0.5">
+              {entry.transposition_count > entry.game_count && (
+                <TranspositionInfo
+                  moveSan={entry.move_san}
+                  transpositionCount={entry.transposition_count}
+                  gameCount={entry.game_count}
+                />
+              )}
+              {entry.game_count}
+            </span>
+          </td>
+          <td className="py-1 pl-2">
+            {!hasWdl ? (
+              <div className="flex h-3 w-full overflow-hidden rounded bg-muted" />
+            ) : (
+              <div className="flex h-3 w-full overflow-hidden rounded">
+                {entry.win_pct > 0 && <div style={{ width: `${entry.win_pct}%`, backgroundColor: WDL_WIN }} />}
+                {entry.draw_pct > 0 && <div style={{ width: `${entry.draw_pct}%`, backgroundColor: WDL_DRAW }} />}
+                {entry.loss_pct > 0 && <div style={{ width: `${entry.loss_pct}%`, backgroundColor: WDL_LOSS }} />}
+              </div>
+            )}
+          </td>
+        </tr>
+      </PopoverPrimitive.Trigger>
+      {hasWdl && (
+        <PopoverPrimitive.Portal>
+          <PopoverPrimitive.Content
+            side="top"
+            sideOffset={4}
+            className={cn(
+              'z-50 max-w-xs rounded-md border-0 outline-none bg-foreground px-3 py-1.5 text-xs text-background pointer-events-none',
+              'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+              'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
+              'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2',
+            )}
+          >
+            W: {entry.win_pct.toFixed(0)}% · D: {entry.draw_pct.toFixed(0)}% · L: {entry.loss_pct.toFixed(0)}%
+          </PopoverPrimitive.Content>
+        </PopoverPrimitive.Portal>
+      )}
+    </PopoverPrimitive.Root>
   );
 }
 
