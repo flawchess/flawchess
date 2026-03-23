@@ -16,9 +16,9 @@ interface WDLCategoryChartProps {
 }
 
 const chartConfig = {
-  win_pct: { label: 'Wins', color: 'oklch(0.55 0.12 145)' },
-  draw_pct: { label: 'Draws', color: 'oklch(0.65 0.01 260)' },
-  loss_pct: { label: 'Losses', color: 'oklch(0.55 0.13 25)' },
+  win_pct: { label: 'Wins', color: 'oklch(0.50 0.14 145)' },
+  draw_pct: { label: 'Draws', color: 'oklch(0.60 0.02 260)' },
+  loss_pct: { label: 'Losses', color: 'oklch(0.50 0.15 25)' },
 };
 
 function ChartTitle({ title, infoTooltip, testId }: { title: string; infoTooltip: string; testId: string }) {

@@ -1,9 +1,13 @@
 import type { WDLStats } from '@/types/api';
 
 // Shared WDL colors — must match WDLBarChart.tsx
-export const WDL_WIN = 'oklch(0.55 0.12 145)';
-export const WDL_DRAW = 'oklch(0.65 0.01 260)';
-export const WDL_LOSS = 'oklch(0.55 0.13 25)';
+// Richer base colors — the glass overlay softens them visually
+export const WDL_WIN = 'oklch(0.50 0.14 145)';
+export const WDL_DRAW = 'oklch(0.60 0.02 260)';
+export const WDL_LOSS = 'oklch(0.50 0.15 25)';
+
+// Glass-effect overlay: white highlight fading to transparent
+const GLASS_OVERLAY = 'linear-gradient(to bottom, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.05) 60%, rgba(0,0,0,0.05) 100%)';
 
 interface WDLBarProps {
   stats: WDLStats;
@@ -26,21 +30,21 @@ export function WDLBar({ stats }: WDLBarProps) {
         {stats.win_pct > 0 && (
           <div
             className="transition-all"
-            style={{ width: `${stats.win_pct}%`, backgroundColor: WDL_WIN }}
+            style={{ width: `${stats.win_pct}%`, backgroundColor: WDL_WIN, backgroundImage: GLASS_OVERLAY }}
             title={`Wins: ${stats.wins} (${stats.win_pct.toFixed(1)}%)`}
           />
         )}
         {stats.draw_pct > 0 && (
           <div
             className="transition-all"
-            style={{ width: `${stats.draw_pct}%`, backgroundColor: WDL_DRAW }}
+            style={{ width: `${stats.draw_pct}%`, backgroundColor: WDL_DRAW, backgroundImage: GLASS_OVERLAY }}
             title={`Draws: ${stats.draws} (${stats.draw_pct.toFixed(1)}%)`}
           />
         )}
         {stats.loss_pct > 0 && (
           <div
             className="transition-all"
-            style={{ width: `${stats.loss_pct}%`, backgroundColor: WDL_LOSS }}
+            style={{ width: `${stats.loss_pct}%`, backgroundColor: WDL_LOSS, backgroundImage: GLASS_OVERLAY }}
             title={`Losses: ${stats.losses} (${stats.loss_pct.toFixed(1)}%)`}
           />
         )}
