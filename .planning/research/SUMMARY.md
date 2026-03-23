@@ -1,182 +1,164 @@
 # Project Research Summary
 
-**Project:** FlawChess (formerly Chessalytics) v1.3 — Project Launch
-**Domain:** Production deployment, DevOps, monitoring, analytics, SEO, public launch
-**Researched:** 2026-03-21
+**Project:** FlawChess v1.5 — Game Statistics & Endgame Analysis
+**Domain:** Chess analytics platform — per-position metadata enrichment and endgame tab
+**Researched:** 2026-03-23
 **Confidence:** HIGH
 
 ## Executive Summary
 
-FlawChess v1.3 is a production launch milestone for an already-functional chess analysis platform. The core application (game import, Zobrist-hash position analysis, bookmarks, move explorer, PWA) was shipped in v1.0–v1.2. This milestone focuses entirely on making that application publicly launchable: containerizing and deploying it to a Hetzner VPS, adding error monitoring, analytics, SEO, and an import queue that prevents chess.com rate-limit bans at concurrent load. The recommended approach is a single-VPS Docker Compose deployment with Caddy as reverse proxy — no orchestration, no managed services, no Kubernetes — appropriate for a solo developer launching to an initial user base.
+FlawChess v1.5 adds endgame analytics (game phase, material classification, endgame type W/D/L) on top of an existing production platform. The research confirms no new libraries are needed — every required capability (material counting, PGN eval parsing, NAG annotations) is available in the already-installed python-chess 1.11.2. The core implementation is a new `position_classifier.py` service that slots into the existing import pipeline at zero additional cost: the board is already constructed at each ply for Zobrist hash computation, so classification runs in the same loop with no extra I/O or PGN re-parses.
 
-The recommended stack additions are minimal: Docker + Docker Compose, Caddy 2.11.2 (auto-TLS, SPA routing, API proxying in ~10 lines of Caddyfile), sentry-sdk 2.55.0 + @sentry/react 10.45.0 for error tracking, Plausible Cloud for GDPR-safe analytics (no cookie consent required), and react-helmet-async 3.0.0 for SEO meta tags. The frontend is served as static files from Caddy, not from a separate running container in production — this eliminates a container while simplifying TLS and routing. GitHub Actions drives CI/CD with SSH deployment to Hetzner.
+The recommended approach has a strict sequential dependency: schema migration first (nullable columns, instant in PostgreSQL 18), then import pipeline wiring, then a background backfill of existing games from stored PGN (no re-download required), then new indexes, and finally the Endgames tab backend and frontend. The core W/D/L endgame statistics require no engine analysis and will work for 100% of imported games — a meaningful competitive advantage over lichess Insights and chess.com Insights, which only show phase accuracy for previously-analyzed games. Engine accuracy import (chess.com accuracy float, lichess per-move evals) is a lower-priority follow-on; P1 is the analysis-free endgame analytics.
 
-The three most critical risks for this milestone are: (1) the chess.com import rate-limit problem — concurrent BackgroundTasks will trigger IP bans at 4+ simultaneous users, requiring a global asyncio.Semaphore before launch; (2) Caddy directive ordering — `try_files` silently rewrites API calls to `/index.html` unless `handle` blocks are ordered correctly; and (3) the Sentry initialization order bug — calling `sentry_sdk.init()` after `app = FastAPI()` silently disables error capture. The rename from Chessalytics to FlawChess must be done first and verified with grep before any other work, as stale references create silent mismatches in Sentry projects, Docker image tags, and CI/CD scripts.
+The top risks are: (1) the backfill triggering OOM on the 3.7 GB Hetzner server if not batched at 10 games at a time, (2) chess.com accuracy absent for 95%+ of games — all accuracy columns must be nullable with graceful UI fallback, and (3) material signature non-canonicalization causing split statistics if the normalization convention is not enforced at compute time. All three are preventable with disciplined schema design and unit tests before any deployment.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The base stack (FastAPI 0.115.x, React 19, PostgreSQL, SQLAlchemy async, TanStack Query, Tailwind, vite-plugin-pwa) is already in production and is not re-evaluated. New additions for v1.3 are deliberately minimal. Caddy is the clear choice over Nginx for a single-server SPA+API deployment: automatic Let's Encrypt TLS with zero configuration, native `try_files` SPA fallback, and a single-file reverse proxy config. The uv multi-stage Docker build pattern keeps the backend image lean by excluding uv and build tools from the runtime layer. Sentry v2.x (not the 3.0 alpha) auto-activates FastAPI and Starlette integrations when initialized at module top-level. Plausible Cloud at $9/month is preferred over Google Analytics because it requires no cookie consent banner (no cookies, no PII) — this eliminates an entire category of GDPR complexity and frontend code.
+No new dependencies are required for v1.5. The entire feature set — game phase detection, material signature computation, endgame classification, eval extraction from PGN, and accuracy import — is covered by the existing stack. python-chess provides `board.pieces()` for material counting, `node.eval()` for centipawn extraction from PGN annotations, and `node.nags` for move quality. The only API-level changes are adding `evals=True` and `accuracy=True` params to the lichess client, and extracting the existing `accuracies` field from chess.com game JSON.
 
-**Core technologies (new for v1.3):**
-- **Docker + Docker Compose 2.x**: Containerization and orchestration with `service_healthy` startup ordering — prevents Alembic running before Postgres is ready
-- **Caddy 2.11.2**: Reverse proxy + auto-TLS + static file serving — eliminates certbot, handles SPA routing, ~10 line Caddyfile
-- **sentry-sdk 2.55.0**: Backend error tracking — auto-instruments FastAPI; init before `app = FastAPI()` is critical
-- **@sentry/react 10.45.0**: Frontend error tracking with `browserTracingIntegration`; source maps via `@sentry/vite-plugin`
-- **react-helmet-async 3.0.0**: Per-route `<title>` and `<meta>` for SEO — v3 is React 19-native, delegates to React's built-in metadata hoisting
-- **vite-plugin-sitemap 0.8.2**: Build-time `sitemap.xml` and `robots.txt` generation
-- **Hetzner Cloud CX32**: 4 vCPU / 8 GB RAM / €6.80/mo — CX32 over CX22 for PostgreSQL + FastAPI + Caddy headroom
-- **GitHub Actions + ghcr.io**: CI/CD with free GHCR registry; avoids Docker Hub rate limits
+**Core technologies:**
+- **python-chess 1.11.2**: Material counting via `board.pieces()`, PGN eval via `node.eval()`, NAG annotations via `node.nags` — all stable since 1.x, no version upgrade needed
+- **SQLAlchemy 2.x + Alembic**: Add 4 nullable `SmallInteger`/`String` columns to `game_positions`; ADD COLUMN DEFAULT NULL is metadata-only in PostgreSQL 18 (instant, no table rewrite)
+- **PostgreSQL 18**: Composite partial index `(user_id, endgame_class) WHERE endgame_class IS NOT NULL` covers the primary endgame query; temporary partial index on `WHERE game_phase IS NULL` drives the backfill scan efficiently
+- **FastAPI + existing router/service/repository pattern**: New `endgames.py` router, service, and repository follow the established 3-layer architecture with no deviation
 
 ### Expected Features
 
-All table-stakes features are P1 — none are optional for a credible public launch.
+**Must have (P1 — v1.5 launch):**
+- Game phase computed per position at import (opening/middlegame/endgame integer stored in `game_positions`) — foundational for all analytics
+- Material signature per position (canonical string e.g. `KQRBNPkrbnpp`) — enables endgame class derivation and future drill-down
+- Endgame class derived from material signature (6 categories: pawn, rook, minor_piece, queen, complex/mixed, pawnless)
+- Material imbalance per position (signed integer in pawn units) — enables conversion/recovery statistics
+- Endgames tab: W/D/L breakdown by endgame type with time control / color / recency filters
+- Conversion stats: W/D/L when materially up vs. down, broken out by game phase
 
-**Must have (table stakes for v1.3 launch):**
-- FlawChess rename — branding consistency before Sentry/Plausible projects are created with the correct name
-- Docker Compose deployment (backend, db, Caddy) with named volumes and health checks
-- Alembic migrations in Docker CMD before uvicorn starts (not inside FastAPI lifespan)
-- Environment variable configuration (.env on VPS, never hardcoded, never committed)
-- GitHub Actions CI/CD (test → build → push GHCR → SSH deploy)
-- Sentry backend + frontend (error capture with DSN-guarded init)
-- About/landing page with Zobrist-hash USP explanation, FAQ, and registration CTA
-- Professional README with screenshots and Docker Compose setup instructions
-- Privacy policy page at `/privacy` covering auth data, Sentry, Plausible, user rights
-- SEO fundamentals: react-helmet-async meta tags, robots.txt, sitemap.xml on About page
-- Plausible analytics (single script tag, no cookie consent required)
-- Import queue (asyncio.Semaphore per platform to prevent chess.com IP ban)
+**Should have (P2 — after v1.5 validation):**
+- Engine accuracy import from chess.com (`accuracies.white/black` float, game-level only)
+- Per-move eval import from lichess (`evals=True` param, only for analyzed games)
+- Material configuration drill-down UI (KRP vs KR level within a rook endgame bucket)
+- Phase label / material class badge in the existing Move Explorer
 
-**Should have (add after v1.3 validates):**
-- Import queue UI feedback showing queued position — add when users report confusion
-- Sentry session replay (error-only, `replaysOnErrorSampleRate: 1.0`) — enable after confirming error capture works in production
-- Structured JSON logging for log-Sentry correlation — add when production debugging proves painful
-
-**Defer (v2+):**
-- ARQ + Redis for durable import queue — only if lost-on-restart jobs become a real user complaint
-- Social sharing of position analysis — requires public/anonymous URL design
-- Horizontal scaling (Docker Swarm, K8s) — only if single VPS is demonstrably insufficient
+**Defer to v2+:**
+- Per-phase accuracy for chess.com games (not in public API; requires local Stockfish or paid partnership)
+- Endgame training module (crosses into training product, outside analytics scope)
+- Opponent endgame scouting (natural follow-on to existing opponent scouting, separate milestone)
 
 ### Architecture Approach
 
-The deployment architecture is a single Hetzner VPS running three Docker Compose services: Caddy (ports 80/443), FastAPI backend (internal only), and PostgreSQL (internal only). Caddy is the sole internet-facing ingress: it terminates TLS, proxies explicit API route prefixes (`/auth/*`, `/analysis/*`, `/games/*`, `/imports/*`, etc.) to the backend, and serves the pre-built React `dist/` as static files with `try_files` fallback for client-side routing. Same-domain deployment eliminates CORS in production — the current hardcoded `allow_origins=["http://localhost:5173"]` must be moved to a `CORS_ALLOWED_ORIGINS` settings field. GitHub Actions runs tests on every push and deploys on push to main by building images, pushing to GHCR, and SSH-executing `docker compose pull && docker compose up -d`.
+The architecture is a clean extension of the existing 3-layer pattern (router → service → repository). A new `position_classifier.py` service computes all position metadata from `chess.Board` in a single pass and integrates into `zobrist.py`'s existing per-ply loop. The existing `game_positions` table gains 4 nullable columns (instant migration); a new optional `game_engine_analysis` table handles per-game accuracy data separately to avoid column pollution on `games`. A background `backfill_service.py` re-parses stored PGN from `games.pgn` to populate new columns on existing rows — no API re-fetching needed. The Endgames tab follows an identical structure to the existing Openings tab: `FilterPanel` for standard filters, new `EndgameTypeFilter` for endgame class, `COUNT(DISTINCT game_id)` aggregation to avoid double-counting position rows.
 
 **Major components:**
-1. **Caddy**: TLS termination, static SPA serving, API reverse proxy — only internet-facing service
-2. **FastAPI + Uvicorn (4 workers)**: All API logic; starts only after PostgreSQL health check passes; Alembic runs in CMD before uvicorn
-3. **PostgreSQL**: Persistent data on named `postgres_data` volume; `depends_on: service_healthy` gates backend startup
-4. **GitHub Actions**: CI (test + lint) on every push; CD (build → GHCR → SSH deploy) on push to main
-5. **Import queue (asyncio.Semaphore)**: Global per-platform semaphore limits concurrent outbound import tasks; prevents chess.com 429 / IP ban
-6. **Sentry (backend + frontend)**: Backend init at `main.py` module top-level before `app = FastAPI()`; frontend init before React renders
+1. `position_classifier.py` — pure-Python service: computes game_phase (material threshold), material_signature (canonical string), material_imbalance (signed int), endgame_class (6-bucket string) from `chess.Board`
+2. `backfill_service.py` — background asyncio task: reads `games.pgn`, replays moves, batch-UPDATEs `game_positions` at 10 games / ~400 rows per commit
+3. `endgames_repository.py` + `endgames_service.py` + `routers/endgames.py` — standard 3-layer stack for the new `/endgames/stats` endpoint
+4. `frontend/src/pages/Endgames.tsx` + `components/endgames/` — new page reusing FilterPanel, TanStack Query hook `useEndgames`, TypeScript type mirrors
 
 ### Critical Pitfalls
 
-1. **Caddy `try_files` rewrites API calls to `/index.html`** — Use two explicit `handle` blocks: one for each API route prefix with `reverse_proxy`, one catch-all with `file_server + try_files`. Verify with `curl /api/health` returning JSON, not HTML.
+1. **chess.com accuracy absent for most games** — `accuracies` field is only present for user-reviewed games (free users: 1 review/day). Always null-guard with `game.get("accuracies", {})`. Store as `FLOAT NULL`. Design UI to show "n/a" not 0%. Do not advertise accuracy import as a core feature.
 
-2. **Sentry init order silently disables error capture** — Call `sentry_sdk.init()` at module top-level in `main.py` unconditionally before `app = FastAPI()`. Verify with a deliberate test exception route; if nothing appears in Sentry within 60 seconds, init order is wrong.
+2. **Backfill OOM risk on 3.7 GB server** — Production was previously OOM-killed at batch_size=50. Backfill must process 10 games (~400 position rows) per commit batch, run as a standalone script (not inside an Alembic migration), and support resume via `WHERE game_phase IS NULL`. Always run `VACUUM game_positions` after backfill to clear dead tuples from MVCC row versions.
 
-3. **Import queue starvation causes chess.com IP ban** — Replace uncoordinated `BackgroundTasks` with a global `asyncio.Semaphore(3)` for chess.com and a separate one for lichess. At 4+ concurrent users without this, the server IP gets banned for 24 hours.
+3. **Non-canonical material signatures split statistics** — Without an explicit normalization convention, `KRP_KR` and `KR_KRP` both appear depending on which color the user played, halving query counts. Enforce: stronger side (higher material value) first; if equal, lexicographic. Write a unit test: rotating board colors must produce the same canonical string.
 
-4. **PostgreSQL data loss via `docker compose down -v`** — Use a named `postgres_data` volume declared in the top-level `volumes:` section. Never use the `-v` flag in production deployment scripts. Verify persistence by running `down && up` and confirming row count.
+4. **Game phase boundary inconsistency** — A single material threshold causes early queen trades to incorrectly classify 50 subsequent moves as "endgame". Use a tapered phase score (Q=4, R=2, B=1, N=1 weights; max 24; endgame < 8) and a ply floor (never label "endgame" before ply 10). Document the formula for users.
 
-5. **Alembic race condition at startup** — Run `alembic upgrade head` in the Docker `CMD` as a shell command before uvicorn, not inside FastAPI's async lifespan. Add a `pg_isready` health check with `depends_on: condition: service_healthy` to prevent the app from starting before Postgres accepts connections.
-
-6. **Stale rename references** — The Chessalytics → FlawChess rename must be the first phase. Run `grep -ri chessalytics` across all file types before declaring the PR complete. Create Sentry and Plausible projects after the rename — not before — since project names are hard to change.
+5. **COUNT(*) instead of COUNT(DISTINCT game_id)** — A game entering a rook endgame at ply 30 produces ~50 position rows all with `endgame_class='rook'`. Every endgame aggregation query must use `COUNT(DISTINCT game_id)` to avoid 50x inflated statistics.
 
 ## Implications for Roadmap
 
-Based on the dependency chain identified in ARCHITECTURE.md and the rename-first constraint from PITFALLS.md, a 4-phase structure is recommended:
+Based on research, the hard sequential dependency chain dictates a 4-phase structure with an optional 5th phase for engine accuracy:
 
-### Phase 1: Rename + Infra Foundation
-**Rationale:** The rename must happen before any external services (Sentry, Plausible) are created using the project name. Docker + Caddy must be validated before CI/CD can be built on top of it. This phase proves end-to-end deployment before adding monitoring complexity.
-**Delivers:** FlawChess branding throughout codebase, working Docker Compose stack on Hetzner with auto-TLS, PostgreSQL persistence, Alembic-on-startup, and FastAPI docs disabled in production.
-**Features addressed:** FlawChess rename, Docker Compose deployment, Caddy reverse proxy, environment variable config, PostgreSQL volume persistence, Alembic migrations on startup, CORS from settings.
-**Pitfalls avoided:** Stale rename references, PostgreSQL data loss, Alembic race condition, Caddy directive ordering, FastAPI docs exposed in production, hardcoded CORS origins.
+### Phase 1: Schema + Position Classifier
+**Rationale:** Everything else depends on the schema existing and the classifier being correct. Write and unit-test it in isolation first, then integrate. Schema migration is instant (nullable columns); classifier is pure Python with no DB dependency.
+**Delivers:** `position_classifier.py` with unit tests covering edge cases (early queen trade, symmetric endgames, canonical signature); Alembic migration adding 4 columns to `game_positions`; updated `bulk_insert_positions` chunk_size (8 → 12 columns = 2730 rows max).
+**Addresses:** Game phase detection, material signature, endgame class, material imbalance (all P1 features from FEATURES.md)
+**Avoids:** Phase boundary inconsistency (pitfall 5), non-canonical signatures (pitfall 4), chunk_size miscalculation (architecture pitfall)
 
-### Phase 2: CI/CD + Backend Hardening + Sentry Backend
-**Rationale:** CI/CD requires Docker images to exist (phase 1 prerequisite). Sentry backend requires a working production environment with the correct domain in the Sentry project. GitHub Actions secrets must be configured after the VPS is provisioned.
-**Delivers:** Automated deploy pipeline (push to main → tests → build → GHCR → SSH deploy), Sentry backend error capture, structured config settings.
-**Features addressed:** GitHub Actions CI/CD, Sentry backend, SENTRY_DSN in settings, PWA `onNeedRefresh` update banner (critical — API contract coupling between frontend/backend versions).
-**Pitfalls avoided:** Sentry init order (init before `app = FastAPI()`), GitHub Actions secrets leakage via SHA-pinned action refs, stale PWA after deployment.
+### Phase 2: Import Pipeline Wiring + Backfill
+**Rationale:** New imports must populate new columns immediately on deploy. Existing rows need backfill from stored PGN. Both must be correct before analytics queries can return meaningful results.
+**Delivers:** Modified `zobrist.py` / `import_service.py` wiring classifier into per-ply loop; standalone `scripts/backfill_position_metadata.py` with batch_size=10, resume support (`WHERE game_phase IS NULL`), and post-backfill VACUUM step; temporary backfill index (created before, dropped after).
+**Avoids:** Backfill OOM (pitfall 3), dead tuple bloat (pitfall 6), backfill non-idempotency (pitfall 8), non-batched UPDATE (performance trap)
 
-### Phase 3: Frontend Monitoring + Analytics + SEO + Public Pages
-**Rationale:** These are all frontend/content concerns that depend on a live production domain (phase 1). Analytics and privacy policy must be decided together — Plausible must be locked in before the privacy policy is written. The About page requires the FlawChess brand to be in place.
-**Delivers:** Frontend Sentry error tracking, Plausible analytics (no cookie consent needed), About/landing page, privacy policy page, SEO meta tags + sitemap + robots.txt, professional README.
-**Features addressed:** Sentry frontend, Plausible analytics, About page, README, privacy policy, SEO fundamentals.
-**Pitfalls avoided:** GDPR analytics-before-consent (eliminated entirely via Plausible), SPA invisible to crawlers (react-helmet-async + sitemap), `index.html` cached with long TTL (Caddy cache headers).
+### Phase 3: Endgames Backend + API
+**Rationale:** Data is populated; backend can now aggregate it. Build the service layer and endpoints before touching the frontend so they can be validated independently via Swagger.
+**Delivers:** `endgames_repository.py` (W/D/L by endgame class, conversion/recovery stats), `endgames_service.py`, `routers/endgames.py`, `schemas/endgames.py`, permanent indexes (`ix_gp_user_endgame_class` partial, `ix_gp_user_game_phase` partial); backfill progress indicator endpoint.
+**Avoids:** COUNT(*) inflation (always COUNT DISTINCT), serving incomplete data before backfill completes (anti-pattern 4)
 
-### Phase 4: Import Queue
-**Rationale:** Import queue is architecturally independent of infra and CI/CD — it can be done at any point. Placed last because it is a backend-only concern with no deployment dependencies. However, it is P1 for launch — a chess.com IP ban at launch would be catastrophic.
-**Delivers:** Global asyncio.Semaphore-based import queue preventing concurrent chess.com rate-limit violations; immediate "queued" status response to frontend.
-**Features addressed:** Import queue (asyncio.Semaphore per platform), import status response with queued state.
-**Pitfalls avoided:** Import queue starvation / chess.com IP ban.
+### Phase 4: Endgames Frontend Tab
+**Rationale:** API is stable; now build the UI. Reuse existing patterns (FilterPanel, TanStack Query, W/D/L display components from Openings tab) to minimize novel frontend work.
+**Delivers:** `Endgames.tsx` page, `EndgamesStats.tsx`, `EndgameTypeFilter.tsx`, `MaterialPhaseStat.tsx`, `useEndgames.ts` hook, navigation wiring (`/endgames` route, bottom bar + More drawer), empty states for users with no endgame data, "—" display for NULL evals.
+**Avoids:** Null eval displayed as 0 (UX pitfall), no empty state for new users (UX pitfall), missing mobile layout (CLAUDE.md requirement — check both desktop sidebar and mobile variants)
+
+### Phase 5 (Optional): Engine Accuracy Import
+**Rationale:** P2 feature, independent of the core endgame analytics. Defer until user demand for accuracy data is validated. Separate optional `game_engine_analysis` table avoids polluting the `games` table with columns that are NULL for 95%+ of rows.
+**Delivers:** chess.com `accuracies` field extraction in normalizer; lichess `evals=True` + `accuracy=True` param addition; optional `game_engine_analysis` table migration.
+**Avoids:** chess.com accuracy absent for most games (pitfall 1 — all columns nullable, graceful UI fallback), lichess eval absent for non-analyzed games (pitfall 2), annotated PGN breaking downstream parsing (pitfall 7)
 
 ### Phase Ordering Rationale
 
-- The rename must be atomic and complete before Sentry/Plausible projects are created — those services embed the project name at creation time and are hard to rename.
-- Docker + Caddy must be validated manually before CI/CD automates it — you cannot debug a broken pipeline if you have not first confirmed the deployment works manually.
-- Sentry backend must be in place before the first real users arrive — silent errors after launch are worse than no error tracking during the build phase.
-- Plausible must be chosen before the privacy policy is drafted — the policy must accurately name data processors.
-- Import queue is P1 but infrastructure-independent, so it slots cleanly into a final phase without creating ordering risk.
+- Schema before pipeline: column migration must exist before the import loop can write to the new columns
+- Classifier before integration: correctness must be unit-tested in isolation (pure Python, no DB) before touching the live import loop
+- Backfill before analytics: returning silently incomplete statistics after deploy erodes user trust; backfill progress must be tracked and surfaced
+- Backend before frontend: enables API validation without UI noise; Swagger UI proves the contract before any React code is written
+- Engine accuracy last: P2 feature with well-understood additional pitfalls (conditional API fields); safest to implement after the P1 pipeline is proven stable
 
 ### Research Flags
 
-All four phases have established patterns. No phase requires `/gsd:research-phase`:
+Phases likely needing deeper research during planning:
+- **Phase 2 (Backfill):** Production memory constraints require careful validation. Recommend testing the backfill script against a production DB snapshot with `docker stats` monitoring before deploying. Also review `EXPLAIN ANALYZE` on the backfill query against actual table row counts to confirm the partial index is used.
+- **Phase 5 (Engine Accuracy):** The ARCHITECTURE.md finding that lichess bulk export omits analysis data (only individual game export includes it) means inline import is not feasible. The enrichment job design — when to trigger it, how to surface status to users — needs explicit design decisions before implementation.
 
-- **Phase 1 (Rename + Infra):** Docker Compose + Caddy patterns are well-documented with official sources. uv multi-stage Dockerfile from official astral-sh docs is directly applicable.
-- **Phase 2 (CI/CD + Sentry):** GitHub Actions + GHCR deploy pattern is well-documented. Sentry FastAPI init placement is covered by official docs and a specific verified GitHub issue.
-- **Phase 3 (Frontend + SEO + Analytics):** react-helmet-async v3 + React 19 compatibility confirmed. Plausible integration is a single script tag. Sentry React follows the same SDK patterns as backend.
-- **Phase 4 (Import Queue):** asyncio.Semaphore pattern is standard Python. No novel integration required.
+Phases with standard patterns (skip additional research):
+- **Phase 1 (Schema + Classifier):** All python-chess APIs confirmed from official docs. PostgreSQL ADD COLUMN behavior confirmed from official docs. Well-documented patterns.
+- **Phase 3 (Backend API):** Follows identical pattern to existing `analysis_repository.py` / `analysis_service.py` / `routers/analysis.py`. No novel patterns.
+- **Phase 4 (Frontend):** Reuses existing FilterPanel, TanStack Query hooks, W/D/L display components from Openings tab. Standard React/TypeScript work.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All versions verified via PyPI, npm CLI, and official GitHub releases. uv Docker pattern from official astral-sh docs. |
-| Features | HIGH (infra/monitoring) / MEDIUM (GDPR requirements) | Docker/Caddy/Sentry mechanics HIGH. GDPR legal status MEDIUM — jurisdiction-dependent; Plausible approach eliminates most risk. |
-| Architecture | HIGH | Patterns verified against official Caddy, uv, Sentry, Docker Compose docs. Codebase analyzed directly for CORS and config patterns. |
-| Pitfalls | HIGH | Critical pitfalls verified via official docs and linked GitHub issues (Sentry #2353, vite-plugin-pwa #33). Community postmortems on PostgreSQL volume loss and Alembic race conditions. |
+| Stack | HIGH | python-chess APIs confirmed from official docs; PostgreSQL column-add behavior confirmed from official docs; no new libraries needed |
+| Features | HIGH (P1) / MEDIUM (P2) | P1 W/D/L features are analysis-free and unambiguous; P2 accuracy features depend on conditional API fields with confirmed platform-specific limitations |
+| Architecture | HIGH | Based on direct codebase inspection of all affected modules; extension points are unambiguous; 10-step build order documented |
+| Pitfalls | HIGH (API limits, backfill OOM) / MEDIUM (phase boundaries, eval coverage) | chess.com API limits confirmed by moderator; backfill OOM confirmed by production history (CLAUDE.md); phase boundary heuristic and lichess eval coverage rate are community-sourced estimates |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **GDPR legal status of Google Analytics in specific EU jurisdictions**: MEDIUM confidence only. The recommended approach (Plausible) sidesteps this entirely — but if GA4 is chosen instead, verify current national DPA guidance before launch. Legal position is fluid jurisdiction-by-jurisdiction.
-- **Hetzner pricing**: Verified via third-party aggregator (costgoat.com), not hetzner.com directly. Confirm CX32 pricing on hetzner.com before provisioning.
-- **chess.com rate-limit thresholds**: Community-reported at ~3-4 concurrent connections; not officially documented. The `asyncio.Semaphore(3)` recommendation is conservative. Monitor 429 responses after launch and tune the semaphore value if needed.
-- **PWA `onNeedRefresh` update banner**: Identified as critical (API contract coupling between frontend and backend versions exists in this project) but not listed in the v1.3 MVP feature list in FEATURES.md. Should be explicitly added to Phase 2 scope.
+- **Backfill performance on real production data:** The OOM risk is concrete (prior production incident), but the exact row count in `game_positions` is unknown. Run the backfill against a production DB snapshot to validate batch_size=10 is sufficient. Reduce to 5 if needed.
+- **Game phase boundary tuning:** The tapered phase score thresholds (opening >= 18, endgame < 8) match Stockfish conventions adapted for user-facing categories. They may need empirical tuning after seeing real data. Adjusting the thresholds later requires a backfill re-run — not a schema change — so this is low-cost to revise.
+- **lichess eval coverage rate:** Estimated at "many casual games have no analysis." Actual coverage rate for the existing user base is unknown. The UI must communicate clearly how many games have accuracy data to avoid user confusion.
+- **COUNT DISTINCT performance at scale:** `COUNT(DISTINCT game_id)` with a JOIN on `game_positions` requires an `EXPLAIN ANALYZE` against a representative dataset before shipping. If the partial index scan + distinct is too slow, a covering index on `(user_id, endgame_class, game_id)` may be needed.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [PyPI sentry-sdk](https://pypi.org/project/sentry-sdk/) — version 2.55.0 confirmed
-- [Sentry FastAPI integration docs](https://docs.sentry.io/platforms/python/integrations/fastapi/) — auto-activation, init placement
-- [Sentry React docs](https://docs.sentry.io/platforms/javascript/guides/react/) — Vite setup, source maps, session replay
-- [Caddy GitHub releases](https://github.com/caddyserver/caddy/releases) — v2.11.2 latest stable
-- [Caddy try_files docs](https://caddyserver.com/docs/caddyfile/directives/try_files) — SPA fallback pattern
-- [Caddy route directive docs](https://caddyserver.com/docs/caddyfile/directives/route) — declaration order preservation
-- [uv Docker integration guide](https://docs.astral.sh/uv/guides/integration/docker/) — multi-stage Dockerfile pattern
-- [Docker Compose startup order docs](https://docs.docker.com/compose/how-tos/startup-order/) — `service_healthy` condition
-- [Vite env variables docs](https://vite.dev/guide/env-and-mode) — VITE_ prefix build-time baking
-- [react-helmet-async GitHub issue #238](https://github.com/staylor/react-helmet-async/issues/238) — React 19 v3 compatibility confirmed
-- [Sentry sentry-python issue #2353](https://github.com/getsentry/sentry-python/issues/2353) — init order bug documented
-- [vite-plugin-pwa issue #33](https://github.com/vite-pwa/vite-plugin-pwa/issues/33) — stale cache update handling
-- Direct codebase analysis: `app/main.py`, `app/core/config.py`, `frontend/vite.config.ts`, `pyproject.toml`
+- [python-chess 1.11.2 Core docs](https://python-chess.readthedocs.io/en/latest/core.html) — `board.pieces()`, material counting, piece type constants
+- [python-chess 1.11.2 PGN docs](https://python-chess.readthedocs.io/en/latest/pgn.html) — `node.eval()`, `node.eval_depth()`, `node.nags`, `node.clock()`
+- [python-chess changelog](https://python-chess.readthedocs.io/en/latest/changelog.html) — 1.11.2 released Feb 2025; `eval()` off-by-one fix in 1.11.1
+- [lichess-org/api OpenAPI YAML](https://raw.githubusercontent.com/lichess-org/api/master/doc/specs/tags/games/api-games-user-username.yaml) — `evals` and `accuracy` query parameters confirmed
+- [chess.com Published-Data API documentation](https://gist.github.com/andreij/0e3309200c0a6bb26308817a168203f3) — `accuracies.white/black` field confirmed, absent when not analyzed
+- [chess.com forum: no per-move evals in API (moderator)](https://www.chess.com/forum/view/general/can-i-download-pgn-with-score-and-clock-using-api) — evals/game-review data confirmed not available via public API
+- [postgresql.org: ALTER TABLE ADD COLUMN performance](https://www.postgresql.org/docs/current/ddl-alter.html) — ADD COLUMN DEFAULT NULL is metadata-only in PG 11+
+- [postgresql.org: Partial Indexes](https://www.postgresql.org/docs/current/indexes-partial.html)
+- Direct codebase inspection: `app/models/game_position.py`, `app/services/import_service.py`, `app/services/zobrist.py`, `app/repositories/game_repository.py`, `frontend/src/pages/Openings.tsx`
 
 ### Secondary (MEDIUM confidence)
-- [Caddy + FastAPI Docker Compose example](https://github.com/GrantBirki/caddy-fastapi)
-- [CI/CD to Hetzner with GitHub Actions](https://infocusdata.com/blog/devops/ci-cd-docker-github-actions-hetzner-deployment)
-- [ARQ + FastAPI background tasks comparison](https://davidmuraya.com/blog/fastapi-background-tasks-arq-vs-built-in/)
-- [GDPR Cookie Consent Requirements 2025](https://secureprivacy.ai/blog/gdpr-cookie-consent-requirements-2025)
-- [Plausible vs Umami 2025 comparison](https://vemetric.com/blog/plausible-vs-umami)
-- [Hetzner pricing (costgoat.com)](https://costgoat.com/pricing/hetzner) — verify on hetzner.com before provisioning
-- [Lichess API tips](https://lichess.org/page/api-tips)
-- [GitHub Actions: top 10 security pitfalls](https://arctiq.com/blog/top-10-github-actions-security-pitfalls-the-ultimate-guide-to-bulletproof-workflows)
+- [Chessprogramming wiki: Game Phases](https://www.chessprogramming.org/Game_Phases) — material-based phase detection rationale, tapered eval pattern
+- [Chessprogramming wiki: Tapered Eval](https://www.chessprogramming.org/Tapered_Eval) — piece phase weights for phase score
+- [lichess forum: accuracy in API](https://lichess.org/forum/lichess-feedback/trying-to-find-accuracy-from-the-api) — `players.*.accuracy` field in NDJSON, consistent with spec
+- [Chess endgame — Wikipedia](https://en.wikipedia.org/wiki/Chess_endgame) — endgame categories, approximate frequency statistics
+- [Rook endings frequency paper](https://centaur.reading.ac.uk/65694/4/URE.pdf) — ~10% of games reach rook endgame
 
 ### Tertiary (LOW confidence)
-- [chess.com API rate limiting](https://www.chess.com/clubs/forum/view/rate-limiting) — community forum, not official; exact thresholds unverified
-- WebSearch: GA4 GDPR status by EU jurisdiction (2026) — fluid, verify with current national DPA guidance before committing to GA4
+- [chess.com forum: phase accuracy not in API](https://www.chess.com/forum/view/site-feedback/insight-data-in-public-apis) — community post; consistent with API inspection but not official documentation
+- [Aimchess feature description](https://eliteai.tools/tool/aimchess) — third-party summary of Aimchess features (conversion/resourcefulness metrics)
 
 ---
-*Research completed: 2026-03-21*
+*Research completed: 2026-03-23*
 *Ready for roadmap: yes*
