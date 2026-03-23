@@ -10,7 +10,6 @@ Covers:
 """
 
 import chess
-import pytest
 
 from app.services.position_classifier import PositionClassification, classify_position
 
@@ -461,28 +460,34 @@ class TestTacticalIndicators:
         assert result.has_bishop_pair_black is True
 
     def test_opposite_color_bishops_true(self) -> None:
-        """Each side has exactly 1 bishop on different colors -> has_opposite_color_bishops=True."""
+        """Each side has exactly 1 bishop on different colors -> has_opposite_color_bishops=True.
+
+        C1 is a dark square and C8 is a light square in python-chess's BB_DARK_SQUARES convention.
+        """
         board = chess.Board()
         board.clear()
         board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
-        # White bishop on C1 (light square)
+        # White bishop on C1 (dark square per BB_DARK_SQUARES)
         board.set_piece_at(chess.C1, chess.Piece(chess.BISHOP, chess.WHITE))
         board.set_piece_at(chess.E8, chess.Piece(chess.KING, chess.BLACK))
-        # Black bishop on D8 (dark square in standard coordinates)
-        board.set_piece_at(chess.D8, chess.Piece(chess.BISHOP, chess.BLACK))
+        # Black bishop on C8 (light square — opposite color from C1)
+        board.set_piece_at(chess.C8, chess.Piece(chess.BISHOP, chess.BLACK))
         result = classify_position(board)
         assert result.has_opposite_color_bishops is True
 
     def test_same_color_bishops_false(self) -> None:
-        """Both bishops on same square color -> has_opposite_color_bishops=False."""
+        """Both bishops on same square color -> has_opposite_color_bishops=False.
+
+        C1 and D8 are both dark squares in python-chess's BB_DARK_SQUARES convention.
+        """
         board = chess.Board()
         board.clear()
         board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
-        # White bishop on C1 (light square: C1 is a light square)
+        # White bishop on C1 (dark square)
         board.set_piece_at(chess.C1, chess.Piece(chess.BISHOP, chess.WHITE))
         board.set_piece_at(chess.E8, chess.Piece(chess.KING, chess.BLACK))
-        # Black bishop on F8 (also a light square)
-        board.set_piece_at(chess.F8, chess.Piece(chess.BISHOP, chess.BLACK))
+        # Black bishop on D8 (also a dark square — same color as C1)
+        board.set_piece_at(chess.D8, chess.Piece(chess.BISHOP, chess.BLACK))
         result = classify_position(board)
         assert result.has_opposite_color_bishops is False
 
