@@ -7,6 +7,7 @@
 - ✅ **v1.2 Mobile & PWA** — Phases 17-19 (shipped 2024-03-21)
 - ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
 - **v1.4 Improvements** — Phases 24-25
+- **v1.5 Game Statistics & Endgame Analysis** — Phases 26-29
 
 ## Phases
 
@@ -59,7 +60,7 @@
 
 ### v1.4 Improvements
 
-- [x] Phase 24: Web Analytics (0/2 plans) — not started (completed 2026-03-22)
+- [x] Phase 24: Web Analytics (2/2 plans) — completed 2026-03-22
   - **Goal:** Add privacy-friendly, low-resource web analytics to track page visits, top routes, and referrer sources
   - **Requirements:** ANLY-01, ANLY-02, ANLY-03, ANLY-04, ANLY-05
   - **Plans:** 2 plans
@@ -71,6 +72,69 @@
     3. Referrer sources are tracked and displayed
     4. No cookie consent banner is needed (privacy-friendly solution)
     5. Analytics adds negligible RAM/CPU overhead to the Hetzner VPS
+
+- [ ] **Phase 25: Password Reset** — Add forgot-password / reset-password flow
+- [ ] **Phase 26: Position Classifier & Schema** — Compute game phase, material signature, imbalance, and endgame class per position with schema migration
+- [ ] **Phase 27: Import Wiring & Backfill** — Wire classifier into live import pipeline and backfill all existing game_positions rows
+- [ ] **Phase 28: Endgame Analytics** — Backend API + frontend Endgames tab delivering W/D/L by endgame category and material conversion/recovery stats
+- [ ] **Phase 29: Engine Analysis Import** — Import chess.com accuracy scores and lichess per-move evals during game import
+
+## Phase Details
+
+### Phase 25: Password Reset
+**Goal**: Users can recover account access when they forget their password
+**Depends on**: Phase 24
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+  1. User can request a password reset link using their email address
+  2. User receives a reset email and can set a new password via the link
+  3. After resetting, user can log in with the new password
+**Plans**: TBD
+
+### Phase 26: Position Classifier & Schema
+**Goal**: Every imported position carries computed game phase, material signature, material imbalance, and endgame class stored in the database
+**Depends on**: Phase 25
+**Requirements**: PMETA-01, PMETA-02, PMETA-03, PMETA-04
+**Success Criteria** (what must be TRUE):
+  1. Alembic migration adds four nullable columns to game_positions (game_phase, material_signature, material_imbalance, endgame_class) and applies cleanly against the production schema
+  2. position_classifier.py correctly classifies a sample position across all edge cases: early queen trade is not classified as endgame, symmetric material produces the same canonical signature regardless of which color the user played, endgame_class is NULL for non-endgame positions
+  3. Unit tests cover all six endgame class categories and the phase boundary heuristic, and all tests pass
+**Plans**: TBD
+
+### Phase 27: Import Wiring & Backfill
+**Goal**: All newly imported games populate the four new columns at import time, and all previously imported games have those columns filled without requiring users to re-import
+**Depends on**: Phase 26
+**Requirements**: PMETA-05
+**Success Criteria** (what must be TRUE):
+  1. A newly imported game shows non-null game_phase values on all its game_positions rows
+  2. The backfill script completes against the production database without OOM error, using batch_size=10 and resuming correctly if interrupted
+  3. After backfill, zero rows in game_positions have a NULL game_phase value
+  4. A post-backfill VACUUM runs and dead tuple count drops to near zero
+**Plans**: TBD
+
+### Phase 28: Endgame Analytics
+**Goal**: Users can view their endgame performance and material conversion/recovery statistics in a new Endgames tab with time control and color filters
+**Depends on**: Phase 27
+**Requirements**: ENDGM-01, ENDGM-02, ENDGM-03, ENDGM-04, CONV-01, CONV-02, CONV-03
+**Success Criteria** (what must be TRUE):
+  1. User can open the Endgames tab and see W/D/L rates broken down by endgame category (rook, minor piece, pawn, queen, mixed, pawnless), with game count per category
+  2. User can filter endgame statistics by time control (bullet/blitz/rapid/classical) and color (white/black/both) and the displayed numbers update correctly
+  3. User can see win rate when materially up and draw/win rate when materially down, each broken down by game phase (opening/middlegame/endgame)
+  4. User can filter conversion/recovery stats by time control and the displayed numbers update correctly
+  5. Users with no endgame data see a meaningful empty state rather than an error or blank page
+  6. The Endgames tab layout is usable on mobile (375px width) with the same filter and stats structure as the desktop layout
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 29: Engine Analysis Import
+**Goal**: The system imports available engine analysis data (chess.com accuracy scores, lichess per-move evals) during game import, storing them for future display
+**Depends on**: Phase 27
+**Requirements**: ENGINE-01, ENGINE-02, ENGINE-03
+**Success Criteria** (what must be TRUE):
+  1. A lichess game that has prior computer analysis imports with per-move eval values populated in the database
+  2. A chess.com game with an accuracy score imports with that score stored; a game without accuracy data imports without error and stores NULL
+  3. A game with no analysis data on either platform imports cleanly with all engine fields NULL and no error logged
+**Plans**: TBD
 
 ## Progress
 
@@ -99,11 +163,9 @@
 | 21. Docker & Deployment | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 22. CI/CD & Monitoring | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 23. Launch Readiness | v1.3 | 4/4 | Complete | 2026-03-22 |
-| 24. Web Analytics | v1.4 | 2/2 | Complete    | 2026-03-22 |
+| 24. Web Analytics | v1.4 | 2/2 | Complete | 2026-03-22 |
 | 25. Password Reset | v1.4 | 0/0 | Not started | — |
-
-- [ ] Phase 25: Add Password Reset Functionality — not started
-  - **Goal:** Add forgot-password / reset-password flow using FastAPI-Users built-in password reset support, with frontend pages for requesting and confirming resets
-  - **Requirements:** TBD
-  - **Plans:** 0 plans
-    - [ ] TBD (run /gsd:plan-phase 25 to break down)
+| 26. Position Classifier & Schema | v1.5 | 0/0 | Not started | — |
+| 27. Import Wiring & Backfill | v1.5 | 0/0 | Not started | — |
+| 28. Endgame Analytics | v1.5 | 0/0 | Not started | — |
+| 29. Engine Analysis Import | v1.5 | 0/0 | Not started | — |

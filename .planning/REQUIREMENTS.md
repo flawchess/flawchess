@@ -71,27 +71,27 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PMETA-01 | — | Pending |
-| PMETA-02 | — | Pending |
-| PMETA-03 | — | Pending |
-| PMETA-04 | — | Pending |
-| PMETA-05 | — | Pending |
-| ENGINE-01 | — | Pending |
-| ENGINE-02 | — | Pending |
-| ENGINE-03 | — | Pending |
-| ENDGM-01 | — | Pending |
-| ENDGM-02 | — | Pending |
-| ENDGM-03 | — | Pending |
-| ENDGM-04 | — | Pending |
-| CONV-01 | — | Pending |
-| CONV-02 | — | Pending |
-| CONV-03 | — | Pending |
+| PMETA-01 | Phase 26 | Pending |
+| PMETA-02 | Phase 26 | Pending |
+| PMETA-03 | Phase 26 | Pending |
+| PMETA-04 | Phase 26 | Pending |
+| PMETA-05 | Phase 27 | Pending |
+| ENGINE-01 | Phase 29 | Pending |
+| ENGINE-02 | Phase 29 | Pending |
+| ENGINE-03 | Phase 29 | Pending |
+| ENDGM-01 | Phase 28 | Pending |
+| ENDGM-02 | Phase 28 | Pending |
+| ENDGM-03 | Phase 28 | Pending |
+| ENDGM-04 | Phase 28 | Pending |
+| CONV-01 | Phase 28 | Pending |
+| CONV-02 | Phase 28 | Pending |
+| CONV-03 | Phase 28 | Pending |
 
 **Coverage:**
 - v1.5 requirements: 15 total
-- Mapped to phases: 0
-- Unmapped: 15 ⚠️ (awaiting roadmap)
+- Mapped to phases: 15
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-23*
-*Last updated: 2026-03-23 after initial definition*
+*Last updated: 2026-03-23 after v1.5 roadmap creation*
