@@ -258,7 +258,7 @@ export function OpeningsPage() {
           <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
             Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.
             <br/><br/>
-            The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors gradually shift from grey to green as your win rate increases from 55% to 65%+, and from grey to red as your loss rate increases from 55% to 65%+. Moves with fewer than 10 games are always grey.
+            The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.
           </InfoPopover>
         }
       />
@@ -566,7 +566,7 @@ export function OpeningsPage() {
                   <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="left">
                     Play moves on the board by tapping squares or dragging pieces.
                     <br /><br />
-                    The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors gradually shift from grey to green as your win rate increases from 55% to 65%+, and from grey to red as your loss rate increases from 55% to 65%+. Moves with fewer than 10 games are always grey.
+                    The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.
                   </InfoPopover>
                 }
               />

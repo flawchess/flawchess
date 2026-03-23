@@ -89,8 +89,8 @@ function buildArrowPath(
   ].join(' ');
 }
 
-// Render priority determined by arrowSortKey: grey = 2 (bottom), red = 1 (middle), green = 0 (top).
-// arrowSortKey returns lower values for more colorful arrows so we sort ascending by key.
+// Render priority determined by arrowSortKey: grey = 2 (drawn first = bottom), red = 1 (middle), green = 0 (drawn last = on top).
+// Sort descending by key so grey (2) is rendered first (behind) and colored arrows (0, 1) render last (on top).
 // Within each color group, thick arrows are drawn first so thin arrows stay visible.
 
 function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; boardWidth: number; flipped: boolean }) {
@@ -100,7 +100,7 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
 
   const sortedArrows = [...arrows].sort(
     (a, b) =>
-      arrowSortKey(a.color) - arrowSortKey(b.color)
+      arrowSortKey(b.color) - arrowSortKey(a.color)
       || b.width - a.width,
   );
 
