@@ -77,15 +77,19 @@ async def bulk_insert_positions(session: AsyncSession, position_rows: list[dict]
     Args:
         session: AsyncSession to use for the insert.
         position_rows: List of dicts with keys: game_id, user_id, ply,
-                       full_hash, white_hash, black_hash, move_san, clock_seconds.
+                       full_hash, white_hash, black_hash, move_san, clock_seconds,
+                       and optionally: game_phase, material_signature,
+                       material_imbalance, endgame_class, has_bishop_pair_white,
+                       has_bishop_pair_black, has_opposite_color_bishops.
     """
     if not position_rows:
         return
 
     # PostgreSQL asyncpg limits query arguments to 32,767.
-    # Each position row has 8 columns, so max rows per chunk = 32767 / 8 ≈ 4095.
-    # Use 4000 for safety margin.
-    chunk_size = 4000
+    # Each position row has 15 columns (8 original + 7 position metadata),
+    # so max rows per chunk = 32767 / 15 = 2184.
+    # Use 2100 for safety margin.
+    chunk_size = 2100
     for i in range(0, len(position_rows), chunk_size):
         chunk = position_rows[i : i + chunk_size]
         stmt = insert(GamePosition).values(chunk)
