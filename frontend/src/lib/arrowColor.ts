@@ -25,14 +25,14 @@ export const GREY_HOVER = '#D8D8D8';
 export const LIGHT_GREEN = '#6BBF59';
 export const LIGHT_GREEN_HOVER = '#9DD490';
 
-export const DARK_GREEN = '#2E8B2E';
-export const DARK_GREEN_HOVER = '#5BBF5B';
+export const DARK_GREEN = '#1E6B1E';
+export const DARK_GREEN_HOVER = '#3E9B3E';
 
 export const LIGHT_RED = '#E07070';
 export const LIGHT_RED_HOVER = '#F0A0A0';
 
-export const DARK_RED = '#C03030';
-export const DARK_RED_HOVER = '#E06060';
+export const DARK_RED = '#9B1C1C';
+export const DARK_RED_HOVER = '#C04040';
 
 /**
  * Returns a categorical hex color string for a board arrow.
