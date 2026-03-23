@@ -43,7 +43,6 @@ created: 2026-03-23
 | 26-01-03 | 01 | 1 | PMETA-03 | unit | `uv run pytest tests/test_position_classifier.py -x` | ❌ W0 | ⬜ pending |
 | 26-01-04 | 01 | 1 | PMETA-04 | unit | `uv run pytest tests/test_position_classifier.py -x` | ❌ W0 | ⬜ pending |
 | 26-02-01 | 02 | 1 | PMETA-01 | integration | `uv run alembic upgrade head` | ❌ W0 | ⬜ pending |
-| 26-03-01 | 03 | 2 | PMETA-01..04 | unit | `uv run pytest tests/test_position_classifier.py -x` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

@@ -50,7 +50,7 @@ Use **repeated piece letters** in standard chess notation style (not numeric cou
   - Pawn endgame: `KPPP_KPP` (3 pawns > 2 pawns in value)
   - Complex: `KQRBNPP_KQRBNPP` (full starting complement minus a few pawns)
 
-Store as `String(20)` — max realistic length ~16 chars.
+Store as `String(40)` — starting position signature is 33 chars (`KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP`).
 
 ### D-03: Material Imbalance (PMETA-03)
 
@@ -90,7 +90,7 @@ Three boolean columns computed per position to avoid a costly second backfill pa
 
 Seven new nullable columns on `game_positions`:
 - `game_phase`: `String(12)` — 'opening', 'middlegame', 'endgame'
-- `material_signature`: `String(20)` — canonical signature string
+- `material_signature`: `String(40)` — canonical signature string (starting position = 33 chars, String(20) would overflow)
 - `material_imbalance`: `Integer` — signed centipawns
 - `endgame_class`: `String(12)` — category or NULL for non-endgame positions
 - `has_bishop_pair_white`: `Boolean` — NULL until backfilled
