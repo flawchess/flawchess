@@ -1,27 +1,23 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: Game Statistics & Endgame Analysis
-status: ready_to_plan
-last_updated: "2026-03-23T00:00:00.000Z"
+milestone: v1.4
+milestone_name: Improvements
+status: Ready to execute
+last_updated: "2026-03-23T21:33:53.519Z"
 last_activity: 2026-03-23
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 26 of 29 (Position Classifier & Schema) — ready to plan
-Plan: —
-Status: Ready to plan
-Last activity: 2026-03-23 — v1.5 roadmap created (Phases 26-29)
-
-Progress: [░░░░░░░░░░] 0%
+Phase: 26 (position-classifier-schema) — EXECUTING
+Plan: 2 of 2
 
 ## Project Reference
 
@@ -54,6 +50,8 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [Phase 24-web-analytics]: Umami shares existing db PostgreSQL container (no separate DB); Node.js heap capped at 256 MB; no Caddy-level auth on analytics subdomain
 - [v1.5 roadmap]: CONV requirements folded into Phase 28 alongside ENDGM — conversion/recovery stats share the same backend infrastructure (endgames repository + service + router)
 - [v1.5 roadmap]: Phase 29 (Engine Analysis Import) is independent of Phase 28 — can be deferred or parallelized; P2 feature
+- [Phase 26]: String(40) for material_signature — full opening signatures reach 33 chars, exceeding initial String(20) estimate
+- [Phase 26]: chunk_size reduced 4000 -> 2100 to stay within asyncpg 32767 arg limit with 15 columns per position row
 
 ### Critical v1.5 Constraints
 
@@ -90,4 +88,4 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260323-rtg | Create better Android and iOS app icons with padded, separate any/maskable PWA icons | 2026-03-23 | b60e1c4 | [260323-rtg-create-better-android-and-ios-app-icons-](./quick/260323-rtg-create-better-android-and-ios-app-icons-/) |
 
 ---
-Last activity: 2026-03-23 — v1.5 roadmap created, Phases 26-29 defined
+Last activity: 2026-03-23

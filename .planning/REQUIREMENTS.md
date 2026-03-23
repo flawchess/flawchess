@@ -9,10 +9,10 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 
 ### Position Metadata
 
-- [ ] **PMETA-01**: System computes game phase (opening/middlegame/endgame) for every position during import using material-weight thresholds
-- [ ] **PMETA-02**: System computes material signature in canonical form (stronger side first, e.g., KRP_KR) for every position during import
-- [ ] **PMETA-03**: System computes material imbalance in centipawns for every position during import
-- [ ] **PMETA-04**: System classifies endgame type (rook/minor piece/pawn/queen/mixed/pawnless) for positions in endgame phase
+- [x] **PMETA-01**: System computes game phase (opening/middlegame/endgame) for every position during import using material-weight thresholds
+- [x] **PMETA-02**: System computes material signature in canonical form (stronger side first, e.g., KRP_KR) for every position during import
+- [x] **PMETA-03**: System computes material imbalance in centipawns for every position during import
+- [x] **PMETA-04**: System classifies endgame type (rook/minor piece/pawn/queen/mixed/pawnless) for positions in endgame phase
 - [ ] **PMETA-05**: System backfills position metadata for all previously imported games without requiring user re-import
 
 ### Engine Analysis Import
@@ -71,10 +71,10 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PMETA-01 | Phase 26 | Pending |
-| PMETA-02 | Phase 26 | Pending |
-| PMETA-03 | Phase 26 | Pending |
-| PMETA-04 | Phase 26 | Pending |
+| PMETA-01 | Phase 26 | Complete |
+| PMETA-02 | Phase 26 | Complete |
+| PMETA-03 | Phase 26 | Complete |
+| PMETA-04 | Phase 26 | Complete |
 | PMETA-05 | Phase 27 | Pending |
 | ENGINE-01 | Phase 29 | Pending |
 | ENGINE-02 | Phase 29 | Pending |
