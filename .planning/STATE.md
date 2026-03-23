@@ -59,6 +59,7 @@ Current focus: Web Analytics
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260323-pkf | Gradient arrow colors: green from 55-65% win rate, red from 45-35% loss rate | 2026-03-23 | 698c37b | [260323-pkf-gradient-arrow-colors-green-from-55-65-w](./quick/260323-pkf-gradient-arrow-colors-green-from-55-65-w/) |
+| 260323-q89 | Categorical arrow colors and fix arrow render order | 2026-03-23 | e9afcf3 | [260323-q89-categorical-arrow-colors-and-fix-renderi](./quick/260323-q89-categorical-arrow-colors-and-fix-renderi/) |
 
 ### Pending Todos
 
@@ -68,4 +69,4 @@ Current focus: Web Analytics
 - **Refactor button brand colors to CSS variables** (ui) — move PRIMARY_BUTTON_CLASS from theme.ts to @theme inline CSS variables
 
 ---
-Last activity: 2026-03-23 - Completed quick task 260323-pkf: Gradient arrow colors
+Last activity: 2026-03-23 - Completed quick task 260323-q89: Categorical arrow colors and fix arrow render order
