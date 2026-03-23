@@ -21,7 +21,8 @@ interface ChessBoardProps {
   arrows?: BoardArrow[];
 }
 
-const BRIGHT_NOTATION: React.CSSProperties = { color: 'rgba(255, 255, 255, 0.85)', fontWeight: 600 };
+const DARK_SQUARE_NOTATION: React.CSSProperties = { color: 'rgba(255, 255, 255, 0.85)', fontWeight: 600 };
+const LIGHT_SQUARE_NOTATION: React.CSSProperties = { color: 'rgba(0, 0, 0, 0.5)', fontWeight: 600 };
 
 const PIECE_NAMES: Record<string, string> = {
   wP: 'white pawn', wR: 'white rook', wN: 'white knight', wB: 'white bishop', wQ: 'white queen', wK: 'white king',
@@ -233,8 +234,8 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
             boardStyle: { width: boardWidth, height: boardWidth },
             darkSquareStyle,
             lightSquareStyle,
-            darkSquareNotationStyle: BRIGHT_NOTATION,
-            lightSquareNotationStyle: BRIGHT_NOTATION,
+            darkSquareNotationStyle: DARK_SQUARE_NOTATION,
+            lightSquareNotationStyle: LIGHT_SQUARE_NOTATION,
             id: 'chessboard',
             // react-chessboard v5 animation state machine causes black screen on mobile
             // when position prop updates — disable animations on touch devices only
