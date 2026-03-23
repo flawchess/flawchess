@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
-status: Ready to execute
-last_updated: "2026-03-23T21:33:53.519Z"
+status: Phase complete — ready for verification
+last_updated: "2026-03-23T21:37:29.545Z"
 last_activity: 2026-03-23
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State: FlawChess
@@ -52,6 +52,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [v1.5 roadmap]: Phase 29 (Engine Analysis Import) is independent of Phase 28 — can be deferred or parallelized; P2 feature
 - [Phase 26]: String(40) for material_signature — full opening signatures reach 33 chars, exceeding initial String(20) estimate
 - [Phase 26]: chunk_size reduced 4000 -> 2100 to stay within asyncpg 32767 arg limit with 15 columns per position row
+- [Phase 26-01]: Bare kings (K vs K) classified as pawnless, not pawn — pawn class requires at least one pawn on board
 
 ### Critical v1.5 Constraints
 
