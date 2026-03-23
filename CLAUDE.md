@@ -57,6 +57,8 @@ npm install                     # Install dependencies
 npm run dev                     # Dev server
 npm run build                   # Production build
 npm run lint                    # Lint
+npm test                        # Run frontend tests
+npm run test:watch              # Run tests in watch mode
 
 # CI/CD (GitHub Actions)
 gh run list                     # List recent workflow runs
