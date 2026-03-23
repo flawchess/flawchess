@@ -54,6 +54,12 @@ Current focus: Web Analytics
 
 (None)
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260323-pkf | Gradient arrow colors: green from 55-65% win rate, red from 45-35% loss rate | 2026-03-23 | 698c37b | [260323-pkf-gradient-arrow-colors-green-from-55-65-w](./quick/260323-pkf-gradient-arrow-colors-green-from-55-65-w/) |
+
 ### Pending Todos
 
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
@@ -62,4 +68,4 @@ Current focus: Web Analytics
 - **Refactor button brand colors to CSS variables** (ui) — move PRIMARY_BUTTON_CLASS from theme.ts to @theme inline CSS variables
 
 ---
-Last activity: 2026-03-22
+Last activity: 2026-03-23 - Completed quick task 260323-pkf: Gradient arrow colors
