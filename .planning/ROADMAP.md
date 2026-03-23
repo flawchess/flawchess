@@ -167,7 +167,7 @@
 | 23. Launch Readiness | v1.3 | 4/4 | Complete | 2026-03-22 |
 | 24. Web Analytics | v1.4 | 2/2 | Complete | 2026-03-22 |
 | 25. Password Reset | v1.4 | 0/0 | Not started | — |
-| 26. Position Classifier & Schema | v1.5 | 2/2 | Complete   | 2026-03-23 |
+| 26. Position Classifier & Schema | v1.5 | 2/2 | Complete    | 2026-03-23 |
 | 27. Import Wiring & Backfill | v1.5 | 0/0 | Not started | — |
 | 28. Endgame Analytics | v1.5 | 0/0 | Not started | — |
 | 29. Engine Analysis Import | v1.5 | 0/0 | Not started | — |
