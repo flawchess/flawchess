@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://flawchess.com"><strong>flawchess.com</strong></a>
+  Live at <a href="https://flawchess.com"><strong>flawchess.com</strong></a>
 </p>
 
 <p align="center">
