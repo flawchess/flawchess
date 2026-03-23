@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Chessboard } from 'react-chessboard';
-import { GREEN, GREEN_HOVER, RED, RED_HOVER, GREY, GREY_HOVER } from '../../lib/arrowColor';
+import { arrowSortKey } from '../../lib/arrowColor';
 import { darkSquareStyle, lightSquareStyle } from '../../lib/theme';
 
 export interface BoardArrow {
@@ -89,16 +89,9 @@ function buildArrowPath(
   ].join(' ');
 }
 
-// Render priority: grey = 0 (bottom), red = 1 (middle), green = 2 (top).
-// Within each color, thick arrows are drawn first so thin arrows stay visible.
-const ARROW_COLOR_PRIORITY: Record<string, number> = {
-  [GREY]: 0,
-  [GREY_HOVER]: 0,
-  [RED]: 1,
-  [RED_HOVER]: 1,
-  [GREEN]: 2,
-  [GREEN_HOVER]: 2,
-};
+// Render priority determined by arrowSortKey: grey = 2 (bottom), red = 1 (middle), green = 0 (top).
+// arrowSortKey returns lower values for more colorful arrows so we sort ascending by key.
+// Within each color group, thick arrows are drawn first so thin arrows stay visible.
 
 function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; boardWidth: number; flipped: boolean }) {
   if (arrows.length === 0) return null;
@@ -107,7 +100,7 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
 
   const sortedArrows = [...arrows].sort(
     (a, b) =>
-      (ARROW_COLOR_PRIORITY[a.color] ?? 0) - (ARROW_COLOR_PRIORITY[b.color] ?? 0)
+      arrowSortKey(a.color) - arrowSortKey(b.color)
       || b.width - a.width,
   );
 
