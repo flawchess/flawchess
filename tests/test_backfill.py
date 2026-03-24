@@ -9,12 +9,8 @@ The backfill module functions are imported directly to avoid running the full ma
 
 import datetime
 import uuid
-from unittest.mock import patch
 
-import chess.pgn
-import io
 import pytest
-import pytest_asyncio
 
 # A short but valid PGN for testing: Fool's Mate (2-move game)
 _FOOLS_MATE_PGN = """\
@@ -163,8 +159,6 @@ class TestBackfillGame:
     async def test_backfill_is_idempotent(self, db_session):
         """Test 3: Running backfill twice produces the same result; second call finds no games."""
         from scripts.backfill_positions import backfill_game, get_unprocessed_game_ids
-        from sqlalchemy import select
-        from app.models.game_position import GamePosition
 
         game_id = await _insert_game_with_null_positions(db_session)
 
