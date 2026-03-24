@@ -23,6 +23,8 @@ On a table with millions of rows (every half-move of every game), saving ~10 byt
 
 ## Solution
 
-1. Add explicit `SmallInteger` / `Float(24)` type overrides on the affected `mapped_column()` calls (overrides the `type_annotation_map` default)
-2. Create an Alembic migration to `ALTER COLUMN ... TYPE` for each
-3. Consider whether `user_id` and `game_id` should also be downgraded to `Integer` (4B) instead of `BIGINT` — depends on expected scale
+1. Remove `int: BIGINT` from `type_annotation_map` in `Base` — let SQLAlchemy default to `INTEGER` (4B) for all `Mapped[int]` columns
+2. Add explicit `BigInteger` on the three Zobrist hash columns (`full_hash`, `white_hash`, `black_hash`) which genuinely need 64-bit
+3. Add explicit `SmallInteger` overrides on `ply` and `material_imbalance`
+4. Change `clock_seconds` to `Float(24)` (`REAL`, 4B) instead of default `DOUBLE PRECISION`
+5. Create an Alembic migration to `ALTER COLUMN ... TYPE` across all affected tables (touches PKs and FKs, so not trivial)
