@@ -48,8 +48,8 @@ Users can determine their success rate for any opening position they specify, fi
 
 ### Active
 
-- [ ] System computes game phase (opening/middlegame/endgame) for every position during import
-- [ ] System computes material signature, material imbalance, and endgame class for every position during import
+- [x] System computes game phase (opening/middlegame/endgame) for every position during import — Validated in Phase 27: import-wiring-backfill
+- [x] System computes material signature, material imbalance, and endgame class for every position during import — Validated in Phase 27: import-wiring-backfill
 - [ ] System imports existing engine analysis data (eval, accuracy, move quality) from chess.com/lichess when available
 - [ ] User can view endgame performance statistics in a dedicated Endgames tab
 - [ ] User can filter endgame stats by endgame type (rook, minor piece, pawn, queen endgames, etc.)
@@ -77,7 +77,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ## Current State
 
-v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD and Sentry monitoring. v1.4 (Web Analytics, Password Reset) in progress. Phase 26 complete — position classifier module and schema migration ready for import wiring (Phase 27).
+v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD and Sentry monitoring. v1.4 (Web Analytics, Password Reset) in progress. Phase 27 complete — classify_position wired into live import pipeline, backfill script created for existing games. All new imports populate 7 position metadata columns automatically.
 
 ## Context
 
@@ -123,4 +123,4 @@ v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD
 | Backend expose-only (no ports) | Caddy is sole internet-facing entry point | ✓ Good |
 
 ---
-*Last updated: 2026-03-23 after Phase 26 completion*
+*Last updated: 2026-03-24 after Phase 27 completion*
