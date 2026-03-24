@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import Integer, String, Text
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,7 +11,9 @@ class PositionBookmark(Base):
     __tablename__ = "position_bookmarks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     label: Mapped[str] = mapped_column(String(200), nullable=False)
     target_hash: Mapped[int] = mapped_column(nullable=False)  # BIGINT via type_annotation_map
     fen: Mapped[str] = mapped_column(String(200), nullable=False)

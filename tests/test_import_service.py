@@ -633,8 +633,8 @@ class TestRunImport:
         assert len(update_calls) >= 1, "Expected at least one UPDATE call for move_count"
 
     @pytest.mark.asyncio
-    async def test_position_rows_include_game_phase(self):
-        """After importing a game, all position_rows dicts have a non-null game_phase field."""
+    async def test_position_rows_include_material_count(self):
+        """After importing a game, all position_rows dicts have a non-null material_count field."""
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
 
         # Use a real PGN with moves so classify_position can run on actual board states
@@ -643,7 +643,7 @@ class TestRunImport:
         async def _yield_one_game(*args, **kwargs):
             yield {
                 "platform": "chess.com",
-                "platform_game_id": "game-gp-1",
+                "platform_game_id": "game-mc-1",
                 "pgn": pgn,
                 "user_id": 1,
             }
@@ -698,14 +698,11 @@ class TestRunImport:
 
             await run_import(job_id)
 
-        # Verify that all position rows have a non-null game_phase
         assert len(captured_positions) > 0, "Expected at least one position row"
         for row in captured_positions:
-            assert "game_phase" in row, f"Missing game_phase in row: {row}"
-            assert row["game_phase"] is not None, "game_phase should not be None"
-            assert row["game_phase"] in ("opening", "middlegame", "endgame"), (
-                f"Unexpected game_phase: {row['game_phase']}"
-            )
+            assert "material_count" in row, f"Missing material_count in row: {row}"
+            assert row["material_count"] is not None, "material_count should not be None"
+            assert isinstance(row["material_count"], int), "material_count should be int"
 
     @pytest.mark.asyncio
     async def test_position_rows_include_material_signature(self):
@@ -778,8 +775,8 @@ class TestRunImport:
             assert row["material_signature"] is not None, "material_signature should not be None"
 
     @pytest.mark.asyncio
-    async def test_starting_position_classified_as_opening(self):
-        """The starting position (ply 0) of a valid game is classified as 'opening' with full material."""
+    async def test_starting_position_has_full_material(self):
+        """The starting position (ply 0) has full material count and signature."""
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
 
         pgn = "1. e4 e5 *"
@@ -843,11 +840,9 @@ class TestRunImport:
             await run_import(job_id)
 
         assert len(captured_positions) > 0
-        # ply 0 is the starting position
         ply0 = captured_positions[0]
         assert ply0["ply"] == 0
-        assert ply0["game_phase"] == "opening"
-        # Starting position has full material on both sides
+        assert ply0["material_count"] == 7800  # full starting material
         assert ply0["material_signature"] == "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP"
 
     @pytest.mark.asyncio
@@ -855,7 +850,6 @@ class TestRunImport:
         """When classify_position fails, import still succeeds with NULL metadata columns."""
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
 
-        # Use a PGN that hashes_for_game can process normally
         pgn = "1. e4 e5 *"
 
         async def _yield_one_game(*args, **kwargs):
@@ -908,8 +902,6 @@ class TestRunImport:
                 "app.services.import_service.user_repository.update_platform_username",
                 new=AsyncMock(),
             ),
-            # Simulate classify PGN parse failure by making read_game return None for classify path
-            # We do this by patching classify_position to raise, to simulate unexpected failure
             patch(
                 "app.services.import_service.classify_position",
                 side_effect=Exception("Simulated classification failure"),
@@ -920,15 +912,13 @@ class TestRunImport:
             mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_http_ctx
 
-            # Import should still complete successfully (no exception raised)
             await run_import(job_id)
 
         job = import_service._jobs[job_id]
         assert job.status == JobStatus.COMPLETED, (
             f"Expected COMPLETED, got {job.status} — classification failure must not fail the import"
         )
-        # Positions should still be inserted, just without metadata
         assert len(captured_positions) > 0, "Position rows should still be inserted despite classify failure"
         for row in captured_positions:
             # When classify fails, metadata keys should not be present (or be None)
-            assert "game_phase" not in row or row["game_phase"] is None
+            assert "material_count" not in row or row["material_count"] is None

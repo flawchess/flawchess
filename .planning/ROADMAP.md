@@ -116,6 +116,16 @@
   - [x] 27-01-PLAN.md — Wire classify_position into import pipeline per-ply loop
   - [x] 27-02-PLAN.md — Standalone backfill script with resumability, VACUUM, and tests
 
+### Phase 27.1: Optimize game_positions column types (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 27
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 27.1 to break down)
+
 ### Phase 28: Endgame Analytics
 **Goal**: Users can view their endgame performance and material conversion/recovery statistics in a new Endgames tab with time control and color filters
 **Depends on**: Phase 27

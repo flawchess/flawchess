@@ -75,9 +75,7 @@ async def _insert_game_with_null_positions(db_session, pgn: str = _FOOLS_MATE_PG
     game_ids = await bulk_insert_games(db_session, game_rows)
     game_id = game_ids[0]
 
-    # Build position rows with NULL metadata (as they would be before Phase 27 wiring)
-    # hashes_for_game returns (hash_tuples, result_fen) where each tuple is
-    # (ply, white_hash, black_hash, full_hash, move_san, clock_seconds)
+    # Build position rows with NULL metadata (as they would be before backfill)
     hash_tuples, _result_fen = hashes_for_game(pgn)
     position_rows = []
     for (ply, white_hash, black_hash, full_hash, move_san, clock_seconds) in hash_tuples:
@@ -91,12 +89,9 @@ async def _insert_game_with_null_positions(db_session, pgn: str = _FOOLS_MATE_PG
             "move_san": move_san,
             "clock_seconds": clock_seconds,
             # Metadata columns intentionally NULL (pre-backfill state)
-            "game_phase": None,
+            "material_count": None,
             "material_signature": None,
             "material_imbalance": None,
-            "endgame_class": None,
-            "has_bishop_pair_white": None,
-            "has_bishop_pair_black": None,
             "has_opposite_color_bishops": None,
         })
     await bulk_insert_positions(db_session, position_rows)
@@ -113,8 +108,8 @@ class TestBackfillGame:
     """Tests for the backfill_game() function."""
 
     @pytest.mark.asyncio
-    async def test_backfill_updates_null_game_phase_to_nonnull(self, db_session):
-        """Test 1: Backfill sets game_phase to a non-null value for a valid PGN game."""
+    async def test_backfill_updates_null_material_count_to_nonnull(self, db_session):
+        """Test 1: Backfill sets material_count to a non-null value for a valid PGN game."""
         from scripts.backfill_positions import backfill_game
         from sqlalchemy import select
         from app.models.game_position import GamePosition
@@ -127,24 +122,24 @@ class TestBackfillGame:
         )
         positions_before = result.scalars().all()
         assert len(positions_before) > 0
-        assert all(p.game_phase is None for p in positions_before)
+        assert all(p.material_count is None for p in positions_before)
 
         # Run backfill
         positions_updated = await backfill_game(db_session, game_id, _FOOLS_MATE_PGN)
 
-        # Verify game_phase is now non-null
+        # Verify material_count is now non-null
         result = await db_session.execute(
             select(GamePosition).where(GamePosition.game_id == game_id)
         )
         positions_after = result.scalars().all()
-        assert all(p.game_phase is not None for p in positions_after), (
-            "All positions should have non-null game_phase after backfill"
+        assert all(p.material_count is not None for p in positions_after), (
+            "All positions should have non-null material_count after backfill"
         )
         assert positions_updated > 0
 
     @pytest.mark.asyncio
-    async def test_backfill_sets_all_7_metadata_columns(self, db_session):
-        """Test 2: After backfill, all 7 metadata columns are non-null on every position row."""
+    async def test_backfill_sets_all_4_metadata_columns(self, db_session):
+        """Test 2: After backfill, all 4 metadata columns are non-null on every position row."""
         from scripts.backfill_positions import backfill_game
         from sqlalchemy import select
         from app.models.game_position import GamePosition
@@ -159,14 +154,10 @@ class TestBackfillGame:
         assert len(positions) > 0
 
         for pos in positions:
-            assert pos.game_phase is not None, f"ply={pos.ply} game_phase is None"
+            assert pos.material_count is not None, f"ply={pos.ply} material_count is None"
             assert pos.material_signature is not None, f"ply={pos.ply} material_signature is None"
             assert pos.material_imbalance is not None, f"ply={pos.ply} material_imbalance is None"
-            # has_bishop_pair_white/black can be False (falsy), use 'is not None'
-            assert pos.has_bishop_pair_white is not None, f"ply={pos.ply} has_bishop_pair_white is None"
-            assert pos.has_bishop_pair_black is not None, f"ply={pos.ply} has_bishop_pair_black is None"
             assert pos.has_opposite_color_bishops is not None, f"ply={pos.ply} has_opposite_color_bishops is None"
-            # endgame_class is None for non-endgame positions — skip that check
 
     @pytest.mark.asyncio
     async def test_backfill_is_idempotent(self, db_session):
@@ -193,13 +184,7 @@ class TestBackfillGame:
 
     @pytest.mark.asyncio
     async def test_corrupt_pgn_skips_gracefully(self, db_session):
-        """Test 4: backfill_game with unparseable PGN returns 0 for truly None game objects.
-
-        chess.pgn.read_game() returns None for empty strings, but partial/corrupt PGN
-        strings often produce a game object with 0 nodes rather than raising.
-        The main loop's except clause handles any exceptions that do propagate.
-        An empty pgn (None/empty string) is handled by the main loop's `if not pgn:` guard.
-        """
+        """Test 4: backfill_game with unparseable PGN returns 0 for truly None game objects."""
         from scripts.backfill_positions import backfill_game
 
         game_id = await _insert_game_with_null_positions(db_session, pgn=_FOOLS_MATE_PGN)
@@ -209,8 +194,8 @@ class TestBackfillGame:
         assert result == 0
 
     @pytest.mark.asyncio
-    async def test_starting_position_classified_as_opening(self, db_session):
-        """Ply 0 (starting board) must have game_phase='opening'."""
+    async def test_starting_position_has_full_material(self, db_session):
+        """Ply 0 (starting board) must have material_count=7800 (full starting material)."""
         from scripts.backfill_positions import backfill_game
         from sqlalchemy import select
         from app.models.game_position import GamePosition
@@ -223,8 +208,8 @@ class TestBackfillGame:
             .where(GamePosition.game_id == game_id, GamePosition.ply == 0)
         )
         ply0 = result.scalar_one()
-        assert ply0.game_phase == "opening", (
-            f"Starting position (ply 0) should be 'opening', got '{ply0.game_phase}'"
+        assert ply0.material_count == 7800, (
+            f"Starting position should have material_count=7800, got {ply0.material_count}"
         )
 
 
@@ -232,8 +217,8 @@ class TestGetUnprocessedGameIds:
     """Tests for the get_unprocessed_game_ids() query helper."""
 
     @pytest.mark.asyncio
-    async def test_returns_game_ids_with_null_game_phase(self, db_session):
-        """Test 5: get_unprocessed_game_ids returns games with NULL game_phase positions."""
+    async def test_returns_game_ids_with_null_material_count(self, db_session):
+        """Test 5: get_unprocessed_game_ids returns games with NULL material_count positions."""
         from scripts.backfill_positions import get_unprocessed_game_ids
 
         game_id = await _insert_game_with_null_positions(db_session)

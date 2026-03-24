@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import String, Text
+from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,7 +11,9 @@ class ImportJob(Base):
     __tablename__ = "import_jobs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)  # UUID
-    user_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     platform: Mapped[str] = mapped_column(String(20), nullable=False)
     username: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)  # pending/in_progress/completed/failed

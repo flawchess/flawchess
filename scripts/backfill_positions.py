@@ -1,10 +1,10 @@
 """Backfill position metadata for all existing game_positions rows.
 
 Re-parses stored PGN from the games table, replays each game through
-chess.Board, calls classify_position() at each ply, and UPDATEs the 7
+chess.Board, calls classify_position() at each ply, and UPDATEs the 4
 metadata columns on existing game_positions rows.
 
-Resumable: queries for games with NULL game_phase — re-run after
+Resumable: queries for games with NULL material_count — re-run after
 interruption to pick up where it left off.
 
 Usage: uv run python scripts/backfill_positions.py
@@ -12,7 +12,12 @@ Usage: uv run python scripts/backfill_positions.py
 
 import asyncio
 import io
+import sys
 import time
+from pathlib import Path
+
+# Ensure project root is on sys.path so `app.*` imports work when running as a script
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import chess
 import chess.pgn
@@ -27,16 +32,16 @@ from app.models.game_position import GamePosition
 from app.services.position_classifier import classify_position
 
 _BATCH_SIZE = 10  # games per DB commit — OOM-safe (STATE.md critical constraint)
-_PROGRESS_INTERVAL = 50  # print progress every N games (per D-09)
+_PROGRESS_INTERVAL = 50  # print progress every N games
 
 
 async def get_unprocessed_game_ids(
     session, batch_size: int, exclude_ids: set[int]
 ) -> list[int]:
-    """Find game_ids with at least one NULL game_phase position."""
+    """Find game_ids with at least one NULL material_count position."""
     stmt = (
         select(distinct(GamePosition.game_id))
-        .where(GamePosition.game_phase.is_(None))
+        .where(GamePosition.material_count.is_(None))
         .limit(batch_size)
     )
     if exclude_ids:
@@ -68,12 +73,9 @@ async def backfill_game(session, game_id: int, pgn: str) -> int:
             sa_update(GamePosition)
             .where(GamePosition.game_id == game_id, GamePosition.ply == i)
             .values(
-                game_phase=classification.game_phase,
+                material_count=classification.material_count,
                 material_signature=classification.material_signature,
                 material_imbalance=classification.material_imbalance,
-                endgame_class=classification.endgame_class,
-                has_bishop_pair_white=classification.has_bishop_pair_white,
-                has_bishop_pair_black=classification.has_bishop_pair_black,
                 has_opposite_color_bishops=classification.has_opposite_color_bishops,
             )
         )
@@ -86,12 +88,9 @@ async def backfill_game(session, game_id: int, pgn: str) -> int:
         sa_update(GamePosition)
         .where(GamePosition.game_id == game_id, GamePosition.ply == len(nodes))
         .values(
-            game_phase=classification.game_phase,
+            material_count=classification.material_count,
             material_signature=classification.material_signature,
             material_imbalance=classification.material_imbalance,
-            endgame_class=classification.endgame_class,
-            has_bishop_pair_white=classification.has_bishop_pair_white,
-            has_bishop_pair_black=classification.has_bishop_pair_black,
             has_opposite_color_bishops=classification.has_opposite_color_bishops,
         )
     )
@@ -101,7 +100,7 @@ async def backfill_game(session, game_id: int, pgn: str) -> int:
 
 
 async def run_vacuum() -> None:
-    """Run VACUUM ANALYZE on game_positions outside a transaction (per D-07).
+    """Run VACUUM ANALYZE on game_positions outside a transaction.
 
     VACUUM cannot run inside a transaction block — use AUTOCOMMIT isolation.
     The execution_options() call must be made on the connection object before
@@ -113,8 +112,8 @@ async def run_vacuum() -> None:
 
 
 async def main() -> None:
-    """Run the full backfill: process all games with NULL game_phase, then VACUUM."""
-    # Initialize Sentry for error tracking (per D-08)
+    """Run the full backfill: process all games with NULL material_count, then VACUUM."""
+    # Initialize Sentry for error tracking
     if settings.SENTRY_DSN:
         sentry_sdk.init(dsn=settings.SENTRY_DSN, environment=settings.ENVIRONMENT)
 
@@ -122,7 +121,7 @@ async def main() -> None:
     total_games = 0
     total_positions = 0
     total_errors = 0
-    # Track permanently-failing game IDs to prevent infinite loop (Pitfall 4)
+    # Track permanently-failing game IDs to prevent infinite loop
     skipped_ids: set[int] = set()
 
     print("Starting position metadata backfill...")
@@ -149,7 +148,6 @@ async def main() -> None:
                     positions = await backfill_game(session, game_id, pgn)
                     total_positions += positions
                 except Exception as e:
-                    # Per D-08: skip and log via Sentry, continue backfill
                     sentry_sdk.capture_exception(e)
                     print(f"ERROR: Failed to classify game_id={game_id}: {e}")
                     skipped_ids.add(game_id)
@@ -164,10 +162,10 @@ async def main() -> None:
                         f"{total_errors} errors, {elapsed:.1f}s elapsed"
                     )
 
-            # Commit batch (per D-04: batch_size=10 games per commit)
+            # Commit batch (batch_size=10 games per commit)
             await session.commit()
 
-    # Per D-07: VACUUM ANALYZE after completion
+    # VACUUM ANALYZE after completion
     print("Running VACUUM ANALYZE game_positions...")
     try:
         await run_vacuum()

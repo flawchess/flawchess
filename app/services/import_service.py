@@ -427,12 +427,9 @@ async def _flush_batch(
                 try:
                     classification = classify_position(classify_board)
                     row.update({
-                        "game_phase": classification.game_phase,
+                        "material_count": classification.material_count,
                         "material_signature": classification.material_signature,
                         "material_imbalance": classification.material_imbalance,
-                        "endgame_class": classification.endgame_class,
-                        "has_bishop_pair_white": classification.has_bishop_pair_white,
-                        "has_bishop_pair_black": classification.has_bishop_pair_black,
                         "has_opposite_color_bishops": classification.has_opposite_color_bishops,
                     })
                 except Exception:

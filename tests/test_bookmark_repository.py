@@ -11,6 +11,7 @@ Coverage:
 import uuid
 
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
@@ -52,6 +53,22 @@ def _make_create(
         color=color,
         match_side=match_side,
     )
+
+
+# ---------------------------------------------------------------------------
+# Ensure test users exist (FK constraints require valid user_id)
+# ---------------------------------------------------------------------------
+
+# All user IDs used across bookmark tests
+_TEST_USER_IDS = [1, 2, 3, 10, 20, 99, 500, 501, 502, 503, 504, 505, 600, 601, 700, 701, 710]
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _create_test_users(db_session: AsyncSession) -> None:
+    """Ensure all test user IDs exist in the users table before each test."""
+    from tests.conftest import ensure_test_user
+    for uid in _TEST_USER_IDS:
+        await ensure_test_user(db_session, uid)
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +274,8 @@ async def _seed_game_with_positions(
     positions: list[dict],
 ) -> Game:
     """Insert a Game and one or more GamePosition rows, return the Game."""
+    from tests.conftest import ensure_test_user
+    await ensure_test_user(session, user_id)
     game = Game(
         user_id=user_id,
         platform="chess.com",

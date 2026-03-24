@@ -86,6 +86,12 @@ services/         # Business logic (import, analysis)
 repositories/     # DB access (no SQL in services)
 ```
 
+### Database Design Rules
+
+- **Foreign key constraints are mandatory.** Every column referencing another table's primary key must use `ForeignKey()` with an explicit `ondelete` policy (typically `CASCADE` for user-owned data). Never use bare integer columns as implicit references — PostgreSQL must enforce referential integrity.
+- **Unique constraints for natural keys.** Add `UniqueConstraint` for any business-level uniqueness (e.g., one import job per user+platform combo, one game per user+platform+platform_game_id).
+- **Use appropriate column types.** E.g. don't use BIGINT where SmallInteger suffices. 
+
 ### Import Pipeline
 
 Background async tasks (not blocking the API). chess.com fetches monthly archives sequentially with rate-limit delays. lichess streams NDJSON line-by-line. Both normalize to a unified schema before storage.

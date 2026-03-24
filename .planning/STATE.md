@@ -71,6 +71,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 
 - Phase 25 added: Password reset functionality
 - Phases 26-29 added: v1.5 Game Statistics & Endgame Analysis
+- Phase 27.1 inserted after Phase 27: Optimize game_positions column types (URGENT)
 
 ### Blockers/Concerns
 
