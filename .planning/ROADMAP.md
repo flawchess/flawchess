@@ -104,7 +104,7 @@
   - [x] 26-02-PLAN.md — GamePosition model columns, Alembic migration, chunk_size update
 
 ### Phase 27: Import Wiring & Backfill
-**Goal**: All newly imported games populate the four new columns at import time, and all previously imported games have those columns filled without requiring users to re-import
+**Goal**: All newly imported games populate the seven metadata columns at import time, and all previously imported games have those columns filled without requiring users to re-import
 **Depends on**: Phase 26
 **Requirements**: PMETA-05
 **Success Criteria** (what must be TRUE):
@@ -112,7 +112,9 @@
   2. The backfill script completes against the production database without OOM error, using batch_size=10 and resuming correctly if interrupted
   3. After backfill, zero rows in game_positions have a NULL game_phase value
   4. A post-backfill VACUUM runs and dead tuple count drops to near zero
-**Plans**: TBD
+**Plans:** 2 plans
+  - [ ] 27-01-PLAN.md — Wire classify_position into import pipeline per-ply loop
+  - [ ] 27-02-PLAN.md — Standalone backfill script with resumability, VACUUM, and tests
 
 ### Phase 28: Endgame Analytics
 **Goal**: Users can view their endgame performance and material conversion/recovery statistics in a new Endgames tab with time control and color filters
@@ -168,6 +170,6 @@
 | 24. Web Analytics | v1.4 | 2/2 | Complete | 2026-03-22 |
 | 25. Password Reset | v1.4 | 0/0 | Not started | — |
 | 26. Position Classifier & Schema | v1.5 | 2/2 | Complete    | 2026-03-23 |
-| 27. Import Wiring & Backfill | v1.5 | 0/0 | Not started | — |
+| 27. Import Wiring & Backfill | v1.5 | 0/2 | Not started | — |
 | 28. Endgame Analytics | v1.5 | 0/0 | Not started | — |
 | 29. Engine Analysis Import | v1.5 | 0/0 | Not started | — |
