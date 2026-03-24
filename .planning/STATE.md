@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
-status: Ready to execute
-last_updated: "2026-03-24T17:33:40.326Z"
+status: Phase complete — ready for verification
+last_updated: "2026-03-24T17:39:33.120Z"
 last_activity: 2026-03-24
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 2
+  completed_plans: 4
 ---
 
 # Project State: FlawChess
@@ -55,6 +55,8 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [Phase 26-01]: Bare kings (K vs K) classified as pawnless, not pawn — pawn class requires at least one pawn on board
 - [Phase 27]: Second PGN parse per game for board state extraction — avoids modifying tested hashes_for_game; parsing is microseconds per game
 - [Phase 27]: Per-ply try/except around classify_position ensures one bad position does not abort the whole game import
+- [Phase 27]: skipped_ids set (not DB flag) for infinite-loop prevention in backfill — simple and sufficient for a one-shot script
+- [Phase 27]: scripts/__init__.py added to make scripts/ importable as Python package for test imports
 
 ### Critical v1.5 Constraints
 

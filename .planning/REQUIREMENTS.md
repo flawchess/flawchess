@@ -13,7 +13,7 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 - [x] **PMETA-02**: System computes material signature in canonical form (stronger side first, e.g., KRP_KR) for every position during import
 - [x] **PMETA-03**: System computes material imbalance in centipawns for every position during import
 - [x] **PMETA-04**: System classifies endgame type (rook/minor piece/pawn/queen/mixed/pawnless) for positions in endgame phase
-- [ ] **PMETA-05**: System backfills position metadata for all previously imported games without requiring user re-import
+- [x] **PMETA-05**: System backfills position metadata for all previously imported games without requiring user re-import
 
 ### Engine Analysis Import
 
@@ -75,7 +75,7 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 | PMETA-02 | Phase 26 | Complete |
 | PMETA-03 | Phase 26 | Complete |
 | PMETA-04 | Phase 26 | Complete |
-| PMETA-05 | Phase 27 | Pending |
+| PMETA-05 | Phase 27 | Complete |
 | ENGINE-01 | Phase 29 | Pending |
 | ENGINE-02 | Phase 29 | Pending |
 | ENGINE-03 | Phase 29 | Pending |

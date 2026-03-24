@@ -75,7 +75,7 @@
 
 - [ ] **Phase 25: Password Reset** — Add forgot-password / reset-password flow
 - [x] **Phase 26: Position Classifier & Schema** — Compute game phase, material signature, imbalance, and endgame class per position with schema migration (completed 2026-03-23)
-- [ ] **Phase 27: Import Wiring & Backfill** — Wire classifier into live import pipeline and backfill all existing game_positions rows
+- [x] **Phase 27: Import Wiring & Backfill** — Wire classifier into live import pipeline and backfill all existing game_positions rows (completed 2026-03-24)
 - [ ] **Phase 28: Endgame Analytics** — Backend API + frontend Endgames tab delivering W/D/L by endgame category and material conversion/recovery stats
 - [ ] **Phase 29: Engine Analysis Import** — Import chess.com accuracy scores and lichess per-move evals during game import
 
@@ -112,9 +112,9 @@
   2. The backfill script completes against the production database without OOM error, using batch_size=10 and resuming correctly if interrupted
   3. After backfill, zero rows in game_positions have a NULL game_phase value
   4. A post-backfill VACUUM runs and dead tuple count drops to near zero
-**Plans:** 2 plans
-  - [ ] 27-01-PLAN.md — Wire classify_position into import pipeline per-ply loop
-  - [ ] 27-02-PLAN.md — Standalone backfill script with resumability, VACUUM, and tests
+**Plans:** 2/2 plans complete
+  - [x] 27-01-PLAN.md — Wire classify_position into import pipeline per-ply loop
+  - [x] 27-02-PLAN.md — Standalone backfill script with resumability, VACUUM, and tests
 
 ### Phase 28: Endgame Analytics
 **Goal**: Users can view their endgame performance and material conversion/recovery statistics in a new Endgames tab with time control and color filters
@@ -170,6 +170,6 @@
 | 24. Web Analytics | v1.4 | 2/2 | Complete | 2026-03-22 |
 | 25. Password Reset | v1.4 | 0/0 | Not started | — |
 | 26. Position Classifier & Schema | v1.5 | 2/2 | Complete    | 2026-03-23 |
-| 27. Import Wiring & Backfill | v1.5 | 0/2 | Not started | — |
+| 27. Import Wiring & Backfill | v1.5 | 2/2 | Complete   | 2026-03-24 |
 | 28. Endgame Analytics | v1.5 | 0/0 | Not started | — |
 | 29. Engine Analysis Import | v1.5 | 0/0 | Not started | — |
