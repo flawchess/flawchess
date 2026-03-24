@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
-status: Ready to plan
-last_updated: "2026-03-23T21:42:36.730Z"
-last_activity: 2026-03-23
+status: Ready to execute
+last_updated: "2026-03-24T17:33:40.326Z"
+last_activity: 2026-03-24
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 2
+  total_plans: 4
   completed_plans: 2
 ---
 
@@ -16,8 +16,8 @@ progress:
 
 ## Current Position
 
-Phase: 27
-Plan: Not started
+Phase: 27 (import-wiring-backfill) — EXECUTING
+Plan: 2 of 2
 
 ## Project Reference
 
@@ -53,6 +53,8 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [Phase 26]: String(40) for material_signature — full opening signatures reach 33 chars, exceeding initial String(20) estimate
 - [Phase 26]: chunk_size reduced 4000 -> 2100 to stay within asyncpg 32767 arg limit with 15 columns per position row
 - [Phase 26-01]: Bare kings (K vs K) classified as pawnless, not pawn — pawn class requires at least one pawn on board
+- [Phase 27]: Second PGN parse per game for board state extraction — avoids modifying tested hashes_for_game; parsing is microseconds per game
+- [Phase 27]: Per-ply try/except around classify_position ensures one bad position does not abort the whole game import
 
 ### Critical v1.5 Constraints
 
@@ -79,6 +81,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
 - **Display opening name from lichess chess-openings database** (ui) — ECO code + opening name via prefix-match
 - **Refactor button brand colors to CSS variables** (ui) — move PRIMARY_BUTTON_CLASS from theme.ts to @theme inline CSS variables
+- **Optimize game_positions column types for storage efficiency** (database) — downsize ply/clock_seconds/material_imbalance from BIGINT/DOUBLE to SmallInteger/REAL
 
 ### Quick Tasks Completed
 
@@ -89,4 +92,4 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260323-rtg | Create better Android and iOS app icons with padded, separate any/maskable PWA icons | 2026-03-23 | b60e1c4 | [260323-rtg-create-better-android-and-ios-app-icons-](./quick/260323-rtg-create-better-android-and-ios-app-icons-/) |
 
 ---
-Last activity: 2026-03-23
+Last activity: 2026-03-24
