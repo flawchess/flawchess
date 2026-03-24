@@ -136,6 +136,12 @@ ssh flawchess "cd /opt/flawchess && docker compose down && docker compose up -d"
 
 This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/get-shit-done). All features and work are planned through GSD phases and roadmap. Do not add unplanned features, refactors, or improvements outside the current GSD phase scope. If something seems needed but isn't in the plan, flag it rather than implementing it.
 
+### GSD Context Management
+
+- **Discuss → Plan: keep context.** The planner benefits from having the raw discussion available for resolving ambiguities not fully captured in artifacts.
+- **Plan → Execute: `/clear` before execution.** The executor reads `PLAN.md` and `RESEARCH.md` from `.planning/` — everything important is already distilled there. Clearing frees context for file reads, test output, and error traces, and improves signal-to-noise ratio.
+- **Small tasks (`/gsd:quick`, `/gsd:fast`): don't bother clearing** — the overhead isn't worth it for inline tasks.
+
 ## User Context
 
 - Data scientist, 15 years web dev, Python expert, proficient with FastAPI
