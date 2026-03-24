@@ -7,7 +7,7 @@
 - ✅ **v1.2 Mobile & PWA** — Phases 17-19 (shipped 2024-03-21)
 - ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
 - **v1.4 Improvements** — Phases 24-25
-- **v1.5 Game Statistics & Endgame Analysis** — Phases 26-29
+- **v1.5 Game Statistics & Endgame Analysis** — Phases 26-30
 
 ## Phases
 
@@ -76,8 +76,9 @@
 - [ ] **Phase 25: Password Reset** — Add forgot-password / reset-password flow
 - [x] **Phase 26: Position Classifier & Schema** — Compute game phase, material signature, imbalance, and endgame class per position with schema migration (completed 2026-03-23)
 - [x] **Phase 27: Import Wiring & Backfill** — Wire classifier into live import pipeline and backfill all existing game_positions rows (completed 2026-03-24)
-- [ ] **Phase 28: Endgame Analytics** — Backend API + frontend Endgames tab delivering W/D/L by endgame category and material conversion/recovery stats
-- [ ] **Phase 29: Engine Analysis Import** — Import chess.com accuracy scores and lichess per-move evals during game import
+- [ ] **Phase 28: Engine Analysis Import** — Import chess.com accuracy scores and lichess per-move evals during game import
+- [ ] **Phase 29: Endgame Analytics** — Backend API + frontend Endgames tab delivering W/D/L by endgame category and material conversion/recovery stats
+- [ ] **Phase 30: Homepage, README & SEO Update** — Update homepage content, README, and SEO metadata to showcase new statistics features introduced in v1.5
 
 ## Phase Details
 
@@ -126,9 +127,19 @@
 Plans:
 - [ ] TBD (run /gsd:plan-phase 27.1 to break down)
 
-### Phase 28: Endgame Analytics
-**Goal**: Users can view their endgame performance and material conversion/recovery statistics in a new Endgames tab with time control and color filters
+### Phase 28: Engine Analysis Import
+**Goal**: The system imports available engine analysis data (chess.com accuracy scores, lichess per-move evals) during game import, storing them for future display
 **Depends on**: Phase 27
+**Requirements**: ENGINE-01, ENGINE-02, ENGINE-03
+**Success Criteria** (what must be TRUE):
+  1. A lichess game that has prior computer analysis imports with per-move eval values populated in the database
+  2. A chess.com game with an accuracy score imports with that score stored; a game without accuracy data imports without error and stores NULL
+  3. A game with no analysis data on either platform imports cleanly with all engine fields NULL and no error logged
+**Plans**: TBD
+
+### Phase 29: Endgame Analytics
+**Goal**: Users can view their endgame performance and material conversion/recovery statistics in a new Endgames tab with time control and color filters
+**Depends on**: Phase 28
 **Requirements**: ENDGM-01, ENDGM-02, ENDGM-03, ENDGM-04, CONV-01, CONV-02, CONV-03
 **Success Criteria** (what must be TRUE):
   1. User can open the Endgames tab and see W/D/L rates broken down by endgame category (rook, minor piece, pawn, queen, mixed, pawnless), with game count per category
@@ -139,16 +150,6 @@ Plans:
   6. The Endgame tab layout is usable on mobile (375px width) with the same filter and stats structure as the desktop layout
 **Plans**: TBD
 **UI hint**: yes
-
-### Phase 29: Engine Analysis Import
-**Goal**: The system imports available engine analysis data (chess.com accuracy scores, lichess per-move evals) during game import, storing them for future display
-**Depends on**: Phase 27
-**Requirements**: ENGINE-01, ENGINE-02, ENGINE-03
-**Success Criteria** (what must be TRUE):
-  1. A lichess game that has prior computer analysis imports with per-move eval values populated in the database
-  2. A chess.com game with an accuracy score imports with that score stored; a game without accuracy data imports without error and stores NULL
-  3. A game with no analysis data on either platform imports cleanly with all engine fields NULL and no error logged
-**Plans**: TBD
 
 ## Progress
 
@@ -181,5 +182,16 @@ Plans:
 | 25. Password Reset | v1.4 | 0/0 | Not started | — |
 | 26. Position Classifier & Schema | v1.5 | 2/2 | Complete    | 2026-03-23 |
 | 27. Import Wiring & Backfill | v1.5 | 2/2 | Complete    | 2026-03-24 |
-| 28. Endgame Analytics | v1.5 | 0/0 | Not started | — |
-| 29. Engine Analysis Import | v1.5 | 0/0 | Not started | — |
+| 28. Engine Analysis Import | v1.5 | 0/0 | Not started | — |
+| 29. Endgame Analytics | v1.5 | 0/0 | Not started | — |
+| 30. Homepage, README & SEO Update | v1.5 | 0/0 | Not started | — |
+
+### Phase 30: Homepage, README & SEO Update
+**Goal**: Update homepage content, README, and SEO metadata to showcase the new statistics features (endgame analytics, engine analysis) introduced in milestone v1.5
+**Depends on**: Phase 29
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+  1. Homepage highlights endgame analytics and engine analysis features
+  2. README accurately describes the current feature set
+  3. SEO metadata (title, description, OG tags) reflects the new capabilities
+**Plans**: TBD
