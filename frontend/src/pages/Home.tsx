@@ -85,7 +85,7 @@ function HomePageContent() {
       <PublicHeader />
 
       {/* Hero */}
-      <section data-testid="hero-section" className="max-w-3xl mx-auto px-4 py-16 lg:py-24 text-center">
+      <section data-testid="hero-section" className="max-w-3xl mx-auto px-4 py-8 lg:py-24 text-center">
         <img
           src="/icons/logo-384.png"
           alt="FlawChess logo"
@@ -101,24 +101,27 @@ function HomePageContent() {
         <Button
           size="lg"
           asChild
-          className={cn(PRIMARY_BUTTON_CLASS, 'min-h-11 mt-8')}
+          className={cn(PRIMARY_BUTTON_CLASS, 'min-h-11 min-w-48 mt-8')}
           data-testid="hero-cta-signup"
         >
           <Link to="/login?tab=register">Sign up free</Link>
         </Button>
         {/* Callout pills */}
-        <div className="mt-4 flex justify-center gap-2">
-          <span className="bg-muted text-muted-foreground rounded-full px-3 py-1 text-sm">
-            Open source and free
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
+            Free to use
           </span>
-          <span className="bg-muted text-muted-foreground rounded-full px-3 py-1 text-sm">
+          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
+            Open source
+          </span>
+          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
             Mobile friendly
           </span>
         </div>
       </section>
 
       {/* Feature sections — alternating image left/right */}
-      <div id="features" data-testid="screenshots-section" className="max-w-5xl mx-auto px-4 py-8 space-y-16 lg:space-y-24 scroll-mt-16">
+      <div id="features" data-testid="screenshots-section" className="max-w-5xl mx-auto px-4 py-4 lg:py-8 space-y-16 lg:space-y-24 scroll-mt-16">
         {FEATURES.map(({ slug, icon: Icon, heading, desc, screenshot, imagePosition }) => {
           const isLandscape = screenshot.orientation === 'landscape';
           // Landscape: 40% text / 60% image. Portrait: 55% text / 45% image (capped width).
@@ -252,7 +255,7 @@ function HomePageContent() {
         <Button
           size="lg"
           asChild
-          className={cn(PRIMARY_BUTTON_CLASS, 'min-h-11')}
+          className={cn(PRIMARY_BUTTON_CLASS, 'min-h-11 min-w-48')}
           data-testid="footer-cta-signup"
         >
           <Link to="/login?tab=register">Sign up free</Link>
