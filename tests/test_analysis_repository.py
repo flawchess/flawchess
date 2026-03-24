@@ -21,6 +21,7 @@ import datetime
 import uuid
 
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
@@ -30,6 +31,14 @@ from app.repositories.analysis_repository import (
     query_all_results,
     query_matching_games,
 )
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _create_test_users(db_session: AsyncSession) -> None:
+    """Ensure test user IDs exist in the users table (FK constraint)."""
+    from tests.conftest import ensure_test_user
+    for uid in [1, 2]:
+        await ensure_test_user(db_session, uid)
 
 
 # ---------------------------------------------------------------------------
