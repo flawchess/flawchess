@@ -631,3 +631,304 @@ class TestRunImport:
             if hasattr(call.args[0], "is_update") and call.args[0].is_update
         ]
         assert len(update_calls) >= 1, "Expected at least one UPDATE call for move_count"
+
+    @pytest.mark.asyncio
+    async def test_position_rows_include_game_phase(self):
+        """After importing a game, all position_rows dicts have a non-null game_phase field."""
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        # Use a real PGN with moves so classify_position can run on actual board states
+        pgn = "1. e4 e5 *"
+
+        async def _yield_one_game(*args, **kwargs):
+            yield {
+                "platform": "chess.com",
+                "platform_game_id": "game-gp-1",
+                "pgn": pgn,
+                "user_id": 1,
+            }
+
+        mock_session = _make_mock_session()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = [(999, pgn)]
+        mock_session.execute.return_value = result_mock
+
+        mock_maker = _mock_session_maker(mock_session)
+        captured_positions: list[dict] = []
+
+        async def _capture(session, position_rows):
+            captured_positions.extend(position_rows)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_one_game,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[999]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(side_effect=_capture),
+            ),
+            patch(
+                "app.services.import_service.user_repository.update_platform_username",
+                new=AsyncMock(),
+            ),
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        # Verify that all position rows have a non-null game_phase
+        assert len(captured_positions) > 0, "Expected at least one position row"
+        for row in captured_positions:
+            assert "game_phase" in row, f"Missing game_phase in row: {row}"
+            assert row["game_phase"] is not None, "game_phase should not be None"
+            assert row["game_phase"] in ("opening", "middlegame", "endgame"), (
+                f"Unexpected game_phase: {row['game_phase']}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_position_rows_include_material_signature(self):
+        """After importing a game, all position_rows dicts have a non-null material_signature field."""
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        pgn = "1. e4 e5 *"
+
+        async def _yield_one_game(*args, **kwargs):
+            yield {
+                "platform": "chess.com",
+                "platform_game_id": "game-ms-1",
+                "pgn": pgn,
+                "user_id": 1,
+            }
+
+        mock_session = _make_mock_session()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = [(999, pgn)]
+        mock_session.execute.return_value = result_mock
+
+        mock_maker = _mock_session_maker(mock_session)
+        captured_positions: list[dict] = []
+
+        async def _capture(session, position_rows):
+            captured_positions.extend(position_rows)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_one_game,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[999]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(side_effect=_capture),
+            ),
+            patch(
+                "app.services.import_service.user_repository.update_platform_username",
+                new=AsyncMock(),
+            ),
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        assert len(captured_positions) > 0, "Expected at least one position row"
+        for row in captured_positions:
+            assert "material_signature" in row, f"Missing material_signature in row: {row}"
+            assert row["material_signature"] is not None, "material_signature should not be None"
+
+    @pytest.mark.asyncio
+    async def test_starting_position_classified_as_opening(self):
+        """The starting position (ply 0) of a valid game is classified as 'opening' with full material."""
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        pgn = "1. e4 e5 *"
+
+        async def _yield_one_game(*args, **kwargs):
+            yield {
+                "platform": "chess.com",
+                "platform_game_id": "game-sp-1",
+                "pgn": pgn,
+                "user_id": 1,
+            }
+
+        mock_session = _make_mock_session()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = [(999, pgn)]
+        mock_session.execute.return_value = result_mock
+
+        mock_maker = _mock_session_maker(mock_session)
+        captured_positions: list[dict] = []
+
+        async def _capture(session, position_rows):
+            captured_positions.extend(position_rows)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_one_game,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[999]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(side_effect=_capture),
+            ),
+            patch(
+                "app.services.import_service.user_repository.update_platform_username",
+                new=AsyncMock(),
+            ),
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        assert len(captured_positions) > 0
+        # ply 0 is the starting position
+        ply0 = captured_positions[0]
+        assert ply0["ply"] == 0
+        assert ply0["game_phase"] == "opening"
+        # Starting position has full material on both sides
+        assert ply0["material_signature"] == "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP"
+
+    @pytest.mark.asyncio
+    async def test_classification_failure_degrades_gracefully(self):
+        """When classify_position fails, import still succeeds with NULL metadata columns."""
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        # Use a PGN that hashes_for_game can process normally
+        pgn = "1. e4 e5 *"
+
+        async def _yield_one_game(*args, **kwargs):
+            yield {
+                "platform": "chess.com",
+                "platform_game_id": "game-degrade-1",
+                "pgn": pgn,
+                "user_id": 1,
+            }
+
+        mock_session = _make_mock_session()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = [(999, pgn)]
+        mock_session.execute.return_value = result_mock
+
+        mock_maker = _mock_session_maker(mock_session)
+        captured_positions: list[dict] = []
+
+        async def _capture(session, position_rows):
+            captured_positions.extend(position_rows)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_one_game,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[999]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(side_effect=_capture),
+            ),
+            patch(
+                "app.services.import_service.user_repository.update_platform_username",
+                new=AsyncMock(),
+            ),
+            # Simulate classify PGN parse failure by making read_game return None for classify path
+            # We do this by patching classify_position to raise, to simulate unexpected failure
+            patch(
+                "app.services.import_service.classify_position",
+                side_effect=Exception("Simulated classification failure"),
+            ),
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            # Import should still complete successfully (no exception raised)
+            await run_import(job_id)
+
+        job = import_service._jobs[job_id]
+        assert job.status == JobStatus.COMPLETED, (
+            f"Expected COMPLETED, got {job.status} — classification failure must not fail the import"
+        )
+        # Positions should still be inserted, just without metadata
+        assert len(captured_positions) > 0, "Position rows should still be inserted despite classify failure"
+        for row in captured_positions:
+            # When classify fails, metadata keys should not be present (or be None)
+            assert "game_phase" not in row or row["game_phase"] is None
