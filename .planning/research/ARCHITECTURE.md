@@ -1,468 +1,517 @@
 # Architecture Research
 
-**Domain:** Production deployment — Docker, Caddy, CI/CD, monitoring, analytics for FastAPI + React SPA
-**Researched:** 2026-03-21
-**Confidence:** HIGH
+**Domain:** Per-position metadata and endgame analytics for an existing chess analytics platform
+**Researched:** 2026-03-23
+**Confidence:** HIGH — based on direct codebase inspection of all affected modules
 
-## Standard Architecture
+---
+
+## Current Architecture (as-built)
 
 ### System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Hetzner Cloud VPS                         │
-│                                                              │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │              Caddy (port 80/443)                     │    │
-│  │  - Auto-SSL via Let's Encrypt                        │    │
-│  │  - Serves /dist static files (SPA + PWA assets)     │    │
-│  │  - Proxies API routes → backend:8000                 │    │
-│  │  - SPA fallback: try_files → /index.html            │    │
-│  └──────────┬───────────────────────────────────────────┘   │
-│             │ /auth /analysis /games /imports etc.           │
-│  ┌──────────▼──────────┐   ┌──────────────────────────┐    │
-│  │  FastAPI + Uvicorn  │   │     PostgreSQL 16         │    │
-│  │  (backend:8000)     │──▶│  (db:5432)               │    │
-│  │  - 4 Uvicorn workers│   │  - asyncpg driver         │    │
-│  │  - Alembic on start │   │  - named volume           │    │
-│  └─────────────────────┘   └──────────────────────────┘    │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │            Docker volumes (persistent)               │   │
-│  │   caddy_data (Let's Encrypt certs)                   │   │
-│  │   postgres_data (DB files)                           │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-
-             ┌──────────────────────────────┐
-             │  GitHub Actions (CI/CD)      │
-             │  1. test + lint              │
-             │  2. build images → push GHCR │
-             │  3. SSH → VPS               │
-             │     docker compose pull      │
-             │     docker compose up -d     │
-             └──────────────────────────────┘
-
-             ┌──────────────────────────────┐
-             │  External Services           │
-             │  - Sentry (errors + perf)    │
-             │  - Plausible (analytics)     │
-             └──────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                        Frontend (React 19 + TS)                   │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────────────┐ │
+│  │ OpeningsPage│  │ GlobalStats  │  │ [NEW] EndgamesPage       │ │
+│  │  /openings  │  │  /stats      │  │  /endgames               │ │
+│  └──────┬──────┘  └──────┬───────┘  └────────────┬─────────────┘ │
+│         │                │                        │               │
+│  TanStack Query hooks -- useAnalysis, useEndgames (new)           │
+│  api/client.ts + types/api.ts + types/endgames.ts (new)           │
+└─────────────────────────┬────────────────────────┴───────────────┘
+                          │ HTTP (JSON + JWT Bearer)
+┌─────────────────────────▼────────────────────────────────────────┐
+│                  FastAPI Routers (HTTP layer only)                 │
+│  routers/analysis.py   routers/stats.py  routers/endgames.py(new)│
+└─────────────────────────┬────────────────────────────────────────┘
+                          │
+┌─────────────────────────▼────────────────────────────────────────┐
+│                    Services (business logic)                       │
+│  analysis_service.py   stats_service.py  endgames_service.py(new)│
+│                   import_service.py (MODIFIED)                    │
+│                   position_classifier.py (NEW)                    │
+└────────────┬────────────────────────────────────────────────────┘
+             │
+┌────────────▼───────────────────────────────────────────────────┐
+│                   Repositories (DB access)                      │
+│  analysis_repository.py  stats_repository.py                   │
+│  game_repository.py (MODIFIED -- new position_rows columns)    │
+│  endgames_repository.py (NEW)                                  │
+└────────────┬───────────────────────────────────────────────────┘
+             │
+┌────────────▼───────────────────────────────────────────────────┐
+│               PostgreSQL 18 (asyncpg via SQLAlchemy 2.x)        │
+│  games          game_positions (MODIFIED -- new columns)        │
+│  users          import_jobs                                     │
+│  [optional: game_engine_analysis NEW table]                     │
+└────────────────────────────────────────────────────────────────┘
 ```
-
-### Component Responsibilities
-
-| Component | Responsibility | Notes |
-|-----------|----------------|-------|
-| Caddy | TLS termination, reverse proxy, static file serving | Serves pre-built `/srv` directly; auto-renews Let's Encrypt certs stored in `caddy_data` volume |
-| FastAPI backend | API logic, auth, chess game import, analysis | uv multi-stage Docker build; Alembic runs migrations before app starts |
-| PostgreSQL | Persistent data store | `postgres:16-alpine`; named volume; healthcheck gates backend startup |
-| GitHub Actions | CI: test + lint; CD: build images, push to GHCR, SSH-deploy | Secrets: `GHCR_TOKEN`, `VPS_SSH_KEY`, `VPS_HOST` |
-| Sentry | Error tracking + performance monitoring | Python SDK in FastAPI; `@sentry/react` in React; single project, two DSNs |
-| Plausible / GA | Page view tracking | Script tag in `index.html`; no build-time code changes needed |
 
 ---
 
-## Recommended Project Structure
+## Database Schema Changes
 
-New files to add to the existing repo:
+### Decision: Extend `game_positions` vs. New Table
 
+**Recommendation: Add new columns directly to `game_positions`.**
+
+Rationale:
+- All new data (game_phase, material_signature, endgame_class) is computed once per position at import time and never changes. It is not a separate concern — it is part of the position descriptor.
+- A JOIN from a separate table on every endgame query would be expensive: `game_positions` is already the largest table (avg 80 rows per game). A separate `position_metadata` table would double the join cost for all endgame queries.
+- `ALTER TABLE ADD COLUMN DEFAULT NULL` is a metadata-only operation in PostgreSQL 11+ and does not rewrite rows. Adding 4-5 nullable columns to an existing large table is instantaneous.
+- The new columns are nullable, so backfill can proceed independently of new imports; both old and new rows are in the same table.
+
+**Reject: Separate `position_metadata` table.** Only warranted if metadata had a different write pattern (e.g., updated post-import). Here it is computed once and never updated.
+
+### New Columns on `game_positions`
+
+```sql
+-- Phase: 'opening' | 'middlegame' | 'endgame'
+game_phase        VARCHAR(12)   NULL
+
+-- Canonical material string sorted by piece type, e.g. 'KQRBNPkqrbnp' or 'KRPkr'
+-- Uppercase = white pieces, lowercase = black. NULL until backfilled.
+material_signature VARCHAR(32)  NULL
+
+-- Signed centipawn material imbalance from user's perspective:
+-- positive = user is up material, negative = down
+-- NULL until backfilled. Based on standard piece values (Q=9,R=5,B=3,N=3,P=1).
+material_imbalance SMALLINT     NULL
+
+-- Endgame classification; NULL when game_phase != 'endgame'
+-- Examples: 'rook', 'queen', 'minor_piece', 'pawn', 'queen_vs_rook', etc.
+endgame_class     VARCHAR(30)   NULL
 ```
-flawchess/                          # repo root (after rename)
-├── Dockerfile                      # NEW: backend multi-stage build (uv)
-├── docker-compose.yml              # NEW: production services
-├── .env.example                    # NEW: template for production secrets
-├── caddy/
-│   └── Caddyfile                   # NEW: reverse proxy + SPA config
-├── frontend/
-│   ├── Dockerfile                  # NEW: frontend multi-stage → Caddy image
-│   └── ...                         # existing files
-└── .github/
-    └── workflows/
-        └── deploy.yml              # NEW: CI/CD pipeline
+
+**Note on `material_signature` design:** Store as a compact canonical string (sorted piece characters), not a hash. Strings like `'KRPkr'` are human-readable, debuggable, and support LIKE/substring queries if needed later. Length 32 covers all practical positions (max ~16 pieces). Index only when needed for endgame queries (see Index section below).
+
+### Engine Analysis Data
+
+**Recommendation: New separate table `game_engine_analysis`.**
+
+Unlike position metadata (per-ply, computed from board state), engine analysis is per-game, externally sourced, and only available for a subset of games. Putting it in `games` would add many nullable columns that are always NULL for non-analyzed games. A separate table avoids that column pollution and matches the natural 0..1 relationship.
+
+```sql
+CREATE TABLE game_engine_analysis (
+    id              BIGINT PRIMARY KEY,
+    game_id         BIGINT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    user_id         BIGINT NOT NULL,          -- denormalized for query perf
+    source          VARCHAR(20) NOT NULL,     -- 'chess.com' | 'lichess'
+    white_accuracy  FLOAT NULL,               -- overall accuracy % (0-100)
+    black_accuracy  FLOAT NULL,
+    user_accuracy   FLOAT NULL,               -- derived: white or black accuracy per user_color
+    -- Future: per-move eval array could be stored as JSONB if needed
+    imported_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(game_id)
+);
+CREATE INDEX ix_gea_user_id ON game_engine_analysis (user_id);
 ```
 
-### Structure Rationale
+**API availability reality:**
+- **chess.com**: `accuracies.white` and `accuracies.black` (float) are returned in the game JSON only when previously computed. No per-move eval in the public API.
+- **lichess**: `accuracy` and `acpl` (average centipawn loss) are available per-player in the JSON export when `accuracy=true` parameter is used AND the game has been analyzed. Bulk exports (`/api/games/user`) do NOT include analysis data -- only individual game exports do.
 
-- **`Dockerfile` at repo root** — builds the backend; stays next to `pyproject.toml` and `uv.lock` for clean COPY paths
-- **`frontend/Dockerfile`** — separate from backend; builds the React SPA into `/dist` then into a Caddy image
-- **`caddy/Caddyfile`** — isolated from compose; mounted as a bind-mount so Caddy config can be updated without rebuilding any image
-- **`docker-compose.yml`** — single production compose file; no dev overrides needed
-- **`.env.example`** — documents all required env vars; `.env` on VPS is gitignored
+**Consequence for import design:** Engine analysis data must be fetched as a separate optional pass, not inline with the main import. Do not attempt to fetch per-game analysis during the main import loop -- the extra per-game HTTP calls would multiply import time by 10-100x and risk rate bans. Treat as a separate "enrich analyzed games" job, or skip entirely for v1.5 and implement as a follow-on feature.
 
 ---
 
-## Architectural Patterns
+## Backfill Strategy
 
-### Pattern 1: Caddy Serving SPA + API on Same Domain
+### The Problem
 
-**What:** Caddy serves pre-built React static files from `/srv` and reverse-proxies all API route prefixes to the FastAPI container. SPA client-side routing is handled via `try_files` fallback to `/index.html`.
+All existing `game_positions` rows have NULL for the new columns. Users may have thousands of games imported. The production server has 3.7 GB RAM and was OOM-killed on large batch inserts.
 
-**When to use:** Always for this deployment — same-domain SPA + API eliminates CORS entirely in production. Browser makes API calls to the same origin it loaded the app from.
+### Recommendation: Alembic Migration + Background Task Backfill
 
-**Trade-offs:** Routing table in Caddyfile must stay in sync with FastAPI route prefixes. The Vite dev proxy (`vite.config.ts`) mirrors this same routing table for local development.
+**Step 1: Alembic migration** -- Add the nullable columns. This is instant (PostgreSQL metadata-only operation). No data is touched. Deploy runs this automatically.
 
-**Caddyfile:**
+**Step 2: Background backfill task** -- A new `backfill_service.py` runs position classification for all existing games. Works from the stored PGN in `games` -- no re-download needed.
+
 ```
-flawchess.com {
-    encode gzip
+Backfill approach:
+1. SELECT g.id, g.pgn FROM games g
+   JOIN game_positions gp ON gp.game_id = g.id
+   WHERE gp.game_phase IS NULL
+   GROUP BY g.id
+   LIMIT 100  -- process 100 games per batch
+2. For each game: re-parse PGN, classify each position, batch UPDATE game_positions
+3. Commit, sleep briefly (asyncio.sleep(0) to yield), repeat
+4. Partial index on game_positions WHERE game_phase IS NULL
+   allows efficient "find unbackfilled games" scans
+```
 
-    # API routes — proxy to backend (must match vite.config.ts proxy config)
-    handle /auth/* {
-        reverse_proxy backend:8000
-    }
-    handle /analysis/* {
-        reverse_proxy backend:8000
-    }
-    handle /games/* {
-        reverse_proxy backend:8000
-    }
-    handle /imports/* {
-        reverse_proxy backend:8000
-    }
-    handle /position-bookmarks/* {
-        reverse_proxy backend:8000
-    }
-    handle /stats/* {
-        reverse_proxy backend:8000
-    }
-    handle /users/* {
-        reverse_proxy backend:8000
-    }
-    handle /health {
-        reverse_proxy backend:8000
-    }
+**Key constraints:**
+- Never rewrite position rows from scratch -- UPDATE only the new columns to preserve existing hashes.
+- Process in game-level batches (100 games = ~8,000 position rows per UPDATE batch). This stays well under OOM limits.
+- The backfill runs as a low-priority asyncio task with `asyncio.sleep(0)` yields between batches so it does not block the API.
+- Partial index `CREATE INDEX CONCURRENTLY ix_gp_game_phase_null ON game_positions (game_id) WHERE game_phase IS NULL` lets the backfill query find unprocessed rows efficiently. Drop it after backfill completes.
+- Do NOT re-download games from chess.com/lichess. PGN is stored in `games.pgn` -- compute everything from that.
 
-    # SPA fallback — serve static assets with index.html fallback for client-side routing
-    handle {
-        root * /srv
-        try_files {path} /index.html
-        file_server
-    }
+**Alternative rejected: Full reimport (wipe + re-import all games).** Rejected because: users lose their import history, import takes hours for large libraries, and the server RAM constraint makes large batch imports risky. The backfill approach is safe and incremental.
+
+---
+
+## New Component: `position_classifier.py`
+
+This is the core new service module. It computes game_phase, material_signature, material_imbalance, and endgame_class from a `chess.Board` object.
+
+### Design
+
+```python
+# services/position_classifier.py
+
+from dataclasses import dataclass
+import chess
+
+PIECE_VALUES = {
+    chess.QUEEN: 9,
+    chess.ROOK: 5,
+    chess.BISHOP: 3,
+    chess.KNIGHT: 3,
+    chess.PAWN: 1,
+    chess.KING: 0,
 }
+
+@dataclass
+class PositionMetadata:
+    game_phase: str            # 'opening' | 'middlegame' | 'endgame'
+    material_signature: str    # e.g. 'KQRBBNPPPkqrbbnnppp'
+    material_imbalance: int    # centipawn material delta from user perspective
+    endgame_class: str | None  # None unless game_phase == 'endgame'
 ```
 
-**CORS change needed:** Because frontend and API share the same origin in production, CORS is only needed for development. `app/main.py` currently hardcodes `allow_origins=["http://localhost:5173"]`. This needs to read from `Settings` so production can configure it via env var.
+**Game phase algorithm (material-based):**
 
-### Pattern 2: uv Multi-Stage Backend Dockerfile
+python-chess provides `board.pieces(piece_type, color)` which returns a SquareSet. Material count is a loop over piece types. A practical threshold based on non-pawn, non-king material:
 
-**What:** Two-stage Docker build. Builder stage installs deps with uv. Runtime stage copies only `.venv` and app source. No uv, pip, or build tools in the final image.
-
-**When to use:** Always — the official uv Docker recommendation. Layer caching on `uv.lock` + `pyproject.toml` means the deps layer is only re-built when dependencies change, not on every code commit.
-
-**Backend `Dockerfile`:**
-```dockerfile
-# --- Builder ---
-FROM python:3.13-slim AS builder
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
-
-WORKDIR /app
-ENV UV_COMPILE_BYTECODE=1
-ENV UV_LINK_MODE=copy
-
-# Deps layer (cached until uv.lock or pyproject.toml changes)
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-dev --no-install-project
-
-# App source
-COPY . /app
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev
-
-# --- Runtime ---
-FROM python:3.13-slim
-WORKDIR /app
-COPY --from=builder /app /app
-ENV PATH="/app/.venv/bin:$PATH"
-
-# Entrypoint: run migrations then start server
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"]
+```
+endgame threshold:  total non-pawn pieces (both sides, excluding kings) <= 6
+opening heuristic:  ply < OPENING_PLY_THRESHOLD (e.g., 20) AND non-pawn material above endgame threshold
+middlegame:         everything in between
 ```
 
-### Pattern 3: Frontend Multi-Stage Build Into Caddy Image
+The exact thresholds are a tunable constant in `position_classifier.py`, not magic numbers scattered through the code.
 
-**What:** Two-stage frontend Dockerfile. Stage 1: Node.js runs `npm ci && npm run build`. Stage 2: Caddy image with the built `/dist` copied to `/srv` and the Caddyfile copied in.
+**Material signature encoding:**
 
-**When to use:** This approach bundles the static assets and Caddy config into a single versioned image — clean rollbacks, no separate `rsync` step.
+Canonical string: uppercase = white pieces, lowercase = black, sorted by piece type (K first, then Q, R, B, N, P). Example: `KQRBNPPkqrbnpp`. This is compact, human-readable, and directly queryable with equality.
 
-**`VITE_` vars are baked in at build time.** The API URL is not needed as a `VITE_` var because the SPA and API are same-origin (Caddy proxies both). Only public-safe values belong in `VITE_`: Sentry DSN (public key), analytics domain.
+**Endgame classification:**
 
-**`frontend/Dockerfile`:**
-```dockerfile
-# Stage 1: Build SPA
-FROM node:22-alpine AS builder
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
-COPY . .
-ARG VITE_SENTRY_DSN
-ARG VITE_PLAUSIBLE_DOMAIN
-RUN npm run build
-
-# Stage 2: Caddy serves the built output
-FROM caddy:2-alpine
-COPY --from=builder /app/dist /srv
-COPY caddy/Caddyfile /etc/caddy/Caddyfile
-```
-
-### Pattern 4: PostgreSQL Healthcheck Gates Backend Start
-
-**What:** `depends_on: condition: service_healthy` ensures PostgreSQL is accepting connections before the backend container starts. The backend entrypoint runs `alembic upgrade head` — this needs a live database.
-
-**When to use:** Always. Without this, the backend container starts immediately, `alembic upgrade head` fails with a connection error, and the app never comes up on first boot.
-
-**`docker-compose.yml` excerpt:**
-```yaml
-services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  backend:
-    image: ghcr.io/${GITHUB_OWNER}/flawchess-backend:${IMAGE_TAG}
-    env_file: .env
-    depends_on:
-      db:
-        condition: service_healthy
-
-  caddy:
-    image: ghcr.io/${GITHUB_OWNER}/flawchess-caddy:${IMAGE_TAG}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - caddy_data:/data
-    depends_on:
-      - backend
-
-volumes:
-  postgres_data:
-  caddy_data:
-```
-
-### Pattern 5: Sentry Integration — Minimal Touch Points
-
-**What:** Sentry SDK initialized once in `app/main.py` (backend) and `frontend/src/main.tsx` (frontend). FastAPI integration is automatic when `sentry-sdk` is installed and `sentry_sdk.init()` is called. React integration adds browser tracing.
-
-**When to use:** Both integrations are guarded by a null check on `SENTRY_DSN` — development runs without Sentry noise.
-
-**Backend — modify `app/main.py`:**
-```python
-import sentry_sdk
-from app.core.config import settings
-
-if settings.SENTRY_DSN:
-    sentry_sdk.init(
-        dsn=settings.SENTRY_DSN,
-        environment=settings.ENVIRONMENT,
-        traces_sample_rate=0.1,  # 10% sampling; raise to 1.0 for debugging
-    )
-```
-
-**Add to `app/core/config.py`:**
-```python
-SENTRY_DSN: str = ""
-CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]
-```
-
-**Update CORS in `app/main.py`:**
-```python
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-```
-
-**Frontend — modify `frontend/src/main.tsx`:**
-```typescript
-import * as Sentry from "@sentry/react";
-
-if (import.meta.env.VITE_SENTRY_DSN) {
-  Sentry.init({
-    dsn: import.meta.env.VITE_SENTRY_DSN,
-    environment: import.meta.env.MODE,
-    integrations: [Sentry.browserTracingIntegration()],
-    tracesSampleRate: 0.1,
-  });
-}
-```
-
-**Install:**
-```bash
-# Backend
-uv add sentry-sdk
-
-# Frontend
-npm install @sentry/react
-npm install -D @sentry/vite-plugin  # optional: for source map upload
-```
-
-### Pattern 6: CI/CD via GitHub Actions with SSH Deploy
-
-**What:** GitHub Actions runs tests and lint on every push. On push to `main`, it builds both Docker images, pushes to GitHub Container Registry (GHCR), SSHs into the VPS, pulls the new images, and restarts services.
-
-**When to use:** Standard pattern for single-server deployments. No orchestration layer needed for this scale.
-
-**`.github/workflows/deploy.yml` (outline):**
-```yaml
-on:
-  push:
-    branches: [main]
-
-jobs:
-  test:
-    steps:
-      - uv run pytest
-      - uv run ruff check .
-      - npm run lint (frontend)
-
-  build-and-deploy:
-    needs: test
-    steps:
-      - Log in to GHCR
-      - Build backend image with docker build → push to ghcr.io/owner/flawchess-backend:sha
-      - Build frontend (with VITE_SENTRY_DSN build arg) → push to ghcr.io/owner/flawchess-caddy:sha
-      - SSH into VPS:
-          echo "IMAGE_TAG=${sha}" > .env.deploy
-          docker compose --env-file .env --env-file .env.deploy pull
-          docker compose --env-file .env --env-file .env.deploy up -d
-```
-
-**GitHub Secrets required:**
-- `GHCR_TOKEN` — GitHub personal access token with `write:packages`
-- `VPS_SSH_KEY` — private key for the deploy user on the VPS
-- `VPS_HOST` — IP or hostname of the Hetzner VPS
-- `VITE_SENTRY_DSN` — public Sentry DSN for frontend bundle (safe to put in CI)
+Classify by dominant piece types once `game_phase == 'endgame'`:
+- Both queens present: `'queen'`
+- No queens, rooks present: `'rook'` (or `'rook_minor'` if minor pieces also present)
+- No queens, no rooks, bishops only: `'bishop'`
+- No queens, no rooks, knights only: `'knight'`
+- No queens, no rooks, mixed minor: `'minor_piece'`
+- Pawns only (K+P vs K+P or K vs K+P): `'pawn'`
+- Queen vs Rook: `'queen_vs_rook'`
 
 ---
 
-## Data Flow
+## Import Pipeline Modifications
 
-### Production Request Flow
+### Where Classification Plugs In
 
+The classification step fits cleanly into the existing `hashes_for_game` function in `zobrist.py`. The board is already constructed at each ply for Zobrist hash computation. Classification calls `classify_position(board, user_color)` at the same loop iteration -- zero extra PGN parses.
+
+**Current `hashes_for_game` output tuple:**
 ```
-Browser
-  │
-  ▼
-Caddy:443 (TLS termination, gzip)
-  │
-  ├─ /auth /analysis /games /imports /stats /users /health
-  │     ──▶ FastAPI:8000 ──▶ PostgreSQL:5432
-  │              │
-  │         (async response with JSON)
-  │
-  └─ all other paths (/, /openings, /bookmarks, etc.)
-        ──▶ /srv/index.html  (React Router handles client routing)
-              │
-         /srv/assets/*.js|css|png  (static, content-hashed, cached by browser)
+(ply, white_hash, black_hash, full_hash, move_san, clock_seconds)
 ```
 
-### Deploy Flow
-
+**Extended tuple (v1.5):**
 ```
-git push main
-  │
-  ▼
-GitHub Actions CI: uv run pytest → uv run ruff → npm run lint
-  │ (pass)
-  ▼
-docker build backend → push ghcr.io/owner/flawchess-backend:${sha}
-docker build frontend (with VITE_SENTRY_DSN) → push ghcr.io/owner/flawchess-caddy:${sha}
-  │
-  ▼
-SSH into VPS
-  │  docker compose pull   (pulls new images)
-  │  docker compose up -d  (restarts changed services)
-  ▼
-backend entrypoint: alembic upgrade head → uvicorn start (4 workers)
+(ply, white_hash, black_hash, full_hash, move_san, clock_seconds,
+ game_phase, material_signature, material_imbalance, endgame_class)
 ```
 
-### Environment Variable Flow
+The `position_rows` dict in `_flush_batch` gains the four new fields. The `bulk_insert_positions` in `game_repository.py` automatically includes them since it does a bulk INSERT of the dict.
+
+**Impact on batch size:** The `bulk_insert_positions` chunk_size calculation `32767 / 8 = 4095` must be updated to `32767 / 12 = 2730` (or 2700 for safety) when the column count increases from 8 to 12.
+
+---
+
+## New Feature: Endgames Tab
+
+### Backend
+
+**New files:**
+- `app/routers/endgames.py` -- HTTP layer, auth, request parsing
+- `app/services/endgames_service.py` -- business logic (W/D/L aggregation, phase stats)
+- `app/repositories/endgames_repository.py` -- SQL queries against game_positions + games
+- `app/schemas/endgames.py` -- Pydantic request/response models
+
+**Primary API endpoint:**
 
 ```
-VPS: /root/flawchess/.env  (gitignored, manually provisioned once)
-  │
-  ▼ (docker-compose env_file)
-  ├─▶ backend: DATABASE_URL, SECRET_KEY, GOOGLE_OAUTH_CLIENT_ID,
-  │             GOOGLE_OAUTH_CLIENT_SECRET, SENTRY_DSN, ENVIRONMENT=production,
-  │             CORS_ALLOWED_ORIGINS=["https://flawchess.com"]
-  └─▶ db: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+POST /endgames/stats
+Body: EndgamesRequest (filters: time_control, platform, rated, color, recency,
+                        endgame_class, material_signature)
+Response: EndgamesStatsResponse
+```
 
-Build-time (GitHub Actions secrets → docker build --build-arg):
-  VITE_SENTRY_DSN → baked into JS bundle (public key, not secret)
-  VITE_PLAUSIBLE_DOMAIN → baked into JS bundle (optional, for self-hosted Plausible)
+The endgames repository core query:
+```sql
+SELECT
+    gp.endgame_class,
+    g.result,
+    g.user_color,
+    COUNT(DISTINCT g.id)
+FROM game_positions gp
+JOIN games g ON g.id = gp.game_id
+WHERE gp.user_id = :user_id
+  AND gp.game_phase = 'endgame'
+  AND gp.endgame_class IS NOT NULL
+  -- optional: AND gp.endgame_class = :endgame_class
+  -- + standard game filters (time_control, color, recency, etc.)
+GROUP BY gp.endgame_class, g.result, g.user_color
+```
+
+Note: `COUNT(DISTINCT g.id)` prevents transposition double-counting (same pattern as existing analysis queries -- a game entering a rook endgame contributes ~50 position rows all with `endgame_class='rook'`).
+
+**Conversion/recovery stats query:**
+
+```sql
+SELECT
+    gp.game_phase,
+    SIGN(gp.material_imbalance) AS material_side,
+    g.result,
+    g.user_color,
+    COUNT(DISTINCT g.id)
+FROM game_positions gp
+JOIN games g ON g.id = gp.game_id
+WHERE gp.user_id = :user_id
+  AND gp.material_imbalance != 0
+  -- + standard filters
+GROUP BY gp.game_phase, material_side, g.result, g.user_color
+```
+
+### Frontend
+
+**New files:**
+- `src/pages/Endgames.tsx` -- page wrapper, filter state
+- `src/components/endgames/EndgamesStats.tsx` -- main stats display
+- `src/components/endgames/EndgameTypeFilter.tsx` -- filter for rook/queen/minor/pawn endgames
+- `src/components/endgames/MaterialPhaseStat.tsx` -- conversion/recovery breakdown
+- `src/hooks/useEndgames.ts` -- TanStack Query hook
+- `src/types/endgames.ts` -- TypeScript mirrors of Pydantic schemas
+
+**Integration with existing FilterPanel:** The existing `FilterPanel` handles time_control, platform, rated, color, recency. `EndgamesPage` reuses `FilterPanel` for those standard filters and adds `EndgameTypeFilter` for endgame class selection.
+
+**Navigation:** Add `/endgames` route in `App.tsx` and add nav item to the bottom bar and "More" drawer on mobile, following the existing mobile nav pattern.
+
+---
+
+## Index Design for Material-Based Queries
+
+### New Indexes Required
+
+**1. Composite partial index for endgame queries (most important):**
+```sql
+CREATE INDEX ix_gp_user_endgame_class
+ON game_positions (user_id, endgame_class)
+WHERE endgame_class IS NOT NULL;
+```
+Partial index excludes the majority of rows (opening/middlegame positions). After backfill, roughly 20-30% of positions will have a non-NULL endgame_class.
+
+**2. Index for game phase queries:**
+```sql
+CREATE INDEX ix_gp_user_game_phase
+ON game_positions (user_id, game_phase)
+WHERE game_phase IS NOT NULL;
+```
+Needed for phase-breakdown stats (conversion/recovery by phase).
+
+**3. Temporary backfill index (drop after backfill completes):**
+```sql
+CREATE INDEX CONCURRENTLY ix_gp_game_phase_null
+ON game_positions (game_id)
+WHERE game_phase IS NULL;
+```
+
+**Indexes NOT needed yet:**
+- `material_signature` alone: high cardinality, no confirmed query pattern requiring it as a leading column. Add `(user_id, material_signature)` only when a filter-by-material-configuration feature is added.
+- `material_imbalance` alone: queries use `SIGN(material_imbalance)` grouping, not equality lookup. The phase index covers the scan.
+
+### Existing Index Compatibility
+
+The new columns do NOT change any existing query patterns. All existing indexes (`ix_gp_user_full_hash`, `ix_gp_user_white_hash`, `ix_gp_user_black_hash`, `ix_gp_user_full_hash_move_san`) are unaffected.
+
+---
+
+## Data Flow Diagrams
+
+### Modified Import Pipeline
+
+```
+Platform API (chess.com / lichess)
+    |
+    v (normalized game dict)
+import_service._flush_batch()
+    |
+    v
+game_repository.bulk_insert_games()      --> games table
+    |
+    v (new game IDs + PGNs)
+hashes_for_game(pgn)                     <-- zobrist.py (MODIFIED)
+  + classify_position(board, user_color) <-- position_classifier.py (NEW)
+    |
+    v (ply, hashes, move_san, clock, game_phase, material_sig, imbalance, endgame_class)
+game_repository.bulk_insert_positions()  --> game_positions (new columns populated)
+```
+
+### Endgames Tab Request Flow
+
+```
+User selects filters on /endgames
+    |
+    v
+useEndgames() TanStack Query hook
+    |
+    v  POST /endgames/stats
+EndgamesRouter.post_stats()
+    |
+    v
+endgames_service.get_endgame_stats()
+    |
+    v
+endgames_repository.query_endgame_wdl_by_class()
+    |  (SQL: game_positions JOIN games, COUNT(DISTINCT game_id) GROUP BY endgame_class)
+    ^
+EndgamesStatsResponse --> EndgamesPage --> EndgamesStats component
+```
+
+### Backfill Pipeline
+
+```
+startup / admin trigger
+    |
+    v
+backfill_service.run_backfill()  [asyncio.create_task, low priority]
+    |
+    v
+SELECT g.id, g.pgn FROM games JOIN game_positions WHERE game_phase IS NULL
+    (uses partial index ix_gp_game_phase_null)
+    |
+    v (batch of 100 games)
+hashes_for_game(pgn)
+  + classify_position(board)    <-- same function as import pipeline
+    |
+    v
+UPDATE game_positions SET game_phase=..., material_signature=..., ...
+WHERE game_id = :game_id
+    |
+    v (asyncio.sleep(0) yield, repeat until complete)
 ```
 
 ---
 
-## New vs Modified Components
+## Build Order (Phase Dependencies)
 
-| Component | New or Modified | What Changes |
-|-----------|----------------|--------------|
-| `Dockerfile` | **New** | Backend uv multi-stage build |
-| `frontend/Dockerfile` | **New** | Node multi-stage build → Caddy image |
-| `docker-compose.yml` | **New** | Orchestrates backend, db, caddy |
-| `caddy/Caddyfile` | **New** | Reverse proxy + SPA + API routing |
-| `.env.example` | **New** | Documents all required env vars |
-| `.github/workflows/deploy.yml` | **New** | CI/CD pipeline |
-| `app/main.py` | **Modified** | Add Sentry init; read CORS origins from settings |
-| `app/core/config.py` | **Modified** | Add `SENTRY_DSN`, `CORS_ALLOWED_ORIGINS` fields |
-| `frontend/src/main.tsx` | **Modified** | Add Sentry init |
-| `frontend/vite.config.ts` | **Modified** | FlawChess branding in PWA manifest |
-| `frontend/index.html` | **Modified** | Add analytics script tag (Plausible or GA) |
-| `pyproject.toml` | **Modified** | Add `sentry-sdk` dependency |
-| `frontend/package.json` | **Modified** | Add `@sentry/react` |
+Hard sequential dependency chain:
 
-### What Does NOT Change
+```
+1. position_classifier.py (new service, no deps)
+        |
+        v
+2. Alembic migration: ADD COLUMN to game_positions (instantaneous, nullable)
+        |
+        v
+3. zobrist.py + import_service.py modifications
+   (wire classifier into hashes_for_game / _flush_batch)
+        |
+        v
+4. backfill_service.py (reads PGN from games, updates game_positions)
+        |
+        v
+5. New indexes (ix_gp_user_endgame_class, ix_gp_user_game_phase)
+        |
+        v
+6. endgames_repository.py + endgames_service.py + schemas/endgames.py
+        |
+        v
+7. routers/endgames.py (register in main.py)
+        |
+        v
+8. Frontend: types/endgames.ts + hooks/useEndgames.ts
+        |
+        v
+9. Frontend: EndgamesPage + components
+        |
+        v
+10. Navigation: add /endgames route + nav items
+```
 
-| Item | Why unchanged |
-|------|---------------|
-| SQLAlchemy models / Alembic migrations | No schema changes in this milestone |
-| FastAPI routers, services, repositories | Business logic untouched |
-| React page components | No new pages except About; SEO is meta tags in `index.html` |
-| TanStack Query / Axios setup | API URL is same-origin in production; no `baseURL` needed |
-| PWA service worker config | Workbox `NetworkOnly` patterns already correct |
+Engine analysis (`game_engine_analysis` table) is independent and can be deferred or run in parallel with steps 6-10.
 
 ---
 
-## Integration Points
+## Modified vs. New Components Summary
 
-### External Service Integration
+### Modified (existing files changed)
 
-| Service | Integration Point | What to Add | Notes |
-|---------|-------------------|-------------|-------|
-| Sentry (backend) | `app/main.py` | `sentry_sdk.init()` call | Auto-detects FastAPI; no per-route changes needed |
-| Sentry (frontend) | `frontend/src/main.tsx` | `Sentry.init()` + `browserTracingIntegration()` | Source maps: add `@sentry/vite-plugin` to `vite.config.ts` (optional but recommended) |
-| Let's Encrypt | `caddy/Caddyfile` | Domain name in Caddyfile | Zero config; Caddy handles cert issuance and renewal; `caddy_data` volume must persist |
-| Plausible analytics | `frontend/index.html` | `<script>` tag | Cookie-free, GDPR compliant, ~1KB script; add to `<head>` |
-| GHCR | `.github/workflows/deploy.yml` | `docker/login-action` + push step | Free for public repos; `ghcr.io/[owner]/[repo]` naming |
-| Hetzner VPS | `.github/workflows/deploy.yml` | SSH deploy step | Deploy key (not personal SSH key) added to VPS `~/.ssh/authorized_keys` |
+| File | Change |
+|------|--------|
+| `app/services/zobrist.py` | `hashes_for_game` returns 4 additional fields per ply |
+| `app/services/import_service.py` | `_flush_batch` populates new position columns; pass `user_color` to classifier |
+| `app/repositories/game_repository.py` | Update chunk_size: 8 cols -> 12 cols (32767/12=2730); new fields in position_rows |
+| `app/models/game_position.py` | Add 4 new `Mapped` columns |
+| `frontend/src/App.tsx` | Add `/endgames` route |
+| `frontend/src/components/layout/` | Add Endgames nav item to bottom bar and More drawer |
 
-### Internal Boundaries After This Milestone
+### New (new files created)
 
-| Boundary | Communication | Change Required |
-|----------|---------------|-----------------|
-| Frontend → Backend (prod) | Same-origin HTTP via Caddy | No `baseURL` needed; relative `/auth/...` paths work |
-| Frontend → Backend (dev) | Vite proxy to `localhost:8000` | No change — dev workflow unchanged |
-| Backend → PostgreSQL | `asyncpg` TCP on Docker internal network | `DATABASE_URL` host changes from `localhost` to `db` (Docker service name) |
-| Caddy → Backend | HTTP on Docker internal network | Backend port `8000` not published externally — Caddy is the only ingress |
-| GitHub Actions → VPS | SSH with deploy key | New deploy key pair; public key on VPS, private key in GitHub secrets |
+| File | Purpose |
+|------|---------|
+| `app/services/position_classifier.py` | Game phase + material classification logic |
+| `app/services/backfill_service.py` | Background backfill of existing positions |
+| `app/repositories/endgames_repository.py` | SQL for endgame W/D/L aggregation |
+| `app/services/endgames_service.py` | Endgame business logic |
+| `app/routers/endgames.py` | HTTP endpoints for endgame tab |
+| `app/schemas/endgames.py` | Pydantic request/response models |
+| `frontend/src/pages/Endgames.tsx` | Endgames page |
+| `frontend/src/components/endgames/` | Endgame-specific UI components |
+| `frontend/src/hooks/useEndgames.ts` | TanStack Query hook |
+| `frontend/src/types/endgames.ts` | TypeScript type mirrors |
+| `alembic/versions/*_add_position_metadata_columns.py` | Alembic migration: 4 new columns |
+| `alembic/versions/*_add_game_engine_analysis_table.py` | Optional: engine analysis table |
+
+---
+
+## Anti-Patterns to Avoid
+
+### Anti-Pattern 1: Re-downloading Games for Backfill
+
+**What it looks like:** Triggering a new import job to populate the new columns.
+**Why it's wrong:** Forces users to wait hours for a re-import, risks rate-limit bans, wastes API quota. PGN is already in `games.pgn`.
+**Do this instead:** Backfill by reading `games.pgn` directly from the DB. All classification is pure computation.
+
+### Anti-Pattern 2: Fetching Engine Analysis Inline with Import
+
+**What it looks like:** Adding an extra HTTP call per game inside `_flush_batch` to fetch accuracy scores.
+**Why it's wrong:** Multiplies import time by 10-100x. chess.com only returns accuracy for analyzed games anyway. Lichess bulk export omits analysis data entirely -- only individual game export (`accuracy=true`) includes it.
+**Do this instead:** Implement engine analysis as a separate background enrichment task, or defer to a future milestone.
+
+### Anti-Pattern 3: Counting Position Rows Instead of Distinct Games
+
+**What it looks like:** `COUNT(*) FROM game_positions WHERE game_phase='endgame' GROUP BY endgame_class`.
+**Why it's wrong:** A game that transitions to a rook endgame at ply 30 has ~50 rows all with `endgame_class='rook'`. Counting rows inflates stats by 50x.
+**Do this instead:** Always `COUNT(DISTINCT game_id)`. One W/D/L outcome per unique game_id per endgame_class.
+
+### Anti-Pattern 4: Serving Endgame Stats Before Backfill Completes
+
+**What it looks like:** Showing endgame stats immediately after deployment while backfill is running.
+**Why it's wrong:** Returns silently incomplete results -- lower game counts than actual for users whose games haven't been backfilled yet.
+**Do this instead:** Track backfill completion per-user (flag in `users` table or count comparison). Show a progress indicator or "analyzing your games..." state during backfill.
+
+### Anti-Pattern 5: Broad Index on `material_signature`
+
+**What it looks like:** `CREATE INDEX ON game_positions (user_id, material_signature)` at the start.
+**Why it's wrong:** `material_signature` has very high cardinality. An index on it uses significant space and slows INSERT/UPDATE during backfill and ongoing imports.
+**Do this instead:** Only add a `material_signature` index when a specific filter-by-material-config query is confirmed. Start with the `endgame_class` partial index which covers the primary access pattern.
 
 ---
 
@@ -470,112 +519,24 @@ Build-time (GitHub Actions secrets → docker build --build-arg):
 
 | Scale | Architecture Adjustments |
 |-------|--------------------------|
-| 0-1k users | Current single-VPS monolith is fine; Hetzner CX22 (2 vCPU / 4GB RAM) sufficient |
-| 1k-10k users | Increase Uvicorn workers; upgrade VPS size; add PgBouncer for connection pooling |
-| 10k+ users | Move DB to managed PostgreSQL (Hetzner Managed DB or Neon); CDN for static assets (Cloudflare free tier); Redis for import queue |
+| Current (small user base) | Backfill runs as inline asyncio task at startup; acceptable |
+| ~100 users, ~50k games each | Backfill should be per-user, throttled, with asyncio.sleep yields between batches |
+| ~1k+ users | Backfill moves to a dedicated background worker process separate from the API; current asyncio approach blocks event loop under heavy concurrent load |
 
-### Scaling Priorities
-
-1. **First bottleneck:** PostgreSQL connection pool — `pool_size=10, max_overflow=20` is conservative; add PgBouncer before scaling worker count
-2. **Second bottleneck:** Import pipeline CPU (Zobrist hash computation per half-move) — move to background worker (Celery + Redis) if import times degrade under concurrent users
-
----
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Building Frontend Inside the Backend Docker Image
-
-**What people do:** Copy all frontend source into the backend image, run `npm run build` there, and serve `/dist` from FastAPI static files.
-
-**Why it's wrong:** Makes the backend image enormous (node_modules), conflates two independent build pipelines, prevents independent deployment and rollback of frontend vs backend.
-
-**Do this instead:** Separate `Dockerfile` for frontend. Serve pre-built `/dist` from Caddy. FastAPI serves only API routes — it should never serve static files in production.
-
-### Anti-Pattern 2: Hardcoding `allow_origins=["http://localhost:5173"]` in Production
-
-**What people do:** The current `app/main.py` hardcodes the dev origin. Many projects leave this unchanged when deploying.
-
-**Why it's wrong:** In production all requests are same-origin (no CORS needed), but the hardcoded localhost origin is useless and leaks dev infrastructure detail. If `allow_credentials=True` is combined with `allow_origins=["*"]`, browsers reject it as insecure.
-
-**Do this instead:** Read `CORS_ALLOWED_ORIGINS` from `Settings`. In production, set it to `["https://flawchess.com"]`. The existing `Settings` pattern in `app/core/config.py` already supports this.
-
-### Anti-Pattern 3: Running Alembic Migrations in the FastAPI Lifespan
-
-**What people do:** Call `alembic upgrade head` inside the FastAPI `lifespan` async context. Seems convenient — the app migrates on every start.
-
-**Why it's wrong:** If two containers start simultaneously (even two rapid restarts), they race to acquire Alembic's version lock. Also, `lifespan` is async — Alembic's upgrade command is synchronous and should not block the event loop.
-
-**Do this instead:** Run `alembic upgrade head` in the Docker `CMD` before starting uvicorn: `sh -c "alembic upgrade head && uvicorn app.main:app ..."`. Synchronous, sequential, correct.
-
-### Anti-Pattern 4: Deleting the `caddy_data` Volume
-
-**What people do:** Run `docker compose down -v` to "clean up" before redeploying.
-
-**Why it's wrong:** The `caddy_data` volume stores Let's Encrypt TLS certificates. Let's Encrypt rate-limits issuance to 5 certs per domain per week. Losing the volume and immediately reprovisioning will hit the rate limit quickly.
-
-**Do this instead:** Use `docker compose down` (without `-v`) for all deployments. Document explicitly: `down -v` only for intentional full reprovisioning from scratch.
-
-### Anti-Pattern 5: Storing OAuth Client Secret in VITE_ Variables
-
-**What people do:** Accidentally put `VITE_GOOGLE_OAUTH_CLIENT_SECRET=...` in a GitHub Actions build arg.
-
-**Why it's wrong:** Anything prefixed `VITE_` is embedded in the JavaScript bundle and is visible to anyone who visits the site. There is no runtime access control on it.
-
-**Do this instead:** Only public-safe values in `VITE_`: Sentry DSN (public key only, safe by design), analytics tracking domain, feature flags. `GOOGLE_OAUTH_CLIENT_SECRET` lives only in the backend `.env` file, never near the frontend build. The existing architecture already handles OAuth server-side via FastAPI-Users — no change needed.
-
----
-
-## Build Order for This Milestone
-
-Dependencies between components:
-
-```
-1. FlawChess rename (code + branding)
-   └─ Foundation: all subsequent work uses the new name
-
-2. Docker + Caddy + PostgreSQL stack
-   └─ Proves the deployment end-to-end; required before:
-      - OAuth redirect URLs (need production domain)
-      - Sentry (needs production environment)
-      - CI/CD (needs images to build and deploy)
-
-3. Backend config hardening (CORS from env, SENTRY_DSN field)
-   └─ Required for: correct production behavior
-
-4. Sentry integration (both SDKs)
-   └─ Depends on: working deployment URL for Sentry project config
-
-5. Analytics + SEO + About page
-   └─ Depends on: live production domain
-
-6. CI/CD automation (GitHub Actions)
-   └─ Depends on: Docker images buildable, VPS accessible, secrets configured
-
-7. Import queue (concurrent rate-limit safety)
-   └─ Independent of infra — can be done at any point
-```
-
-Recommended phase grouping:
-- **Phase A:** Rename + Docker + Caddy + PostgreSQL (infra foundation)
-- **Phase B:** Backend hardening + Sentry backend + CI/CD
-- **Phase C:** Frontend Sentry + analytics + SEO + About page + privacy/cookie
-- **Phase D:** Import queue
+**First bottleneck:** Endgame aggregation queries join `game_positions` (large) to `games`. With the partial index on `(user_id, endgame_class)`, performance should be acceptable for libraries up to ~100k games. Verify with `EXPLAIN ANALYZE` for any user with large imports before deploying.
 
 ---
 
 ## Sources
 
-- [Caddy Caddyfile Patterns — Official Docs](https://caddyserver.com/docs/caddyfile/patterns) — `try_files` + `handle` blocks for SPA + API — HIGH confidence
-- [Serving SPAs and API With Caddy v2](https://haykot.dev/blog/serving-spas-and-api-with-caddy-v2/) — exact `handle @proxied` + `try_files` pattern — HIGH confidence
-- [uv Docker Integration — Official Docs](https://docs.astral.sh/uv/guides/integration/docker/) — multi-stage Dockerfile, `UV_COMPILE_BYTECODE`, `.venv` copy pattern — HIGH confidence
-- [FastAPI Sentry Integration — Official Docs](https://docs.sentry.io/platforms/python/integrations/fastapi/) — auto-detection, `sentry_sdk.init()` placement — HIGH confidence
-- [Sentry React + Vite Docs](https://docs.sentry.io/platforms/javascript/guides/react/) — `@sentry/react`, `@sentry/vite-plugin`, `browserTracingIntegration()` — HIGH confidence
-- [Docker Compose Healthchecks — Official Docs](https://docs.docker.com/compose/how-tos/startup-order/) — `service_healthy` condition for PostgreSQL readiness — HIGH confidence
-- [Vite env variables — Official Docs](https://vite.dev/guide/env-and-mode) — `VITE_` prefix baked at build time, not runtime — HIGH confidence
-- [Plausible vs Umami 2025](https://vemetric.com/blog/plausible-vs-umami) — Umami Docker self-hosting viable; Plausible CE is heavier (Elixir + ClickHouse) — MEDIUM confidence
-- [CI/CD to Hetzner with GitHub Actions](https://infocusdata.com/blog/devops/ci-cd-docker-github-actions-hetzner-deployment) — SSH deploy pattern, GHCR image push — MEDIUM confidence
-- Direct codebase analysis: `app/main.py`, `app/core/config.py`, `frontend/vite.config.ts`, `pyproject.toml`, `frontend/package.json` — HIGH confidence
+- Direct codebase inspection: `app/models/game_position.py`, `app/models/game.py`, `app/services/import_service.py`, `app/services/zobrist.py`, `app/repositories/analysis_repository.py`, `app/repositories/game_repository.py`, `frontend/src/types/api.ts`, `frontend/src/pages/Openings.tsx`
+- [postgresql.org: Modifying Tables (ALTER TABLE ADD COLUMN performance)](https://www.postgresql.org/docs/current/ddl-alter.html) -- ADD COLUMN DEFAULT NULL is metadata-only in PG 11+
+- [postgresql.org: Partial Indexes](https://www.postgresql.org/docs/current/indexes-partial.html)
+- [python-chess Core docs](https://python-chess.readthedocs.io/en/latest/core.html) -- `board.pieces()`, `board.piece_map()` for material counting
+- [chess.com Published-Data API](https://gist.github.com/andreij/0e3309200c0a6bb26308817a168203f3) -- `accuracies.white/black` optional field; no per-move eval
+- [lichess forum: accuracy in API](https://lichess.org/forum/lichess-feedback/trying-to-find-accuracy-from-the-api) -- accuracy only in individual game export, not bulk export
+- [Chessprogramming wiki: Game Phases](https://www.chessprogramming.org/Game_Phases) -- material-threshold phase detection standard
 
 ---
-*Architecture research for: Chessalytics v1.3 Production Deployment*
-*Researched: 2026-03-21*
+*Architecture research for: FlawChess v1.5 -- per-position metadata and endgame analytics*
+*Researched: 2026-03-23*

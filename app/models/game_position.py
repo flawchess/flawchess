@@ -1,6 +1,6 @@
 from typing import Optional
 
-from sqlalchemy import Float, ForeignKey, Index, String
+from sqlalchemy import Boolean, Float, ForeignKey, Index, SmallInteger, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -21,7 +21,9 @@ class GamePosition(Base):
     game_id: Mapped[int] = mapped_column(
         ForeignKey("games.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    user_id: Mapped[int] = mapped_column(nullable=False)  # denormalized for query perf
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )  # denormalized for query perf
     ply: Mapped[int] = mapped_column(nullable=False)       # half-move number (0 = initial)
 
     # Zobrist hashes — all BIGINT via type_annotation_map
@@ -34,5 +36,11 @@ class GamePosition(Base):
 
     # Clock seconds remaining from %clk PGN annotation; None if not present or final position
     clock_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Position metadata — computed by position_classifier.py, populated during import (Phase 27)
+    material_count: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    material_signature: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    material_imbalance: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    has_opposite_color_bishops: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
 
     game: Mapped["Game"] = relationship(back_populates="positions")  # type: ignore[name-defined]

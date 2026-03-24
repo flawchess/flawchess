@@ -23,6 +23,7 @@ import httpx
 from app.core.database import async_session_maker
 from app.repositories import game_repository, import_job_repository, user_repository
 from app.services import chesscom_client, lichess_client
+from app.services.position_classifier import classify_position
 from app.services.zobrist import hashes_for_game
 
 logger = logging.getLogger(__name__)
@@ -398,19 +399,47 @@ async def _flush_batch(
             logger.warning("Failed to compute hashes for game_id=%s", game_id)
             continue
 
-        for ply, white_hash, black_hash, full_hash, move_san, clock_seconds in hash_tuples:
-            position_rows.append(
-                {
-                    "game_id": game_id,
-                    "user_id": user_id,
-                    "ply": ply,
-                    "white_hash": white_hash,
-                    "black_hash": black_hash,
-                    "full_hash": full_hash,
-                    "move_san": move_san,
-                    "clock_seconds": clock_seconds,
-                }
-            )
+        # Second PGN parse for board state — classify_position needs the board BEFORE each move.
+        # hashes_for_game does not expose intermediate board states, so we re-parse here.
+        # Performance impact is negligible: PGN parsing is microseconds per game.
+        try:
+            game_obj_for_classify = chess.pgn.read_game(io.StringIO(pgn))
+            classify_nodes = list(game_obj_for_classify.mainline()) if game_obj_for_classify else []
+            classify_board = game_obj_for_classify.board() if game_obj_for_classify else None
+        except Exception:
+            logger.warning("Failed to parse PGN for classification for game_id=%s", game_id)
+            classify_board = None
+            classify_nodes = []
+
+        for i, (ply, white_hash, black_hash, full_hash, move_san, clock_seconds) in enumerate(hash_tuples):
+            row: dict[str, Any] = {
+                "game_id": game_id,
+                "user_id": user_id,
+                "ply": ply,
+                "white_hash": white_hash,
+                "black_hash": black_hash,
+                "full_hash": full_hash,
+                "move_san": move_san,
+                "clock_seconds": clock_seconds,
+            }
+            # Classify position BEFORE pushing the move (pre-move board state matches ply semantics).
+            if classify_board is not None:
+                try:
+                    classification = classify_position(classify_board)
+                    row.update({
+                        "material_count": classification.material_count,
+                        "material_signature": classification.material_signature,
+                        "material_imbalance": classification.material_imbalance,
+                        "has_opposite_color_bishops": classification.has_opposite_color_bishops,
+                    })
+                except Exception:
+                    logger.warning(
+                        "Failed to classify position at ply=%s for game_id=%s", ply, game_id
+                    )
+                # Advance classify_board to next ply regardless of classification success
+                if i < len(classify_nodes):
+                    classify_board.push(classify_nodes[i].move)
+            position_rows.append(row)
 
         # Compute and persist move_count and result_fen for this new game
         try:

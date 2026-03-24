@@ -1,309 +1,325 @@
 # Stack Research
 
-**Domain:** Production deployment, DevOps, monitoring, analytics, SEO — FlawChess v1.3 Project Launch
-**Researched:** 2026-03-21
-**Confidence:** HIGH (all versions verified via PyPI, npm, or official docs — see Sources)
+**Domain:** Chess analytics platform — per-position metadata enrichment and engine analysis import (v1.5)
+**Researched:** 2026-03-23
+**Confidence:** HIGH (API findings verified via official lichess YAML spec, chess.com API documentation, official python-chess 1.11.2 docs)
+
+---
 
 ## Scope Note
 
-This document covers ONLY additions and changes needed for v1.3. The base stack
-(FastAPI, React 19, PostgreSQL, SQLAlchemy async, TanStack Query, Vite, Tailwind,
-shadcn/ui, python-chess, vite-plugin-pwa) is validated and in production.
+This document covers ONLY new capabilities needed for v1.5 (game phase, material, endgame class, engine analysis import).
+The base stack (FastAPI, React 19, PostgreSQL, SQLAlchemy async, python-chess, TanStack Query, Vite, Tailwind, shadcn/ui) is validated and in production.
 Those choices are not re-evaluated here.
+
+**Bottom line: no new libraries.** Every required capability is already available in the installed stack.
 
 ---
 
 ## Recommended Stack
 
-### Core Technologies (New for v1.3)
+### Core Technologies (No Changes for v1.5)
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Docker Engine | 27.x | Containerization of backend + frontend | Multi-stage builds via official `astral-sh/uv` pattern produce lean images. Standard for reproducible server deploys. |
-| Docker Compose v2 | 2.x (bundled with Docker Desktop / Engine) | Multi-container orchestration (backend, db, caddy) | Native `depends_on: condition: service_healthy` solves FastAPI-waits-for-Postgres ordering. Single `compose.yml` for the whole stack. |
-| Caddy | 2.11.2 | Reverse proxy + automatic TLS termination | Zero-config Let's Encrypt TLS renewal — no certbot cron, no manual cert management. Built-in SPA `try_files` support. Caddyfile is ~10 lines for this stack. Current stable as of 2026-03-06. |
-| sentry-sdk | 2.55.0 | Backend error tracking + performance monitoring | First-party FastAPI integration auto-activates when `fastapi` is present — no extra wiring. Supports traces, profiling, log forwarding. Do NOT use 3.0.x alpha. |
-| @sentry/react | 10.45.0 | Frontend error capture + session replay | Official SDK. `ErrorBoundary` wraps the React tree. Source map upload via `@sentry/vite-plugin` makes production stack traces readable. |
+All v1.5 features are implemented using existing dependencies:
 
-### Supporting Libraries
+| Technology | Version in Use | Relevant Capability for v1.5 |
+|------------|---------------|------------------------------|
+| python-chess | >=1.10.0 (1.11.2 latest) | `board.pieces()` for material counting, `node.eval()` for PGN eval parsing, `node.nags` for move quality annotations |
+| FastAPI | >=0.115.x | New `/endgames` router endpoints |
+| SQLAlchemy 2.x async | >=2.0.0 | New columns on `game_positions` and `games`; new aggregation queries |
+| PostgreSQL 18 | (Docker, pinned) | Composite B-tree indexes on new integer columns |
+| httpx async | >=0.27.0 | Existing platform clients gain new query params only — no client changes |
 
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| react-helmet-async | 3.0.0 | Per-route `<title>` and `<meta>` tags for SEO | v3 is React 19-native: detects React 19 at runtime and delegates to React's built-in metadata hoisting. No DOM hacks. Use for About page, homepage, and any public route. |
-| vite-plugin-sitemap | 0.8.2 | Generate `sitemap.xml` + `robots.txt` at build time | Minimal config: pass `hostname` and static routes. Emits both files into `dist/` automatically. |
-| react-cookie-consent | 10.0.1 | GDPR cookie consent banner | Lightweight, fully customizable, no dependencies beyond React. Gates analytics script loading on user acceptance. |
-| @sentry/vite-plugin | latest (auto-configured) | Upload source maps to Sentry at build | Required alongside `@sentry/react`. Run `npx @sentry/wizard@latest -i sourcemaps` once — it writes the plugin config into `vite.config.ts`. |
+### python-chess API Surface for New Computations
 
-### Development & Deployment Tools
+All methods confirmed available in python-chess 1.10.x+ (stable since 1.x):
 
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| GitHub Actions | CI/CD: build image, push to registry, SSH-deploy to Hetzner | Pattern: build → push to ghcr.io → SSH `docker compose pull && docker compose up -d` on server. |
-| ghcr.io (GitHub Container Registry) | Docker image registry | Free for public/private repos. No pull rate limits in GitHub Actions workflows. Avoids Docker Hub rate limits. |
-| Hetzner Cloud CX32 | VPS hosting | 4 vCPU / 8 GB RAM / 80 GB NVMe / 20 TB transfer / €6.80/mo. CX32 recommended over CX22 (4 GB RAM) because PostgreSQL + FastAPI + Caddy under real load needs headroom. CX22 is viable for very low traffic. |
+**Material counting:**
+```python
+import chess
 
----
+# Count pieces by type and color — returns SquareSet, use len()
+len(board.pieces(chess.QUEEN, chess.WHITE))    # 0 or 1
+len(board.pieces(chess.ROOK, chess.BLACK))     # 0–2
+len(board.pieces(chess.BISHOP, chess.WHITE))   # 0–2
+len(board.pieces(chess.KNIGHT, chess.BLACK))   # 0–2
+len(board.pieces(chess.PAWN, chess.WHITE))     # 0–8
 
-## Installation
+# Piece type constants: PAWN=1, KNIGHT=2, BISHOP=3, ROOK=4, QUEEN=5, KING=6
 
-```bash
-# Backend — add to pyproject.toml
-uv add "sentry-sdk[fastapi]"
+# Insufficient material check (useful for endgame branch)
+board.has_insufficient_material(chess.WHITE)
+board.has_insufficient_material(chess.BLACK)
+board.is_insufficient_material()
+```
 
-# Frontend
-npm install @sentry/react
-npm install react-helmet-async
-npm install react-cookie-consent
+**PGN eval parsing (already in python-chess, zero new imports):**
+```python
+import chess.pgn
 
-# Frontend dev dependencies
-npm install -D @sentry/vite-plugin vite-plugin-sitemap
+node = ...  # chess.pgn.ChildNode from game.mainline()
+score = node.eval()                     # chess.engine.PovScore | None
+if score is not None:
+    cp   = score.white().score()        # int centipawns from white's view; None if mate
+    mate = score.white().mate()         # int mate-in-N from white's view; None if not mate
+    depth = node.eval_depth()           # int depth annotation; None if not present
+```
 
-# Sentry source map wizard (run once, writes vite.config.ts changes)
-npx @sentry/wizard@latest -i sourcemaps
+**NAG move quality annotations:**
+```python
+# Standard NAG integer constants:
+# chess.pgn.NAG_GOOD_MOVE        = 1   (!)
+# chess.pgn.NAG_MISTAKE          = 2   (?)
+# chess.pgn.NAG_BRILLIANT_MOVE   = 3   (!!)
+# chess.pgn.NAG_BLUNDER          = 4   (??)
+# chess.pgn.NAG_SPECULATIVE_MOVE = 5   (!?)
+# chess.pgn.NAG_DUBIOUS_MOVE     = 6   (?!)
+
+node.nags   # set[int] — e.g. {4} = blunder
+```
+
+**Clock annotation (already used in `zobrist.py`):**
+```python
+node.clock()    # float | None — seconds remaining from [%clk ...]
 ```
 
 ---
 
-## Key Configuration Patterns
+## Platform API Integration Points
 
-### Docker: Multi-Stage Python Build with uv
+### chess.com — Accuracy Only, No Per-Move Evals
 
-Official pattern from `astral-sh/uv-docker-example`. The uv binary is copied from
-the official distroless image — it is not present in the final runtime layer.
+**What is available via the existing monthly archive endpoint:**
 
-```dockerfile
-# Build stage: install deps into .venv
-FROM python:3.13-slim-bookworm AS builder
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-WORKDIR /app
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
-# Dependency layer (cached unless pyproject.toml or uv.lock changes)
-COPY pyproject.toml uv.lock ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-install-project --no-dev
-# Source layer
-COPY . .
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable
+The game JSON object already fetched by `chesscom_client.py` includes an optional `accuracies` field:
 
-# Runtime stage: minimal image, no uv binary
-FROM python:3.13-slim-bookworm
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app /app
-ENV PATH="/app/.venv/bin:$PATH"
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-### Docker: Multi-Stage Vite Build
-
-```dockerfile
-FROM node:22-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-# dist/ is copied into the Caddy image or mounted as a volume
-```
-
-The frontend does not need its own running container in production — Caddy serves the
-`dist/` output directly as static files.
-
-### Caddy: SPA + API Reverse Proxy (Caddyfile)
-
-```caddyfile
-flawchess.io {
-    # API routes → FastAPI
-    handle /api/* {
-        reverse_proxy backend:8000
-    }
-
-    # SPA: serve static files, fall back to index.html for client-side routing
-    handle {
-        root * /srv/frontend
-        try_files {path} /index.html
-        file_server
-    }
+```json
+{
+  "accuracies": {
+    "white": 87.3,
+    "black": 72.1
+  }
 }
 ```
 
-Caddy auto-provisions and renews TLS from Let's Encrypt. No certbot, no cron.
-`try_files {path} /index.html` is the canonical Caddy SPA pattern.
+This field is absent when the game has not been analyzed on chess.com. No additional API call is needed.
 
-### Docker Compose: Startup Ordering with Health Checks
+**What is NOT available (confirmed by chess.com moderators):**
 
-```yaml
-services:
-  db:
-    image: postgres:17
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
+Per-move evaluation scores, centipawn values, and move quality annotations are not exposed by the chess.com public API. No workaround exists within the documented public API. The CAPS accuracy algorithm output is only available as the game-level `accuracies` field.
 
-  backend:
-    build:
-      context: ./backend
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - SENTRY_DSN=${SENTRY_DSN}
+**Integration:** One line in `normalize_chesscom_game()`. The raw game dict already flows through normalization — extract `game.get("accuracies", {})` and map `white`/`black` keys to new `games` table columns.
 
-  caddy:
-    image: caddy:2.11.2
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - ./frontend/dist:/srv/frontend
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - backend
+### lichess — Per-Move Evals and Per-Game Accuracy
 
-volumes:
-  caddy_data:   # Persists TLS certs — critical, do not lose
-  caddy_config:
+lichess exposes two distinct data points that require two different approaches:
+
+**1. Per-move evals — already stored in the database, no new API call:**
+
+When lichess games have been analyzed, `[%eval ...]` annotations are embedded in the PGN. The PGN is already stored in the `games.pgn` TEXT column. python-chess parses these via `node.eval()`.
+
+Example PGN from lichess with evals:
+```
+1. e4 { [%eval 0.17] [%clk 0:01:00] } 1... e5 { [%eval 0.19] [%clk 0:01:00] }
 ```
 
-### Sentry: FastAPI Initialization
+This means all historical games already in the database can have evals extracted (at migration time or lazily) by re-parsing stored PGNs — no API round-trips.
+
+**2. Requesting evals at import time — add one param to existing client:**
+
+Add `evals=True` to the params dict in `lichess_client.py`. This ensures PGN evals are included for future imports of analyzed games:
 
 ```python
-# app/main.py — before app = FastAPI()
-import sentry_sdk
-
-sentry_sdk.init(
-    dsn=settings.sentry_dsn,          # empty string disables Sentry
-    traces_sample_rate=0.2,            # 20% in production; 1.0 in staging
-    send_default_pii=False,            # avoid capturing PII by default
-    environment=settings.environment,  # "production" / "staging" / "development"
-)
+# lichess_client.py — add to existing params dict:
+params["evals"] = True
 ```
 
-FastAPI and Starlette integrations activate automatically when those packages are present.
-No explicit `FastApiIntegration()` instantiation required unless customizing options.
+Note: `evals=true` returns data only for games that lichess has already analyzed. Not all games have analysis; the param is safe to add always.
 
-### Sentry: React + Vite Initialization
+**3. Per-game accuracy via JSON — add one param:**
 
-```typescript
-// src/instrument.ts — imported FIRST in main.tsx before any other import
-import * as Sentry from "@sentry/react";
+The NDJSON streaming endpoint supports `accuracy=true`. This enriches the existing JSON game objects with accuracy data nested under `players`:
 
-Sentry.init({
-  dsn: import.meta.env.VITE_SENTRY_DSN,
-  integrations: [Sentry.browserTracingIntegration()],
-  tracesSampleRate: 0.2,
-  environment: import.meta.env.MODE,
-});
+```json
+{
+  "players": {
+    "white": {
+      "accuracy": 88,
+      "analysis": {
+        "inaccuracy": 3,
+        "mistake": 1,
+        "blunder": 0,
+        "acpl": 28
+      }
+    },
+    "black": {
+      "accuracy": 79,
+      "analysis": { ... }
+    }
+  }
+}
 ```
 
-```tsx
-// main.tsx
-import "./instrument";  // must be first import
-import React from "react";
-// ... rest of app
+The `accuracy` integer and `analysis` object appear only when the game has been analyzed. Safe to request always.
+
+```python
+# lichess_client.py — add to existing params dict:
+params["accuracy"] = True
 ```
 
-### SEO: react-helmet-async with React 19
+**Integration:** Update `normalize_lichess_game()` to extract `players.white.accuracy` and `players.black.accuracy`.
 
-In React 19, react-helmet-async v3 delegates to React's native metadata hoisting.
-`HelmetProvider` is a no-op passthrough in React 19 (still include it for compat).
+Confirmed via: [lichess-org/api OpenAPI spec](https://raw.githubusercontent.com/lichess-org/api/master/doc/specs/tags/games/api-games-user-username.yaml) — `evals` and `accuracy` are documented query parameters.
 
-```tsx
-import { Helmet } from "react-helmet-async";
+---
 
-// In the About / landing page component:
-<Helmet>
-  <title>FlawChess — Chess Position Win Rate Analyzer</title>
-  <meta
-    name="description"
-    content="Analyze your win/draw/loss rates for any chess opening position, filtered by your actual piece placement."
-  />
-  <link rel="canonical" href="https://flawchess.io/" />
-</Helmet>
+## New Database Columns
+
+### On `game_positions` — per half-move metadata
+
+Add these columns. All computed during the existing import loop with no additional I/O:
+
+| Column | SQLAlchemy Type | Notes |
+|--------|----------------|-------|
+| `game_phase` | `SmallInteger`, NOT NULL | 0=opening, 1=middlegame, 2=endgame. Integer beats enum for composite index efficiency and range queries. |
+| `material_white` | `SmallInteger`, NOT NULL | Total non-king material value for white using standard piece values (Q=9, R=5, B=3, N=3). Range 0–39. |
+| `material_black` | `SmallInteger`, NOT NULL | Total non-king material value for black. Same scale. |
+| `endgame_class` | `String(20)`, nullable | Normalized material signature string, e.g. `"KQvKR"`, `"KRvK"`, `"KPvK"`. NULL when `game_phase != 2`. |
+| `eval_cp` | `SmallInteger`, nullable | Centipawn eval from `[%eval ...]` annotation; NULL if not available or if mate score. From white's perspective. |
+| `eval_mate` | `SmallInteger`, nullable | Mate-in-N from eval annotation; NULL if not available or if not a mate score. From white's perspective. |
+
+### On `games` — per-game accuracy from platform
+
+| Column | SQLAlchemy Type | Notes |
+|--------|----------------|-------|
+| `white_accuracy` | `Float`, nullable | Game-level CAPS/accuracy % from chess.com `accuracies.white` or lichess `players.white.accuracy`. NULL if game not analyzed. |
+| `black_accuracy` | `Float`, nullable | Same for black. |
+
+### Indexing Strategy
+
+The primary Endgames tab query pattern is:
+```sql
+WHERE user_id = $1 AND game_phase = 2 AND endgame_class = $2
 ```
 
-For authenticated pages (Dashboard, Openings) meta tags provide minimal SEO value —
-focus effort on the homepage and About page.
-
-### Analytics: Google Analytics 4 with Cookie Consent Gate
-
-GA4 with consent gating avoids cookie consent requirements for analytics-only tracking
-if using consent mode v2. The simplest integration: load `gtag.js` conditionally.
-
-```tsx
-// Load GA4 only after consent is granted
-const handleAccept = () => {
-  const script = document.createElement("script");
-  script.src = `https://www.googletagmanager.com/gtag/js?id=${GA_ID}`;
-  script.async = true;
-  document.head.appendChild(script);
-};
+Add one composite index to `game_positions`:
+```python
+Index("ix_gp_user_phase_class", "user_id", "game_phase", "endgame_class")
 ```
+
+This index also accelerates `WHERE user_id = $1 AND game_phase = 2` (endgame stats without class filter) and `WHERE user_id = $1 AND game_phase = ?` (phase-level statistics). No partial indexes needed — the composite B-tree handles all three query shapes.
+
+The four existing hash indexes (`ix_gp_user_full_hash`, `ix_gp_user_white_hash`, `ix_gp_user_black_hash`, `ix_gp_user_full_hash_move_san`) are unchanged.
+
+---
+
+## Game Phase Detection — Implementation Recommendation
+
+There is no standard built-in method in python-chess or any library. Use a material-threshold approach, which is what chess engines use (Stockfish, Crafty, others). No ply-count method is needed.
+
+**Recommended thresholds (compute `total_material = material_white + material_black`):**
+
+| Phase | Condition | Rationale |
+|-------|-----------|-----------|
+| Opening | `total_material >= 56` | Both queens + most pieces present. Full starting material = 78 (Q×2=18, R×4=20, B×4=12, N×4=12, pawns excluded from phase calc). Opening ends when 1–2 minor pieces have been traded. |
+| Middlegame | `20 <= total_material < 56` | Active piece play with reduced force. |
+| Endgame | `total_material < 20` | Queens traded or most heavy pieces gone. |
+
+These thresholds are deliberately simple — they are for user-facing statistics categories, not engine evaluation. Exact boundary values can be tuned after seeing real data; the column is `SmallInteger` so a re-migration to adjust thresholds means a data backfill, not a schema change.
+
+**Pawns excluded from phase threshold:** Pawns do not strongly signal game phase (a position with 16 pawns and no pieces is clearly an endgame). Use only Q/R/B/N material values.
+
+---
+
+## Endgame Classification — Material Signature
+
+No library method exists. Build a compact string from `board.pieces()`:
+
+- List piece letters (Q, R, B, N, P) for each side, most valuable first
+- Format: `"K{white_pieces}vK{black_pieces}"` — always include K on both sides
+- Examples: `"KQRvKR"`, `"KRvK"`, `"KBNvK"`, `"KPvK"`, `"KvK"` (bare kings)
+- Only compute when `game_phase == 2` — store NULL otherwise to avoid polluting opening/middlegame rows
+
+A `String(20)` column fits all realistic endgame signatures. The `v` separator keeps it unambiguous.
+
+---
+
+## Integration Points in the Existing Import Pipeline
+
+The existing flow in `import_service.py::_flush_batch` → `zobrist.py::hashes_for_game`:
+
+1. Parses PGN via `chess.pgn.read_game()`
+2. Iterates `game.mainline()` node-by-node
+3. Computes hashes via `compute_hashes(board)` at each ply
+4. Pushes move to board
+5. Appends a dict to `position_rows`
+
+**New computations slot into step 3**, after `compute_hashes(board)` and before `board.push(node.move)`:
+
+```python
+game_phase    = compute_game_phase(board)           # uses board.pieces()
+mat_w         = compute_material(board, chess.WHITE)
+mat_b         = compute_material(board, chess.BLACK)
+endgame_cls   = classify_endgame(board) if game_phase == 2 else None
+eval_cp, eval_mate = parse_node_eval(node)          # node.eval()
+```
+
+All new values append to the existing `position_rows` dict. Zero additional DB round-trips. No async changes. The natural extension point is either `zobrist.py` (renamed to `position_metadata.py`) or a parallel `metadata.py` module that `_flush_batch` calls alongside `hashes_for_game`.
+
+**Accuracy extraction** is a two-line change in each normalizer:
+- `normalize_chesscom_game()` — extract `game.get("accuracies", {}).get("white")` and `black`
+- `normalize_lichess_game()` — extract `players["white"].get("accuracy")` and `black`
+
+---
+
+## What NOT to Add
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| Local Stockfish (python-chess UCI) | OOM risk on 3.7GB server; async pipeline complexity; per-position eval during import would be catastrophically slow at scale; explicitly out of scope per PROJECT.md | Import platform-provided evals from existing PGN `[%eval ...]` annotations |
+| `berserk` library | Blocking (not async); project constraint violation | Existing `httpx.AsyncClient` in `lichess_client.py` — add two params |
+| JSONB columns for material data | 100–1000x slower than integer columns for the equality/range queries the Endgames tab requires | Separate `SmallInteger` columns for `material_white`, `material_black`, `game_phase` |
+| Per-ply accuracy column | chess.com does not expose per-move accuracy; computing it requires local Stockfish | Per-game accuracy on `games` table is sufficient for phase-based statistics |
+| Syzygy/Gaviota tablebase probing | Requires large binary files (10s of GB) incompatible with the 75GB Hetzner disk budget; overkill for statistics classification | Custom material-signature string built from `board.pieces()` |
+| Re-fetching all lichess games with `evals=true` | Unnecessary — evals are already embedded in stored PGNs for analyzed games; re-fetching costs rate-limited API calls | Re-parse stored `games.pgn` column to extract `[%eval ...]` annotations at migration |
 
 ---
 
 ## Alternatives Considered
 
-| Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| Caddy 2.11.2 | Nginx + certbot | Only if you need nginx-specific modules or complex caching headers. Caddy is strictly simpler for auto-TLS on a single VPS. |
-| Caddy | Traefik | Traefik excels at Kubernetes/Docker Swarm label-based routing. Overkill for a single-VPS Compose deployment. |
-| Google Analytics 4 | Plausible Analytics Cloud (~€9/mo) | Clean GDPR-by-default option if GA4 compliance is a blocker. No self-hosting overhead. |
-| Google Analytics 4 | Umami (self-hosted) | Umami runs on the existing PostgreSQL instance (single Docker container, no ClickHouse). Good if you want self-hosted analytics without GA4's GDPR concerns. Slightly more ops than GA4. |
-| Google Analytics 4 | Plausible CE (self-hosted) | Requires ClickHouse + Elixir in addition to Postgres. 3+ additional containers. Significant RAM overhead (≥2 GB for ClickHouse alone). Not worth it for a small project on a single VPS. |
-| sentry-sdk 2.55.0 | sentry-sdk 3.0.x alpha | 3.0 alpha available (3.0.0a7 as of research date). Do not use in production. |
-| react-helmet-async v3 | Native React 19 `<title>` / `<meta>` in JSX | React 19 supports native hoisting via `<title>` and `<meta>` in component JSX. For very simple static titles, react-helmet-async is unnecessary. Use it only when you need `og:*` tags, canonical links, or per-route dynamics in multiple components. |
-| GitHub Actions + ghcr.io | Woodpecker CI (self-hosted) | Only worthwhile if GitHub Actions minutes become a cost concern. Adds operational overhead not justified at this project size. |
-
----
-
-## What NOT to Use
-
-| Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| Gunicorn + Uvicorn workers | Adds complexity without benefit on a single server. Docker horizontal scaling (replicas) is the right scale-out mechanism. Gunicorn as a process manager is redundant when Docker handles restarts. | Single `uvicorn` process per container |
-| Nginx (for new work) | More config boilerplate vs Caddy for TLS + SPA routing. certbot renewal cron is a silent failure point. | Caddy |
-| Plausible CE self-hosted | ClickHouse requires ≥2 GB RAM minimum; the whole Plausible CE stack (Postgres, ClickHouse, Elixir app) needs a dedicated VPS. Competes directly with the main app's resources. | Plausible Cloud or Umami or GA4 |
-| `react-helmet` (original) | Unmaintained; known thread-safety issues; no React 18/19 support. | `react-helmet-async` v3 |
-| Docker `latest` image tags in production | Non-reproducible: a registry update silently changes your deploy. Breaks rollback. | Pin to semantic version tags (e.g., `caddy:2.11.2`, `postgres:17`) |
-| Storing TLS certs in a non-persistent volume | Caddy's `caddy_data` volume contains your Let's Encrypt certificates. If this volume is deleted, Caddy re-requests certs and you may hit LE rate limits (5 certs/domain/week). | Always define `caddy_data` as a named volume; back it up. |
-| `requests` library (Python) | Already forbidden by project constraints. Blocks async event loop. | `httpx.AsyncClient` (already in use) |
+| Recommended | Alternative | Why Not |
+|-------------|-------------|---------|
+| Material-count thresholds for phase detection | Ply-based opening boundary (e.g. ply <= 10 = opening) | Ply count is too rigid; a theoretical Sicilian Najdorf line can still be "opening" at ply 30. Material thresholds reflect the actual piece complexity of the position. |
+| `SmallInteger` columns for phase/material | PostgreSQL enum type for `game_phase` | Enum requires a migration to add values; `SmallInteger` with application-layer constants (0/1/2) is simpler and equally fast for indexed queries. |
+| Extract evals from stored PGN at migration | Request evals fresh from lichess API | Stored PGN already contains `[%eval ...]` for games that were analyzed. Re-parsing is free; re-fetching costs API rate limit budget. |
+| Game-level accuracy on `games` table | Per-move accuracy on `game_positions` | chess.com only provides game-level accuracy; per-move values require local engine. Game-level is the right granularity for the conversion/recovery statistics use case. |
 
 ---
 
 ## Version Compatibility
 
-| Package | Version | Compatible With | Notes |
-|---------|---------|-----------------|-------|
-| react-helmet-async | 3.0.0 | React 19 | v3 detects React version at runtime; React 19 path uses native hoisting. API-compatible with v2; no code changes needed. |
-| sentry-sdk | 2.55.0 | FastAPI 0.115.x, Python 3.13 | FastAPI ≥ 0.79.0 required. Python 3.13 supported. Auto-activates FastAPI + Starlette integrations. |
-| @sentry/react | 10.45.0 | React 19, Vite 7 | Vite source map upload requires `@sentry/vite-plugin`. Must be initialized before React renders. |
-| Caddy | 2.11.2 | Docker, any HTTP backend | Docker image tag: `caddy:2.11.2`. |
-| vite-plugin-sitemap | 0.8.2 | Vite 5+ (Vite 7 in use) | Post-build hook; generates `sitemap.xml` and `robots.txt` in `dist/`. |
-| react-cookie-consent | 10.0.1 | React 19 | Pure React component; no conflicting peer deps with React 19. |
+| Package | Constraint | Notes |
+|---------|------------|-------|
+| `chess` (python-chess) | >=1.10.0 — 1.11.2 latest (Feb 2025) | `node.eval()`, `node.nags`, `board.pieces()`, `NAG_*` constants all stable since 1.x. The `eval()` off-by-one centipawn bug was fixed in 1.11.1 — already resolved in 1.11.2. |
+| PostgreSQL | 18 (production Docker) | `SMALLINT` maps cleanly; composite B-tree syntax unchanged. |
+| SQLAlchemy | >=2.0.0 | `mapped_column(SmallInteger, nullable=False)` for new columns; `select()` API unchanged. |
+| lichess API | Current (no versioning) | `evals` and `accuracy` parameters confirmed in official OpenAPI YAML as of research date. |
+| chess.com API | Published Data API (no versioning) | `accuracies` field confirmed in official documentation; field is optional/absent when not analyzed. |
 
 ---
 
 ## Sources
 
-- [PyPI sentry-sdk](https://pypi.org/project/sentry-sdk/) — version 2.55.0 confirmed (released 2026-03-17). HIGH confidence.
-- [Sentry FastAPI integration docs](https://docs.sentry.io/platforms/python/integrations/fastapi/) — auto-activation, config options verified. HIGH confidence.
-- [Sentry React docs](https://docs.sentry.io/platforms/javascript/guides/react/) — Vite setup, wizard for source maps. HIGH confidence.
-- [Caddy GitHub releases](https://github.com/caddyserver/caddy/releases) — v2.11.2 confirmed latest stable (2026-03-06). HIGH confidence.
-- [Caddy try_files docs](https://caddyserver.com/docs/caddyfile/directives/try_files) — SPA fallback pattern verified. HIGH confidence.
-- [uv Docker integration guide](https://docs.astral.sh/uv/guides/integration/docker/) — multi-stage pattern, ENV vars, layer caching, `uv-docker-example` reference. HIGH confidence.
-- `npm info` (local CLI) — @sentry/react@10.45.0, react-helmet-async@3.0.0, react-cookie-consent@10.0.1, vite-plugin-sitemap@0.8.2 confirmed. HIGH confidence.
-- [react-helmet-async GitHub issue #238/#239](https://github.com/staylor/react-helmet-async/issues/238) — React 19 compatibility in v3 confirmed. HIGH confidence.
-- [Docker Compose startup order docs](https://docs.docker.com/compose/how-tos/startup-order/) — `condition: service_healthy` pattern. HIGH confidence.
-- [Hetzner Cloud pricing (costgoat.com, March 2026)](https://costgoat.com/pricing/hetzner) — CX22/CX32 specs and pricing. MEDIUM confidence (third-party aggregator; verify on hetzner.com before provisioning).
-- WebSearch: GA4 GDPR status, Plausible/Umami comparison (2026). LOW confidence on GDPR legal status — fluid jurisdiction-by-jurisdiction; verify current DPA guidance before committing to GA4.
+- [python-chess 1.11.2 Core docs](https://python-chess.readthedocs.io/en/latest/core.html) — `pieces()`, `piece_map()`, `has_insufficient_material()`, piece type constants — HIGH confidence
+- [python-chess 1.11.2 PGN docs](https://python-chess.readthedocs.io/en/latest/pgn.html) — `node.eval()`, `node.eval_depth()`, `node.nags`, `node.clock()` — HIGH confidence
+- [python-chess changelog](https://python-chess.readthedocs.io/en/latest/changelog.html) — 1.11.2 released Feb 2025, `eval()` off-by-one fix in 1.11.1 — HIGH confidence
+- [lichess-org/api OpenAPI YAML](https://raw.githubusercontent.com/lichess-org/api/master/doc/specs/tags/games/api-games-user-username.yaml) — `evals`, `accuracy`, `analysed` parameters confirmed, PGN comment format `[%eval cp]` / `[%eval #N]` — HIGH confidence
+- [lichess accuracy API forum](https://lichess.org/forum/lichess-feedback/trying-to-find-accuracy-from-the-api) — `players.*.accuracy` and `players.*.analysis` fields in NDJSON with JSON Accept header — MEDIUM confidence (forum, consistent with spec)
+- [chess.com Published-Data API documentation](https://gist.github.com/andreij/0e3309200c0a6bb26308817a168203f3) — `accuracies.white/black` field confirmed, absent when not analyzed — HIGH confidence
+- [chess.com forum: no per-move evals in API](https://www.chess.com/forum/view/general/can-i-download-pgn-with-score-and-clock-using-api) — chess.com moderator confirmed evals/game-review data not available via public API — HIGH confidence
+- [Chessprogramming wiki: Game Phases](https://www.chessprogramming.org/Game_Phases) — material-based phase detection rationale, tapered eval pattern — MEDIUM confidence (community reference)
 
 ---
-*Stack research for: FlawChess v1.3 — production deployment, monitoring, analytics, SEO*
-*Researched: 2026-03-21*
+
+*Stack research for: FlawChess v1.5 — game statistics & endgame analysis*
+*Researched: 2026-03-23*

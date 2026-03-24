@@ -18,6 +18,7 @@ import datetime
 import uuid
 
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
@@ -36,6 +37,14 @@ from app.repositories.stats_repository import (
 def _unique_game_id() -> str:
     """Return a unique platform_game_id for each call."""
     return str(uuid.uuid4())
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _create_test_users(db_session: AsyncSession) -> None:
+    """Ensure test user IDs exist in the users table (FK constraint)."""
+    from tests.conftest import ensure_test_user
+    for uid in [2, 99999]:
+        await ensure_test_user(db_session, uid)
 
 
 async def _seed_game(

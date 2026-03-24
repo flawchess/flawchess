@@ -1,14 +1,13 @@
 # Feature Research
 
-**Domain:** Production deployment, monitoring, analytics, SEO, and public launch for FastAPI + React SPA (FlawChess v1.3)
-**Researched:** 2026-03-21
-**Confidence:** HIGH (Docker/Caddy/Sentry mechanics); MEDIUM (GDPR requirements, import queue design, CI/CD patterns); LOW (exact chess.com/lichess rate-limit thresholds — community-reported, not officially documented)
+**Domain:** Chess analytics — per-position game statistics, endgame classification, and material tracking
+**Researched:** 2026-03-23
+**Confidence:** HIGH (endgame categories, material notation, game phase algorithms from chessprogramming.org and Wikipedia); MEDIUM (competitor feature comparison — lichess/chess.com UIs are live but change without notice); LOW (exact API field availability for accuracy scores — chess.com has confirmed engine accuracy is NOT in the public API; lichess is different and DOES expose it)
 
 ---
 
-> This file covers features for v1.3: Project Launch.
-> v1.0–v1.2 features are already shipped (import, analysis, bookmarks, move explorer, game cards, PWA, mobile nav).
-> Focus: Docker deployment, Caddy, Hetzner, CI/CD, Sentry, About page, SEO, analytics, privacy policy, import queue, rename.
+> This file covers features for v1.5: Game Statistics & Endgame Analysis.
+> v1.0–v1.4 features are already shipped. Focus: game phase detection, endgame classification, material signatures, engine accuracy import, and a new Endgames analytics tab.
 
 ---
 
@@ -16,147 +15,131 @@
 
 ### Table Stakes (Users Expect These)
 
-Features that a publicly launched web app must have. Missing these = product feels unfinished or legally non-compliant.
+Features that a chess analytics platform with endgame analysis must provide. Missing these = the Endgames tab feels incomplete or misleading.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Docker Compose deployment | Standard production packaging; reproducible across environments | MEDIUM | Separate services: FastAPI backend, PostgreSQL, Caddy (serves React dist + proxies /api). Multi-stage Dockerfiles: backend (Python slim), frontend (Node build stage → Caddy/nginx copy). |
-| Caddy reverse proxy with auto-TLS | HTTPS non-negotiable for any public app; Caddy provisions Let's Encrypt certs automatically with no cert management overhead | LOW | Single `Caddyfile`. Routes `/api/*` to uvicorn. Serves React `dist/` as static files with SPA fallback (`try_files {path} /index.html`). Auto-HTTPS on domain. |
-| Environment variable configuration | Production must not hardcode secrets or API DSNs in source | LOW | `.env` on server injected at compose runtime. `VITE_*` vars at frontend build time (baked into bundle). Pydantic `BaseSettings` already supports env on backend. |
-| PostgreSQL volume persistence | DB data must survive container restarts and redeploys | LOW | Named Docker volume, not bind mount. `pg_data` volume in `docker-compose.yml`. |
-| Alembic migrations on startup | Schema must be current before app accepts traffic — especially important for zero-downtime redeploys | LOW | Backend entrypoint: `alembic upgrade head && uvicorn app.main:app ...`. Idempotent, safe to run on every start. |
-| GitHub Actions CI/CD | Automated deploy on push to main; eliminates risky manual SSH deploys over time | MEDIUM | Workflow: run tests → build images → push to GHCR → SSH into Hetzner → `docker compose pull && docker compose up -d`. SSH private key and secrets stored in GitHub Secrets. |
-| Sentry error monitoring (backend) | Unhandled exceptions in production must be captured with request context and stack traces | LOW | `sentry-sdk[fastapi]` auto-instruments FastAPI. One `sentry_sdk.init(dsn=..., traces_sample_rate=0.1)` call. DSN from environment variable. |
-| Sentry error monitoring (frontend) | JS errors and unhandled promise rejections must surface with component stack | LOW | `@sentry/react` with `Sentry.init()` and `<ErrorBoundary>` wrapping the app. React Router integration for transaction names. |
-| About / landing page | New visitors must understand what FlawChess does before registering; the only SEO-indexable page | MEDIUM | Explains Zobrist-hash position matching USP vs chess.com/lichess categorization. FAQ covering: what is it, how does it work, data sources, privacy. CTA: Register / Log in. Fully public (no auth required). |
-| Professional README | GitHub visitors judge project quality and credibility by the README | LOW | Project name + description, feature list, screenshots, tech stack badges, quick local setup (Docker Compose), links to live app. |
-| Privacy policy page | GDPR legally requires disclosing what data is collected and how it's used whenever collecting personal data or using third-party analytics | MEDIUM | Static page at `/privacy`. Covers: auth data, imported game data (stored server-side), Sentry error tracking, Plausible analytics (no cookies, no PII), user rights (deletion), contact. |
-| SEO fundamentals | About page must be discoverable in search engines for FlawChess to grow organically | MEDIUM | `react-helmet-async` for per-route `<title>` and `<meta description>`. Open Graph tags on About page. `robots.txt` (allow all, point to sitemap). `sitemap.xml` listing `/` and `/about` with lastmod. Canonical URL tag. |
-| FlawChess rename / branding | Consistent brand identity before public launch; "Chessalytics" is a working title | LOW | Update: repo name, all code string references, PWA manifest (`name`, `short_name`), About page copy, README, Sentry project name, Plausible site name, `CLAUDE.md`. |
+| Endgame type breakdown by W/D/L | Every chess analytics competitor (lichess Insights, chess.com Insights, Aimchess) shows performance broken down by game phase. Users expect to know "do I win my rook endgames?" | MEDIUM | Classification at import time into ~6 buckets (pawn, rook, minor piece, queen, no-pawns, complex). Aggregate W/D/L per bucket in a new Endgames tab. Depends on endgame class computed during import. |
+| Game phase annotation per position | Lichess Insights filters every metric by opening/middlegame/endgame. Without this, per-position stats can't be phase-contextualized. | MEDIUM | Compute phase (opening/middlegame/endgame) at import for every position. Store as enum column on `game_positions`. Phase boundary algorithm based on non-pawn material count (see Architecture notes). |
+| Material signature per position | ChessBase search, Syzygy tablebases, Stockfish endgame probing all use material signature notation (KRKP, KRPKR, etc.). Users expecting endgame filtering need this. | MEDIUM | Compute canonical material signature string (e.g. "KRPKRP") at import. Store on `game_positions`. Use white-dominant canonical form (White material first, heavier pieces first within each side). |
+| Filter endgame stats by endgame type | Lichess Insights filters by game phase; users naturally want to filter by "show me only rook endgames". Lack of this makes the Endgames tab shallow. | LOW | Filter UI — same sidebar pattern as existing Openings tab filters. Filter values map directly to endgame class enum. |
+| W/D/L in endgame when up/down material | Aimchess explicitly tracks "conversion rate" (winning when up) and "resourcefulness" (saving when down). Users expect to see whether they squander material advantages. | HIGH | Requires material imbalance column on `game_positions`. Query: group by (material_advantage_bucket, game_phase) → W/D/L. Buckets: down ≥2 pawns, down 1 pawn, equal, up 1 pawn, up ≥2 pawns. Define in pawn units. |
+| Opening / middlegame / endgame accuracy (when available) | Chess.com Insights shows accuracy per phase. Lichess exports eval/accuracy per game when analysis is available. Users who have analyzed games expect these numbers. | HIGH | Import-time: parse accuracy from chess.com API `accuracies` field (game level only, not phase-level). For lichess, eval annotations per move are available via `?evals=true` in NDJSON. Phase-level accuracy requires per-move eval data — compute centipawn loss per phase. This is the most complex import feature. |
 
 ### Differentiators (Competitive Advantage)
 
-Features that go beyond table stakes and improve quality, trust, or stability at launch.
+Features that go beyond what lichess/chess.com/Aimchess provide, exploiting FlawChess's unique Zobrist hash position matching.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Import queue with per-platform serialization | Prevents 429 errors when multiple users import simultaneously. chess.com enforces ~3 concurrent connections; lichess recommends 1 request at a time. Without a queue, concurrent users will get rate-limited and see import failures. | MEDIUM | Two options: (1) `asyncio.Queue` singleton in FastAPI process — simple, zero dependencies, lost on restart but imports are re-triggerable; (2) ARQ + Redis — durable, restartable, adds Redis container. Recommend starting with asyncio.Queue. Two separate queues: one per platform (chess.com, lichess). Each worker drains its queue sequentially with the existing per-platform delay logic. |
-| Plausible analytics (privacy-first) | Understand real usage without cookie consent banner, Google data sharing, or GDPR complexity. Plausible uses no cookies and collects no PII, making it exempt from ePrivacy cookie consent requirements. | LOW | Plausible Cloud: $9/mo for 10K pageviews. Single `<script>` tag in `index.html`. SPA-compatible: tracks `pushState` navigation automatically. Recommended over Google Analytics for this project's scale and privacy posture. |
-| Sentry session replay (error-only mode) | When a frontend error occurs, a replay shows exactly what the user did — invaluable for debugging chess board interactions and position state. | LOW | Set `replaysOnErrorSampleRate: 1.0`, `replaysSessionSampleRate: 0.0`. Capture replay only on errors — zero cost when no errors occur. Sentry masks all DOM text/images by default, so game data does not leak. |
-| Import status + queue position in UI | Users know whether their import is queued, running, or complete — prevents "is this broken?" confusion when many users import simultaneously | MEDIUM | Backend: import status response includes `queued_position` field. Frontend: poll `/imports/status`, show "Queued (#N)" state with estimated wait. Builds on existing Import page polling. |
-| Structured JSON logging | Correlate Sentry error reports with server-side logs across container restarts | LOW | Python `logging` with JSON formatter or `structlog`. Include Sentry trace ID in log records. Docker Compose log driver collects stdout JSON. |
+| Material configuration drill-down (KRP vs KR) | No public tool lets you filter by exact material signature. ChessBase does it in database search but not as analytics. FlawChess can expose this natively since material signature is stored per position. | MEDIUM | UI: after selecting an endgame type (e.g. "rook endgames"), show a secondary breakdown by specific material signature. Toggle between type-level and signature-level granularity. The data is already in the DB if material signature is computed at import. |
+| Phase transition point analysis | FlawChess can show which specific board positions are where users' win rates drop — combining Zobrist hash position matching with phase annotation. No competitor does this. | HIGH | Cross-tab feature: from the Endgames tab, click a position in the move explorer to see that position's stats filtered to endgame phase only. Requires phase column on `game_positions` and a phase filter in the existing Openings analysis query. |
+| Conversion rate broken out by time control | Did I fail to convert a won rook endgame in bullet but convert it in rapid? Unique because FlawChess already has time control as a filter. | LOW | Minimal extra complexity — already have time control filter; just expose it on the Endgames tab alongside the existing filter sidebar. |
+| Per-position endgame stats in the Move Explorer | The existing move explorer shows next-move W/D/L from any position. Annotating each position with its game phase and material class makes the explorer more informative without building a new UI. | LOW | Surface phase label and material signature as tooltip/badge on the board or stats panel. The data is already stored if computed at import. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Google Analytics (with cookie consent banner) | Industry default, familiar reports | Requires GDPR-compliant cookie consent UI — banner must give equal prominence to "Accept" and "Reject". Adds frontend complexity, risks GDPR fines if misconfigured, data goes to Google. Overkill for a small app. | Plausible: no cookies, no consent banner required, GDPR-compliant by design. |
-| Celery for import queue | Familiar Python task queue | Requires broker (Redis/RabbitMQ) + result backend + worker process + beat scheduler. For the simple "serialize outbound API calls" use case, this is 10x the complexity needed. | `asyncio.Queue` in the FastAPI process for v1.3. Migrate to ARQ + Redis only if queue durability proves necessary after launch. |
-| SSR / Next.js for SEO | SPAs have SEO limitations | Complete rewrite of all existing React code. The only SEO-critical page is the About/landing page. Authenticated analysis pages don't need indexing. | `react-helmet-async` for meta tags on About page. Googlebot handles modern SPAs (Vite + React Router) adequately for this use case. |
-| Kubernetes / container orchestration | "Production-grade" framing | Catastrophically over-engineered for a single Hetzner VPS with low initial traffic. Adds enormous operational complexity. | Docker Compose on a single server is the correct level. Upgrade path to Swarm or K8s exists if demand grows. |
-| Separate staging environment | Best practice | Doubles Hetzner cost and deployment complexity for a solo developer. | Test with local Docker Compose before pushing. Feature branches with local testing are sufficient for this project's risk profile. |
-| Email notifications for import completion | Good UX for long imports | Requires transactional email service (SendGrid/SES), email templates, unsubscribe handling — significant scope creep for v1.3. | In-app polling on the Import page is sufficient. Queue position display closes the feedback gap. |
-| Full cookie consent manager (CookieHub, OneTrust) | GDPR compliance | If using Plausible (no cookies) and Sentry (functional, not tracking cookies), no cookie consent banner is legally required. Third-party consent managers are expensive ($50-200/mo), add JS weight, and are unnecessary here. | Plausible replaces tracking cookies entirely. Privacy policy page covers the remaining disclosure requirements. |
+| Running engine analysis on the server | Users want computer evaluations for games not previously analyzed | Stockfish analysis is CPU-intensive. A single 15-move position analysis can take 0.5–5s at depth 20. Multi-user platform on 2-vCPU Hetzner VPS would be overwhelmed immediately. Chess.com limits analysis to Diamond subscribers for this reason. | Import accuracy/eval from chess.com and lichess APIs when already computed. Flag games with no eval data; defer server-side analysis to a future dedicated compute tier. |
+| Storing per-move eval for all positions | Allows full accuracy computation at any depth | PGN eval annotations exist only if analysis was requested by the user on lichess/chess.com before import. For games without evals, there is nothing to import. Attempting to compute evals at import time hits the compute problem above. | Store evals where available from the API (lichess `?evals=true`, chess.com `accuracies` field). Mark games with `has_eval: bool`. Analytics only applies to eval-annotated subset. |
+| Syzygy tablebase lookups at analysis time | True endgame Win/Draw/Loss by force (not user's historical stats) | Requires 150 GB+ of tablebase files for 7-piece endings. Even 5-piece Syzygy is ~880 MB. Impractical on VPS with 75 GB NVMe. | Use material signature + historical W/D/L from user's own games. This is FlawChess's core value anyway — personal statistics, not theoretical results. |
+| Named endgame position bookmarks (Lucena, Philidor) | Advanced users want to track theoretical positions | Requires a curated endgame position database, manual FEN entry, or expert-tagged library. High editorial burden, low traffic for most users. | The existing bookmark system already allows any position to be bookmarked. Power users can bookmark the Lucena position themselves. No special support needed in v1.5. |
+| Side-by-side endgame comparison vs. opponents | "How does my KRP endgame compare to player X's?" | Requires other users' data to be queryable. Privacy implications, multi-user aggregation complexity. | Defer to opponent scouting feature (already on roadmap). Stick to single-user analytics for endgames in v1.5. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-Docker Compose deployment
-    └──requires──> Multi-stage Dockerfiles (backend + frontend)
-    └──requires──> Environment variable config (.env on server)
-    └──requires──> Alembic migrations on startup
+Endgame analytics tab (Endgames page)
+    └──requires──> Endgame class per game_position (computed at import)
+    └──requires──> Game phase per game_position (computed at import)
+    └──requires──> Material imbalance per game_position (computed at import)
+    └──requires──> Material signature per game_position (computed at import)
 
-Caddy reverse proxy
-    └──requires──> Docker Compose deployment
-    └──requires──> Domain DNS pointing to Hetzner IP
+Endgame class computation
+    └──requires──> Material signature computation (endgame class is derived from signature)
+    └──requires──> Game phase computation (endgame class only meaningful in endgame phase)
 
-GitHub Actions CI/CD
-    └──requires──> Docker Compose deployment
-    └──requires──> Container registry (GHCR, free for public repos)
-    └──requires──> SSH key in GitHub Secrets
-    └──enhances──> All deployment features (automates them)
+Game phase computation
+    └──requires──> python-chess board state at each ply (already available during import)
+    └──uses──> Non-pawn material count threshold (no external dependency)
 
-Sentry (frontend)
-    └──requires──> FlawChess rename (consistent project naming in DSN)
-    └──enhances──> About page (ErrorBoundary wraps whole app including landing)
+Material signature computation
+    └──requires──> python-chess board state at each ply (already available during import)
+    └──produces──> canonical string "KRPKR" (white-dominant, sorted by piece value)
 
-Sentry session replay
-    └──requires──> Sentry frontend (same SDK, additional config)
+Material imbalance computation
+    └──requires──> python-chess board state at each ply (already available during import)
+    └──produces──> signed integer in centipawn units (positive = white ahead)
 
-Plausible analytics
-    └──requires──> About page deployed (page views to track)
-    └──conflicts──> Google Analytics + cookie consent (pick one)
+Engine accuracy import (chess.com)
+    └──requires──> chess.com game archive API (already integrated)
+    └──note──> Only game-level accuracy available (white/black scalar), NOT phase-level
+    └──note──> Field present as `accuracies.white` / `accuracies.black` in game JSON
 
-Privacy policy page
-    └──requires──> Plausible analytics chosen (policy covers what data is collected)
-    └──requires──> Sentry listed as error tracking third-party
+Engine accuracy import (lichess)
+    └──requires──> lichess NDJSON game export with `?evals=true` parameter
+    └──note──> Per-move eval and judgment available for analyzed games
+    └──note──> lichess does NOT compute accuracy for unanalyzed games at export time
 
-SEO fundamentals
-    └──requires──> About page (only public page worth indexing)
-    └──requires──> react-helmet-async installed
+Per-phase accuracy computation
+    └──requires──> Per-move eval annotations (lichess with evals=true)
+    └──requires──> Game phase label per ply (game phase computation)
+    └──derives──> Average centipawn loss per phase = endgame accuracy proxy
 
-About page
-    └──requires──> FlawChess rename (correct brand name in copy)
+Material conversion/recovery stats
+    └──requires──> Material imbalance per position
+    └──requires──> Game phase per position
+    └──requires──> Game result (already stored)
 
-Import queue
-    └──requires──> asyncio.Queue or ARQ worker setup
-    └──requires──> Existing per-platform delay constants (already in codebase)
-    └──enhances──> Import status UI (queue position data)
+Filter by endgame type
+    └──requires──> Endgame class column on game_positions
+    └──enhances──> Endgames tab (drives the primary filter)
 
-Import status UI
-    └──requires──> Import queue (queue position field in status response)
-    └──requires──> Existing Import page polling (already implemented)
-
-FlawChess rename
-    └──requires──> Update PWA manifest (name, short_name)
-    └──requires──> Update all "chessalytics" string references in code/config
-    └──must precede──> About page copy, README, Sentry/Plausible project setup
+Filter by material configuration
+    └──requires──> Material signature column on game_positions
+    └──enhances──> Endgames tab (secondary drill-down filter)
 ```
 
 ### Dependency Notes
 
-- **Import queue: asyncio.Queue vs ARQ:** `asyncio.Queue` lives in the FastAPI process — if the server restarts during an import, that job is lost. Users can re-trigger imports, so this is acceptable for v1.3. ARQ + Redis adds durability but also a Redis container and worker management. Start simple.
-- **CI/CD requires GHCR:** GitHub Container Registry is free for public repos. Use `ghcr.io/[owner]/[repo]-backend:latest` and `ghcr.io/[owner]/[repo]-frontend:latest`. Avoids Docker Hub rate limits and account management.
-- **Plausible must be chosen before privacy policy is written:** The privacy policy must accurately describe what analytics data is collected. Lock in the analytics tool first.
-- **rename must happen before Sentry/Plausible setup:** Both services have a site/project name configured at creation time. Creating them as "FlawChess" from the start avoids a rename step later.
+- **Import pipeline is the critical path:** All analytics features depend on per-position metadata being computed at import time. There is no retroactive computation shortcut — the DB schema must be migrated and all existing positions re-enriched (or a full re-import triggered).
+- **Engine accuracy is a split story:** chess.com provides only a single accuracy scalar per player per game (not per phase) via the public API. Lichess provides full per-move eval when the user has requested analysis. Phase-level accuracy is only possible for lichess analyzed games, not chess.com games.
+- **Endgame class requires phase first:** The endgame class (rook endgame, pawn endgame, etc.) is only meaningful to classify positions that are already in the endgame phase. For positions in the opening or middlegame, endgame class is irrelevant.
+- **Material imbalance and material signature are independent computations** that both run on the same board state at each ply. They should be computed in a single pass to avoid iterating positions twice.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v1.3)
+### Launch With (v1.5)
 
-All of the following are required for a credible public launch. None are optional.
+Minimum viable endgame analytics — enough to make the Endgames tab genuinely useful.
 
-- [ ] FlawChess rename (code, manifest, README, CLAUDE.md)
-- [ ] Multi-stage Dockerfiles for backend and frontend
-- [ ] Docker Compose with Caddy, FastAPI, PostgreSQL services
-- [ ] Alembic migrations on container startup
-- [ ] Environment variable config (.env, no hardcoded secrets)
-- [ ] GitHub Actions CI/CD (test → build → push GHCR → SSH deploy)
-- [ ] Sentry backend (sentry-sdk[fastapi], DSN from env)
-- [ ] Sentry frontend (@sentry/react, ErrorBoundary)
-- [ ] About page with FlawChess USPs, FAQ, and CTA
-- [ ] Professional README with screenshots and setup instructions
-- [ ] Privacy policy page (/privacy)
-- [ ] SEO: react-helmet-async, meta tags on About, robots.txt, sitemap.xml
-- [ ] Plausible analytics (script tag, site registered)
-- [ ] Import queue (asyncio.Queue per platform, serialized outbound calls)
+- [ ] Game phase computed per position at import (opening/middlegame/endgame enum stored in `game_positions`)
+- [ ] Material signature computed per position at import (canonical "KRPKR" string)
+- [ ] Endgame class derived from material signature (6-category enum: pawn, rook, minor_piece, queen, mixed, pawnless)
+- [ ] Material imbalance computed per position (signed integer, centipawn units)
+- [ ] Endgames tab: W/D/L breakdown by endgame type (using same W/D/L display components as Openings tab)
+- [ ] Endgames tab: filter by endgame type, time control, color, recency (reuse existing filter sidebar)
+- [ ] Conversion stats: W/D/L when up/down material, broken down by game phase
 
-### Add After Validation (v1.x)
+### Add After Validation (v1.5.x)
 
-- [ ] Import queue UI feedback (queue position on Import page) — add after queue is live and users report confusion
-- [ ] Sentry session replay (error-only) — enable after confirming error capture is working in production
-- [ ] Structured JSON logging — add if debugging production issues without log correlation proves painful
-- [ ] Blog or changelog page — only if SEO strategy expands
+Features to add once the core Endgames tab is live and users engage with it.
+
+- [ ] Engine accuracy import from chess.com API (`accuracies` field) — add if users request accuracy tracking
+- [ ] Per-move eval import from lichess (`?evals=true`) — add if accuracy-by-phase analytics is validated as high-value
+- [ ] Material configuration drill-down (KRP vs KR level) — add if users navigate past top-level endgame types
+- [ ] Phase label in Move Explorer tooltip — low-effort enhancement once phase data is available
 
 ### Future Consideration (v2+)
 
-- [ ] ARQ + Redis for durable import queue — only if lost-on-restart jobs become a real user complaint
-- [ ] Social sharing (shareable position analysis links) — requires public/anonymous URL design
-- [ ] Horizontal scaling (Docker Swarm, K8s) — only if VPS capacity is demonstrably insufficient
+- [ ] Per-phase accuracy for chess.com games — not feasible with the public API; would require a chess.com partnership or local engine analysis
+- [ ] Endgame training module (retry endgame positions) — crosses into training product territory, outside FlawChess's analytics-first scope
+- [ ] Endgame comparison vs. opponent (scouting) — natural extension of opponent scouting, separate milestone
 
 ---
 
@@ -164,58 +147,110 @@ All of the following are required for a credible public launch. None are optiona
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| FlawChess rename | MEDIUM | LOW | P1 |
-| Docker + Caddy deployment | HIGH | MEDIUM | P1 |
-| Alembic on startup | HIGH | LOW | P1 |
-| Environment variable config | HIGH | LOW | P1 |
-| GitHub Actions CI/CD | HIGH | MEDIUM | P1 |
-| Sentry backend | HIGH | LOW | P1 |
-| Sentry frontend | HIGH | LOW | P1 |
-| About page | HIGH | MEDIUM | P1 |
-| README | MEDIUM | LOW | P1 |
-| Privacy policy | HIGH (legal) | LOW | P1 |
-| SEO fundamentals | MEDIUM | LOW | P1 |
-| Plausible analytics | MEDIUM | LOW | P1 |
-| Import queue | HIGH (stability) | MEDIUM | P1 |
-| Import queue UI feedback | MEDIUM | MEDIUM | P2 |
-| Sentry session replay | MEDIUM | LOW | P2 |
-| Structured JSON logging | LOW | LOW | P2 |
+| Game phase computation at import | HIGH | MEDIUM | P1 |
+| Material signature computation at import | HIGH | LOW | P1 |
+| Endgame class derivation | HIGH | LOW | P1 |
+| Material imbalance computation | HIGH | LOW | P1 |
+| Endgames tab: W/D/L by endgame type | HIGH | MEDIUM | P1 |
+| Filter by endgame type | HIGH | LOW | P1 |
+| Conversion stats (up/down material) | HIGH | MEDIUM | P1 |
+| Engine accuracy import (chess.com game-level) | MEDIUM | LOW | P2 |
+| Eval import from lichess per-move | MEDIUM | HIGH | P2 |
+| Phase-level accuracy (lichess) | MEDIUM | HIGH | P2 |
+| Material signature drill-down UI | MEDIUM | MEDIUM | P2 |
+| Phase label in Move Explorer | LOW | LOW | P2 |
 
 **Priority key:**
-- P1: Must have for v1.3 launch
+- P1: Must have for v1.5 launch
 - P2: Should have, add when time permits
 - P3: Nice to have, future consideration
 
 ---
 
-## Ecosystem Comparison
+## Competitor Feature Analysis
 
-| Feature | chess.com Insights | lichess Analysis | FlawChess approach |
-|---------|-------------------|------------------|--------------------|
-| Opening analysis | By ECO name, not position | By opening name/moves | By exact board position (Zobrist hash) — handles transpositions |
-| Analytics | Google Analytics | Self-hosted Matomo | Plausible (no cookies, GDPR-compliant) |
-| Deployment | Cloud SaaS | Open source / self-hosted | Single Hetzner VPS, Docker Compose |
-| Error monitoring | Not visible | Not visible | Sentry (backend + frontend) |
-| Mobile | Native apps | PWA + native apps | PWA (already shipped in v1.2) |
+### Endgame Classification Categories
+
+All major tools use the same 5-6 top-level endgame types derived from chess theory (Chess Informant, Dvoretsky's Manual). The "most valuable piece remaining" principle determines the category:
+
+| Category | Classification Rule | Frequency (estimated) | Notes |
+|----------|--------------------|-----------------------|-------|
+| Pawn endgame | Only kings and pawns remain | ~5% of games | Pure pawn endings; king activity decisive |
+| Rook endgame | Rooks present, no queens, pawns present | ~8-10% of games | Most common endgame type; Lucena/Philidor positions |
+| Minor piece endgame | Bishops and/or knights, no rooks or queens, pawns present | ~5-7% of games | Knight vs bishop is a classic sub-type |
+| Queen endgame | Queens present (no rooks), pawns present | ~3-5% of games | Perpetual check risk, complex technique |
+| Complex/mixed endgame | Multiple different piece types remain | ~10-15% of games | Rook + minor piece, or queen + rook, etc. |
+| Pawnless endgame | No pawns remain | Rare (~1-2%) | Often drawn; tablebase-decidable |
+
+Note: Frequency statistics are approximate from community sources. Rook endgames are widely cited as the most common specific endgame type. Exact frequency data across amateur games is not authoritatively published.
+
+### Game Phase Detection Algorithms
+
+| Tool | Algorithm | Thresholds |
+|------|-----------|------------|
+| Lichess (Scalachess) | Non-public (source not documented in forums) | Likely material-based; forum speculation about centrality scores |
+| Stockfish (tapered eval) | Non-pawn material count as phase weight | Start: 6400 units (4N + 4B + 4R + 2Q using N=300, B=300, R=500, Q=1000). Endgame = 0. Interpolates between. |
+| Chessprogramming standard | Piece count threshold | Endgame when combined non-pawn material ≤ ~1300 centipawns per side (roughly: no queens, or ≤ 1 rook + 1 minor per side) |
+| Chess theory (Speelman) | Material threshold | Each side ≤ 13 points (not counting king). Pawns = 1, N/B = 3, R = 5, Q = 9. |
+| Chess theory (Minev) | Piece count | ≤ 4 non-king non-pawn pieces total on board |
+| Chess theory (Fine) | Queen presence | Endgame = no queens on board |
+
+**Recommended approach for FlawChess:** Use a two-threshold piece-weight system. Opening ends when both sides have castled or move 15 is reached (ply 30). Endgame begins when total non-pawn material (excluding kings) drops below a threshold (approximately: equivalent to ≤ 1 rook + 1 minor piece per side, or ~1300cp per side). Middlegame is the gap between. This is deterministic, fast to compute with python-chess, and aligns with how chess players think about phases.
+
+### Platform Comparison
+
+| Feature | lichess Insights | chess.com Insights | Aimchess | FlawChess v1.5 plan |
+|---------|------------------|--------------------|----------|---------------------|
+| Game phase stats | Opening/middlegame/endgame accuracy (requires prior computer analysis) | Opening/middlegame/endgame accuracy (Diamond only) | Phase accuracy as one of 6 performance scores | W/D/L by phase; accuracy if eval available |
+| Endgame type breakdown | None — no endgame-type filtering | None — game phases only, no endgame categories | Tracks endgame as single bucket ("conversion", "resourcefulness") | W/D/L by 6 endgame type categories |
+| Material signature filtering | None | None | None | W/D/L by specific material configuration (KRP vs KR) |
+| Material imbalance stats | Available as a dimension (filter/group-by) | Not directly exposed | "Advantage capitalization" score | W/D/L when up/down material by phase |
+| Accuracy per game | Yes (analyzed games only) | Yes (game-level, analyzed games only) | Yes (aggregated) | Yes (chess.com: game-level; lichess: per-move eval when available) |
+| Accuracy per phase | Yes (lichess analyzed games) | Yes (Diamond only) | Yes | Possible for lichess analyzed games only |
+| Requires prior engine analysis | Yes | Yes (Diamond plan) | Yes | Only for accuracy features; W/D/L stats require no engine analysis |
+| Free tier | Yes (lichess is free) | No (Diamond = $14/mo) | Partial (free tier limited) | Yes — core endgame stats are free (no engine required) |
+
+### Key Insight: FlawChess's Advantage
+
+Lichess and chess.com phase/endgame accuracy require prior per-game engine analysis. FlawChess's W/D/L endgame stats (the P1 features) require NO engine analysis — they derive from game results and position metadata. This means FlawChess can provide meaningful endgame analytics for 100% of imported games, not just the subset users happened to analyze.
+
+---
+
+## Engine Accuracy API Notes
+
+### chess.com Public API
+- Field: `accuracies.white` and `accuracies.black` on each game object in archive JSON
+- Availability: Only present if game was previously analyzed via Game Review; absent otherwise
+- Granularity: Single scalar per player per game (not per phase, not per move)
+- Confirmed limitation: Game phase accuracy values are NOT stored in the database and NOT available via API (chess.com forum, confirmed by chess.com staff)
+- Source: chess.com forum "Insight data in public APIs" — LOW confidence (community post, but consistent with API inspection)
+
+### lichess API
+- Field: Per-move eval comments in PGN when `?evals=true` parameter used on game export
+- Availability: Only for games where user requested computer analysis on lichess; absent otherwise
+- Granularity: Per-move eval (centipawn) and judgment (inaccuracy/mistake/blunder) annotations in PGN
+- Accuracy field: `players.white.analysis.accuracy` / `players.black.analysis.accuracy` in JSON format (integer 0-100)
+- Phase-level accuracy: Computable from per-move eval + phase annotation, but must be derived — not returned directly
+- Source: lichess API docs (`?evals=true` param documented) — HIGH confidence
 
 ---
 
 ## Sources
 
-- [FastAPI Deployment Concepts](https://fastapi.tiangolo.com/deployment/concepts/) — HIGH confidence
-- [FastAPI Docker Guide](https://fastapi.tiangolo.com/deployment/docker/) — HIGH confidence
-- [Caddy + FastAPI Docker Compose](https://github.com/GrantBirki/caddy-fastapi) — MEDIUM confidence
-- [Sentry FastAPI Integration](https://docs.sentry.io/platforms/python/integrations/fastapi/) — HIGH confidence
-- [Sentry React SDK + Session Replay](https://docs.sentry.io/platforms/javascript/guides/react/session-replay/) — HIGH confidence
-- [Plausible Privacy-Focused Analytics](https://plausible.io/privacy-focused-web-analytics) — HIGH confidence
-- [ARQ + FastAPI background tasks](https://davidmuraya.com/blog/fastapi-background-tasks-arq-vs-built-in/) — MEDIUM confidence
-- [GDPR Cookie Consent Requirements 2025](https://secureprivacy.ai/blog/gdpr-cookie-consent-requirements-2025) — MEDIUM confidence
-- [React + Vite SEO with react-helmet-async](https://dev.to/ali_dz/optimizing-seo-in-a-react-vite-project-the-ultimate-guide-3mbh) — MEDIUM confidence
-- [GitHub Actions + Hetzner SSH Deploy](https://infocusdata.com/blog/devops/ci-cd-docker-github-actions-hetzner-deployment) — MEDIUM confidence
-- [chess.com API rate limiting](https://www.chess.com/clubs/forum/view/rate-limiting) — LOW confidence (community forum, not official API docs)
-- [Lichess API tips](https://lichess.org/page/api-tips) — MEDIUM confidence (official Lichess page)
+- [Chess endgame — Wikipedia](https://en.wikipedia.org/wiki/Chess_endgame) — HIGH confidence (endgame categories, frequency stats)
+- [Game Phases — Chessprogramming wiki](https://www.chessprogramming.org/Game_Phases) — HIGH confidence (engine algorithms)
+- [Stockfish endgame.h material notation](https://github.com/evijit/material-chess-android/blob/master/app/src/main/jni/stockfish/endgame.h) — HIGH confidence (KRPKR notation standard)
+- [Lichess Insights live interface](https://lichess.org/insights/Chess-Network) — MEDIUM confidence (UI observed directly, may change)
+- [chess.com Insights Help Center](https://support.chess.com/en/articles/8708925-what-is-insights-on-chess-com) — HIGH confidence (official docs)
+- [chess.com game review API fields](https://www.chess.com/announcements/view/published-data-api) — HIGH confidence
+- [chess.com forum: phase accuracy not in API](https://www.chess.com/forum/view/site-feedback/insight-data-in-public-apis) — LOW confidence (community post)
+- [Aimchess feature description](https://eliteai.tools/tool/aimchess) — MEDIUM confidence (third-party summary)
+- [ChessBase material search](https://en.chessbase.com/post/material-searches-in-chebase-9-part-one) — MEDIUM confidence
+- [Rook endings frequency (~10% of games)](https://centaur.reading.ac.uk/65694/4/URE.pdf) — MEDIUM confidence (academic paper)
+- [Chess Informant endgame classification system](https://chessforallages.blogspot.com/2012/03/chess-informant-endgames.html) — MEDIUM confidence
+- [lichess API: evals export parameter](https://lichess.org/api) — HIGH confidence (official API docs)
 
 ---
 
-*Feature research for: FlawChess v1.3 — production deployment, monitoring, analytics, SEO, public launch*
-*Researched: 2026-03-21*
+*Feature research for: FlawChess v1.5 — game statistics & endgame analysis*
+*Researched: 2026-03-23*

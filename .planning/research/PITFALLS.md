@@ -1,274 +1,213 @@
 # Pitfalls Research
 
-**Domain:** Production deployment + monitoring + analytics + SEO + launch infrastructure for FastAPI + React SPA + PostgreSQL
-**Researched:** 2026-03-21
-**Confidence:** HIGH (critical pitfalls verified via official docs + community postmortems); MEDIUM (scale thresholds from community experience)
+**Domain:** Per-position metadata enrichment, engine analysis import, and endgame classification for an existing chess analytics platform (FlawChess v1.5)
+**Researched:** 2026-03-23
+**Confidence:** HIGH (chess.com API limitations confirmed via official forum moderator statement; PostgreSQL behavior confirmed via official docs; python-chess material APIs confirmed from maintainer discussion); MEDIUM (lichess eval coverage rate, game phase edge cases from community sources)
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Caddy Directive Ordering Breaks API Routing
+### Pitfall 1: chess.com Accuracy Data Is Absent for Most Games
 
 **What goes wrong:**
-When Caddy serves the React SPA (static files + `try_files` fallback) and also proxies `/api/*` to FastAPI, the `try_files` directive has a higher internal priority than `reverse_proxy`. Without explicit ordering control, all requests — including API calls — get rewritten to `/index.html` before `reverse_proxy` can match. API calls return the HTML shell instead of JSON, and the app silently fails to load any data.
+The chess.com archive API (`/pub/player/{username}/games/{YYYY}/{MM}`) does include an `accuracies` field (`{"white": 87.6, "black": 23.6}`) — but only for games that have already been reviewed by the user via the "Game Review" feature. The vast majority of a user's games have never been reviewed. For those games, the `accuracies` field is either absent from the JSON or `null`. A chess.com moderator has confirmed: "game phase accuracy values only show for games with reviews and are not stored in the DB." The public API is also in **maintenance mode only** — no new analysis fields will be added.
+
+There is no API endpoint to trigger a game review programmatically. Free users get 1 review per day; Diamond members get unlimited. Move-level evaluations (centipawn scores, accuracy per move) are not exposed at all through the public API — only the single overall accuracy float per player is available.
 
 **Why it happens:**
-Caddyfile directive ordering is implicit and non-obvious. Developers configure directives in logical reading order (proxy first, then SPA fallback), but Caddy sorts them by its own internal priority table, not declaration order.
+Developers assume "chess.com shows accuracy so the API must return it" and design their import pipeline expecting a field that will be absent for 95%+ of games. The field name `accuracies` in the official docs sounds definitive but is actually conditional.
 
 **How to avoid:**
-Wrap all directives in a `route {}` block, or use two `handle` blocks: one for `/api*` targeting `reverse_proxy`, one as a catch-all fallback with `file_server` + `try_files`. The `route` block preserves declaration order:
-```
-route {
-  reverse_proxy /api/* localhost:8000
-  file_server
-  try_files {path} /index.html
-}
-```
+- Store accuracy as `FLOAT NULL` on the `games` table — never `NOT NULL`
+- On import, check `game.get("accuracies")` before accessing `.get("white")` / `.get("black")`
+- Design the endgame analytics UI to degrade gracefully when accuracy is null — show "n/a" rather than 0% or crashing
+- Do NOT advertise "import your accuracy data" as a core feature — it will be absent for most users
+- Limit scope to the overall accuracy float that IS available; per-phase accuracy and per-move quality are not accessible
 
 **Warning signs:**
-- API calls return HTTP 200 with `Content-Type: text/html` instead of `application/json`
-- React app loads but all TanStack Query requests fail with JSON parse errors
+- Import pipeline accesses `game["accuracies"]["white"]` with no null guard — fails immediately on first unreviewed game
+- UI shows 0% accuracy for all endgame positions rather than "no data"
 
-**Phase to address:** Docker + Caddy deployment phase (phase 1)
+**Phase to address:** Engine analysis import phase (schema design + normalization)
 
 ---
 
-### Pitfall 2: PostgreSQL Data Loss via Missing Named Volume
+### Pitfall 2: lichess Evals Are Absent for Non-Analyzed Games
 
 **What goes wrong:**
-`docker compose down` followed by `docker compose up --build` destroys all PostgreSQL data. If the `db` service uses an anonymous volume or no volume, data lives only in the container's writable layer — removed with the container. All user games and position data wiped on every redeploy.
+lichess game exports support an `evals=true` parameter that embeds Stockfish centipawn annotations as `{ [%eval 0.17] }` comments inside PGN move nodes. However, this only returns data for games that have had computer analysis requested and computed. A game played without ever requesting "Request a computer analysis" on lichess will export with no eval annotations, even with `evals=true` passed to the API.
+
+Many casual games, especially older ones, have never been analyzed. The `evals` annotations will be present for some games and completely absent for others in the same API response. Additionally, the format uses centipawns from White's perspective (e.g., `[%eval -3.15]`), and mate scores use the format `[%eval #5]` (White mates in 5) or `[%eval #-3]` (Black mates in 3) — the sign on the mate count is not obvious and easy to misparse.
 
 **Why it happens:**
-Docker containers are ephemeral by design. Tutorials frequently omit volume declarations for brevity. The `postgres` image stores data at `/var/lib/postgresql/data` inside the container — without a named volume mounted there, data does not persist.
+Developers add `evals=true` to the lichess API request and assume the response will contain eval data for all games. The conditional nature of lichess analysis is not clearly documented at the API level.
 
 **How to avoid:**
-Declare a named volume in `docker-compose.yml`:
-```yaml
-volumes:
-  postgres_data:
-
-services:
-  db:
-    image: postgres:17
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-```
-Use `docker compose down` (without `-v`) in all deployment scripts. Never run `docker compose down -v` in production automation.
+- Parse `[%eval ...]` annotations defensively — always check that the annotation exists before using it
+- Use python-chess's `node.eval()` API (returns `chess.engine.PovScore | None`) rather than regex-parsing PGN comment strings manually
+- Store eval as `SMALLINT NULL` (centipawns) on `game_positions` — `None` for positions without analysis
+- Never assume evals will exist — design queries and UI to work on the subset that has data
+- For the current lichess request in `lichess_client.py`: add `"evals": True` to the params dict, but gate all downstream processing on the presence of the annotation
 
 **Warning signs:**
-- Volume declaration uses a relative host path with no top-level `volumes:` entry (brittle)
-- Deploy script runs `docker compose down` without confirming named volume exists first
+- Regex-based eval extraction crashes or returns garbage on mate scores like `#-3`
+- Import logs show parsing failures only for certain games (the unanalyzed ones have no `[%eval]` nodes — skipping silently is correct, crashing is not)
 
-**Phase to address:** Docker + Caddy deployment phase (phase 1)
+**Phase to address:** Engine analysis import phase (lichess client + PGN parsing)
 
 ---
 
-### Pitfall 3: Alembic Migrations Race Condition at Container Startup
+### Pitfall 3: Backfilling game_positions for Existing Games Is an OOM Risk
 
 **What goes wrong:**
-The FastAPI app container starts and immediately tries to connect to PostgreSQL before the database is ready to accept connections (PG needs 3-10s to initialize on first run). Either the app crashes on startup, or — if `alembic upgrade head` runs from within FastAPI's lifespan — multiple replicas attempt migrations simultaneously, causing schema corruption.
+Adding new columns to `game_positions` (e.g., `game_phase`, `material_signature`, `endgame_class`) and then running a backfill script that recomputes values for all existing rows will attempt to load and update a very large number of rows. The production server already hit an OOM kill at batch_size=50 during initial import — the same risk applies to backfill. A naive `UPDATE game_positions SET game_phase = compute(fen) WHERE game_phase IS NULL` across millions of rows will lock the table for minutes and likely trigger the OOM killer on the 3.7GB/2GB-swap Hetzner instance.
+
+The `game_positions` table has no stored FEN — only Zobrist hashes. Computing `game_phase` requires replaying PGN moves from `games.pgn`, which means the backfill must join `game_positions` to `games`, re-parse each PGN, and update rows in chunks. This is a multi-step operation, not a simple column update.
 
 **Why it happens:**
-`depends_on: db` in Docker Compose only waits for the container process to start, not for PostgreSQL to be ready. The `pg_isready` health check is the correct gate but is frequently omitted. Running migrations from within `asyncio` lifespan also has a known issue: the Alembic context variable is sometimes `None` when using an async engine.
+Backfill migrations are typically modeled as simple column-population scripts. For `game_positions`, the data needed (FEN/board state per ply) is not stored — it must be recomputed from PGN, making the backfill significantly more expensive and memory-intensive than it appears.
 
 **How to avoid:**
-1. Add a `healthcheck` to the `db` service and `depends_on: condition: service_healthy` for the app.
-2. Run `alembic upgrade head` as a one-off step before the app starts (e.g., `command: sh -c "alembic upgrade head && uvicorn app.main:app ..."`), not inside the FastAPI lifespan.
-```yaml
-db:
-  healthcheck:
-    test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER"]
-    interval: 5s
-    retries: 5
-
-app:
-  depends_on:
-    db:
-      condition: service_healthy
-```
+- Add new columns as `NULL` (no `NOT NULL` constraint) via Alembic — PostgreSQL 18 adds nullable columns near-instantly with no table rewrite
+- Write the backfill as a standalone Python script (not an Alembic migration) that processes one game at a time, calling `hashes_for_game` (or a new `metadata_for_game` function that also returns phase/material per ply), and batches position `UPDATE`s using primary key range pagination
+- Use the same batch_size=10 games pattern from `import_service.py` — 10 games × ~40 positions = ~400 rows per UPDATE batch
+- Add a `game_id` range parameter so the backfill can be resumed after interruption
+- Run the backfill as a one-off script via `uv run python scripts/backfill_position_metadata.py` rather than inside an Alembic migration (migrations must be fast and transactional — backfills are neither)
+- Monitor PostgreSQL memory during the first test run with `ssh flawchess "docker stats --no-stream"`
 
 **Warning signs:**
-- App container restarts once, then succeeds — masks the race condition
-- `sqlalchemy.exc.OperationalError: could not connect to server` in early logs
+- Backfill script does a single large `UPDATE ... WHERE game_phase IS NULL` without batching
+- Alembic migration includes a Python loop that processes all games — will time out or OOM on production
+- No resume capability — if the server OOMs midway, the half-backfilled state is hard to recover from
 
-**Phase to address:** Docker + Caddy deployment phase (phase 1)
+**Phase to address:** Database schema phase (add columns) + a dedicated backfill phase
 
 ---
 
-### Pitfall 4: Service Worker Serves Stale App After Deployment
+### Pitfall 4: Material Signature Normalization Is Not Canonical Without a Convention
 
 **What goes wrong:**
-This project already uses `vite-plugin-pwa` with Workbox. After a new deployment, returning users continue to run the old app version — including stale API request shapes that may be incompatible with the updated FastAPI backend. The user sees no error; the app silently fails or returns wrong data because the old JS bundle sends requests the new API no longer recognizes.
+When computing endgame class, a material signature like "KRP vs KR" must be consistent regardless of which player is White. If the user played Black in a rook + pawn vs rook endgame, the raw position is "KR vs KRP" — but this should map to the same endgame class as "KRP vs KR". Without a normalization step, the same endgame class gets stored under two different strings, splitting statistics in half and making queries return wrong aggregates.
+
+The convention used must also handle equal material (e.g., "KR vs KR" is symmetric and only has one form), unequal material where it's unclear which side has more (e.g., "KQRP vs KRR"), and the perspective issue (White may have more material but the user played Black).
 
 **Why it happens:**
-Workbox precaches all assets at build time. The service worker update cycle requires: (1) browser detects a new `sw.js`, (2) new SW installs, (3) user closes all tabs or accepts a prompt. Step 3 often never happens in an installed PWA where the tab is never fully closed.
+It is natural to compute pieces for White and Black separately and join with "vs" — but the result depends on which side is White. Without an explicit "stronger side always goes first" or "alphabetical sort" convention enforced at compute time, the normalization is inconsistent.
 
 **How to avoid:**
-- Implement the `onNeedRefresh` callback from `vite-plugin-pwa`'s `useRegisterSW` hook to show a "New version available — reload?" banner.
-- Do not use `skipWaiting: true` silently — this interrupts in-progress analysis sessions.
-- Set `Cache-Control: no-cache` on `index.html` in Caddy (assets in `/assets/` with content-hashed filenames can use `immutable` caching safely).
+- Define a canonical form: always sort the two sides so the side with higher material value goes first; if equal, use lexicographic ordering of the piece string
+- Use abbreviations based on piece count: `K` + one letter per extra piece in piece-value-descending order (Q, R, B, N, P) — e.g., `KQRP` for a King + Queen + Rook + Pawn
+- Store a separate `user_material_side` flag (stronger/weaker/equal) so queries can filter by whether the user was the stronger or weaker side, independent of the canonical form
+- Test normalization with symmetric cases (KR_KR), asymmetric cases (KRP_KR and KR_KRP must map to the same canonical form), and edge cases like bare kings (KK) or promotion-related material mismatches
+- Write a unit test: for any position, rotating the board (swapping colors) should produce the same `material_signature`
 
 **Warning signs:**
-- Users report seeing old UI after a deploy
-- Sentry shows API errors affecting only a subset of users (those on cached version)
-- `sw.js` gets a new hash in the deploy but affected users do not reload
+- Analytics query for "rook endgames" returns half the expected games
+- `material_signature` values like `KR_KRP` and `KRP_KR` both appear in the database
+- Statistics vary depending on whether the user played White or Black in the same type of endgame
 
-**Phase to address:** Docker + Caddy deployment phase (cache headers for `index.html`); also part of CI/CD phase (update banner verification)
+**Phase to address:** Material computation phase (signature normalization logic)
 
 ---
 
-### Pitfall 5: GDPR Violation — Analytics Fires Before Consent
+### Pitfall 5: Game Phase Boundaries Have No Universal Standard — Inconsistency Across Games
 
 **What goes wrong:**
-Google Analytics (or any tracking script) initializes on page load before the consent banner is shown or accepted. The banner's presence does not constitute consent — under GDPR, data collection must not begin until explicit user consent is given. Firing GA before consent is a violation regardless of whether a banner exists.
+The terms "opening", "middlegame", and "endgame" have no universally agreed numerical definition. Chess.com classifies phase per game (their insight data is not in the API). Stockfish uses a tapered, continuous phase value — not a discrete threshold. Common heuristics disagree: some treat any queenless position as an endgame; others require both queens and at least two minor pieces to be off the board; others use total piece weight thresholds.
+
+If the phase boundary heuristic is poorly chosen, a game where queens are traded on move 10 will be flagged as "endgame" for moves 10-60, including a long tactical middlegame played without queens. Conversely, a long pawn endgame might not be detected until well into the endgame phase.
 
 **Why it happens:**
-The most natural implementation puts `gtag` initialization in `index.html` or a top-level React `useEffect`. Both fire immediately on every page load, including first visits where no consent has been given.
+Phase detection seems simple ("count pieces") but real games have high variance: early queen trades, quick piece exchanges, games without queens but rich in minor pieces. A single threshold cannot fit all game types cleanly.
 
 **How to avoid:**
-- Gate `gtag` initialization behind stored consent state: only initialize after the user explicitly accepts analytics cookies.
-- On subsequent visits, check the stored consent flag on app load and re-initialize GA if previously accepted (so returning users who consented are tracked without seeing the banner again).
-- Implement Google Consent Mode v2 — mandatory since March 2024 for EU users of Google services. Without it, Google stops processing conversion data from EEA users.
-- Alternatively: use Plausible Analytics or Umami (privacy-friendly, no cookies, no PII). These do not require a consent banner at all, eliminating this pitfall category entirely. Recommended given this project's developer audience.
+- Use a tapered phase score derived from non-pawn, non-king material: `phase = sum(piece_phase_weights_for_remaining_pieces)` where weights are Queen=4, Rook=2, Knight=1, Bishop=1. Max is 24 (starting position). Normalize to 0-24.
+- Classify as: phase >= 18 → opening; 8 <= phase < 18 → middlegame; phase < 8 → endgame. These thresholds match typical Stockfish-adjacent conventions (total minor+rook phase weight ≤ 8 indicates endgame-like material)
+- Supplement with a ply floor: never classify ply < 10 as middlegame or endgame regardless of material (accounts for sacrificial openings)
+- Accept that the boundary is a heuristic — document the exact formula so users can understand what they're looking at
+- Do NOT attempt to match chess.com's undisclosed phase boundaries (not in API, not documented)
 
 **Warning signs:**
-- Network tab shows `google-analytics.com` requests on first page load before any user interaction
-- Analytics consent cookie is absent when analytics network requests fire
+- All queen trades on move 8 result in "endgame" label for the next 60 moves of a tactical game
+- Stats show 60% of positions classified as "endgame" for blitz games (too aggressive threshold)
+- Different games of the same type produce wildly different phase breakdowns
 
-**Phase to address:** Analytics + privacy policy phase
+**Phase to address:** Phase computation phase (design + unit tests covering edge cases)
 
 ---
 
-### Pitfall 6: GitHub Actions Secrets Leaked via Third-Party Actions
+### Pitfall 6: Adding Many Nullable Columns to game_positions Risks Postgres Page Bloat
 
 **What goes wrong:**
-CI/CD workflows using third-party GitHub Actions run with the same permissions as the workflow. In 2025, multiple supply-chain incidents compromised widely-used actions by rewriting mutable version tags (`@v3`, `@v4`) to serve malicious code that exfiltrates secrets from the runner — including `DATABASE_URL`, `SSH_PRIVATE_KEY`, and Docker registry tokens.
+`game_positions` has ~40 rows per game. A user with 5,000 games has ~200,000 rows. A multi-user platform will have millions of rows total. Adding 4+ nullable columns (game_phase, material_signature, endgame_class, eval_cp) to this table does not require a table rewrite in PostgreSQL 18 (nullable columns with no default are near-instant). However, once the backfill runs and rows are updated, PostgreSQL creates new row versions (dead tuples) via MVCC. Without autovacuum catching up, dead tuple accumulation inflates table and index size, increasing query I/O and slowing the existing Zobrist hash queries.
+
+The existing indexes `ix_gp_user_full_hash`, `ix_gp_user_white_hash`, `ix_gp_user_black_hash` are critical for query performance. Excessive dead tuples after backfill can bloat these indexes.
 
 **Why it happens:**
-Version tags like `@v3` are mutable. An attacker who compromises the action maintainer's account can reassign the tag to a different commit. Pinning to `@v3` provides no integrity guarantee.
+MVCC writes new row versions for every UPDATE. A backfill that touches every row in `game_positions` is essentially a full-table update — it creates as many dead tuples as there are rows. Autovacuum may not keep up with the rate of dead tuple generation during a fast backfill.
 
 **How to avoid:**
-- Pin all third-party actions to a full commit SHA: `uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683` (not `@v4`).
-- Minimize secret scope: use environment-scoped secrets rather than repository-wide where possible.
-- Use `--password-stdin` for Docker registry login rather than inline token arguments (process args can be visible via `ps` on a self-hosted runner).
-- Never run `echo $SECRET` in `run:` steps — GitHub's automatic redaction is not guaranteed after all transformations.
+- Run `ANALYZE game_positions;` after the backfill completes to update statistics
+- Run `VACUUM game_positions;` (not FULL — that locks) after backfill to reclaim dead tuple space
+- Set `autovacuum_vacuum_cost_delay` to a lower value temporarily if the table is idle during backfill
+- Monitor with `SELECT n_dead_tup, n_live_tup FROM pg_stat_user_tables WHERE relname = 'game_positions';` before and after backfill
+- For the small Hetzner instance, run the backfill during off-peak hours and pause between game batches to give autovacuum time to reclaim space
 
 **Warning signs:**
-- Workflow files use `@v3` or `@main` style action references
-- `DATABASE_URL` or `SSH_PRIVATE_KEY` passed as environment variables without review of the action's source
+- Zobrist hash queries become 3-10x slower after backfill completes
+- `pg_stat_user_tables` shows `n_dead_tup` growing beyond `n_live_tup`
+- `\d+ game_positions` in psql shows table size doubling after backfill with no corresponding data growth
 
-**Phase to address:** CI/CD pipeline phase
+**Phase to address:** Backfill phase (post-completion cleanup step)
 
 ---
 
-### Pitfall 7: Import Queue Starvation Under Concurrent Users
+### Pitfall 7: Lichess evals=true Parameter Changes the NDJSON Response Structure
 
 **What goes wrong:**
-Currently each user import is a FastAPI `BackgroundTask`. Under concurrent users, multiple imports run simultaneously — each making sequential HTTP requests to chess.com/lichess with embedded rate-limit delays. Chess.com enforces roughly 3-4 concurrent connections per server IP; the fourth concurrent import receives HTTP 429 and either silently fails or triggers a temporary IP-level ban. With 5+ simultaneous importing users, the platform can ban the server's IP for 24 hours.
+The current `lichess_client.py` fetches games as NDJSON with `pgnInJson: True` and parses the `pgn` field from each JSON object. When `evals=True` is added, the PGN string will contain embedded `[%eval ...]` annotations inside move text nodes. If the existing `normalize_lichess_game` function stores the full PGN including eval annotations into `games.pgn`, then `hashes_for_game` (which re-parses the PGN) will encounter annotated PGN. python-chess handles annotated PGN correctly via `chess.pgn.read_game`, but any downstream code that does string-level PGN parsing or expects clean algebraic notation without comments will break silently.
+
+There is also a risk that `evals=True` significantly increases the size of each NDJSON line for analyzed games, increasing streaming time and memory usage per line.
 
 **Why it happens:**
-`BackgroundTasks` has no global concurrency limit or coordination across user sessions. Each import is an independent async task with no awareness of other running imports.
+Annotated PGN is a superset of plain PGN and looks identical when the game has no analysis. The difference only appears at runtime for games with analysis. Testing with non-analyzed games will pass; only analyzed games reveal the issue.
 
 **How to avoid:**
-- Implement a global `asyncio.Semaphore` limiting concurrent outbound import tasks (e.g., `asyncio.Semaphore(3)` for chess.com, separate one for lichess).
-- Return an immediate "queued" status to the frontend; poll for progress via a status endpoint.
-- Persist import state in the DB (queued / running / complete / failed) so status survives app restarts.
-- Do not introduce Celery — it adds Redis + worker infrastructure disproportionate to this use case. A semaphore-based asyncio queue is sufficient at current scale.
+- Always use `chess.pgn.read_game` for PGN parsing — it handles annotations correctly
+- Never regex-parse move text from PGN strings for move extraction
+- Test the import pipeline specifically on a lichess game that has computer analysis enabled
+- Consider whether to store the annotated PGN (with evals inline) or strip annotations before storage: storing annotated PGN is fine since `hashes_for_game` uses `chess.pgn.read_game`, but it will increase `games.pgn` column size for analyzed games
 
 **Warning signs:**
-- Import works for solo testing but fails when two users import simultaneously
-- Chess.com 429 errors in logs with no retry logic
-- Users see no feedback after clicking "Import" — task silently dropped
+- `hashes_for_game` fails on a game whose PGN contains `[%eval 0.35]` annotations
+- Eval extraction via `node.eval()` returns `None` even after adding `evals=True` to the request (means the game was never analyzed on lichess)
 
-**Phase to address:** Import queue phase
+**Phase to address:** Engine analysis import phase (lichess client modification)
 
 ---
 
-### Pitfall 8: Sentry Initialization Order Silently Breaks Error Capture
+### Pitfall 8: Backfill Strategy Must Handle the games.pgn → game_positions Join Correctly
 
 **What goes wrong:**
-If `sentry_sdk.init()` is called after the FastAPI app is instantiated or after middleware is added, the ASGI integration hooks are never registered. Errors occur and are logged, but nothing appears in the Sentry dashboard. The app appears to be working normally while errors go untracked.
+`game_positions` does not store a FEN per ply — only Zobrist hashes and `move_san`. To compute `game_phase`, `material_signature`, and `endgame_class` for each position row, the backfill must replay the PGN from `games.pgn` and, at each ply, capture the board state. The `game_positions` rows must then be updated with the computed values, matched by `(game_id, ply)`.
+
+A common mistake is to write a per-position backfill that somehow derives game phase from only the data available in `game_positions` (hashes and move_san). There is not enough information — you need the full board state, which requires PGN replay.
 
 **Why it happens:**
-Sentry is often added as an afterthought and dropped inside a function or after `app = FastAPI()`. The `FastApiIntegration` must hook into the app at construction time; late initialization misses the middleware chain. A known GitHub issue (`sentry-python #2353`) documents exactly this: "When initialized before FastAPI app, sentry doesn't capture errors" — the fix is initialization at module top-level, unconditionally before `app = FastAPI()`.
+Developers look at the `game_positions` table columns and try to write a pure-SQL migration. The missing FEN makes that impossible for phase/material computation — the PGN must be re-parsed.
 
 **How to avoid:**
-Call `sentry_sdk.init(...)` at module top-level in `main.py`, unconditionally, before `app = FastAPI(...)`. Use `FastApiIntegration` and `AsyncioIntegration` (the latter required for correct async task context propagation). Verify with a deliberate test route.
+- Write the backfill as: `SELECT g.id, g.pgn FROM games g WHERE EXISTS (SELECT 1 FROM game_positions gp WHERE gp.game_id = g.id AND gp.game_phase IS NULL LIMIT 1)` — iterate games, not positions
+- For each game, call a new `metadata_for_game(pgn)` function that returns `List[(ply, game_phase, material_imbalance, material_signature, endgame_class)]`
+- Use bulk `UPDATE game_positions SET game_phase = data.phase, ... FROM (VALUES ...) AS data(ply, ...) WHERE game_positions.game_id = $1 AND game_positions.ply = data.ply`
+- Reuse the existing batch pattern from `import_service.py` — iterate games in batches of 10, build the UPDATE values in memory, execute as a single statement
 
 **Warning signs:**
-- Sentry dashboard shows zero events despite confirmed unhandled exceptions in logs
-- Test route `GET /api/debug/sentry-test` raises but no event appears in Sentry within 60 seconds
+- Backfill script iterates `game_positions` rows individually and makes per-row DB calls
+- Backfill query lacks a `LIMIT` / pagination mechanism — processes all rows in one transaction
 
-**Phase to address:** Monitoring + Sentry phase
-
----
-
-### Pitfall 9: SEO — SPA Returns Empty HTML Shell to Crawlers
-
-**What goes wrong:**
-Googlebot fetches `index.html` and receives `<div id="root"></div>` — nothing. React has not run. There are no `<meta>` description tags, no `<title>`, no visible text. The app is invisible to search engines for all routes, including the About/landing page that is critical for organic discovery.
-
-**Why it happens:**
-Client-side rendering defers all content to JavaScript execution. Google's crawl pipeline does execute JavaScript, but with delays of days to weeks and no guaranteed success rate. Even when Google does render the page, dynamic meta tags set via React are often missed on the first crawl pass.
-
-**How to avoid:**
-For a chess analysis tool whose primary SEO value is the landing/About page (not per-user analysis pages), the pragmatic approach is:
-- Use `react-helmet-async` to set `<title>` and `<meta description>` on the About, Login, and root pages.
-- Pre-render the About/landing page as static HTML at build time — either a simple `/about.html` served by Caddy, or using `vite-ssg` for selective pre-rendering. This gives crawlers real content without full SSR infrastructure.
-- Generate a `sitemap.xml` and `robots.txt` served as static files.
-- Do not add Next.js or full SSR for this milestone — complexity is disproportionate. Focus on the marketing pages only.
-
-**Warning signs:**
-- `curl https://flawchess.com/about` returns `<div id="root"></div>` with no visible text in `<body>`
-- Google Search Console shows pages as "Discovered — currently not indexed" after weeks
-
-**Phase to address:** SEO fundamentals phase
-
----
-
-### Pitfall 10: Rename Leaves Stale References Causing Silent Mismatches
-
-**What goes wrong:**
-Renaming Chessalytics to FlawChess is easy in visible branding (HTML title, README) but incomplete in code. Old names persist in: Python `pyproject.toml` metadata, environment variable names (e.g., `CHESSALYTICS_SECRET_KEY` in deployment scripts), Alembic migration comment headers, Docker image tags, GitHub Actions workflow names, Sentry project DSN configuration, and `package.json` `name` field. These rarely cause immediate failures but create confusion and silent mismatches — Sentry events tagged to the wrong project, CI alerts referencing the wrong app name.
-
-**Why it happens:**
-Renames are treated as a visible-strings find-and-replace, but structural references baked into deployment scripts, env var names, CI secrets, and container registry paths are missed.
-
-**How to avoid:**
-- Before declaring the rename PR complete, run `grep -ri chessalytics . --include="*.py" --include="*.ts" --include="*.json" --include="*.yml"` and resolve all hits.
-- Update explicitly: `package.json` `name`, `pyproject.toml` `[project] name`, any env vars with the old name, Docker image tag in compose and CI scripts, Sentry project name, GitHub repo name (creates automatic redirects for ~1 year — still update your local remote immediately with `git remote set-url`).
-
-**Warning signs:**
-- `grep -ri chessalytics` returns hits after the rename PR merges
-- Sentry events land in a project named "chessalytics" post-launch
-
-**Phase to address:** Rename/rebrand phase — should be the first or a standalone phase before other phases introduce new references to the new name
-
----
-
-### Pitfall 11: FastAPI Docs Endpoint Exposed in Production
-
-**What goes wrong:**
-FastAPI's auto-generated `/docs` (Swagger UI) and `/redoc` endpoints are enabled by default. In production, these expose the full API schema, all endpoint signatures, request/response models, and authentication flows to any visitor. This enables targeted enumeration and attack construction.
-
-**Why it happens:**
-Default FastAPI configuration enables docs for developer convenience. There is no framework-level nudge to disable them in production.
-
-**How to avoid:**
-Configure the app with docs disabled in production:
-```python
-app = FastAPI(
-    docs_url=None if settings.environment == "production" else "/docs",
-    redoc_url=None if settings.environment == "production" else "/redoc",
-)
-```
-
-**Warning signs:**
-- `GET https://flawchess.com/docs` returns a Swagger UI page in production
-- `/openapi.json` endpoint returns the full schema publicly
-
-**Phase to address:** Docker + Caddy deployment phase (production config)
+**Phase to address:** Backfill phase (script design)
 
 ---
 
@@ -276,14 +215,13 @@ app = FastAPI(
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| No Docker health check — rely on `depends_on` service name only | Simpler compose file | Intermittent startup failures; app crashes before DB is ready | Never in production |
-| Run `alembic upgrade head` inside FastAPI async lifespan | Single deployment artifact | Race condition with multiple replicas; async engine context bugs | Never |
-| Hardcode `DATABASE_URL` in `docker-compose.yml` | No secrets setup required | Credentials in VCS history | Never |
-| GA without Consent Mode v2 | Simpler implementation | GDPR violation; Google stops processing EEA conversions | Never for EU-accessible apps |
-| `BackgroundTasks` for concurrent imports with no semaphore | No extra infrastructure | chess.com IP ban at 4+ concurrent users | MVP only if max concurrent users is known to be < 3 |
-| No PWA `onNeedRefresh` update banner | One fewer UI component | Users run stale version indefinitely after deploys | Never — app has API contract coupling between frontend and backend versions |
-| Pin GitHub Actions to `@v3` tags instead of commit SHA | Readable workflow files | Supply-chain attack vector (multiple incidents in 2025) | Never for workflows handling production secrets |
-| Leave `/docs` and `/redoc` enabled in production | Convenient for debugging | API schema enumeration by attackers | Never in production |
+| Store `game_phase` as `VARCHAR` instead of a typed enum or SMALLINT | Easier to read in psql | Typo-prone; no DB-level constraint; string comparison slower than integer | Never — use SMALLINT (0=opening,1=middlegame,2=endgame) or a PG enum |
+| Assume chess.com accuracy is always present; no null handling | One less null check | Crashes on first unreviewed game (likely the first game of every user) | Never |
+| Run backfill inside an Alembic migration | Single deploy step | Migrations are transactional — a 10-minute Python loop blocks the migration lock and OOMs | Never for compute-heavy backfills |
+| Compute material signature on-the-fly in queries | No schema change needed | Repeated PGN re-parsing per query; unindexable; query latency at scale | Never — compute at import time |
+| Use a simple `ply < 20` threshold for opening phase | Zero computation | Wrong for gambits, short games, rapid piece trades | Never — use piece count heuristic |
+| Skip VACUUM after backfill | Saves a step | Query performance degrades due to dead tuple bloat | Never — always VACUUM after large table updates |
+| Store per-move eval in `game_positions` for moves without analysis as 0 | Simpler query | 0 is a valid eval (equal position) — impossible to distinguish "no data" from "equal" | Never — use NULL for absent evals |
 
 ---
 
@@ -291,16 +229,14 @@ app = FastAPI(
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| Caddy + React SPA | `try_files` rewrites API calls to `/index.html` | Wrap in `route {}` block; put `reverse_proxy /api/*` first |
-| Caddy + `index.html` | Long `Cache-Control: max-age` on `index.html` | `Cache-Control: no-cache` on `index.html`; `immutable` caching safe only for `/assets/` content-hashed files |
-| Sentry + FastAPI | `sentry_sdk.init()` called after `app = FastAPI()` | Init at module top-level before app instantiation; use `FastApiIntegration` + `AsyncioIntegration` |
-| Sentry + React | Using `SENTRY_DSN` env var (not exposed by Vite) | Use `VITE_SENTRY_DSN` (public prefix required for Vite to expose to browser bundle) |
-| Google Analytics + GDPR | `gtag` in `<head>` fires before consent | Gate initialization on consent state; implement Consent Mode v2; or use Plausible to skip consent entirely |
-| chess.com API + concurrent users | Multiple simultaneous imports hit 429 or trigger IP ban | Global `asyncio.Semaphore(3)` shared across all user import tasks |
-| Docker + PostgreSQL | Container data in writable layer — lost on `down` | Named volume in `docker-compose.yml` top-level `volumes:` |
-| Docker + json-file logging | Unbounded log file growth exhausts disk | Set `logging: driver: local` or `--log-opt max-size=10m max-file=3` |
-| GitHub Actions + Docker registry | `--password` argument visible in `ps` output | Use `--password-stdin` with piped input |
-| vite-plugin-pwa + deployments | No update notification — users stay on old version | Implement `useRegisterSW` with `onNeedRefresh` reload banner |
+| chess.com API + accuracy | Access `game["accuracies"]["white"]` directly | Always check `game.get("accuracies")` first; both white and black may be absent |
+| chess.com API + move evals | Expect per-move centipawn from archive API | Move-level evals are not in the public API; only overall accuracy floats when reviewed |
+| lichess API + evals | Expect evals for all games after adding `evals=True` | Evals only present for games with computer analysis; always check `node.eval()` for None |
+| lichess PGN eval format | Parse `[%eval 0.17]` with regex | Use `chess.pgn.read_game` then `node.eval()` — returns `chess.engine.PovScore | None` |
+| lichess mate eval format | Treat `[%eval #-3]` as centipawn value | `#N` = mate, `#-N` = mated; always branch on `PovScore.is_mate()` before `.score()` |
+| python-chess + material count | Use `board.piece_map()` with dict comprehension | Use bitboard operations: `chess.popcount(board.occupied_co[WHITE] & board.queens)` for efficiency |
+| PostgreSQL + new nullable columns | Add column with `NOT NULL DEFAULT 0` | Add as `NULL` first; backfill later; then add `NOT NULL` constraint after backfill completes |
+| Alembic + compute-heavy backfill | Put Python backfill loop inside `op.execute()` or upgrade function | Use a separate script run after migration; migrations must be fast and transactional |
 
 ---
 
@@ -308,11 +244,12 @@ app = FastAPI(
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| No DB connection pool config | App works in dev, timeouts under load in prod | Set `pool_size`, `max_overflow`, `pool_timeout` in SQLAlchemy async engine | ~20 concurrent requests |
-| Docker json-file log driver, no rotation | Host disk exhausts; app becomes unresponsive | `logging: driver: local` in compose, or `--log-opt max-size=10m` | After days of moderate traffic |
-| No Hetzner volume for PostgreSQL | Data in container layer — lost on VM restart | Mount Hetzner volume at `/mnt/data`, bind-mount into container | Any VM restart |
-| `index.html` cached by CDN or browser with long TTL | New deployments not picked up by returning users | `Cache-Control: no-cache` on `index.html` specifically in Caddy | Any deployment after the first |
-| Import task state not persisted | User import disappears with no status if app restarts | Store import state (queued / running / done / failed) in DB | Any app restart during an active import |
+| Per-position PGN re-parse in backfill | Backfill takes hours, OOMs on production | Parse PGN once per game, emit metadata for all plies at once | At ~5,000+ games (200k+ position rows) |
+| Non-batched UPDATE during backfill | Single multi-hour transaction, table lock | Batch by game_id ranges; commit after each batch of 10 games | Any table size above ~1,000 rows |
+| Dead tuple bloat after backfill | Existing Zobrist hash queries 3-10x slower | Run VACUUM game_positions after backfill | Immediately post-backfill |
+| Endgame query with LIKE on material_signature | Slow full-table scan for "rook endgames" | Add index on material_signature; or use a `endgame_class` integer column with exact equality | At ~50k position rows or more |
+| Joining game_positions to games for phase-based stats | N+1 query or expensive join without index | Denormalize game_phase onto game_positions at import time (which is the plan); never compute at query time | Any non-trivial dataset |
+| Storing full eval annotations in games.pgn for analyzed lichess games | games.pgn column grows 3-5x for analyzed games | Acceptable at current scale; if PGN storage becomes significant, extract evals into separate table | At ~100k analyzed games |
 
 ---
 
@@ -320,12 +257,8 @@ app = FastAPI(
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| `SECRET_KEY` or `DATABASE_URL` committed to `.env` in VCS | Credential exposure in public repo | `.env` in `.gitignore`; use `.env.example` with placeholders; pass secrets via GitHub Actions secrets |
-| FastAPI `/docs` and `/redoc` enabled in production | API schema enumeration; targeted attacks | `docs_url=None, redoc_url=None` in production config |
-| No rate limiting on `/auth/login` | Brute-force credential stuffing | Add `slowapi` or Caddy rate limiting on auth endpoints |
-| Docker container port bound to `0.0.0.0:8000` | FastAPI directly reachable, bypassing Caddy | Bind to `127.0.0.1:8000`; only Caddy faces the internet |
-| Frontend `VITE_SENTRY_DSN` treated as secret | Unnecessary secret management overhead | Frontend DSN is intentionally public; only the backend DSN needs protection. Use separate Sentry projects for frontend and backend. |
-| Third-party GitHub Actions at mutable version tags | Supply-chain attack exfiltrates production secrets | Pin all actions to full commit SHA |
+| Expose `material_signature` containing opponent piece counts in API response without auth check | Inadvertently exposing private game data via analytics endpoints | All endgame analytics endpoints must verify `user_id == current_user.id` before querying |
+| Log PGN strings in full during backfill errors | PGN may contain username/rating data; logs accumulate and are not rotated | Log `game_id` only in backfill error messages, not the full PGN string |
 
 ---
 
@@ -333,27 +266,28 @@ app = FastAPI(
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| No import queue status — "Import" click gives no feedback | User clicks multiple times; duplicate imports queued | Immediate "queued" status response; disable button while running; poll for completion |
-| Cookie consent banner blocks the entire viewport on mobile | First-time mobile users cannot see the app at all | Compact bottom banner; "Accept" + "Manage" buttons only; never full-screen overlay |
-| PWA update banner fires aggressively during active session | Users are interrupted mid-analysis | Show banner only when user is idle or navigates; allow dismissal |
-| Privacy policy linked only in footer on desktop | Mobile users never find it; GDPR requires accessible link | Link in the consent banner itself; also in the mobile "More" drawer |
+| Show accuracy statistics for "all games" when only reviewed games have accuracy data | User sees misleadingly low counts ("only 47 of 2,341 games have accuracy data") | Surface clearly: "Accuracy data available for X reviewed games" with a tooltip explaining reviews |
+| Display "0.0" for centipawn eval when data is absent | User thinks every unanalyzed position is exactly equal | Show "—" or "n/a" when eval is NULL, not 0 |
+| Endgame filter shows "no games" for users with few analyzed games | User thinks the feature is broken | Show a "No analyzed endgame data yet" empty state with an explanation |
+| Phase boundaries produce counter-intuitive phase labels on short games | 10-move game shows "endgame" from move 8 due to early simplification | Enforce a ply floor: never label ply < 8 as endgame regardless of material |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **Docker volume:** Named volume declared AND verified to survive `docker compose down` + `up` — check with `docker volume ls` and query row count post-cycle
-- [ ] **Caddy SPA routing:** Deep-link URL (e.g., `/openings`) works on hard refresh — not just root navigation
-- [ ] **Caddy SSL:** Certificate auto-renewed — check Caddy logs for ACME challenge success; verify with `curl -I https://flawchess.com`
-- [ ] **Alembic on deploy:** Migrations complete before app starts (confirmed via `docker compose logs` ordering)
-- [ ] **Sentry FastAPI:** Test exception route raises — event appears in Sentry dashboard within 60 seconds
-- [ ] **Sentry React:** Frontend JS error triggered — stack trace appears sourcemapped (not minified) in Sentry
-- [ ] **Analytics GDPR:** Network tab on first visit shows zero requests to `google-analytics.com` before the consent "Accept" action
-- [ ] **PWA update banner:** Deploy a visible change, reload the installed PWA — update notification appears within one background check cycle
-- [ ] **SEO:** `curl https://flawchess.com/about` returns non-empty visible text in `<body>` (not just `<div id="root">`)
-- [ ] **Rename complete:** `grep -ri chessalytics . --include="*.py" --include="*.ts" --include="*.json" --include="*.yml"` returns zero hits
-- [ ] **Import queue:** Two simultaneous imports from different browser sessions complete without chess.com 429 errors
-- [ ] **FastAPI docs disabled:** `GET /docs` returns 404 in production
+- [ ] **chess.com accuracy:** Import pipeline tested against a game that has NOT been reviewed — `accuracies` field absent without crashing
+- [ ] **chess.com accuracy:** Import pipeline tested against a game that HAS been reviewed — both `white` and `black` accuracy fields stored correctly
+- [ ] **lichess evals:** Import pipeline tested against a lichess game with computer analysis — `[%eval ...]` annotations parsed correctly
+- [ ] **lichess evals:** Import pipeline tested against a lichess game WITHOUT computer analysis — no crash, positions stored with `eval_cp = NULL`
+- [ ] **lichess mate evals:** Import pipeline handles `[%eval #5]` and `[%eval #-3]` without crashing or treating mate as a centipawn value
+- [ ] **Material signature:** Same endgame type produces identical `material_signature` regardless of which color the user played — verified by unit test
+- [ ] **Material signature:** Symmetric positions (KR vs KR) produce a single canonical form, not two
+- [ ] **Game phase:** Early queen trade (e.g., ply 12) does not immediately classify remaining 50 moves as "endgame"
+- [ ] **Backfill:** Backfill script can be re-run safely after a partial run — idempotent (skips rows where `game_phase IS NOT NULL`)
+- [ ] **Backfill:** Backfill completes on production without triggering OOM killer — tested with `docker stats` monitoring
+- [ ] **Backfill:** VACUUM run after backfill completes — `pg_stat_user_tables.n_dead_tup` returns to near-zero
+- [ ] **Endgame analytics:** Empty state shown for users with no endgame data (new users, users with no analyzed games)
+- [ ] **Null evals UI:** Positions with `eval_cp = NULL` display "—" not "0" or crash
 
 ---
 
@@ -361,12 +295,11 @@ app = FastAPI(
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| PostgreSQL data loss (no volume) | HIGH | Restore from Hetzner snapshot if configured; otherwise ask users to re-import; set up named volume immediately |
-| Service worker serving stale version | LOW-MEDIUM | Deploy a self-destroying service worker that immediately unregisters; users get fix on next browser check; add `onNeedRefresh` banner going forward |
-| chess.com IP ban from concurrent imports | MEDIUM | Wait out the ban (typically 24 hours); implement semaphore immediately; consider Hetzner floating IP as emergency alternative |
-| Sentry not capturing errors (wrong init order) | LOW | Fix init order, redeploy; only cost is a gap in error history |
-| GA firing before consent (GDPR) | HIGH | Immediate: disable GA entirely; medium-term: reimplement behind consent gate or switch to Plausible |
-| GitHub Actions secret leaked via compromised action | HIGH | Rotate all exposed secrets immediately; audit action versions; pin all actions to SHA; review recent workflow run logs for unauthorized commands |
+| Backfill OOM kills PostgreSQL | MEDIUM | Server restarts automatically; backfill script detects `game_phase IS NOT NULL` rows and resumes; reduce batch size to 5 games and retry |
+| Inconsistent material_signature stored (non-canonical form) | HIGH | Write a fix script to re-normalize all stored signatures; add unit test to prevent regression; requires re-running backfill for affected rows |
+| chess.com accuracy imported as 0 for unreviewed games | MEDIUM | Add NULL guard to import; run a targeted UPDATE to set `accuracy_white = NULL WHERE accuracy_white = 0 AND games were not reviewed` (requires cross-referencing import timestamp) |
+| Dead tuple bloat post-backfill slows queries | LOW | `VACUUM game_positions;` immediately resolves; no data loss |
+| Game phase boundary heuristic produces wrong results | MEDIUM | The phase value is recomputable from PGN — update the heuristic, drop the `game_phase` column, re-add it, re-run backfill |
 
 ---
 
@@ -374,39 +307,34 @@ app = FastAPI(
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Caddy directive ordering breaks API routing | Docker + Caddy deployment | `curl /api/health` returns JSON; `/openings` hard-refresh returns SPA |
-| PostgreSQL data loss (no volume) | Docker + Caddy deployment | `docker compose down && docker compose up` preserves all rows |
-| Alembic startup race condition | Docker + Caddy deployment | Clean deploy from scratch completes without container restart loops |
-| Stale PWA after deployment | Docker + Caddy (cache headers) + CI/CD (update banner) | Redeploy while PWA is open; update notification appears |
-| FastAPI docs exposed in production | Docker + Caddy deployment | `GET /docs` returns 404 in production |
-| Analytics fires before GDPR consent | Analytics + privacy policy phase | Network tab shows zero GA requests before consent action |
-| GitHub Actions secrets supply-chain risk | CI/CD pipeline phase | All third-party actions pinned to commit SHA in workflow files |
-| Import queue starvation (chess.com 429) | Import queue phase | Concurrent 3-user import test completes without 429 errors |
-| Sentry init order | Monitoring + Sentry phase | Test exception route triggers Sentry event within 60s |
-| SPA invisible to crawlers | SEO fundamentals phase | `curl /about` returns meaningful text content in response body |
-| Stale rename references | Rename/rebrand phase (first) | `grep -ri chessalytics` returns zero hits after PR merges |
+| chess.com accuracy absent for unreviewed games | Engine analysis import phase | Import 100 games from a free user account; confirm most have `accuracy_white = NULL` without errors |
+| lichess evals absent for non-analyzed games | Engine analysis import phase | Import a lichess game without analysis; confirm no crash and `eval_cp = NULL` on all positions |
+| Lichess mate eval format misparse | Engine analysis import phase | Unit test for `[%eval #5]` and `[%eval #-3]` parsing |
+| Non-canonical material signature | Material computation phase | Unit test: KR_KRP and KRP_KR map to same canonical form |
+| Inconsistent phase boundaries | Phase computation phase | Unit test: early queen trade game does not become "endgame" by move 15 |
+| Backfill OOM on production | Backfill phase | Run with `batch_size=10`, monitor with `docker stats` on staging first |
+| Dead tuple bloat post-backfill | Backfill phase (cleanup step) | `n_dead_tup` near zero in `pg_stat_user_tables` after VACUUM |
+| Backfill non-idempotent | Backfill phase | Re-run backfill on already-processed database; row counts unchanged, no duplicate updates |
+| Annotated PGN breaks downstream parsing | Engine analysis import phase | `hashes_for_game` unit test on PGN with embedded `[%eval]` annotations |
+| Null eval displayed as 0 in UI | Endgame analytics UI phase | QA: position without analysis shows "—" not "0.00" |
 
 ---
 
 ## Sources
 
-- [Caddy: route directive preserving declaration order](https://caddyserver.com/docs/caddyfile/directives/route)
-- [Caddy community: React Router + reverse_proxy 404 issue](https://caddy.community/t/caddy-reverse-proxy-and-react-router/13013)
-- [Configuring Client-Side Routing for React SPA with Caddy](https://blog.metters.dev/posts/caddy-routing-and-reload-safety-with-csr-on-spa/)
-- [Docker: stop losing PostgreSQL data on container restart](https://dev.to/teguh_coding/docker-volumes-explained-stop-losing-data-every-time-you-restart-a-container-254g)
-- [Solving the FastAPI, Alembic, Docker startup problem](https://hackernoon.com/solving-the-fastapi-alembic-docker-problem)
-- [Sentry FastAPI integration — official docs](https://docs.sentry.io/platforms/python/integrations/fastapi/)
-- [Sentry: initialized before FastAPI app — issue #2353](https://github.com/getsentry/sentry-python/issues/2353)
-- [vite-plugin-pwa: automatic reload / update handling](https://vite-pwa-org.netlify.app/guide/auto-update.html)
-- [GDPR cookie consent — what developers get wrong](https://dev.to/andreashatlem/gdpr-cookie-consent-implementation-what-most-developers-get-wrong-and-how-to-fix-it-1jpl)
-- [Your cookie consent banner is probably breaking your analytics](https://dev.to/anjab/your-cookie-consent-banner-is-probably-breaking-your-analytics-5c4h)
-- [Google Analytics GDPR compliance 2025](https://gdprlocal.com/google-analytics-gdpr-compliance/)
-- [GitHub Actions: top 10 security pitfalls](https://arctiq.com/blog/top-10-github-actions-security-pitfalls-the-ultimate-guide-to-bulletproof-workflows)
-- [FastAPI async task management pitfalls](https://leapcell.io/blog/understanding-pitfalls-of-async-task-management-in-fastapi-requests)
-- [Why SPAs still struggle with SEO in 2025](https://dev.to/arkhan/why-spas-still-struggle-with-seo-and-what-developers-can-actually-do-in-2025-237b)
-- [Docker logging driver disk exhaustion prevention](https://betterstack.com/community/guides/scaling-python/fastapi-docker-best-practices/)
-- [Vite SPA PWA stale cache — vite-plugin-pwa issue #33](https://github.com/vite-pwa/vite-plugin-pwa/issues/33)
+- [chess.com forum: Insight data in public APIs (moderator confirms analysis data not in public API)](https://www.chess.com/forum/view/site-feedback/insight-data-in-public-apis)
+- [chess.com API: Published-Data API official help article](https://support.chess.com/en/articles/9650547-published-data-api)
+- [chess.com forum: accuracy field absent for unreviewed games](https://www.chess.com/forum/view/game-analysis/how-come-some-of-my-games-dont-show-anything-in-the-accuracy-column)
+- [lichess forum: exporting PGN with computer analysis](https://lichess.org/forum/lichess-feedback/is-there-a-way-to-export-the-pgn-games-with-computer-analysis)
+- [lichess API docs: evals parameter](https://lichess.org/api)
+- [python-chess: efficient material balance (maintainer recommendation)](https://github.com/niklasf/python-chess/discussions/864)
+- [Chessprogramming wiki: Tapered Eval — piece phase weights](https://www.chessprogramming.org/Tapered_Eval)
+- [Chessprogramming wiki: Game Phases](https://www.chessprogramming.org/Game_Phases)
+- [PostgreSQL docs: ALTER TABLE — adding nullable columns is near-instant](https://www.postgresql.org/docs/current/ddl-alter.html)
+- [PostgreSQL: batch UPDATE strategy for large tables](https://blog.codacy.com/how-to-update-large-tables-in-postgresql)
+- [ChessBase: endgame classification format (RB-RN notation)](http://help.chessbase.com/CBase/14/Eng/endgame_classification.htm)
+- [FlawChess CLAUDE.md — batch_size=10 OOM history](../CLAUDE.md)
 
 ---
-*Pitfalls research for: FlawChess / Chessalytics v1.3 — Production deployment, monitoring, analytics, SEO, and public launch*
-*Researched: 2026-03-21*
+*Pitfalls research for: FlawChess v1.5 — per-position metadata, engine analysis import, and endgame analytics*
+*Researched: 2026-03-23*

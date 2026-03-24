@@ -4,9 +4,11 @@ import pytest
 import pytest_asyncio
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+from app.models.user import User
 
 
 @pytest.fixture(scope="session")
@@ -83,6 +85,17 @@ def empty_board() -> chess.Board:
     board = chess.Board()
     board.clear()
     return board
+
+
+async def ensure_test_user(session: AsyncSession, user_id: int) -> None:
+    """Create a test user with the given ID if it doesn't already exist.
+
+    Needed because user_id columns have FK constraints to the users table.
+    """
+    existing = (await session.execute(select(User).where(User.id == user_id))).unique()
+    if existing.scalar_one_or_none() is None:
+        session.add(User(id=user_id, email=f"test-{user_id}@example.com", hashed_password="fakehash"))
+        await session.flush()
 
 
 @pytest_asyncio.fixture
