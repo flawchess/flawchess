@@ -135,7 +135,10 @@ Plans:
   1. A lichess game that has prior computer analysis imports with per-move eval values populated in the database
   2. A chess.com game with an accuracy score imports with that score stored; a game without accuracy data imports without error and stores NULL
   3. A game with no analysis data on either platform imports cleanly with all engine fields NULL and no error logged
-**Plans**: TBD
+**Plans:** 3 plans
+  - [ ] 28-01-PLAN.md — Schema migration, model updates, normalization accuracy extraction, lichess evals param, chunk_size fix
+  - [ ] 28-02-PLAN.md — Wire eval extraction into _flush_batch import pipeline
+  - [ ] 28-03-PLAN.md — Admin re-import script for backfilling existing games
 
 ### Phase 29: Endgame Analytics
 **Goal**: Users can view their endgame performance and material conversion/recovery statistics in a new Endgames tab with time control and color filters
@@ -182,7 +185,7 @@ Plans:
 | 25. Password Reset | v1.4 | 0/0 | Not started | — |
 | 26. Position Classifier & Schema | v1.5 | 2/2 | Complete    | 2026-03-23 |
 | 27. Import Wiring & Backfill | v1.5 | 2/2 | Complete    | 2026-03-24 |
-| 28. Engine Analysis Import | v1.5 | 0/0 | Not started | — |
+| 28. Engine Analysis Import | v1.5 | 0/3 | Not started | — |
 | 29. Endgame Analytics | v1.5 | 0/0 | Not started | — |
 | 30. Homepage, README & SEO Update | v1.5 | 0/0 | Not started | — |
 
