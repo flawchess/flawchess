@@ -39,6 +39,12 @@ function stripPrerenderChunk(): Plugin {
         }
       }
     },
+    // vite-prerender-plugin dynamically imports the prerender entry at build
+    // time. The loaded module graph (React, source-map WASM) keeps Node alive
+    // after the build finishes. Force exit once all files are written.
+    closeBundle() {
+      setTimeout(() => process.exit(0), 100)
+    },
   }
 }
 
@@ -52,7 +58,6 @@ export default defineConfig({
       prerenderScript: path.resolve(__dirname, 'src/prerender.tsx'),
       additionalPrerenderRoutes: ['/privacy'],
     }),
-    stripPrerenderChunk(),
     VitePWA({
       registerType: 'autoUpdate',
       devOptions: { enabled: true },
@@ -99,6 +104,8 @@ export default defineConfig({
         ],
       },
     }),
+    // Must be AFTER VitePWA so its closeBundle runs after SW generation
+    stripPrerenderChunk(),
   ],
   resolve: {
     alias: {
