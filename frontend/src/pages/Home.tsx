@@ -79,7 +79,7 @@ const FEATURES: {
 
 // ─── Homepage content (unauthenticated) ───────────────────────────────────────
 
-function HomePageContent() {
+export function HomePageContent() {
   return (
     <>
       <PublicHeader />
