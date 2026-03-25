@@ -1,4 +1,3 @@
-import fs from 'fs'
 import path from 'path'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -6,42 +5,14 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { vitePrerenderPlugin } from 'vite-prerender-plugin'
 
-// vite-prerender-plugin emits the prerender entry as a client chunk that
-// browsers download (via modulepreload) but never execute. Strip the
-// modulepreload link and delete the unused chunk file after build.
-function stripPrerenderChunk(): Plugin {
+// vite-prerender-plugin dynamically imports the prerender entry at build time.
+// The loaded module graph (React, source-map WASM) keeps Node alive after the
+// build finishes. Force exit once all plugins (including VitePWA) are done.
+function forceExitAfterBuild(): Plugin {
   return {
-    name: 'strip-prerender-chunk',
+    name: 'force-exit-after-build',
     apply: 'build',
     enforce: 'post',
-    writeBundle(options, bundle) {
-      const outDir = options.dir ?? 'dist'
-      for (const [fileName, chunk] of Object.entries(bundle)) {
-        if (chunk.type === 'chunk' && fileName.includes('prerender')) {
-          // Remove the chunk file
-          const chunkPath = path.join(outDir, fileName)
-          fs.rmSync(chunkPath, { force: true })
-
-          // Strip modulepreload link from all HTML files
-          const htmlFiles = Object.keys(bundle).filter(f => f.endsWith('.html'))
-          for (const htmlFile of htmlFiles) {
-            const htmlPath = path.join(outDir, htmlFile)
-            if (fs.existsSync(htmlPath)) {
-              const html = fs.readFileSync(htmlPath, 'utf-8')
-              const cleaned = html.replace(
-                new RegExp(`\\s*<link[^>]*${fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^>]*>`),
-                ''
-              )
-              if (cleaned !== html) fs.writeFileSync(htmlPath, cleaned)
-            }
-          }
-          break
-        }
-      }
-    },
-    // vite-prerender-plugin dynamically imports the prerender entry at build
-    // time. The loaded module graph (React, source-map WASM) keeps Node alive
-    // after the build finishes. Force exit once all files are written.
     closeBundle() {
       setTimeout(() => process.exit(0), 100)
     },
@@ -105,7 +76,7 @@ export default defineConfig({
       },
     }),
     // Must be AFTER VitePWA so its closeBundle runs after SW generation
-    stripPrerenderChunk(),
+    forceExitAfterBuild(),
   ],
   resolve: {
     alias: {
