@@ -44,4 +44,8 @@ class GamePosition(Base):
     material_imbalance: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     has_opposite_color_bishops: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
 
+    # Engine analysis: per-move eval from lichess %eval PGN annotations (NULL for chess.com and unanalyzed games)
+    eval_cp: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    eval_mate: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+
     game: Mapped["Game"] = relationship(back_populates="positions")  # type: ignore[name-defined]
