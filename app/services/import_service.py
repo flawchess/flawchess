@@ -411,6 +411,21 @@ async def _flush_batch(
             classify_board = None
             classify_nodes = []
 
+        # Extract per-move evals from PGN %eval annotations (lichess games with prior analysis).
+        # Each node in classify_nodes corresponds to a move (ply 1..N). The final hash_tuple
+        # entry (the position after the last move) has no corresponding node, so it gets
+        # (None, None). This mirrors how clock_seconds is already stored: the annotation on
+        # a move node is stored on the same position row as that move's move_san.
+        evals: list[tuple[int | None, int | None]] = []
+        if classify_nodes:
+            for node in classify_nodes:
+                pov = node.eval()
+                if pov is not None:
+                    w = pov.white()
+                    evals.append((w.score(mate_score=None), w.mate()))
+                else:
+                    evals.append((None, None))
+
         for i, (ply, white_hash, black_hash, full_hash, move_san, clock_seconds) in enumerate(hash_tuples):
             row: dict[str, Any] = {
                 "game_id": game_id,
@@ -439,6 +454,17 @@ async def _flush_batch(
                 # Advance classify_board to next ply regardless of classification success
                 if i < len(classify_nodes):
                     classify_board.push(classify_nodes[i].move)
+
+            # Eval extraction: evals[i] = eval from classify_nodes[i] (the move played FROM
+            # position at ply i). For the final position (no move), eval is (None, None)
+            # since len(evals) < len(hash_tuples). Chess.com games always produce an empty
+            # evals list — all positions get (None, None).
+            eval_cp: int | None = None
+            eval_mate: int | None = None
+            if i < len(evals):
+                eval_cp, eval_mate = evals[i]
+            row["eval_cp"] = eval_cp
+            row["eval_mate"] = eval_mate
             position_rows.append(row)
 
         # Compute and persist move_count and result_fen for this new game
