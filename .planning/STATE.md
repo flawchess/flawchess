@@ -3,20 +3,20 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
 status: Ready to plan
-last_updated: "2026-03-24T17:43:01.293Z"
-last_activity: 2026-03-24
+last_updated: "2026-03-25T21:46:53.743Z"
+last_activity: 2026-03-25
 progress:
-  total_phases: 5
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_phases: 7
+  completed_phases: 3
+  total_plans: 7
+  completed_plans: 7
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 28
+Phase: 30
 Plan: Not started
 
 ## Project Reference
@@ -57,6 +57,9 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [Phase 27]: Per-ply try/except around classify_position ensures one bad position does not abort the whole game import
 - [Phase 27]: skipped_ids set (not DB flag) for infinite-loop prevention in backfill — simple and sufficient for a one-shot script
 - [Phase 27]: scripts/__init__.py added to make scripts/ importable as Python package for test imports
+- [Phase 28]: white_accuracy/black_accuracy use Float(24) for game-level accuracy; eval_cp/eval_mate use SmallInteger for per-move engine evals
+- [Phase 28]: chunk_size 2700->2300 to stay within asyncpg 32767 arg limit with 14 columns per position row
+- [Phase 28]: evals list built from classify_nodes — no extra PGN parse; eval_cp/eval_mate outside classify_board guard for robustness
 
 ### Critical v1.5 Constraints
 
@@ -99,4 +102,4 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260325-t74 | Improve Import page UX: platform icons, remove logged-in-as, add sync/scouting info box | 2026-03-25 | 9c0caa6 | [260325-t74-improve-import-page-ux-for-new-users](./quick/260325-t74-improve-import-page-ux-for-new-users/) |
 
 ---
-Last activity: 2026-03-25 - Completed quick task 260325-t74: Improve import page UX for new users
+Last activity: 2026-03-25

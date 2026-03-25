@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import Boolean, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -57,6 +57,10 @@ class Game(Base):
 
     # Final position FEN (piece placement only, from board.board_fen())
     result_fen: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # Engine analysis: game-level accuracy from chess.com (NULL for lichess and unanalyzed games)
+    white_accuracy: Mapped[float | None] = mapped_column(Float(24), nullable=True)
+    black_accuracy: Mapped[float | None] = mapped_column(Float(24), nullable=True)
 
     # Timestamps
     played_at: Mapped[datetime.datetime | None]
