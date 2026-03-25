@@ -4,7 +4,7 @@ Provides a pure function that accepts a ``chess.Board`` and returns a
 ``PositionClassification`` dataclass containing:
 
 - ``material_count`` — total centipawns both sides (white + black, including pawns)
-- ``material_signature`` — canonical string (stronger side first)
+- ``material_signature`` — canonical string (white pieces _ black pieces)
 - ``material_imbalance`` — signed centipawns (white minus black)
 - ``has_opposite_color_bishops`` — True if each side has exactly 1 bishop on different square colors
 
@@ -69,7 +69,7 @@ class PositionClassification:
     """
 
     material_count: int  # total centipawns both sides (white + black, including pawns)
-    material_signature: str  # canonical piece string, stronger side first
+    material_signature: str  # canonical piece string, white_black format
     material_imbalance: int  # white_material - black_material in centipawns
     has_opposite_color_bishops: bool
 
@@ -119,30 +119,15 @@ def _side_material(board: chess.Board, color: chess.Color) -> int:
 
 
 def _compute_material_signature(board: chess.Board) -> str:
-    """Return the canonical material signature for *board*.
+    """Return the material signature for *board*.
 
-    Format: ``{stronger_side_string}_{weaker_side_string}``
+    Format: ``{white_pieces}_{black_pieces}``
 
-    Canonical ordering rules (per D-02):
-    1. The side with more total material goes first.
-    2. If material is equal, the lexicographically smaller string goes first.
-
-    This ensures the same physical position always produces the same signature
-    regardless of which side happens to be white or black.
+    Always white first, black second — no normalization by material strength.
+    This makes signatures directly interpretable in user-perspective queries
+    (e.g. filter by played_as color to know which half is "your" pieces).
     """
-    white_str = _side_string(board, chess.WHITE)
-    black_str = _side_string(board, chess.BLACK)
-    white_mat = _side_material(board, chess.WHITE)
-    black_mat = _side_material(board, chess.BLACK)
-
-    if white_mat > black_mat:
-        return f"{white_str}_{black_str}"
-    if black_mat > white_mat:
-        return f"{black_str}_{white_str}"
-    # Equal material: lexicographic tie-break (smaller string first)
-    if white_str <= black_str:
-        return f"{white_str}_{black_str}"
-    return f"{black_str}_{white_str}"
+    return f"{_side_string(board, chess.WHITE)}_{_side_string(board, chess.BLACK)}"
 
 
 def _compute_material_imbalance(board: chess.Board) -> int:

@@ -2,7 +2,7 @@
 
 Covers:
 - Material count computation (total centipawns both sides)
-- Material signature computation (canonical form, stronger side first)
+- Material signature computation (white_black format)
 - Material imbalance computation
 - Tactical indicators (opposite-color bishops)
 """
@@ -94,8 +94,8 @@ class TestMaterialSignature:
         result = classify_position(starting_board)
         assert len(result.material_signature) == 33
 
-    def test_asymmetric_stronger_side_first(self) -> None:
-        """KRP vs KR: asymmetric position, stronger side (with pawn) must be first."""
+    def test_asymmetric_white_stronger(self) -> None:
+        """KRP vs KR: white has more material, signature is white_black."""
         board = chess.Board()
         board.clear()
         board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
@@ -128,8 +128,8 @@ class TestMaterialSignature:
         result = classify_position(board)
         assert result.material_signature == "KQR_KQR"
 
-    def test_symmetric_signature_deterministic_regardless_of_color(self) -> None:
-        """Symmetric positions must produce identical signatures regardless of which side we view from."""
+    def test_symmetric_signature(self) -> None:
+        """Symmetric positions produce matching halves."""
         board = chess.Board()
         board.clear()
         board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
@@ -140,7 +140,7 @@ class TestMaterialSignature:
         assert result.material_signature == "KQ_KQ"
 
     def test_asymmetric_black_stronger(self) -> None:
-        """When black has more material, stronger side must still come first in signature."""
+        """When black has more material, white side still comes first in signature."""
         board = chess.Board()
         board.clear()
         board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
@@ -148,10 +148,10 @@ class TestMaterialSignature:
         board.set_piece_at(chess.E8, chess.Piece(chess.KING, chess.BLACK))
         board.set_piece_at(chess.D8, chess.Piece(chess.QUEEN, chess.BLACK))
         result = classify_position(board)
-        assert result.material_signature == "KQ_KR"
+        assert result.material_signature == "KR_KQ"
 
     def test_pawn_endgame_signature(self) -> None:
-        """KPP vs KP: correct pawn count with stronger side first."""
+        """KPP vs KP: correct pawn count, white first."""
         board = chess.Board()
         board.clear()
         board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
