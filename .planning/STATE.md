@@ -96,6 +96,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260323-q89 | Categorical arrow colors and fix arrow render order | 2026-03-23 | e9afcf3 | [260323-q89-categorical-arrow-colors-and-fix-renderi](./quick/260323-q89-categorical-arrow-colors-and-fix-renderi/) |
 | 260323-rtg | Create better Android and iOS app icons with padded, separate any/maskable PWA icons | 2026-03-23 | b60e1c4 | [260323-rtg-create-better-android-and-ios-app-icons-](./quick/260323-rtg-create-better-android-and-ios-app-icons-/) |
 | 260325-qz8 | Build-time prerendering for homepage and privacy page (SEO for non-JS crawlers) | 2026-03-25 | 1b08b2d | [260325-qz8-ssr-static-rendering-for-homepage-seo](./quick/260325-qz8-ssr-static-rendering-for-homepage-seo/) |
+| 260325-t74 | Improve Import page UX: platform icons, remove logged-in-as, add sync/scouting info box | 2026-03-25 | 9c0caa6 | [260325-t74-improve-import-page-ux-for-new-users](./quick/260325-t74-improve-import-page-ux-for-new-users/) |
 
 ---
-Last activity: 2026-03-25 - Completed quick task 260325-qz8: SSR/static rendering for homepage SEO
+Last activity: 2026-03-25 - Completed quick task 260325-t74: Improve import page UX for new users
