@@ -204,6 +204,11 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | N
     # Opening via longest-prefix match against openings.tsv
     opening_eco, opening_name = find_opening(pgn_str)
 
+    # Engine analysis: game-level accuracy (only present for analyzed games)
+    accuracies = game.get("accuracies", {})
+    white_accuracy: float | None = accuracies.get("white")
+    black_accuracy: float | None = accuracies.get("black")
+
     return {
         "user_id": user_id,
         "platform": "chess.com",
@@ -226,6 +231,8 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | N
         "black_rating": black.get("rating"),
         "opening_name": opening_name,
         "opening_eco": opening_eco,
+        "white_accuracy": white_accuracy,
+        "black_accuracy": black_accuracy,
         "played_at": played_at,
     }
 

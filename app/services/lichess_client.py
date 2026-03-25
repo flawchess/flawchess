@@ -47,6 +47,7 @@ async def fetch_lichess_games(
         "moves": True,
         "tags": True,
         "opening": True,
+        "evals": True,  # include %eval annotations when prior computer analysis exists
     }
 
     if since_ms is not None:
