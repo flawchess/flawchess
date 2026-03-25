@@ -335,6 +335,80 @@ class TestNormalizeChesscomGame:
         assert result["opening_eco"] is None
 
 
+class TestChesscomAccuracy:
+    """Tests for chess.com accuracy extraction in normalize_chesscom_game."""
+
+    def _make_chesscom_game(self, accuracies=None):
+        """Build a minimal chess.com game dict, optionally with accuracies field."""
+        game = {
+            "uuid": "test-uuid-acc",
+            "url": "https://www.chess.com/game/live/test-uuid-acc",
+            "pgn": '[Event "Live Chess"]\n[White "Magnus"]\n[Black "Hikaru"]\n[Result "1-0"]\n\n1. e4 e5 *',
+            "rules": "chess",
+            "time_control": "600+0",
+            "rated": True,
+            "end_time": 1700000000,
+            "white": {"username": "Magnus", "rating": 2800, "result": "win"},
+            "black": {"username": "Hikaru", "rating": 2750, "result": "checkmated"},
+        }
+        if accuracies is not None:
+            game["accuracies"] = accuracies
+        return game
+
+    def test_accuracy_present(self):
+        """Both accuracies present -> white_accuracy and black_accuracy extracted."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game(accuracies={"white": 83.53, "black": 76.21})
+        result = normalize_chesscom_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["white_accuracy"] == 83.53
+        assert result["black_accuracy"] == 76.21
+
+    def test_no_accuracies_key(self):
+        """No accuracies key -> both accuracy fields are None."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game()  # no accuracies key
+        result = normalize_chesscom_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["white_accuracy"] is None
+        assert result["black_accuracy"] is None
+
+    def test_partial_accuracies(self):
+        """Only white accuracy present -> white_accuracy=float, black_accuracy=None."""
+        from app.services.normalization import normalize_chesscom_game
+        game = self._make_chesscom_game(accuracies={"white": 90.0})
+        result = normalize_chesscom_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["white_accuracy"] == 90.0
+        assert result["black_accuracy"] is None
+
+    def test_lichess_no_accuracy(self):
+        """normalize_lichess_game does NOT return accuracy fields (lichess has no game-level accuracy)."""
+        from app.services.normalization import normalize_lichess_game
+        game = {
+            "id": "q7ZvsdUF",
+            "rated": True,
+            "variant": {"key": "standard", "name": "Standard"},
+            "speed": "blitz",
+            "perf": "blitz",
+            "createdAt": 1700000000000,
+            "lastMoveAt": 1700000600000,
+            "status": "mate",
+            "winner": "white",
+            "players": {
+                "white": {"user": {"name": "Magnus", "id": "magnus"}, "rating": 2800},
+                "black": {"user": {"name": "Hikaru", "id": "hikaru"}, "rating": 2750},
+            },
+            "moves": "e4 c5 Nf3",
+            "pgn": '[Event "?"]\n[White "Magnus"]\n[Black "Hikaru"]\n\n1. e4 c5 *',
+            "clock": {"initial": 600, "increment": 0, "totalTime": 600},
+        }
+        result = normalize_lichess_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert "white_accuracy" not in result
+        assert "black_accuracy" not in result
+
+
 class TestNormalizeLichessGame:
     """Tests for normalize_lichess_game function."""
 
