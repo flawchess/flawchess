@@ -95,6 +95,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260323-pkf | Gradient arrow colors: green from 55-65% win rate, red from 45-35% loss rate | 2026-03-23 | 698c37b | [260323-pkf-gradient-arrow-colors-green-from-55-65-w](./quick/260323-pkf-gradient-arrow-colors-green-from-55-65-w/) |
 | 260323-q89 | Categorical arrow colors and fix arrow render order | 2026-03-23 | e9afcf3 | [260323-q89-categorical-arrow-colors-and-fix-renderi](./quick/260323-q89-categorical-arrow-colors-and-fix-renderi/) |
 | 260323-rtg | Create better Android and iOS app icons with padded, separate any/maskable PWA icons | 2026-03-23 | b60e1c4 | [260323-rtg-create-better-android-and-ios-app-icons-](./quick/260323-rtg-create-better-android-and-ios-app-icons-/) |
+| 260325-qz8 | Build-time prerendering for homepage and privacy page (SEO for non-JS crawlers) | 2026-03-25 | 1b08b2d | [260325-qz8-ssr-static-rendering-for-homepage-seo](./quick/260325-qz8-ssr-static-rendering-for-homepage-seo/) |
 
 ---
-Last activity: 2026-03-24
+Last activity: 2026-03-25
