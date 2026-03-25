@@ -77,11 +77,11 @@ Users can determine their success rate for any opening position they specify, fi
 
 ## Current State
 
-v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD and Sentry monitoring. v1.4 (Web Analytics, Password Reset) in progress. Phase 27 complete — classify_position wired into live import pipeline, backfill script created for existing games. All new imports populate 7 position metadata columns automatically.
+v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD and Sentry monitoring. v1.4 (Web Analytics, Password Reset) in progress. Phase 28 complete — engine analysis import: lichess per-move evals (eval_cp, eval_mate) and chess.com accuracy scores (white_accuracy, black_accuracy) extracted during import. Admin re-import script available for backfilling existing games.
 
 ## Context
 
-- **Current state:** v1.3 shipped. 23 phases complete across 4 milestones. Live at flawchess.com with CI/CD and Sentry.
+- **Current state:** v1.3 shipped. 28 phases complete across 4 milestones. Live at flawchess.com with CI/CD and Sentry.
 - **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui
 - **Auth:** FastAPI-Users (JWT + Google SSO)
 - **Core algorithm:** Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import for indexed integer equality lookups
