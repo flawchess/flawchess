@@ -10,7 +10,6 @@ Verifies:
 import datetime
 import io
 import uuid
-from argparse import ArgumentParser
 from unittest.mock import AsyncMock, patch
 
 import chess.pgn
