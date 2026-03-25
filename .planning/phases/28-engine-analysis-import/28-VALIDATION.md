@@ -38,16 +38,19 @@ created: 2026-03-25
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 28-01-01 | 01 | 1 | ENGINE-01, ENGINE-02 | unit | `uv run pytest tests/test_engine_import.py -x` | ❌ W0 | ⬜ pending |
-| 28-01-02 | 01 | 1 | ENGINE-03 | unit | `uv run pytest tests/test_engine_import.py -x` | ❌ W0 | ⬜ pending |
+| 28-01-01 | 01 | 1 | ENGINE-02, ENGINE-03 | unit | `uv run pytest tests/test_normalization.py -x` | pending | pending |
+| 28-02-01 | 02 | 2 | ENGINE-01, ENGINE-03 | unit | `uv run pytest tests/test_import_service.py -x` | pending | pending |
+| 28-03-01 | 03 | 2 | ENGINE-01, ENGINE-02, ENGINE-03 | unit+integration | `uv run pytest tests/test_reimport.py -x` | pending | pending |
 
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+*Status: pending / green / red / flaky*
 
 ---
 
 ## Wave 0 Requirements
 
-- [ ] `tests/test_engine_import.py` — stubs for ENGINE-01, ENGINE-02, ENGINE-03
+- [ ] `tests/test_normalization.py` — existing file, add stubs for chess.com accuracy extraction (ENGINE-02, ENGINE-03)
+- [ ] `tests/test_import_service.py` — stubs for eval extraction from PGN (ENGINE-01, ENGINE-03)
+- [ ] `tests/test_reimport.py` — stubs for CLI argument parsing + eval population integration test (ENGINE-01, ENGINE-02, ENGINE-03)
 - [ ] Test fixtures for lichess PGN with %eval annotations and chess.com game JSON with accuracies
 
 *Existing test infrastructure (conftest.py, test DB) covers framework needs.*
@@ -58,7 +61,7 @@ created: 2026-03-25
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Re-import script deletes and re-imports correctly | D-11 | Requires live API access | Run `uv run python scripts/reimport_games.py --user-id 1` against dev DB with seeded data |
+| Re-import script deletes and re-imports correctly against live APIs | D-11, D-12 | Requires live platform API access (chess.com rate limits, lichess auth) | Run `uv run python scripts/reimport_games.py --user-id 1` against dev DB with seeded data |
 
 ---
 
