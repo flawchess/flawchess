@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
 status: Ready to execute
-last_updated: "2026-03-25T21:34:18.236Z"
+last_updated: "2026-03-25T21:40:21.589Z"
 last_activity: 2026-03-25
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State: FlawChess
@@ -17,7 +17,7 @@ progress:
 ## Current Position
 
 Phase: 28 (engine-analysis-import) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Project Reference
 
@@ -59,6 +59,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [Phase 27]: scripts/__init__.py added to make scripts/ importable as Python package for test imports
 - [Phase 28]: white_accuracy/black_accuracy use Float(24) for game-level accuracy; eval_cp/eval_mate use SmallInteger for per-move engine evals
 - [Phase 28]: chunk_size 2700->2300 to stay within asyncpg 32767 arg limit with 14 columns per position row
+- [Phase 28]: evals list built from classify_nodes — no extra PGN parse; eval_cp/eval_mate outside classify_board guard for robustness
 
 ### Critical v1.5 Constraints
 
