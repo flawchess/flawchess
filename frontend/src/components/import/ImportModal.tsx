@@ -12,6 +12,7 @@ import { useImportTrigger } from '@/hooks/useImport';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import type { UserProfile } from '@/types/users';
 import { toast } from 'sonner';
+import { PlatformIcon } from '@/components/icons/PlatformIcon';
 
 interface ImportModalProps {
   open: boolean;
@@ -129,7 +130,10 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
           /* Input view: first-time user or edit mode */
           <form onSubmit={handleImport} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="chess-com-username">chess.com username</Label>
+              <div className="flex items-center gap-2">
+                <PlatformIcon platform="chess.com" className="h-4 w-4" />
+                <Label htmlFor="chess-com-username">chess.com username</Label>
+              </div>
               <Input
                 id="chess-com-username"
                 type="text"
@@ -143,7 +147,10 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="lichess-username">lichess username</Label>
+              <div className="flex items-center gap-2">
+                <PlatformIcon platform="lichess" className="h-4 w-4" />
+                <Label htmlFor="lichess-username">lichess username</Label>
+              </div>
               <Input
                 id="lichess-username"
                 type="text"
@@ -192,7 +199,10 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
             {/* chess.com platform row */}
             <div className="flex items-center justify-between rounded-md border px-3 py-2">
               <div>
-                <p className="text-sm font-medium">chess.com</p>
+                <div className="flex items-center gap-1.5">
+                  <PlatformIcon platform="chess.com" className="h-4 w-4" />
+                  <p className="text-sm font-medium">chess.com</p>
+                </div>
                 {profile?.chess_com_username ? (
                   <p className="text-xs text-muted-foreground">{profile.chess_com_username}</p>
                 ) : (
@@ -254,7 +264,10 @@ export function ImportModal({ open, onOpenChange, onImportStarted }: ImportModal
             {/* lichess platform row */}
             <div className="flex items-center justify-between rounded-md border px-3 py-2">
               <div>
-                <p className="text-sm font-medium">lichess</p>
+                <div className="flex items-center gap-1.5">
+                  <PlatformIcon platform="lichess" className="h-4 w-4" />
+                  <p className="text-sm font-medium">lichess</p>
+                </div>
                 {profile?.lichess_username ? (
                   <p className="text-xs text-muted-foreground">{profile.lichess_username}</p>
                 ) : (

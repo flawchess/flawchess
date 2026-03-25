@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Info } from 'lucide-react';
+import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import {
   Dialog,
   DialogContent,
@@ -168,12 +169,6 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
         <p className="text-sm text-muted-foreground">Loading profile...</p>
       ) : (
         <div className="space-y-4">
-          {profile && (
-            <p className="text-sm text-muted-foreground" data-testid="import-user-email">
-              Logged in as {profile.email}
-            </p>
-          )}
-
           {/* chess.com platform row */}
           <div
             data-testid="import-platform-chess-com"
@@ -182,6 +177,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
             <div className="flex items-center gap-3">
               <div className="flex-1 space-y-1">
                 <div className="flex items-center gap-2">
+                  <PlatformIcon platform="chess.com" className="h-4 w-4" />
                   <Label htmlFor="chess-com-username" className="text-sm font-medium">chess.com</Label>
                   {profile && (
                     <span className="text-xs text-muted-foreground" data-testid="import-game-count-chess-com">
@@ -224,6 +220,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
             <div className="flex items-center gap-3">
               <div className="flex-1 space-y-1">
                 <div className="flex items-center gap-2">
+                  <PlatformIcon platform="lichess" className="h-4 w-4" />
                   <Label htmlFor="lichess-username" className="text-sm font-medium">lichess</Label>
                   {profile && (
                     <span className="text-xs text-muted-foreground" data-testid="import-game-count-lichess">
@@ -259,6 +256,16 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
           </div>
         </div>
       )}
+
+      {/* Info box: sync behavior and opponent scouting explanation */}
+      <div className="space-y-2 rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground" data-testid="import-info">
+        <p>
+          <strong>First sync</strong> imports all your games. Later syncs only fetch new games since the last import.
+        </p>
+        <p>
+          <strong>Opponent scouting:</strong> delete your games, import the opponent's games to analyze their openings, then delete and re-import your own games.
+        </p>
+      </div>
 
       {/* Inline import progress bars */}
       {activeJobIds.length > 0 && (
