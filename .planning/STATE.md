@@ -107,6 +107,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260323-rtg | Create better Android and iOS app icons with padded, separate any/maskable PWA icons | 2026-03-23 | b60e1c4 | [260323-rtg-create-better-android-and-ios-app-icons-](./quick/260323-rtg-create-better-android-and-ios-app-icons-/) |
 | 260325-qz8 | Build-time prerendering for homepage and privacy page (SEO for non-JS crawlers) | 2026-03-25 | 1b08b2d | [260325-qz8-ssr-static-rendering-for-homepage-seo](./quick/260325-qz8-ssr-static-rendering-for-homepage-seo/) |
 | 260325-t74 | Improve Import page UX: platform icons, remove logged-in-as, add sync/scouting info box | 2026-03-25 | 9c0caa6 | [260325-t74-improve-import-page-ux-for-new-users](./quick/260325-t74-improve-import-page-ux-for-new-users/) |
+| 260326-icg | Fix endgame filter bug (axios array params), add total games context, sample size warnings, Q vs Q tooltip | 2026-03-26 | 5ac4c3c | [260326-icg-fix-endgame-analytics-issues-ui-filter-b](./quick/260326-icg-fix-endgame-analytics-issues-ui-filter-b/) |
 
 ---
 Last activity: 2026-03-26
