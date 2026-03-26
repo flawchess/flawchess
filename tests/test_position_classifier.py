@@ -293,12 +293,13 @@ class TestReturnType:
         assert isinstance(result, PositionClassification)
 
     def test_all_fields_present(self, starting_board: chess.Board) -> None:
-        """All 4 fields of PositionClassification must be present."""
+        """All 5 fields of PositionClassification must be present."""
         result = classify_position(starting_board)
         assert hasattr(result, "material_count")
         assert hasattr(result, "material_signature")
         assert hasattr(result, "material_imbalance")
         assert hasattr(result, "has_opposite_color_bishops")
+        assert hasattr(result, "piece_count")
 
     def test_pure_function_no_side_effects(self, starting_board: chess.Board) -> None:
         """classify_position must not modify the board state."""
@@ -312,3 +313,111 @@ class TestReturnType:
 
         result = classify_position(starting_board)
         assert not inspect.iscoroutine(result)
+
+
+# ---------------------------------------------------------------------------
+# Piece Count tests (Lichess endgame definition)
+# ---------------------------------------------------------------------------
+
+
+class TestPieceCount:
+    """Tests for the piece_count field: count of Q+R+B+N (both sides, excludes K and P)."""
+
+    def test_starting_position_piece_count(self, starting_board: chess.Board) -> None:
+        """Starting position: 2N+2B+2R+Q per side = 7 each, total = 14... wait.
+        Actually: Q+R+R+B+B+N+N per side = 1+2+2+2 = 7, times 2 sides = 14.
+        But plan says 16 for starting — actually per side: Q(1)+R(2)+B(2)+N(2) = 7, total = 14.
+        Wait, plan says KQRRBBNNPPPPPPPP: Q=1,R=2,B=2,N=2 per side = 7, both = 14.
+        The plan states 16 — let me re-read: "starting position -> 16 (2N+2B+2R+Q per side = 8 x 2)".
+        That's 2+2+2+1=7 per side, 14 total. But plan says "8 x 2" = 16...
+        N+N+B+B+R+R+Q = 7 per side. Perhaps plan counts pawns? No — plan says exclude pawns.
+        Counting again: 2N + 2B + 2R + 1Q = 7 pieces per side, 14 total.
+        The plan note says "2N+2B+2R+Q per side = 8" which is wrong (2+2+2+1=7).
+        Using correct math: starting position has 14 major+minor pieces total.
+        """
+        result = classify_position(starting_board)
+        # Per side: Q(1) + R(2) + B(2) + N(2) = 7, total = 14
+        assert result.piece_count == 14
+
+    def test_bare_kings_zero_piece_count(self) -> None:
+        """K vs K: piece_count = 0 (no major or minor pieces)."""
+        board = chess.Board()
+        board.clear()
+        board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.E8, chess.Piece(chess.KING, chess.BLACK))
+        result = classify_position(board)
+        assert result.piece_count == 0
+
+    def test_kr_vs_kr_piece_count(self) -> None:
+        """KR vs KR: piece_count = 2 (1 rook per side)."""
+        board = chess.Board()
+        board.clear()
+        board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.A1, chess.Piece(chess.ROOK, chess.WHITE))
+        board.set_piece_at(chess.E8, chess.Piece(chess.KING, chess.BLACK))
+        board.set_piece_at(chess.A8, chess.Piece(chess.ROOK, chess.BLACK))
+        result = classify_position(board)
+        assert result.piece_count == 2
+
+    def test_kq_vs_kq_piece_count(self) -> None:
+        """KQ vs KQ: piece_count = 2 (1 queen per side)."""
+        board = chess.Board()
+        board.clear()
+        board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.D1, chess.Piece(chess.QUEEN, chess.WHITE))
+        board.set_piece_at(chess.E8, chess.Piece(chess.KING, chess.BLACK))
+        board.set_piece_at(chess.D8, chess.Piece(chess.QUEEN, chess.BLACK))
+        result = classify_position(board)
+        assert result.piece_count == 2
+
+    def test_kqr_vs_kqr_piece_count(self) -> None:
+        """KQR vs KQR: piece_count = 4 (Q+R per side)."""
+        board = chess.Board()
+        board.clear()
+        board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.D1, chess.Piece(chess.QUEEN, chess.WHITE))
+        board.set_piece_at(chess.A1, chess.Piece(chess.ROOK, chess.WHITE))
+        board.set_piece_at(chess.E8, chess.Piece(chess.KING, chess.BLACK))
+        board.set_piece_at(chess.D8, chess.Piece(chess.QUEEN, chess.BLACK))
+        board.set_piece_at(chess.A8, chess.Piece(chess.ROOK, chess.BLACK))
+        result = classify_position(board)
+        assert result.piece_count == 4
+
+    def test_pawns_excluded_from_piece_count(self) -> None:
+        """KRP vs KR: pawns do not count — piece_count = 2."""
+        board = chess.Board()
+        board.clear()
+        board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.A1, chess.Piece(chess.ROOK, chess.WHITE))
+        board.set_piece_at(chess.A2, chess.Piece(chess.PAWN, chess.WHITE))
+        board.set_piece_at(chess.E8, chess.Piece(chess.KING, chess.BLACK))
+        board.set_piece_at(chess.A8, chess.Piece(chess.ROOK, chess.BLACK))
+        result = classify_position(board)
+        assert result.piece_count == 2
+
+    def test_mixed_asymmetric_piece_count(self) -> None:
+        """KBNPP vs KRP: B+N from white, R from black; pawns excluded -> piece_count = 3."""
+        board = chess.Board()
+        board.clear()
+        board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.C1, chess.Piece(chess.BISHOP, chess.WHITE))
+        board.set_piece_at(chess.G1, chess.Piece(chess.KNIGHT, chess.WHITE))
+        board.set_piece_at(chess.A2, chess.Piece(chess.PAWN, chess.WHITE))
+        board.set_piece_at(chess.B2, chess.Piece(chess.PAWN, chess.WHITE))
+        board.set_piece_at(chess.E8, chess.Piece(chess.KING, chess.BLACK))
+        board.set_piece_at(chess.A8, chess.Piece(chess.ROOK, chess.BLACK))
+        board.set_piece_at(chess.H7, chess.Piece(chess.PAWN, chess.BLACK))
+        result = classify_position(board)
+        assert result.piece_count == 3
+
+    def test_pawn_endgame_piece_count(self) -> None:
+        """KPP vs KP: only kings and pawns -> piece_count = 0."""
+        board = chess.Board()
+        board.clear()
+        board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.A2, chess.Piece(chess.PAWN, chess.WHITE))
+        board.set_piece_at(chess.B2, chess.Piece(chess.PAWN, chess.WHITE))
+        board.set_piece_at(chess.E8, chess.Piece(chess.KING, chess.BLACK))
+        board.set_piece_at(chess.A7, chess.Piece(chess.PAWN, chess.BLACK))
+        result = classify_position(board)
+        assert result.piece_count == 0
