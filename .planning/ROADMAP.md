@@ -149,10 +149,10 @@ Plans:
   1. Lichess games with computer analysis import with all 8 analysis metric columns populated (ACPL + 3 move quality counts per color)
   2. Lichess games without analysis and all chess.com games import with all 8 columns as NULL
   3. Alembic migration adds 8 nullable SmallInteger columns to games table and applies cleanly
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 28.1-01-PLAN.md — Game model columns, Alembic migration, lichess normalizer extraction, tests
+- [x] 28.1-01-PLAN.md — Game model columns, Alembic migration, lichess normalizer extraction, tests
 
 ### Phase 29: Endgame Analytics
 **Goal**: Users can view their endgame performance and material conversion/recovery statistics in a new Endgames tab with time control and color filters
@@ -200,7 +200,7 @@ Plans:
 | 26. Position Classifier & Schema | v1.5 | 2/2 | Complete    | 2026-03-23 |
 | 27. Import Wiring & Backfill | v1.5 | 2/2 | Complete    | 2026-03-24 |
 | 28. Engine Analysis Import | v1.5 | 2/3 | Complete    | 2026-03-25 |
-| 28.1. Import lichess analysis metrics | v1.5 | 0/1 | In progress | — |
+| 28.1. Import lichess analysis metrics | v1.5 | 1/1 | Complete   | 2026-03-26 |
 | 29. Endgame Analytics | v1.5 | 0/0 | Not started | — |
 | 30. Homepage, README & SEO Update | v1.5 | 0/0 | Not started | — |
 

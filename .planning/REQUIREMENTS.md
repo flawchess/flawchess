@@ -20,8 +20,8 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 - [ ] **ENGINE-01**: System imports per-move eval (centipawns/mate) from lichess PGN annotations for games with prior computer analysis
 - [ ] **ENGINE-02**: System imports game-level accuracy scores from chess.com for games where analysis exists
 - [ ] **ENGINE-03**: System gracefully handles missing analysis data (null fields, no errors) for unanalyzed games
-- [ ] **LMETRIC-01**: System stores per-player analysis metrics (ACPL, inaccuracy count, mistake count, blunder count) as nullable SmallInteger columns on the games table
-- [ ] **LMETRIC-02**: System imports lichess per-player analysis metrics (ACPL, inaccuracy, mistake, blunder counts) from the API response during game normalization
+- [x] **LMETRIC-01**: System stores per-player analysis metrics (ACPL, inaccuracy count, mistake count, blunder count) as nullable SmallInteger columns on the games table
+- [x] **LMETRIC-02**: System imports lichess per-player analysis metrics (ACPL, inaccuracy, mistake, blunder counts) from the API response during game normalization
 
 ### Endgame Analytics
 
@@ -88,8 +88,8 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 | CONV-01 | Phase 28 | Pending |
 | CONV-02 | Phase 28 | Pending |
 | CONV-03 | Phase 28 | Pending |
-| LMETRIC-01 | Phase 28.1 | Pending |
-| LMETRIC-02 | Phase 28.1 | Pending |
+| LMETRIC-01 | Phase 28.1 | Complete |
+| LMETRIC-02 | Phase 28.1 | Complete |
 
 **Coverage:**
 - v1.5 requirements: 17 total
