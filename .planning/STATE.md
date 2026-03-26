@@ -109,6 +109,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260325-t74 | Improve Import page UX: platform icons, remove logged-in-as, add sync/scouting info box | 2026-03-25 | 9c0caa6 | [260325-t74-improve-import-page-ux-for-new-users](./quick/260325-t74-improve-import-page-ux-for-new-users/) |
 | 260326-icg | Fix endgame filter bug (axios array params), add total games context, sample size warnings, Q vs Q tooltip | 2026-03-26 | 5ac4c3c | [260326-icg-fix-endgame-analytics-issues-ui-filter-b](./quick/260326-icg-fix-endgame-analytics-issues-ui-filter-b/) |
 | 260326-jo8 | Implement Lichess endgame definition: piece_count column, threshold switch (piece_count <= 6), backfill migration | 2026-03-26 | 5afdfe9 | [260326-jo8-implement-lichess-endgame-phase-definiti](./quick/260326-jo8-implement-lichess-endgame-phase-definiti/) |
+| 260326-k94 | Add backrank_sparse and mixedness columns to position classifier and game_positions (Lichess Divider.scala algorithm) | 2026-03-26 | d8d6796 | [260326-k94-add-backrank-sparse-and-mixedness-column](./quick/260326-k94-add-backrank-sparse-and-mixedness-column/) |
 
 ---
-Last activity: 2026-03-26 - Completed quick task 260326-jo8: Implement Lichess endgame definition (piece_count <= 6 threshold, backfill migration, updated tests and tooltip)
+Last activity: 2026-03-26 - Completed quick task 260326-k94: Add backrank_sparse and mixedness columns (Lichess middlegame detection, Divider.scala algorithm, 17-column import pipeline)
