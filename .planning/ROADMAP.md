@@ -200,7 +200,7 @@ Plans:
 | 26. Position Classifier & Schema | v1.5 | 2/2 | Complete    | 2026-03-23 |
 | 27. Import Wiring & Backfill | v1.5 | 2/2 | Complete    | 2026-03-24 |
 | 28. Engine Analysis Import | v1.5 | 2/3 | Complete    | 2026-03-25 |
-| 28.1. Import lichess analysis metrics | v1.5 | 1/1 | Complete   | 2026-03-26 |
+| 28.1. Import lichess analysis metrics | v1.5 | 1/1 | Complete    | 2026-03-26 |
 | 29. Endgame Analytics | v1.5 | 0/0 | Not started | — |
 | 30. Homepage, README & SEO Update | v1.5 | 0/0 | Not started | — |
 
