@@ -8,8 +8,9 @@ import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
 import { EndgamePerformanceSection } from '@/components/charts/EndgamePerformanceSection';
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
+import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
 import { GameCardList } from '@/components/results/GameCardList';
-import { useEndgameStats, useEndgameGames, useEndgamePerformance } from '@/hooks/useEndgames';
+import { useEndgameStats, useEndgameGames, useEndgamePerformance, useEndgameTimeline } from '@/hooks/useEndgames';
 import { useDebounce } from '@/hooks/useDebounce';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
@@ -42,6 +43,7 @@ export function EndgamesPage() {
   // ── Data ─────────────────────────────────────────────────────────────────────
   const { data: statsData, isLoading: statsLoading } = useEndgameStats(debouncedFilters);
   const { data: perfData } = useEndgamePerformance(debouncedFilters);
+  const { data: timelineData } = useEndgameTimeline(debouncedFilters);
   const { data: gamesData, isLoading: gamesLoading } = useEndgameGames(
     selectedCategory,
     debouncedFilters,
@@ -100,6 +102,9 @@ export function EndgamesPage() {
           />
           {statsData && statsData.categories.length > 0 && (
             <EndgameConvRecovChart categories={statsData.categories} />
+          )}
+          {timelineData && timelineData.overall.length > 0 && (
+            <EndgameTimelineChart data={timelineData} />
           )}
         </>
       ) : statsData && statsData.categories.length === 0 ? (
