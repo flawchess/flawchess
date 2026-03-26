@@ -207,7 +207,7 @@ Plans:
 | 28.1. Import lichess analysis metrics | v1.5 | 1/1 | Complete    | 2026-03-26 |
 | 29. Endgame Analytics | v1.5 | 3/3 | Complete   | 2026-03-26 |
 | 30. Homepage, README & SEO Update | v1.5 | 0/0 | Not started | — |
-| 32. Endgame Performance Charts | v1.5 | 0/0 | Not started | — |
+| 32. Endgame Performance Charts | v1.5 | 0/3 | Not started | — |
 
 ### Phase 30: Homepage, README & SEO Update
 **Goal**: Update homepage content, README, and SEO metadata to showcase the new statistics features (endgame analytics, engine analysis) introduced in milestone v1.5
@@ -250,7 +250,7 @@ Plans:
 ### Phase 32: Endgame Performance Charts
 
 **Goal:** Add endgame performance comparison charts: endgame vs non-endgame WDL, endgame strength gauge, and rolling-window timeline charts for overall and per-endgame-type win rates
-**Requirements**: TBD
+**Requirements**: PERF-01, PERF-02, PERF-03, PERF-04, PERF-05, PERF-06, PERF-07
 **Depends on:** Phase 31
 **Success Criteria** (what must be TRUE):
   1. "Endgame Performance" section shows WDL chart for games reaching endgame and a separate WDL chart for games that don't
@@ -258,7 +258,9 @@ Plans:
   3. Timeline chart shows rolling 50-game win rate for all endgame games
   4. Timeline chart shows rolling 50-game win rate broken down by endgame type
   5. All charts respect existing filters (time control, platform, recency, rated, opponent)
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 32 to break down)
+- [ ] 32-01-PLAN.md — Backend schemas, repository queries, service functions, router endpoints, and tests
+- [ ] 32-02-PLAN.md — Frontend performance section (WDL bars, gauges) and conversion/recovery bar chart
+- [ ] 32-03-PLAN.md — Frontend timeline charts and visual verification
