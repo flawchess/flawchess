@@ -216,3 +216,14 @@ Plans:
   2. README accurately describes the current feature set
   3. SEO metadata (title, description, OG tags) reflects the new capabilities
 **Plans**: TBD
+
+## Backlog
+
+### Phase 999.1: Python Static Type Checker in CI (BACKLOG)
+
+**Goal:** Add a Python static type checker to the CI pipeline to catch type-level bugs (typos, bare `str` where `Literal` is needed, wrong function names) that ruff cannot detect. Evaluate [ty](https://docs.astral.sh/ty/) (from Astral, same team as ruff/uv) vs pyright vs mypy.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
