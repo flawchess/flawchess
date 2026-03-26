@@ -18,15 +18,21 @@ export const MATERIAL_ADVANTAGE_POINTS = 3;
 
 // Per-gauge zone definitions
 const CONVERSION_ZONES: GaugeZone[] = [
-  { from: 0,    to: 0.5,  color: 'oklch(0.55 0.20 25)' },   // red
-  { from: 0.5,  to: 0.7,  color: 'oklch(0.65 0.18 80)' },   // amber
-  { from: 0.7,  to: 1.0,  color: 'oklch(0.55 0.17 145)' },  // green
+  { from: 0,    to: 0.6,  color: 'oklch(0.55 0.20 25)' },   // red
+  { from: 0.6,  to: 0.8,  color: 'oklch(0.65 0.18 80)' },   // amber
+  { from: 0.8,  to: 1.0,  color: 'oklch(0.55 0.17 145)' },  // green
 ];
 
 const RECOVERY_ZONES: GaugeZone[] = [
-  { from: 0,    to: 0.2,  color: 'oklch(0.55 0.20 25)' },   // red
-  { from: 0.2,  to: 0.4,  color: 'oklch(0.65 0.18 80)' },   // amber
+  { from: 0,    to: 0.1,  color: 'oklch(0.55 0.20 25)' },   // red
+  { from: 0.1,  to: 0.4,  color: 'oklch(0.65 0.18 80)' },   // amber
   { from: 0.4,  to: 1.0,  color: 'oklch(0.55 0.17 145)' },  // green
+];
+
+const ENDGAME_SKILL_ZONES: GaugeZone[] = [
+  { from: 0,    to: 0.4,  color: 'oklch(0.55 0.20 25)' },   // red
+  { from: 0.4,  to: 0.6,  color: 'oklch(0.65 0.18 80)' },   // amber
+  { from: 0.6,  to: 1.0,  color: 'oklch(0.55 0.17 145)' },  // green
 ];
 
 interface WDLRowProps {
@@ -103,11 +109,11 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
       </div>
 
       {/* Gauge charts: Conversion, Recovery, Endgame Skill (D-04, D-05, D-06) */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4 mt-4" data-testid="perf-gauges">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 mt-8 mb-6" data-testid="perf-gauges">
 
         {/* Conversion gauge */}
         <div className="flex flex-col items-center gap-0">
-          <div className="flex items-center gap-1 text-xs text-muted-foreground text-center mb-0.5">
+          <div className="relative z-10 flex items-center gap-1 text-sm text-foreground text-center">
             <span>Conversion</span>
             <InfoPopover ariaLabel="Conversion info" testId="gauge-conversion-info" side="top">
               Your win rate when entering an endgame with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} points.
@@ -122,7 +128,7 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
 
         {/* Recovery gauge */}
         <div className="flex flex-col items-center gap-0">
-          <div className="flex items-center gap-1 text-xs text-muted-foreground text-center mb-0.5">
+          <div className="relative z-10 flex items-center gap-1 text-sm text-foreground text-center">
             <span>Recovery</span>
             <InfoPopover ariaLabel="Recovery info" testId="gauge-recovery-info" side="top">
               Your draw or win rate when entering an endgame with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} points.
@@ -137,7 +143,7 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
 
         {/* Endgame Skill gauge */}
         <div className="flex flex-col items-center gap-0">
-          <div className="flex items-center gap-1 text-xs text-muted-foreground text-center mb-0.5">
+          <div className="relative z-10 flex items-center gap-1 text-sm text-foreground text-center">
             <span>Endgame Skill</span>
             <InfoPopover ariaLabel="Endgame Skill info" testId="gauge-endgame-skill-info" side="top">
               A weighted average of your conversion rate (60%) and recovery rate (40%). Measures overall endgame proficiency.
@@ -146,6 +152,7 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
           <EndgameGauge
             value={data.endgame_skill}
             label="Endgame Skill"
+            zones={ENDGAME_SKILL_ZONES}
           />
         </div>
 

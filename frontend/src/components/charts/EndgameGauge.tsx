@@ -1,38 +1,11 @@
 /**
- * Reusable SVG semicircle gauge component for endgame performance metrics.
- * Renders a half-circle arc with a fill proportional to value/maxValue.
- * Colored zone segments (red/yellow/green) are rendered as background hints.
- * The label is no longer rendered inside this component — the parent must render labels above the gauge.
+ * Reusable semicircle gauge component for endgame performance metrics.
+ * Uses Recharts PieChart with a 180° arc to render colored zone segments
+ * and a needle indicator for the current value.
+ * The label is rendered by the parent — this component only renders the gauge.
  */
 
-const GAUGE_R = 72;
-const GAUGE_CX = 100;
-const GAUGE_CY = 90;
-const ARC_LENGTH = Math.PI * GAUGE_R;
-
-// Arc path: left endpoint → right endpoint via semicircle
-const ARC_D = `M ${GAUGE_CX - GAUGE_R} ${GAUGE_CY} A ${GAUGE_R} ${GAUGE_R} 0 0 1 ${GAUGE_CX + GAUGE_R} ${GAUGE_CY}`;
-
-function getGaugeColor(pct: number): string {
-  if (pct >= 0.8) return 'oklch(0.55 0.17 145)';  // green
-  if (pct >= 0.6) return 'oklch(0.65 0.18 80)';   // amber
-  return 'oklch(0.55 0.20 25)';                    // red
-}
-
-/**
- * Compute a partial arc path using strokeDasharray/strokeDashoffset to fill only
- * the [from, to] fraction of the semicircular arc (both in 0-1 range).
- * Returns { strokeDasharray, strokeDashoffset } style props for a <path d={ARC_D}>.
- */
-function zoneSegmentStyle(from: number, to: number): { strokeDasharray: string; strokeDashoffset: number } {
-  const segLength = (to - from) * ARC_LENGTH;
-  const offset = from * ARC_LENGTH;
-  // dasharray: [segment length] [rest of arc] — positions the dash at [from, to]
-  return {
-    strokeDasharray: `${segLength} ${ARC_LENGTH - segLength}`,
-    strokeDashoffset: -offset,
-  };
-}
+import { PieChart, Pie, Cell } from 'recharts';
 
 export interface GaugeZone {
   from: number; // 0-1 fraction
@@ -46,6 +19,38 @@ export const DEFAULT_GAUGE_ZONES: GaugeZone[] = [
   { from: 0.8,  to: 1.0,  color: 'oklch(0.55 0.17 145)' },  // green
 ];
 
+/** Derive fill color from zones — returns the color of the zone containing pct. */
+function getZoneColor(pct: number, zones: GaugeZone[]): string {
+  for (let i = zones.length - 1; i >= 0; i--) {
+    if (pct >= zones[i].from) return zones[i].color;
+  }
+  return zones[0].color;
+}
+
+const GAUGE_WIDTH = 200;
+const GAUGE_HEIGHT = 110;
+const CX = GAUGE_WIDTH / 2;
+const CY = GAUGE_HEIGHT - 10;
+const INNER_R = 55;
+const OUTER_R = 72;
+
+/** SVG needle pointing at the correct angle on the semicircle. */
+function Needle({ value, color }: { value: number; color: string }) {
+  const pct = Math.max(0, Math.min(value / 100, 1));
+  // 180° = left (0%), 0° = right (100%)
+  const angle = Math.PI * (1 - pct);
+  const needleLen = INNER_R - 6;
+  const tipX = CX + needleLen * Math.cos(angle);
+  const tipY = CY - needleLen * Math.sin(angle);
+
+  return (
+    <g>
+      <line x1={CX} y1={CY} x2={tipX} y2={tipY} stroke={color} strokeWidth={2.5} strokeLinecap="round" />
+      <circle cx={CX} cy={CY} r={4} fill={color} />
+    </g>
+  );
+}
+
 interface EndgameGaugeProps {
   value: number;
   maxValue?: number;
@@ -54,59 +59,48 @@ interface EndgameGaugeProps {
 }
 
 export function EndgameGauge({ value, maxValue = 100, label, zones = DEFAULT_GAUGE_ZONES }: EndgameGaugeProps) {
-  // Clamp arc fill to [0, 1] even if value exceeds maxValue (arc never overflows)
   const pct = Math.max(0, Math.min(value / maxValue, 1));
-  const offset = ARC_LENGTH * (1 - pct);
-  const color = getGaugeColor(pct);
+  const needleColor = getZoneColor(pct, zones);
   const testId = `gauge-${label.toLowerCase().replace(/\s+/g, '-')}`;
 
+  // Convert zones to Recharts pie data — each zone is a segment sized by its fraction
+  const data = zones.map((z) => ({ value: (z.to - z.from) * 100, color: z.color }));
+
   return (
-    <div className="flex flex-col items-center" data-testid={testId}>
-      <svg
-        viewBox="0 0 200 110"
-        className="w-full max-w-[200px]"
-        aria-label={`${label}: ${value.toFixed(0)}%`}
-      >
-        {/* Zone segment arcs — low opacity background hints */}
-        {zones.map((zone) => {
-          const style = zoneSegmentStyle(zone.from, zone.to);
-          return (
-            <path
-              key={`${zone.from}-${zone.to}`}
-              d={ARC_D}
-              fill="none"
-              stroke={zone.color}
-              strokeOpacity={0.25}
-              strokeWidth={16}
-              strokeLinecap="butt"
-              strokeDasharray={style.strokeDasharray}
-              strokeDashoffset={style.strokeDashoffset}
-            />
-          );
-        })}
-        {/* Foreground arc — strokeDashoffset controls fill amount */}
-        <path
-          d={ARC_D}
-          fill="none"
-          stroke={color}
-          strokeWidth={16}
-          strokeLinecap="round"
-          strokeDasharray={ARC_LENGTH}
-          strokeDashoffset={offset}
-        />
-        {/* Value text — shows true value even when arc is capped */}
-        <text
-          x={GAUGE_CX}
-          y={GAUGE_CY - 8}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fontSize={22}
-          fontWeight={600}
-          fill="currentColor"
+    <div className="flex flex-col items-center -mt-5" data-testid={testId}>
+      <div className="relative pointer-events-none" style={{ width: GAUGE_WIDTH, height: GAUGE_HEIGHT }}>
+        <PieChart width={GAUGE_WIDTH} height={GAUGE_HEIGHT}>
+          <Pie
+            data={data}
+            cx={CX}
+            cy={CY}
+            startAngle={180}
+            endAngle={0}
+            innerRadius={INNER_R}
+            outerRadius={OUTER_R}
+            dataKey="value"
+            stroke="none"
+            isAnimationActive={false}
+          >
+            {data.map((entry, i) => (
+              <Cell key={i} fill={entry.color} fillOpacity={0.6} />
+            ))}
+          </Pie>
+        </PieChart>
+        {/* Needle overlay via absolute-positioned SVG */}
+        <svg
+          viewBox={`0 0 ${GAUGE_WIDTH} ${GAUGE_HEIGHT}`}
+          className="absolute inset-0"
+          style={{ width: GAUGE_WIDTH, height: GAUGE_HEIGHT }}
+          aria-label={`${label}: ${value.toFixed(0)}%`}
         >
-          {value.toFixed(0)}%
-        </text>
-      </svg>
+          <Needle value={value} color={needleColor} />
+        </svg>
+      </div>
+      {/* Percentage below the gauge, colored by needle zone */}
+      <span className="-mt-1 text-lg font-semibold" style={{ color: needleColor }}>
+        {value.toFixed(0)}%
+      </span>
     </div>
   );
 }
