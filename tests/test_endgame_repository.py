@@ -22,9 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game
 from app.models.game_position import GamePosition
 
-# Tests will fail with ImportError until Task 2 creates the repository module (RED phase — expected).
+# Import the threshold constant and repository functions.
 from app.repositories.endgame_repository import (
-    ENDGAME_MATERIAL_THRESHOLD,
+    ENDGAME_PIECE_COUNT_THRESHOLD,
     query_endgame_entry_rows,
     query_endgame_games,
 )
@@ -91,11 +91,16 @@ async def _seed_game_position(
     *,
     game: Game,
     ply: int,
-    material_count: int,
+    piece_count: int = 2,
+    material_count: int = 1000,
     material_signature: str = "KR_KR",
     material_imbalance: int = 0,
 ) -> GamePosition:
-    """Insert a GamePosition row with endgame-relevant metadata."""
+    """Insert a GamePosition row with endgame-relevant metadata.
+
+    piece_count defaults to 2 (KR_KR — rook endgame, safely below threshold of 6).
+    material_count is kept for completeness but no longer drives endgame detection.
+    """
     pos = GamePosition(
         game_id=game.id,
         user_id=game.user_id,
@@ -104,6 +109,7 @@ async def _seed_game_position(
         white_hash=hash(f"w-{game.id}-{ply}"),
         black_hash=hash(f"b-{game.id}-{ply}"),
         move_san=None,
+        piece_count=piece_count,
         material_count=material_count,
         material_signature=material_signature,
         material_imbalance=material_imbalance,
@@ -137,14 +143,14 @@ class TestQueryEndgameEntryRows:
 
     @pytest.mark.asyncio
     async def test_no_endgame_positions_returns_empty(self, db_session: AsyncSession) -> None:
-        """Game with no positions below the endgame threshold returns empty."""
+        """Game with no positions at or below the endgame piece_count threshold returns empty."""
         game = await _seed_game(db_session)
-        # Position with material_count above threshold — not an endgame position
+        # Position with piece_count above threshold — not an endgame position
         await _seed_game_position(
             db_session,
             game=game,
             ply=10,
-            material_count=ENDGAME_MATERIAL_THRESHOLD + 100,
+            piece_count=ENDGAME_PIECE_COUNT_THRESHOLD + 2,
             material_signature="KQRB_KQRB",
         )
 
@@ -163,12 +169,12 @@ class TestQueryEndgameEntryRows:
     async def test_returns_one_row_per_game_min_ply(self, db_session: AsyncSession) -> None:
         """When a game has multiple endgame positions, only the first (MIN ply) is returned."""
         game = await _seed_game(db_session)
-        # Two positions below the endgame threshold at different plies
+        # Two positions at or below the endgame piece_count threshold at different plies
         await _seed_game_position(
-            db_session, game=game, ply=30, material_count=ENDGAME_MATERIAL_THRESHOLD - 100, material_signature="KR_KR"
+            db_session, game=game, ply=30, piece_count=ENDGAME_PIECE_COUNT_THRESHOLD - 2, material_signature="KR_KR"
         )
         await _seed_game_position(
-            db_session, game=game, ply=40, material_count=ENDGAME_MATERIAL_THRESHOLD - 300, material_signature="KR_K"
+            db_session, game=game, ply=40, piece_count=ENDGAME_PIECE_COUNT_THRESHOLD - 4, material_signature="KR_K"
         )
 
         rows = await query_endgame_entry_rows(
@@ -195,7 +201,7 @@ class TestQueryEndgameEntryRows:
 
         for game in [blitz_game, rapid_game]:
             await _seed_game_position(
-                db_session, game=game, ply=30, material_count=ENDGAME_MATERIAL_THRESHOLD - 100, material_signature="KR_KR"
+                db_session, game=game, ply=30, piece_count=ENDGAME_PIECE_COUNT_THRESHOLD - 2, material_signature="KR_KR"
             )
 
         rows = await query_endgame_entry_rows(
@@ -220,7 +226,7 @@ class TestQueryEndgameEntryRows:
 
         for game in [chesscom_game, lichess_game]:
             await _seed_game_position(
-                db_session, game=game, ply=30, material_count=ENDGAME_MATERIAL_THRESHOLD - 100, material_signature="KR_KR"
+                db_session, game=game, ply=30, piece_count=ENDGAME_PIECE_COUNT_THRESHOLD - 2, material_signature="KR_KR"
             )
 
         rows = await query_endgame_entry_rows(
@@ -251,7 +257,7 @@ class TestQueryEndgameGames:
         """query_endgame_games returns GameRecord-shaped rows for rook endgame class."""
         game = await _seed_game(db_session)
         await _seed_game_position(
-            db_session, game=game, ply=30, material_count=ENDGAME_MATERIAL_THRESHOLD - 100, material_signature="KR_KR"
+            db_session, game=game, ply=30, piece_count=ENDGAME_PIECE_COUNT_THRESHOLD - 2, material_signature="KR_KR"
         )
 
         games, matched_count = await query_endgame_games(
@@ -277,7 +283,7 @@ class TestQueryEndgameGames:
         """Unknown endgame class (not rook/minor_piece/pawn/queen/mixed/pawnless) returns empty."""
         game = await _seed_game(db_session)
         await _seed_game_position(
-            db_session, game=game, ply=30, material_count=ENDGAME_MATERIAL_THRESHOLD - 100, material_signature="KR_KR"
+            db_session, game=game, ply=30, piece_count=ENDGAME_PIECE_COUNT_THRESHOLD - 2, material_signature="KR_KR"
         )
 
         games, matched_count = await query_endgame_games(

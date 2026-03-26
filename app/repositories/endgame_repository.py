@@ -14,12 +14,14 @@ from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.schemas.endgames import EndgameClass
 
-# material_count threshold for endgame classification.
-# Positions with material_count strictly below this value are classified as endgame phase.
-# Full opening value is ~7800. At 1500, typical entry signatures are KRP_KRP (rook+pawns)
-# or KBPP_KNP (minor+pawns) — true endgame territory.
-# Validated against user data: 1500 yields a balanced distribution across all 6 categories.
-ENDGAME_MATERIAL_THRESHOLD = 1500
+# Piece-count threshold for endgame classification (Lichess definition).
+# Positions with piece_count <= this value are classified as endgame phase.
+# piece_count counts major and minor pieces (Q+R+B+N) for both sides combined,
+# excluding kings and pawns.
+# At threshold 6: KRR_KRR (4 pieces) = endgame; KQRBN_KQRBN (8 pieces) = NOT endgame.
+# This correlates better with position complexity than centipawn value:
+# Q vs Q (1800cp) and RB vs RN (1600cp) were previously excluded from endgames but are true endgames.
+ENDGAME_PIECE_COUNT_THRESHOLD = 6
 
 
 async def count_filtered_games(
@@ -54,7 +56,7 @@ async def query_endgame_entry_rows(
     """Return one row per game at the endgame transition point.
 
     The endgame transition point is the first position (MIN ply) per game where
-    material_count < ENDGAME_MATERIAL_THRESHOLD. The material_signature and
+    piece_count <= ENDGAME_PIECE_COUNT_THRESHOLD. The material_signature and
     user_material_imbalance at that ply determine the endgame class and
     conversion/recovery classification.
 
@@ -65,7 +67,7 @@ async def query_endgame_entry_rows(
 
     NO color filter is applied per D-02 — stats cover both white and black games.
     """
-    # Subquery: find MIN ply per game where material_count < threshold
+    # Subquery: find MIN ply per game where piece_count <= threshold (Lichess endgame definition)
     entry_ply_subq = (
         select(
             GamePosition.game_id.label("game_id"),
@@ -73,8 +75,8 @@ async def query_endgame_entry_rows(
         )
         .where(
             GamePosition.user_id == user_id,
-            GamePosition.material_count.isnot(None),
-            GamePosition.material_count < ENDGAME_MATERIAL_THRESHOLD,
+            GamePosition.piece_count.isnot(None),
+            GamePosition.piece_count <= ENDGAME_PIECE_COUNT_THRESHOLD,
         )
         .group_by(GamePosition.game_id)
         .subquery("entry_ply")

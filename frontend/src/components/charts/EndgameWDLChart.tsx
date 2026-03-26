@@ -65,9 +65,10 @@ export function EndgameWDLChart({ categories, selectedCategory, onCategoryClick 
             Shows your win, draw, and loss percentages for each endgame type, based on games that reached that endgame.
             Conversion is your win rate when you entered the endgame with more material. Recovery is your draw+win rate
             when you entered with less material. Click a row to view the matching games.
-            {' '}Note: Endgame phase is defined as positions where total material falls below 1500 centipawns
-            (roughly a rook and pawns per side). This means queen-vs-queen positions are typically not
-            classified as endgames unless significant material has been traded alongside.
+            {' '}Endgame phase is defined as positions where the total count of major and minor pieces
+            (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not counted.
+            This follows the Lichess definition based on research showing position complexity correlates
+            with piece count rather than piece value.
           </InfoPopover>
         </span>
       </h2>
