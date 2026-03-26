@@ -2,22 +2,22 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
-status: Phase complete — ready for verification
-last_updated: "2026-03-26T09:54:24.411Z"
+status: Ready to execute
+last_updated: "2026-03-26T15:45:16.052Z"
 last_activity: 2026-03-26
 progress:
-  total_phases: 8
+  total_phases: 10
   completed_phases: 5
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 13
+  completed_plans: 12
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 29 (endgame-analytics) — EXECUTING
-Plan: 3 of 3
+Phase: 31 (endgame-classification-redesign) — EXECUTING
+Plan: 2 of 2
 
 ## Project Reference
 
@@ -66,6 +66,8 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [Phase 29-endgame-analytics]: user_material_imbalance = imbalance*sign where sign=1 for white, -1 for black (user-perspective normalization in SQL CASE)
 - [Phase 29]: EndgameWDLChart uses custom per-row buttons instead of Recharts for click-to-select interactivity and inline conversion/recovery metrics
 - [Phase 29]: totalGames and matchedCount both use gamesData.matched_count — EndgameGamesResponse has no separate total_games field (games already scoped by category)
+- [Phase 31-01]: endgame_class backfill uses CASE on material_signature regex with mixed check FIRST to match Python classify_endgame_class logic
+- [Phase 31-01]: chunk_size reduced 1900->1700 for 19-column asyncpg safety margin; Float(24)/REAL alter_column noise removed (semantically equivalent in PostgreSQL)
 
 ### Critical v1.5 Constraints
 
@@ -113,4 +115,4 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260326-k94 | Add backrank_sparse and mixedness columns to position classifier and game_positions (Lichess Divider.scala algorithm) | 2026-03-26 | d8d6796 | [260326-k94-add-backrank-sparse-and-mixedness-column](./quick/260326-k94-add-backrank-sparse-and-mixedness-column/) |
 
 ---
-Last activity: 2026-03-26 - Completed quick task 260326-k94: Add backrank_sparse and mixedness columns (Lichess middlegame detection, Divider.scala algorithm, 17-column import pipeline)
+Last activity: 2026-03-26
