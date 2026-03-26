@@ -165,8 +165,11 @@ Plans:
   4. User can filter conversion/recovery stats by time control and the displayed numbers update correctly
   5. Users with no endgame data see a meaningful empty state rather than an error or blank page
   6. The Endgame tab layout is usable on mobile (375px width) with the same filter and stats structure as the desktop layout
-**Plans**: TBD
-**UI hint**: yes
+**Plans**: 2 plans
+
+Plans:
+- [ ] 29-01-PLAN.md — Backend endgame repository, service, router, schemas, and tests
+- [ ] 29-02-PLAN.md — Frontend Endgames page with charts, filters, and navigation wiring
 
 ## Progress
 
@@ -201,7 +204,7 @@ Plans:
 | 27. Import Wiring & Backfill | v1.5 | 2/2 | Complete    | 2026-03-24 |
 | 28. Engine Analysis Import | v1.5 | 2/3 | Complete    | 2026-03-25 |
 | 28.1. Import lichess analysis metrics | v1.5 | 1/1 | Complete    | 2026-03-26 |
-| 29. Endgame Analytics | v1.5 | 0/0 | Not started | — |
+| 29. Endgame Analytics | v1.5 | 0/2 | Not started | — |
 | 30. Homepage, README & SEO Update | v1.5 | 0/0 | Not started | — |
 
 ### Phase 30: Homepage, README & SEO Update
