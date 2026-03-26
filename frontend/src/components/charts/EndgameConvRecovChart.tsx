@@ -6,6 +6,7 @@
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { MATERIAL_ADVANTAGE_POINTS } from '@/components/charts/EndgamePerformanceSection';
 import type { EndgameCategoryStats } from '@/types/endgames';
 import type { ChartConfig } from '@/components/ui/chart';
 
@@ -39,8 +40,8 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
         <span className="inline-flex items-center gap-1">
           Conversion &amp; Recovery by Endgame Type
           <InfoPopover ariaLabel="Conversion and Recovery info" testId="conv-recov-chart-info" side="top">
-            Conversion: your win rate when you entered the endgame with a material advantage. Recovery: your
-            draw+win rate when you entered the endgame with a material deficit.
+              <strong>Conversion</strong>: your win rate when you entered the endgame with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} points. <br/>
+              <strong>Recovery</strong>: your draw+win rate when you entered the endgame with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} points.
           </InfoPopover>
         </span>
       </h3>

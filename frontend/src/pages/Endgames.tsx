@@ -72,13 +72,15 @@ export function EndgamesPage() {
   const endgameSummary = statsData ? (
     statsData.total_games === 0 ? null : (
       <p className="text-sm text-muted-foreground mb-2" data-testid="endgame-summary">
-        {statsData.endgame_games} of {statsData.total_games} games
-        ({(statsData.endgame_games / statsData.total_games * 100).toFixed(1)}%) reached an endgame phase
-        <InfoPopover ariaLabel="Endgame phase definition" testId="endgame-phase-info" side="bottom">
-          An endgame phase is defined as positions where the total count of major and minor pieces
-          (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not counted.
-          This follows the Lichess definition.
-        </InfoPopover>
+        <span className="inline-flex items-center gap-1 flex-wrap">
+          {statsData.endgame_games} of {statsData.total_games} games
+          ({(statsData.endgame_games / statsData.total_games * 100).toFixed(1)}%) reached an endgame phase
+          <InfoPopover ariaLabel="Endgame phase definition" testId="endgame-phase-info" side="bottom">
+            An endgame phase is defined as positions where the total count of major and minor pieces
+            (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not counted.
+            This follows the Lichess definition.
+          </InfoPopover>
+        </span>
       </p>
     )
   ) : null;
