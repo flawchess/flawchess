@@ -65,6 +65,16 @@ export function EndgamesPage() {
 
   // ── Statistics tab content ───────────────────────────────────────────────────
 
+  // Summary line: "X of Y games (Z%) reached an endgame phase"
+  const endgameSummary = statsData ? (
+    statsData.total_games === 0 ? null : (
+      <p className="text-sm text-muted-foreground mb-2" data-testid="endgame-summary">
+        {statsData.endgame_games} of {statsData.total_games} games
+        ({(statsData.endgame_games / statsData.total_games * 100).toFixed(1)}%) reached an endgame phase
+      </p>
+    )
+  ) : null;
+
   const statisticsContent = (
     <div className="flex flex-col gap-4">
       {statsLoading ? (
@@ -72,11 +82,14 @@ export function EndgamesPage() {
           <p className="text-muted-foreground">Loading endgame statistics...</p>
         </div>
       ) : statsData && statsData.categories.length > 0 ? (
-        <EndgameWDLChart
-          categories={statsData.categories}
-          selectedCategory={selectedCategory}
-          onCategoryClick={handleCategoryClick}
-        />
+        <>
+          {endgameSummary}
+          <EndgameWDLChart
+            categories={statsData.categories}
+            selectedCategory={selectedCategory}
+            onCategoryClick={handleCategoryClick}
+          />
+        </>
       ) : statsData && statsData.categories.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
           <p className="mb-2 text-base font-medium text-foreground">No endgame data yet</p>

@@ -27,6 +27,8 @@ const CLASS_TO_SLUG: Record<EndgameClass, string> = {
   pawnless: 'pawnless',
 };
 
+const MIN_GAMES_FOR_RELIABLE_STATS = 10;
+
 function formatConversionMetric(pct: number, saves: number, games: number): string {
   if (games === 0) return '—';
   return `${pct.toFixed(0)}% (${saves}/${games})`;
@@ -63,6 +65,9 @@ export function EndgameWDLChart({ categories, selectedCategory, onCategoryClick 
             Shows your win, draw, and loss percentages for each endgame type, based on games that reached that endgame.
             Conversion is your win rate when you entered the endgame with more material. Recovery is your draw+win rate
             when you entered with less material. Click a row to view the matching games.
+            {' '}Note: Endgame phase is defined as positions where total material falls below 1500 centipawns
+            (roughly a rook and pawns per side). This means queen-vs-queen positions are typically not
+            classified as endgames unless significant material has been traded alongside.
           </InfoPopover>
         </span>
       </h2>
@@ -91,11 +96,18 @@ export function EndgameWDLChart({ categories, selectedCategory, onCategoryClick 
               {/* Category label and game count */}
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm font-medium">{cat.label}</span>
-                <span className="text-xs text-muted-foreground">{cat.total} games</span>
+                <span className="text-xs text-muted-foreground">
+                  {cat.total} games
+                  {cat.total < MIN_GAMES_FOR_RELIABLE_STATS && (
+                    <span className="text-xs text-amber-500 ml-1" title="Small sample size — percentages may be unreliable">
+                      (low sample)
+                    </span>
+                  )}
+                </span>
               </div>
 
-              {/* Stacked WDL bar */}
-              <div className="flex h-5 w-full overflow-hidden rounded mb-1">
+              {/* Stacked WDL bar — dimmed for low sample size categories */}
+              <div className={cn("flex h-5 w-full overflow-hidden rounded mb-1", cat.total < MIN_GAMES_FOR_RELIABLE_STATS && "opacity-50")}>
                 {cat.win_pct > 0 && (
                   <div
                     className="transition-all"
