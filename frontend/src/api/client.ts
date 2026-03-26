@@ -6,7 +6,7 @@ import type {
   MatchSideUpdateRequest, SuggestionsResponse
 } from '@/types/position_bookmarks';
 import type { RatingHistoryResponse, GlobalStatsResponse } from '@/types/stats';
-import type { EndgameStatsResponse, EndgameGamesResponse } from '@/types/endgames';
+import type { EndgameStatsResponse, EndgameGamesResponse, EndgameTimelineResponse } from '@/types/endgames';
 
 /**
  * Central Axios instance.
@@ -141,6 +141,25 @@ export const endgameApi = {
         ...(params.opponent_type && params.opponent_type !== 'all' ? { opponent_type: params.opponent_type } : {}),
         offset: params.offset ?? 0,
         limit: params.limit ?? 20,
+      },
+    }).then(r => r.data),
+
+  getTimeline: (params: {
+    time_control?: string[] | null;
+    platform?: string[] | null;
+    recency?: string | null;
+    rated?: boolean | null;
+    opponent_type?: string;
+    window?: number;
+  }) =>
+    apiClient.get<EndgameTimelineResponse>('/endgames/timeline', {
+      params: {
+        ...(params.time_control ? { time_control: params.time_control } : {}),
+        ...(params.platform ? { platform: params.platform } : {}),
+        ...(params.recency && params.recency !== 'all' ? { recency: params.recency } : {}),
+        ...(params.rated !== null && params.rated !== undefined ? { rated: params.rated } : {}),
+        ...(params.opponent_type && params.opponent_type !== 'all' ? { opponent_type: params.opponent_type } : {}),
+        ...(params.window ? { window: params.window } : {}),
       },
     }).then(r => r.data),
 };

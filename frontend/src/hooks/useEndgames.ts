@@ -22,6 +22,14 @@ export function useEndgameStats(filters: FilterState) {
   });
 }
 
+export function useEndgameTimeline(filters: FilterState, window = 50) {
+  const params = buildEndgameParams(filters);
+  return useQuery({
+    queryKey: ['endgameTimeline', params, window],
+    queryFn: () => endgameApi.getTimeline({ ...params, window }),
+  });
+}
+
 export function useEndgameGames(
   endgameClass: EndgameClass | null,
   filters: FilterState,

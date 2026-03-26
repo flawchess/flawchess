@@ -44,3 +44,25 @@ export interface EndgameGamesResponse {
   offset: number;
   limit: number;
 }
+
+export interface EndgameTimelinePoint {
+  date: string;
+  win_rate: number;
+  game_count: number;
+  window_size: number;
+}
+
+export interface EndgameOverallPoint {
+  date: string;
+  endgame_win_rate: number | null;
+  non_endgame_win_rate: number | null;
+  endgame_game_count: number;
+  non_endgame_game_count: number;
+  window_size: number;
+}
+
+export interface EndgameTimelineResponse {
+  overall: EndgameOverallPoint[];
+  per_type: Record<string, EndgameTimelinePoint[]>;
+  window: number;
+}

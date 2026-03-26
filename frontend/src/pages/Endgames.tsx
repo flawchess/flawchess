@@ -7,7 +7,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
 import { GameCardList } from '@/components/results/GameCardList';
-import { useEndgameStats, useEndgameGames } from '@/hooks/useEndgames';
+import { useEndgameStats, useEndgameGames, useEndgameTimeline } from '@/hooks/useEndgames';
+import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
 import { useDebounce } from '@/hooks/useDebounce';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
@@ -39,6 +40,7 @@ export function EndgamesPage() {
 
   // ── Data ─────────────────────────────────────────────────────────────────────
   const { data: statsData, isLoading: statsLoading } = useEndgameStats(debouncedFilters);
+  const { data: timelineData } = useEndgameTimeline(debouncedFilters);
   const { data: gamesData, isLoading: gamesLoading } = useEndgameGames(
     selectedCategory,
     debouncedFilters,
@@ -92,6 +94,9 @@ export function EndgamesPage() {
             onCategoryClick={handleCategoryClick}
             onSelectedCategoryClick={handleSelectedCategoryClick}
           />
+          {timelineData && timelineData.overall.length > 0 && (
+            <EndgameTimelineChart data={timelineData} />
+          )}
         </>
       ) : statsData && statsData.categories.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
