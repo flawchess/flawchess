@@ -124,6 +124,12 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
     return "pawnless"
 
 
+# Minimum material imbalance (in centipawns) to count as conversion or recovery.
+# Filters out minor imbalances like bishop pair (~50cp) that aren't meaningful
+# advantages to convert or deficits to recover from.
+_MATERIAL_ADVANTAGE_THRESHOLD = 300
+
+
 def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
     """Aggregate raw per-(game, class) endgame rows into EndgameCategoryStats list.
 
@@ -167,16 +173,18 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
         else:
             wdl[endgame_class]["losses"] += 1
 
-        # Conversion: user entered with material advantage (positive imbalance)
-        if user_material_imbalance is not None and user_material_imbalance > 0:
+        # Conversion: user entered with significant material advantage (>= 3 pawns / 300cp)
+        # Threshold filters out minor imbalances (e.g. bishop pair) that don't represent
+        # a meaningful advantage to "convert" into a win.
+        if user_material_imbalance is not None and user_material_imbalance >= _MATERIAL_ADVANTAGE_THRESHOLD:
             conv[endgame_class]["games"] += 1
             if outcome == "win":
                 conv[endgame_class]["wins"] += 1
             elif outcome == "draw":
                 conv[endgame_class]["draws"] += 1
 
-        # Recovery: user entered with material disadvantage (negative imbalance)
-        if user_material_imbalance is not None and user_material_imbalance < 0:
+        # Recovery: user entered with significant material deficit (<= -3 pawns / -300cp)
+        if user_material_imbalance is not None and user_material_imbalance <= -_MATERIAL_ADVANTAGE_THRESHOLD:
             recov[endgame_class]["games"] += 1
             if outcome == "win":
                 recov[endgame_class]["wins"] += 1

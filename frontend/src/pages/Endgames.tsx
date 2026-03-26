@@ -4,6 +4,7 @@ import { ChevronUp, ChevronDown, BarChart2Icon, Gamepad2Icon } from 'lucide-reac
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
 import { EndgamePerformanceSection } from '@/components/charts/EndgamePerformanceSection';
@@ -57,27 +58,27 @@ export function EndgamesPage() {
     setGamesOffset(0); // D-03: reset pagination on filter change
   }, []);
 
-  // ── Category click handlers ───────────────────────────────────────────────────
+  // ── Category selection handler ──────────────────────────────────────────────
 
-  const handleCategoryClick = useCallback((category: EndgameClass) => {
-    // First click on a row selects it; reset pagination on category change (D-03)
+  const handleCategorySelect = useCallback((category: EndgameClass) => {
+    // Select category and reset pagination — user navigates via link icon
     setSelectedCategory(category);
     setGamesOffset(0);
   }, []);
 
-  const handleSelectedCategoryClick = useCallback(() => {
-    // Second click on the already-selected category — navigate to games tab
-    navigate('/endgames/games');
-  }, [navigate]);
-
   // ── Statistics tab content ───────────────────────────────────────────────────
 
-  // Summary line: "X of Y games (Z%) reached an endgame phase"
+  // Summary line: "X of Y games (Z%) reached an endgame phase" with info popover
   const endgameSummary = statsData ? (
     statsData.total_games === 0 ? null : (
       <p className="text-sm text-muted-foreground mb-2" data-testid="endgame-summary">
         {statsData.endgame_games} of {statsData.total_games} games
         ({(statsData.endgame_games / statsData.total_games * 100).toFixed(1)}%) reached an endgame phase
+        <InfoPopover ariaLabel="Endgame phase definition" testId="endgame-phase-info" side="bottom">
+          An endgame phase is defined as positions where the total count of major and minor pieces
+          (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not counted.
+          This follows the Lichess definition.
+        </InfoPopover>
       </p>
     )
   ) : null;
@@ -96,9 +97,7 @@ export function EndgamesPage() {
           )}
           <EndgameWDLChart
             categories={statsData.categories}
-            selectedCategory={selectedCategory}
-            onCategoryClick={handleCategoryClick}
-            onSelectedCategoryClick={handleSelectedCategoryClick}
+            onCategorySelect={handleCategorySelect}
           />
           {statsData && statsData.categories.length > 0 && (
             <EndgameConvRecovChart categories={statsData.categories} />

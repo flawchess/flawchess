@@ -1,3 +1,5 @@
+import { Gamepad2Icon, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { WDL_WIN, WDL_DRAW, WDL_LOSS } from '@/components/results/WDLBar';
 import { cn } from '@/lib/utils';
@@ -5,9 +7,7 @@ import type { EndgameCategoryStats, EndgameClass } from '@/types/endgames';
 
 interface EndgameWDLChartProps {
   categories: EndgameCategoryStats[];
-  selectedCategory: EndgameClass | null;
-  onCategoryClick: (category: EndgameClass) => void;
-  onSelectedCategoryClick: () => void;
+  onCategorySelect: (category: EndgameClass) => void;
 }
 
 // Glass-effect overlay matching WDLBar.tsx
@@ -50,113 +50,101 @@ interface CategoryData {
 
 interface CategoryRowProps {
   cat: CategoryData;
-  isSelected: boolean;
   maxTotal: number;
-  onCategoryClick: (category: EndgameClass) => void;
-  onSelectedCategoryClick: () => void;
+  onCategorySelect: (category: EndgameClass) => void;
 }
 
 function EndgameCategoryRow({
   cat,
-  isSelected,
   maxTotal,
-  onCategoryClick,
-  onSelectedCategoryClick,
+  onCategorySelect,
 }: CategoryRowProps) {
   return (
     <div
-      className={cn(
-        'rounded px-2 py-1.5 transition-colors',
-        isSelected
-          ? 'bg-muted/50 ring-1 ring-primary/40'
-          : 'hover:bg-muted/30',
-      )}
+      className="rounded px-2 py-1.5 transition-colors hover:bg-muted/30"
+      data-testid={`endgame-category-${cat.slug}`}
     >
-      <button
-        data-testid={`endgame-category-${cat.slug}`}
-        aria-pressed={isSelected}
-        aria-label={`${cat.label} endgame category`}
-        onClick={() => {
-          if (isSelected) {
-            onSelectedCategoryClick();
-          } else {
-            onCategoryClick(cat.endgame_class);
-          }
-        }}
-        className="w-full text-left cursor-pointer"
-      >
-        {/* Category label with per-type info popover and game count */}
-        <div className="flex items-center justify-between mb-1">
-          <span className="inline-flex items-center gap-1">
-            <span className="text-sm font-medium">{cat.label}</span>
-            <InfoPopover
-              ariaLabel={`${cat.label} endgame type info`}
-              testId={`endgame-type-info-${cat.slug}`}
-              side="top"
-            >
-              {ENDGAME_TYPE_DESCRIPTIONS[cat.endgame_class]}
-            </InfoPopover>
-          </span>
+      {/* Category label with per-type info popover and game count + link */}
+      <div className="flex items-center justify-between mb-1">
+        <span className="inline-flex items-center gap-1">
+          <span className="text-sm font-medium">{cat.label}</span>
+          <InfoPopover
+            ariaLabel={`${cat.label} endgame type info`}
+            testId={`endgame-type-info-${cat.slug}`}
+            side="top"
+          >
+            {ENDGAME_TYPE_DESCRIPTIONS[cat.endgame_class]}
+          </InfoPopover>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Gamepad2Icon className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs text-muted-foreground">
-            {cat.total} games
+            {cat.total}
             {cat.total < MIN_GAMES_FOR_RELIABLE_STATS && (
-              <span className="text-xs text-amber-500 ml-1" title="Small sample size — percentages may be unreliable">
-                (low sample)
+              <span className="text-amber-500 ml-1" title="Small sample size — percentages may be unreliable">
+                (low)
               </span>
             )}
           </span>
-        </div>
+          <Link
+            to="/endgames/games"
+            onClick={() => onCategorySelect(cat.endgame_class)}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            aria-label={`View ${cat.label} endgame games`}
+            data-testid={`endgame-games-link-${cat.slug}`}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Link>
+        </span>
+      </div>
 
-        {/* Stacked WDL bar with glass overlay — dimmed for low sample size categories */}
-        <div className={cn('flex h-5 w-full overflow-hidden rounded mb-0', cat.total < MIN_GAMES_FOR_RELIABLE_STATS && 'opacity-50')}>
-          {cat.win_pct > 0 && (
-            <div
-              className="transition-all"
-              style={{ width: `${cat.win_pct}%`, backgroundColor: WDL_WIN, backgroundImage: GLASS_OVERLAY }}
-            />
-          )}
-          {cat.draw_pct > 0 && (
-            <div
-              className="transition-all"
-              style={{ width: `${cat.draw_pct}%`, backgroundColor: WDL_DRAW, backgroundImage: GLASS_OVERLAY }}
-            />
-          )}
-          {cat.loss_pct > 0 && (
-            <div
-              className="transition-all"
-              style={{ width: `${cat.loss_pct}%`, backgroundColor: WDL_LOSS, backgroundImage: GLASS_OVERLAY }}
-            />
-          )}
-        </div>
-
-        {/* Grey-outlined game count bar — proportional to max category total */}
-        <div className="h-2 mt-0.5 mb-1">
+      {/* Stacked WDL bar with glass overlay — dimmed for low sample size categories */}
+      <div className={cn('flex h-5 w-full overflow-hidden rounded mb-0', cat.total < MIN_GAMES_FOR_RELIABLE_STATS && 'opacity-50')}>
+        {cat.win_pct > 0 && (
           <div
-            className="h-full rounded-sm"
-            style={{
-              width: `${(cat.total / maxTotal) * 100}%`,
-              border: '1px solid oklch(0.6 0 0)',
-              backgroundColor: 'transparent',
-            }}
+            className="transition-all"
+            style={{ width: `${cat.win_pct}%`, backgroundColor: WDL_WIN, backgroundImage: GLASS_OVERLAY }}
           />
-        </div>
+        )}
+        {cat.draw_pct > 0 && (
+          <div
+            className="transition-all"
+            style={{ width: `${cat.draw_pct}%`, backgroundColor: WDL_DRAW, backgroundImage: GLASS_OVERLAY }}
+          />
+        )}
+        {cat.loss_pct > 0 && (
+          <div
+            className="transition-all"
+            style={{ width: `${cat.loss_pct}%`, backgroundColor: WDL_LOSS, backgroundImage: GLASS_OVERLAY }}
+          />
+        )}
+      </div>
 
-        {/* WDL stats with game counts */}
-        <div className="flex justify-center gap-3 text-sm">
-          <span style={{ color: WDL_WIN }}>W: {cat.wins} ({Math.round(cat.win_pct)}%)</span>
-          <span style={{ color: WDL_DRAW }}>D: {cat.draws} ({Math.round(cat.draw_pct)}%)</span>
-          <span style={{ color: WDL_LOSS }}>L: {cat.losses} ({Math.round(cat.loss_pct)}%)</span>
-        </div>
-      </button>
+      {/* Grey-outlined game count bar — proportional to max category total */}
+      <div className="h-2 mt-0.5 mb-1">
+        <div
+          className="h-full rounded-sm"
+          style={{
+            width: `${(cat.total / maxTotal) * 100}%`,
+            border: '1px solid oklch(0.6 0 0)',
+            backgroundColor: 'transparent',
+          }}
+        />
+      </div>
+
+      {/* WDL stats with game counts */}
+      <div className="flex justify-center gap-3 text-sm">
+        <span style={{ color: WDL_WIN }}>W: {cat.wins} ({Math.round(cat.win_pct)}%)</span>
+        <span style={{ color: WDL_DRAW }}>D: {cat.draws} ({Math.round(cat.draw_pct)}%)</span>
+        <span style={{ color: WDL_LOSS }}>L: {cat.losses} ({Math.round(cat.loss_pct)}%)</span>
+      </div>
     </div>
   );
 }
 
 export function EndgameWDLChart({
   categories,
-  selectedCategory,
-  onCategoryClick,
-  onSelectedCategoryClick,
+  onCategorySelect,
 }: EndgameWDLChartProps) {
   // Backend already sorts by total desc — transform for display
   const data = categories.map((cat) => ({
@@ -180,44 +168,22 @@ export function EndgameWDLChart({
         <span className="inline-flex items-center gap-1">
           Results by Endgame Type
           <InfoPopover ariaLabel="Results by endgame type info" testId="endgame-chart-info" side="top">
-            <p className="mb-2">
-              Shows your win, draw, and loss percentages for each endgame type, based on games that reached that endgame.
-            </p>
-
-            <p className="mb-2">
-              Endgame phase is defined as positions where the total count of major and minor pieces
-              (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not counted.
-              This follows the Lichess definition.
-            </p>
-
-            <p className="mb-2">
-              <strong>Conversion</strong> is your win rate when you entered the endgame with a material advantage. <br/>
-              <strong>Recovery</strong> is your draw+win rate when you entered with a material deficit.
-            </p>
-
-            <p>
-              Click a row to select it and view details. Click the same row again to jump to matching games.
-            </p>
+            Shows your win, draw, and loss percentages for each endgame type, based on games
+            that reached an endgame phase. Click the link icon to view matching games.
           </InfoPopover>
         </span>
       </h2>
 
-      {/* Per-category clickable rows */}
+      {/* Per-category rows with game links */}
       <div className="space-y-2">
-        {data.map((cat) => {
-          const isSelected = selectedCategory === cat.endgame_class;
-
-          return (
-            <EndgameCategoryRow
-              key={cat.endgame_class}
-              cat={cat}
-              isSelected={isSelected}
-              maxTotal={maxTotal}
-              onCategoryClick={onCategoryClick}
-              onSelectedCategoryClick={onSelectedCategoryClick}
-            />
-          );
-        })}
+        {data.map((cat) => (
+          <EndgameCategoryRow
+            key={cat.endgame_class}
+            cat={cat}
+            maxTotal={maxTotal}
+            onCategorySelect={onCategorySelect}
+          />
+        ))}
       </div>
     </div>
   );
