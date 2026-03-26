@@ -446,6 +446,7 @@ async def _flush_batch(
                         "material_signature": classification.material_signature,
                         "material_imbalance": classification.material_imbalance,
                         "has_opposite_color_bishops": classification.has_opposite_color_bishops,
+                        "piece_count": classification.piece_count,
                     })
                 except Exception:
                     logger.warning(
