@@ -10,9 +10,13 @@ export interface ConversionRecoveryStats {
   conversion_pct: number;    // win rate when up material (0-100)
   conversion_games: number;  // games where user entered up
   conversion_wins: number;
+  conversion_draws: number;
+  conversion_losses: number;
   recovery_pct: number;      // draw+win rate when down material (0-100)
   recovery_games: number;
-  recovery_saves: number;
+  recovery_saves: number;    // wins + draws (backward compat)
+  recovery_wins: number;
+  recovery_draws: number;
 }
 
 export interface EndgameCategoryStats {
