@@ -39,6 +39,9 @@ interface CategoryData {
   endgame_class: EndgameClass;
   label: string;
   slug: string;
+  wins: number;
+  draws: number;
+  losses: number;
   win_pct: number;
   draw_pct: number;
   loss_pct: number;
@@ -138,11 +141,11 @@ function EndgameCategoryRow({
           />
         </div>
 
-        {/* WDL percentages */}
-        <div className="flex gap-3 text-xs text-muted-foreground">
-          <span style={{ color: WDL_WIN }}>W: {cat.win_pct.toFixed(0)}%</span>
-          <span style={{ color: WDL_DRAW }}>D: {cat.draw_pct.toFixed(0)}%</span>
-          <span style={{ color: WDL_LOSS }}>L: {cat.loss_pct.toFixed(0)}%</span>
+        {/* WDL stats with game counts */}
+        <div className="flex justify-center gap-3 text-sm">
+          <span style={{ color: WDL_WIN }}>W: {cat.wins} ({Math.round(cat.win_pct)}%)</span>
+          <span style={{ color: WDL_DRAW }}>D: {cat.draws} ({Math.round(cat.draw_pct)}%)</span>
+          <span style={{ color: WDL_LOSS }}>L: {cat.losses} ({Math.round(cat.loss_pct)}%)</span>
         </div>
       </button>
     </div>
@@ -160,6 +163,9 @@ export function EndgameWDLChart({
     endgame_class: cat.endgame_class,
     label: cat.label,
     slug: CLASS_TO_SLUG[cat.endgame_class],
+    wins: cat.wins,
+    draws: cat.draws,
+    losses: cat.losses,
     win_pct: cat.win_pct,
     draw_pct: cat.draw_pct,
     loss_pct: cat.loss_pct,

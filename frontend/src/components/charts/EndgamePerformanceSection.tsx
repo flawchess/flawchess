@@ -49,10 +49,10 @@ function WDLRow({ label, wdl, testId }: WDLRowProps) {
           />
         )}
       </div>
-      <div className="flex gap-3 text-xs text-muted-foreground">
-        <span style={{ color: WDL_WIN }}>W: {wdl.win_pct.toFixed(1)}%</span>
-        <span style={{ color: WDL_DRAW }}>D: {wdl.draw_pct.toFixed(1)}%</span>
-        <span style={{ color: WDL_LOSS }}>L: {wdl.loss_pct.toFixed(1)}%</span>
+      <div className="flex justify-center gap-3 text-sm">
+        <span style={{ color: WDL_WIN }}>W: {wdl.wins} ({Math.round(wdl.win_pct)}%)</span>
+        <span style={{ color: WDL_DRAW }}>D: {wdl.draws} ({Math.round(wdl.draw_pct)}%)</span>
+        <span style={{ color: WDL_LOSS }}>L: {wdl.losses} ({Math.round(wdl.loss_pct)}%)</span>
       </div>
     </div>
   );
