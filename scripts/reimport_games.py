@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Ensure project root is on sys.path so `app.*` imports work when running as a script
@@ -30,6 +31,12 @@ from app.repositories import game_repository
 from app.services.import_service import create_job, get_job, run_import
 
 _BATCH_SIZE = 10  # games per DB commit — OOM-safe (STATE.md critical constraint)
+
+
+def _log(msg: str = "") -> None:
+    """Print a message prefixed with a UTC timestamp (second precision)."""
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{ts}] {msg}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -108,19 +115,19 @@ async def reimport_user(session, user_id: int) -> tuple[bool, int]:
     # Find which platforms the user has imported from
     platform_jobs = await get_platform_jobs_for_user(session, user_id)
     if not platform_jobs:
-        print(f"  User {user_id}: no completed import jobs found — skipping.")
+        _log(f"  User {user_id}: no completed import jobs found — skipping.")
         return True, 0
 
     # Count current games before deletion
     game_count = await game_repository.count_games_for_user(session, user_id)
     platform_list = ", ".join(f"{p} ({u})" for p, u in platform_jobs)
-    print(
+    _log(
         f"  User {user_id}: {game_count} games across: {platform_list}. "
         f"This will DELETE all games and re-import from scratch."
     )
 
     # Delete all games for the user
-    print(f"  Deleting {game_count} games for user {user_id}...")
+    _log(f"  Deleting {game_count} games for user {user_id}...")
     deleted_count = await game_repository.delete_all_games_for_user(session, user_id)
 
     # Reset last_synced_at on all completed import jobs so run_import does a full
@@ -134,12 +141,12 @@ async def reimport_user(session, user_id: int) -> tuple[bool, int]:
     )
 
     await session.commit()
-    print(f"  Deleted {deleted_count} games.")
+    _log(f"  Deleted {deleted_count} games.")
 
     # Re-import from each platform
     total_imported = 0
     for platform, username in platform_jobs:
-        print(f"  Re-importing from {platform} ({username})...")
+        _log(f"  Re-importing from {platform} ({username})...")
         try:
             job_id = create_job(user_id=user_id, platform=platform, username=username)
             await run_import(job_id)
@@ -149,14 +156,14 @@ async def reimport_user(session, user_id: int) -> tuple[bool, int]:
             if job_state is not None:
                 if job_state.status == "completed":
                     total_imported += job_state.games_imported
-                    print(
+                    _log(
                         f"  Done: {job_state.games_imported} games imported from {platform}."
                     )
                 else:
                     error_msg = job_state.error or "Unknown error"
-                    print(f"  WARNING: Import from {platform} failed: {error_msg}")
+                    _log(f"  WARNING: Import from {platform} failed: {error_msg}")
         except Exception as e:
-            print(f"  WARNING: Re-import from {platform} failed with exception: {e}")
+            _log(f"  WARNING: Re-import from {platform} failed with exception: {e}")
 
     return True, total_imported
 
@@ -180,12 +187,12 @@ async def main() -> None:
             target_label = f"user {args.user_id}"
 
     if not user_ids:
-        print("No users found. Exiting.")
+        _log("No users found. Exiting.")
         return
 
-    print(f"Re-import script: targeting {target_label}")
-    print(f"Batch size: {_BATCH_SIZE} games per commit")
-    print()
+    _log(f"Re-import script: targeting {target_label}")
+    _log(f"Batch size: {_BATCH_SIZE} games per commit")
+    _log()
 
     # Confirm before proceeding (unless --yes flag given)
     if not args.yes:
@@ -194,7 +201,7 @@ async def main() -> None:
             f"Proceed? [y/N] "
         )
         if response.strip().lower() not in ("y", "yes"):
-            print("Aborted.")
+            _log("Aborted.")
             return
 
     # Process each user
@@ -213,16 +220,16 @@ async def main() -> None:
                     total_failed += 1
         except Exception as e:
             sentry_sdk.capture_exception(e)
-            print(f"  ERROR: User {user_id} failed: {e}")
+            _log(f"  ERROR: User {user_id} failed: {e}")
             total_failed += 1
 
     elapsed = time.time() - start_time
-    print()
-    print("Re-import complete:")
-    print(f"  Users processed successfully: {total_success}")
-    print(f"  Users failed: {total_failed}")
-    print(f"  Total games imported: {total_games_imported}")
-    print(f"  Duration: {elapsed:.1f}s")
+    _log()
+    _log("Re-import complete:")
+    _log(f"  Users processed successfully: {total_success}")
+    _log(f"  Users failed: {total_failed}")
+    _log(f"  Total games imported: {total_games_imported}")
+    _log(f"  Duration: {elapsed:.1f}s")
 
 
 if __name__ == "__main__":

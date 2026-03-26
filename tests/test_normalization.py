@@ -443,6 +443,107 @@ class TestChesscomAccuracy:
         assert result["black_accuracy"] == 82
 
 
+class TestLichessAnalysisMetrics:
+    """Tests for lichess analysis metrics extraction (ACPL, inaccuracies, mistakes, blunders)."""
+
+    def test_lichess_analysis_metrics_present(self):
+        """Lichess game with analysis dict returns all 8 metric fields populated."""
+        from app.services.normalization import normalize_lichess_game
+        game = {
+            "id": "q7ZvsdUF",
+            "rated": True,
+            "variant": {"key": "standard", "name": "Standard"},
+            "speed": "blitz",
+            "perf": "blitz",
+            "createdAt": 1700000000000,
+            "lastMoveAt": 1700000600000,
+            "status": "mate",
+            "winner": "white",
+            "players": {
+                "white": {
+                    "user": {"name": "Magnus", "id": "magnus"},
+                    "rating": 2800,
+                    "analysis": {"inaccuracy": 1, "mistake": 0, "blunder": 0, "acpl": 15, "accuracy": 94},
+                },
+                "black": {
+                    "user": {"name": "Hikaru", "id": "hikaru"},
+                    "rating": 2750,
+                    "analysis": {"inaccuracy": 2, "mistake": 1, "blunder": 0, "acpl": 30, "accuracy": 82},
+                },
+            },
+            "moves": "e4 c5 Nf3",
+            "pgn": '[Event "?"]\n[White "Magnus"]\n[Black "Hikaru"]\n\n1. e4 c5 *',
+            "clock": {"initial": 600, "increment": 0, "totalTime": 600},
+        }
+        result = normalize_lichess_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["white_acpl"] == 15
+        assert result["black_acpl"] == 30
+        assert result["white_inaccuracies"] == 1
+        assert result["black_inaccuracies"] == 2
+        assert result["white_mistakes"] == 0
+        assert result["black_mistakes"] == 1
+        assert result["white_blunders"] == 0
+        assert result["black_blunders"] == 0
+
+    def test_lichess_analysis_metrics_absent(self):
+        """Lichess game without analysis key returns all 8 metric fields as None."""
+        from app.services.normalization import normalize_lichess_game
+        game = {
+            "id": "q7ZvsdUF",
+            "rated": True,
+            "variant": {"key": "standard", "name": "Standard"},
+            "speed": "blitz",
+            "perf": "blitz",
+            "createdAt": 1700000000000,
+            "lastMoveAt": 1700000600000,
+            "status": "mate",
+            "winner": "white",
+            "players": {
+                "white": {"user": {"name": "Magnus", "id": "magnus"}, "rating": 2800},
+                "black": {"user": {"name": "Hikaru", "id": "hikaru"}, "rating": 2750},
+            },
+            "moves": "e4 c5 Nf3",
+            "pgn": '[Event "?"]\n[White "Magnus"]\n[Black "Hikaru"]\n\n1. e4 c5 *',
+            "clock": {"initial": 600, "increment": 0, "totalTime": 600},
+        }
+        result = normalize_lichess_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["white_acpl"] is None
+        assert result["black_acpl"] is None
+        assert result["white_inaccuracies"] is None
+        assert result["black_inaccuracies"] is None
+        assert result["white_mistakes"] is None
+        assert result["black_mistakes"] is None
+        assert result["white_blunders"] is None
+        assert result["black_blunders"] is None
+
+    def test_chesscom_no_analysis_metrics(self):
+        """Chess.com normalized game does NOT contain the 8 analysis metric keys."""
+        from app.services.normalization import normalize_chesscom_game
+        game = {
+            "uuid": "test-uuid-123",
+            "url": "https://www.chess.com/game/live/test-uuid-123",
+            "pgn": '[Event "Live Chess"]\n[White "Magnus"]\n[Black "Hikaru"]\n[Result "1-0"]\n\n1. e4 e5 *',
+            "rules": "chess",
+            "time_control": "600+0",
+            "end_time": 1700000600,
+            "rated": True,
+            "white": {"username": "Magnus", "rating": 2800, "result": "win"},
+            "black": {"username": "Hikaru", "rating": 2750, "result": "checkmated"},
+        }
+        result = normalize_chesscom_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert "white_acpl" not in result
+        assert "black_acpl" not in result
+        assert "white_inaccuracies" not in result
+        assert "black_inaccuracies" not in result
+        assert "white_mistakes" not in result
+        assert "black_mistakes" not in result
+        assert "white_blunders" not in result
+        assert "black_blunders" not in result
+
+
 class TestNormalizeLichessGame:
     """Tests for normalize_lichess_game function."""
 

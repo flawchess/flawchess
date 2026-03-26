@@ -77,7 +77,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ## Current State
 
-v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD and Sentry monitoring. v1.4 (Web Analytics, Password Reset) in progress. Phase 28 complete — engine analysis import: lichess per-move evals (eval_cp, eval_mate) and chess.com accuracy scores (white_accuracy, black_accuracy) extracted during import. Admin re-import script available for backfilling existing games.
+v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD and Sentry monitoring. v1.4 (Web Analytics, Password Reset) in progress. Phase 28.1 complete — lichess analysis metrics (ACPL, inaccuracy/mistake/blunder counts per color) now imported during game normalization alongside existing accuracy scores and per-move evals. Admin re-import script available for backfilling existing games.
 
 ## Context
 

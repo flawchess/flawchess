@@ -20,6 +20,8 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 - [ ] **ENGINE-01**: System imports per-move eval (centipawns/mate) from lichess PGN annotations for games with prior computer analysis
 - [ ] **ENGINE-02**: System imports game-level accuracy scores from chess.com for games where analysis exists
 - [ ] **ENGINE-03**: System gracefully handles missing analysis data (null fields, no errors) for unanalyzed games
+- [x] **LMETRIC-01**: System stores per-player analysis metrics (ACPL, inaccuracy count, mistake count, blunder count) as nullable SmallInteger columns on the games table
+- [x] **LMETRIC-02**: System imports lichess per-player analysis metrics (ACPL, inaccuracy, mistake, blunder counts) from the API response during game normalization
 
 ### Endgame Analytics
 
@@ -64,7 +66,7 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 |---------|--------|
 | Local Stockfish analysis | Too CPU-intensive for Hetzner VPS; only import existing platform analysis |
 | Per-phase accuracy for chess.com | chess.com API only provides game-level accuracy, not per-phase |
-| Move quality classification (blunder/mistake/inaccuracy) | Requires engine eval for every move; deferred until engine data coverage improves |
+| Per-move quality classification (computing blunder/mistake/inaccuracy from engine evals) | Requires engine eval for every move; importing pre-computed game-level counts from lichess is in scope (Phase 28.1) |
 | Chessboard in Endgames tab | Endgame positions too diverse for meaningful board-based exploration |
 
 ## Traceability
@@ -86,10 +88,12 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 | CONV-01 | Phase 28 | Pending |
 | CONV-02 | Phase 28 | Pending |
 | CONV-03 | Phase 28 | Pending |
+| LMETRIC-01 | Phase 28.1 | Complete |
+| LMETRIC-02 | Phase 28.1 | Complete |
 
 **Coverage:**
-- v1.5 requirements: 15 total
-- Mapped to phases: 15
+- v1.5 requirements: 17 total
+- Mapped to phases: 17
 - Unmapped: 0 ✓
 
 ---
