@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { InfoPopover } from '@/components/ui/info-popover';
 import type { EndgameTimelineResponse } from '@/types/endgames';
 
 interface EndgameTimelineChartProps {
@@ -125,7 +126,15 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
     <div className="flex flex-col gap-6">
       {/* Chart 1: Win Rate Over Time */}
       <div>
-        <h3 className="text-base font-semibold mb-3">Win Rate Over Time</h3>
+        <h3 className="text-base font-semibold mb-3">
+          <span className="inline-flex items-center gap-1">
+            Win Rate Over Time
+            <InfoPopover ariaLabel="Win Rate Over Time info" testId="timeline-overall-info" side="top">
+              Rolling-window win rate over time, comparing games that reached an endgame phase vs. those that did
+              not. Each point represents a window of recent games.
+            </InfoPopover>
+          </span>
+        </h3>
         <ChartContainer
           config={overallChartConfig}
           className="w-full h-72"
@@ -190,7 +199,15 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
       {/* Chart 2: Win Rate by Endgame Type (only if per_type data is present) */}
       {typeKeys.length > 0 && (
         <div>
-          <h3 className="text-base font-semibold mb-3">Win Rate by Endgame Type</h3>
+          <h3 className="text-base font-semibold mb-3">
+            <span className="inline-flex items-center gap-1">
+              Win Rate by Endgame Type
+              <InfoPopover ariaLabel="Win Rate by Endgame Type info" testId="timeline-per-type-info" side="top">
+                Rolling-window win rate over time for each endgame type. Click legend items to toggle individual
+                series.
+              </InfoPopover>
+            </span>
+          </h3>
           <ChartContainer
             config={perTypeChartConfig}
             className="w-full h-72"
