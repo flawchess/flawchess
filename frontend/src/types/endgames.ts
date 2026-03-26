@@ -44,3 +44,24 @@ export interface EndgameGamesResponse {
   offset: number;
   limit: number;
 }
+
+export interface EndgameWDLSummary {
+  wins: number;
+  draws: number;
+  losses: number;
+  total: number;
+  win_pct: number;
+  draw_pct: number;
+  loss_pct: number;
+}
+
+export interface EndgamePerformanceResponse {
+  endgame_wdl: EndgameWDLSummary;
+  non_endgame_wdl: EndgameWDLSummary;
+  overall_win_rate: number;
+  endgame_win_rate: number;
+  aggregate_conversion_pct: number;
+  aggregate_recovery_pct: number;
+  relative_strength: number;
+  endgame_skill: number;
+}
