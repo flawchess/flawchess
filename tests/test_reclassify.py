@@ -1,10 +1,10 @@
-"""Tests for the backfill_positions script.
+"""Tests for the reclassify_positions script.
 
-Verifies that the backfill correctly updates NULL metadata columns on
+Verifies that reclassification correctly updates NULL metadata columns on
 game_positions rows by re-parsing stored PGN and calling classify_position().
 
 Uses real PostgreSQL with transaction rollback isolation (via db_session fixture).
-The backfill module functions are imported directly to avoid running the full main().
+The script module functions are imported directly to avoid running the full main().
 """
 
 import datetime
@@ -106,7 +106,7 @@ class TestBackfillGame:
     @pytest.mark.asyncio
     async def test_backfill_updates_null_material_count_to_nonnull(self, db_session):
         """Test 1: Backfill sets material_count to a non-null value for a valid PGN game."""
-        from scripts.backfill_positions import backfill_game
+        from scripts.reclassify_positions import backfill_game
         from sqlalchemy import select
         from app.models.game_position import GamePosition
 
@@ -134,11 +134,12 @@ class TestBackfillGame:
         assert positions_updated > 0
 
     @pytest.mark.asyncio
-    async def test_backfill_sets_all_4_metadata_columns(self, db_session):
-        """Test 2: After backfill, all 4 metadata columns are non-null on every position row."""
-        from scripts.backfill_positions import backfill_game
+    async def test_backfill_sets_all_classification_columns(self, db_session):
+        """Test 2: After backfill, all classification columns are non-null on every position row."""
+        from scripts.reclassify_positions import backfill_game
         from sqlalchemy import select
         from app.models.game_position import GamePosition
+        from app.services.position_classifier import PositionClassification
 
         game_id = await _insert_game_with_null_positions(db_session)
         await backfill_game(db_session, game_id, _FOOLS_MATE_PGN)
@@ -149,16 +150,19 @@ class TestBackfillGame:
         positions = result.scalars().all()
         assert len(positions) > 0
 
+        # Check every field from PositionClassification that exists on the model
+        classification_fields = [
+            field for field in PositionClassification.__dataclass_fields__
+            if hasattr(GamePosition, field)
+        ]
         for pos in positions:
-            assert pos.material_count is not None, f"ply={pos.ply} material_count is None"
-            assert pos.material_signature is not None, f"ply={pos.ply} material_signature is None"
-            assert pos.material_imbalance is not None, f"ply={pos.ply} material_imbalance is None"
-            assert pos.has_opposite_color_bishops is not None, f"ply={pos.ply} has_opposite_color_bishops is None"
+            for field in classification_fields:
+                assert getattr(pos, field) is not None, f"ply={pos.ply} {field} is None"
 
     @pytest.mark.asyncio
     async def test_backfill_is_idempotent(self, db_session):
         """Test 3: Running backfill twice produces the same result; second call finds no games."""
-        from scripts.backfill_positions import backfill_game, get_unprocessed_game_ids
+        from scripts.reclassify_positions import backfill_game, get_unprocessed_game_ids
 
         game_id = await _insert_game_with_null_positions(db_session)
 
@@ -167,7 +171,7 @@ class TestBackfillGame:
         await db_session.flush()
 
         # After first run, game should no longer appear as unprocessed
-        unprocessed = await get_unprocessed_game_ids(db_session, batch_size=100, exclude_ids=set())
+        unprocessed = await get_unprocessed_game_ids(db_session, batch_size=100, exclude_ids=set(), user_id=None)
         assert game_id not in unprocessed, (
             "game_id should not appear in unprocessed list after backfill"
         )
@@ -179,7 +183,7 @@ class TestBackfillGame:
     @pytest.mark.asyncio
     async def test_corrupt_pgn_skips_gracefully(self, db_session):
         """Test 4: backfill_game with unparseable PGN returns 0 for truly None game objects."""
-        from scripts.backfill_positions import backfill_game
+        from scripts.reclassify_positions import backfill_game
 
         game_id = await _insert_game_with_null_positions(db_session, pgn=_FOOLS_MATE_PGN)
 
@@ -190,7 +194,7 @@ class TestBackfillGame:
     @pytest.mark.asyncio
     async def test_starting_position_has_full_material(self, db_session):
         """Ply 0 (starting board) must have material_count=7800 (full starting material)."""
-        from scripts.backfill_positions import backfill_game
+        from scripts.reclassify_positions import backfill_game
         from sqlalchemy import select
         from app.models.game_position import GamePosition
 
@@ -213,34 +217,34 @@ class TestGetUnprocessedGameIds:
     @pytest.mark.asyncio
     async def test_returns_game_ids_with_null_material_count(self, db_session):
         """Test 5: get_unprocessed_game_ids returns games with NULL material_count positions."""
-        from scripts.backfill_positions import get_unprocessed_game_ids
+        from scripts.reclassify_positions import get_unprocessed_game_ids
 
         game_id = await _insert_game_with_null_positions(db_session)
 
-        result = await get_unprocessed_game_ids(db_session, batch_size=100, exclude_ids=set())
+        result = await get_unprocessed_game_ids(db_session, batch_size=100, exclude_ids=set(), user_id=None)
         assert game_id in result
 
     @pytest.mark.asyncio
     async def test_respects_batch_size(self, db_session):
         """get_unprocessed_game_ids should return at most batch_size game IDs."""
-        from scripts.backfill_positions import get_unprocessed_game_ids
+        from scripts.reclassify_positions import get_unprocessed_game_ids
 
         # Insert 3 games with NULL positions
         for _ in range(3):
             await _insert_game_with_null_positions(db_session)
 
-        result = await get_unprocessed_game_ids(db_session, batch_size=2, exclude_ids=set())
+        result = await get_unprocessed_game_ids(db_session, batch_size=2, exclude_ids=set(), user_id=None)
         assert len(result) <= 2
 
     @pytest.mark.asyncio
     async def test_excludes_skipped_ids(self, db_session):
         """get_unprocessed_game_ids should exclude IDs in exclude_ids set."""
-        from scripts.backfill_positions import get_unprocessed_game_ids
+        from scripts.reclassify_positions import get_unprocessed_game_ids
 
         game_id = await _insert_game_with_null_positions(db_session)
 
         # Exclude the game we just inserted
         result = await get_unprocessed_game_ids(
-            db_session, batch_size=100, exclude_ids={game_id}
+            db_session, batch_size=100, exclude_ids={game_id}, user_id=None
         )
         assert game_id not in result

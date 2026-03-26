@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { arrowSortKey } from '../../lib/arrowColor';
-import { darkSquareStyle, lightSquareStyle } from '../../lib/theme';
+import { darkSquareStyle, lightSquareStyle, BOARD_DARK_SQUARE, BOARD_LIGHT_SQUARE } from '../../lib/theme';
 
 export interface BoardArrow {
   startSquare: string;
@@ -21,8 +21,9 @@ interface ChessBoardProps {
   arrows?: BoardArrow[];
 }
 
-const DARK_SQUARE_NOTATION: React.CSSProperties = { color: 'rgba(255, 255, 255, 0.85)', fontWeight: 600 };
-const LIGHT_SQUARE_NOTATION: React.CSSProperties = { color: 'rgba(0, 0, 0, 0.5)', fontWeight: 600 };
+// Coordinate labels use the opposite square's color for contrast
+const DARK_SQUARE_NOTATION: React.CSSProperties = { color: BOARD_LIGHT_SQUARE, fontWeight: 600 };
+const LIGHT_SQUARE_NOTATION: React.CSSProperties = { color: BOARD_DARK_SQUARE, fontWeight: 600 };
 
 const PIECE_NAMES: Record<string, string> = {
   wP: 'white pawn', wR: 'white rook', wN: 'white knight', wB: 'white bishop', wQ: 'white queen', wK: 'white king',

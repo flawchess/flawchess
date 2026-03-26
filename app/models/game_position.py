@@ -44,6 +44,16 @@ class GamePosition(Base):
     material_imbalance: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     has_opposite_color_bishops: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
 
+    # Lichess piece-count for endgame classification: count of Q+R+B+N for both sides combined.
+    # Nullable because existing rows won't have it until the backfill migration.
+    piece_count: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+
+    # Lichess middlegame detection columns (nullable — existing rows backfilled via reimport)
+    # True when < 4 pieces on either side's back rank
+    backrank_sparse: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    # Lichess mixedness score: measures how interleaved white/black pieces are (0-~400)
+    mixedness: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+
     # Engine analysis: per-move eval from lichess %eval PGN annotations (NULL for chess.com and unanalyzed games)
     eval_cp: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     eval_mate: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)

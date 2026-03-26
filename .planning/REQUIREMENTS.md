@@ -25,16 +25,16 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 
 ### Endgame Analytics
 
-- [ ] **ENDGM-01**: User can view W/D/L rates for each endgame category in a dedicated Endgames tab
-- [ ] **ENDGM-02**: User can filter endgame statistics by time control (bullet/blitz/rapid/classical)
-- [ ] **ENDGM-03**: User can filter endgame statistics by color played (white/black/both)
-- [ ] **ENDGM-04**: User can see game count per endgame category to assess statistical significance
+- [x] **ENDGM-01**: User can view W/D/L rates for each endgame category in a dedicated Endgames tab
+- [x] **ENDGM-02**: User can filter endgame statistics by time control (bullet/blitz/rapid/classical)
+- [x] **ENDGM-03**: User can filter endgame statistics by color played (white/black/both)
+- [x] **ENDGM-04**: User can see game count per endgame category to assess statistical significance
 
 ### Conversion & Recovery Statistics
 
-- [ ] **CONV-01**: User can see win rate when up material, broken down by game phase (placement TBD: Stats tab or Endgames tab)
-- [ ] **CONV-02**: User can see draw/win rate when down material, broken down by game phase
-- [ ] **CONV-03**: User can filter conversion/recovery stats by time control
+- [x] **CONV-01**: User can see win rate when up material, broken down by game phase (placement TBD: Stats tab or Endgames tab)
+- [x] **CONV-02**: User can see draw/win rate when down material, broken down by game phase
+- [x] **CONV-03**: User can filter conversion/recovery stats by time control
 
 ## v1.4 Requirements (Prior Milestone)
 
@@ -81,13 +81,13 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 | ENGINE-01 | Phase 29 | Pending |
 | ENGINE-02 | Phase 29 | Pending |
 | ENGINE-03 | Phase 29 | Pending |
-| ENDGM-01 | Phase 28 | Pending |
-| ENDGM-02 | Phase 28 | Pending |
-| ENDGM-03 | Phase 28 | Pending |
-| ENDGM-04 | Phase 28 | Pending |
-| CONV-01 | Phase 28 | Pending |
-| CONV-02 | Phase 28 | Pending |
-| CONV-03 | Phase 28 | Pending |
+| ENDGM-01 | Phase 28 | Complete |
+| ENDGM-02 | Phase 28 | Complete |
+| ENDGM-03 | Phase 28 | Complete |
+| ENDGM-04 | Phase 28 | Complete |
+| CONV-01 | Phase 28 | Complete |
+| CONV-02 | Phase 28 | Complete |
+| CONV-03 | Phase 28 | Complete |
 | LMETRIC-01 | Phase 28.1 | Complete |
 | LMETRIC-02 | Phase 28.1 | Complete |
 

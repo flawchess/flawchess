@@ -119,7 +119,7 @@ class TestCRUD:
         bookmark = await create_bookmark(
             db_session,
             user_id=1,
-            data=_make_create(label="Original", match_side="white"),
+            data=_make_create(label="Original", match_side="mine"),
         )
         original_hash = bookmark.target_hash
         original_sort_order = bookmark.sort_order
@@ -135,7 +135,7 @@ class TestCRUD:
         assert updated.label == "Updated"
         assert updated.target_hash == original_hash  # unchanged
         assert updated.sort_order == original_sort_order  # unchanged
-        assert updated.match_side == "white"  # unchanged
+        assert updated.match_side == "mine"  # unchanged
 
     @pytest.mark.asyncio
     async def test_delete_bookmark(self, db_session: AsyncSession) -> None:

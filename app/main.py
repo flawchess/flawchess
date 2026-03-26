@@ -8,6 +8,7 @@ from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
 from app.routers import analysis, position_bookmarks, imports, auth
+from app.routers.endgames import router as endgames_router
 from app.routers.stats import router as stats_router
 from app.routers.users import router as users_router
 from app.services.import_service import cleanup_orphaned_jobs
@@ -44,6 +45,7 @@ app.include_router(imports.router, prefix="/api")
 app.include_router(analysis.router, prefix="/api")
 app.include_router(position_bookmarks.router, prefix="/api")
 app.include_router(stats_router, prefix="/api")
+app.include_router(endgames_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 
 
