@@ -52,16 +52,18 @@ export function EndgamesPage() {
     setGamesOffset(0); // D-03: reset pagination on filter change
   }, []);
 
-  // ── Category click handler ────────────────────────────────────────────────────
+  // ── Category click handlers ───────────────────────────────────────────────────
 
   const handleCategoryClick = useCallback((category: EndgameClass) => {
-    // Clicking the same row deselects it; reset pagination on category change (D-03)
-    setSelectedCategory((prev) => {
-      if (prev === category) return null;
-      setGamesOffset(0);
-      return category;
-    });
+    // First click on a row selects it; reset pagination on category change (D-03)
+    setSelectedCategory(category);
+    setGamesOffset(0);
   }, []);
+
+  const handleSelectedCategoryClick = useCallback(() => {
+    // Second click on the already-selected category — navigate to games tab
+    navigate('/endgames/games');
+  }, [navigate]);
 
   // ── Statistics tab content ───────────────────────────────────────────────────
 
@@ -88,6 +90,7 @@ export function EndgamesPage() {
             categories={statsData.categories}
             selectedCategory={selectedCategory}
             onCategoryClick={handleCategoryClick}
+            onSelectedCategoryClick={handleSelectedCategoryClick}
           />
         </>
       ) : statsData && statsData.categories.length === 0 ? (
