@@ -48,3 +48,11 @@ export function useEndgameGames(
     enabled: endgameClass !== null,
   });
 }
+
+export function useEndgamePerformance(filters: FilterState) {
+  const params = buildEndgameParams(filters);
+  return useQuery({
+    queryKey: ['endgamePerformance', params],
+    queryFn: () => endgameApi.getPerformance(params),
+  });
+}

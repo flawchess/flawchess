@@ -45,24 +45,23 @@ export interface EndgameGamesResponse {
   limit: number;
 }
 
-export interface EndgameTimelinePoint {
-  date: string;
-  win_rate: number;
-  game_count: number;
-  window_size: number;
+export interface EndgameWDLSummary {
+  wins: number;
+  draws: number;
+  losses: number;
+  total: number;
+  win_pct: number;
+  draw_pct: number;
+  loss_pct: number;
 }
 
-export interface EndgameOverallPoint {
-  date: string;
-  endgame_win_rate: number | null;
-  non_endgame_win_rate: number | null;
-  endgame_game_count: number;
-  non_endgame_game_count: number;
-  window_size: number;
-}
-
-export interface EndgameTimelineResponse {
-  overall: EndgameOverallPoint[];
-  per_type: Record<string, EndgameTimelinePoint[]>;
-  window: number;
+export interface EndgamePerformanceResponse {
+  endgame_wdl: EndgameWDLSummary;
+  non_endgame_wdl: EndgameWDLSummary;
+  overall_win_rate: number;
+  endgame_win_rate: number;
+  aggregate_conversion_pct: number;
+  aggregate_recovery_pct: number;
+  relative_strength: number;
+  endgame_skill: number;
 }
