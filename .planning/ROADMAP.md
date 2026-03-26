@@ -79,7 +79,7 @@
 - [x] **Phase 28: Engine Analysis Import** — Import chess.com accuracy scores and lichess per-move evals during game import (completed 2026-03-25)
 - [x] **Phase 29: Endgame Analytics** — Backend API + frontend Endgames tab delivering W/D/L by endgame category and material conversion/recovery stats (completed 2026-03-26)
 - [ ] **Phase 30: Homepage, README & SEO Update** — Update homepage content, README, and SEO metadata to showcase new statistics features introduced in v1.5
-- [ ] **Phase 32: Endgame Performance Charts** — Endgame vs non-endgame WDL comparison, strength gauge, and rolling-window timeline charts per endgame type
+- [x] **Phase 32: Endgame Performance Charts** — Endgame vs non-endgame WDL comparison, strength gauge, and rolling-window timeline charts per endgame type (completed 2026-03-26)
 
 ## Phase Details
 
@@ -207,7 +207,7 @@ Plans:
 | 28.1. Import lichess analysis metrics | v1.5 | 1/1 | Complete    | 2026-03-26 |
 | 29. Endgame Analytics | v1.5 | 3/3 | Complete   | 2026-03-26 |
 | 30. Homepage, README & SEO Update | v1.5 | 0/0 | Not started | — |
-| 32. Endgame Performance Charts | v1.5 | 1/3 | In Progress|  |
+| 32. Endgame Performance Charts | v1.5 | 3/3 | Complete   | 2026-03-26 |
 
 ### Phase 30: Homepage, README & SEO Update
 **Goal**: Update homepage content, README, and SEO metadata to showcase the new statistics features (endgame analytics, engine analysis) introduced in milestone v1.5
@@ -258,9 +258,9 @@ Plans:
   3. Timeline chart shows rolling 50-game win rate for all endgame games
   4. Timeline chart shows rolling 50-game win rate broken down by endgame type
   5. All charts respect existing filters (time control, platform, recency, rated, opponent)
-**Plans:** 1/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 32-01-PLAN.md — Backend schemas, repository queries, service functions, router endpoints, and tests
-- [ ] 32-02-PLAN.md — Frontend performance section (WDL bars, gauges) and conversion/recovery bar chart
-- [ ] 32-03-PLAN.md — Frontend timeline charts and visual verification
+- [x] 32-02-PLAN.md — Frontend performance section (WDL bars, gauges) and conversion/recovery bar chart
+- [x] 32-03-PLAN.md — Frontend timeline charts and visual verification
