@@ -1,4 +1,4 @@
-import { Gamepad2Icon, ExternalLink } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { WDL_WIN, WDL_DRAW, WDL_LOSS } from '@/components/results/WDLBar';
@@ -61,7 +61,7 @@ function EndgameCategoryRow({
 }: CategoryRowProps) {
   return (
     <div
-      className="rounded px-2 py-1.5 transition-colors hover:bg-muted/30"
+      className="rounded px-2 py-1.5"
       data-testid={`endgame-category-${cat.slug}`}
     >
       {/* Category label with per-type info popover and game count + link */}
@@ -77,9 +77,8 @@ function EndgameCategoryRow({
           </InfoPopover>
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <Gamepad2Icon className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs text-muted-foreground">
-            {cat.total}
+            {cat.total} games
             {cat.total < MIN_GAMES_FOR_RELIABLE_STATS && (
               <span className="text-amber-500 ml-1" title="Small sample size — percentages may be unreliable">
                 (low)
@@ -169,7 +168,7 @@ export function EndgameWDLChart({
           Results by Endgame Type
           <InfoPopover ariaLabel="Results by endgame type info" testId="endgame-chart-info" side="top">
             Shows your win, draw, and loss percentages for each endgame type, based on games
-            that reached an endgame phase. Click the link icon to view matching games.
+            that reached an endgame phase (at most 6 major/minor pieces on the board). Click the link icon to view matching games.
           </InfoPopover>
         </span>
       </h2>
