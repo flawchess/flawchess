@@ -8,10 +8,12 @@ Provides a pure function that accepts a ``chess.Board`` and returns a
 - ``material_imbalance`` — signed centipawns (white minus black)
 - ``has_opposite_color_bishops`` — True if each side has exactly 1 bishop on different square colors
 - ``piece_count`` — count of major+minor pieces (Q+R+B+N) for both sides combined, excluding kings and pawns
+- ``backrank_sparse`` — True when < 4 pieces on either side's back rank (Lichess middlegame detection)
+- ``mixedness`` — Lichess Divider.scala mixedness score (0..~400)
 
 Game phase (opening/middlegame/endgame) and endgame class are derived at query
-time from material_count + ply + material_signature + piece_count, allowing
-threshold tuning without data migration.
+time from material_count + ply + material_signature + piece_count + backrank_sparse
++ mixedness, allowing threshold tuning without data migration.
 
 No I/O, no DB access, no async.  All computation is deterministic.
 """
@@ -56,6 +58,25 @@ _SIGNATURE_LETTER: dict[int, str] = {
     chess.PAWN: "P",
 }
 
+# Backrank sparseness threshold: if either side has fewer than this many pieces
+# on their back rank, the position is considered "backrank sparse".
+BACKRANK_SPARSE_THRESHOLD = 4
+
+# ---------------------------------------------------------------------------
+# Mixedness precomputed tables (Lichess Divider.scala algorithm)
+# ---------------------------------------------------------------------------
+
+# 2x2 sliding window anchor bitboard (a1-b1-a2-b2 square mask)
+_SMALL_SQUARE = 0x0303
+
+# 49 overlapping 2x2 regions: list of (mask, y) where y is the 1-based rank of
+# the bottom-left corner of the region (1..7). Used by _compute_mixedness.
+_MIXEDNESS_REGIONS: list[tuple[int, int]] = [
+    (_SMALL_SQUARE << (x_idx + 8 * y_idx), y_idx + 1)
+    for y_idx in range(7)
+    for x_idx in range(7)
+]
+
 
 # ---------------------------------------------------------------------------
 # Public dataclass
@@ -74,6 +95,8 @@ class PositionClassification:
     material_imbalance: int  # white_material - black_material in centipawns
     has_opposite_color_bishops: bool
     piece_count: int  # count of Q+R+B+N for both sides combined (excludes kings and pawns)
+    backrank_sparse: bool  # True when < 4 pieces on either side's back rank
+    mixedness: int  # Lichess mixedness score (0..~400)
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +207,82 @@ def _compute_opposite_color_bishops(board: chess.Board) -> bool:
     return white_on_dark != black_on_dark
 
 
+def _compute_backrank_sparse(board: chess.Board) -> bool:
+    """Return True if either side has fewer than BACKRANK_SPARSE_THRESHOLD pieces on their back rank.
+
+    White's back rank is rank 1 (BB_RANK_1); black's back rank is rank 8 (BB_RANK_8).
+    A position is backrank sparse when a side has evacuated most of their back rank —
+    one component of the Lichess middlegame phase detection algorithm.
+    """
+    white_backrank_count = bin(board.occupied_co[chess.WHITE] & chess.BB_RANK_1).count("1")
+    black_backrank_count = bin(board.occupied_co[chess.BLACK] & chess.BB_RANK_8).count("1")
+    return (
+        white_backrank_count < BACKRANK_SPARSE_THRESHOLD
+        or black_backrank_count < BACKRANK_SPARSE_THRESHOLD
+    )
+
+
+def _mixedness_score(y: int, white: int, black: int) -> int:
+    """Return the mixedness contribution for a 2x2 region.
+
+    Transcribed from Lichess Divider.scala. y is the 1-based rank of the
+    bottom-left corner of the region. white and black are piece counts (0..4)
+    of each color within the 2x2 region.
+    """
+    match (white, black):
+        case (0, 0):
+            return 0
+        case (1, 0):
+            return 1 + (8 - y)
+        case (2, 0):
+            return (2 + (y - 2)) if y > 2 else 0
+        case (3, 0):
+            return (3 + (y - 1)) if y > 1 else 0
+        case (4, 0):
+            return (3 + (y - 1)) if y > 1 else 0
+        case (0, 1):
+            return 1 + y
+        case (1, 1):
+            return 5 + abs(4 - y)
+        case (2, 1):
+            return 4 + (y - 1)
+        case (3, 1):
+            return 5 + (y - 1)
+        case (0, 2):
+            return (2 + (6 - y)) if y < 6 else 0
+        case (1, 2):
+            return 4 + (7 - y)
+        case (2, 2):
+            return 7
+        case (0, 3):
+            return (3 + (7 - y)) if y < 7 else 0
+        case (1, 3):
+            return 5 + (7 - y)
+        case (0, 4):
+            return (3 + (7 - y)) if y < 7 else 0
+        case _:
+            return 0
+
+
+def _compute_mixedness(board: chess.Board) -> int:
+    """Return the Lichess mixedness score for *board*.
+
+    Iterates over 49 overlapping 2x2 regions (precomputed in _MIXEDNESS_REGIONS),
+    computing white_count and black_count of pieces within each region and
+    accumulating the score from _mixedness_score.
+
+    Uses bin(bb).count('1') for popcount — portable across python-chess versions.
+    """
+    score = 0
+    white_occ = board.occupied_co[chess.WHITE]
+    black_occ = board.occupied_co[chess.BLACK]
+    for mask, y in _MIXEDNESS_REGIONS:
+        white_count = bin(white_occ & mask).count("1")
+        black_count = bin(black_occ & mask).count("1")
+        score += _mixedness_score(y, white_count, black_count)
+    return score
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -199,9 +298,10 @@ def classify_position(board: chess.Board) -> PositionClassification:
         board: Any ``chess.Board`` instance.
 
     Returns:
-        A frozen ``PositionClassification`` dataclass with five fields:
+        A frozen ``PositionClassification`` dataclass with seven fields:
         ``material_count``, ``material_signature``, ``material_imbalance``,
-        ``has_opposite_color_bishops``, and ``piece_count``.
+        ``has_opposite_color_bishops``, ``piece_count``,
+        ``backrank_sparse``, and ``mixedness``.
     """
     return PositionClassification(
         material_count=_compute_material_count(board),
@@ -209,4 +309,6 @@ def classify_position(board: chess.Board) -> PositionClassification:
         material_imbalance=_compute_material_imbalance(board),
         has_opposite_color_bishops=_compute_opposite_color_bishops(board),
         piece_count=_compute_piece_count(board),
+        backrank_sparse=_compute_backrank_sparse(board),
+        mixedness=_compute_mixedness(board),
     )
