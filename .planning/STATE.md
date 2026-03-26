@@ -84,6 +84,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - Phases 28/29 swapped: Engine Analysis Import now before Endgame Analytics
 - Phase 30 added: Homepage, README & SEO Update
 - Phase 28.1 inserted after Phase 28: Import lichess analysis metrics (URGENT)
+- Phase 31 added: Endgame classification redesign — per-position instead of per-game
 
 ### Blockers/Concerns
 
