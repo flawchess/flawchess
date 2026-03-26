@@ -1,7 +1,4 @@
-import { useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { WDL_WIN, WDL_DRAW, WDL_LOSS } from '@/components/results/WDLBar';
 import { cn } from '@/lib/utils';
 import type { EndgameCategoryStats, EndgameClass } from '@/types/endgames';
@@ -38,11 +35,6 @@ const ENDGAME_TYPE_DESCRIPTIONS: Record<EndgameClass, string> = {
 
 const MIN_GAMES_FOR_RELIABLE_STATS = 10;
 
-function formatConversionMetric(pct: number, saves: number, games: number): string {
-  if (games === 0) return '—';
-  return `${pct.toFixed(0)}% (${saves}/${games})`;
-}
-
 interface CategoryData {
   endgame_class: EndgameClass;
   label: string;
@@ -51,25 +43,12 @@ interface CategoryData {
   draw_pct: number;
   loss_pct: number;
   total: number;
-  conversion_pct: number;
-  conversion_games: number;
-  conversion_wins: number;
-  conversion_draws: number;
-  conversion_losses: number;
-  recovery_pct: number;
-  recovery_games: number;
-  recovery_saves: number;
-  recovery_wins: number;
-  recovery_draws: number;
 }
 
 interface CategoryRowProps {
   cat: CategoryData;
   isSelected: boolean;
   maxTotal: number;
-  conversionText: string;
-  recoveryText: string;
-  hasConvRecov: boolean;
   onCategoryClick: (category: EndgameClass) => void;
   onSelectedCategoryClick: () => void;
 }
@@ -78,25 +57,9 @@ function EndgameCategoryRow({
   cat,
   isSelected,
   maxTotal,
-  conversionText,
-  recoveryText,
-  hasConvRecov,
   onCategoryClick,
   onSelectedCategoryClick,
 }: CategoryRowProps) {
-  const [moreOpen, setMoreOpen] = useState(false);
-
-  // Conversion: 3-segment bar (win / draw / loss)
-  const convWinPct = cat.conversion_games > 0 ? (cat.conversion_wins / cat.conversion_games) * 100 : 0;
-  const convDrawPct = cat.conversion_games > 0 ? (cat.conversion_draws / cat.conversion_games) * 100 : 0;
-  const convLossPct = cat.conversion_games > 0 ? (cat.conversion_losses / cat.conversion_games) * 100 : 0;
-
-  // Recovery: 3-segment bar (win / draw / loss)
-  const recvWinPct = cat.recovery_games > 0 ? (cat.recovery_wins / cat.recovery_games) * 100 : 0;
-  const recvDrawPct = cat.recovery_games > 0 ? (cat.recovery_draws / cat.recovery_games) * 100 : 0;
-  const recvLosses = cat.recovery_games - cat.recovery_wins - cat.recovery_draws;
-  const recvLossPct = cat.recovery_games > 0 ? (recvLosses / cat.recovery_games) * 100 : 0;
-
   return (
     <div
       className={cn(
@@ -182,52 +145,6 @@ function EndgameCategoryRow({
           <span style={{ color: WDL_LOSS }}>L: {cat.loss_pct.toFixed(0)}%</span>
         </div>
       </button>
-
-      {/* Collapsible conversion/recovery section */}
-      {hasConvRecov && (
-        <Collapsible open={moreOpen} onOpenChange={setMoreOpen}>
-          <CollapsibleTrigger asChild>
-            <button
-              data-testid={`endgame-more-${cat.slug}`}
-              className="flex items-center gap-0.5 text-[11px] text-muted-foreground mt-1 cursor-pointer hover:text-foreground transition-colors"
-            >
-              More
-              {moreOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="mt-1.5 space-y-1.5">
-              {/* Conversion W/D/L bar */}
-              {cat.conversion_games > 0 && (
-                <div>
-                  <p className="text-[11px] text-muted-foreground mb-0.5">
-                    Conversion: {conversionText}
-                  </p>
-                  <div className="flex h-3 w-full overflow-hidden rounded">
-                    {convWinPct > 0 && <div style={{ width: `${convWinPct}%`, backgroundColor: WDL_WIN }} />}
-                    {convDrawPct > 0 && <div style={{ width: `${convDrawPct}%`, backgroundColor: WDL_DRAW }} />}
-                    {convLossPct > 0 && <div style={{ width: `${convLossPct}%`, backgroundColor: WDL_LOSS }} />}
-                  </div>
-                </div>
-              )}
-
-              {/* Recovery W/D/L bar */}
-              {cat.recovery_games > 0 && (
-                <div>
-                  <p className="text-[11px] text-muted-foreground mb-0.5">
-                    Recovery: {recoveryText}
-                  </p>
-                  <div className="flex h-3 w-full overflow-hidden rounded">
-                    {recvWinPct > 0 && <div style={{ width: `${recvWinPct}%`, backgroundColor: WDL_WIN }} />}
-                    {recvDrawPct > 0 && <div style={{ width: `${recvDrawPct}%`, backgroundColor: WDL_DRAW }} />}
-                    {recvLossPct > 0 && <div style={{ width: `${recvLossPct}%`, backgroundColor: WDL_LOSS }} />}
-                  </div>
-                </div>
-              )}
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
     </div>
   );
 }
@@ -246,20 +163,7 @@ export function EndgameWDLChart({
     win_pct: cat.win_pct,
     draw_pct: cat.draw_pct,
     loss_pct: cat.loss_pct,
-    wins: cat.wins,
-    draws: cat.draws,
-    losses: cat.losses,
     total: cat.total,
-    conversion_pct: cat.conversion.conversion_pct,
-    conversion_games: cat.conversion.conversion_games,
-    conversion_wins: cat.conversion.conversion_wins,
-    conversion_draws: cat.conversion.conversion_draws,
-    conversion_losses: cat.conversion.conversion_losses,
-    recovery_pct: cat.conversion.recovery_pct,
-    recovery_games: cat.conversion.recovery_games,
-    recovery_saves: cat.conversion.recovery_saves,
-    recovery_wins: cat.conversion.recovery_wins,
-    recovery_draws: cat.conversion.recovery_draws,
   }));
 
   const maxTotal = Math.max(...categories.map((c) => c.total));
@@ -292,13 +196,10 @@ export function EndgameWDLChart({
         </span>
       </h2>
 
-      {/* Per-category clickable rows with collapsible conversion/recovery */}
+      {/* Per-category clickable rows */}
       <div className="space-y-2">
         {data.map((cat) => {
           const isSelected = selectedCategory === cat.endgame_class;
-          const conversionText = formatConversionMetric(cat.conversion_pct, cat.conversion_wins, cat.conversion_games);
-          const recoveryText = formatConversionMetric(cat.recovery_pct, cat.recovery_saves, cat.recovery_games);
-          const hasConvRecov = cat.conversion_games > 0 || cat.recovery_games > 0;
 
           return (
             <EndgameCategoryRow
@@ -306,9 +207,6 @@ export function EndgameWDLChart({
               cat={cat}
               isSelected={isSelected}
               maxTotal={maxTotal}
-              conversionText={conversionText}
-              recoveryText={recoveryText}
-              hasConvRecov={hasConvRecov}
               onCategoryClick={onCategoryClick}
               onSelectedCategoryClick={onSelectedCategoryClick}
             />

@@ -5,6 +5,7 @@
 
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { InfoPopover } from '@/components/ui/info-popover';
 import type { EndgameCategoryStats } from '@/types/endgames';
 import type { ChartConfig } from '@/components/ui/chart';
 
@@ -34,7 +35,15 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
 
   return (
     <div data-testid="conv-recov-chart">
-      <h3 className="text-base font-semibold mb-3">Conversion &amp; Recovery by Endgame Type</h3>
+      <h3 className="text-base font-semibold mb-3">
+        <span className="inline-flex items-center gap-1">
+          Conversion &amp; Recovery by Endgame Type
+          <InfoPopover ariaLabel="Conversion and Recovery info" testId="conv-recov-chart-info" side="top">
+            Conversion: your win rate when you entered the endgame with a material advantage. Recovery: your
+            draw+win rate when you entered the endgame with a material deficit.
+          </InfoPopover>
+        </span>
+      </h3>
 
       {chartData.length === 0 ? (
         <p className="text-sm text-muted-foreground py-4">
