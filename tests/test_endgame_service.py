@@ -117,28 +117,33 @@ class TestAggregateEndgameStats:
     def test_conversion_pct_per_category(self):
         """D-08: Conversion = win rate when user entered endgame with material advantage."""
         rows = [
-            (1, 1, "1-0", "white", 200),    # rook, up, won → converted
-            (2, 1, "0-1", "white", 150),     # rook, up, lost → failed conversion
-            (3, 1, "1-0", "white", -100),    # rook, down, won → not a conversion game
+            (1, 1, "1-0", "white", 200),      # rook, up, won → converted
+            (2, 1, "0-1", "white", 150),       # rook, up, lost → failed conversion
+            (3, 1, "1/2-1/2", "white", 120),  # rook, up, draw → draw conversion
+            (4, 1, "1-0", "white", -100),      # rook, down, won → not a conversion game
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
-        # 2 games up, 1 win when up → 50% conversion
-        assert rook.conversion.conversion_games == 2
+        # 3 games up: 1 win, 1 draw, 1 loss → 33.3% conversion
+        assert rook.conversion.conversion_games == 3
         assert rook.conversion.conversion_wins == 1
-        assert abs(rook.conversion.conversion_pct - 50.0) < 0.1
+        assert rook.conversion.conversion_draws == 1
+        assert rook.conversion.conversion_losses == 1
+        assert abs(rook.conversion.conversion_pct - 33.3) < 0.1
 
     def test_recovery_pct_per_category(self):
         """D-09: Recovery = draw+win rate when user entered endgame with material disadvantage."""
         rows = [
-            (1, 1, "1/2-1/2", "white", -200),   # rook, down, draw → recovered
-            (2, 1, "0-1", "white", -150),         # rook, down, lost → not recovered
-            (3, 1, "1-0", "white", -100),         # rook, down, won → recovered
+            (1, 1, "1-0", "white", -100),     # rook, down, won → recovery win
+            (2, 1, "1/2-1/2", "white", -200), # rook, down, draw → recovery draw
+            (3, 1, "0-1", "white", -150),     # rook, down, lost → not recovered
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
-        # 3 games down, 2 saves (draw + win) → 66.7%
+        # 3 games down, 2 saves (win + draw) → 66.7%
         assert rook.conversion.recovery_games == 3
+        assert rook.conversion.recovery_wins == 1
+        assert rook.conversion.recovery_draws == 1
         assert rook.conversion.recovery_saves == 2
         assert abs(rook.conversion.recovery_pct - 66.7) < 0.1
 

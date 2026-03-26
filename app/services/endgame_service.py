@@ -138,11 +138,11 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
     )
     # Conversion: games where user was up material at endgame entry
     conv: dict[str, dict[str, int]] = defaultdict(
-        lambda: {"games": 0, "wins": 0}
+        lambda: {"games": 0, "wins": 0, "draws": 0}
     )
     # Recovery: games where user was down material at endgame entry
     recov: dict[str, dict[str, int]] = defaultdict(
-        lambda: {"games": 0, "saves": 0}
+        lambda: {"games": 0, "wins": 0, "draws": 0}
     )
 
     for _game_id, endgame_class_int, result, user_color, user_material_imbalance in rows:
@@ -162,12 +162,16 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
             conv[endgame_class]["games"] += 1
             if outcome == "win":
                 conv[endgame_class]["wins"] += 1
+            elif outcome == "draw":
+                conv[endgame_class]["draws"] += 1
 
         # Recovery: user entered with material disadvantage (negative imbalance)
         if user_material_imbalance is not None and user_material_imbalance < 0:
             recov[endgame_class]["games"] += 1
-            if outcome in ("win", "draw"):
-                recov[endgame_class]["saves"] += 1
+            if outcome == "win":
+                recov[endgame_class]["wins"] += 1
+            elif outcome == "draw":
+                recov[endgame_class]["draws"] += 1
 
     # Build EndgameCategoryStats objects
     categories: list[EndgameCategoryStats] = []
@@ -190,6 +194,8 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
 
         conversion_games = conv_data["games"]
         conversion_wins = conv_data["wins"]
+        conversion_draws = conv_data["draws"]
+        conversion_losses = conversion_games - conversion_wins - conversion_draws
         conversion_pct = (
             round(conversion_wins / conversion_games * 100, 1)
             if conversion_games > 0
@@ -197,7 +203,9 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
         )
 
         recovery_games = recov_data["games"]
-        recovery_saves = recov_data["saves"]
+        recovery_wins = recov_data["wins"]
+        recovery_draws = recov_data["draws"]
+        recovery_saves = recovery_wins + recovery_draws  # derived, kept for backward compat
         recovery_pct = (
             round(recovery_saves / recovery_games * 100, 1)
             if recovery_games > 0
@@ -208,9 +216,13 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
             conversion_pct=conversion_pct,
             conversion_games=conversion_games,
             conversion_wins=conversion_wins,
+            conversion_draws=conversion_draws,
+            conversion_losses=conversion_losses,
             recovery_pct=recovery_pct,
             recovery_games=recovery_games,
             recovery_saves=recovery_saves,
+            recovery_wins=recovery_wins,
+            recovery_draws=recovery_draws,
         )
 
         label = _ENDGAME_CATEGORY_LABELS.get(endgame_class, endgame_class.replace("_", " ").title())

@@ -26,10 +26,14 @@ class ConversionRecoveryStats(BaseModel):
     conversion_pct: float   # win rate when up material entering endgame (0-100), per D-08
     conversion_games: int   # games where user entered this endgame type with material advantage
     conversion_wins: int    # wins among those games
+    conversion_draws: int   # draws among those games
+    conversion_losses: int  # losses among those games (= conversion_games - wins - draws)
 
     recovery_pct: float     # draw+win rate when down material entering endgame (0-100), per D-09
     recovery_games: int     # games where user entered this endgame type with material disadvantage
-    recovery_saves: int     # draws+wins among those games
+    recovery_saves: int     # draws+wins among those games (kept for backward compat)
+    recovery_wins: int      # wins among those games
+    recovery_draws: int     # draws among those games
 
 
 class EndgameCategoryStats(BaseModel):
