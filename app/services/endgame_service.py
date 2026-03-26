@@ -7,10 +7,13 @@ Exposes:
 - _aggregate_endgame_stats: aggregates raw per-game rows into EndgameCategoryStats list
 - get_endgame_stats: orchestrator for GET /api/endgames/stats
 - get_endgame_games: orchestrator for GET /api/endgames/games
+- get_endgame_performance: orchestrator for GET /api/endgames/performance
+- get_endgame_timeline: orchestrator for GET /api/endgames/timeline
 """
 
 from collections import defaultdict
 from enum import IntEnum
+from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +21,8 @@ from app.repositories.endgame_repository import (
     count_filtered_games,
     query_endgame_entry_rows,
     query_endgame_games as _query_endgame_games,
+    query_endgame_performance_rows,
+    query_endgame_timeline_rows,
 )
 from app.schemas.analysis import GameRecord
 from app.schemas.endgames import (
@@ -26,7 +31,12 @@ from app.schemas.endgames import (
     EndgameCategoryStats,
     EndgameGamesResponse,
     EndgameLabel,
+    EndgameOverallPoint,
+    EndgamePerformanceResponse,
     EndgameStatsResponse,
+    EndgameTimelinePoint,
+    EndgameTimelineResponse,
+    EndgameWDLSummary,
 )
 from app.services.analysis_service import derive_user_result, recency_cutoff
 
@@ -362,3 +372,257 @@ async def get_endgame_games(
         offset=offset,
         limit=limit,
     )
+
+
+# --- Performance chart service functions (Phase 32) ---
+
+# Weights for endgame_skill score. Conversion (winning when up) weighted more
+# than recovery (drawing/winning when down) per D-06.
+_ENDGAME_SKILL_CONVERSION_WEIGHT = 0.6
+_ENDGAME_SKILL_RECOVERY_WEIGHT = 0.4
+
+
+def _build_wdl_summary(rows: list[tuple]) -> EndgameWDLSummary:
+    """Build EndgameWDLSummary from a list of (played_at, result, user_color) rows."""
+    wins = draws = losses = 0
+    for _played_at, result, user_color in rows:
+        outcome = derive_user_result(result, user_color)
+        if outcome == "win":
+            wins += 1
+        elif outcome == "draw":
+            draws += 1
+        else:
+            losses += 1
+    total = wins + draws + losses
+    if total > 0:
+        win_pct = round(wins / total * 100, 1)
+        draw_pct = round(draws / total * 100, 1)
+        loss_pct = round(losses / total * 100, 1)
+    else:
+        win_pct = draw_pct = loss_pct = 0.0
+    return EndgameWDLSummary(
+        wins=wins,
+        draws=draws,
+        losses=losses,
+        total=total,
+        win_pct=win_pct,
+        draw_pct=draw_pct,
+        loss_pct=loss_pct,
+    )
+
+
+def _compute_rolling_series(rows: list[tuple], window: int) -> list[dict]:
+    """Compute a rolling-window win-rate series from chronological game rows.
+
+    Mirrors the pattern in analysis_service.get_time_series.
+
+    Args:
+        rows: List of (played_at, result, user_color) tuples ordered by played_at ASC.
+        window: Rolling window size. Partial windows (< window games) are included.
+
+    Returns:
+        List of dicts with keys: date, win_rate, game_count, window_size.
+    """
+    results_so_far: list[Literal["win", "draw", "loss"]] = []
+    data: list[dict] = []
+
+    for played_at, result, user_color in rows:
+        outcome = derive_user_result(result, user_color)
+        results_so_far.append(outcome)
+
+        # Rolling window: trailing `window` results
+        window_slice = results_so_far[-window:]
+        win_count = window_slice.count("win")
+        window_total = len(window_slice)
+        win_rate = win_count / window_total if window_total > 0 else 0.0
+
+        data.append({
+            "date": played_at.strftime("%Y-%m-%d"),
+            "win_rate": round(win_rate, 4),
+            "game_count": window_total,
+            "window_size": window,
+        })
+
+    return data
+
+
+async def get_endgame_performance(
+    session: AsyncSession,
+    user_id: int,
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    recency: str | None,
+    rated: bool | None,
+    opponent_type: str,
+) -> EndgamePerformanceResponse:
+    """Orchestrate endgame performance query and return EndgamePerformanceResponse.
+
+    Steps:
+    1. Convert recency to cutoff datetime.
+    2. Fetch endgame and non-endgame game rows for WDL comparison.
+    3. Fetch existing endgame stats for aggregate conversion/recovery numerators/denominators.
+    4. Build WDL summaries and compute gauge values.
+    5. Return EndgamePerformanceResponse.
+    """
+    cutoff = recency_cutoff(recency)
+
+    # Fetch WDL rows and existing stats concurrently (stats needed for conversion/recovery)
+    # Note: get_endgame_stats is awaited separately to access conversion/recovery raw counts
+    endgame_rows, non_endgame_rows = await query_endgame_performance_rows(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+    )
+
+    # Build WDL summaries for each group
+    endgame_wdl = _build_wdl_summary(endgame_rows)
+    non_endgame_wdl = _build_wdl_summary(non_endgame_rows)
+
+    # Gauge: overall win rate across all games
+    total_wins = endgame_wdl.wins + non_endgame_wdl.wins
+    total_games = endgame_wdl.total + non_endgame_wdl.total
+    overall_win_rate = total_wins / total_games * 100 if total_games > 0 else 0.0
+    endgame_win_rate = endgame_wdl.win_pct  # already computed as wins/total*100
+
+    # Relative strength: endgame win rate normalized by overall win rate (D-05)
+    # Returns 0 when overall_win_rate is 0 to avoid division by zero
+    relative_strength = (
+        endgame_win_rate / overall_win_rate * 100 if overall_win_rate > 0 else 0.0
+    )
+
+    # Aggregate conversion/recovery: use sum-of-raw (not mean of percentages) per D-07
+    # Reuse existing get_endgame_stats which returns categories with raw conversion counts
+    stats = await get_endgame_stats(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency=recency,
+    )
+
+    total_conversion_wins = sum(c.conversion.conversion_wins for c in stats.categories)
+    total_conversion_games = sum(c.conversion.conversion_games for c in stats.categories)
+    total_recovery_saves = sum(c.conversion.recovery_saves for c in stats.categories)
+    total_recovery_games = sum(c.conversion.recovery_games for c in stats.categories)
+
+    aggregate_conversion_pct = (
+        total_conversion_wins / total_conversion_games * 100
+        if total_conversion_games > 0
+        else 0.0
+    )
+    aggregate_recovery_pct = (
+        total_recovery_saves / total_recovery_games * 100
+        if total_recovery_games > 0
+        else 0.0
+    )
+
+    # Endgame skill: weighted combination of conversion and recovery rates (D-06)
+    endgame_skill = (
+        _ENDGAME_SKILL_CONVERSION_WEIGHT * aggregate_conversion_pct
+        + _ENDGAME_SKILL_RECOVERY_WEIGHT * aggregate_recovery_pct
+    )
+
+    return EndgamePerformanceResponse(
+        endgame_wdl=endgame_wdl,
+        non_endgame_wdl=non_endgame_wdl,
+        overall_win_rate=round(overall_win_rate, 1),
+        endgame_win_rate=endgame_win_rate,
+        aggregate_conversion_pct=round(aggregate_conversion_pct, 1),
+        aggregate_recovery_pct=round(aggregate_recovery_pct, 1),
+        relative_strength=round(relative_strength, 1),
+        endgame_skill=round(endgame_skill, 1),
+    )
+
+
+async def get_endgame_timeline(
+    session: AsyncSession,
+    user_id: int,
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    recency: str | None,
+    rated: bool | None,
+    opponent_type: str,
+    window: int = 50,
+) -> EndgameTimelineResponse:
+    """Orchestrate endgame timeline query and return EndgameTimelineResponse.
+
+    Steps:
+    1. Convert recency to cutoff datetime.
+    2. Fetch endgame rows, non-endgame rows, and per-type rows concurrently.
+    3. Compute rolling-window series for overall (endgame + non-endgame) and per type.
+    4. Merge overall series by date (all unique dates from both series).
+    5. Return EndgameTimelineResponse.
+    """
+    cutoff = recency_cutoff(recency)
+
+    endgame_rows, non_endgame_rows, per_type_rows = await query_endgame_timeline_rows(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+    )
+
+    # Compute rolling series for both overall groups
+    endgame_series = _compute_rolling_series(endgame_rows, window)
+    non_endgame_series = _compute_rolling_series(non_endgame_rows, window)
+
+    # Merge overall series by date. For each date that appears in either series,
+    # find the latest point from each series up to that date.
+    # We build cumulative dicts (date -> latest point) and collect all unique dates.
+    endgame_by_date: dict[str, dict] = {}
+    for pt in endgame_series:
+        endgame_by_date[pt["date"]] = pt
+
+    non_endgame_by_date: dict[str, dict] = {}
+    for pt in non_endgame_series:
+        non_endgame_by_date[pt["date"]] = pt
+
+    all_dates = sorted(set(endgame_by_date.keys()) | set(non_endgame_by_date.keys()))
+
+    # For each date, take the most recent known point from each series up to that date
+    last_endgame_pt: dict | None = None
+    last_non_endgame_pt: dict | None = None
+    overall: list[EndgameOverallPoint] = []
+
+    for date in all_dates:
+        if date in endgame_by_date:
+            last_endgame_pt = endgame_by_date[date]
+        if date in non_endgame_by_date:
+            last_non_endgame_pt = non_endgame_by_date[date]
+
+        overall.append(
+            EndgameOverallPoint(
+                date=date,
+                endgame_win_rate=last_endgame_pt["win_rate"] if last_endgame_pt else None,
+                non_endgame_win_rate=last_non_endgame_pt["win_rate"] if last_non_endgame_pt else None,
+                endgame_game_count=last_endgame_pt["game_count"] if last_endgame_pt else 0,
+                non_endgame_game_count=last_non_endgame_pt["game_count"] if last_non_endgame_pt else 0,
+                window_size=window,
+            )
+        )
+
+    # Compute per-type rolling series and map class int -> EndgameClass string
+    per_type: dict[str, list[EndgameTimelinePoint]] = {}
+    for class_int, rows in per_type_rows.items():
+        class_name = _INT_TO_CLASS[class_int]
+        series = _compute_rolling_series(rows, window)
+        per_type[class_name] = [
+            EndgameTimelinePoint(
+                date=pt["date"],
+                win_rate=pt["win_rate"],
+                game_count=pt["game_count"],
+                window_size=pt["window_size"],
+            )
+            for pt in series
+        ]
+
+    return EndgameTimelineResponse(overall=overall, per_type=per_type, window=window)
