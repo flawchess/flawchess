@@ -14,7 +14,8 @@ import {
 } from '@/components/ui/select';
 import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
-import { useEndgameStats } from '@/hooks/useEndgames';
+import { GameCardList } from '@/components/results/GameCardList';
+import { useEndgameStats, useEndgameGames } from '@/hooks/useEndgames';
 import { useDebounce } from '@/hooks/useDebounce';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { TimeControl, Platform, OpponentType, Recency } from '@/types/api';
@@ -63,6 +64,12 @@ export function EndgamesPage() {
 
   // ── Data ─────────────────────────────────────────────────────────────────────
   const { data: statsData, isLoading: statsLoading } = useEndgameStats(debouncedFilters);
+  const { data: gamesData, isLoading: gamesLoading } = useEndgameGames(
+    selectedCategory,
+    debouncedFilters,
+    gamesOffset,
+    PAGE_SIZE,
+  );
 
   // ── Filter handlers ───────────────────────────────────────────────────────────
 
@@ -106,8 +113,12 @@ export function EndgamesPage() {
   // ── Category click handler ────────────────────────────────────────────────────
 
   const handleCategoryClick = useCallback((category: EndgameClass) => {
-    // Clicking the same row deselects it
-    setSelectedCategory((prev) => (prev === category ? null : category));
+    // Clicking the same row deselects it; reset pagination on category change (D-03)
+    setSelectedCategory((prev) => {
+      if (prev === category) return null;
+      setGamesOffset(0);
+      return category;
+    });
   }, []);
 
   // ── Filter panel content (Time Control, Platform, Recency) ───────────────────
@@ -267,7 +278,7 @@ export function EndgamesPage() {
     </div>
   );
 
-  // ── Games tab content (placeholder — Plan 03 will wire GameCardList) ─────────
+  // ── Games tab content ────────────────────────────────────────────────────────
 
   const selectedLabel =
     selectedCategory && statsData
@@ -282,17 +293,32 @@ export function EndgamesPage() {
             Select an endgame category in the Statistics tab to view matching games.
           </p>
         </div>
-      ) : (
-        <div>
-          {selectedLabel && (
-            <p className="text-sm font-medium mb-3">{selectedLabel} Endgames</p>
-          )}
-          {/* Games list placeholder — Plan 03 will implement GameCardList integration */}
+      ) : gamesLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <p className="text-muted-foreground">Loading games...</p>
+        </div>
+      ) : gamesData && gamesData.games.length === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
+          <p className="mb-2 text-base font-medium text-foreground">No games matched</p>
           <p className="text-sm text-muted-foreground">
-            Games list coming in Plan 03. Offset: {gamesOffset}, limit: {PAGE_SIZE}.
+            Try adjusting the time control, platform, or recency filters.
           </p>
         </div>
-      )}
+      ) : gamesData ? (
+        <div>
+          {selectedLabel && (
+            <p className="text-lg font-medium mb-3">{selectedLabel} Endgames</p>
+          )}
+          <GameCardList
+            games={gamesData.games}
+            matchedCount={gamesData.matched_count}
+            totalGames={gamesData.matched_count}
+            offset={gamesOffset}
+            limit={PAGE_SIZE}
+            onPageChange={setGamesOffset}
+          />
+        </div>
+      ) : null}
     </div>
   );
 
