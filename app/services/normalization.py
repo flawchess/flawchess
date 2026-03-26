@@ -349,5 +349,13 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
         "opening_eco": opening_eco,
         "white_accuracy": white_analysis.get("accuracy"),
         "black_accuracy": black_analysis.get("accuracy"),
+        "white_acpl": white_analysis.get("acpl"),
+        "black_acpl": black_analysis.get("acpl"),
+        "white_inaccuracies": white_analysis.get("inaccuracy"),
+        "black_inaccuracies": black_analysis.get("inaccuracy"),
+        "white_mistakes": white_analysis.get("mistake"),
+        "black_mistakes": black_analysis.get("mistake"),
+        "white_blunders": white_analysis.get("blunder"),
+        "black_blunders": black_analysis.get("blunder"),
         "played_at": played_at,
     }

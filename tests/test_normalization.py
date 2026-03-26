@@ -522,12 +522,15 @@ class TestLichessAnalysisMetrics:
         """Chess.com normalized game does NOT contain the 8 analysis metric keys."""
         from app.services.normalization import normalize_chesscom_game
         game = {
-            "url": "https://www.chess.com/game/live/12345",
-            "pgn": '[Event "Live Chess"]\n[White "Magnus"]\n[Black "Hikaru"]\n[Result "1-0"]\n[WhiteElo "2800"]\n[BlackElo "2750"]\n[TimeControl "600"]\n[Termination "Magnus won by checkmate"]\n\n1. e4 e5 *',
-            "time_control": "600",
+            "uuid": "test-uuid-123",
+            "url": "https://www.chess.com/game/live/test-uuid-123",
+            "pgn": '[Event "Live Chess"]\n[White "Magnus"]\n[Black "Hikaru"]\n[Result "1-0"]\n\n1. e4 e5 *',
+            "rules": "chess",
+            "time_control": "600+0",
             "end_time": 1700000600,
             "rated": True,
-            "accuracies": {"white": 90.0},
+            "white": {"username": "Magnus", "rating": 2800, "result": "win"},
+            "black": {"username": "Hikaru", "rating": 2750, "result": "checkmated"},
         }
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None

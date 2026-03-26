@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import Boolean, Float, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Float, ForeignKey, SmallInteger, String, Text, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -61,6 +61,17 @@ class Game(Base):
     # Engine analysis: game-level accuracy from chess.com (NULL for lichess and unanalyzed games)
     white_accuracy: Mapped[float | None] = mapped_column(Float(24), nullable=True)
     black_accuracy: Mapped[float | None] = mapped_column(Float(24), nullable=True)
+
+    # Lichess analysis metrics: ACPL and move quality counts per color
+    # (NULL for chess.com games and unanalyzed lichess games)
+    white_acpl: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    black_acpl: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    white_inaccuracies: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    black_inaccuracies: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    white_mistakes: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    black_mistakes: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    white_blunders: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    black_blunders: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
     # Timestamps
     played_at: Mapped[datetime.datetime | None]
