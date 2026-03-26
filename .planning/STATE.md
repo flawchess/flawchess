@@ -89,6 +89,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - Phase 30 added: Homepage, README & SEO Update
 - Phase 28.1 inserted after Phase 28: Import lichess analysis metrics (URGENT)
 - Phase 31 added: Endgame classification redesign — per-position instead of per-game
+- Phase 32 added: Endgame Performance Charts — endgame vs non-endgame WDL, strength gauge, rolling-window timelines
 
 ### Blockers/Concerns
 
