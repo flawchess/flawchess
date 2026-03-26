@@ -1,16 +1,21 @@
-"""Unit tests for endgame service: classify_endgame_class and _aggregate_endgame_stats.
+"""Tests for endgame service: classify_endgame_class, _aggregate_endgame_stats, and service entry points.
 
 Tests cover:
 - classify_endgame_class: maps material_signature strings to endgame category names
 - _aggregate_endgame_stats: aggregates raw per-game rows into EndgameCategoryStats list
-
-All tests are pure Python (no DB required) since these functions operate on in-memory data.
+- get_endgame_stats / get_endgame_games: smoke tests to catch wiring bugs (typos, import errors)
 """
 
 import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession
 
-# Tests will fail with ImportError until Task 2 creates the modules (RED phase — expected).
-from app.services.endgame_service import _aggregate_endgame_stats, classify_endgame_class
+from app.services.endgame_service import (
+    _aggregate_endgame_stats,
+    classify_endgame_class,
+    get_endgame_stats,
+    get_endgame_games,
+)
 
 
 class TestClassifyEndgameClass:
@@ -48,10 +53,21 @@ class TestClassifyEndgameClass:
         """K vs K — bare kings, pawnless endgame."""
         assert classify_endgame_class("K_K") == "pawnless"
 
-    def test_minor_piece_with_pawns_is_mixed(self):
-        """KBPP vs KNP — minor piece + pawns = mixed (combination of piece types)."""
-        # Minor piece + pawns = mixed, since it has both minor and pawn material
-        assert classify_endgame_class("KBPP_KNP") == "mixed"
+    def test_minor_piece_with_pawns_is_minor(self):
+        """KBPP vs KNP — minor piece + pawns = minor_piece (pawns don't create a mixed endgame)."""
+        assert classify_endgame_class("KBPP_KNP") == "minor_piece"
+
+    def test_rook_with_pawns_is_rook(self):
+        """KRPP vs KRP — rook + pawns = rook (pawns alongside single piece family)."""
+        assert classify_endgame_class("KRPP_KRP") == "rook"
+
+    def test_queen_with_pawns_is_queen(self):
+        """KQPP vs KQP — queen + pawns = queen."""
+        assert classify_endgame_class("KQPP_KQP") == "queen"
+
+    def test_rook_and_minor_is_mixed(self):
+        """KRN vs KR — two piece families (rook + minor) = mixed."""
+        assert classify_endgame_class("KRN_KR") == "mixed"
 
 
 class TestAggregateEndgameStats:
@@ -174,3 +190,27 @@ class TestAggregateEndgameStats:
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.conversion.recovery_games == 0
         assert rook.conversion.recovery_pct == 0.0
+
+
+class TestGetEndgameStatsSmoke:
+    """Smoke tests for service entry points — catch wiring bugs like typos and broken imports."""
+
+    @pytest.mark.asyncio
+    async def test_get_endgame_stats_returns_empty_for_nonexistent_user(self, db_session: AsyncSession):
+        """Calling get_endgame_stats with a user that has no games should return empty categories."""
+        result = await get_endgame_stats(
+            db_session, user_id=999999, time_control=None, platform=None,
+            rated=None, opponent_type="human", recency=None,
+        )
+        assert result.categories == []
+
+    @pytest.mark.asyncio
+    async def test_get_endgame_games_returns_empty_for_nonexistent_user(self, db_session: AsyncSession):
+        """Calling get_endgame_games with a user that has no games should return empty."""
+        result = await get_endgame_games(
+            db_session, user_id=999999, endgame_class="rook",
+            time_control=None, platform=None, rated=None,
+            opponent_type="human", recency=None, offset=0, limit=20,
+        )
+        assert result.games == []
+        assert result.matched_count == 0

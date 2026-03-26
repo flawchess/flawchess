@@ -165,10 +165,10 @@ class TestQueryEndgameEntryRows:
         game = await _seed_game(db_session)
         # Two positions below the endgame threshold at different plies
         await _seed_game_position(
-            db_session, game=game, ply=30, material_count=2400, material_signature="KR_KR"
+            db_session, game=game, ply=30, material_count=ENDGAME_MATERIAL_THRESHOLD - 100, material_signature="KR_KR"
         )
         await _seed_game_position(
-            db_session, game=game, ply=40, material_count=2200, material_signature="KR_K"
+            db_session, game=game, ply=40, material_count=ENDGAME_MATERIAL_THRESHOLD - 300, material_signature="KR_K"
         )
 
         rows = await query_endgame_entry_rows(
@@ -195,7 +195,7 @@ class TestQueryEndgameEntryRows:
 
         for game in [blitz_game, rapid_game]:
             await _seed_game_position(
-                db_session, game=game, ply=30, material_count=2400, material_signature="KR_KR"
+                db_session, game=game, ply=30, material_count=ENDGAME_MATERIAL_THRESHOLD - 100, material_signature="KR_KR"
             )
 
         rows = await query_endgame_entry_rows(
@@ -220,7 +220,7 @@ class TestQueryEndgameEntryRows:
 
         for game in [chesscom_game, lichess_game]:
             await _seed_game_position(
-                db_session, game=game, ply=30, material_count=2400, material_signature="KR_KR"
+                db_session, game=game, ply=30, material_count=ENDGAME_MATERIAL_THRESHOLD - 100, material_signature="KR_KR"
             )
 
         rows = await query_endgame_entry_rows(
@@ -251,7 +251,7 @@ class TestQueryEndgameGames:
         """query_endgame_games returns GameRecord-shaped rows for rook endgame class."""
         game = await _seed_game(db_session)
         await _seed_game_position(
-            db_session, game=game, ply=30, material_count=2400, material_signature="KR_KR"
+            db_session, game=game, ply=30, material_count=ENDGAME_MATERIAL_THRESHOLD - 100, material_signature="KR_KR"
         )
 
         games, matched_count = await query_endgame_games(
@@ -277,7 +277,7 @@ class TestQueryEndgameGames:
         """Unknown endgame class (not rook/minor_piece/pawn/queen/mixed/pawnless) returns empty."""
         game = await _seed_game(db_session)
         await _seed_game_position(
-            db_session, game=game, ply=30, material_count=2400, material_signature="KR_KR"
+            db_session, game=game, ply=30, material_count=ENDGAME_MATERIAL_THRESHOLD - 100, material_signature="KR_KR"
         )
 
         games, matched_count = await query_endgame_games(

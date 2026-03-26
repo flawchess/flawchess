@@ -18,14 +18,16 @@ from app.repositories.endgame_repository import (
 from app.schemas.analysis import GameRecord
 from app.schemas.endgames import (
     ConversionRecoveryStats,
+    EndgameClass,
     EndgameCategoryStats,
     EndgameGamesResponse,
+    EndgameLabel,
     EndgameStatsResponse,
 )
 from app.services.analysis_service import derive_user_result, recency_cutoff
 
 # Display labels for each endgame category (D-07).
-_ENDGAME_CATEGORY_LABELS: dict[str, str] = {
+_ENDGAME_CATEGORY_LABELS: dict[EndgameClass, EndgameLabel] = {
     "rook": "Rook",
     "minor_piece": "Minor Piece",
     "pawn": "Pawn",
@@ -35,23 +37,19 @@ _ENDGAME_CATEGORY_LABELS: dict[str, str] = {
 }
 
 
-def classify_endgame_class(material_signature: str) -> str:
+def classify_endgame_class(material_signature: str) -> EndgameClass:
     """Classify a material_signature string into one of six endgame categories.
 
     Categories (D-07):
-    - queen: queen(s) only (may have pawns), no rook or minor pieces
-    - rook: rook(s) only (may have pawns), no queen or minor pieces
-    - minor_piece: bishop/knight only, no queen, rook, or pawns
+    - queen: queen(s), may have pawns, no rook or minor pieces
+    - rook: rook(s), may have pawns, no queen or minor pieces
+    - minor_piece: bishop/knight, may have pawns, no queen or rook
     - pawn: only pawns, no pieces
-    - mixed: combination of major/minor piece families (queen+rook, queen+minor, rook+minor, minor+pawn)
+    - mixed: two or more piece families present (queen+rook, queen+minor, rook+minor)
     - pawnless: no pieces and no pawns (bare kings only)
 
-    Mixed rules (from RESEARCH.md):
-    - Q + anything else (rook, minor, pawn) → mixed
-    - R + minor → mixed
-    - minor + pawn → mixed
-
-    Rook+pawn and queen+pawn remain rook/queen (pawns alongside one piece family is normal).
+    Pawns alongside a single piece family do NOT trigger mixed — a rook+pawns endgame
+    is a rook endgame, a bishop+pawns endgame is a minor piece endgame.
 
     Args:
         material_signature: Canonical string like "KRPP_KRP" (stronger side first).
@@ -67,15 +65,14 @@ def classify_endgame_class(material_signature: str) -> str:
     has_minor = "B" in sig or "N" in sig
     has_pawn = "P" in sig
 
-    # Mixed conditions (RESEARCH.md: Q+any, R+minor, minor+pawn)
-    if has_queen and (has_rook or has_minor):
-        return "mixed"
-    if has_rook and has_minor:
-        return "mixed"
-    if has_minor and has_pawn:
+    # Count piece families (queen, rook, minor) — pawns are NOT a piece family.
+    # A rook endgame with pawns (KRP_KRP) is still a rook endgame.
+    # Mixed = two or more piece families present (e.g. queen+rook, rook+minor).
+    piece_families = sum([has_queen, has_rook, has_minor])
+    if piece_families >= 2:
         return "mixed"
 
-    # Single-family categories (queen/rook may co-exist with pawns)
+    # Single piece family (may have pawns alongside)
     if has_queen:
         return "queen"
     if has_rook:
@@ -243,7 +240,7 @@ async def get_endgame_stats(
 async def get_endgame_games(
     session: AsyncSession,
     user_id: int,
-    endgame_class: str,
+    endgame_class: EndgameClass,
     time_control: list[str] | None,
     platform: list[str] | None,
     rated: bool | None,

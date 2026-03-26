@@ -5,9 +5,14 @@ Provides response models for:
 - GET /api/endgames/games: paginated game list filtered by endgame class
 """
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 from app.schemas.analysis import GameRecord
+
+EndgameClass = Literal["rook", "minor_piece", "pawn", "queen", "mixed", "pawnless"]
+EndgameLabel = Literal["Rook", "Minor Piece", "Pawn", "Queen", "Mixed", "Pawnless"]
 
 
 class ConversionRecoveryStats(BaseModel):
@@ -34,8 +39,8 @@ class EndgameCategoryStats(BaseModel):
     rook | minor_piece | pawn | queen | mixed | pawnless
     """
 
-    endgame_class: str       # rook|minor_piece|pawn|queen|mixed|pawnless
-    label: str               # Display label: "Rook", "Minor Piece", "Pawn", "Queen", "Mixed", "Pawnless"
+    endgame_class: EndgameClass
+    label: EndgameLabel
     wins: int
     draws: int
     losses: int

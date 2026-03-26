@@ -12,11 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.schemas.endgames import EndgameClass
 
 # material_count threshold for endgame classification.
 # Positions with material_count strictly below this value are classified as endgame phase.
-# The value 2600 corresponds to most major-piece endgames (full opening value is ~7800).
-ENDGAME_MATERIAL_THRESHOLD = 2600
+# Full opening value is ~7800. At 1500, typical entry signatures are KRP_KRP (rook+pawns)
+# or KBPP_KNP (minor+pawns) — true endgame territory.
+# Validated against user data: 1500 yields a balanced distribution across all 6 categories.
+ENDGAME_MATERIAL_THRESHOLD = 1500
 
 
 async def query_endgame_entry_rows(
@@ -100,7 +103,7 @@ async def query_endgame_entry_rows(
 async def query_endgame_games(
     session: AsyncSession,
     user_id: int,
-    endgame_class: str,
+    endgame_class: EndgameClass,
     time_control: list[str] | None,
     platform: list[str] | None,
     rated: bool | None,

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.models.user import User
-from app.schemas.endgames import EndgameGamesResponse, EndgameStatsResponse
+from app.schemas.endgames import EndgameClass, EndgameGamesResponse, EndgameStatsResponse
 from app.services import endgame_service
 from app.users import current_active_user
 
@@ -52,7 +52,7 @@ async def get_endgame_stats(
 async def get_endgame_games(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
-    endgame_class: str = Query(...),  # required — one of: rook|minor_piece|pawn|queen|mixed|pawnless
+    endgame_class: EndgameClass = Query(...),
     time_control: list[str] | None = Query(default=None),
     platform: list[str] | None = Query(default=None),
     recency: str | None = Query(default=None),

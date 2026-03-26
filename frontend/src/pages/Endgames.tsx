@@ -4,38 +4,15 @@ import { ChevronUp, ChevronDown, BarChart2Icon, Gamepad2Icon } from 'lucide-reac
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
+import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
 import { GameCardList } from '@/components/results/GameCardList';
 import { useEndgameStats, useEndgameGames } from '@/hooks/useEndgames';
 import { useDebounce } from '@/hooks/useDebounce';
 import type { FilterState } from '@/components/filters/FilterPanel';
-import type { TimeControl, Platform, OpponentType, Recency } from '@/types/api';
 import type { EndgameClass } from '@/types/endgames';
 
 const PAGE_SIZE = 20;
-
-const TIME_CONTROLS: TimeControl[] = ['bullet', 'blitz', 'rapid', 'classical'];
-const TIME_CONTROL_LABELS: Record<TimeControl, string> = {
-  bullet: 'Bullet',
-  blitz: 'Blitz',
-  rapid: 'Rapid',
-  classical: 'Classical',
-};
-
-const PLATFORMS: Platform[] = ['chess.com', 'lichess'];
-const PLATFORM_LABELS: Record<Platform, string> = {
-  'chess.com': 'Chess.com',
-  lichess: 'Lichess',
-};
 
 export function EndgamesPage() {
   const location = useLocation();
@@ -57,9 +34,7 @@ export function EndgamesPage() {
   const [selectedCategory, setSelectedCategory] = useState<EndgameClass | null>(null);
   const [gamesOffset, setGamesOffset] = useState(0);
 
-  // ── Collapsible state ────────────────────────────────────────────────────────
-  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
-  const [moreFiltersMobileOpen, setMoreFiltersMobileOpen] = useState(false);
+  // ── Mobile collapsible state ───────────────────────────────────────────────
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // ── Data ─────────────────────────────────────────────────────────────────────
@@ -71,44 +46,11 @@ export function EndgamesPage() {
     PAGE_SIZE,
   );
 
-  // ── Filter handlers ───────────────────────────────────────────────────────────
-
-  const update = useCallback((partial: Partial<FilterState>) => {
-    setFilters((prev) => ({ ...prev, ...partial }));
+  // ── Filter change handler — wraps setFilters + resets pagination ────────────
+  const handleFilterChange = useCallback((newFilters: FilterState) => {
+    setFilters(newFilters);
     setGamesOffset(0); // D-03: reset pagination on filter change
   }, []);
-
-  const toggleTimeControl = useCallback((tc: TimeControl) => {
-    const current = filters.timeControls ?? TIME_CONTROLS;
-    if (current.includes(tc)) {
-      const next = current.filter((t) => t !== tc);
-      update({ timeControls: next.length === TIME_CONTROLS.length ? null : next.length === 0 ? [tc] : next });
-    } else {
-      const next = [...current, tc];
-      update({ timeControls: next.length === TIME_CONTROLS.length ? null : next });
-    }
-  }, [filters.timeControls, update]);
-
-  const isTimeControlActive = (tc: TimeControl) => {
-    if (filters.timeControls === null) return true;
-    return filters.timeControls.includes(tc);
-  };
-
-  const togglePlatform = useCallback((p: Platform) => {
-    const current = filters.platforms ?? PLATFORMS;
-    if (current.includes(p)) {
-      const next = current.filter((x) => x !== p);
-      update({ platforms: next.length === PLATFORMS.length ? null : next.length === 0 ? [p] : next });
-    } else {
-      const next = [...current, p];
-      update({ platforms: next.length === PLATFORMS.length ? null : next });
-    }
-  }, [filters.platforms, update]);
-
-  const isPlatformActive = (p: Platform) => {
-    if (filters.platforms === null) return true;
-    return filters.platforms.includes(p);
-  };
 
   // ── Category click handler ────────────────────────────────────────────────────
 
@@ -120,127 +62,6 @@ export function EndgamesPage() {
       return category;
     });
   }, []);
-
-  // ── Filter panel content (Time Control, Platform, Recency) ───────────────────
-
-  const mainFilterContent = (
-    <div className="space-y-3">
-      {/* Time Control */}
-      <div>
-        <p className="mb-1 text-xs text-muted-foreground">Time control</p>
-        <div className="flex flex-wrap gap-1">
-          {TIME_CONTROLS.map((tc) => (
-            <button
-              key={tc}
-              onClick={() => toggleTimeControl(tc)}
-              data-testid={`filter-time-control-${tc}`}
-              aria-label={`${TIME_CONTROL_LABELS[tc]} time control`}
-              aria-pressed={isTimeControlActive(tc)}
-              className={
-                'rounded border px-3 h-11 sm:h-7 sm:px-2 text-xs transition-colors ' +
-                (isTimeControlActive(tc)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground')
-              }
-            >
-              {TIME_CONTROL_LABELS[tc]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Platform */}
-      <div>
-        <p className="mb-1 text-xs text-muted-foreground">Platform</p>
-        <div className="flex flex-wrap gap-1">
-          {PLATFORMS.map((p) => (
-            <button
-              key={p}
-              onClick={() => togglePlatform(p)}
-              data-testid={`filter-platform-${p === 'chess.com' ? 'chess-com' : p}`}
-              aria-label={`${PLATFORM_LABELS[p]} platform`}
-              aria-pressed={isPlatformActive(p)}
-              className={
-                'rounded border px-3 h-11 sm:h-7 sm:px-2 text-xs transition-colors ' +
-                (isPlatformActive(p)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground')
-              }
-            >
-              {PLATFORM_LABELS[p]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Recency */}
-      <div>
-        <p className="mb-1 text-xs text-muted-foreground">Recency</p>
-        <Select
-          value={filters.recency ?? 'all'}
-          onValueChange={(v) => update({ recency: v === 'all' ? null : (v as Recency) })}
-        >
-          <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All time</SelectItem>
-            <SelectItem value="week">Past week</SelectItem>
-            <SelectItem value="month">Past month</SelectItem>
-            <SelectItem value="3months">3 months</SelectItem>
-            <SelectItem value="6months">6 months</SelectItem>
-            <SelectItem value="year">1 year</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-    </div>
-  );
-
-  // ── More filters content (Rated, Opponent Type) ───────────────────────────────
-
-  const moreFilterContent = (
-    <div className="space-y-3">
-      {/* Rated */}
-      <div>
-        <p className="mb-1 text-xs text-muted-foreground">Rated</p>
-        <ToggleGroup
-          type="single"
-          value={filters.rated === null ? 'all' : filters.rated ? 'rated' : 'casual'}
-          onValueChange={(v) => {
-            if (!v) return;
-            update({ rated: v === 'all' ? null : v === 'rated' });
-          }}
-          variant="outline"
-          size="sm"
-          data-testid="filter-rated"
-        >
-          <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0">All</ToggleGroupItem>
-          <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0">Rated</ToggleGroupItem>
-          <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0">Casual</ToggleGroupItem>
-        </ToggleGroup>
-      </div>
-
-      {/* Opponent */}
-      <div>
-        <p className="mb-1 text-xs text-muted-foreground">Opponent</p>
-        <ToggleGroup
-          type="single"
-          value={filters.opponentType}
-          onValueChange={(v) => {
-            if (!v) return;
-            update({ opponentType: v as OpponentType });
-          }}
-          variant="outline"
-          size="sm"
-          data-testid="filter-opponent"
-        >
-          <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0">Human</ToggleGroupItem>
-          <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0">Bot</ToggleGroupItem>
-          <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0">Both</ToggleGroupItem>
-        </ToggleGroup>
-      </div>
-    </div>
-  );
 
   // ── Statistics tab content ───────────────────────────────────────────────────
 
@@ -322,36 +143,6 @@ export function EndgamesPage() {
     </div>
   );
 
-  // ── Desktop sidebar ──────────────────────────────────────────────────────────
-
-  const desktopSidebar = (
-    <div className="flex flex-col gap-2 min-w-0">
-      {mainFilterContent}
-
-      <div className="border-t border-border/40" />
-
-      {/* More filters collapsible (Rated, Opponent Type) */}
-      <Collapsible open={moreFiltersOpen} onOpenChange={setMoreFiltersOpen}>
-        <CollapsibleTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
-            data-testid="section-more-filters"
-          >
-            More filters
-            {moreFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="pt-2">
-            {moreFilterContent}
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-    </div>
-  );
-
   // ── Render ───────────────────────────────────────────────────────────────────
 
   if (needsRedirect) {
@@ -364,7 +155,9 @@ export function EndgamesPage() {
 
         {/* Desktop: two-column layout */}
         <div className="hidden md:grid md:grid-cols-[280px_1fr] md:gap-8">
-          <div className="min-w-0">{desktopSidebar}</div>
+          <div className="min-w-0">
+            <FilterPanel filters={filters} onChange={handleFilterChange} />
+          </div>
           <div className="min-w-0">
             <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>
               <TabsList className="w-full" data-testid="endgames-tabs">
@@ -405,27 +198,7 @@ export function EndgamesPage() {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="pt-2">
-                {mainFilterContent}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-
-          {/* More filters collapsible */}
-          <Collapsible open={moreFiltersMobileOpen} onOpenChange={setMoreFiltersMobileOpen}>
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
-                data-testid="section-more-filters-mobile"
-              >
-                More filters
-                {moreFiltersMobileOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="pt-2">
-                {moreFilterContent}
+                <FilterPanel filters={filters} onChange={handleFilterChange} />
               </div>
             </CollapsibleContent>
           </Collapsible>
