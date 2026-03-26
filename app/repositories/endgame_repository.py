@@ -1,10 +1,13 @@
 """Endgame repository: DB queries for endgame analytics.
 
-Two functions:
+Functions:
 - query_endgame_entry_rows: one row per (game, endgame_class) span meeting the ply threshold
 - query_endgame_games: paginated Game objects for a given endgame class
+- query_endgame_performance_rows: endgame and non-endgame game rows for performance comparison
+- query_endgame_timeline_rows: rows for rolling-window time series, overall and per-type
 """
 
+import asyncio
 import datetime
 
 from sqlalchemy import case, func, select
@@ -230,3 +233,167 @@ def _apply_game_filters(
     if recency_cutoff is not None:
         stmt = stmt.where(Game.played_at >= recency_cutoff)
     return stmt
+
+
+# Integer values for all six endgame classes — used in per-type timeline queries.
+# Avoids importing from endgame_service which would create a circular import.
+_ENDGAME_CLASS_INTS = range(1, 7)
+
+
+async def query_endgame_performance_rows(
+    session: AsyncSession,
+    user_id: int,
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+) -> tuple[list[tuple], list[tuple]]:
+    """Return endgame and non-endgame game rows for performance comparison.
+
+    Endgame games: games where the user spent >= ENDGAME_PLY_THRESHOLD plies
+    in any endgame class (endgame_class IS NOT NULL).
+
+    Non-endgame games: all other games that did not meet the ply threshold
+    in any endgame class.
+
+    Returns: (endgame_rows, non_endgame_rows) where each row is
+    (played_at, result, user_color).
+
+    Rows are ordered by played_at ASC for chronological processing.
+    """
+    # Subquery: game_ids that spent >= ENDGAME_PLY_THRESHOLD plies in ANY endgame class
+    endgame_game_ids_subq = (
+        select(GamePosition.game_id)
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.endgame_class.isnot(None),
+        )
+        .group_by(GamePosition.game_id)
+        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
+        .subquery("endgame_game_ids")
+    )
+
+    # Base select for game rows — columns needed for WDL derivation and timeline
+    game_cols = select(Game.played_at, Game.result, Game.user_color).where(
+        Game.user_id == user_id,
+        Game.played_at.isnot(None),
+    )
+
+    # Endgame games: id in the endgame subquery
+    endgame_stmt = (
+        game_cols.where(Game.id.in_(select(endgame_game_ids_subq.c.game_id)))
+        .order_by(Game.played_at.asc())
+    )
+    endgame_stmt = _apply_game_filters(
+        endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff
+    )
+
+    # Non-endgame games: id NOT in the endgame subquery
+    non_endgame_stmt = (
+        game_cols.where(Game.id.notin_(select(endgame_game_ids_subq.c.game_id)))
+        .order_by(Game.played_at.asc())
+    )
+    non_endgame_stmt = _apply_game_filters(
+        non_endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff
+    )
+
+    endgame_result, non_endgame_result = await asyncio.gather(
+        session.execute(endgame_stmt),
+        session.execute(non_endgame_stmt),
+    )
+
+    return list(endgame_result.fetchall()), list(non_endgame_result.fetchall())
+
+
+async def query_endgame_timeline_rows(
+    session: AsyncSession,
+    user_id: int,
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+) -> tuple[list[tuple], list[tuple], dict[int, list[tuple]]]:
+    """Return rows for rolling-window time series (overall and per endgame class).
+
+    Runs 8 queries concurrently via asyncio.gather:
+    - 2 overall queries (endgame games, non-endgame games)
+    - 6 per-type queries (one per endgame class integer 1-6)
+
+    Returns: (endgame_rows, non_endgame_rows, per_type_rows)
+    where per_type_rows is dict[class_int, list[(played_at, result, user_color)]].
+
+    Each row is (played_at, result, user_color), ordered by played_at ASC.
+    """
+    # Subquery: game_ids reaching any endgame class (for overall split)
+    endgame_game_ids_subq = (
+        select(GamePosition.game_id)
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.endgame_class.isnot(None),
+        )
+        .group_by(GamePosition.game_id)
+        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
+        .subquery("endgame_game_ids")
+    )
+
+    game_cols = select(Game.played_at, Game.result, Game.user_color).where(
+        Game.user_id == user_id,
+        Game.played_at.isnot(None),
+    )
+
+    endgame_stmt = (
+        game_cols.where(Game.id.in_(select(endgame_game_ids_subq.c.game_id)))
+        .order_by(Game.played_at.asc())
+    )
+    endgame_stmt = _apply_game_filters(
+        endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff
+    )
+
+    non_endgame_stmt = (
+        game_cols.where(Game.id.notin_(select(endgame_game_ids_subq.c.game_id)))
+        .order_by(Game.played_at.asc())
+    )
+    non_endgame_stmt = _apply_game_filters(
+        non_endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff
+    )
+
+    # Per-type subqueries: one per endgame class integer
+    def _per_class_stmt(class_int: int):
+        per_class_game_ids_subq = (
+            select(GamePosition.game_id)
+            .where(
+                GamePosition.user_id == user_id,
+                GamePosition.endgame_class == class_int,
+            )
+            .group_by(GamePosition.game_id)
+            .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
+            .subquery(f"endgame_game_ids_{class_int}")
+        )
+        stmt = (
+            game_cols.where(Game.id.in_(select(per_class_game_ids_subq.c.game_id)))
+            .order_by(Game.played_at.asc())
+        )
+        return _apply_game_filters(
+            stmt, time_control, platform, rated, opponent_type, recency_cutoff
+        )
+
+    class_ints = list(_ENDGAME_CLASS_INTS)
+    per_class_stmts = [_per_class_stmt(ci) for ci in class_ints]
+
+    # Run all 8 queries concurrently
+    all_results = await asyncio.gather(
+        session.execute(endgame_stmt),
+        session.execute(non_endgame_stmt),
+        *[session.execute(s) for s in per_class_stmts],
+    )
+
+    endgame_rows = list(all_results[0].fetchall())
+    non_endgame_rows = list(all_results[1].fetchall())
+    per_type_rows: dict[int, list[tuple]] = {
+        class_int: list(all_results[2 + i].fetchall())
+        for i, class_int in enumerate(class_ints)
+    }
+
+    return endgame_rows, non_endgame_rows, per_type_rows

@@ -77,3 +77,83 @@ class EndgameGamesResponse(BaseModel):
     matched_count: int
     offset: int
     limit: int
+
+
+# --- Performance chart schemas (Phase 32) ---
+
+
+class EndgameWDLSummary(BaseModel):
+    """W/D/L summary for a set of games (endgame or non-endgame).
+
+    Used in EndgamePerformanceResponse to compare endgame games vs non-endgame games.
+    All percentages are 0-100.
+    """
+
+    wins: int
+    draws: int
+    losses: int
+    total: int
+    win_pct: float
+    draw_pct: float
+    loss_pct: float
+
+
+class EndgamePerformanceResponse(BaseModel):
+    """Response for GET /api/endgames/performance.
+
+    Provides WDL comparison and gauge values for endgame performance analytics.
+    Endgame games = games that spent >= ENDGAME_PLY_THRESHOLD plies in any endgame class.
+    Non-endgame games = games that never reached any endgame class above the threshold.
+    """
+
+    endgame_wdl: EndgameWDLSummary       # games reaching any endgame class >= ENDGAME_PLY_THRESHOLD
+    non_endgame_wdl: EndgameWDLSummary   # games NOT reaching any endgame class
+    overall_win_rate: float              # wins / total across ALL games, 0-100
+    endgame_win_rate: float              # wins / total for endgame games only, 0-100
+    aggregate_conversion_pct: float      # sum of conversion_wins / sum of conversion_games * 100 (D-07)
+    aggregate_recovery_pct: float        # sum of recovery_saves / sum of recovery_games * 100 (D-07)
+    relative_strength: float             # endgame_win_rate / overall_win_rate * 100, can exceed 100 (D-05)
+    endgame_skill: float                 # 0.6 * conversion_pct + 0.4 * recovery_pct, 0-100 (D-06)
+
+
+class EndgameTimelinePoint(BaseModel):
+    """Single data point in a per-type rolling-window time series.
+
+    Represents win rate over the trailing `window_size` games (or fewer if early in the series).
+    """
+
+    date: str           # ISO date string "YYYY-MM-DD" of the game
+    win_rate: float     # fraction (0.0–1.0) wins in the rolling window
+    game_count: int     # number of games in the rolling window (may be < window_size early on)
+    window_size: int    # configured window size
+
+
+class EndgameOverallPoint(BaseModel):
+    """Single data point in the overall endgame vs non-endgame rolling-window time series.
+
+    Tracks two parallel series (endgame games, non-endgame games) merged by date.
+    Either win_rate may be None if that series has no games on this date's window.
+    """
+
+    date: str
+    endgame_win_rate: float | None          # rolling win rate for endgame games
+    non_endgame_win_rate: float | None      # rolling win rate for non-endgame games
+    endgame_game_count: int                 # rolling window size for endgame series
+    non_endgame_game_count: int             # rolling window size for non-endgame series
+    window_size: int                        # configured window size
+
+
+class EndgameTimelineResponse(BaseModel):
+    """Response for GET /api/endgames/timeline.
+
+    overall: merged endgame vs non-endgame series aligned by date.
+    per_type: per-endgame-class rolling win-rate series (keys are EndgameClass strings).
+    window: configured rolling window size.
+
+    Uses dict[str, ...] not dict[EndgameClass, ...] because Pydantic requires str keys
+    for JSON serialization of dict models.
+    """
+
+    overall: list[EndgameOverallPoint]
+    per_type: dict[str, list[EndgameTimelinePoint]]
+    window: int
