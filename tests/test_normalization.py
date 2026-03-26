@@ -383,7 +383,7 @@ class TestChesscomAccuracy:
         assert result["black_accuracy"] is None
 
     def test_lichess_no_accuracy(self):
-        """normalize_lichess_game does NOT return accuracy fields (lichess has no game-level accuracy)."""
+        """Lichess game without analysis returns None accuracy."""
         from app.services.normalization import normalize_lichess_game
         game = {
             "id": "q7ZvsdUF",
@@ -405,8 +405,42 @@ class TestChesscomAccuracy:
         }
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert "white_accuracy" not in result
-        assert "black_accuracy" not in result
+        assert result["white_accuracy"] is None
+        assert result["black_accuracy"] is None
+
+    def test_lichess_with_accuracy(self):
+        """Lichess game with analysis returns accuracy values."""
+        from app.services.normalization import normalize_lichess_game
+        game = {
+            "id": "q7ZvsdUF",
+            "rated": True,
+            "variant": {"key": "standard", "name": "Standard"},
+            "speed": "blitz",
+            "perf": "blitz",
+            "createdAt": 1700000000000,
+            "lastMoveAt": 1700000600000,
+            "status": "mate",
+            "winner": "white",
+            "players": {
+                "white": {
+                    "user": {"name": "Magnus", "id": "magnus"},
+                    "rating": 2800,
+                    "analysis": {"inaccuracy": 1, "mistake": 0, "blunder": 0, "acpl": 15, "accuracy": 94},
+                },
+                "black": {
+                    "user": {"name": "Hikaru", "id": "hikaru"},
+                    "rating": 2750,
+                    "analysis": {"inaccuracy": 2, "mistake": 1, "blunder": 0, "acpl": 30, "accuracy": 82},
+                },
+            },
+            "moves": "e4 c5 Nf3",
+            "pgn": '[Event "?"]\n[White "Magnus"]\n[Black "Hikaru"]\n\n1. e4 c5 *',
+            "clock": {"initial": 600, "increment": 0, "totalTime": 600},
+        }
+        result = normalize_lichess_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result["white_accuracy"] == 94
+        assert result["black_accuracy"] == 82
 
 
 class TestNormalizeLichessGame:

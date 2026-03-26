@@ -321,6 +321,10 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
 
     game_id = game["id"]
 
+    # Engine analysis: per-player accuracy (only present for analyzed games)
+    white_analysis = white_player.get("analysis", {})
+    black_analysis = black_player.get("analysis", {})
+
     return {
         "user_id": user_id,
         "platform": "lichess",
@@ -343,5 +347,7 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
         "black_rating": black_player.get("rating"),
         "opening_name": opening_name,
         "opening_eco": opening_eco,
+        "white_accuracy": white_analysis.get("accuracy"),
+        "black_accuracy": black_analysis.get("accuracy"),
         "played_at": played_at,
     }

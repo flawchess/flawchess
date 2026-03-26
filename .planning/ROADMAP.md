@@ -140,6 +140,16 @@ Plans:
   - [x] 28-02-PLAN.md — Wire eval extraction into _flush_batch import pipeline
   - [ ] 28-03-PLAN.md — Admin re-import script for backfilling existing games
 
+### Phase 28.1: Import lichess analysis metrics (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 28
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 28.1 to break down)
+
 ### Phase 29: Endgame Analytics
 **Goal**: Users can view their endgame performance and material conversion/recovery statistics in a new Endgames tab with time control and color filters
 **Depends on**: Phase 28
