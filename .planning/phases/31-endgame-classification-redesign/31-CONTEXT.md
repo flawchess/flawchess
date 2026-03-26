@@ -23,7 +23,7 @@ Redesign endgame analytics from per-game (single transition point) to per-positi
 ### Classifier & Storage
 
 - **D-05:** Do NOT store `game_phase` — it's easily derived from `piece_count <= 6` at query time. Only store `endgame_class`.
-- **D-06:** Add `endgame_class` column to `game_positions` — populated only where `piece_count <= 6` (NULL for non-endgame positions). Enables efficient SQL GROUP BY for per-position analytics.
+- **D-06:** Add `endgame_class` as **SmallInteger** column to `game_positions` — mapped to an IntEnum (1-6) in Python. 2 bytes per row, fastest for GROUP BY. NULL for non-endgame positions. No VARCHAR overhead on the largest table.
 - **D-07:** Endgame class derivation stays as a **separate function** from `classify_position()`. The existing `classify_endgame_class(material_signature)` in `endgame_service.py` is the source of truth. It should be called during import for new games and during backfill for existing rows.
 - **D-08:** **Alembic data migration** for backfill — single migration adds the column AND populates it from existing `material_signature` + `piece_count` data. No PGN replay needed.
 
@@ -96,6 +96,7 @@ Redesign endgame analytics from per-game (single transition point) to per-positi
 
 - **Position-level endgame drill-down** — Explore specific endgame positions on a board (like Openings tab for endgames). Builds on stored per-position endgame_class but is a separate feature.
 - **MATFLT-01 — Material signature drill-down** — Finer breakdown by specific material configuration (e.g., KRP vs KR within rook endgames). Already tracked in REQUIREMENTS.md.
+- **Material signature BIGINT encoding** — Encode material_signature as a single BIGINT (40 bits: 4 bits × 5 piece types × 2 sides) instead of VARCHAR(40). Saves ~25 bytes/row worst case. Could fold into Phase 27.1 (column type optimization).
 
 None — discussion stayed within phase scope
 
