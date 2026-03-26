@@ -2,22 +2,22 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
-status: Phase complete — ready for verification
-last_updated: "2026-03-26T09:54:24.411Z"
+status: Ready to plan
+last_updated: "2026-03-26T15:56:31.241Z"
 last_activity: 2026-03-26
 progress:
-  total_phases: 8
-  completed_phases: 5
-  total_plans: 11
-  completed_plans: 11
+  total_phases: 10
+  completed_phases: 6
+  total_plans: 13
+  completed_plans: 13
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 29 (endgame-analytics) — EXECUTING
-Plan: 3 of 3
+Phase: 999.1
+Plan: Not started
 
 ## Project Reference
 
@@ -66,6 +66,10 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [Phase 29-endgame-analytics]: user_material_imbalance = imbalance*sign where sign=1 for white, -1 for black (user-perspective normalization in SQL CASE)
 - [Phase 29]: EndgameWDLChart uses custom per-row buttons instead of Recharts for click-to-select interactivity and inline conversion/recovery metrics
 - [Phase 29]: totalGames and matchedCount both use gamesData.matched_count — EndgameGamesResponse has no separate total_games field (games already scoped by category)
+- [Phase 31-01]: endgame_class backfill uses CASE on material_signature regex with mixed check FIRST to match Python classify_endgame_class logic
+- [Phase 31-01]: chunk_size reduced 1900->1700 for 19-column asyncpg safety margin; Float(24)/REAL alter_column noise removed (semantically equivalent in PostgreSQL)
+- [Phase 31-02]: ENDGAME_PLY_THRESHOLD = 6: games must spend 3+ full moves in a class to count — filters tactical transitions
+- [Phase 31-02]: endgame_games counts (game, class) combinations not unique games — intentional per D-02
 
 ### Critical v1.5 Constraints
 
@@ -111,6 +115,8 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260326-icg | Fix endgame filter bug (axios array params), add total games context, sample size warnings, Q vs Q tooltip | 2026-03-26 | 5ac4c3c | [260326-icg-fix-endgame-analytics-issues-ui-filter-b](./quick/260326-icg-fix-endgame-analytics-issues-ui-filter-b/) |
 | 260326-jo8 | Implement Lichess endgame definition: piece_count column, threshold switch (piece_count <= 6), backfill migration | 2026-03-26 | 5afdfe9 | [260326-jo8-implement-lichess-endgame-phase-definiti](./quick/260326-jo8-implement-lichess-endgame-phase-definiti/) |
 | 260326-k94 | Add backrank_sparse and mixedness columns to position classifier and game_positions (Lichess Divider.scala algorithm) | 2026-03-26 | d8d6796 | [260326-k94-add-backrank-sparse-and-mixedness-column](./quick/260326-k94-add-backrank-sparse-and-mixedness-column/) |
+| 260326-p93 | Redesign endgame stats UI: glass-effect WDL bars, game count bars, conversion/recovery mini-bars, per-type tooltips, click-to-select-then-navigate | 2026-03-26 | 57f475d | [260326-p93-redesign-endgame-stats-ui-with-glass-eff](./quick/260326-p93-redesign-endgame-stats-ui-with-glass-eff/) |
+| 260326-qhw | Fix endgame conversion/recovery bars from 2-segment to full W/D/L 3-segment bars | 2026-03-26 | a868425 | [260326-qhw-fix-endgame-conversion-recovery-wdl-bars](./quick/260326-qhw-fix-endgame-conversion-recovery-wdl-bars/) |
 
 ---
-Last activity: 2026-03-26 - Completed quick task 260326-k94: Add backrank_sparse and mixedness columns (Lichess middlegame detection, Divider.scala algorithm, 17-column import pipeline)
+Last activity: 2026-03-26

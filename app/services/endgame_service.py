@@ -2,12 +2,15 @@
 
 Exposes:
 - classify_endgame_class: pure function mapping material_signature to category name
+- EndgameClassInt: IntEnum encoding for endgame_class SmallInteger column (Per D-06)
+- _INT_TO_CLASS / _CLASS_TO_INT: bidirectional mappings for integer <-> string conversion
 - _aggregate_endgame_stats: aggregates raw per-game rows into EndgameCategoryStats list
 - get_endgame_stats: orchestrator for GET /api/endgames/stats
 - get_endgame_games: orchestrator for GET /api/endgames/games
 """
 
 from collections import defaultdict
+from enum import IntEnum
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +29,30 @@ from app.schemas.endgames import (
     EndgameStatsResponse,
 )
 from app.services.analysis_service import derive_user_result, recency_cutoff
+
+class EndgameClassInt(IntEnum):
+    """Integer encoding for endgame_class column (SmallInteger, 2 bytes per row).
+    Maps 1:1 to EndgameClass Literal strings. Per D-06."""
+
+    ROOK = 1
+    MINOR_PIECE = 2
+    PAWN = 3
+    QUEEN = 4
+    MIXED = 5
+    PAWNLESS = 6
+
+
+_INT_TO_CLASS: dict[int, EndgameClass] = {
+    1: "rook",
+    2: "minor_piece",
+    3: "pawn",
+    4: "queen",
+    5: "mixed",
+    6: "pawnless",
+}
+
+_CLASS_TO_INT: dict[EndgameClass, int] = {v: k for k, v in _INT_TO_CLASS.items()}
+
 
 # Display labels for each endgame category (D-07).
 _ENDGAME_CATEGORY_LABELS: dict[EndgameClass, EndgameLabel] = {
@@ -88,10 +115,12 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
 
 
 def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
-    """Aggregate raw per-game endgame entry rows into EndgameCategoryStats list.
+    """Aggregate raw per-(game, class) endgame rows into EndgameCategoryStats list.
 
-    Each row is: (game_id, result, user_color, material_signature, user_material_imbalance)
-    where user_material_imbalance > 0 = user was up material at endgame entry.
+    Each row is: (game_id, endgame_class_int, result, user_color, user_material_imbalance)
+    where endgame_class_int is 1-6 (see EndgameClassInt).
+    A game_id may appear multiple times (once per endgame class it spent >= 6 plies in).
+    Per D-02: multi-class per game.
 
     Computes per-category:
     - W/D/L counts and percentages
@@ -109,15 +138,15 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
     )
     # Conversion: games where user was up material at endgame entry
     conv: dict[str, dict[str, int]] = defaultdict(
-        lambda: {"games": 0, "wins": 0}
+        lambda: {"games": 0, "wins": 0, "draws": 0}
     )
     # Recovery: games where user was down material at endgame entry
     recov: dict[str, dict[str, int]] = defaultdict(
-        lambda: {"games": 0, "saves": 0}
+        lambda: {"games": 0, "wins": 0, "draws": 0}
     )
 
-    for _game_id, result, user_color, material_signature, user_material_imbalance in rows:
-        endgame_class = classify_endgame_class(material_signature)
+    for _game_id, endgame_class_int, result, user_color, user_material_imbalance in rows:
+        endgame_class = _INT_TO_CLASS[endgame_class_int]
         outcome = derive_user_result(result, user_color)
 
         # W/D/L counts
@@ -133,12 +162,16 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
             conv[endgame_class]["games"] += 1
             if outcome == "win":
                 conv[endgame_class]["wins"] += 1
+            elif outcome == "draw":
+                conv[endgame_class]["draws"] += 1
 
         # Recovery: user entered with material disadvantage (negative imbalance)
         if user_material_imbalance is not None and user_material_imbalance < 0:
             recov[endgame_class]["games"] += 1
-            if outcome in ("win", "draw"):
-                recov[endgame_class]["saves"] += 1
+            if outcome == "win":
+                recov[endgame_class]["wins"] += 1
+            elif outcome == "draw":
+                recov[endgame_class]["draws"] += 1
 
     # Build EndgameCategoryStats objects
     categories: list[EndgameCategoryStats] = []
@@ -161,6 +194,8 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
 
         conversion_games = conv_data["games"]
         conversion_wins = conv_data["wins"]
+        conversion_draws = conv_data["draws"]
+        conversion_losses = conversion_games - conversion_wins - conversion_draws
         conversion_pct = (
             round(conversion_wins / conversion_games * 100, 1)
             if conversion_games > 0
@@ -168,7 +203,9 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
         )
 
         recovery_games = recov_data["games"]
-        recovery_saves = recov_data["saves"]
+        recovery_wins = recov_data["wins"]
+        recovery_draws = recov_data["draws"]
+        recovery_saves = recovery_wins + recovery_draws  # derived, kept for backward compat
         recovery_pct = (
             round(recovery_saves / recovery_games * 100, 1)
             if recovery_games > 0
@@ -179,9 +216,13 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
             conversion_pct=conversion_pct,
             conversion_games=conversion_games,
             conversion_wins=conversion_wins,
+            conversion_draws=conversion_draws,
+            conversion_losses=conversion_losses,
             recovery_pct=recovery_pct,
             recovery_games=recovery_games,
             recovery_saves=recovery_saves,
+            recovery_wins=recovery_wins,
+            recovery_draws=recovery_draws,
         )
 
         label = _ENDGAME_CATEGORY_LABELS.get(endgame_class, endgame_class.replace("_", " ").title())
@@ -220,7 +261,7 @@ async def get_endgame_stats(
 
     Steps:
     1. Convert recency to cutoff datetime.
-    2. Fetch one row per game at endgame transition point.
+    2. Fetch one row per (game, endgame_class) span meeting the ply threshold.
     3. Aggregate into per-category stats with conversion/recovery.
     4. Return sorted categories (by total desc, D-05).
     """
@@ -246,7 +287,9 @@ async def get_endgame_stats(
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
     )
-    # Endgame games = sum of all category totals (each row is one game)
+    # endgame_games counts (game, class) combinations, not unique games.
+    # A game in two classes (e.g. rook then pawn) contributes 2 to this total.
+    # This is intentional per D-02 — each class gets its own W/D/L count.
     endgame_games = sum(c.total for c in categories)
 
     return EndgameStatsResponse(

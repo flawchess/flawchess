@@ -1,6 +1,6 @@
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Index, SmallInteger, String
+from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Index, SmallInteger, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -15,6 +15,13 @@ class GamePosition(Base):
         Index("ix_gp_user_black_hash", "user_id", "black_hash"),
         # Covering index for Phase 12 next-moves aggregation queries
         Index("ix_gp_user_full_hash_move_san", "user_id", "full_hash", "move_san"),
+        # Partial index for endgame queries — only indexes rows where endgame_class IS NOT NULL
+        Index(
+            "ix_gp_user_endgame_class",
+            "user_id",
+            "endgame_class",
+            postgresql_where=text("endgame_class IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -57,5 +64,11 @@ class GamePosition(Base):
     # Engine analysis: per-move eval from lichess %eval PGN annotations (NULL for chess.com and unanalyzed games)
     eval_cp: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     eval_mate: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+
+    # Endgame class: SmallInteger IntEnum (1-6), NULL for non-endgame positions.
+    # 1=rook, 2=minor_piece, 3=pawn, 4=queen, 5=mixed, 6=pawnless.
+    # Computed from material_signature at import time (see endgame_service.classify_endgame_class).
+    # Per D-06: SmallInteger for fastest GROUP BY, 2 bytes per row.
+    endgame_class: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
 
     game: Mapped["Game"] = relationship(back_populates="positions")  # type: ignore[name-defined]

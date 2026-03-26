@@ -22,7 +22,9 @@ import httpx
 
 from app.core.database import async_session_maker
 from app.repositories import game_repository, import_job_repository, user_repository
+from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD
 from app.services import chesscom_client, lichess_client
+from app.services.endgame_service import _CLASS_TO_INT, classify_endgame_class
 from app.services.position_classifier import classify_position
 from app.services.zobrist import hashes_for_game
 
@@ -450,6 +452,18 @@ async def _flush_batch(
                         "backrank_sparse": classification.backrank_sparse,
                         "mixedness": classification.mixedness,
                     })
+                    # Compute endgame_class for endgame positions (piece_count <= threshold).
+                    # Uses classify_endgame_class from endgame_service, converted to integer
+                    # via _CLASS_TO_INT for SmallInteger storage. Per D-07.
+                    if (
+                        classification.piece_count is not None
+                        and classification.piece_count <= ENDGAME_PIECE_COUNT_THRESHOLD
+                        and classification.material_signature is not None
+                    ):
+                        ec_str = classify_endgame_class(classification.material_signature)
+                        row["endgame_class"] = _CLASS_TO_INT[ec_str]
+                    else:
+                        row["endgame_class"] = None
                 except Exception:
                     logger.warning(
                         "Failed to classify position at ply=%s for game_id=%s", ply, game_id

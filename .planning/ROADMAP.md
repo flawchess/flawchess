@@ -230,10 +230,17 @@ Plans:
 
 ### Phase 31: Endgame classification redesign: per-position instead of per-game
 
-**Goal:** [To be planned]
+**Goal:** Redesign endgame analytics from per-game single-transition-point to per-position classification, storing endgame_class on game_positions and enabling multi-class-per-game counting with a 6-ply minimum threshold
 **Requirements**: TBD
 **Depends on:** Phase 29
-**Plans:** 0 plans
+**Success Criteria** (what must be TRUE):
+  1. Every endgame position (piece_count <= 6) has a non-NULL endgame_class SmallInteger value
+  2. A game passing through multiple endgame classes counts in each category it spent >= 6 plies in
+  3. Games with fewer than 6 plies in an endgame class are excluded from that category
+  4. Conversion/recovery uses material_imbalance at the first ply of each endgame class span
+  5. No frontend changes — same API response shape, same Endgames tab UI
+**Plans:** 2/2 plans complete
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 31 to break down)
+- [x] 31-01-PLAN.md — Schema migration (endgame_class column + backfill + index), IntEnum mapping, import pipeline wiring, chunk_size update
+- [x] 31-02-PLAN.md — Repository + service redesign for per-position multi-class grouping, test updates
