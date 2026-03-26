@@ -145,6 +145,7 @@ async def reimport_user(session, user_id: int) -> tuple[bool, int]:
 
     # Re-import from each platform
     total_imported = 0
+    any_platform_failed = False
     for platform, username in platform_jobs:
         _log(f"  Re-importing from {platform} ({username})...")
         try:
@@ -160,12 +161,14 @@ async def reimport_user(session, user_id: int) -> tuple[bool, int]:
                         f"  Done: {job_state.games_imported} games imported from {platform}."
                     )
                 else:
+                    any_platform_failed = True
                     error_msg = job_state.error or "Unknown error"
-                    _log(f"  WARNING: Import from {platform} failed: {error_msg}")
+                    _log(f"  FAILED: Import from {platform} failed: {error_msg}")
         except Exception as e:
-            _log(f"  WARNING: Re-import from {platform} failed with exception: {e}")
+            any_platform_failed = True
+            _log(f"  FAILED: Re-import from {platform} failed with exception: {e}")
 
-    return True, total_imported
+    return not any_platform_failed, total_imported
 
 
 async def main() -> None:
