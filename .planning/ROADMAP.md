@@ -77,7 +77,7 @@
 - [x] **Phase 26: Position Classifier & Schema** — Compute game phase, material signature, imbalance, and endgame class per position with schema migration (completed 2026-03-23)
 - [x] **Phase 27: Import Wiring & Backfill** — Wire classifier into live import pipeline and backfill all existing game_positions rows (completed 2026-03-24)
 - [x] **Phase 28: Engine Analysis Import** — Import chess.com accuracy scores and lichess per-move evals during game import (completed 2026-03-25)
-- [ ] **Phase 29: Endgame Analytics** — Backend API + frontend Endgames tab delivering W/D/L by endgame category and material conversion/recovery stats
+- [x] **Phase 29: Endgame Analytics** — Backend API + frontend Endgames tab delivering W/D/L by endgame category and material conversion/recovery stats (completed 2026-03-26)
 - [ ] **Phase 30: Homepage, README & SEO Update** — Update homepage content, README, and SEO metadata to showcase new statistics features introduced in v1.5
 
 ## Phase Details
@@ -165,8 +165,11 @@ Plans:
   4. User can filter conversion/recovery stats by time control and the displayed numbers update correctly
   5. Users with no endgame data see a meaningful empty state rather than an error or blank page
   6. The Endgame tab layout is usable on mobile (375px width) with the same filter and stats structure as the desktop layout
-**Plans**: TBD
-**UI hint**: yes
+**Plans**: 3 plans
+
+- [x] 29-01-PLAN.md — Backend endgame repository, service, router, schemas, and tests (TDD)
+- [x] 29-02-PLAN.md — Frontend Statistics sub-tab with EndgameWDLChart, filter sidebar, types and hooks
+- [x] 29-03-PLAN.md — Frontend Games sub-tab with GameCardList, navigation wiring, and visual checkpoint
 
 ## Progress
 
@@ -201,7 +204,7 @@ Plans:
 | 27. Import Wiring & Backfill | v1.5 | 2/2 | Complete    | 2026-03-24 |
 | 28. Engine Analysis Import | v1.5 | 2/3 | Complete    | 2026-03-25 |
 | 28.1. Import lichess analysis metrics | v1.5 | 1/1 | Complete    | 2026-03-26 |
-| 29. Endgame Analytics | v1.5 | 0/0 | Not started | — |
+| 29. Endgame Analytics | v1.5 | 3/3 | Complete   | 2026-03-26 |
 | 30. Homepage, README & SEO Update | v1.5 | 0/0 | Not started | — |
 
 ### Phase 30: Homepage, README & SEO Update
@@ -213,3 +216,14 @@ Plans:
   2. README accurately describes the current feature set
   3. SEO metadata (title, description, OG tags) reflects the new capabilities
 **Plans**: TBD
+
+## Backlog
+
+### Phase 999.1: Python Static Type Checker in CI (BACKLOG)
+
+**Goal:** Add a Python static type checker to the CI pipeline to catch type-level bugs (typos, bare `str` where `Literal` is needed, wrong function names) that ruff cannot detect. Evaluate [ty](https://docs.astral.sh/ty/) (from Astral, same team as ruff/uv) vs pyright vs mypy.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)

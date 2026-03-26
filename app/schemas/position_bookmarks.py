@@ -1,8 +1,12 @@
 """Pydantic v2 schemas for position bookmark CRUD operations."""
 
 import json
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_serializer, field_validator, model_validator
+
+Color = Literal["white", "black"]
+BookmarkMatchSide = Literal["mine", "opponent", "both", "full"]
 
 
 class PositionSuggestion(BaseModel):
@@ -13,7 +17,7 @@ class PositionSuggestion(BaseModel):
     full_hash: str
     fen: str
     moves: list[str]
-    color: str  # "white" | "black"
+    color: Color
     game_count: int
     opening_name: str | None
     opening_eco: str | None
@@ -32,7 +36,7 @@ class SuggestionsResponse(BaseModel):
 class MatchSideUpdateRequest(BaseModel):
     """Request body for updating match_side on an existing position bookmark."""
 
-    match_side: str  # "mine" | "opponent" | "both"
+    match_side: Literal["mine", "opponent", "both"]
 
 
 class PositionBookmarkCreate(BaseModel):
@@ -56,8 +60,8 @@ class PositionBookmarkCreate(BaseModel):
 
     fen: str
     moves: list[str]
-    color: str | None = None
-    match_side: str = "full"
+    color: Color | None = None
+    match_side: BookmarkMatchSide = "full"
     is_flipped: bool = False
 
 
@@ -89,8 +93,8 @@ class PositionBookmarkResponse(BaseModel):
 
     fen: str
     moves: list[str]  # deserialized from JSON string stored in DB
-    color: str | None
-    match_side: str
+    color: Color | None
+    match_side: BookmarkMatchSide
     is_flipped: bool
     sort_order: int
 
