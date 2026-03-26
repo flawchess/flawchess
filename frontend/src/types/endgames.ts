@@ -30,6 +30,8 @@ export interface EndgameCategoryStats {
 
 export interface EndgameStatsResponse {
   categories: EndgameCategoryStats[];  // sorted by total desc
+  total_games: number;       // Total games matching current filters
+  endgame_games: number;     // Games that reached an endgame phase
 }
 
 export interface EndgameGamesResponse {

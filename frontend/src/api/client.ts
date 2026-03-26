@@ -20,6 +20,13 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  // FastAPI expects repeated keys for array params (e.g. time_control=blitz&time_control=rapid),
+  // not bracket notation (time_control[]=blitz) which is axios's default.
+  // Bug fix: without this, array query params like time_control and platform were silently
+  // ignored by the backend, causing filters to have no effect on GET endpoints.
+  paramsSerializer: {
+    indexes: null,
+  },
 });
 
 // ─── Request interceptor: attach Bearer token ─────────────────────────────

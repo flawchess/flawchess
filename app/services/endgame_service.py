@@ -12,6 +12,7 @@ from collections import defaultdict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.endgame_repository import (
+    count_filtered_games,
     query_endgame_entry_rows,
     query_endgame_games as _query_endgame_games,
 )
@@ -234,7 +235,25 @@ async def get_endgame_stats(
         recency_cutoff=cutoff,
     )
     categories = _aggregate_endgame_stats(rows)
-    return EndgameStatsResponse(categories=categories)
+
+    # Total games matching current filters (not just endgame games)
+    total_games = await count_filtered_games(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+    )
+    # Endgame games = sum of all category totals (each row is one game)
+    endgame_games = sum(c.total for c in categories)
+
+    return EndgameStatsResponse(
+        categories=categories,
+        total_games=total_games,
+        endgame_games=endgame_games,
+    )
 
 
 async def get_endgame_games(

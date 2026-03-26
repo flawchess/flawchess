@@ -59,6 +59,8 @@ class EndgameStatsResponse(BaseModel):
     """
 
     categories: list[EndgameCategoryStats]
+    total_games: int       # Total games matching current filters (not just endgame games)
+    endgame_games: int     # Games that reached an endgame phase
 
 
 class EndgameGamesResponse(BaseModel):

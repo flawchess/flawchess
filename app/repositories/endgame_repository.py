@@ -22,6 +22,26 @@ from app.schemas.endgames import EndgameClass
 ENDGAME_MATERIAL_THRESHOLD = 1500
 
 
+async def count_filtered_games(
+    session: AsyncSession,
+    user_id: int,
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+) -> int:
+    """Count ALL games for the user matching the given filters.
+
+    This counts total games regardless of whether they reached an endgame phase,
+    used to provide context like "X of Y games reached an endgame".
+    """
+    stmt = select(func.count()).select_from(Game).where(Game.user_id == user_id)
+    stmt = _apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+    result = await session.execute(stmt)
+    return result.scalar_one()
+
+
 async def query_endgame_entry_rows(
     session: AsyncSession,
     user_id: int,
