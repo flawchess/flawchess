@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
 status: Executing Phase 32
-last_updated: "2026-03-26T19:50:00.000Z"
+last_updated: "2026-03-26T20:10:00.000Z"
 last_activity: 2026-03-26
 progress:
   total_phases: 11
@@ -118,6 +118,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260326-k94 | Add backrank_sparse and mixedness columns to position classifier and game_positions (Lichess Divider.scala algorithm) | 2026-03-26 | d8d6796 | [260326-k94-add-backrank-sparse-and-mixedness-column](./quick/260326-k94-add-backrank-sparse-and-mixedness-column/) |
 | 260326-p93 | Redesign endgame stats UI: glass-effect WDL bars, game count bars, conversion/recovery mini-bars, per-type tooltips, click-to-select-then-navigate | 2026-03-26 | 57f475d | [260326-p93-redesign-endgame-stats-ui-with-glass-eff](./quick/260326-p93-redesign-endgame-stats-ui-with-glass-eff/) |
 | 260326-qhw | Fix endgame conversion/recovery bars from 2-segment to full W/D/L 3-segment bars | 2026-03-26 | a868425 | [260326-qhw-fix-endgame-conversion-recovery-wdl-bars](./quick/260326-qhw-fix-endgame-conversion-recovery-wdl-bars/) |
+| 260326-tok | Polish endgame charts: info popovers on section titles and gauges, one-decimal WDL, remove "More" collapsibles | 2026-03-26 | f38322b | [260326-tok-polish-endgame-charts-gauge-section-titl](./quick/260326-tok-polish-endgame-charts-gauge-section-titl/) |
 
 ---
 Last activity: 2026-03-26
