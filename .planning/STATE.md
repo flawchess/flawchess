@@ -119,6 +119,8 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260326-p93 | Redesign endgame stats UI: glass-effect WDL bars, game count bars, conversion/recovery mini-bars, per-type tooltips, click-to-select-then-navigate | 2026-03-26 | 57f475d | [260326-p93-redesign-endgame-stats-ui-with-glass-eff](./quick/260326-p93-redesign-endgame-stats-ui-with-glass-eff/) |
 | 260326-qhw | Fix endgame conversion/recovery bars from 2-segment to full W/D/L 3-segment bars | 2026-03-26 | a868425 | [260326-qhw-fix-endgame-conversion-recovery-wdl-bars](./quick/260326-qhw-fix-endgame-conversion-recovery-wdl-bars/) |
 | 260326-tok | Polish endgame charts: info popovers on section titles and gauges, one-decimal WDL, remove "More" collapsibles | 2026-03-26 | f38322b | [260326-tok-polish-endgame-charts-gauge-section-titl](./quick/260326-tok-polish-endgame-charts-gauge-section-titl/) |
+| 260326-ut4 | Simplify WDL chart UX: game count links, simplified popovers, 300cp material thresholds | 2026-03-26 | cc24f76 | [260326-ut4-endgame-wdl-chart-ux-simplify-info-popov](./quick/260326-ut4-endgame-wdl-chart-ux-simplify-info-popov/) |
+| 260326-wjj | Polish endgame charts: 3-gauge row with colored zones, remove Relative Strength/Win Rate Over Time, WDL row de-noise, inline popover fix | 2026-03-26 | 1864b4d | [260326-wjj-polish-endgame-charts-gauge-section-titl](./quick/260326-wjj-polish-endgame-charts-gauge-section-titl/) |
 
 ---
 Last activity: 2026-03-26
