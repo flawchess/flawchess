@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
 status: Ready to plan
-last_updated: "2026-03-26T15:56:31.241Z"
+last_updated: "2026-03-26T19:58:20.899Z"
 last_activity: 2026-03-26
 progress:
   total_phases: 10
@@ -70,6 +70,8 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [Phase 31-01]: chunk_size reduced 1900->1700 for 19-column asyncpg safety margin; Float(24)/REAL alter_column noise removed (semantically equivalent in PostgreSQL)
 - [Phase 31-02]: ENDGAME_PLY_THRESHOLD = 6: games must spend 3+ full moves in a class to count — filters tactical transitions
 - [Phase 31-02]: endgame_games counts (game, class) combinations not unique games — intentional per D-02
+- [Phase 32]: GLASS_OVERLAY copied locally in EndgamePerformanceSection to avoid coupling to EndgameWDLChart
+- [Phase 32]: Relative Endgame Strength gauge maxValue=150 to give visual room for values above 100% per D-05
 
 ### Critical v1.5 Constraints
 
