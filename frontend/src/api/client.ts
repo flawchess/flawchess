@@ -6,6 +6,7 @@ import type {
   MatchSideUpdateRequest, SuggestionsResponse
 } from '@/types/position_bookmarks';
 import type { RatingHistoryResponse, GlobalStatsResponse } from '@/types/stats';
+import type { EndgameStatsResponse, EndgameGamesResponse } from '@/types/endgames';
 
 /**
  * Central Axios instance.
@@ -89,5 +90,50 @@ export const statsApi = {
   getGlobalStats: (recency: string | null, platform: string | null) =>
     apiClient.get<GlobalStatsResponse>('/stats/global', {
       params: { ...(recency ? { recency } : {}), ...(platform ? { platform } : {}) },
+    }).then(r => r.data),
+};
+
+// ─── Endgame Analytics API ────────────────────────────────────────────────────
+
+// No color parameter passed — endgame stats are color-agnostic per D-02.
+export const endgameApi = {
+  getStats: (params: {
+    time_control?: string[] | null;
+    platform?: string[] | null;
+    recency?: string | null;
+    rated?: boolean | null;
+    opponent_type?: string;
+  }) =>
+    apiClient.get<EndgameStatsResponse>('/endgames/stats', {
+      params: {
+        ...(params.time_control ? { time_control: params.time_control } : {}),
+        ...(params.platform ? { platform: params.platform } : {}),
+        ...(params.recency && params.recency !== 'all' ? { recency: params.recency } : {}),
+        ...(params.rated !== null && params.rated !== undefined ? { rated: params.rated } : {}),
+        ...(params.opponent_type && params.opponent_type !== 'all' ? { opponent_type: params.opponent_type } : {}),
+      },
+    }).then(r => r.data),
+
+  getGames: (params: {
+    endgame_class: string;
+    time_control?: string[] | null;
+    platform?: string[] | null;
+    recency?: string | null;
+    rated?: boolean | null;
+    opponent_type?: string;
+    offset?: number;
+    limit?: number;
+  }) =>
+    apiClient.get<EndgameGamesResponse>('/endgames/games', {
+      params: {
+        endgame_class: params.endgame_class,
+        ...(params.time_control ? { time_control: params.time_control } : {}),
+        ...(params.platform ? { platform: params.platform } : {}),
+        ...(params.recency && params.recency !== 'all' ? { recency: params.recency } : {}),
+        ...(params.rated !== null && params.rated !== undefined ? { rated: params.rated } : {}),
+        ...(params.opponent_type && params.opponent_type !== 'all' ? { opponent_type: params.opponent_type } : {}),
+        offset: params.offset ?? 0,
+        limit: params.limit ?? 20,
+      },
     }).then(r => r.data),
 };
