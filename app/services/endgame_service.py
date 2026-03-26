@@ -2,12 +2,15 @@
 
 Exposes:
 - classify_endgame_class: pure function mapping material_signature to category name
+- EndgameClassInt: IntEnum encoding for endgame_class SmallInteger column (Per D-06)
+- _INT_TO_CLASS / _CLASS_TO_INT: bidirectional mappings for integer <-> string conversion
 - _aggregate_endgame_stats: aggregates raw per-game rows into EndgameCategoryStats list
 - get_endgame_stats: orchestrator for GET /api/endgames/stats
 - get_endgame_games: orchestrator for GET /api/endgames/games
 """
 
 from collections import defaultdict
+from enum import IntEnum
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +29,30 @@ from app.schemas.endgames import (
     EndgameStatsResponse,
 )
 from app.services.analysis_service import derive_user_result, recency_cutoff
+
+class EndgameClassInt(IntEnum):
+    """Integer encoding for endgame_class column (SmallInteger, 2 bytes per row).
+    Maps 1:1 to EndgameClass Literal strings. Per D-06."""
+
+    ROOK = 1
+    MINOR_PIECE = 2
+    PAWN = 3
+    QUEEN = 4
+    MIXED = 5
+    PAWNLESS = 6
+
+
+_INT_TO_CLASS: dict[int, EndgameClass] = {
+    1: "rook",
+    2: "minor_piece",
+    3: "pawn",
+    4: "queen",
+    5: "mixed",
+    6: "pawnless",
+}
+
+_CLASS_TO_INT: dict[EndgameClass, int] = {v: k for k, v in _INT_TO_CLASS.items()}
+
 
 # Display labels for each endgame category (D-07).
 _ENDGAME_CATEGORY_LABELS: dict[EndgameClass, EndgameLabel] = {
