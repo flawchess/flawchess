@@ -5,7 +5,10 @@ which wraps each test in a rolled-back transaction for isolation.
 
 Coverage:
 - query_endgame_entry_rows: returns empty list for user with no endgame positions
-- query_endgame_entry_rows: returns one row per game (MIN ply deduplication)
+- query_endgame_entry_rows: returns one row per (game_id, endgame_class) span with >= 6 plies
+- query_endgame_entry_rows: ply threshold filters short spans (< 6 plies)
+- query_endgame_entry_rows: multi-class per game — game counts in both rook and pawn categories
+- query_endgame_entry_rows: material_imbalance from first ply of each span
 - query_endgame_entry_rows: time_control filter returns only matching games
 - query_endgame_entry_rows: platform filter returns only matching games
 - query_endgame_games: returns paginated GameRecord-shaped rows for a given endgame class
@@ -22,9 +25,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game
 from app.models.game_position import GamePosition
 
-# Import the threshold constant and repository functions.
+# Import the threshold constants and repository functions.
 from app.repositories.endgame_repository import (
     ENDGAME_PIECE_COUNT_THRESHOLD,
+    ENDGAME_PLY_THRESHOLD,
     query_endgame_entry_rows,
     query_endgame_games,
 )
@@ -95,11 +99,13 @@ async def _seed_game_position(
     material_count: int = 1000,
     material_signature: str = "KR_KR",
     material_imbalance: int = 0,
+    endgame_class: int | None = 1,  # Default 1 (rook) matching default material_signature KR_KR
 ) -> GamePosition:
     """Insert a GamePosition row with endgame-relevant metadata.
 
     piece_count defaults to 2 (KR_KR — rook endgame, safely below threshold of 6).
-    material_count is kept for completeness but no longer drives endgame detection.
+    endgame_class defaults to 1 (rook), matching the default material_signature KR_KR.
+    Use endgame_class=None for non-endgame positions.
     """
     pos = GamePosition(
         game_id=game.id,
@@ -113,6 +119,7 @@ async def _seed_game_position(
         material_count=material_count,
         material_signature=material_signature,
         material_imbalance=material_imbalance,
+        endgame_class=endgame_class,
     )
     session.add(pos)
     await session.flush()
@@ -143,15 +150,16 @@ class TestQueryEndgameEntryRows:
 
     @pytest.mark.asyncio
     async def test_no_endgame_positions_returns_empty(self, db_session: AsyncSession) -> None:
-        """Game with no positions at or below the endgame piece_count threshold returns empty."""
+        """Game with no endgame_class positions returns empty (endgame_class=None filters out)."""
         game = await _seed_game(db_session)
-        # Position with piece_count above threshold — not an endgame position
+        # Position with no endgame class — not counted
         await _seed_game_position(
             db_session,
             game=game,
             ply=10,
             piece_count=ENDGAME_PIECE_COUNT_THRESHOLD + 2,
             material_signature="KQRB_KQRB",
+            endgame_class=None,
         )
 
         rows = await query_endgame_entry_rows(
@@ -166,16 +174,14 @@ class TestQueryEndgameEntryRows:
         assert rows == []
 
     @pytest.mark.asyncio
-    async def test_returns_one_row_per_game_min_ply(self, db_session: AsyncSession) -> None:
-        """When a game has multiple endgame positions, only the first (MIN ply) is returned."""
+    async def test_returns_one_row_per_game_class_span(self, db_session: AsyncSession) -> None:
+        """A game with >= ENDGAME_PLY_THRESHOLD positions of one class returns exactly one row."""
         game = await _seed_game(db_session)
-        # Two positions at or below the endgame piece_count threshold at different plies
-        await _seed_game_position(
-            db_session, game=game, ply=30, piece_count=ENDGAME_PIECE_COUNT_THRESHOLD - 2, material_signature="KR_KR"
-        )
-        await _seed_game_position(
-            db_session, game=game, ply=40, piece_count=ENDGAME_PIECE_COUNT_THRESHOLD - 4, material_signature="KR_K"
-        )
+        # Seed exactly ENDGAME_PLY_THRESHOLD rook endgame positions
+        for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
+            await _seed_game_position(
+                db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
+            )
 
         rows = await query_endgame_entry_rows(
             db_session,
@@ -186,12 +192,95 @@ class TestQueryEndgameEntryRows:
             opponent_type="both",
             recency_cutoff=None,
         )
-        # Should return exactly one row for this game
+        # Should return exactly one row for this (game, rook) span
         assert len(rows) == 1
-        game_id, result, user_color, material_signature, user_material_imbalance = rows[0]
+        game_id, endgame_class, result, user_color, user_material_imbalance = rows[0]
         assert game_id == game.id
-        # Material signature should be from ply=30 (the first endgame position)
-        assert material_signature == "KR_KR"
+        assert endgame_class == 1  # rook
+
+    @pytest.mark.asyncio
+    async def test_ply_threshold_filters_short_spans(self, db_session: AsyncSession) -> None:
+        """A game with fewer than ENDGAME_PLY_THRESHOLD plies in a class is excluded."""
+        game = await _seed_game(db_session)
+        # Seed only ENDGAME_PLY_THRESHOLD - 2 rook positions (below threshold)
+        for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD - 2):
+            await _seed_game_position(
+                db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
+            )
+
+        rows = await query_endgame_entry_rows(
+            db_session,
+            user_id=99999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+        )
+        # Short span filtered out by HAVING clause
+        assert rows == []
+
+    @pytest.mark.asyncio
+    async def test_multi_class_per_game(self, db_session: AsyncSession) -> None:
+        """A game with >= threshold plies in two classes returns TWO rows (one per class)."""
+        game = await _seed_game(db_session)
+        # 7 rook endgame positions (endgame_class=1)
+        for ply in range(20, 27):
+            await _seed_game_position(
+                db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
+            )
+        # 6 pawn endgame positions (endgame_class=3)
+        for ply in range(30, 36):
+            await _seed_game_position(
+                db_session, game=game, ply=ply, material_signature="KPP_KP", endgame_class=3
+            )
+
+        rows = await query_endgame_entry_rows(
+            db_session,
+            user_id=99999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+        )
+        # Should return two rows: one for rook span, one for pawn span
+        assert len(rows) == 2
+        classes = {r[1] for r in rows}  # endgame_class is index 1
+        assert 1 in classes  # rook
+        assert 3 in classes  # pawn
+        # Both rows belong to the same game
+        assert all(r[0] == game.id for r in rows)
+
+    @pytest.mark.asyncio
+    async def test_entry_imbalance_at_first_ply_of_span(self, db_session: AsyncSession) -> None:
+        """material_imbalance at the first (MIN) ply of each span is used for conversion/recovery."""
+        game = await _seed_game(db_session, user_color="white")
+        # Seed 6 rook positions; first at ply=20 with imbalance=200, rest with different values
+        await _seed_game_position(
+            db_session, game=game, ply=20, material_signature="KR_KR",
+            endgame_class=1, material_imbalance=200
+        )
+        for ply in range(21, 26):
+            await _seed_game_position(
+                db_session, game=game, ply=ply, material_signature="KR_KR",
+                endgame_class=1, material_imbalance=50  # different from entry ply
+            )
+
+        rows = await query_endgame_entry_rows(
+            db_session,
+            user_id=99999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+        )
+        assert len(rows) == 1
+        _game_id, _endgame_class, _result, user_color, user_material_imbalance = rows[0]
+        # For white user, user_material_imbalance = material_imbalance at entry ply (ply=20)
+        assert user_color == "white"
+        assert user_material_imbalance == 200  # from first ply of span
 
     @pytest.mark.asyncio
     async def test_time_control_filter(self, db_session: AsyncSession) -> None:
@@ -200,9 +289,10 @@ class TestQueryEndgameEntryRows:
         rapid_game = await _seed_game(db_session, time_control_bucket="rapid")
 
         for game in [blitz_game, rapid_game]:
-            await _seed_game_position(
-                db_session, game=game, ply=30, piece_count=ENDGAME_PIECE_COUNT_THRESHOLD - 2, material_signature="KR_KR"
-            )
+            for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
+                await _seed_game_position(
+                    db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
+                )
 
         rows = await query_endgame_entry_rows(
             db_session,
@@ -225,9 +315,10 @@ class TestQueryEndgameEntryRows:
         lichess_game = await _seed_game(db_session, platform="lichess")
 
         for game in [chesscom_game, lichess_game]:
-            await _seed_game_position(
-                db_session, game=game, ply=30, piece_count=ENDGAME_PIECE_COUNT_THRESHOLD - 2, material_signature="KR_KR"
-            )
+            for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
+                await _seed_game_position(
+                    db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
+                )
 
         rows = await query_endgame_entry_rows(
             db_session,
@@ -254,11 +345,12 @@ class TestQueryEndgameGames:
 
     @pytest.mark.asyncio
     async def test_returns_games_for_rook_endgame(self, db_session: AsyncSession) -> None:
-        """query_endgame_games returns GameRecord-shaped rows for rook endgame class."""
+        """query_endgame_games returns Game objects for games with >= threshold rook plies."""
         game = await _seed_game(db_session)
-        await _seed_game_position(
-            db_session, game=game, ply=30, piece_count=ENDGAME_PIECE_COUNT_THRESHOLD - 2, material_signature="KR_KR"
-        )
+        for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
+            await _seed_game_position(
+                db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
+            )
 
         games, matched_count = await query_endgame_games(
             db_session,
@@ -282,9 +374,10 @@ class TestQueryEndgameGames:
     async def test_unknown_endgame_class_returns_empty(self, db_session: AsyncSession) -> None:
         """Unknown endgame class (not rook/minor_piece/pawn/queen/mixed/pawnless) returns empty."""
         game = await _seed_game(db_session)
-        await _seed_game_position(
-            db_session, game=game, ply=30, piece_count=ENDGAME_PIECE_COUNT_THRESHOLD - 2, material_signature="KR_KR"
-        )
+        for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
+            await _seed_game_position(
+                db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
+            )
 
         games, matched_count = await query_endgame_games(
             db_session,

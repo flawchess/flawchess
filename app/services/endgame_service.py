@@ -115,10 +115,12 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
 
 
 def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
-    """Aggregate raw per-game endgame entry rows into EndgameCategoryStats list.
+    """Aggregate raw per-(game, class) endgame rows into EndgameCategoryStats list.
 
-    Each row is: (game_id, result, user_color, material_signature, user_material_imbalance)
-    where user_material_imbalance > 0 = user was up material at endgame entry.
+    Each row is: (game_id, endgame_class_int, result, user_color, user_material_imbalance)
+    where endgame_class_int is 1-6 (see EndgameClassInt).
+    A game_id may appear multiple times (once per endgame class it spent >= 6 plies in).
+    Per D-02: multi-class per game.
 
     Computes per-category:
     - W/D/L counts and percentages
@@ -143,8 +145,8 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
         lambda: {"games": 0, "saves": 0}
     )
 
-    for _game_id, result, user_color, material_signature, user_material_imbalance in rows:
-        endgame_class = classify_endgame_class(material_signature)
+    for _game_id, endgame_class_int, result, user_color, user_material_imbalance in rows:
+        endgame_class = _INT_TO_CLASS[endgame_class_int]
         outcome = derive_user_result(result, user_color)
 
         # W/D/L counts
@@ -247,7 +249,7 @@ async def get_endgame_stats(
 
     Steps:
     1. Convert recency to cutoff datetime.
-    2. Fetch one row per game at endgame transition point.
+    2. Fetch one row per (game, endgame_class) span meeting the ply threshold.
     3. Aggregate into per-category stats with conversion/recovery.
     4. Return sorted categories (by total desc, D-05).
     """
@@ -273,7 +275,9 @@ async def get_endgame_stats(
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
     )
-    # Endgame games = sum of all category totals (each row is one game)
+    # endgame_games counts (game, class) combinations, not unique games.
+    # A game in two classes (e.g. rook then pawn) contributes 2 to this total.
+    # This is intentional per D-02 — each class gets its own W/D/L count.
     endgame_games = sum(c.total for c in categories)
 
     return EndgameStatsResponse(
