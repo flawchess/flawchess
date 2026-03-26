@@ -116,6 +116,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260326-jo8 | Implement Lichess endgame definition: piece_count column, threshold switch (piece_count <= 6), backfill migration | 2026-03-26 | 5afdfe9 | [260326-jo8-implement-lichess-endgame-phase-definiti](./quick/260326-jo8-implement-lichess-endgame-phase-definiti/) |
 | 260326-k94 | Add backrank_sparse and mixedness columns to position classifier and game_positions (Lichess Divider.scala algorithm) | 2026-03-26 | d8d6796 | [260326-k94-add-backrank-sparse-and-mixedness-column](./quick/260326-k94-add-backrank-sparse-and-mixedness-column/) |
 | 260326-p93 | Redesign endgame stats UI: glass-effect WDL bars, game count bars, conversion/recovery mini-bars, per-type tooltips, click-to-select-then-navigate | 2026-03-26 | 57f475d | [260326-p93-redesign-endgame-stats-ui-with-glass-eff](./quick/260326-p93-redesign-endgame-stats-ui-with-glass-eff/) |
+| 260326-qhw | Fix endgame conversion/recovery bars from 2-segment to full W/D/L 3-segment bars | 2026-03-26 | a868425 | [260326-qhw-fix-endgame-conversion-recovery-wdl-bars](./quick/260326-qhw-fix-endgame-conversion-recovery-wdl-bars/) |
 
 ---
 Last activity: 2026-03-26
