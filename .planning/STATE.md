@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
-status: Ready to execute
-last_updated: "2026-03-26T09:50:36.260Z"
+status: Phase complete — ready for verification
+last_updated: "2026-03-26T09:54:24.411Z"
 last_activity: 2026-03-26
 progress:
   total_phases: 8
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State: FlawChess
@@ -65,6 +65,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [Phase 29-endgame-analytics]: classify_endgame_class: rook+pawn=rook, minor+pawn=mixed, Q+any=mixed, R+minor=mixed (not all multi-family)
 - [Phase 29-endgame-analytics]: user_material_imbalance = imbalance*sign where sign=1 for white, -1 for black (user-perspective normalization in SQL CASE)
 - [Phase 29]: EndgameWDLChart uses custom per-row buttons instead of Recharts for click-to-select interactivity and inline conversion/recovery metrics
+- [Phase 29]: totalGames and matchedCount both use gamesData.matched_count — EndgameGamesResponse has no separate total_games field (games already scoped by category)
 
 ### Critical v1.5 Constraints
 
