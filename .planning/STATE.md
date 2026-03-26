@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
-status: Ready to execute
-last_updated: "2026-03-26T15:45:16.052Z"
+status: Phase complete — ready for verification
+last_updated: "2026-03-26T15:52:16.251Z"
 last_activity: 2026-03-26
 progress:
   total_phases: 10
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 13
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # Project State: FlawChess
@@ -68,6 +68,8 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [Phase 29]: totalGames and matchedCount both use gamesData.matched_count — EndgameGamesResponse has no separate total_games field (games already scoped by category)
 - [Phase 31-01]: endgame_class backfill uses CASE on material_signature regex with mixed check FIRST to match Python classify_endgame_class logic
 - [Phase 31-01]: chunk_size reduced 1900->1700 for 19-column asyncpg safety margin; Float(24)/REAL alter_column noise removed (semantically equivalent in PostgreSQL)
+- [Phase 31-02]: ENDGAME_PLY_THRESHOLD = 6: games must spend 3+ full moves in a class to count — filters tactical transitions
+- [Phase 31-02]: endgame_games counts (game, class) combinations not unique games — intentional per D-02
 
 ### Critical v1.5 Constraints
 

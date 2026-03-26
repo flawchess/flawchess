@@ -239,8 +239,8 @@ Plans:
   3. Games with fewer than 6 plies in an endgame class are excluded from that category
   4. Conversion/recovery uses material_imbalance at the first ply of each endgame class span
   5. No frontend changes — same API response shape, same Endgames tab UI
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 31-01-PLAN.md — Schema migration (endgame_class column + backfill + index), IntEnum mapping, import pipeline wiring, chunk_size update
-- [ ] 31-02-PLAN.md — Repository + service redesign for per-position multi-class grouping, test updates
+- [x] 31-02-PLAN.md — Repository + service redesign for per-position multi-class grouping, test updates
