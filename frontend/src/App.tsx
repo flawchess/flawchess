@@ -7,7 +7,7 @@ import { queryClient } from '@/lib/queryClient';
 import { Toaster } from '@/components/ui/sonner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon } from 'lucide-react';
+import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon, TrophyIcon } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
@@ -20,6 +20,7 @@ import { HomePage } from '@/pages/Home';
 import { ImportPage } from '@/pages/Import';
 import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
 import { OpeningsPage } from '@/pages/Openings';
+import { EndgamesPage } from '@/pages/Endgames';
 import { GlobalStatsPage } from '@/pages/GlobalStats';
 import { PrivacyPage } from '@/pages/Privacy';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
@@ -43,27 +44,30 @@ function ImportJobWatcher({ jobId, onDone }: { jobId: string; onDone: (jobId: st
 const NAV_ITEMS = [
   { to: '/import', label: 'Import', Icon: DownloadIcon },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
+  { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
   { to: '/global-stats', label: 'Statistics', Icon: BarChart3Icon },
 ] as const;
 
 const BOTTOM_NAV_ITEMS = [
   { to: '/import', label: 'Import', Icon: DownloadIcon },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
+  { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
   { to: '/global-stats', label: 'Statistics', Icon: BarChart3Icon },
 ] as const;
 
 const ROUTE_TITLES: Record<string, string> = {
   '/import': 'Import',
   '/openings': 'Openings',
+  '/endgames': 'Endgames',
   '/global-stats': 'Statistics',
 };
 
 // ─── Active route helper ───────────────────────────────────────────────────────
 
 function isActive(to: string, pathname: string): boolean {
-  return to === '/openings'
-    ? pathname.startsWith('/openings')
-    : pathname === to;
+  if (to === '/openings') return pathname.startsWith('/openings');
+  if (to === '/endgames') return pathname.startsWith('/endgames');
+  return pathname === to;
 }
 
 // ─── Nav header (desktop) ─────────────────────────────────────────────────────
@@ -231,6 +235,7 @@ function ProtectedLayout() {
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const isOpeningsRoute = location.pathname.startsWith('/openings');
+  const isEndgamesRoute = location.pathname.startsWith('/endgames');
 
   if (!token) {
     return <Navigate to="/login" replace />;
@@ -238,7 +243,7 @@ function ProtectedLayout() {
   return (
     <>
       <NavHeader />
-      {!isOpeningsRoute && <MobileHeader />}
+      {!isOpeningsRoute && !isEndgamesRoute && <MobileHeader />}
       <main className="pb-16 sm:pb-0">
         <Outlet />
       </main>
@@ -324,6 +329,7 @@ function AppRoutes() {
         <Route element={<ProtectedLayout />}>
           <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />
           <Route path="/openings/*" element={<OpeningsPage />} />
+          <Route path="/endgames/*" element={<EndgamesPage />} />
           <Route path="/rating" element={<Navigate to="/global-stats" replace />} />
           <Route path="/global-stats" element={<GlobalStatsPage />} />
         </Route>
