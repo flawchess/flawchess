@@ -22,6 +22,8 @@ interface ConvRecovDataPoint {
   label: string;
   conversion_pct: number;
   recovery_pct: number;
+  conversion_games: number;
+  recovery_games: number;
 }
 
 interface EndgameConvRecovChartProps {
@@ -35,6 +37,8 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
       label: c.label,
       conversion_pct: c.conversion.conversion_pct,
       recovery_pct: c.conversion.recovery_pct,
+      conversion_games: c.conversion.conversion_games,
+      recovery_games: c.conversion.recovery_games,
     }));
 
   return (
@@ -81,10 +85,10 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
                   <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
                     <div className="font-medium">{d.label}</div>
                     <div style={{ color: chartConfig.conversion_pct.color }}>
-                      Conversion: {d.conversion_pct.toFixed(1)}%
+                      Conversion: {d.conversion_pct.toFixed(1)}% ({d.conversion_games} games)
                     </div>
                     <div style={{ color: chartConfig.recovery_pct.color }}>
-                      Recovery: {d.recovery_pct.toFixed(1)}%
+                      Recovery: {d.recovery_pct.toFixed(1)}% ({d.recovery_games} games)
                     </div>
                   </div>
                 );
