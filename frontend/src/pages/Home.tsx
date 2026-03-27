@@ -23,7 +23,7 @@ const FEATURES: {
   slug: string;
   icon: LucideIcon;
   heading: string;
-  desc: string;
+  desc: string | string[];
   screenshot: { src: string; alt: string };
   imagePosition: 'left' | 'right';
 }[] = [
@@ -31,7 +31,11 @@ const FEATURES: {
     slug: 'opening-explorer',
     icon: ArrowRightLeft,
     heading: 'Interactive Opening Explorer',
-    desc: "Step through any opening and see your win/draw/loss rate for every move you\u2019ve played. Scout your opponents\u2019 weaknesses and tendencies before a match.",
+    desc: [
+      "Step through any opening and see your win/draw/loss rate for every move you\u2019ve played.",
+      "Scout your opponents\u2019 weaknesses and tendencies before a match.",
+      "Discover which moves you struggle against and which traps and gambits work for you.",
+    ],
     screenshot: { src: '/screenshots/opening-explorer.png', alt: 'Board with move explorer showing win/draw/loss bars per candidate move' },
     imagePosition: 'right',
   },
@@ -39,23 +43,37 @@ const FEATURES: {
     slug: 'opening-comparison',
     icon: Target,
     heading: 'Opening Comparison and Tracking',
-    desc: 'Discover which moves you struggle against, which traps and gambits work for you, and track how your opening repertoire performs over time.',
+    desc: [
+        'Bookmark your favorite openings and compare their performance.',
+        'Find out how your opening study impacts your win rate over time.',
+        'Use the filters to see which openings work best for which time controls.'
+
+    ],
+
     screenshot: { src: '/screenshots/opening-comparison.png', alt: 'Win rate trends over time for multiple openings' },
     imagePosition: 'left',
   },
   {
     slug: 'system-openings',
     icon: Swords,
-    heading: 'System Opening Grouping',
-    desc: "Analyze your performance with system openings like the London, where opponents respond in different ways. Group all variations under one position.",
+    heading: 'System Opening Filtering',
+    desc: [
+        "You play the London, but your analysis tool scatters your games across 5 different opening names.",
+        "FlawChess lets you filter by your pieces only, ignoring your opponent\u2019s responses.",
+        "Calculate win/draw/loss rates for your system openings across all variations."
+    ],
     screenshot: { src: '/screenshots/system-openings.png', alt: 'Position bookmarks grouping system opening variations' },
     imagePosition: 'right',
   },
   {
     slug: 'endgame-analysis',
     icon: BarChart2,
-    heading: 'Endgame Analysis',
-    desc: 'Track your win/draw/loss rates by endgame type \u2014 rook, minor piece, pawn, queen, and more. See where you convert material advantages and where you recover from deficits.',
+    heading: 'Endgame Statistics',
+    desc: [
+        'Measure your endgame performance, conversion, and recovery ability.',
+        'Track your win/draw/loss rates by endgame type \u2014 rook, minor piece, pawn, queen, and more.',
+        'Find out for each endgame type how often you convert material advantages and recover from deficits.',
+    ],
     screenshot: { src: '/screenshots/endgame-analysis.png', alt: 'Endgame analytics showing WDL rates by endgame category' },
     imagePosition: 'left',
   },
@@ -63,7 +81,10 @@ const FEATURES: {
     slug: 'cross-platform',
     icon: Layers,
     heading: 'Cross-Platform with Powerful Filters',
-    desc: "Import games from chess.com and lichess into one place. Slice your analysis by color, time control, recency, and more to find exactly the patterns you\u2019re looking for.",
+    desc: [
+        "Import games from chess.com and lichess into one place.",
+        "Slice your analysis by color, time control, recency, and more to find exactly the patterns you\u2019re looking for."
+    ],
     screenshot: { src: '/screenshots/cross-platform.png', alt: 'Import page with chess.com and lichess plus filter controls' },
     imagePosition: 'right',
   },
@@ -109,7 +130,16 @@ export function HomePageContent() {
             Mobile friendly
           </span>
           <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Endgame analytics
+            Opening explorer
+          </span>
+          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
+            Progress tracking
+          </span>
+          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
+            Endgame stats
+          </span>
+          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
+            Cross-platform
           </span>
         </div>
       </section>
@@ -129,7 +159,13 @@ export function HomePageContent() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold">{heading}</h2>
-                  <p className="mt-3 text-base leading-relaxed text-muted-foreground">{desc}</p>
+                  {Array.isArray(desc) ? (
+                    <ul className="mt-3 list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
+                      {desc.map((item, i) => <li key={i}>{item}</li>)}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-base leading-relaxed text-muted-foreground">{desc}</p>
+                  )}
                 </div>
               </div>
             </div>
