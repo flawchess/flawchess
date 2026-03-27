@@ -200,10 +200,13 @@ async def get_time_series(
     Partial windows (games 1 to ROLLING_WINDOW_SIZE-1) are included from the start.
     """
     cutoff = recency_cutoff(request.recency)
+    cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
 
     series: list[BookmarkTimeSeries] = []
     for bkm in request.bookmarks:
         hash_column = HASH_COLUMN_MAP[bkm.match_side]
+        # Fetch all games (no recency filter) so rolling windows are pre-filled.
+        # Other filters (time_control, platform, etc.) still applied.
         rows = await query_time_series(
             session,
             user_id,
@@ -214,7 +217,7 @@ async def get_time_series(
             platform=request.platform,
             rated=request.rated,
             opponent_type=request.opponent_type,
-            recency_cutoff=cutoff,
+            recency_cutoff=None,
         )
 
         # Build rolling-window datapoints from chronological per-game rows.
@@ -227,7 +230,7 @@ async def get_time_series(
             outcome = derive_user_result(result, user_color)
             results_so_far.append(outcome)
 
-            # Accumulate overall totals
+            # Accumulate overall totals (may be narrowed below by recency filter)
             if outcome == "win":
                 total_wins += 1
             elif outcome == "draw":
@@ -249,6 +252,21 @@ async def get_time_series(
                     window_size=ROLLING_WINDOW_SIZE,
                 )
             )
+
+        # Filter output to recency window (rolling window was computed over full history)
+        if cutoff_str:
+            data = [pt for pt in data if pt.date >= cutoff_str]
+            # Recompute totals from filtered period only
+            total_wins = total_draws = total_losses = 0
+            for played_at, result, user_color in rows:
+                if played_at.strftime("%Y-%m-%d") >= cutoff_str:
+                    outcome = derive_user_result(result, user_color)
+                    if outcome == "win":
+                        total_wins += 1
+                    elif outcome == "draw":
+                        total_draws += 1
+                    else:
+                        total_losses += 1
 
         total_games = total_wins + total_draws + total_losses
         series.append(
