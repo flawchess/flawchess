@@ -1,35 +1,34 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.4
-milestone_name: Improvements
-status: Ready to execute
-last_updated: "2026-03-27T23:09:34Z"
-last_activity: 2026-03-27
+milestone: v1.5
+milestone_name: Game Statistics & Endgame Analysis
+status: Complete
+last_updated: "2026-03-28T00:00:00Z"
+last_activity: 2026-03-28
 progress:
   total_phases: 11
-  completed_phases: 7
+  completed_phases: 11
   total_plans: 19
-  completed_plans: 18
+  completed_plans: 19
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 33 (homepage-readme-seo-update) — EXECUTING
-Plan: 3 of 3
+Milestone v1.5 complete. All phases shipped.
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-03-23)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Game Statistics & Endgame Analysis (v1.5)
+Milestone v1.5 shipped: Game Statistics & Endgame Analysis
 
 ## Phase Progress
 
 | Phase | Goal | Status |
 |-------|------|--------|
-| 33. Homepage, README & SEO Update | Update homepage content, README, and SEO metadata | Not started |
+| 33. Homepage, README & SEO Update | Update homepage content, README, and SEO metadata | Complete |
 
 ## Key Context
 
@@ -135,4 +134,4 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260328-04a | Update SEO meta tags, README, and CLAUDE.md to match 5-feature homepage | 2026-03-27 | d039ba6 | [260328-04a-update-seo-readme-and-claude-md-based-on](./quick/260328-04a-update-seo-readme-and-claude-md-based-on/) |
 
 ---
-Last activity: 2026-03-27 - Completed quick task 260328-04a: Update SEO, README, and CLAUDE.md to match homepage features
+Last activity: 2026-03-28 - Milestone v1.5 complete. Phase 33 shipped, deployed to production.

@@ -7,7 +7,7 @@
 - ✅ **v1.2 Mobile & PWA** — Phases 17-19 (shipped 2024-03-21)
 - ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
 - **v1.4 Improvements** — Phases 24-25
-- **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33
+- ✅ **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33 (shipped 2026-03-28)
 
 ## Phases
 
@@ -78,7 +78,7 @@
 - [x] **Phase 27: Import Wiring & Backfill** — Wire classifier into live import pipeline and backfill all existing game_positions rows (completed 2026-03-24)
 - [x] **Phase 28: Engine Analysis Import** — Import chess.com accuracy scores and lichess per-move evals during game import (completed 2026-03-25)
 - [x] **Phase 29: Endgame Analytics** — Backend API + frontend Endgames tab delivering W/D/L by endgame category and material conversion/recovery stats (completed 2026-03-26)
-- [ ] **Phase 33: Homepage, README & SEO Update** — Update homepage content, README, and SEO metadata to showcase new statistics features introduced in v1.5
+- [x] **Phase 33: Homepage, README & SEO Update** — Update homepage content, README, and SEO metadata to showcase new statistics features introduced in v1.5 (completed 2026-03-28)
 
 ## Phase Details
 
@@ -206,7 +206,7 @@ Plans:
 | 27.1. Optimize game_positions columns | v1.5 | N/A | Complete | 2026-03-26 |
 | 31. Endgame classification redesign | v1.5 | 2/2 | Complete | 2026-03-26 |
 | 32. Endgame Performance Charts | v1.5 | 3/3 | Complete | 2026-03-27 |
-| 33. Homepage, README & SEO Update | v1.5 | 2/3 | In Progress|  |
+| 33. Homepage, README & SEO Update | v1.5 | 3/3 | Complete | 2026-03-28 |
 
 ### Phase 31: Endgame classification redesign: per-position instead of per-game
 
@@ -253,12 +253,12 @@ Plans:
   1. Homepage highlights endgame analytics and engine analysis features
   2. README accurately describes the current feature set
   3. SEO metadata (title, description, OG tags) reflects the new capabilities
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 33-01-PLAN.md — Restructure homepage FEATURES array (6 to 5 sections), simplify layout, update hero and FAQ
 - [x] 33-02-PLAN.md — Update SEO meta tags in index.html and README feature list
-- [ ] 33-03-PLAN.md — Capture fresh screenshots and remove old screenshot files
+- [x] 33-03-PLAN.md — Fresh screenshots, under-construction callout, icon updates, bullet-point descriptions
 
 ## Backlog
 
