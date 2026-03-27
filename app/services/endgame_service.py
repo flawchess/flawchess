@@ -568,13 +568,18 @@ async def get_endgame_timeline(
 
     Steps:
     1. Convert recency to cutoff datetime.
-    2. Fetch endgame rows, non-endgame rows, and per-type rows concurrently.
-    3. Compute rolling-window series for overall (endgame + non-endgame) and per type.
-    4. Merge overall series by date (all unique dates from both series).
-    5. Return EndgameTimelineResponse.
+    2. Fetch ALL rows (no recency filter) so the rolling window is pre-filled
+       with games before the cutoff — avoids cold-start when filtering recent games.
+    3. Compute rolling-window series over full history.
+    4. Filter output to only emit points on or after the recency cutoff.
+    5. Merge overall series by date, build per-type series.
+    6. Return EndgameTimelineResponse.
     """
     cutoff = recency_cutoff(recency)
+    cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
 
+    # Fetch all games (no recency filter) so rolling windows are pre-filled.
+    # Other filters (time_control, platform, etc.) still applied.
     endgame_rows, non_endgame_rows, per_type_rows = await query_endgame_timeline_rows(
         session,
         user_id=user_id,
@@ -582,12 +587,15 @@ async def get_endgame_timeline(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        recency_cutoff=None,
     )
 
-    # Compute rolling series for both overall groups
+    # Compute rolling series over full history, then filter to recency window
     endgame_series = _compute_rolling_series(endgame_rows, window)
     non_endgame_series = _compute_rolling_series(non_endgame_rows, window)
+    if cutoff_str:
+        endgame_series = [pt for pt in endgame_series if pt["date"] >= cutoff_str]
+        non_endgame_series = [pt for pt in non_endgame_series if pt["date"] >= cutoff_str]
 
     # Merge overall series by date. For each date that appears in either series,
     # find the latest point from each series up to that date.
@@ -637,6 +645,7 @@ async def get_endgame_timeline(
                 window_size=pt["window_size"],
             )
             for pt in series
+            if not cutoff_str or pt["date"] >= cutoff_str
         ]
 
     return EndgameTimelineResponse(overall=overall, per_type=per_type, window=window)
@@ -655,29 +664,28 @@ def _compute_conv_recov_rolling_series(
         rate_fn: function taking a list of outcome strings ("win"/"draw"/"loss")
                  and returning a float rate (0.0-1.0).
 
-    Returns one ConvRecovTimelinePoint per game once the window is full.
+    Partial windows (fewer games than `window`) are included from the start.
     """
     if not rows:
         return []
 
     outcomes: list[Literal["win", "draw", "loss"]] = []
-    dates: list[str] = []
     points: list[ConvRecovTimelinePoint] = []
 
     for played_at, result, user_color, *_rest in rows:
         outcome = derive_user_result(result, user_color)
         outcomes.append(outcome)
-        dates.append(played_at.strftime("%Y-%m-%d") if hasattr(played_at, "strftime") else str(played_at))
+        date = played_at.strftime("%Y-%m-%d") if hasattr(played_at, "strftime") else str(played_at)
 
-        if len(outcomes) >= window:
-            trailing = outcomes[-window:]
-            rate = rate_fn(trailing)
-            points.append(ConvRecovTimelinePoint(
-                date=dates[-1],
-                rate=round(rate, 4),
-                game_count=len(trailing),
-                window_size=window,
-            ))
+        # Rolling window: trailing `window` results (partial windows included)
+        trailing = outcomes[-window:]
+        rate = rate_fn(trailing)
+        points.append(ConvRecovTimelinePoint(
+            date=date,
+            rate=round(rate, 4),
+            game_count=len(trailing),
+            window_size=window,
+        ))
 
     return points
 
@@ -698,8 +706,14 @@ async def get_conv_recov_timeline(
     with >= _MATERIAL_ADVANTAGE_THRESHOLD cp advantage.
     Recovery: save rate (win+draw) over trailing `window` games where user entered
     endgame with >= _MATERIAL_ADVANTAGE_THRESHOLD cp disadvantage.
+
+    Fetches all games (no recency filter) so the rolling window is pre-filled
+    with games before the cutoff. Output points are filtered to recency window.
     """
     cutoff = recency_cutoff(recency)
+    cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
+
+    # Fetch all games (no recency filter) so rolling windows are pre-filled
     rows = await query_conv_recov_timeline_rows(
         session,
         user_id=user_id,
@@ -707,7 +721,7 @@ async def get_conv_recov_timeline(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        recency_cutoff=None,
     )
 
     # Split by material advantage direction
@@ -727,6 +741,11 @@ async def get_conv_recov_timeline(
         window,
         lambda outcomes: (outcomes.count("win") + outcomes.count("draw")) / len(outcomes),
     )
+
+    # Filter output to recency window
+    if cutoff_str:
+        conversion_series = [pt for pt in conversion_series if pt.date >= cutoff_str]
+        recovery_series = [pt for pt in recovery_series if pt.date >= cutoff_str]
 
     return ConvRecovTimelineResponse(
         conversion=conversion_series,

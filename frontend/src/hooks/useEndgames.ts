@@ -22,7 +22,9 @@ export function useEndgameStats(filters: FilterState) {
   });
 }
 
-export function useEndgameTimeline(filters: FilterState, window = 50) {
+const DEFAULT_TIMELINE_WINDOW = 100;
+
+export function useEndgameTimeline(filters: FilterState, window = DEFAULT_TIMELINE_WINDOW) {
   const params = buildEndgameParams(filters);
   return useQuery({
     queryKey: ['endgameTimeline', params, window],
@@ -57,7 +59,7 @@ export function useEndgamePerformance(filters: FilterState) {
   });
 }
 
-const DEFAULT_CONV_RECOV_WINDOW = 50;
+const DEFAULT_CONV_RECOV_WINDOW = 100;
 
 export function useEndgameConvRecovTimeline(filters: FilterState, window = DEFAULT_CONV_RECOV_WINDOW) {
   const params = buildEndgameParams(filters);

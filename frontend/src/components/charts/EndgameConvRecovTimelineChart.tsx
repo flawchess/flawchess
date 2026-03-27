@@ -109,7 +109,6 @@ export function EndgameConvRecovTimelineChart({ data }: EndgameConvRecovTimeline
                     .map((item) => {
                       const cfg = chartConfig[item.dataKey as keyof typeof chartConfig];
                       const gameCount = item.payload[`${item.dataKey}_game_count`] as number;
-                      const windowSize = item.payload[`${item.dataKey}_window_size`] as number;
                       return (
                         <div key={item.dataKey} className="flex items-center gap-1.5">
                           <div
@@ -119,7 +118,7 @@ export function EndgameConvRecovTimelineChart({ data }: EndgameConvRecovTimeline
                           <span>
                             {cfg?.label ?? item.dataKey}: {Math.round((item.value as number) * 100)}%
                             <span className="text-muted-foreground ml-1">
-                              ({gameCount}/{windowSize} games)
+                              (past {gameCount} games)
                             </span>
                           </span>
                         </div>

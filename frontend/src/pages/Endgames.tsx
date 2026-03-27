@@ -99,6 +99,9 @@ export function EndgamesPage() {
           {perfData && perfData.endgame_wdl.total > 0 && (
             <EndgamePerformanceSection data={perfData} />
           )}
+          {convRecovData && (convRecovData.conversion.length > 0 || convRecovData.recovery.length > 0) && (
+            <EndgameConvRecovTimelineChart data={convRecovData} />
+          )}
           <EndgameWDLChart
             categories={statsData.categories}
             onCategorySelect={handleCategorySelect}
@@ -108,9 +111,6 @@ export function EndgamesPage() {
           )}
           {timelineData && timelineData.overall.length > 0 && (
             <EndgameTimelineChart data={timelineData} />
-          )}
-          {convRecovData && (convRecovData.conversion.length > 0 || convRecovData.recovery.length > 0) && (
-            <EndgameConvRecovTimelineChart data={convRecovData} />
           )}
         </>
       ) : statsData && statsData.categories.length === 0 ? (

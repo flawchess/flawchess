@@ -150,8 +150,8 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
                           />
                           <span>
                             {cfg?.label ?? item.dataKey}: {Math.round((item.value as number) * 100)}%
-                            {gameCount !== undefined && windowSize !== undefined && (
-                              <span className="text-muted-foreground ml-1">({gameCount}/{windowSize} games)</span>
+                            {gameCount !== undefined && (
+                              <span className="text-muted-foreground ml-1">(past {gameCount} games)</span>
                             )}
                           </span>
                         </div>
