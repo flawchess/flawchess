@@ -206,7 +206,7 @@ Plans:
 | 27.1. Optimize game_positions columns | v1.5 | N/A | Complete | 2026-03-26 |
 | 31. Endgame classification redesign | v1.5 | 2/2 | Complete | 2026-03-26 |
 | 32. Endgame Performance Charts | v1.5 | 3/3 | Complete | 2026-03-27 |
-| 33. Homepage, README & SEO Update | v1.5 | 1/3 | In Progress|  |
+| 33. Homepage, README & SEO Update | v1.5 | 2/3 | In Progress|  |
 
 ### Phase 31: Endgame classification redesign: per-position instead of per-game
 
@@ -253,10 +253,10 @@ Plans:
   1. Homepage highlights endgame analytics and engine analysis features
   2. README accurately describes the current feature set
   3. SEO metadata (title, description, OG tags) reflects the new capabilities
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
-- [ ] 33-01-PLAN.md — Restructure homepage FEATURES array (6 to 5 sections), simplify layout, update hero and FAQ
+- [x] 33-01-PLAN.md — Restructure homepage FEATURES array (6 to 5 sections), simplify layout, update hero and FAQ
 - [x] 33-02-PLAN.md — Update SEO meta tags in index.html and README feature list
 - [ ] 33-03-PLAN.md — Capture fresh screenshots and remove old screenshot files
 

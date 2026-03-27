@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
 status: Ready to execute
-last_updated: "2026-03-27T18:38:37.729Z"
+last_updated: "2026-03-27T18:39:55.831Z"
 last_activity: 2026-03-27
 progress:
   total_phases: 11
   completed_phases: 7
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
 ---
 
 # Project State: FlawChess
@@ -17,7 +17,7 @@ progress:
 ## Current Position
 
 Phase: 33 (homepage-readme-seo-update) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Project Reference
 
@@ -69,6 +69,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [Phase 31-02]: endgame_games counts (game, class) combinations not unique games — intentional per D-02
 - [Phase 33]: Title changed to 'Chess Analysis for Human Players' to reflect v1.5 scope
 - [Phase 33]: README broadened to include endgame analytics, Zobrist hash mention, and updated screenshot reference
+- [Phase 33]: orientation field removed from FEATURES type — all homepage sections now landscape with fixed 2fr/3fr grid ratio
 
 ### Critical v1.5 Constraints
 
