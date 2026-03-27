@@ -7,7 +7,7 @@
 - ✅ **v1.2 Mobile & PWA** — Phases 17-19 (shipped 2024-03-21)
 - ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
 - **v1.4 Improvements** — Phases 24-25
-- **v1.5 Game Statistics & Endgame Analysis** — Phases 26-30
+- **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33
 
 ## Phases
 
@@ -78,8 +78,7 @@
 - [x] **Phase 27: Import Wiring & Backfill** — Wire classifier into live import pipeline and backfill all existing game_positions rows (completed 2026-03-24)
 - [x] **Phase 28: Engine Analysis Import** — Import chess.com accuracy scores and lichess per-move evals during game import (completed 2026-03-25)
 - [x] **Phase 29: Endgame Analytics** — Backend API + frontend Endgames tab delivering W/D/L by endgame category and material conversion/recovery stats (completed 2026-03-26)
-- [ ] **Phase 30: Homepage, README & SEO Update** — Update homepage content, README, and SEO metadata to showcase new statistics features introduced in v1.5
-- [x] **Phase 32: Endgame Performance Charts** — Endgame vs non-endgame WDL comparison, strength gauge, and rolling-window timeline charts per endgame type (completed 2026-03-26)
+- [ ] **Phase 33: Homepage, README & SEO Update** — Update homepage content, README, and SEO metadata to showcase new statistics features introduced in v1.5
 
 ## Phase Details
 
@@ -120,13 +119,11 @@
 
 ### Phase 27.1: Optimize game_positions column types (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** Optimize game_positions with piece_count, backrank_sparse, and mixedness columns for endgame classification — implemented via quick tasks 260326-jo8 (piece_count + Lichess endgame threshold) and 260326-k94 (backrank_sparse + mixedness per Lichess Divider.scala algorithm)
+**Requirements**: N/A (implemented via quick tasks)
 **Depends on:** Phase 27
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (run /gsd:plan-phase 27.1 to break down)
+**Status:** Complete (2026-03-26, via quick tasks — no formal plans)
+**Plans:** 0 formal plans
 
 ### Phase 28: Engine Analysis Import
 **Goal**: The system imports available engine analysis data (chess.com accuracy scores, lichess per-move evals) during game import, storing them for future display
@@ -136,10 +133,10 @@ Plans:
   1. A lichess game that has prior computer analysis imports with per-move eval values populated in the database
   2. A chess.com game with an accuracy score imports with that score stored; a game without accuracy data imports without error and stores NULL
   3. A game with no analysis data on either platform imports cleanly with all engine fields NULL and no error logged
-**Plans:** 3/3 plans complete
+**Plans:** 2/3 plans complete (28-03 deferred — admin re-import script for backfilling existing games)
   - [x] 28-01-PLAN.md — Schema migration, model updates, normalization accuracy extraction, lichess evals param, chunk_size fix
   - [x] 28-02-PLAN.md — Wire eval extraction into _flush_batch import pipeline
-  - [ ] 28-03-PLAN.md — Admin re-import script for backfilling existing games
+  - [ ] 28-03-PLAN.md — Admin re-import script for backfilling existing games (deferred)
 
 ### Phase 28.1: Import lichess analysis metrics (INSERTED)
 
@@ -203,38 +200,20 @@ Plans:
 | 25. Password Reset | v1.4 | 0/0 | Not started | — |
 | 26. Position Classifier & Schema | v1.5 | 2/2 | Complete    | 2026-03-23 |
 | 27. Import Wiring & Backfill | v1.5 | 2/2 | Complete    | 2026-03-24 |
-| 28. Engine Analysis Import | v1.5 | 2/3 | Complete    | 2026-03-25 |
-| 28.1. Import lichess analysis metrics | v1.5 | 1/1 | Complete    | 2026-03-26 |
-| 29. Endgame Analytics | v1.5 | 3/3 | Complete   | 2026-03-26 |
-| 30. Homepage, README & SEO Update | v1.5 | 0/0 | Not started | — |
-| 32. Endgame Performance Charts | v1.5 | 3/3 | Complete   | 2026-03-26 |
-
-### Phase 30: Homepage, README & SEO Update
-**Goal**: Update homepage content, README, and SEO metadata to showcase the new statistics features (endgame analytics, engine analysis) introduced in milestone v1.5
-**Depends on**: Phase 29
-**Requirements**: TBD
-**Success Criteria** (what must be TRUE):
-  1. Homepage highlights endgame analytics and engine analysis features
-  2. README accurately describes the current feature set
-  3. SEO metadata (title, description, OG tags) reflects the new capabilities
-**Plans**: TBD
-
-## Backlog
-
-### Phase 999.1: Python Static Type Checker in CI (BACKLOG)
-
-**Goal:** Add a Python static type checker to the CI pipeline to catch type-level bugs (typos, bare `str` where `Literal` is needed, wrong function names) that ruff cannot detect. Evaluate [ty](https://docs.astral.sh/ty/) (from Astral, same team as ruff/uv) vs pyright vs mypy.
-**Requirements:** TBD
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
+| 28. Engine Analysis Import | v1.5 | 2/3 | Complete (03 deferred) | 2026-03-25 |
+| 28.1. Import lichess analysis metrics | v1.5 | 1/1 | Complete | 2026-03-26 |
+| 29. Endgame Analytics | v1.5 | 3/3 | Complete | 2026-03-26 |
+| 27.1. Optimize game_positions columns | v1.5 | N/A | Complete | 2026-03-26 |
+| 31. Endgame classification redesign | v1.5 | 2/2 | Complete | 2026-03-26 |
+| 32. Endgame Performance Charts | v1.5 | 3/3 | Complete | 2026-03-27 |
+| 33. Homepage, README & SEO Update | v1.5 | 0/0 | Not started | — |
 
 ### Phase 31: Endgame classification redesign: per-position instead of per-game
 
 **Goal:** Redesign endgame analytics from per-game single-transition-point to per-position classification, storing endgame_class on game_positions and enabling multi-class-per-game counting with a 6-ply minimum threshold
 **Requirements**: TBD
 **Depends on:** Phase 29
+**Status:** Complete (2026-03-26)
 **Success Criteria** (what must be TRUE):
   1. Every endgame position (piece_count <= 6) has a non-NULL endgame_class SmallInteger value
   2. A game passing through multiple endgame classes counts in each category it spent >= 6 plies in
@@ -252,6 +231,7 @@ Plans:
 **Goal:** Add endgame performance comparison charts: endgame vs non-endgame WDL, endgame strength gauge, and rolling-window timeline charts for overall and per-endgame-type win rates
 **Requirements**: PERF-01, PERF-02, PERF-03, PERF-04, PERF-05, PERF-06, PERF-07
 **Depends on:** Phase 31
+**Status:** Complete (2026-03-27)
 **Success Criteria** (what must be TRUE):
   1. "Endgame Performance" section shows WDL chart for games reaching endgame and a separate WDL chart for games that don't
   2. Endgame strength gauge compares endgame win rate against non-endgame win rate
@@ -264,3 +244,24 @@ Plans:
 - [x] 32-01-PLAN.md — Backend schemas, repository queries, service functions, router endpoints, and tests
 - [x] 32-02-PLAN.md — Frontend performance section (WDL bars, gauges) and conversion/recovery bar chart
 - [x] 32-03-PLAN.md — Frontend timeline charts and visual verification
+
+### Phase 33: Homepage, README & SEO Update
+**Goal**: Update homepage content, README, and SEO metadata to showcase the new statistics features (endgame analytics, engine analysis) introduced in milestone v1.5
+**Depends on**: Phase 32
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+  1. Homepage highlights endgame analytics and engine analysis features
+  2. README accurately describes the current feature set
+  3. SEO metadata (title, description, OG tags) reflects the new capabilities
+**Plans**: TBD
+
+## Backlog
+
+### Phase 999.1: Python Static Type Checker in CI (BACKLOG)
+
+**Goal:** Add a Python static type checker to the CI pipeline to catch type-level bugs (typos, bare `str` where `Literal` is needed, wrong function names) that ruff cannot detect. Evaluate [ty](https://docs.astral.sh/ty/) (from Astral, same team as ruff/uv) vs pyright vs mypy.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
