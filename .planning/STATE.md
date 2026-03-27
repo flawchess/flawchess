@@ -2,22 +2,22 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
-status: Executing Phase 32
-last_updated: "2026-03-26T20:10:00.000Z"
-last_activity: 2026-03-26
+status: Ready to execute
+last_updated: "2026-03-27T23:09:34Z"
+last_activity: 2026-03-27
 progress:
   total_phases: 11
-  completed_phases: 6
-  total_plans: 16
-  completed_plans: 14
+  completed_phases: 7
+  total_plans: 19
+  completed_plans: 18
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 32 (endgame-performance-charts) — EXECUTING
-Plan: 2 of 3
+Phase: 33 (homepage-readme-seo-update) — EXECUTING
+Plan: 3 of 3
 
 ## Project Reference
 
@@ -29,10 +29,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 
 | Phase | Goal | Status |
 |-------|------|--------|
-| 26. Position Classifier & Schema | Classifier + 4-column migration | Not started |
-| 27. Import Wiring & Backfill | Wire classifier + backfill existing rows | Not started |
-| 28. Endgame Analytics | Backend API + Endgames tab frontend | Not started |
-| 29. Engine Analysis Import | chess.com accuracy + lichess per-move evals | Not started |
+| 33. Homepage, README & SEO Update | Update homepage content, README, and SEO metadata | Not started |
 
 ## Key Context
 
@@ -70,6 +67,9 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [Phase 31-01]: chunk_size reduced 1900->1700 for 19-column asyncpg safety margin; Float(24)/REAL alter_column noise removed (semantically equivalent in PostgreSQL)
 - [Phase 31-02]: ENDGAME_PLY_THRESHOLD = 6: games must spend 3+ full moves in a class to count — filters tactical transitions
 - [Phase 31-02]: endgame_games counts (game, class) combinations not unique games — intentional per D-02
+- [Phase 33]: Title changed to 'Chess Analysis for Human Players' to reflect v1.5 scope
+- [Phase 33]: README broadened to include endgame analytics, Zobrist hash mention, and updated screenshot reference
+- [Phase 33]: orientation field removed from FEATURES type — all homepage sections now landscape with fixed 2fr/3fr grid ratio
 
 ### Critical v1.5 Constraints
 
@@ -90,6 +90,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - Phase 28.1 inserted after Phase 28: Import lichess analysis metrics (URGENT)
 - Phase 31 added: Endgame classification redesign — per-position instead of per-game
 - Phase 32 added: Endgame Performance Charts — endgame vs non-endgame WDL, strength gauge, rolling-window timelines
+- Phase 30 renumbered to Phase 33: Homepage, README & SEO Update (was skipped during v1.5 execution; phases 31 and 32 were inserted before it)
 
 ### Blockers/Concerns
 
@@ -124,11 +125,14 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260327-de0 | Centralize WDL/gauge/glass color constants in theme.ts; add CLAUDE.md theme convention rule | 2026-03-27 | 8b878d4 | [260327-de0-theme-management-centralize-wdl-danger-w](./quick/260327-de0-theme-management-centralize-wdl-danger-w/) |
 | 260327-egu | Optimize gauge chart endpoint performance | 2026-03-27 | ddd4b54 | [260327-egu-optimize-gauge-chart-endpoint-performanc](./quick/260327-egu-optimize-gauge-chart-endpoint-performanc/) |
 | 260327-f0o | Make import resilient to server restarts | 2026-03-27 | 9a0012a | [260327-f0o-make-import-resilient-to-server-restarts](./quick/260327-f0o-make-import-resilient-to-server-restarts/) |
-
 | 260327-gyz | Add conversion/recovery timeline chart to endgame statistics | 2026-03-27 | 97d2116 | [260327-gyz-add-conversion-recovery-timeline-chart-t](./quick/260327-gyz-add-conversion-recovery-timeline-chart-t/) |
 | 260327-jfd | Put a beta label in the Endgame statistics chart | 2026-03-27 | 5264d73 | [260327-jfd-put-a-beta-label-in-the-endgame-statisti](./quick/260327-jfd-put-a-beta-label-in-the-endgame-statisti/) |
 | 260327-mjt | Sticky filter dropdowns for Endgame and Statistics pages | 2026-03-27 | 22ceb5d | [260327-mjt-sticky-filter-dropdowns-endgame-and-stat](./quick/260327-mjt-sticky-filter-dropdowns-endgame-and-stat/) |
 | 260327-nbs | Show game count in conversion recovery chart tooltip | 2026-03-27 | 92f2c68 | [260327-nbs-show-game-count-in-conversion-recovery-c](./quick/260327-nbs-show-game-count-in-conversion-recovery-c/) |
+| 260327-oxo | Finish Phase 32 and clean up roadmap — renumber Phase 30 to 33, update STATE.md to v1.5 | 2026-03-27 | 74a59cc | [260327-oxo-finish-phase-32-and-clean-up-roadmap-ren](./quick/260327-oxo-finish-phase-32-and-clean-up-roadmap-ren/) |
+| 260327-q8j | Expand rolling window to include all games when recency filter is set in Win Rate Over Time chart | 2026-03-27 | b2b31a0 | [260327-q8j-expand-rolling-window-to-include-all-gam](./quick/260327-q8j-expand-rolling-window-to-include-all-gam/) |
+| 260327-tun | In the Moves subtab of the Openings, show moves below the 10 game threshold as muted | 2026-03-27 | c9d28e4 | [260327-tun-in-the-moves-subtab-of-the-openings-show](./quick/260327-tun-in-the-moves-subtab-of-the-openings-show/) |
+| 260328-04a | Update SEO meta tags, README, and CLAUDE.md to match 5-feature homepage | 2026-03-27 | d039ba6 | [260328-04a-update-seo-readme-and-claude-md-based-on](./quick/260328-04a-update-seo-readme-and-claude-md-based-on/) |
 
 ---
-Last activity: 2026-03-27 - Completed quick task 260327-nbs: Show game count in conversion recovery chart
+Last activity: 2026-03-27 - Completed quick task 260328-04a: Update SEO, README, and CLAUDE.md to match homepage features

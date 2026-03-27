@@ -23,17 +23,17 @@
 
 ## What is FlawChess?
 
-Analyze your opening positions by move, not just name. Import games from chess.com and lichess to discover where you really lose — which moves you struggle against, which traps and gambits work for you, and how your opening repertoire performs over time.
+A free, open-source chess analysis platform. Import games from chess.com and lichess to analyze your openings by position (not just name), track endgame performance by category, and find exactly where you win and lose. FlawChess matches positions via Zobrist hashes for precise, cross-platform analysis.
 
-![Board and Move Explorer](frontend/public/screenshots/board-and-move-explorer.png)
+![Opening Explorer](frontend/public/screenshots/opening-explorer.png)
 
 ## Features
 
-- **Interactive move explorer** — step through any opening and see your win/draw/loss rate for every move you've played
-- **Find weaknesses in your openings** — discover which moves you struggle against and which traps you fall for
-- **System opening analysis** — analyze your performance with system openings like the London, where opponents respond in different ways
-- **Cross-platform analysis** — import from chess.com and lichess into one place, analyze your complete history regardless of platform
-- **Powerful filters** — slice your games by color, time control, recency, and more to find exactly the patterns you're looking for
+- **Interactive opening explorer** — step through any opening and see your win/draw/loss rate for every move, scout opponents before a match, discover which moves you struggle against
+- **Opening comparison and tracking** — bookmark openings and compare their performance, track how your opening study impacts your win rate over time, filter by time control
+- **System opening filtering** — filter by your pieces only to analyze system openings like the London across all opponent variations
+- **Endgame analytics** — win/draw/loss rates by endgame type (rook, minor piece, pawn, queen, mixed), material conversion and recovery statistics, performance gauges and timelines
+- **Cross-platform import** — import from chess.com and lichess, sync new games, scout opponents by importing their games
 - **Mobile-friendly PWA** — installable on Android and iOS, optimized for touch
 - **Open source** — self-hostable, MIT licensed
 

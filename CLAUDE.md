@@ -10,19 +10,19 @@ Users import their games from chess.com and/or lichess and analyze win/draw/loss
 
 ### Key Features
 
-- **Interactive move explorer** — navigate positions on a chessboard and see WDL rates for each candidate move, based on the user's own game history
-- **Opponent scouting** — explore an opponent's opening weaknesses before a match
-- **Weakness detection** — find positions where the user's win rate drops off
-- **Powerful filters** — filter analysis by color (white/black), time control (bullet/blitz/rapid/classical), and recency
-- **System opening analysis** — analyze named opening systems (e.g. the London) across all games
-- **Cross-platform analysis** — combine chess.com and lichess games into a single unified dataset
+- **Interactive move explorer** — navigate positions on a chessboard and see WDL rates for each candidate move, scout opponents, detect weaknesses
+- **Opening comparison and tracking** — bookmark openings, compare performance, track win rate over time with filters
+- **System opening filtering** — filter by user's pieces only to analyze system openings (e.g. the London) across all opponent variations
+- **Endgame analytics** — WDL rates by endgame type, material conversion/recovery stats, performance gauges, rolling-window timelines
+- **Cross-platform analysis** — combine chess.com and lichess games, powerful filters (color, time control, recency)
 
 ### User Flow
 
 1. Sign up (free, no credit card)
 2. Import games from chess.com and/or lichess (background async import)
 3. Explore openings on the interactive board with WDL statistics
-4. Optionally scout opponents or bookmark positions
+4. Analyze endgame performance by type with conversion/recovery metrics
+5. Optionally scout opponents or bookmark positions
 
 ## Tech Stack
 

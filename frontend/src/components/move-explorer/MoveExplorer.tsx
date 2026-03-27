@@ -2,7 +2,7 @@ import { useState, useMemo, useRef } from 'react';
 import { Chess } from 'chess.js';
 import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { WDL_WIN, WDL_DRAW, WDL_LOSS } from '@/lib/theme';
+import { WDL_WIN, WDL_DRAW, WDL_LOSS, MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { cn } from '@/lib/utils';
 import type { NextMoveEntry } from '@/types/api';
@@ -95,9 +95,14 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
                 <span className="inline-flex items-center gap-1">
                   Move
                   <InfoPopover ariaLabel="Move arrows info" testId="move-arrows-info" side="top">
-                    These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings.
-                    <br /><br />
-                    On desktop, click a move to play it. On mobile, tap to highlight (shows the arrow on the board), then tap again to play.
+                    <div className="space-y-2">
+                      <p>
+                        These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings. Moves with fewer than 10 games have unreliable statistics and are shown as muted.
+                      </p>
+                      <p>
+                        On desktop, click a move to play it. On mobile, tap to highlight (shows the arrow on the board), then tap again to play.
+                      </p>
+                    </div>
                   </InfoPopover>
                 </span>
               </th>
@@ -134,6 +139,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover }:
   const [open, setOpen] = useState(false);
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
+  const isBelowThreshold = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
 
   const handleMouseEnter = () => {
     onMoveHover?.(entry.move_san);
@@ -157,6 +163,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover }:
             'cursor-pointer hover:bg-accent min-h-[44px]',
             selectedMove === entry.move_san && 'bg-accent',
           )}
+          style={isBelowThreshold ? { opacity: UNRELIABLE_OPACITY } : undefined}
           role="button"
           tabIndex={0}
           onClick={() => onRowClick(entry)}
