@@ -64,7 +64,7 @@ export function EndgameGauge({ value, maxValue = 100, label, zones = DEFAULT_GAU
   return (
     <div className="flex flex-col items-center -mt-5" data-testid={testId}>
       <div className="relative pointer-events-none" style={{ width: GAUGE_WIDTH, height: GAUGE_HEIGHT }}>
-        <PieChart width={GAUGE_WIDTH} height={GAUGE_HEIGHT}>
+        <PieChart width={GAUGE_WIDTH} height={GAUGE_HEIGHT} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
           <Pie
             data={data}
             cx={CX}
