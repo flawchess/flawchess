@@ -241,48 +241,52 @@ export function EndgamesPage() {
         </div>
 
         {/* Mobile: single column */}
-        <div className="md:hidden flex flex-col gap-2 min-w-0">
-
-          {/* Filters collapsible — collapsed by default on mobile */}
-          <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
-                data-testid="section-filters-mobile"
-              >
-                Filters
-                {mobileFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="pt-2">
-                <FilterPanel filters={filters} onChange={handleFilterChange} />
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-
-          <div className="border-t border-border/40" />
-
-          {/* Tabs: Statistics / Games */}
+        <div className="md:hidden flex flex-col min-w-0">
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>
-            <TabsList className="w-full h-11!" data-testid="endgames-tabs-mobile">
-              <TabsTrigger value="statistics" className="flex-1" data-testid="tab-statistics-mobile">
-                <BarChart2Icon className="mr-1.5 h-4 w-4" />
-                Statistics
-                <span
-                  data-testid="badge-beta"
-                  className="text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full ml-1.5"
-                >
-                  Beta
-                </span>
-              </TabsTrigger>
-              <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
-                <Gamepad2Icon className="mr-1.5 h-4 w-4" />
-                Games
-              </TabsTrigger>
-            </TabsList>
+            {/* Sticky: filters collapsible + divider + tab bar */}
+            <div className="sticky top-0 z-20 bg-background pb-2 flex flex-col gap-2">
+
+              {/* Filters collapsible — collapsed by default on mobile */}
+              <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
+                    data-testid="section-filters-mobile"
+                  >
+                    Filters
+                    {mobileFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="pt-2">
+                    <FilterPanel filters={filters} onChange={handleFilterChange} />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+
+              <div className="border-t border-border/40" />
+
+              {/* Tabs: Statistics / Games */}
+              <TabsList className="w-full h-11!" data-testid="endgames-tabs-mobile">
+                <TabsTrigger value="statistics" className="flex-1" data-testid="tab-statistics-mobile">
+                  <BarChart2Icon className="mr-1.5 h-4 w-4" />
+                  Statistics
+                  <span
+                    data-testid="badge-beta"
+                    className="text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full ml-1.5"
+                  >
+                    Beta
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
+                  <Gamepad2Icon className="mr-1.5 h-4 w-4" />
+                  Games
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
             <TabsContent value="statistics" className="mt-4">
               {statisticsContent}
             </TabsContent>
