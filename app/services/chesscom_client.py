@@ -6,6 +6,7 @@ with a 60-second backoff on 429 responses.
 """
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timezone
 
@@ -14,10 +15,17 @@ import httpx
 from app.core.rate_limiters import get_chesscom_semaphore
 from app.services.normalization import normalize_chesscom_game
 
+logger = logging.getLogger(__name__)
+
 USER_AGENT = "FlawChess/1.0 (github.com/flawchess/flawchess)"
 BASE_URL = "https://api.chess.com/pub/player"
 
 _HEADERS = {"User-Agent": USER_AGENT}
+_MAX_RETRIES = 3
+_RETRY_BACKOFF_BASE_SECONDS = 5
+
+# Transient network errors worth retrying (same set as lichess client)
+_RETRYABLE_EXCEPTIONS = (httpx.TimeoutException, httpx.RemoteProtocolError, httpx.ReadError)
 
 
 def _archive_before_timestamp(archive_url: str, since: datetime) -> bool:
@@ -72,7 +80,21 @@ async def fetch_chesscom_games(
     # chess.com API requires lowercase usernames (returns 301 for mixed case)
     api_username = username.lower()
     archives_url = f"{BASE_URL}/{api_username}/games/archives"
-    archives_resp = await client.get(archives_url, headers=_HEADERS)
+    for attempt in range(_MAX_RETRIES):
+        try:
+            archives_resp = await client.get(archives_url, headers=_HEADERS)
+            break
+        except _RETRYABLE_EXCEPTIONS as exc:
+            if attempt < _MAX_RETRIES - 1:
+                backoff = _RETRY_BACKOFF_BASE_SECONDS * (2**attempt)
+                logger.warning(
+                    "chess.com archives list for %s failed (attempt %d/%d), "
+                    "retrying in %ds: %s",
+                    username, attempt + 1, _MAX_RETRIES, backoff, exc,
+                )
+                await asyncio.sleep(backoff)
+            else:
+                raise
 
     if archives_resp.status_code == 404:
         raise ValueError(f"chess.com user '{username}' not found")
@@ -96,15 +118,34 @@ async def fetch_chesscom_games(
             # Rate-limit delay between requests
             await asyncio.sleep(0.15)
 
-            resp = await client.get(archive_url, headers=_HEADERS)
+            resp = None
+            for attempt in range(_MAX_RETRIES):
+                try:
+                    resp = await client.get(archive_url, headers=_HEADERS)
+                except _RETRYABLE_EXCEPTIONS as exc:
+                    if attempt < _MAX_RETRIES - 1:
+                        backoff = _RETRY_BACKOFF_BASE_SECONDS * (2**attempt)
+                        logger.warning(
+                            "chess.com archive %s failed (attempt %d/%d), "
+                            "retrying in %ds: %s",
+                            archive_url, attempt + 1, _MAX_RETRIES, backoff, exc,
+                        )
+                        await asyncio.sleep(backoff)
+                        continue
+                    raise
 
-            # 429 rate-limited: back off 60s and retry once
-            if resp.status_code == 429:
-                await asyncio.sleep(60)
-                resp = await client.get(archive_url, headers=_HEADERS)
+                if resp.status_code == 429:
+                    logger.warning(
+                        "chess.com 429 rate-limited on %s, backing off 60s",
+                        archive_url,
+                    )
+                    await asyncio.sleep(60)
+                    continue
+
+                break
 
             # Skip non-200 archive responses rather than crashing on .json()
-            if resp.status_code != 200:
+            if resp is None or resp.status_code != 200:
                 continue
 
             games = resp.json().get("games", [])

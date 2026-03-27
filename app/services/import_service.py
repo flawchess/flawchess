@@ -205,7 +205,7 @@ async def run_import(job_id: str) -> None:
                 def _on_game_fetched() -> None:
                     job.games_fetched += 1
 
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=60.0) as client:
                     game_iter = _make_game_iterator(
                         client, job, previous_job, _on_game_fetched
                     )
