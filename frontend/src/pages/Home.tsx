@@ -109,7 +109,7 @@ export function HomePageContent() {
           Engines are flawless, humans play FlawChess
         </h1>
         <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-          Import games from chess.com and lichess. Explore openings by position, track endgame performance, and find exactly where you win and lose.
+          Import games from chess.com and lichess. Explore openings move by move, track endgame performance, and find exactly where you win and lose.
         </p>
         <p
           className="mt-4 mx-auto max-w-lg rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3 text-sm text-muted-foreground"
