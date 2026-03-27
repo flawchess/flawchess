@@ -14,66 +14,58 @@ import {
 } from '@/components/ui/accordion';
 import { PRIMARY_BUTTON_CLASS } from '@/lib/theme';
 import { cn } from '@/lib/utils';
-import { Target, Eye, ArrowRightLeft, Layers, SlidersHorizontal, Swords, Loader2 } from 'lucide-react';
+import { Target, ArrowRightLeft, Layers, Swords, BarChart2, Loader2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-// USPs with screenshots — order alternates landscape/portrait for visual rhythm.
-// imagePosition alternates right/left so text and image swap sides on desktop.
+// Feature sections — imagePosition alternates right/left so text and image swap sides on desktop.
+// All screenshots are landscape orientation with a 2fr/3fr text/image ratio.
 const FEATURES: {
   slug: string;
   icon: LucideIcon;
   heading: string;
   desc: string;
-  screenshot: { src: string; alt: string; orientation: 'landscape' | 'portrait' };
+  screenshot: { src: string; alt: string };
   imagePosition: 'left' | 'right';
 }[] = [
   {
-    slug: 'move-explorer',
+    slug: 'opening-explorer',
     icon: ArrowRightLeft,
-    heading: 'Interactive move explorer',
-    desc: "Step through any opening and see your win/draw/loss rate for every move you\u2019ve played.",
-    screenshot: { src: '/screenshots/board-and-move-explorer.png', alt: 'Board with move explorer showing win/draw/loss bars per move', orientation: 'landscape' },
+    heading: 'Interactive Opening Explorer',
+    desc: "Step through any opening and see your win/draw/loss rate for every move you\u2019ve played. Scout your opponents\u2019 weaknesses and tendencies before a match.",
+    screenshot: { src: '/screenshots/opening-explorer.png', alt: 'Board with move explorer showing win/draw/loss bars per candidate move' },
     imagePosition: 'right',
   },
   {
-    slug: 'scout',
-    icon: Eye,
-    heading: 'Scout your opponents',
-    desc: 'Prepare for a match by exploring their opening weaknesses and tendencies.',
-    screenshot: { src: '/screenshots/chess-board-and-moves.png', alt: 'Chess board with move analysis and opening classification', orientation: 'portrait' },
-    imagePosition: 'left',
-  },
-  {
-    slug: 'weaknesses',
+    slug: 'opening-comparison',
     icon: Target,
-    heading: 'Find weaknesses in your openings',
-    desc: 'Discover which moves you struggle against, which traps and gambits you fall for or work for you, and how your opening repertoire performs over time.',
-    screenshot: { src: '/screenshots/win-rate-over-time.png', alt: 'Win rate trends over time for multiple openings', orientation: 'landscape' },
-    imagePosition: 'right',
-  },
-  {
-    slug: 'filters',
-    icon: SlidersHorizontal,
-    heading: 'Powerful filters',
-    desc: "Slice your games by color, time control, and recency to find exactly the patterns you\u2019re looking for.",
-    screenshot: { src: '/screenshots/filters.png', alt: 'Filter panel with time control, platform, rating, and opponent options', orientation: 'portrait' },
+    heading: 'Opening Comparison and Tracking',
+    desc: 'Discover which moves you struggle against, which traps and gambits work for you, and track how your opening repertoire performs over time.',
+    screenshot: { src: '/screenshots/opening-comparison.png', alt: 'Win rate trends over time for multiple openings' },
     imagePosition: 'left',
   },
   {
     slug: 'system-openings',
     icon: Swords,
-    heading: 'System opening analysis',
-    desc: "Analyze your performance with system openings like the London, where opponents respond in different ways.",
-    screenshot: { src: '/screenshots/position-bookmarks.png', alt: 'Position bookmarks with Mine/Opponent/Both piece filter', orientation: 'portrait' },
+    heading: 'System Opening Grouping',
+    desc: "Analyze your performance with system openings like the London, where opponents respond in different ways. Group all variations under one position.",
+    screenshot: { src: '/screenshots/system-openings.png', alt: 'Position bookmarks grouping system opening variations' },
     imagePosition: 'right',
+  },
+  {
+    slug: 'endgame-analysis',
+    icon: BarChart2,
+    heading: 'Endgame Analysis',
+    desc: 'Track your win/draw/loss rates by endgame type \u2014 rook, minor piece, pawn, queen, and more. See where you convert material advantages and where you recover from deficits.',
+    screenshot: { src: '/screenshots/endgame-analysis.png', alt: 'Endgame analytics showing WDL rates by endgame category' },
+    imagePosition: 'left',
   },
   {
     slug: 'cross-platform',
     icon: Layers,
-    heading: 'Cross-platform analysis',
-    desc: "Import games from chess.com and lichess into one place \u2014 analyze your complete history regardless of platform.",
-    screenshot: { src: '/screenshots/game-import.png', alt: 'Import page showing chess.com and lichess with sync buttons', orientation: 'landscape' },
-    imagePosition: 'left',
+    heading: 'Cross-Platform with Powerful Filters',
+    desc: "Import games from chess.com and lichess into one place. Slice your analysis by color, time control, recency, and more to find exactly the patterns you\u2019re looking for.",
+    screenshot: { src: '/screenshots/cross-platform.png', alt: 'Import page with chess.com and lichess plus filter controls' },
+    imagePosition: 'right',
   },
 ];
 
@@ -95,8 +87,7 @@ export function HomePageContent() {
           Engines are flawless, humans play FlawChess
         </h1>
         <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-          Analyze your opening positions by move, not just name. Import games from chess.com and
-          lichess to discover where you really lose.
+          Import games from chess.com and lichess. Explore openings by position, track endgame performance, and find exactly where you win and lose.
         </p>
         <Button
           size="lg"
@@ -117,21 +108,18 @@ export function HomePageContent() {
           <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
             Mobile friendly
           </span>
+          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
+            Endgame analytics
+          </span>
         </div>
       </section>
 
       {/* Feature sections — alternating image left/right */}
       <div id="features" data-testid="screenshots-section" className="max-w-5xl mx-auto px-4 py-4 lg:py-8 space-y-16 lg:space-y-24 scroll-mt-16">
         {FEATURES.map(({ slug, icon: Icon, heading, desc, screenshot, imagePosition }) => {
-          const isLandscape = screenshot.orientation === 'landscape';
-          // Landscape: 40% text / 60% image. Portrait: 55% text / 45% image (capped width).
-          const gridCols = isLandscape
-            ? 'lg:grid-cols-[2fr_3fr]'
-            : 'lg:grid-cols-[11fr_9fr]';
-          // Flip the ratio when image is on the left
-          const gridColsFlipped = isLandscape
+          const gridCols = imagePosition === 'left'
             ? 'lg:grid-cols-[3fr_2fr]'
-            : 'lg:grid-cols-[9fr_11fr]';
+            : 'lg:grid-cols-[2fr_3fr]';
 
           const textBlock = (
             <div className="flex flex-col justify-center">
@@ -151,10 +139,7 @@ export function HomePageContent() {
               <img
                 src={screenshot.src}
                 alt={screenshot.alt}
-                className={cn(
-                  'rounded-lg border border-border shadow-md',
-                  isLandscape ? 'w-full' : 'w-full max-w-xs',
-                )}
+                className="rounded-lg border border-border shadow-md w-full"
               />
             </div>
           );
@@ -162,10 +147,7 @@ export function HomePageContent() {
             <section
               key={slug}
               data-testid={`feature-${slug}`}
-              className={cn(
-                'grid gap-8 lg:gap-12 items-center',
-                imagePosition === 'left' ? gridColsFlipped : gridCols,
-              )}
+              className={cn('grid gap-8 lg:gap-12 items-center', gridCols)}
             >
               {/* On mobile: always text first, image second.
                   On desktop: alternate via order classes. */}
@@ -207,6 +189,14 @@ export function HomePageContent() {
             <AccordionContent>
               Yes. FlawChess is a Progressive Web App &mdash; install it from your browser for a
               native-like experience on iPhone and Android.
+            </AccordionContent>
+          </AccordionItem>
+          <AccordionItem value="endgames" data-testid="faq-item-endgames">
+            <AccordionTrigger>What endgame analytics does FlawChess offer?</AccordionTrigger>
+            <AccordionContent>
+              FlawChess tracks your win/draw/loss rates by endgame type (rook, minor piece, pawn,
+              queen, and more), plus conversion rates when you&apos;re up material and recovery rates
+              when you&apos;re down. All statistics are filterable by time control, color, and recency.
             </AccordionContent>
           </AccordionItem>
           <AccordionItem value="requests" data-testid="faq-item-requests">
