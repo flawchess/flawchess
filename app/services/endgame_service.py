@@ -316,10 +316,9 @@ async def get_endgame_stats(
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
     )
-    # endgame_games counts (game, class) combinations, not unique games.
-    # A game in two classes (e.g. rook then pawn) contributes 2 to this total.
-    # This is intentional per D-02 — each class gets its own W/D/L count.
-    endgame_games = sum(c.total for c in categories)
+    # Count unique games that reached an endgame phase (not game×class combinations,
+    # since a game can appear in multiple endgame classes).
+    endgame_games = len({row[0] for row in rows})  # row[0] = game_id
 
     return EndgameStatsResponse(
         categories=categories,

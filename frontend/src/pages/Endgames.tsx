@@ -109,6 +109,13 @@ export function EndgamesPage() {
                 counted. This follows the Lichess definition.
               </p>
               <p>
+                <strong>Endgame types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
+                Queen, Mixed (two or more piece types), and Pawnless (no pawns on board). A game is counted
+                for a type only if it spent at least 3 full moves (6 half-moves) in that type. A single game
+                can pass through multiple types — for example, a rook endgame where the rooks get traded
+                becomes a pawn endgame, so the game counts toward both.
+              </p>
+              <p>
                 <strong>Conversion & recovery:</strong> these rates reflect your performance against opponents
                 at your current rating level. As your rating changes, you face stronger or weaker opponents,
                 so trends or flat lines may not directly indicate improvement or stagnation in absolute terms.

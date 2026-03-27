@@ -167,8 +167,15 @@ export function EndgameWDLChart({
         <span className="inline-flex items-center gap-1">
           Results by Endgame Type
           <InfoPopover ariaLabel="Results by endgame type info" testId="endgame-chart-info" side="top">
-            Shows your win, draw, and loss percentages for each endgame type, based on games
-            that reached an endgame phase (at most 6 major/minor pieces on the board). Click the link icon to view matching games.
+            <div className="space-y-2">
+              <p>
+                Shows your win, draw, and loss percentages for each endgame type, based on games
+            that included the endgame type. Note that a game can include more than one type of endgame.
+              </p>
+              <p>
+                Click the link icon to view matching games.
+              </p>
+            </div>
           </InfoPopover>
         </span>
       </h2>
