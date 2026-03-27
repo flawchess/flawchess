@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/accordion';
 import { PRIMARY_BUTTON_CLASS } from '@/lib/theme';
 import { cn } from '@/lib/utils';
-import { Target, ArrowRightLeft, Layers, Swords, BarChart2, Loader2 } from 'lucide-react';
+import { ArrowRightLeft, Scale, Filter, TrophyIcon, DownloadIcon, Loader2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Feature sections — imagePosition alternates right/left so text and image swap sides on desktop.
@@ -41,7 +41,7 @@ const FEATURES: {
   },
   {
     slug: 'opening-comparison',
-    icon: Target,
+    icon: Scale,
     heading: 'Opening Comparison and Tracking',
     desc: [
         'Bookmark your favorite openings and compare their performance.',
@@ -55,7 +55,7 @@ const FEATURES: {
   },
   {
     slug: 'system-openings',
-    icon: Swords,
+    icon: Filter,
     heading: 'System Opening Filtering',
     desc: [
         "You play the London, but your analysis tool scatters your games across 5 different opening names.",
@@ -67,7 +67,7 @@ const FEATURES: {
   },
   {
     slug: 'endgame-analysis',
-    icon: BarChart2,
+    icon: TrophyIcon,
     heading: 'Endgame Statistics',
     desc: [
         'Measure your endgame performance, conversion, and recovery ability.',
@@ -79,11 +79,12 @@ const FEATURES: {
   },
   {
     slug: 'cross-platform',
-    icon: Layers,
-    heading: 'Cross-Platform with Powerful Filters',
+    icon: DownloadIcon,
+    heading: 'Cross-Platform Import',
     desc: [
         "Import games from chess.com and lichess into one place.",
-        "Slice your analysis by color, time control, recency, and more to find exactly the patterns you\u2019re looking for."
+        "Add your most recent games with the sync button.",
+        "Import your opponent's games to prepare for an upcoming match.",
     ],
     screenshot: { src: '/screenshots/cross-platform.png', alt: 'Import page with chess.com and lichess plus filter controls' },
     imagePosition: 'right',
