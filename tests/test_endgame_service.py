@@ -360,10 +360,10 @@ class TestGetEndgamePerformance:
         """With no games, all fields should be 0.0 without ZeroDivisionError."""
         with (
             patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
+            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
         ):
             mock_perf.return_value = ([], [])
-            mock_stats.return_value = type("Stats", (), {"categories": []})()
+            mock_entry.return_value = []
 
             result = await get_endgame_performance(
                 AsyncMock(), user_id=1, time_control=None, platform=None,
@@ -387,10 +387,10 @@ class TestGetEndgamePerformance:
 
         with (
             patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
+            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
         ):
             mock_perf.return_value = (endgame_rows, non_endgame_rows)
-            mock_stats.return_value = type("Stats", (), {"categories": []})()
+            mock_entry.return_value = []
 
             result = await get_endgame_performance(
                 AsyncMock(), user_id=1, time_control=None, platform=None,
@@ -419,10 +419,10 @@ class TestGetEndgamePerformance:
 
         with (
             patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
+            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
         ):
             mock_perf.return_value = (endgame_rows, non_endgame_rows)
-            mock_stats.return_value = type("Stats", (), {"categories": []})()
+            mock_entry.return_value = []
 
             result = await get_endgame_performance(
                 AsyncMock(), user_id=1, time_control=None, platform=None,
@@ -441,10 +441,10 @@ class TestGetEndgamePerformance:
 
         with (
             patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
+            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
         ):
             mock_perf.return_value = (endgame_rows, non_endgame_rows)
-            mock_stats.return_value = type("Stats", (), {"categories": []})()
+            mock_entry.return_value = []
 
             result = await get_endgame_performance(
                 AsyncMock(), user_id=1, time_control=None, platform=None,
@@ -461,10 +461,10 @@ class TestGetEndgamePerformance:
 
         with (
             patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
+            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
         ):
             mock_perf.return_value = (endgame_rows, non_endgame_rows)
-            mock_stats.return_value = type("Stats", (), {"categories": []})()
+            mock_entry.return_value = []
 
             result = await get_endgame_performance(
                 AsyncMock(), user_id=1, time_control=None, platform=None,
@@ -477,34 +477,34 @@ class TestGetEndgamePerformance:
 class TestEndgameGaugeCalculations:
     """Unit tests for gauge value formulas: aggregate conversion/recovery and endgame_skill."""
 
-    def _mock_category(self, conv_wins: int, conv_games: int, rec_saves: int, rec_games: int):
-        """Build a mock category object with the given conversion/recovery raw counts."""
-        conv = type("Conv", (), {
-            "conversion_wins": conv_wins,
-            "conversion_games": conv_games,
-            "recovery_saves": rec_saves,
-            "recovery_games": rec_games,
-        })()
-        return type("Cat", (), {"conversion": conv})()
+    def _entry_row(self, game_id: int, endgame_class_int: int, result: str, user_color: str, imbalance: int):
+        """Build a (game_id, endgame_class_int, result, user_color, user_material_imbalance) entry row."""
+        return (game_id, endgame_class_int, result, user_color, imbalance)
 
     @pytest.mark.asyncio
     async def test_aggregate_conversion_uses_sum_of_raw_not_mean_of_percentages(self):
         """Aggregate conversion_pct = sum(conv_wins) / sum(conv_games) * 100 (not mean of pcts)."""
-        # Category A: 1 win / 2 games = 50%
-        # Category B: 3 wins / 4 games = 75%
+        # Category A (rook=1): 2 games up material, 1 win → 50%
+        # Category B (minor=2): 4 games up material, 3 wins → 75%
         # Mean of percentages: (50 + 75) / 2 = 62.5%
         # Sum of raw: 4 wins / 6 games = 66.67%
-        categories = [
-            self._mock_category(conv_wins=1, conv_games=2, rec_saves=0, rec_games=0),
-            self._mock_category(conv_wins=3, conv_games=4, rec_saves=0, rec_games=0),
+        entry_rows = [
+            # Category A: rook (1), positive imbalance — 1 win, 1 loss
+            self._entry_row(1, 1, "1-0", "white", 500),
+            self._entry_row(2, 1, "0-1", "white", 500),
+            # Category B: minor_piece (2), positive imbalance — 3 wins, 1 loss
+            self._entry_row(3, 2, "1-0", "white", 500),
+            self._entry_row(4, 2, "1-0", "white", 500),
+            self._entry_row(5, 2, "1-0", "white", 500),
+            self._entry_row(6, 2, "0-1", "white", 500),
         ]
 
         with (
             patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
+            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
         ):
             mock_perf.return_value = ([], [])
-            mock_stats.return_value = type("Stats", (), {"categories": categories})()
+            mock_entry.return_value = entry_rows
 
             result = await get_endgame_performance(
                 AsyncMock(), user_id=1, time_control=None, platform=None,
@@ -517,17 +517,24 @@ class TestEndgameGaugeCalculations:
     @pytest.mark.asyncio
     async def test_endgame_skill_formula(self):
         """endgame_skill = 0.6 * conversion_pct + 0.4 * recovery_pct."""
-        # conversion 80%, recovery 60% → skill = 0.6*80 + 0.4*60 = 48+24 = 72
-        categories = [
-            self._mock_category(conv_wins=8, conv_games=10, rec_saves=6, rec_games=10),
-        ]
+        # conversion: 8 wins / 10 games up material = 80%
+        # recovery: 6 saves / 10 games down material = 60% → skill = 0.6*80 + 0.4*60 = 72
+        entry_rows = (
+            # 10 games with positive imbalance (rook=1): 8 wins, 2 losses
+            [self._entry_row(i, 1, "1-0", "white", 500) for i in range(1, 9)]
+            + [self._entry_row(i, 1, "0-1", "white", 500) for i in range(9, 11)]
+            # 10 games with negative imbalance (rook=1): 4 wins, 2 draws, 4 losses (6 saves)
+            + [self._entry_row(i, 1, "1-0", "white", -500) for i in range(11, 15)]
+            + [self._entry_row(i, 1, "1/2-1/2", "white", -500) for i in range(15, 17)]
+            + [self._entry_row(i, 1, "0-1", "white", -500) for i in range(17, 21)]
+        )
 
         with (
             patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
+            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
         ):
             mock_perf.return_value = ([], [])
-            mock_stats.return_value = type("Stats", (), {"categories": categories})()
+            mock_entry.return_value = entry_rows
 
             result = await get_endgame_performance(
                 AsyncMock(), user_id=1, time_control=None, platform=None,
@@ -541,10 +548,10 @@ class TestEndgameGaugeCalculations:
         """endgame_skill should be 0.0 when no conversion/recovery games exist."""
         with (
             patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
+            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
         ):
             mock_perf.return_value = ([], [])
-            mock_stats.return_value = type("Stats", (), {"categories": []})()
+            mock_entry.return_value = []
 
             result = await get_endgame_performance(
                 AsyncMock(), user_id=1, time_control=None, platform=None,

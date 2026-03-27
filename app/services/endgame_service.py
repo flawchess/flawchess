@@ -11,6 +11,7 @@ Exposes:
 - get_endgame_timeline: orchestrator for GET /api/endgames/timeline
 """
 
+import asyncio
 from collections import defaultdict
 from enum import IntEnum
 from typing import Literal
@@ -467,23 +468,34 @@ async def get_endgame_performance(
 
     Steps:
     1. Convert recency to cutoff datetime.
-    2. Fetch endgame and non-endgame game rows for WDL comparison.
-    3. Fetch existing endgame stats for aggregate conversion/recovery numerators/denominators.
+    2. Fetch WDL comparison rows and entry rows concurrently.
+    3. Aggregate entry rows inline for conversion/recovery stats.
     4. Build WDL summaries and compute gauge values.
     5. Return EndgamePerformanceResponse.
     """
     cutoff = recency_cutoff(recency)
 
-    # Fetch WDL rows and existing stats concurrently (stats needed for conversion/recovery)
-    # Note: get_endgame_stats is awaited separately to access conversion/recovery raw counts
-    endgame_rows, non_endgame_rows = await query_endgame_performance_rows(
-        session,
-        user_id=user_id,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+    # Fetch entry rows directly (not via get_endgame_stats) to avoid redundant
+    # count_filtered_games query and enable concurrent execution with performance rows.
+    (endgame_rows, non_endgame_rows), entry_rows = await asyncio.gather(
+        query_endgame_performance_rows(
+            session,
+            user_id=user_id,
+            time_control=time_control,
+            platform=platform,
+            rated=rated,
+            opponent_type=opponent_type,
+            recency_cutoff=cutoff,
+        ),
+        query_endgame_entry_rows(
+            session,
+            user_id=user_id,
+            time_control=time_control,
+            platform=platform,
+            rated=rated,
+            opponent_type=opponent_type,
+            recency_cutoff=cutoff,
+        ),
     )
 
     # Build WDL summaries for each group
@@ -502,22 +514,13 @@ async def get_endgame_performance(
         endgame_win_rate / overall_win_rate * 100 if overall_win_rate > 0 else 0.0
     )
 
-    # Aggregate conversion/recovery: use sum-of-raw (not mean of percentages) per D-07
-    # Reuse existing get_endgame_stats which returns categories with raw conversion counts
-    stats = await get_endgame_stats(
-        session,
-        user_id=user_id,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        recency=recency,
-    )
-
-    total_conversion_wins = sum(c.conversion.conversion_wins for c in stats.categories)
-    total_conversion_games = sum(c.conversion.conversion_games for c in stats.categories)
-    total_recovery_saves = sum(c.conversion.recovery_saves for c in stats.categories)
-    total_recovery_games = sum(c.conversion.recovery_games for c in stats.categories)
+    # Aggregate conversion/recovery: use sum-of-raw (not mean of percentages) per D-07.
+    # Compute inline from entry_rows — avoids redundant get_endgame_stats + count_filtered_games calls.
+    categories = _aggregate_endgame_stats(entry_rows)
+    total_conversion_wins = sum(c.conversion.conversion_wins for c in categories)
+    total_conversion_games = sum(c.conversion.conversion_games for c in categories)
+    total_recovery_saves = sum(c.conversion.recovery_saves for c in categories)
+    total_recovery_games = sum(c.conversion.recovery_games for c in categories)
 
     aggregate_conversion_pct = (
         total_conversion_wins / total_conversion_games * 100
