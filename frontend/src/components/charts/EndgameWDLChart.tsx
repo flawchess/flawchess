@@ -25,7 +25,7 @@ const ENDGAME_TYPE_DESCRIPTIONS: Record<EndgameClass, string> = {
   minor_piece: 'Endgames with bishops and/or knights as the only non-king, non-pawn pieces.',
   pawn: 'King and pawn endgames only — no other pieces remain on the board.',
   queen: 'Endgames where queens are the only non-king, non-pawn pieces.',
-  mixed: 'Endgames with pieces from two or more families (e.g. queen + rook, rook + knight).',
+  mixed: 'Endgames with pieces from two or more piece types — rooks, minor pieces (bishops/knights), and queens (e.g. queen + rook, rook + knight).',
   pawnless: 'Endgames with no pawns on the board — only kings and pieces.',
 };
 
