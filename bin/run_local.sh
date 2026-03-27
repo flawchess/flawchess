@@ -3,9 +3,13 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# Kill existing backend/frontend processes if running
+# Kill existing backend/frontend processes if running.
+# Use fuser to kill anything on the ports directly — pkill -f can miss
+# orphaned uvicorn child processes (--reload spawns a watcher + worker).
 pkill -f "uvicorn app.main:app" 2>/dev/null || true
 pkill -f "vite" 2>/dev/null || true
+fuser -k 8000/tcp 2>/dev/null || true
+fuser -k 5173/tcp 2>/dev/null || true
 sleep 1
 
 # Fail fast if a local postgres process is already holding port 5432.

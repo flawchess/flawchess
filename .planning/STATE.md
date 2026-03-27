@@ -2,22 +2,22 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
-status: Ready to plan
-last_updated: "2026-03-26T15:56:31.241Z"
+status: Executing Phase 32
+last_updated: "2026-03-26T20:10:00.000Z"
 last_activity: 2026-03-26
 progress:
-  total_phases: 10
+  total_phases: 11
   completed_phases: 6
-  total_plans: 13
-  completed_plans: 13
+  total_plans: 16
+  completed_plans: 14
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
+Phase: 32 (endgame-performance-charts) — EXECUTING
+Plan: 2 of 3
 
 ## Project Reference
 
@@ -89,6 +89,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - Phase 30 added: Homepage, README & SEO Update
 - Phase 28.1 inserted after Phase 28: Import lichess analysis metrics (URGENT)
 - Phase 31 added: Endgame classification redesign — per-position instead of per-game
+- Phase 32 added: Endgame Performance Charts — endgame vs non-endgame WDL, strength gauge, rolling-window timelines
 
 ### Blockers/Concerns
 
@@ -117,6 +118,17 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260326-k94 | Add backrank_sparse and mixedness columns to position classifier and game_positions (Lichess Divider.scala algorithm) | 2026-03-26 | d8d6796 | [260326-k94-add-backrank-sparse-and-mixedness-column](./quick/260326-k94-add-backrank-sparse-and-mixedness-column/) |
 | 260326-p93 | Redesign endgame stats UI: glass-effect WDL bars, game count bars, conversion/recovery mini-bars, per-type tooltips, click-to-select-then-navigate | 2026-03-26 | 57f475d | [260326-p93-redesign-endgame-stats-ui-with-glass-eff](./quick/260326-p93-redesign-endgame-stats-ui-with-glass-eff/) |
 | 260326-qhw | Fix endgame conversion/recovery bars from 2-segment to full W/D/L 3-segment bars | 2026-03-26 | a868425 | [260326-qhw-fix-endgame-conversion-recovery-wdl-bars](./quick/260326-qhw-fix-endgame-conversion-recovery-wdl-bars/) |
+| 260326-tok | Polish endgame charts: info popovers on section titles and gauges, one-decimal WDL, remove "More" collapsibles | 2026-03-26 | f38322b | [260326-tok-polish-endgame-charts-gauge-section-titl](./quick/260326-tok-polish-endgame-charts-gauge-section-titl/) |
+| 260326-ut4 | Simplify WDL chart UX: game count links, simplified popovers, 300cp material thresholds | 2026-03-26 | cc24f76 | [260326-ut4-endgame-wdl-chart-ux-simplify-info-popov](./quick/260326-ut4-endgame-wdl-chart-ux-simplify-info-popov/) |
+| 260326-wjj | Polish endgame charts: 3-gauge row with colored zones, remove Relative Strength/Win Rate Over Time, WDL row de-noise, inline popover fix | 2026-03-26 | 1864b4d | [260326-wjj-polish-endgame-charts-gauge-section-titl](./quick/260326-wjj-polish-endgame-charts-gauge-section-titl/) |
+| 260327-de0 | Centralize WDL/gauge/glass color constants in theme.ts; add CLAUDE.md theme convention rule | 2026-03-27 | 8b878d4 | [260327-de0-theme-management-centralize-wdl-danger-w](./quick/260327-de0-theme-management-centralize-wdl-danger-w/) |
+| 260327-egu | Optimize gauge chart endpoint performance | 2026-03-27 | ddd4b54 | [260327-egu-optimize-gauge-chart-endpoint-performanc](./quick/260327-egu-optimize-gauge-chart-endpoint-performanc/) |
+| 260327-f0o | Make import resilient to server restarts | 2026-03-27 | 9a0012a | [260327-f0o-make-import-resilient-to-server-restarts](./quick/260327-f0o-make-import-resilient-to-server-restarts/) |
+
+| 260327-gyz | Add conversion/recovery timeline chart to endgame statistics | 2026-03-27 | 97d2116 | [260327-gyz-add-conversion-recovery-timeline-chart-t](./quick/260327-gyz-add-conversion-recovery-timeline-chart-t/) |
+| 260327-jfd | Put a beta label in the Endgame statistics chart | 2026-03-27 | 5264d73 | [260327-jfd-put-a-beta-label-in-the-endgame-statisti](./quick/260327-jfd-put-a-beta-label-in-the-endgame-statisti/) |
+| 260327-mjt | Sticky filter dropdowns for Endgame and Statistics pages | 2026-03-27 | 22ceb5d | [260327-mjt-sticky-filter-dropdowns-endgame-and-stat](./quick/260327-mjt-sticky-filter-dropdowns-endgame-and-stat/) |
+| 260327-nbs | Show game count in conversion recovery chart tooltip | 2026-03-27 | 92f2c68 | [260327-nbs-show-game-count-in-conversion-recovery-c](./quick/260327-nbs-show-game-count-in-conversion-recovery-c/) |
 
 ---
-Last activity: 2026-03-26
+Last activity: 2026-03-27 - Completed quick task 260327-nbs: Show game count in conversion recovery chart

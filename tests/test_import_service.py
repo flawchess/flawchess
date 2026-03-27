@@ -513,13 +513,14 @@ class TestRunImport:
         await run_import("nonexistent-job-id")
 
     @pytest.mark.asyncio
-    async def test_username_saved_after_import(self):
-        """After a successful chess.com import, the user's chess_com_username is saved."""
+    async def test_username_not_saved_in_run_import(self):
+        """run_import should NOT save the platform username — that is now done at import start
+        in the router (start_import endpoint), so it persists even if the import fails.
+        """
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
 
         mock_session = _make_mock_session()
         mock_maker = _mock_session_maker(mock_session)
-        mock_update_username = AsyncMock()
 
         with (
             patch("app.services.import_service.async_session_maker", mock_maker),
@@ -540,10 +541,6 @@ class TestRunImport:
                 side_effect=_empty_async_gen,
             ),
             patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
-            patch(
-                "app.services.import_service.user_repository.update_platform_username",
-                mock_update_username,
-            ),
         ):
             mock_http_ctx = AsyncMock()
             mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
@@ -555,7 +552,6 @@ class TestRunImport:
         job = get_job(job_id)
         assert job is not None
         assert job.status == JobStatus.COMPLETED
-        mock_update_username.assert_called_once_with(mock_session, 1, "chess.com", "alice")
 
     @pytest.mark.asyncio
     async def test_move_count_populated(self):
@@ -610,10 +606,6 @@ class TestRunImport:
             patch(
                 "app.services.import_service.hashes_for_game",
                 return_value=([(0, 1, 2, 3, "e4", None), (1, 4, 5, 6, None, None)], "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR"),
-            ),
-            patch(
-                "app.services.import_service.user_repository.update_platform_username",
-                new=AsyncMock(),
             ),
         ):
             mock_http_ctx = AsyncMock()
@@ -686,10 +678,6 @@ class TestRunImport:
                 "app.services.import_service.game_repository.bulk_insert_positions",
                 new=AsyncMock(side_effect=_capture),
             ),
-            patch(
-                "app.services.import_service.user_repository.update_platform_username",
-                new=AsyncMock(),
-            ),
         ):
             mock_http_ctx = AsyncMock()
             mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
@@ -757,10 +745,6 @@ class TestRunImport:
                 "app.services.import_service.game_repository.bulk_insert_positions",
                 new=AsyncMock(side_effect=_capture),
             ),
-            patch(
-                "app.services.import_service.user_repository.update_platform_username",
-                new=AsyncMock(),
-            ),
         ):
             mock_http_ctx = AsyncMock()
             mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
@@ -826,10 +810,6 @@ class TestRunImport:
             patch(
                 "app.services.import_service.game_repository.bulk_insert_positions",
                 new=AsyncMock(side_effect=_capture),
-            ),
-            patch(
-                "app.services.import_service.user_repository.update_platform_username",
-                new=AsyncMock(),
             ),
         ):
             mock_http_ctx = AsyncMock()
@@ -897,10 +877,6 @@ class TestRunImport:
             patch(
                 "app.services.import_service.game_repository.bulk_insert_positions",
                 new=AsyncMock(side_effect=_capture),
-            ),
-            patch(
-                "app.services.import_service.user_repository.update_platform_username",
-                new=AsyncMock(),
             ),
             patch(
                 "app.services.import_service.classify_position",
@@ -1043,3 +1019,175 @@ class TestEvalExtraction:
         assert results[0] == {"eval_cp": 18, "eval_mate": None}   # node 0: after e4
         assert results[1] == {"eval_cp": -17, "eval_mate": None}  # node 1: after e5
         assert results[2] == {"eval_cp": None, "eval_mate": None}  # final position
+
+
+# ---------------------------------------------------------------------------
+# TestIncrementalProgress — DB counter updates after each batch
+# ---------------------------------------------------------------------------
+
+
+class TestIncrementalProgress:
+    """Tests that DB job counters are updated incrementally during import."""
+
+    @pytest.mark.asyncio
+    async def test_db_counters_updated_after_full_batch(self):
+        """After a full batch flush (_BATCH_SIZE games), DB counters should be updated
+        with the current games_fetched and games_imported values (not left at zero).
+        """
+        from app.services.import_service import _BATCH_SIZE
+
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        # Yield exactly _BATCH_SIZE games to trigger exactly one full-batch DB update
+        call_count = 0
+
+        async def _yield_batch_games(*args, **kwargs):
+            nonlocal call_count
+            for i in range(_BATCH_SIZE):
+                call_count += 1
+                kwargs["on_game_fetched"]()
+                yield {
+                    "platform": "chess.com",
+                    "platform_game_id": f"game-{i}",
+                    "pgn": "1. e4 *",
+                    "user_id": 1,
+                }
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+        captured_update_calls: list[dict] = []
+
+        async def _capture_update(session, job_id, **kwargs):
+            captured_update_calls.append(dict(kwargs))
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(side_effect=_capture_update),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_batch_games,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=list(range(_BATCH_SIZE))),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.hashes_for_game",
+                return_value=([(0, 1, 2, 3, None, None)], "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR"),
+            ),
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        # There must be at least one incremental DB update (after the full batch)
+        # and one final completion update. The incremental one has status="in_progress".
+        in_progress_updates = [c for c in captured_update_calls if c.get("status") == "in_progress"]
+        assert len(in_progress_updates) >= 1, (
+            "Expected at least one in_progress DB update after batch flush, got none. "
+            f"All update calls: {captured_update_calls}"
+        )
+
+        # The incremental update must carry non-zero games_imported (all _BATCH_SIZE games inserted)
+        incremental = in_progress_updates[0]
+        assert incremental["games_imported"] == _BATCH_SIZE, (
+            f"Expected games_imported={_BATCH_SIZE} in incremental update, got {incremental}"
+        )
+        assert incremental["games_fetched"] == _BATCH_SIZE, (
+            f"Expected games_fetched={_BATCH_SIZE} in incremental update, got {incremental}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_db_counters_updated_after_trailing_batch(self):
+        """After the trailing (sub-batch-size) flush, DB counters should also be updated."""
+        from app.services.import_service import _BATCH_SIZE
+
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        # Yield fewer than _BATCH_SIZE games — triggers only the trailing batch path
+        trailing_count = _BATCH_SIZE - 3  # e.g. 7 games for _BATCH_SIZE=10
+
+        async def _yield_trailing_games(*args, **kwargs):
+            for i in range(trailing_count):
+                kwargs["on_game_fetched"]()
+                yield {
+                    "platform": "chess.com",
+                    "platform_game_id": f"game-{i}",
+                    "pgn": "1. e4 *",
+                    "user_id": 1,
+                }
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+        captured_update_calls: list[dict] = []
+
+        async def _capture_update(session, job_id, **kwargs):
+            captured_update_calls.append(dict(kwargs))
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(side_effect=_capture_update),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_trailing_games,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=list(range(trailing_count))),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.hashes_for_game",
+                return_value=([(0, 1, 2, 3, None, None)], "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR"),
+            ),
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        # Trailing batch should also produce an in_progress DB update
+        in_progress_updates = [c for c in captured_update_calls if c.get("status") == "in_progress"]
+        assert len(in_progress_updates) >= 1, (
+            "Expected at least one in_progress DB update after trailing batch flush, got none. "
+            f"All update calls: {captured_update_calls}"
+        )
+        incremental = in_progress_updates[0]
+        assert incremental["games_imported"] == trailing_count
+        assert incremental["games_fetched"] == trailing_count

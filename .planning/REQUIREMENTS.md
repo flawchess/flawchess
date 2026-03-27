@@ -36,6 +36,16 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 - [x] **CONV-02**: User can see draw/win rate when down material, broken down by game phase
 - [x] **CONV-03**: User can filter conversion/recovery stats by time control
 
+### Endgame Performance Charts
+
+- [ ] **PERF-01**: User can see side-by-side WDL comparison of endgame games vs non-endgame games
+- [ ] **PERF-02**: User can see a Relative Endgame Strength gauge (endgame win rate / overall win rate * 100)
+- [ ] **PERF-03**: User can see an Endgame Skill gauge (0.6 * conversion_pct + 0.4 * recovery_pct)
+- [ ] **PERF-04**: User can see conversion and recovery percentages side by side for each endgame type in a grouped bar chart
+- [ ] **PERF-05**: User can see rolling 50-game win rate timeline for endgame vs non-endgame games
+- [ ] **PERF-06**: User can see rolling 50-game win rate timeline broken down by endgame type
+- [ ] **PERF-07**: All endgame performance charts respect existing filters (time control, platform, recency, rated, opponent)
+
 ## v1.4 Requirements (Prior Milestone)
 
 ### Analytics
@@ -90,12 +100,19 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 | CONV-03 | Phase 28 | Complete |
 | LMETRIC-01 | Phase 28.1 | Complete |
 | LMETRIC-02 | Phase 28.1 | Complete |
+| PERF-01 | Phase 32 | Pending |
+| PERF-02 | Phase 32 | Pending |
+| PERF-03 | Phase 32 | Pending |
+| PERF-04 | Phase 32 | Pending |
+| PERF-05 | Phase 32 | Pending |
+| PERF-06 | Phase 32 | Pending |
+| PERF-07 | Phase 32 | Pending |
 
 **Coverage:**
-- v1.5 requirements: 17 total
-- Mapped to phases: 17
-- Unmapped: 0 ✓
+- v1.5 requirements: 24 total
+- Mapped to phases: 24
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-23*
-*Last updated: 2026-03-23 after v1.5 roadmap creation*
+*Last updated: 2026-03-26 after Phase 32 planning*

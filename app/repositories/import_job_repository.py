@@ -110,6 +110,52 @@ async def get_latest_for_user_platform(
     return result.scalar_one_or_none()
 
 
+async def get_unseen_failed_jobs_for_user(
+    session: AsyncSession,
+    user_id: int,
+) -> list[ImportJob]:
+    """Return recently failed jobs that the user hasn't resolved yet.
+
+    Only returns a failed job if it's the most recent job for that platform —
+    i.e., no newer completed (or other) job exists. Once the user successfully
+    re-syncs, the failed job is superseded and no longer shown.
+
+    Also filtered to the last 24 hours to avoid surfacing ancient failures.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import func as sa_func
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+
+    # Subquery: the most recent job (any status) per platform for this user
+    latest_per_platform = (
+        select(
+            ImportJob.platform,
+            sa_func.max(ImportJob.started_at).label("max_started"),
+        )
+        .where(ImportJob.user_id == user_id)
+        .group_by(ImportJob.platform)
+        .subquery()
+    )
+
+    # Join: only return the job if it's both the latest AND failed
+    result = await session.execute(
+        select(ImportJob)
+        .join(
+            latest_per_platform,
+            (ImportJob.platform == latest_per_platform.c.platform)
+            & (ImportJob.started_at == latest_per_platform.c.max_started),
+        )
+        .where(
+            ImportJob.user_id == user_id,
+            ImportJob.status == "failed",
+            ImportJob.completed_at >= cutoff,
+        )
+    )
+    return list(result.scalars().all())
+
+
 async def fail_orphaned_jobs(session: AsyncSession) -> int:
     """Mark any pending/in_progress jobs as failed (orphaned after server restart).
 

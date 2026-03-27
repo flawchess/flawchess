@@ -24,10 +24,9 @@ export function GlobalStatsPage() {
 
   return (
     <div data-testid="global-stats-page" className="mx-auto max-w-4xl space-y-6 px-6 py-6">
-      <h1 className="text-2xl font-semibold">Statistics</h1>
-
-      {/* Filters */}
-      <div className="flex flex-wrap items-end gap-4">
+      {/* Sticky filters */}
+      <div className="sticky top-0 z-10 bg-background pb-2 -mx-6 px-6 pt-1">
+        <div className="flex flex-wrap items-end gap-4">
         {/* Recency filter */}
         <div>
           <p className="mb-1 text-xs text-muted-foreground">Recency</p>
@@ -81,6 +80,7 @@ export function GlobalStatsPage() {
               );
             })}
           </div>
+        </div>
         </div>
       </div>
 

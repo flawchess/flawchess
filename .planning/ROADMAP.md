@@ -79,6 +79,7 @@
 - [x] **Phase 28: Engine Analysis Import** — Import chess.com accuracy scores and lichess per-move evals during game import (completed 2026-03-25)
 - [x] **Phase 29: Endgame Analytics** — Backend API + frontend Endgames tab delivering W/D/L by endgame category and material conversion/recovery stats (completed 2026-03-26)
 - [ ] **Phase 30: Homepage, README & SEO Update** — Update homepage content, README, and SEO metadata to showcase new statistics features introduced in v1.5
+- [x] **Phase 32: Endgame Performance Charts** — Endgame vs non-endgame WDL comparison, strength gauge, and rolling-window timeline charts per endgame type (completed 2026-03-26)
 
 ## Phase Details
 
@@ -206,6 +207,7 @@ Plans:
 | 28.1. Import lichess analysis metrics | v1.5 | 1/1 | Complete    | 2026-03-26 |
 | 29. Endgame Analytics | v1.5 | 3/3 | Complete   | 2026-03-26 |
 | 30. Homepage, README & SEO Update | v1.5 | 0/0 | Not started | — |
+| 32. Endgame Performance Charts | v1.5 | 3/3 | Complete   | 2026-03-26 |
 
 ### Phase 30: Homepage, README & SEO Update
 **Goal**: Update homepage content, README, and SEO metadata to showcase the new statistics features (endgame analytics, engine analysis) introduced in milestone v1.5
@@ -244,3 +246,21 @@ Plans:
 Plans:
 - [x] 31-01-PLAN.md — Schema migration (endgame_class column + backfill + index), IntEnum mapping, import pipeline wiring, chunk_size update
 - [x] 31-02-PLAN.md — Repository + service redesign for per-position multi-class grouping, test updates
+
+### Phase 32: Endgame Performance Charts
+
+**Goal:** Add endgame performance comparison charts: endgame vs non-endgame WDL, endgame strength gauge, and rolling-window timeline charts for overall and per-endgame-type win rates
+**Requirements**: PERF-01, PERF-02, PERF-03, PERF-04, PERF-05, PERF-06, PERF-07
+**Depends on:** Phase 31
+**Success Criteria** (what must be TRUE):
+  1. "Endgame Performance" section shows WDL chart for games reaching endgame and a separate WDL chart for games that don't
+  2. Endgame strength gauge compares endgame win rate against non-endgame win rate
+  3. Timeline chart shows rolling 50-game win rate for all endgame games
+  4. Timeline chart shows rolling 50-game win rate broken down by endgame type
+  5. All charts respect existing filters (time control, platform, recency, rated, opponent)
+**Plans:** 3/3 plans complete
+
+Plans:
+- [x] 32-01-PLAN.md — Backend schemas, repository queries, service functions, router endpoints, and tests
+- [x] 32-02-PLAN.md — Frontend performance section (WDL bars, gauges) and conversion/recovery bar chart
+- [x] 32-03-PLAN.md — Frontend timeline charts and visual verification

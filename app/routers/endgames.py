@@ -3,6 +3,8 @@
 Endpoints:
 - GET /api/endgames/stats: W/D/L per endgame category with inline conversion/recovery stats
 - GET /api/endgames/games: paginated game list filtered by endgame class
+- GET /api/endgames/performance: WDL comparison + gauge values for endgame vs non-endgame
+- GET /api/endgames/timeline: rolling-window win-rate time series
 """
 
 from typing import Annotated
@@ -12,7 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.models.user import User
-from app.schemas.endgames import EndgameClass, EndgameGamesResponse, EndgameStatsResponse
+from app.schemas.endgames import (
+    ConvRecovTimelineResponse,
+    EndgameClass,
+    EndgameGamesResponse,
+    EndgamePerformanceResponse,
+    EndgameStatsResponse,
+    EndgameTimelineResponse,
+)
 from app.services import endgame_service
 from app.users import current_active_user
 
@@ -79,4 +88,94 @@ async def get_endgame_games(
         recency=recency,
         offset=offset,
         limit=limit,
+    )
+
+
+@router.get("/endgames/performance", response_model=EndgamePerformanceResponse)
+async def get_endgame_performance(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    time_control: list[str] | None = Query(default=None),
+    platform: list[str] | None = Query(default=None),
+    recency: str | None = Query(default=None),
+    rated: bool | None = Query(default=None),
+    opponent_type: str = Query(default="human"),
+) -> EndgamePerformanceResponse:
+    """Return WDL comparison and gauge values for endgame vs non-endgame games.
+
+    Compares win/draw/loss rates for games reaching an endgame (>= ENDGAME_PLY_THRESHOLD plies)
+    against games that did not reach any endgame. Also returns aggregate conversion/recovery
+    rates and composite gauge values (relative_strength, endgame_skill).
+
+    No color filter is applied per D-02.
+    """
+    return await endgame_service.get_endgame_performance(
+        session,
+        user_id=user.id,
+        time_control=time_control,
+        platform=platform,
+        recency=recency,
+        rated=rated,
+        opponent_type=opponent_type,
+    )
+
+
+@router.get("/endgames/timeline", response_model=EndgameTimelineResponse)
+async def get_endgame_timeline(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    time_control: list[str] | None = Query(default=None),
+    platform: list[str] | None = Query(default=None),
+    recency: str | None = Query(default=None),
+    rated: bool | None = Query(default=None),
+    opponent_type: str = Query(default="human"),
+    window: int = Query(default=50, ge=5, le=200),
+) -> EndgameTimelineResponse:
+    """Return rolling-window win-rate time series for endgame performance.
+
+    overall: merged series for endgame games vs non-endgame games, aligned by date.
+    per_type: per-endgame-class rolling win-rate series (rook, minor_piece, pawn, etc.).
+    window: configurable rolling window size (5–200, default 50).
+
+    Partial windows (fewer games than window size) are included from the start of each series.
+    """
+    return await endgame_service.get_endgame_timeline(
+        session,
+        user_id=user.id,
+        time_control=time_control,
+        platform=platform,
+        recency=recency,
+        rated=rated,
+        opponent_type=opponent_type,
+        window=window,
+    )
+
+
+@router.get("/endgames/conv-recov-timeline", response_model=ConvRecovTimelineResponse)
+async def get_conv_recov_timeline(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    time_control: list[str] | None = Query(default=None),
+    platform: list[str] | None = Query(default=None),
+    recency: str | None = Query(default=None),
+    rated: bool | None = Query(default=None),
+    opponent_type: str = Query(default="human"),
+    window: int = Query(default=50, ge=5, le=200),
+) -> ConvRecovTimelineResponse:
+    """Return conversion and recovery rolling-window timelines.
+
+    Conversion: win rate over trailing `window` games where user entered endgame
+    with significant material advantage (>=3 pawns).
+    Recovery: save rate (win+draw) over trailing `window` games where user entered
+    endgame with significant material disadvantage (>=3 pawns down).
+    """
+    return await endgame_service.get_conv_recov_timeline(
+        session,
+        user_id=user.id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency=recency,
+        window=window,
     )

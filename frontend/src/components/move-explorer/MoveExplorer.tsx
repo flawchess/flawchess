@@ -2,7 +2,7 @@ import { useState, useMemo, useRef } from 'react';
 import { Chess } from 'chess.js';
 import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { WDL_WIN, WDL_DRAW, WDL_LOSS } from '@/components/results/WDLBar';
+import { WDL_WIN, WDL_DRAW, WDL_LOSS } from '@/lib/theme';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { cn } from '@/lib/utils';
 import type { NextMoveEntry } from '@/types/api';

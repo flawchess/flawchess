@@ -1,18 +1,41 @@
 import { useState, useCallback } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { ChevronUp, ChevronDown, BarChart2Icon, Gamepad2Icon } from 'lucide-react';
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
+import { EndgamePerformanceSection } from '@/components/charts/EndgamePerformanceSection';
+import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
+import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
+import { EndgameConvRecovTimelineChart } from '@/components/charts/EndgameConvRecovTimelineChart';
 import { GameCardList } from '@/components/results/GameCardList';
-import { useEndgameStats, useEndgameGames } from '@/hooks/useEndgames';
+import { useEndgameStats, useEndgameGames, useEndgamePerformance, useEndgameTimeline, useEndgameConvRecovTimeline } from '@/hooks/useEndgames';
 import { useDebounce } from '@/hooks/useDebounce';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
 
 const PAGE_SIZE = 20;
+
+const ENDGAME_CLASS_LABELS: Record<EndgameClass, string> = {
+  mixed: 'Mixed',
+  rook: 'Rook',
+  minor_piece: 'Minor Piece',
+  pawn: 'Pawn',
+  queen: 'Queen',
+  pawnless: 'Pawnless',
+};
+
+const DEFAULT_ENDGAME_CLASS: EndgameClass = 'mixed';
 
 export function EndgamesPage() {
   const location = useLocation();
@@ -31,7 +54,7 @@ export function EndgamesPage() {
   const debouncedFilters = useDebounce(filters, 300);
 
   // ── Category selection state ─────────────────────────────────────────────────
-  const [selectedCategory, setSelectedCategory] = useState<EndgameClass | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<EndgameClass>(DEFAULT_ENDGAME_CLASS);
   const [gamesOffset, setGamesOffset] = useState(0);
 
   // ── Mobile collapsible state ───────────────────────────────────────────────
@@ -39,6 +62,9 @@ export function EndgamesPage() {
 
   // ── Data ─────────────────────────────────────────────────────────────────────
   const { data: statsData, isLoading: statsLoading } = useEndgameStats(debouncedFilters);
+  const { data: perfData } = useEndgamePerformance(debouncedFilters);
+  const { data: timelineData } = useEndgameTimeline(debouncedFilters);
+  const { data: convRecovData } = useEndgameConvRecovTimeline(debouncedFilters);
   const { data: gamesData, isLoading: gamesLoading } = useEndgameGames(
     selectedCategory,
     debouncedFilters,
@@ -52,28 +78,56 @@ export function EndgamesPage() {
     setGamesOffset(0); // D-03: reset pagination on filter change
   }, []);
 
-  // ── Category click handlers ───────────────────────────────────────────────────
+  // ── Category selection handler ──────────────────────────────────────────────
 
-  const handleCategoryClick = useCallback((category: EndgameClass) => {
-    // First click on a row selects it; reset pagination on category change (D-03)
+  const handleCategorySelect = useCallback((category: EndgameClass) => {
+    // Select category, reset pagination, and scroll to top — user navigates via link icon
     setSelectedCategory(category);
     setGamesOffset(0);
+    window.scrollTo(0, 0);
   }, []);
-
-  const handleSelectedCategoryClick = useCallback(() => {
-    // Second click on the already-selected category — navigate to games tab
-    navigate('/endgames/games');
-  }, [navigate]);
 
   // ── Statistics tab content ───────────────────────────────────────────────────
 
-  // Summary line: "X of Y games (Z%) reached an endgame phase"
+  // Summary line + collapsible explaining endgame concepts and metric limitations
   const endgameSummary = statsData ? (
     statsData.total_games === 0 ? null : (
-      <p className="text-sm text-muted-foreground mb-2" data-testid="endgame-summary">
-        {statsData.endgame_games} of {statsData.total_games} games
-        ({(statsData.endgame_games / statsData.total_games * 100).toFixed(1)}%) reached an endgame phase
-      </p>
+      <div data-testid="endgame-summary">
+        <p className="text-sm text-muted-foreground mb-2">
+          {statsData.endgame_games} of {statsData.total_games} games
+          ({(statsData.endgame_games / statsData.total_games * 100).toFixed(1)}%) reached an endgame phase
+        </p>
+        <Accordion type="single" collapsible>
+          <AccordionItem value="concepts" className="border rounded-md border-border px-4" data-testid="endgame-concepts-trigger">
+            <AccordionTrigger className="text-muted-foreground hover:no-underline">
+              Endgame statistics concepts
+            </AccordionTrigger>
+            <AccordionContent className="text-muted-foreground space-y-2">
+              <p>
+                <strong>Endgame phase:</strong> positions where the total count of major and minor pieces
+                (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
+                counted. This follows the Lichess definition.
+              </p>
+              <p>
+                <strong>Endgame types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
+                Queen, Mixed (two or more piece types), and Pawnless (no pawns on board). A game is counted
+                for a type only if it spent at least 3 full moves (6 half-moves) in that type. A single game
+                can pass through multiple types — for example, a rook endgame where the rooks get traded
+                becomes a pawn endgame, so the game counts toward both.
+              </p>
+              <p>
+                <strong>Conversion & recovery:</strong> these rates reflect your performance against opponents
+                at your current rating level. As your rating changes, you face stronger or weaker opponents,
+                so trends or flat lines may not directly indicate improvement or stagnation in absolute terms.
+              </p>
+              <p>
+                <strong>Material balance:</strong> winning and losing positions are classified by piece count.
+                Positional factors like passed pawns or piece activity are not considered.
+              </p>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </div>
     )
   ) : null;
 
@@ -86,12 +140,22 @@ export function EndgamesPage() {
       ) : statsData && statsData.categories.length > 0 ? (
         <>
           {endgameSummary}
+          {perfData && perfData.endgame_wdl.total > 0 && (
+            <EndgamePerformanceSection data={perfData} />
+          )}
+          {convRecovData && (convRecovData.conversion.length > 0 || convRecovData.recovery.length > 0) && (
+            <EndgameConvRecovTimelineChart data={convRecovData} />
+          )}
           <EndgameWDLChart
             categories={statsData.categories}
-            selectedCategory={selectedCategory}
-            onCategoryClick={handleCategoryClick}
-            onSelectedCategoryClick={handleSelectedCategoryClick}
+            onCategorySelect={handleCategorySelect}
           />
+          {statsData && statsData.categories.length > 0 && (
+            <EndgameConvRecovChart categories={statsData.categories} />
+          )}
+          {timelineData && timelineData.overall.length > 0 && (
+            <EndgameTimelineChart data={timelineData} />
+          )}
         </>
       ) : statsData && statsData.categories.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
@@ -117,20 +181,33 @@ export function EndgamesPage() {
 
   // ── Games tab content ────────────────────────────────────────────────────────
 
-  const selectedLabel =
-    selectedCategory && statsData
-      ? statsData.categories.find((c) => c.endgame_class === selectedCategory)?.label ?? null
-      : null;
+  // ── Endgame type dropdown (used in Games tab) ──────────────────────────────
+  const endgameTypeDropdown = (
+    <div className="flex items-center gap-2">
+      <p className="text-xs text-muted-foreground whitespace-nowrap">Endgame type</p>
+      <Select
+        value={selectedCategory}
+        onValueChange={(v) => {
+          setSelectedCategory(v as EndgameClass);
+          setGamesOffset(0);
+        }}
+      >
+        <SelectTrigger size="sm" data-testid="filter-endgame-type" className="min-h-11 sm:min-h-0 w-[160px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(Object.entries(ENDGAME_CLASS_LABELS) as [EndgameClass, string][]).map(([value, label]) => (
+            <SelectItem key={value} value={value}>{label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
 
   const gamesContent = (
     <div className="flex flex-col gap-4">
-      {selectedCategory === null ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <p className="text-sm text-muted-foreground">
-            Select an endgame category in the Statistics tab to view matching games.
-          </p>
-        </div>
-      ) : gamesLoading ? (
+      {endgameTypeDropdown}
+      {gamesLoading ? (
         <div className="flex items-center justify-center py-12">
           <p className="text-muted-foreground">Loading games...</p>
         </div>
@@ -142,19 +219,21 @@ export function EndgamesPage() {
           </p>
         </div>
       ) : gamesData ? (
-        <div>
-          {selectedLabel && (
-            <p className="text-lg font-medium mb-3">{selectedLabel} Endgames</p>
-          )}
-          <GameCardList
-            games={gamesData.games}
-            matchedCount={gamesData.matched_count}
-            totalGames={gamesData.matched_count}
-            offset={gamesOffset}
-            limit={PAGE_SIZE}
-            onPageChange={setGamesOffset}
-          />
-        </div>
+        <GameCardList
+          games={gamesData.games}
+          matchedCount={gamesData.matched_count}
+          totalGames={statsData?.endgame_games ?? gamesData.matched_count}
+          offset={gamesOffset}
+          limit={PAGE_SIZE}
+          onPageChange={setGamesOffset}
+          matchLabel={statsData ? (
+            <>
+              <span className="font-medium text-foreground">{gamesData.matched_count}</span> of{' '}
+              <span className="font-medium text-foreground">{statsData.endgame_games}</span>
+              {' '}({(gamesData.matched_count / statsData.endgame_games * 100).toFixed(1)}%) games with endgame matched
+            </>
+          ) : undefined}
+        />
       ) : null}
     </div>
   );
@@ -180,6 +259,12 @@ export function EndgamesPage() {
                 <TabsTrigger value="statistics" data-testid="tab-statistics" className="flex-1">
                   <BarChart2Icon className="mr-1.5 h-4 w-4" />
                   Statistics
+                  <span
+                    data-testid="badge-beta"
+                    className="text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full ml-1.5"
+                  >
+                    Beta
+                  </span>
                 </TabsTrigger>
                 <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
                   <Gamepad2Icon className="mr-1.5 h-4 w-4" />
@@ -197,42 +282,48 @@ export function EndgamesPage() {
         </div>
 
         {/* Mobile: single column */}
-        <div className="md:hidden flex flex-col gap-2 min-w-0">
-
-          {/* Filters collapsible — collapsed by default on mobile */}
-          <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
-                data-testid="section-filters-mobile"
-              >
-                Filters
-                {mobileFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="pt-2">
-                <FilterPanel filters={filters} onChange={handleFilterChange} />
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-
-          <div className="border-t border-border/40" />
-
-          {/* Tabs: Statistics / Games */}
+        <div className="md:hidden flex flex-col min-w-0">
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>
+            {/* Sticky filters */}
+            <div className="sticky top-0 z-20 bg-background pb-2">
+              <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
+                    data-testid="section-filters-mobile"
+                  >
+                    Filters
+                    {mobileFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="pt-2">
+                    <FilterPanel filters={filters} onChange={handleFilterChange} />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            </div>
+
+            {/* Tabs: Statistics / Games */}
             <TabsList className="w-full h-11!" data-testid="endgames-tabs-mobile">
               <TabsTrigger value="statistics" className="flex-1" data-testid="tab-statistics-mobile">
                 <BarChart2Icon className="mr-1.5 h-4 w-4" />
                 Statistics
+                <span
+                  data-testid="badge-beta"
+                  className="text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full ml-1.5"
+                >
+                  Beta
+                </span>
               </TabsTrigger>
               <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
                 <Gamepad2Icon className="mr-1.5 h-4 w-4" />
                 Games
               </TabsTrigger>
             </TabsList>
+
             <TabsContent value="statistics" className="mt-4">
               {statisticsContent}
             </TabsContent>

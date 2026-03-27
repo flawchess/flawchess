@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronUp, ChevronDown, Save, Sparkles, ArrowRightLeft, Gamepad2, Scale } from 'lucide-react';
+import { ChevronUp, ChevronDown, Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
@@ -147,7 +147,7 @@ export function OpeningsPage() {
   });
   const gameCount = gameCountData?.count ?? null;
 
-  // ── Compare tab data ────────────────────────────────────────────────────────
+  // ── Statistics tab data ────────────────────────────────────────────────────────
   const timeSeriesRequest: TimeSeriesRequest | null = useMemo(() => {
     if (bookmarks.length === 0) return null;
     return {
@@ -352,7 +352,7 @@ export function OpeningsPage() {
               Position bookmarks
               <span onClick={(e) => e.stopPropagation()}>
                 <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info" side="top">
-                  Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Compare tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                  Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
                 </InfoPopover>
               </span>
             </span>
@@ -521,8 +521,8 @@ export function OpeningsPage() {
                   Games
                 </TabsTrigger>
                 <TabsTrigger value="compare" data-testid="tab-compare" className="flex-1">
-                  <Scale className="mr-1.5 h-4 w-4" />
-                  Compare
+                  <BarChart2 className="mr-1.5 h-4 w-4" />
+                  Statistics
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="explorer" className="mt-4">
@@ -680,7 +680,7 @@ export function OpeningsPage() {
                   Position bookmarks
                   <span onClick={(e) => e.stopPropagation()}>
                     <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info-mobile" side="top">
-                      Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Compare tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                      Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
                     </InfoPopover>
                   </span>
                 </span>
@@ -732,8 +732,8 @@ export function OpeningsPage() {
                 Games
               </TabsTrigger>
               <TabsTrigger value="compare" className="flex-1" data-testid="tab-compare-mobile">
-                <Scale className="mr-1.5 h-4 w-4" />
-                Compare
+                <BarChart2 className="mr-1.5 h-4 w-4" />
+                Statistics
               </TabsTrigger>
             </TabsList>
             <TabsContent value="explorer" className="mt-4">

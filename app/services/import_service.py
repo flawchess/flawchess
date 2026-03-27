@@ -21,7 +21,7 @@ import chess.pgn
 import httpx
 
 from app.core.database import async_session_maker
-from app.repositories import game_repository, import_job_repository, user_repository
+from app.repositories import game_repository, import_job_repository
 from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD
 from app.services import chesscom_client, lichess_client
 from app.services.endgame_service import _CLASS_TO_INT, classify_endgame_class
@@ -216,24 +216,46 @@ async def run_import(job_id: str) -> None:
                         if len(batch) >= _BATCH_SIZE:
                             imported = await _flush_batch(session, batch, job.user_id)
                             job.games_imported += imported
+                            # Persist incremental counters to DB after each batch so that
+                            # orphaned-job cleanup and post-restart status reads reflect
+                            # accurate progress (not zero) if the server crashes mid-import.
+                            await import_job_repository.update_import_job(
+                                session,
+                                job_id=job_id,
+                                status="in_progress",
+                                games_fetched=job.games_fetched,
+                                games_imported=job.games_imported,
+                            )
+                            await session.commit()
                             batch = []
 
                     # Flush any remaining games
                     if batch:
                         imported = await _flush_batch(session, batch, job.user_id)
                         job.games_imported += imported
+                        # Persist incremental counters for the trailing batch as well.
+                        await import_job_repository.update_import_job(
+                            session,
+                            job_id=job_id,
+                            status="in_progress",
+                            games_fetched=job.games_fetched,
+                            games_imported=job.games_imported,
+                        )
+                        await session.commit()
 
-                # Mark job complete in DB — only advance last_synced_at when games
-                # were actually imported, otherwise future incremental syncs would
-                # skip the entire history based on a no-op import's timestamp.
+                # Mark job complete in DB — always advance last_synced_at so that
+                # future syncs start from this point. A no-op sync (0 new games)
+                # still confirms we're caught up — without this, the next sync
+                # would re-fetch everything if the previous completed job had
+                # last_synced_at=NULL (e.g. after a crash recovery re-sync).
+                now = datetime.now(timezone.utc)
                 completion_fields: dict[str, object] = {
                     "status": "completed",
                     "games_fetched": job.games_fetched,
                     "games_imported": job.games_imported,
-                    "completed_at": datetime.now(timezone.utc),
+                    "completed_at": now,
+                    "last_synced_at": now,
                 }
-                if job.games_imported > 0:
-                    completion_fields["last_synced_at"] = datetime.now(timezone.utc)
 
                 await import_job_repository.update_import_job(
                     session,
@@ -241,15 +263,6 @@ async def run_import(job_id: str) -> None:
                     **completion_fields,
                 )
                 await session.commit()
-
-                # Best-effort: auto-save platform username to user profile
-                try:
-                    await user_repository.update_platform_username(
-                        session, job.user_id, job.platform, job.username
-                    )
-                    await session.commit()
-                except Exception:
-                    logger.warning("Failed to save platform username for job %s", job_id)
 
             job.status = JobStatus.COMPLETED
 

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_async_session
 from app.models.import_job import ImportJob
 from app.models.user import User
-from app.repositories import game_repository, import_job_repository
+from app.repositories import game_repository, import_job_repository, user_repository
 from app.schemas.imports import ImportRequest, ImportStartedResponse, ImportStatusResponse
 from app.services import import_service
 from app.users import current_active_user
@@ -26,6 +26,7 @@ async def start_import(
     request: ImportRequest,
     response: Response,
     user: Annotated[User, Depends(current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> ImportStartedResponse:
     """Trigger a background import from chess.com or lichess.
 
@@ -33,6 +34,10 @@ async def start_import(
 
     If an import for this user+platform is already PENDING or IN_PROGRESS,
     the existing job is returned with HTTP 200 instead of creating a duplicate.
+
+    Platform username is saved to user profile immediately at import start (not
+    at completion), so that after a server restart the Import page pre-populates
+    the username field and the Sync button is enabled even if the import failed.
     """
     # Extract user_id before asyncio.create_task — Depends only works in request scope
     user_id = user.id
@@ -46,6 +51,14 @@ async def start_import(
             status=existing.status.value,
         )
 
+    # Save platform username to user profile immediately — ensures the username
+    # persists even if the import fails mid-way or the server restarts, so the
+    # Import page can pre-populate the username field for immediate re-sync.
+    await user_repository.update_platform_username(
+        session, user_id, request.platform, request.username
+    )
+    await session.commit()
+
     job_id = import_service.create_job(user_id, request.platform, request.username)
     asyncio.create_task(import_service.run_import(job_id))
 
@@ -55,27 +68,54 @@ async def start_import(
 @router.get("/active", response_model=list[ImportStatusResponse])
 async def get_active_imports(
     user: Annotated[User, Depends(current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> list[ImportStatusResponse]:
-    """Return all active (PENDING or IN_PROGRESS) import jobs for the authenticated user.
+    """Return import jobs the frontend should display for the authenticated user.
 
-    Only checks in-memory registry — completed/failed jobs are not returned.
-    After a server restart in-memory jobs are gone, which is correct (background
-    tasks are also gone at that point).
+    Includes:
+    - In-memory active jobs (PENDING/IN_PROGRESS) — live imports in this session
+    - Recently failed DB jobs (last 24h) — surfaces errors from server restarts
+      that the user hasn't seen yet (in-memory registry is empty after restart)
     """
-    jobs = import_service.find_active_jobs_for_user(user.id)
-    return [
-        ImportStatusResponse(
-            job_id=job.job_id,
-            platform=job.platform,
-            username=job.username,
-            status=job.status.value,
-            games_fetched=job.games_fetched,
-            games_imported=job.games_imported,
-            error=job.error,
-            other_importers=import_service.count_active_platform_jobs(job.platform, job.user_id),
+    results: list[ImportStatusResponse] = []
+    seen_job_ids: set[str] = set()
+
+    # In-memory active jobs
+    for job in import_service.find_active_jobs_for_user(user.id):
+        seen_job_ids.add(job.job_id)
+        results.append(
+            ImportStatusResponse(
+                job_id=job.job_id,
+                platform=job.platform,
+                username=job.username,
+                status=job.status.value,
+                games_fetched=job.games_fetched,
+                games_imported=job.games_imported,
+                error=job.error,
+                other_importers=import_service.count_active_platform_jobs(job.platform, job.user_id),
+            )
         )
-        for job in jobs
-    ]
+
+    # Recently failed DB jobs (e.g. orphaned after server restart)
+    failed_jobs = await import_job_repository.get_unseen_failed_jobs_for_user(
+        session, user.id
+    )
+    for db_job in failed_jobs:
+        if db_job.id in seen_job_ids:
+            continue
+        results.append(
+            ImportStatusResponse(
+                job_id=db_job.id,
+                platform=db_job.platform,
+                username=db_job.username,
+                status=db_job.status,
+                games_fetched=db_job.games_fetched,
+                games_imported=db_job.games_imported,
+                error=db_job.error_message,
+            )
+        )
+
+    return results
 
 
 @router.get("/{job_id}", response_model=ImportStatusResponse)

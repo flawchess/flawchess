@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, Info } from 'lucide-react';
+import { X } from 'lucide-react';
+import { Alert } from '@/components/ui/alert';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import {
   Dialog,
@@ -49,7 +50,7 @@ function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jo
   const canDismiss = isDone || isError;
 
   const progressText = isDone
-    ? `Imported ${data.games_imported} games from ${data.platform}`
+    ? (data.games_imported === 0 ? 'No new games found since last sync' : `Imported ${data.games_imported} games from ${data.platform}`)
     : isError
       ? `Import failed: ${data.error ?? 'Unknown error'}`
       : `Importing ${data.username} (${data.platform})... ${data.games_fetched} fetched, ${data.games_imported} saved`;
@@ -57,9 +58,10 @@ function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jo
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
-        <p className={`text-sm ${isError ? 'text-destructive' : isDone ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
-          {progressText}
-        </p>
+        <div className={`flex items-center gap-1.5 text-sm ${isError ? 'text-destructive' : isDone ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+          <PlatformIcon platform={data.platform} className="h-4 w-4 shrink-0" />
+          <span>{progressText}</span>
+        </div>
         {canDismiss && (
           <button
             onClick={() => onDismiss(jobId)}
@@ -81,15 +83,9 @@ function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jo
         )}
       </div>
       {data.other_importers > 0 && (
-        <div
-          className="bg-muted border border-border rounded-md px-4 py-3 text-sm text-muted-foreground flex items-center gap-2 mt-3"
-          data-testid="import-concurrent-notice"
-        >
-          <Info className="h-4 w-4 shrink-0" />
-          <span>
-            {data.other_importers} other {data.other_importers === 1 ? 'user is' : 'users are'} also importing from {data.platform} — progress may be slower than usual.
-          </span>
-        </div>
+        <Alert variant="info" className="mt-3" data-testid="import-concurrent-notice">
+          {data.other_importers} other {data.other_importers === 1 ? 'user is' : 'users are'} also importing from {data.platform} — progress may be slower than usual.
+        </Alert>
       )}
     </div>
   );
@@ -107,6 +103,9 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
   // Per-platform error state
   const [chessComError, setChessComError] = useState<string | null>(null);
   const [lichessError, setLichessError] = useState<string | null>(null);
+
+  // Track jobId→platform for active imports — disables sync button while running
+  const [jobPlatforms, setJobPlatforms] = useState<Map<string, string>>(new Map());
 
   // Track previous profile to detect changes and sync input fields (derived state pattern)
   const [prevProfile, setPrevProfile] = useState<UserProfile | undefined>(undefined);
@@ -133,6 +132,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
     try {
       const result = await trigger.mutateAsync({ platform, username });
       onImportStarted(result.job_id);
+      setJobPlatforms((prev) => new Map(prev).set(result.job_id, platform));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Import failed. Please check the username and try again.';
       if (platform === 'chess.com') setChessComError(message);
@@ -155,6 +155,14 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  // Derive which platforms have a non-dismissed active job
+  const activePlatforms = new Set(jobPlatforms.values());
+
+  const handleDismiss = (jobId: string) => {
+    setJobPlatforms((prev) => { const next = new Map(prev); next.delete(jobId); return next; });
+    onJobDismissed(jobId);
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -200,7 +208,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
               <Button
                 size="sm"
                 onClick={() => handleSync('chess.com')}
-                disabled={trigger.isPending || !chessComUsername.trim()}
+                disabled={trigger.isPending || !chessComUsername.trim() || activePlatforms.has('chess.com')}
                 data-testid="btn-sync-chess-com"
                 className="self-end"
               >
@@ -243,7 +251,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
               <Button
                 size="sm"
                 onClick={() => handleSync('lichess')}
-                disabled={trigger.isPending || !lichessUsername.trim()}
+                disabled={trigger.isPending || !lichessUsername.trim() || activePlatforms.has('lichess')}
                 data-testid="btn-sync-lichess"
                 className="self-end"
               >
@@ -258,20 +266,20 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       )}
 
       {/* Info box: sync behavior and opponent scouting explanation */}
-      <div className="space-y-2 rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground" data-testid="import-info">
+      <Alert variant="info" data-testid="import-info">
         <p>
           <strong>First sync</strong> imports all your games. Later syncs only fetch new games since the last import.
         </p>
         <p>
           <strong>Opponent scouting:</strong> delete your games, import the opponent's games to analyze their openings, then delete and re-import your own games.
         </p>
-      </div>
+      </Alert>
 
       {/* Inline import progress bars */}
       {activeJobIds.length > 0 && (
         <section data-testid="import-progress-section" className="space-y-3">
           {activeJobIds.map((id) => (
-            <ImportProgressBar key={id} jobId={id} onDismiss={onJobDismissed} />
+            <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} />
           ))}
         </section>
       )}
