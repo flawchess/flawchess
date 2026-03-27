@@ -115,8 +115,8 @@ export function HomePageContent() {
           className="mt-4 mx-auto max-w-lg rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3 text-sm text-muted-foreground"
           data-testid="beta-badge"
         >
-          🏗️ Under active development and still rough around the edges. Bug
-          reports and feature requests welcome on{' '}
+          🏗️ Under active development. Bug
+          reports and feature requests are welcome on{' '}
           <a
             href="https://github.com/flawchess/flawchess"
             className="text-primary underline-offset-4 hover:underline"
