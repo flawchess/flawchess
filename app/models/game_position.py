@@ -22,6 +22,15 @@ class GamePosition(Base):
             "endgame_class",
             postgresql_where=text("endgame_class IS NOT NULL"),
         ),
+        # Covering index for endgame GROUP BY queries — enables index-only scans by including
+        # game_id and ply in the index, avoiding heap access for the common aggregation pattern:
+        # WHERE user_id = ? AND endgame_class IS NOT NULL GROUP BY game_id [, endgame_class]
+        # HAVING COUNT(ply) >= ENDGAME_PLY_THRESHOLD
+        Index(
+            "ix_gp_user_endgame_game",
+            "user_id", "game_id", "endgame_class", "ply",
+            postgresql_where=text("endgame_class IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
