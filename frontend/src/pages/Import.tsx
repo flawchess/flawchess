@@ -109,6 +109,9 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
   const [chessComError, setChessComError] = useState<string | null>(null);
   const [lichessError, setLichessError] = useState<string | null>(null);
 
+  // Track jobId→platform for active imports — disables sync button while running
+  const [jobPlatforms, setJobPlatforms] = useState<Map<string, string>>(new Map());
+
   // Track previous profile to detect changes and sync input fields (derived state pattern)
   const [prevProfile, setPrevProfile] = useState<UserProfile | undefined>(undefined);
   if (profile !== prevProfile) {
@@ -134,6 +137,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
     try {
       const result = await trigger.mutateAsync({ platform, username });
       onImportStarted(result.job_id);
+      setJobPlatforms((prev) => new Map(prev).set(result.job_id, platform));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Import failed. Please check the username and try again.';
       if (platform === 'chess.com') setChessComError(message);
@@ -156,6 +160,14 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  // Derive which platforms have a non-dismissed active job
+  const activePlatforms = new Set(jobPlatforms.values());
+
+  const handleDismiss = (jobId: string) => {
+    setJobPlatforms((prev) => { const next = new Map(prev); next.delete(jobId); return next; });
+    onJobDismissed(jobId);
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -201,7 +213,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
               <Button
                 size="sm"
                 onClick={() => handleSync('chess.com')}
-                disabled={trigger.isPending || !chessComUsername.trim()}
+                disabled={trigger.isPending || !chessComUsername.trim() || activePlatforms.has('chess.com')}
                 data-testid="btn-sync-chess-com"
                 className="self-end"
               >
@@ -244,7 +256,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
               <Button
                 size="sm"
                 onClick={() => handleSync('lichess')}
-                disabled={trigger.isPending || !lichessUsername.trim()}
+                disabled={trigger.isPending || !lichessUsername.trim() || activePlatforms.has('lichess')}
                 data-testid="btn-sync-lichess"
                 className="self-end"
               >
@@ -272,7 +284,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       {activeJobIds.length > 0 && (
         <section data-testid="import-progress-section" className="space-y-3">
           {activeJobIds.map((id) => (
-            <ImportProgressBar key={id} jobId={id} onDismiss={onJobDismissed} />
+            <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} />
           ))}
         </section>
       )}
