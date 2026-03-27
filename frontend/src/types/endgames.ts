@@ -61,7 +61,11 @@ export interface EndgamePerformanceResponse {
   overall_win_rate: number;
   endgame_win_rate: number;
   aggregate_conversion_pct: number;
+  aggregate_conversion_wins: number;
+  aggregate_conversion_games: number;
   aggregate_recovery_pct: number;
+  aggregate_recovery_saves: number;
+  aggregate_recovery_games: number;
   relative_strength: number;
   endgame_skill: number;
 }

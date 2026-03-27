@@ -555,7 +555,11 @@ async def get_endgame_performance(
         overall_win_rate=round(overall_win_rate, 1),
         endgame_win_rate=endgame_win_rate,
         aggregate_conversion_pct=round(aggregate_conversion_pct, 1),
+        aggregate_conversion_wins=total_conversion_wins,
+        aggregate_conversion_games=total_conversion_games,
         aggregate_recovery_pct=round(aggregate_recovery_pct, 1),
+        aggregate_recovery_saves=total_recovery_saves,
+        aggregate_recovery_games=total_recovery_games,
         relative_strength=round(relative_strength, 1),
         endgame_skill=round(endgame_skill, 1),
     )

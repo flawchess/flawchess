@@ -119,6 +119,7 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
             label="Conversion"
             zones={CONVERSION_ZONES}
           />
+          <span className="-mt-1 text-xs text-muted-foreground">({data.aggregate_conversion_wins} of {data.aggregate_conversion_games} games)</span>
         </div>
 
         {/* Recovery gauge */}
@@ -134,6 +135,7 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
             label="Recovery"
             zones={RECOVERY_ZONES}
           />
+          <span className="-mt-1 text-xs text-muted-foreground">({data.aggregate_recovery_saves} of {data.aggregate_recovery_games} games)</span>
         </div>
 
         {/* Endgame Skill gauge */}

@@ -111,7 +111,11 @@ class EndgamePerformanceResponse(BaseModel):
     overall_win_rate: float              # wins / total across ALL games, 0-100
     endgame_win_rate: float              # wins / total for endgame games only, 0-100
     aggregate_conversion_pct: float      # sum of conversion_wins / sum of conversion_games * 100 (D-07)
+    aggregate_conversion_wins: int       # total games converted (won from material advantage)
+    aggregate_conversion_games: int      # total games entering endgame with material advantage
     aggregate_recovery_pct: float        # sum of recovery_saves / sum of recovery_games * 100 (D-07)
+    aggregate_recovery_saves: int        # total games recovered (won or drawn from material deficit)
+    aggregate_recovery_games: int        # total games entering endgame with material deficit
     relative_strength: float             # endgame_win_rate / overall_win_rate * 100, can exceed 100 (D-05)
     endgame_skill: float                 # 0.6 * conversion_pct + 0.4 * recovery_pct, 0-100 (D-06)
 
