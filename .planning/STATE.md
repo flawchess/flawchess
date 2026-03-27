@@ -123,6 +123,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260326-wjj | Polish endgame charts: 3-gauge row with colored zones, remove Relative Strength/Win Rate Over Time, WDL row de-noise, inline popover fix | 2026-03-26 | 1864b4d | [260326-wjj-polish-endgame-charts-gauge-section-titl](./quick/260326-wjj-polish-endgame-charts-gauge-section-titl/) |
 | 260327-de0 | Centralize WDL/gauge/glass color constants in theme.ts; add CLAUDE.md theme convention rule | 2026-03-27 | 8b878d4 | [260327-de0-theme-management-centralize-wdl-danger-w](./quick/260327-de0-theme-management-centralize-wdl-danger-w/) |
 | 260327-egu | Optimize gauge chart endpoint performance | 2026-03-27 | ddd4b54 | [260327-egu-optimize-gauge-chart-endpoint-performanc](./quick/260327-egu-optimize-gauge-chart-endpoint-performanc/) |
+| 260327-f0o | Make import resilient to server restarts | 2026-03-27 | 9a0012a | [260327-f0o-make-import-resilient-to-server-restarts](./quick/260327-f0o-make-import-resilient-to-server-restarts/) |
 
 ---
-Last activity: 2026-03-27 - Completed quick task 260327-egu: Optimize gauge chart endpoint performance
+Last activity: 2026-03-27 - Completed quick task 260327-f0o: Make import resilient to server restarts
