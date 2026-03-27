@@ -243,17 +243,19 @@ async def run_import(job_id: str) -> None:
                         )
                         await session.commit()
 
-                # Mark job complete in DB — only advance last_synced_at when games
-                # were actually imported, otherwise future incremental syncs would
-                # skip the entire history based on a no-op import's timestamp.
+                # Mark job complete in DB — always advance last_synced_at so that
+                # future syncs start from this point. A no-op sync (0 new games)
+                # still confirms we're caught up — without this, the next sync
+                # would re-fetch everything if the previous completed job had
+                # last_synced_at=NULL (e.g. after a crash recovery re-sync).
+                now = datetime.now(timezone.utc)
                 completion_fields: dict[str, object] = {
                     "status": "completed",
                     "games_fetched": job.games_fetched,
                     "games_imported": job.games_imported,
-                    "completed_at": datetime.now(timezone.utc),
+                    "completed_at": now,
+                    "last_synced_at": now,
                 }
-                if job.games_imported > 0:
-                    completion_fields["last_synced_at"] = datetime.now(timezone.utc)
 
                 await import_job_repository.update_import_job(
                     session,

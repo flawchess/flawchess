@@ -68,27 +68,54 @@ async def start_import(
 @router.get("/active", response_model=list[ImportStatusResponse])
 async def get_active_imports(
     user: Annotated[User, Depends(current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> list[ImportStatusResponse]:
-    """Return all active (PENDING or IN_PROGRESS) import jobs for the authenticated user.
+    """Return import jobs the frontend should display for the authenticated user.
 
-    Only checks in-memory registry — completed/failed jobs are not returned.
-    After a server restart in-memory jobs are gone, which is correct (background
-    tasks are also gone at that point).
+    Includes:
+    - In-memory active jobs (PENDING/IN_PROGRESS) — live imports in this session
+    - Recently failed DB jobs (last 24h) — surfaces errors from server restarts
+      that the user hasn't seen yet (in-memory registry is empty after restart)
     """
-    jobs = import_service.find_active_jobs_for_user(user.id)
-    return [
-        ImportStatusResponse(
-            job_id=job.job_id,
-            platform=job.platform,
-            username=job.username,
-            status=job.status.value,
-            games_fetched=job.games_fetched,
-            games_imported=job.games_imported,
-            error=job.error,
-            other_importers=import_service.count_active_platform_jobs(job.platform, job.user_id),
+    results: list[ImportStatusResponse] = []
+    seen_job_ids: set[str] = set()
+
+    # In-memory active jobs
+    for job in import_service.find_active_jobs_for_user(user.id):
+        seen_job_ids.add(job.job_id)
+        results.append(
+            ImportStatusResponse(
+                job_id=job.job_id,
+                platform=job.platform,
+                username=job.username,
+                status=job.status.value,
+                games_fetched=job.games_fetched,
+                games_imported=job.games_imported,
+                error=job.error,
+                other_importers=import_service.count_active_platform_jobs(job.platform, job.user_id),
+            )
         )
-        for job in jobs
-    ]
+
+    # Recently failed DB jobs (e.g. orphaned after server restart)
+    failed_jobs = await import_job_repository.get_unseen_failed_jobs_for_user(
+        session, user.id
+    )
+    for db_job in failed_jobs:
+        if db_job.id in seen_job_ids:
+            continue
+        results.append(
+            ImportStatusResponse(
+                job_id=db_job.id,
+                platform=db_job.platform,
+                username=db_job.username,
+                status=db_job.status,
+                games_fetched=db_job.games_fetched,
+                games_imported=db_job.games_imported,
+                error=db_job.error_message,
+            )
+        )
+
+    return results
 
 
 @router.get("/{job_id}", response_model=ImportStatusResponse)

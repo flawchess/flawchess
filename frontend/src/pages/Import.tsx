@@ -49,7 +49,7 @@ function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jo
   const canDismiss = isDone || isError;
 
   const progressText = isDone
-    ? `Imported ${data.games_imported} games from ${data.platform}`
+    ? (data.games_imported === 0 ? 'No new games found since last sync' : `Imported ${data.games_imported} games from ${data.platform}`)
     : isError
       ? `Import failed: ${data.error ?? 'Unknown error'}`
       : `Importing ${data.username} (${data.platform})... ${data.games_fetched} fetched, ${data.games_imported} saved`;
@@ -57,9 +57,10 @@ function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jo
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
-        <p className={`text-sm ${isError ? 'text-destructive' : isDone ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
-          {progressText}
-        </p>
+        <div className={`flex items-center gap-1.5 text-sm ${isError ? 'text-destructive' : isDone ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+          <PlatformIcon platform={data.platform} className="h-4 w-4 shrink-0" />
+          <span>{progressText}</span>
+        </div>
         {canDismiss && (
           <button
             onClick={() => onDismiss(jobId)}
