@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
-import { CHART_CONVERSION, CHART_RECOVERY } from '@/lib/theme';
+import { GAUGE_SUCCESS } from '@/lib/theme';
 import type { ConvRecovTimelineResponse } from '@/types/endgames';
 
 interface EndgameConvRecovTimelineChartProps {
@@ -27,8 +27,9 @@ const formatDateWithYear = (d: string) => {
 };
 
 const chartConfig = {
-  conversion: { label: 'Conversion', color: CHART_CONVERSION },
-  recovery: { label: 'Recovery', color: CHART_RECOVERY },
+  conversion: { label: 'Conversion', color: GAUGE_SUCCESS },
+  // Same blue as EndgameConvRecovChart — distinct from WDL_DRAW, represents "saved" outcome
+  recovery: { label: 'Recovery', color: 'oklch(0.55 0.18 260)' },
 };
 
 export function EndgameConvRecovTimelineChart({ data }: EndgameConvRecovTimelineChartProps) {
