@@ -121,6 +121,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260326-tok | Polish endgame charts: info popovers on section titles and gauges, one-decimal WDL, remove "More" collapsibles | 2026-03-26 | f38322b | [260326-tok-polish-endgame-charts-gauge-section-titl](./quick/260326-tok-polish-endgame-charts-gauge-section-titl/) |
 | 260326-ut4 | Simplify WDL chart UX: game count links, simplified popovers, 300cp material thresholds | 2026-03-26 | cc24f76 | [260326-ut4-endgame-wdl-chart-ux-simplify-info-popov](./quick/260326-ut4-endgame-wdl-chart-ux-simplify-info-popov/) |
 | 260326-wjj | Polish endgame charts: 3-gauge row with colored zones, remove Relative Strength/Win Rate Over Time, WDL row de-noise, inline popover fix | 2026-03-26 | 1864b4d | [260326-wjj-polish-endgame-charts-gauge-section-titl](./quick/260326-wjj-polish-endgame-charts-gauge-section-titl/) |
+| 260327-de0 | Centralize WDL/gauge/glass color constants in theme.ts; add CLAUDE.md theme convention rule | 2026-03-27 | 8b878d4 | [260327-de0-theme-management-centralize-wdl-danger-w](./quick/260327-de0-theme-management-centralize-wdl-danger-w/) |
 
 ---
-Last activity: 2026-03-26 - Completed quick task 260326-wjj: Polish endgame charts gauge section titles
+Last activity: 2026-03-27 - Completed quick task 260327-de0: Centralize WDL/gauge/glass color constants in theme.ts
