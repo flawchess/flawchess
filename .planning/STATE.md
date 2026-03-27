@@ -125,7 +125,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260327-jfd | Put a beta label in the Endgame statistics chart | 2026-03-27 | 5264d73 | [260327-jfd-put-a-beta-label-in-the-endgame-statisti](./quick/260327-jfd-put-a-beta-label-in-the-endgame-statisti/) |
 | 260327-mjt | Sticky filter dropdowns for Endgame and Statistics pages | 2026-03-27 | 22ceb5d | [260327-mjt-sticky-filter-dropdowns-endgame-and-stat](./quick/260327-mjt-sticky-filter-dropdowns-endgame-and-stat/) |
 | 260327-nbs | Show game count in conversion recovery chart tooltip | 2026-03-27 | 92f2c68 | [260327-nbs-show-game-count-in-conversion-recovery-c](./quick/260327-nbs-show-game-count-in-conversion-recovery-c/) |
-| 260327-oxo | Finish Phase 32 and clean up roadmap — renumber Phase 30 to 33, update STATE.md to v1.5 | 2026-03-27 | — | [260327-oxo-finish-phase-32-and-clean-up-roadmap-ren](./quick/260327-oxo-finish-phase-32-and-clean-up-roadmap-ren/) |
+| 260327-oxo | Finish Phase 32 and clean up roadmap — renumber Phase 30 to 33, update STATE.md to v1.5 | 2026-03-27 | 74a59cc | [260327-oxo-finish-phase-32-and-clean-up-roadmap-ren](./quick/260327-oxo-finish-phase-32-and-clean-up-roadmap-ren/) |
 
 ---
 Last activity: 2026-03-27 - Completed Phase 32: Endgame Performance Charts. Roadmap cleanup (Phase 30 renumbered to 33).
