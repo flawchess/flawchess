@@ -126,6 +126,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260327-mjt | Sticky filter dropdowns for Endgame and Statistics pages | 2026-03-27 | 22ceb5d | [260327-mjt-sticky-filter-dropdowns-endgame-and-stat](./quick/260327-mjt-sticky-filter-dropdowns-endgame-and-stat/) |
 | 260327-nbs | Show game count in conversion recovery chart tooltip | 2026-03-27 | 92f2c68 | [260327-nbs-show-game-count-in-conversion-recovery-c](./quick/260327-nbs-show-game-count-in-conversion-recovery-c/) |
 | 260327-oxo | Finish Phase 32 and clean up roadmap — renumber Phase 30 to 33, update STATE.md to v1.5 | 2026-03-27 | 74a59cc | [260327-oxo-finish-phase-32-and-clean-up-roadmap-ren](./quick/260327-oxo-finish-phase-32-and-clean-up-roadmap-ren/) |
+| 260327-q8j | Expand rolling window to include all games when recency filter is set in Win Rate Over Time chart | 2026-03-27 | b2b31a0 | [260327-q8j-expand-rolling-window-to-include-all-gam](./quick/260327-q8j-expand-rolling-window-to-include-all-gam/) |
 
 ---
-Last activity: 2026-03-27 - Completed Phase 32: Endgame Performance Charts. Roadmap cleanup (Phase 30 renumbered to 33).
+Last activity: 2026-03-27 - Completed quick task 260327-q8j: Expand rolling window to include all games when recency filter is set in Win Rate Over Time chart
