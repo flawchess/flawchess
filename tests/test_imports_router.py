@@ -176,6 +176,34 @@ class TestPostImports:
 
         assert resp.status_code == 422
 
+    @pytest.mark.asyncio
+    async def test_post_imports_saves_username_immediately(self, no_op_run_import, auth_headers):
+        """POST /imports should save the platform username to the user profile before
+        launching the background task, so it persists even if the import fails.
+        """
+        mock_update_username = AsyncMock()
+
+        with patch(
+            "app.routers.imports.user_repository.update_platform_username",
+            mock_update_username,
+        ):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/api/imports",
+                    json={"platform": "chess.com", "username": "alice"},
+                    headers=auth_headers,
+                )
+
+        assert resp.status_code == 201
+        # Username must have been saved before the background task starts
+        mock_update_username.assert_called_once()
+        call_args = mock_update_username.call_args
+        # Args: (session, user_id, platform, username) — check platform and username
+        assert call_args.args[2] == "chess.com"
+        assert call_args.args[3] == "alice"
+
 
 # ---------------------------------------------------------------------------
 # GET /imports/{job_id}
