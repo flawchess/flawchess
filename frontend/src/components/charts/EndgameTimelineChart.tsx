@@ -141,7 +141,6 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
                     .map((item) => {
                       const cfg = perTypeChartConfig[item.dataKey as string];
                       const gameCount = item.payload[`${item.dataKey}_game_count`] as number | undefined;
-                      const windowSize = item.payload[`${item.dataKey}_window_size`] as number | undefined;
                       return (
                         <div key={item.dataKey} className="flex items-center gap-1.5">
                           <div

@@ -200,6 +200,12 @@ export function EndgamesPage() {
                 <TabsTrigger value="statistics" data-testid="tab-statistics" className="flex-1">
                   <BarChart2Icon className="mr-1.5 h-4 w-4" />
                   Statistics
+                  <span
+                    data-testid="badge-beta"
+                    className="text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full ml-1.5"
+                  >
+                    Beta
+                  </span>
                 </TabsTrigger>
                 <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
                   <Gamepad2Icon className="mr-1.5 h-4 w-4" />
@@ -247,6 +253,12 @@ export function EndgamesPage() {
               <TabsTrigger value="statistics" className="flex-1" data-testid="tab-statistics-mobile">
                 <BarChart2Icon className="mr-1.5 h-4 w-4" />
                 Statistics
+                <span
+                  data-testid="badge-beta"
+                  className="text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full ml-1.5"
+                >
+                  Beta
+                </span>
               </TabsTrigger>
               <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
                 <Gamepad2Icon className="mr-1.5 h-4 w-4" />
