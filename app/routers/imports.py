@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_async_session
 from app.models.import_job import ImportJob
 from app.models.user import User
-from app.repositories import game_repository, import_job_repository
+from app.repositories import game_repository, import_job_repository, user_repository
 from app.schemas.imports import ImportRequest, ImportStartedResponse, ImportStatusResponse
 from app.services import import_service
 from app.users import current_active_user
@@ -26,6 +26,7 @@ async def start_import(
     request: ImportRequest,
     response: Response,
     user: Annotated[User, Depends(current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> ImportStartedResponse:
     """Trigger a background import from chess.com or lichess.
 
@@ -33,6 +34,10 @@ async def start_import(
 
     If an import for this user+platform is already PENDING or IN_PROGRESS,
     the existing job is returned with HTTP 200 instead of creating a duplicate.
+
+    Platform username is saved to user profile immediately at import start (not
+    at completion), so that after a server restart the Import page pre-populates
+    the username field and the Sync button is enabled even if the import failed.
     """
     # Extract user_id before asyncio.create_task — Depends only works in request scope
     user_id = user.id
@@ -45,6 +50,14 @@ async def start_import(
             job_id=existing.job_id,
             status=existing.status.value,
         )
+
+    # Save platform username to user profile immediately — ensures the username
+    # persists even if the import fails mid-way or the server restarts, so the
+    # Import page can pre-populate the username field for immediate re-sync.
+    await user_repository.update_platform_username(
+        session, user_id, request.platform, request.username
+    )
+    await session.commit()
 
     job_id = import_service.create_job(user_id, request.platform, request.username)
     asyncio.create_task(import_service.run_import(job_id))

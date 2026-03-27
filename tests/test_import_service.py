@@ -513,13 +513,14 @@ class TestRunImport:
         await run_import("nonexistent-job-id")
 
     @pytest.mark.asyncio
-    async def test_username_saved_after_import(self):
-        """After a successful chess.com import, the user's chess_com_username is saved."""
+    async def test_username_not_saved_in_run_import(self):
+        """run_import should NOT save the platform username — that is now done at import start
+        in the router (start_import endpoint), so it persists even if the import fails.
+        """
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
 
         mock_session = _make_mock_session()
         mock_maker = _mock_session_maker(mock_session)
-        mock_update_username = AsyncMock()
 
         with (
             patch("app.services.import_service.async_session_maker", mock_maker),
@@ -540,10 +541,6 @@ class TestRunImport:
                 side_effect=_empty_async_gen,
             ),
             patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
-            patch(
-                "app.services.import_service.user_repository.update_platform_username",
-                mock_update_username,
-            ),
         ):
             mock_http_ctx = AsyncMock()
             mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
@@ -555,7 +552,6 @@ class TestRunImport:
         job = get_job(job_id)
         assert job is not None
         assert job.status == JobStatus.COMPLETED
-        mock_update_username.assert_called_once_with(mock_session, 1, "chess.com", "alice")
 
     @pytest.mark.asyncio
     async def test_move_count_populated(self):
@@ -610,10 +606,6 @@ class TestRunImport:
             patch(
                 "app.services.import_service.hashes_for_game",
                 return_value=([(0, 1, 2, 3, "e4", None), (1, 4, 5, 6, None, None)], "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR"),
-            ),
-            patch(
-                "app.services.import_service.user_repository.update_platform_username",
-                new=AsyncMock(),
             ),
         ):
             mock_http_ctx = AsyncMock()
@@ -686,10 +678,6 @@ class TestRunImport:
                 "app.services.import_service.game_repository.bulk_insert_positions",
                 new=AsyncMock(side_effect=_capture),
             ),
-            patch(
-                "app.services.import_service.user_repository.update_platform_username",
-                new=AsyncMock(),
-            ),
         ):
             mock_http_ctx = AsyncMock()
             mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
@@ -757,10 +745,6 @@ class TestRunImport:
                 "app.services.import_service.game_repository.bulk_insert_positions",
                 new=AsyncMock(side_effect=_capture),
             ),
-            patch(
-                "app.services.import_service.user_repository.update_platform_username",
-                new=AsyncMock(),
-            ),
         ):
             mock_http_ctx = AsyncMock()
             mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
@@ -826,10 +810,6 @@ class TestRunImport:
             patch(
                 "app.services.import_service.game_repository.bulk_insert_positions",
                 new=AsyncMock(side_effect=_capture),
-            ),
-            patch(
-                "app.services.import_service.user_repository.update_platform_username",
-                new=AsyncMock(),
             ),
         ):
             mock_http_ctx = AsyncMock()
@@ -897,10 +877,6 @@ class TestRunImport:
             patch(
                 "app.services.import_service.game_repository.bulk_insert_positions",
                 new=AsyncMock(side_effect=_capture),
-            ),
-            patch(
-                "app.services.import_service.user_repository.update_platform_username",
-                new=AsyncMock(),
             ),
             patch(
                 "app.services.import_service.classify_position",

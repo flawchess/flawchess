@@ -21,7 +21,7 @@ import chess.pgn
 import httpx
 
 from app.core.database import async_session_maker
-from app.repositories import game_repository, import_job_repository, user_repository
+from app.repositories import game_repository, import_job_repository
 from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD
 from app.services import chesscom_client, lichess_client
 from app.services.endgame_service import _CLASS_TO_INT, classify_endgame_class
@@ -216,12 +216,32 @@ async def run_import(job_id: str) -> None:
                         if len(batch) >= _BATCH_SIZE:
                             imported = await _flush_batch(session, batch, job.user_id)
                             job.games_imported += imported
+                            # Persist incremental counters to DB after each batch so that
+                            # orphaned-job cleanup and post-restart status reads reflect
+                            # accurate progress (not zero) if the server crashes mid-import.
+                            await import_job_repository.update_import_job(
+                                session,
+                                job_id=job_id,
+                                status="in_progress",
+                                games_fetched=job.games_fetched,
+                                games_imported=job.games_imported,
+                            )
+                            await session.commit()
                             batch = []
 
                     # Flush any remaining games
                     if batch:
                         imported = await _flush_batch(session, batch, job.user_id)
                         job.games_imported += imported
+                        # Persist incremental counters for the trailing batch as well.
+                        await import_job_repository.update_import_job(
+                            session,
+                            job_id=job_id,
+                            status="in_progress",
+                            games_fetched=job.games_fetched,
+                            games_imported=job.games_imported,
+                        )
+                        await session.commit()
 
                 # Mark job complete in DB — only advance last_synced_at when games
                 # were actually imported, otherwise future incremental syncs would
@@ -241,15 +261,6 @@ async def run_import(job_id: str) -> None:
                     **completion_fields,
                 )
                 await session.commit()
-
-                # Best-effort: auto-save platform username to user profile
-                try:
-                    await user_repository.update_platform_username(
-                        session, job.user_id, job.platform, job.username
-                    )
-                    await session.commit()
-                except Exception:
-                    logger.warning("Failed to save platform username for job %s", job_id)
 
             job.status = JobStatus.COMPLETED
 
