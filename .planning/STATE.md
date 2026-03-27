@@ -1,23 +1,22 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.4
-milestone_name: Improvements
-status: Executing Phase 32
-last_updated: "2026-03-26T20:10:00.000Z"
-last_activity: 2026-03-26
+milestone: v1.5
+milestone_name: Game Statistics and Endgame Analysis
+status: Phase 32 Complete — Planning Phase 33
+last_updated: "2026-03-27T18:00:00.000Z"
+last_activity: 2026-03-27
 progress:
   total_phases: 11
-  completed_phases: 6
-  total_plans: 16
-  completed_plans: 14
+  completed_phases: 9
+  total_plans: 18
+  completed_plans: 17
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 32 (endgame-performance-charts) — EXECUTING
-Plan: 2 of 3
+Phase: 33 (homepage-readme-seo-update) — NOT STARTED
 
 ## Project Reference
 
@@ -29,10 +28,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 
 | Phase | Goal | Status |
 |-------|------|--------|
-| 26. Position Classifier & Schema | Classifier + 4-column migration | Not started |
-| 27. Import Wiring & Backfill | Wire classifier + backfill existing rows | Not started |
-| 28. Endgame Analytics | Backend API + Endgames tab frontend | Not started |
-| 29. Engine Analysis Import | chess.com accuracy + lichess per-move evals | Not started |
+| 33. Homepage, README & SEO Update | Update homepage content, README, and SEO metadata | Not started |
 
 ## Key Context
 
@@ -90,6 +86,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - Phase 28.1 inserted after Phase 28: Import lichess analysis metrics (URGENT)
 - Phase 31 added: Endgame classification redesign — per-position instead of per-game
 - Phase 32 added: Endgame Performance Charts — endgame vs non-endgame WDL, strength gauge, rolling-window timelines
+- Phase 30 renumbered to Phase 33: Homepage, README & SEO Update (was skipped during v1.5 execution; phases 31 and 32 were inserted before it)
 
 ### Blockers/Concerns
 
@@ -124,11 +121,11 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260327-de0 | Centralize WDL/gauge/glass color constants in theme.ts; add CLAUDE.md theme convention rule | 2026-03-27 | 8b878d4 | [260327-de0-theme-management-centralize-wdl-danger-w](./quick/260327-de0-theme-management-centralize-wdl-danger-w/) |
 | 260327-egu | Optimize gauge chart endpoint performance | 2026-03-27 | ddd4b54 | [260327-egu-optimize-gauge-chart-endpoint-performanc](./quick/260327-egu-optimize-gauge-chart-endpoint-performanc/) |
 | 260327-f0o | Make import resilient to server restarts | 2026-03-27 | 9a0012a | [260327-f0o-make-import-resilient-to-server-restarts](./quick/260327-f0o-make-import-resilient-to-server-restarts/) |
-
 | 260327-gyz | Add conversion/recovery timeline chart to endgame statistics | 2026-03-27 | 97d2116 | [260327-gyz-add-conversion-recovery-timeline-chart-t](./quick/260327-gyz-add-conversion-recovery-timeline-chart-t/) |
 | 260327-jfd | Put a beta label in the Endgame statistics chart | 2026-03-27 | 5264d73 | [260327-jfd-put-a-beta-label-in-the-endgame-statisti](./quick/260327-jfd-put-a-beta-label-in-the-endgame-statisti/) |
 | 260327-mjt | Sticky filter dropdowns for Endgame and Statistics pages | 2026-03-27 | 22ceb5d | [260327-mjt-sticky-filter-dropdowns-endgame-and-stat](./quick/260327-mjt-sticky-filter-dropdowns-endgame-and-stat/) |
 | 260327-nbs | Show game count in conversion recovery chart tooltip | 2026-03-27 | 92f2c68 | [260327-nbs-show-game-count-in-conversion-recovery-c](./quick/260327-nbs-show-game-count-in-conversion-recovery-c/) |
+| 260327-oxo | Finish Phase 32 and clean up roadmap — renumber Phase 30 to 33, update STATE.md to v1.5 | 2026-03-27 | — | [260327-oxo-finish-phase-32-and-clean-up-roadmap-ren](./quick/260327-oxo-finish-phase-32-and-clean-up-roadmap-ren/) |
 
 ---
-Last activity: 2026-03-27 - Completed quick task 260327-nbs: Show game count in conversion recovery chart
+Last activity: 2026-03-27 - Completed Phase 32: Endgame Performance Charts. Roadmap cleanup (Phase 30 renumbered to 33).
