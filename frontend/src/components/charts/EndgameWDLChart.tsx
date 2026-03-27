@@ -1,7 +1,7 @@
 import { ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { WDL_WIN, WDL_DRAW, WDL_LOSS } from '@/components/results/WDLBar';
+import { WDL_WIN, WDL_DRAW, WDL_LOSS, GLASS_OVERLAY, MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { EndgameCategoryStats, EndgameClass } from '@/types/endgames';
 
@@ -9,10 +9,6 @@ interface EndgameWDLChartProps {
   categories: EndgameCategoryStats[];
   onCategorySelect: (category: EndgameClass) => void;
 }
-
-// Glass-effect overlay matching WDLBar.tsx
-const GLASS_OVERLAY =
-  'linear-gradient(to bottom, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.05) 60%, rgba(0,0,0,0.05) 100%)';
 
 // Map EndgameClass to slug used in data-testid
 const CLASS_TO_SLUG: Record<EndgameClass, string> = {
@@ -32,8 +28,6 @@ const ENDGAME_TYPE_DESCRIPTIONS: Record<EndgameClass, string> = {
   mixed: 'Endgames with pieces from two or more families (e.g. queen + rook, rook + knight).',
   pawnless: 'Endgames with no pawns on the board — only kings and pieces.',
 };
-
-const MIN_GAMES_FOR_RELIABLE_STATS = 10;
 
 interface CategoryData {
   endgame_class: EndgameClass;
@@ -98,7 +92,10 @@ function EndgameCategoryRow({
       </div>
 
       {/* Stacked WDL bar with glass overlay — dimmed for low sample size categories */}
-      <div className={cn('flex h-5 w-full overflow-hidden rounded mb-0', cat.total < MIN_GAMES_FOR_RELIABLE_STATS && 'opacity-50')}>
+      <div
+        className={cn('flex h-5 w-full overflow-hidden rounded mb-0')}
+        style={cat.total < MIN_GAMES_FOR_RELIABLE_STATS ? { opacity: UNRELIABLE_OPACITY } : undefined}
+      >
         {cat.win_pct > 0 && (
           <div
             className="transition-all"
@@ -131,8 +128,11 @@ function EndgameCategoryRow({
         />
       </div>
 
-      {/* WDL stats with game counts */}
-      <div className="flex justify-center gap-3 text-sm">
+      {/* WDL stats with game counts — dimmed for low sample size categories */}
+      <div
+        className="flex justify-center gap-3 text-sm"
+        style={cat.total < MIN_GAMES_FOR_RELIABLE_STATS ? { opacity: UNRELIABLE_OPACITY } : undefined}
+      >
         <span style={{ color: WDL_WIN }}>W: {cat.wins} ({Math.round(cat.win_pct)}%)</span>
         <span style={{ color: WDL_DRAW }}>D: {cat.draws} ({Math.round(cat.draw_pct)}%)</span>
         <span style={{ color: WDL_LOSS }}>L: {cat.losses} ({Math.round(cat.loss_pct)}%)</span>

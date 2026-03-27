@@ -1,6 +1,7 @@
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { WDL_WIN, WDL_DRAW, WDL_LOSS } from '@/lib/theme';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 
 interface WDLStats {
@@ -16,9 +17,9 @@ interface WDLBarChartProps {
 }
 
 const chartConfig = {
-  win_pct: { label: 'Wins', color: 'oklch(0.50 0.14 145)' },
-  draw_pct: { label: 'Draws', color: 'oklch(0.60 0.02 260)' },
-  loss_pct: { label: 'Losses', color: 'oklch(0.50 0.15 25)' },
+  win_pct: { label: 'Wins', color: WDL_WIN },
+  draw_pct: { label: 'Draws', color: WDL_DRAW },
+  loss_pct: { label: 'Losses', color: WDL_LOSS },
   game_count: { label: 'Games', color: 'transparent' },
 };
 

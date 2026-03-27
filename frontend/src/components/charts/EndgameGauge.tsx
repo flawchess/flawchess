@@ -3,21 +3,16 @@
  * Uses Recharts PieChart with a 180° arc to render colored zone segments
  * and a needle indicator for the current value.
  * The label is rendered by the parent — this component only renders the gauge.
+ *
+ * GaugeZone type and DEFAULT_GAUGE_ZONES are defined in @/lib/theme
+ * to avoid exporting non-component values from this file (react-refresh constraint).
  */
 
 import { PieChart, Pie, Cell } from 'recharts';
+import { type GaugeZone, DEFAULT_GAUGE_ZONES } from '@/lib/theme';
 
-export interface GaugeZone {
-  from: number; // 0-1 fraction
-  to: number;   // 0-1 fraction
-  color: string;
-}
-
-export const DEFAULT_GAUGE_ZONES: GaugeZone[] = [
-  { from: 0,    to: 0.6,  color: 'oklch(0.55 0.20 25)' },   // red
-  { from: 0.6,  to: 0.8,  color: 'oklch(0.65 0.18 80)' },   // amber
-  { from: 0.8,  to: 1.0,  color: 'oklch(0.55 0.17 145)' },  // green
-];
+// Re-export GaugeZone type for callers who need it without importing from theme directly
+export type { GaugeZone };
 
 /** Derive fill color from zones — returns the color of the zone containing pct. */
 function getZoneColor(pct: number, zones: GaugeZone[]): string {

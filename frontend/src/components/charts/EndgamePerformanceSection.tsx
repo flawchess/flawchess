@@ -6,33 +6,29 @@
 
 import { EndgameGauge, type GaugeZone } from '@/components/charts/EndgameGauge';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { WDL_WIN, WDL_DRAW, WDL_LOSS } from '@/components/results/WDLBar';
+import { WDL_WIN, WDL_DRAW, WDL_LOSS, GLASS_OVERLAY, GAUGE_DANGER, GAUGE_WARNING, GAUGE_SUCCESS } from '@/lib/theme';
 import type { EndgamePerformanceResponse, EndgameWDLSummary } from '@/types/endgames';
-
-// Glass-effect overlay copied locally to avoid coupling to EndgameWDLChart
-const GLASS_OVERLAY =
-  'linear-gradient(to bottom, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.05) 60%, rgba(0,0,0,0.05) 100%)';
 
 // Material advantage/deficit threshold in pawn points (backend uses 300 centipawns)
 export const MATERIAL_ADVANTAGE_POINTS = 3;
 
-// Per-gauge zone definitions
+// Per-gauge zone definitions — thresholds differ per metric, colors from theme constants
 const CONVERSION_ZONES: GaugeZone[] = [
-  { from: 0,    to: 0.6,  color: 'oklch(0.55 0.20 25)' },   // red
-  { from: 0.6,  to: 0.8,  color: 'oklch(0.65 0.18 80)' },   // amber
-  { from: 0.8,  to: 1.0,  color: 'oklch(0.55 0.17 145)' },  // green
+  { from: 0,    to: 0.6,  color: GAUGE_DANGER },
+  { from: 0.6,  to: 0.8,  color: GAUGE_WARNING },
+  { from: 0.8,  to: 1.0,  color: GAUGE_SUCCESS },
 ];
 
 const RECOVERY_ZONES: GaugeZone[] = [
-  { from: 0,    to: 0.1,  color: 'oklch(0.55 0.20 25)' },   // red
-  { from: 0.1,  to: 0.3,  color: 'oklch(0.65 0.18 80)' },   // amber
-  { from: 0.3,  to: 1.0,  color: 'oklch(0.55 0.17 145)' },  // green
+  { from: 0,    to: 0.1,  color: GAUGE_DANGER },
+  { from: 0.1,  to: 0.3,  color: GAUGE_WARNING },
+  { from: 0.3,  to: 1.0,  color: GAUGE_SUCCESS },
 ];
 
 const ENDGAME_SKILL_ZONES: GaugeZone[] = [
-  { from: 0,    to: 0.4,  color: 'oklch(0.55 0.20 25)' },   // red
-  { from: 0.4,  to: 0.6,  color: 'oklch(0.65 0.18 80)' },   // amber
-  { from: 0.6,  to: 1.0,  color: 'oklch(0.55 0.17 145)' },  // green
+  { from: 0,    to: 0.4,  color: GAUGE_DANGER },
+  { from: 0.4,  to: 0.6,  color: GAUGE_WARNING },
+  { from: 0.6,  to: 1.0,  color: GAUGE_SUCCESS },
 ];
 
 interface WDLRowProps {
