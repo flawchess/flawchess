@@ -2,7 +2,7 @@ import { useState, useMemo, useRef } from 'react';
 import { Chess } from 'chess.js';
 import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { WDL_WIN, WDL_DRAW, WDL_LOSS } from '@/lib/theme';
+import { WDL_WIN, WDL_DRAW, WDL_LOSS, MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { cn } from '@/lib/utils';
 import type { NextMoveEntry } from '@/types/api';
@@ -134,6 +134,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover }:
   const [open, setOpen] = useState(false);
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
+  const isBelowThreshold = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
 
   const handleMouseEnter = () => {
     onMoveHover?.(entry.move_san);
@@ -157,6 +158,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover }:
             'cursor-pointer hover:bg-accent min-h-[44px]',
             selectedMove === entry.move_san && 'bg-accent',
           )}
+          style={isBelowThreshold ? { opacity: UNRELIABLE_OPACITY } : undefined}
           role="button"
           tabIndex={0}
           onClick={() => onRowClick(entry)}
