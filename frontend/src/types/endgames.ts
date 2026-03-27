@@ -87,3 +87,16 @@ export interface EndgameTimelineResponse {
   per_type: Record<string, EndgameTimelinePoint[]>;
   window: number;
 }
+
+export interface ConvRecovTimelinePoint {
+  date: string;
+  rate: number; // 0.0-1.0 fraction
+  game_count: number; // games in rolling window at this point
+  window_size: number;
+}
+
+export interface ConvRecovTimelineResponse {
+  conversion: ConvRecovTimelinePoint[];
+  recovery: ConvRecovTimelinePoint[];
+  window: number;
+}

@@ -56,3 +56,13 @@ export function useEndgamePerformance(filters: FilterState) {
     queryFn: () => endgameApi.getPerformance(params),
   });
 }
+
+const DEFAULT_CONV_RECOV_WINDOW = 50;
+
+export function useEndgameConvRecovTimeline(filters: FilterState, window = DEFAULT_CONV_RECOV_WINDOW) {
+  const params = buildEndgameParams(filters);
+  return useQuery({
+    queryKey: ['endgameConvRecovTimeline', params, window],
+    queryFn: () => endgameApi.getConvRecovTimeline({ ...params, window }),
+  });
+}

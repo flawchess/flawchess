@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_async_session
 from app.models.user import User
 from app.schemas.endgames import (
+    ConvRecovTimelineResponse,
     EndgameClass,
     EndgameGamesResponse,
     EndgamePerformanceResponse,
@@ -146,5 +147,35 @@ async def get_endgame_timeline(
         recency=recency,
         rated=rated,
         opponent_type=opponent_type,
+        window=window,
+    )
+
+
+@router.get("/endgames/conv-recov-timeline", response_model=ConvRecovTimelineResponse)
+async def get_conv_recov_timeline(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    time_control: list[str] | None = Query(default=None),
+    platform: list[str] | None = Query(default=None),
+    recency: str | None = Query(default=None),
+    rated: bool | None = Query(default=None),
+    opponent_type: str = Query(default="human"),
+    window: int = Query(default=50, ge=5, le=200),
+) -> ConvRecovTimelineResponse:
+    """Return conversion and recovery rolling-window timelines.
+
+    Conversion: win rate over trailing `window` games where user entered endgame
+    with significant material advantage (>=3 pawns).
+    Recovery: save rate (win+draw) over trailing `window` games where user entered
+    endgame with significant material disadvantage (>=3 pawns down).
+    """
+    return await endgame_service.get_conv_recov_timeline(
+        session,
+        user_id=user.id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency=recency,
         window=window,
     )

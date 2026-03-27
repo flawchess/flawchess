@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.endgame_repository import (
     count_filtered_games,
+    query_conv_recov_timeline_rows,
     query_endgame_entry_rows,
     query_endgame_games as _query_endgame_games,
     query_endgame_performance_rows,
@@ -27,6 +28,8 @@ from app.repositories.endgame_repository import (
 )
 from app.schemas.analysis import GameRecord
 from app.schemas.endgames import (
+    ConvRecovTimelinePoint,
+    ConvRecovTimelineResponse,
     ConversionRecoveryStats,
     EndgameClass,
     EndgameCategoryStats,
@@ -637,3 +640,96 @@ async def get_endgame_timeline(
         ]
 
     return EndgameTimelineResponse(overall=overall, per_type=per_type, window=window)
+
+
+def _compute_conv_recov_rolling_series(
+    rows: list[tuple],
+    window: int,
+    rate_fn,
+) -> list[ConvRecovTimelinePoint]:
+    """Compute a rolling-window timeline series from chronologically sorted rows.
+
+    Args:
+        rows: list of (played_at, result, user_color, ...) tuples, sorted by played_at asc.
+        window: rolling window size (number of trailing games).
+        rate_fn: function taking a list of outcome strings ("win"/"draw"/"loss")
+                 and returning a float rate (0.0-1.0).
+
+    Returns one ConvRecovTimelinePoint per game once the window is full.
+    """
+    if not rows:
+        return []
+
+    outcomes: list[Literal["win", "draw", "loss"]] = []
+    dates: list[str] = []
+    points: list[ConvRecovTimelinePoint] = []
+
+    for played_at, result, user_color, *_rest in rows:
+        outcome = derive_user_result(result, user_color)
+        outcomes.append(outcome)
+        dates.append(played_at.strftime("%Y-%m-%d") if hasattr(played_at, "strftime") else str(played_at))
+
+        if len(outcomes) >= window:
+            trailing = outcomes[-window:]
+            rate = rate_fn(trailing)
+            points.append(ConvRecovTimelinePoint(
+                date=dates[-1],
+                rate=round(rate, 4),
+                game_count=len(trailing),
+                window_size=window,
+            ))
+
+    return points
+
+
+async def get_conv_recov_timeline(
+    session: AsyncSession,
+    user_id: int,
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency: str | None,
+    window: int = 50,
+) -> ConvRecovTimelineResponse:
+    """Compute conversion and recovery rolling-window timelines.
+
+    Conversion: win rate over trailing `window` games where user entered endgame
+    with >= _MATERIAL_ADVANTAGE_THRESHOLD cp advantage.
+    Recovery: save rate (win+draw) over trailing `window` games where user entered
+    endgame with >= _MATERIAL_ADVANTAGE_THRESHOLD cp disadvantage.
+    """
+    cutoff = recency_cutoff(recency)
+    rows = await query_conv_recov_timeline_rows(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+    )
+
+    # Split by material advantage direction
+    conversion_rows = [r for r in rows if r[3] is not None and r[3] >= _MATERIAL_ADVANTAGE_THRESHOLD]
+    recovery_rows = [r for r in rows if r[3] is not None and r[3] <= -_MATERIAL_ADVANTAGE_THRESHOLD]
+
+    # Conversion rate: wins / total in window
+    conversion_series = _compute_conv_recov_rolling_series(
+        conversion_rows,
+        window,
+        lambda outcomes: outcomes.count("win") / len(outcomes),
+    )
+
+    # Recovery rate: (wins + draws) / total in window
+    recovery_series = _compute_conv_recov_rolling_series(
+        recovery_rows,
+        window,
+        lambda outcomes: (outcomes.count("win") + outcomes.count("draw")) / len(outcomes),
+    )
+
+    return ConvRecovTimelineResponse(
+        conversion=conversion_series,
+        recovery=recovery_series,
+        window=window,
+    )

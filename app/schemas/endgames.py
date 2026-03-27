@@ -157,3 +157,24 @@ class EndgameTimelineResponse(BaseModel):
     overall: list[EndgameOverallPoint]
     per_type: dict[str, list[EndgameTimelinePoint]]
     window: int
+
+
+class ConvRecovTimelinePoint(BaseModel):
+    """Single data point in a conversion or recovery rolling timeline."""
+
+    date: str
+    rate: float  # 0.0-1.0 fraction
+    game_count: int  # games in rolling window at this point
+    window_size: int
+
+
+class ConvRecovTimelineResponse(BaseModel):
+    """Response for GET /api/endgames/conv-recov-timeline.
+
+    Two rolling-window series showing how conversion rate (winning when up material)
+    and recovery rate (saving when down material) trend over game history.
+    """
+
+    conversion: list[ConvRecovTimelinePoint]
+    recovery: list[ConvRecovTimelinePoint]
+    window: int

@@ -206,6 +206,90 @@ async def query_endgame_games(
     return games, matched_count
 
 
+async def query_conv_recov_timeline_rows(
+    session: AsyncSession,
+    user_id: int,
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+) -> list[tuple]:
+    """Return rows for conversion/recovery timeline: games with significant material imbalance.
+
+    Only includes games where abs(material_imbalance) >= 300 at endgame entry
+    (significant advantage or disadvantage of roughly 3+ pawns).
+
+    Returns rows of: (played_at, result, user_color, user_material_imbalance)
+    ordered by played_at ascending for chronological rolling-window computation.
+    """
+    # Minimum centipawn imbalance for a game to count as "significant advantage/disadvantage"
+    SIGNIFICANT_IMBALANCE_CP = 300
+
+    # Subquery 1: group by (game_id, endgame_class), count plies per span, find entry ply.
+    span_subq = (
+        select(
+            GamePosition.game_id.label("game_id"),
+            GamePosition.endgame_class.label("endgame_class"),
+            func.count(GamePosition.ply).label("ply_count"),
+            func.min(GamePosition.ply).label("entry_ply"),
+        )
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.endgame_class.isnot(None),
+        )
+        .group_by(GamePosition.game_id, GamePosition.endgame_class)
+        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
+        .subquery("span")
+    )
+
+    # Subquery 2: entry position material imbalance lookup.
+    entry_pos_subq = (
+        select(
+            GamePosition.game_id.label("game_id"),
+            GamePosition.ply.label("ply"),
+            GamePosition.material_imbalance.label("material_imbalance"),
+        )
+        .where(GamePosition.user_id == user_id)
+        .subquery("entry_pos")
+    )
+
+    # Sign flip for black: positive = user has more material.
+    color_sign = case(
+        (Game.user_color == "white", 1),
+        else_=-1,
+    )
+
+    # Main query: join Game -> span_subq -> entry_pos_subq.
+    # Filter by abs(material_imbalance) >= 300 — works regardless of sign flip
+    # since abs is symmetric. This keeps the query efficient by filtering in SQL.
+    stmt = (
+        select(
+            Game.played_at,
+            Game.result,
+            Game.user_color,
+            (entry_pos_subq.c.material_imbalance * color_sign).label("user_material_imbalance"),
+        )
+        .join(span_subq, Game.id == span_subq.c.game_id)
+        .join(
+            entry_pos_subq,
+            (entry_pos_subq.c.game_id == span_subq.c.game_id)
+            & (entry_pos_subq.c.ply == span_subq.c.entry_ply),
+        )
+        .where(
+            Game.user_id == user_id,
+            Game.played_at.isnot(None),
+            func.abs(entry_pos_subq.c.material_imbalance) >= SIGNIFICANT_IMBALANCE_CP,
+        )
+        .order_by(Game.played_at.asc())
+    )
+
+    stmt = _apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+
+    result = await session.execute(stmt)
+    return list(result.fetchall())
+
+
 def _apply_game_filters(
     stmt,
     time_control: list[str] | None,

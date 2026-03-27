@@ -125,5 +125,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260327-egu | Optimize gauge chart endpoint performance | 2026-03-27 | ddd4b54 | [260327-egu-optimize-gauge-chart-endpoint-performanc](./quick/260327-egu-optimize-gauge-chart-endpoint-performanc/) |
 | 260327-f0o | Make import resilient to server restarts | 2026-03-27 | 9a0012a | [260327-f0o-make-import-resilient-to-server-restarts](./quick/260327-f0o-make-import-resilient-to-server-restarts/) |
 
+| 260327-gyz | Add conversion/recovery timeline chart to endgame statistics | 2026-03-27 | 97d2116 | [260327-gyz-add-conversion-recovery-timeline-chart-t](./quick/260327-gyz-add-conversion-recovery-timeline-chart-t/) |
+
 ---
-Last activity: 2026-03-27 - Completed quick task 260327-f0o: Make import resilient to server restarts
+Last activity: 2026-03-27 - Completed quick task 260327-gyz: Add conversion/recovery timeline chart to endgame statistics

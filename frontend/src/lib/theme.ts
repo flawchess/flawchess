@@ -49,6 +49,10 @@ export const DEFAULT_GAUGE_ZONES: GaugeZone[] = [
   { from: 0.8,  to: 1.0,  color: GAUGE_SUCCESS },
 ];
 
+// Semantic chart colors for conversion/recovery trend lines
+export const CHART_CONVERSION = 'oklch(0.65 0.20 145)';   // green — winning when up material
+export const CHART_RECOVERY = 'oklch(0.70 0.18 80)';      // amber — saving when down material
+
 // Minimum games required for reliable stats — rows/charts below this threshold are dimmed
 export const MIN_GAMES_FOR_RELIABLE_STATS = 10;
 
