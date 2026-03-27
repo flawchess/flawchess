@@ -82,13 +82,13 @@ jobs:
 
       - name: Health check
         run: |
-          for i in $(seq 1 12); do
+          for i in $(seq 1 36); do
             if curl -sf https://flawchess.com/api/health; then
               echo "Health check passed"
               exit 0
             fi
-            echo "Attempt $i/12 failed, waiting 5s..."
+            echo "Attempt $i/36 failed, waiting 5s..."
             sleep 5
           done
-          echo "Health check failed after 60s"
+          echo "Health check failed after 180s"
           exit 1
