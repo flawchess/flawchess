@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, Info } from 'lucide-react';
+import { X } from 'lucide-react';
+import { Alert } from '@/components/ui/alert';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import {
   Dialog,
@@ -82,15 +83,9 @@ function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jo
         )}
       </div>
       {data.other_importers > 0 && (
-        <div
-          className="bg-muted border border-border rounded-md px-4 py-3 text-sm text-muted-foreground flex items-center gap-2 mt-3"
-          data-testid="import-concurrent-notice"
-        >
-          <Info className="h-4 w-4 shrink-0" />
-          <span>
-            {data.other_importers} other {data.other_importers === 1 ? 'user is' : 'users are'} also importing from {data.platform} — progress may be slower than usual.
-          </span>
-        </div>
+        <Alert variant="info" className="mt-3" data-testid="import-concurrent-notice">
+          {data.other_importers} other {data.other_importers === 1 ? 'user is' : 'users are'} also importing from {data.platform} — progress may be slower than usual.
+        </Alert>
       )}
     </div>
   );
@@ -271,14 +266,14 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       )}
 
       {/* Info box: sync behavior and opponent scouting explanation */}
-      <div className="space-y-2 rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground" data-testid="import-info">
+      <Alert variant="info" data-testid="import-info">
         <p>
           <strong>First sync</strong> imports all your games. Later syncs only fetch new games since the last import.
         </p>
         <p>
           <strong>Opponent scouting:</strong> delete your games, import the opponent's games to analyze their openings, then delete and re-import your own games.
         </p>
-      </div>
+      </Alert>
 
       {/* Inline import progress bars */}
       {activeJobIds.length > 0 && (

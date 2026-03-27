@@ -85,7 +85,6 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
           Endgame Performance
           <InfoPopover ariaLabel="Endgame Performance info" testId="perf-section-info" side="top">
             Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not.
-            Conversion, Recovery, and Endgame Skill are computed from your material advantage/deficit rates.
           </InfoPopover>
         </span>
       </h3>

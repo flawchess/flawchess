@@ -1,10 +1,10 @@
 import { useState, useCallback } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { ChevronUp, ChevronDown, BarChart2Icon, Gamepad2Icon } from 'lucide-react';
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { InfoPopover } from '@/components/ui/info-popover';
 import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
 import { EndgamePerformanceSection } from '@/components/charts/EndgamePerformanceSection';
@@ -70,20 +70,38 @@ export function EndgamesPage() {
 
   // ── Statistics tab content ───────────────────────────────────────────────────
 
-  // Summary line: "X of Y games (Z%) reached an endgame phase" with info popover
+  // Summary line + collapsible explaining endgame concepts and metric limitations
   const endgameSummary = statsData ? (
     statsData.total_games === 0 ? null : (
-      <p className="text-sm text-muted-foreground mb-2" data-testid="endgame-summary">
-        <span className="inline-flex items-center gap-1 flex-wrap">
+      <div data-testid="endgame-summary">
+        <p className="text-sm text-muted-foreground mb-2">
           {statsData.endgame_games} of {statsData.total_games} games
           ({(statsData.endgame_games / statsData.total_games * 100).toFixed(1)}%) reached an endgame phase
-          <InfoPopover ariaLabel="Endgame phase definition" testId="endgame-phase-info" side="bottom">
-            An endgame phase is defined as positions where the total count of major and minor pieces
-            (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not counted.
-            This follows the Lichess definition.
-          </InfoPopover>
-        </span>
-      </p>
+        </p>
+        <Accordion type="single" collapsible>
+          <AccordionItem value="concepts" className="border rounded-md border-border px-4" data-testid="endgame-concepts-trigger">
+            <AccordionTrigger className="text-muted-foreground hover:no-underline">
+              Endgame statistics concepts
+            </AccordionTrigger>
+            <AccordionContent className="text-muted-foreground space-y-2">
+              <p>
+                <strong>Endgame phase:</strong> positions where the total count of major and minor pieces
+                (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
+                counted. This follows the Lichess definition.
+              </p>
+              <p>
+                <strong>Conversion & recovery:</strong> these rates reflect your performance against opponents
+                at your current rating level. As your rating changes, you face stronger or weaker opponents,
+                so trends or flat lines may not directly indicate improvement or stagnation in absolute terms.
+              </p>
+              <p>
+                <strong>Material balance:</strong> winning and losing positions are classified by piece count.
+                Positional factors like passed pawns or piece activity are not considered.
+              </p>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </div>
     )
   ) : null;
 

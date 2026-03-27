@@ -87,11 +87,18 @@ export function EndgameConvRecovTimelineChart({ data }: EndgameConvRecovTimeline
         <span className="inline-flex items-center gap-1">
           Conversion & Recovery Over Time
           <InfoPopover ariaLabel="Conversion recovery chart info" testId="conv-recov-timeline-info" side="top">
-            <strong>Conversion rate</strong>: your win rate in the last {data.window} games where you
-            entered the endgame with a significant material advantage ({'>'}=3 pawns).{' '}
-            <strong>Recovery rate</strong>: your save rate (wins + draws) in the last {data.window} games
-            where you entered the endgame at a significant material disadvantage ({'>'}=3 pawns down).
+            <div className="space-y-2">
+              <p>
+                <strong>Conversion rate</strong>: your win rate in the last {data.window} games where you
+              entered the endgame with a significant material advantage ({'>'}=3 pawns).{' '}
+              </p>
+              <p>
+                <strong>Recovery rate</strong>: your save rate (wins + draws) in the last {data.window} games
+              where you entered the endgame at a significant material disadvantage ({'>'}=3 pawns down).
+              </p>
+            </div>
           </InfoPopover>
+
         </span>
       </h3>
       <ChartContainer config={chartConfig} className="w-full h-72" data-testid="conv-recov-timeline-chart">
