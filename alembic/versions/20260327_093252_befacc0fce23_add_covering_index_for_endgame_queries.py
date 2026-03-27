@@ -21,7 +21,17 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
     # Float(precision=24) vs REAL alter_column noise removed — semantically equivalent in PostgreSQL.
-    op.create_index('ix_gp_user_endgame_game', 'game_positions', ['user_id', 'game_id', 'endgame_class', 'ply'], unique=False, postgresql_where=sa.text('endgame_class IS NOT NULL'))
+    # Replace the original index with one that INCLUDEs material_imbalance, enabling index-only scans
+    # for the array_agg(material_imbalance ORDER BY ply) pattern used in endgame entry-row queries.
+    # Without INCLUDE, Postgres falls back to a parallel seq scan on 5M+ rows for material_imbalance.
+    op.create_index(
+        'ix_gp_user_endgame_game',
+        'game_positions',
+        ['user_id', 'game_id', 'endgame_class', 'ply'],
+        unique=False,
+        postgresql_where=sa.text('endgame_class IS NOT NULL'),
+        postgresql_include=['material_imbalance'],
+    )
 
 
 def downgrade() -> None:

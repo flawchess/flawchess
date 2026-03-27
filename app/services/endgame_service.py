@@ -87,8 +87,8 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
     - rook: rook(s), may have pawns, no queen or minor pieces
     - minor_piece: bishop/knight, may have pawns, no queen or rook
     - pawn: only pawns, no pieces
-    - mixed: two or more piece families present (queen+rook, queen+minor, rook+minor)
-    - pawnless: no pieces and no pawns (bare kings only)
+    - mixed: two or more piece families present WITH pawns
+    - pawnless: no pawns at all — bare kings or multi-family without pawns (e.g. KRN_KR)
 
     Pawns alongside a single piece family do NOT trigger mixed — a rook+pawns endgame
     is a rook endgame, a bishop+pawns endgame is a minor piece endgame.
@@ -109,8 +109,15 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
 
     # Count piece families (queen, rook, minor) — pawns are NOT a piece family.
     # A rook endgame with pawns (KRP_KRP) is still a rook endgame.
-    # Mixed = two or more piece families present (e.g. queen+rook, rook+minor).
+    # Mixed = two or more piece families present WITH pawns (e.g. queen+rook+pawns).
+    # Pawnless = no pawns at all (bare kings, or multi-family without pawns like KRB_KR).
     piece_families = sum([has_queen, has_rook, has_minor])
+
+    # Pawnless: any endgame with no pawns and either no pieces (bare kings)
+    # or multiple piece families (e.g. KRN_KR, KQR_KQ).
+    if not has_pawn and (piece_families != 1):
+        return "pawnless"
+
     if piece_families >= 2:
         return "mixed"
 
@@ -124,7 +131,7 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
     if has_pawn:
         return "pawn"
 
-    # No pieces, no pawns — bare kings
+    # Should not be reachable, but kept as safety net
     return "pawnless"
 
 

@@ -48,17 +48,29 @@ class TestClassifyEndgameClass:
         """KQ vs KQ — pure queen endgame, no rook or minor pieces."""
         assert classify_endgame_class("KQ_KQ") == "queen"
 
-    def test_mixed_rook_and_minor(self):
-        """KRB vs KR — rook + minor piece = mixed."""
-        assert classify_endgame_class("KRB_KR") == "mixed"
+    def test_mixed_rook_and_minor_with_pawns(self):
+        """KRBP vs KRP — rook + minor + pawns = mixed."""
+        assert classify_endgame_class("KRBP_KRP") == "mixed"
 
-    def test_mixed_queen_and_rook(self):
-        """KQR vs KQ — queen + rook = mixed."""
-        assert classify_endgame_class("KQR_KQ") == "mixed"
+    def test_mixed_queen_and_rook_with_pawns(self):
+        """KQRP vs KQP — queen + rook + pawns = mixed."""
+        assert classify_endgame_class("KQRP_KQP") == "mixed"
 
-    def test_pawnless(self):
+    def test_pawnless_bare_kings(self):
         """K vs K — bare kings, pawnless endgame."""
         assert classify_endgame_class("K_K") == "pawnless"
+
+    def test_pawnless_rook_and_minor(self):
+        """KRB vs KR — rook + minor, no pawns = pawnless."""
+        assert classify_endgame_class("KRB_KR") == "pawnless"
+
+    def test_pawnless_queen_and_rook(self):
+        """KQR vs KQ — queen + rook, no pawns = pawnless."""
+        assert classify_endgame_class("KQR_KQ") == "pawnless"
+
+    def test_pawnless_rook_and_minor_2(self):
+        """KRN vs KR — two piece families, no pawns = pawnless."""
+        assert classify_endgame_class("KRN_KR") == "pawnless"
 
     def test_minor_piece_with_pawns_is_minor(self):
         """KBPP vs KNP — minor piece + pawns = minor_piece (pawns don't create a mixed endgame)."""
@@ -71,10 +83,6 @@ class TestClassifyEndgameClass:
     def test_queen_with_pawns_is_queen(self):
         """KQPP vs KQP — queen + pawns = queen."""
         assert classify_endgame_class("KQPP_KQP") == "queen"
-
-    def test_rook_and_minor_is_mixed(self):
-        """KRN vs KR — two piece families (rook + minor) = mixed."""
-        assert classify_endgame_class("KRN_KR") == "mixed"
 
 
 class TestAggregateEndgameStats:

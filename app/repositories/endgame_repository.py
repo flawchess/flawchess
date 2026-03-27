@@ -10,7 +10,9 @@ Functions:
 import asyncio
 import datetime
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, type_coerce
+from sqlalchemy.dialects.postgresql import ARRAY, aggregate_order_by
+from sqlalchemy.types import SmallInteger as SmallIntegerType
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
@@ -75,14 +77,25 @@ async def query_endgame_entry_rows(
 
     NO color filter is applied per D-02 — stats cover both white and black games.
     """
-    # Subquery 1: group by (game_id, endgame_class), count plies per span, find entry ply.
-    # HAVING filters out spans below the ply threshold — short tactical transitions ignored.
+    # Single subquery: group by (game_id, endgame_class), count plies per span,
+    # AND grab material_imbalance at entry ply via array_agg ordered by ply.
+    # This eliminates a separate entry_pos subquery that caused a 5M+ row seq scan.
+    # The INCLUDE(material_imbalance) on ix_gp_user_endgame_game enables index-only scans.
+    #
+    # (array_agg(material_imbalance ORDER BY ply))[1] gets the value at the min ply
+    # without needing a separate lookup join.
+    entry_imbalance_agg = type_coerce(
+        func.array_agg(
+            aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())
+        ),
+        ARRAY(SmallIntegerType),
+    )[1]
+
     span_subq = (
         select(
             GamePosition.game_id.label("game_id"),
             GamePosition.endgame_class.label("endgame_class"),
-            func.count(GamePosition.ply).label("ply_count"),
-            func.min(GamePosition.ply).label("entry_ply"),
+            entry_imbalance_agg.label("entry_imbalance"),
         )
         .where(
             GamePosition.user_id == user_id,
@@ -93,17 +106,6 @@ async def query_endgame_entry_rows(
         .subquery("span")
     )
 
-    # Subquery 2: select (game_id, ply, material_imbalance) for looking up entry ply imbalance.
-    entry_pos_subq = (
-        select(
-            GamePosition.game_id.label("game_id"),
-            GamePosition.ply.label("ply"),
-            GamePosition.material_imbalance.label("material_imbalance"),
-        )
-        .where(GamePosition.user_id == user_id)
-        .subquery("entry_pos")
-    )
-
     # Sign flip for black: material_imbalance is always from white's perspective in DB.
     # Multiply by -1 when user is black so positive value = user has more material.
     color_sign = case(
@@ -111,22 +113,16 @@ async def query_endgame_entry_rows(
         else_=-1,
     )
 
-    # Main query: join Game -> span_subq -> entry_pos_subq.
-    # entry_pos_subq joined on entry_ply to get material_imbalance at span start.
+    # Main query: join Game -> span_subq (no second subquery needed).
     stmt = (
         select(
             Game.id.label("game_id"),
             span_subq.c.endgame_class,
             Game.result,
             Game.user_color,
-            (entry_pos_subq.c.material_imbalance * color_sign).label("user_material_imbalance"),
+            (span_subq.c.entry_imbalance * color_sign).label("user_material_imbalance"),
         )
         .join(span_subq, Game.id == span_subq.c.game_id)
-        .join(
-            entry_pos_subq,
-            (entry_pos_subq.c.game_id == span_subq.c.game_id)
-            & (entry_pos_subq.c.ply == span_subq.c.entry_ply),
-        )
         .where(Game.user_id == user_id)
     )
 
@@ -226,13 +222,19 @@ async def query_conv_recov_timeline_rows(
     # Minimum centipawn imbalance for a game to count as "significant advantage/disadvantage"
     SIGNIFICANT_IMBALANCE_CP = 300
 
-    # Subquery 1: group by (game_id, endgame_class), count plies per span, find entry ply.
+    # Single subquery: group + grab entry material_imbalance via array_agg.
+    # Same pattern as query_endgame_entry_rows — eliminates 5M+ row seq scan.
+    entry_imbalance_agg = type_coerce(
+        func.array_agg(
+            aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())
+        ),
+        ARRAY(SmallIntegerType),
+    )[1]
+
     span_subq = (
         select(
             GamePosition.game_id.label("game_id"),
-            GamePosition.endgame_class.label("endgame_class"),
-            func.count(GamePosition.ply).label("ply_count"),
-            func.min(GamePosition.ply).label("entry_ply"),
+            entry_imbalance_agg.label("entry_imbalance"),
         )
         .where(
             GamePosition.user_id == user_id,
@@ -243,43 +245,26 @@ async def query_conv_recov_timeline_rows(
         .subquery("span")
     )
 
-    # Subquery 2: entry position material imbalance lookup.
-    entry_pos_subq = (
-        select(
-            GamePosition.game_id.label("game_id"),
-            GamePosition.ply.label("ply"),
-            GamePosition.material_imbalance.label("material_imbalance"),
-        )
-        .where(GamePosition.user_id == user_id)
-        .subquery("entry_pos")
-    )
-
     # Sign flip for black: positive = user has more material.
     color_sign = case(
         (Game.user_color == "white", 1),
         else_=-1,
     )
 
-    # Main query: join Game -> span_subq -> entry_pos_subq.
-    # Filter by abs(material_imbalance) >= 300 — works regardless of sign flip
-    # since abs is symmetric. This keeps the query efficient by filtering in SQL.
+    # Main query: join Game -> span_subq only (no second subquery).
+    # Filter by abs(entry_imbalance) >= 300 — works regardless of sign flip.
     stmt = (
         select(
             Game.played_at,
             Game.result,
             Game.user_color,
-            (entry_pos_subq.c.material_imbalance * color_sign).label("user_material_imbalance"),
+            (span_subq.c.entry_imbalance * color_sign).label("user_material_imbalance"),
         )
         .join(span_subq, Game.id == span_subq.c.game_id)
-        .join(
-            entry_pos_subq,
-            (entry_pos_subq.c.game_id == span_subq.c.game_id)
-            & (entry_pos_subq.c.ply == span_subq.c.entry_ply),
-        )
         .where(
             Game.user_id == user_id,
             Game.played_at.isnot(None),
-            func.abs(entry_pos_subq.c.material_imbalance) >= SIGNIFICANT_IMBALANCE_CP,
+            func.abs(span_subq.c.entry_imbalance) >= SIGNIFICANT_IMBALANCE_CP,
         )
         .order_by(Game.played_at.asc())
     )
