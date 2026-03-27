@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Improvements
 status: Ready to execute
-last_updated: "2026-03-27T18:39:55.831Z"
+last_updated: "2026-03-27T23:09:34Z"
 last_activity: 2026-03-27
 progress:
   total_phases: 11
@@ -132,6 +132,7 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260327-oxo | Finish Phase 32 and clean up roadmap — renumber Phase 30 to 33, update STATE.md to v1.5 | 2026-03-27 | 74a59cc | [260327-oxo-finish-phase-32-and-clean-up-roadmap-ren](./quick/260327-oxo-finish-phase-32-and-clean-up-roadmap-ren/) |
 | 260327-q8j | Expand rolling window to include all games when recency filter is set in Win Rate Over Time chart | 2026-03-27 | b2b31a0 | [260327-q8j-expand-rolling-window-to-include-all-gam](./quick/260327-q8j-expand-rolling-window-to-include-all-gam/) |
 | 260327-tun | In the Moves subtab of the Openings, show moves below the 10 game threshold as muted | 2026-03-27 | c9d28e4 | [260327-tun-in-the-moves-subtab-of-the-openings-show](./quick/260327-tun-in-the-moves-subtab-of-the-openings-show/) |
+| 260328-04a | Update SEO meta tags, README, and CLAUDE.md to match 5-feature homepage | 2026-03-27 | d039ba6 | [260328-04a-update-seo-readme-and-claude-md-based-on](./quick/260328-04a-update-seo-readme-and-claude-md-based-on/) |
 
 ---
-Last activity: 2026-03-27 - Completed quick task 260327-tun: In the Moves subtab of the Openings, show moves below the 10 game threshold as muted
+Last activity: 2026-03-27 - Completed quick task 260328-04a: Update SEO, README, and CLAUDE.md to match homepage features
