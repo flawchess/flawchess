@@ -30,10 +30,10 @@ export const WDL_LOSS = 'oklch(0.50 0.15 25)';
 export const GLASS_OVERLAY =
   'linear-gradient(to bottom, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.05) 60%, rgba(0,0,0,0.05) 100%)';
 
-// Semantic gauge zone colors (danger/warning/success)
-export const GAUGE_DANGER = 'oklch(0.55 0.20 25)';   // red zone
-export const GAUGE_WARNING = 'oklch(0.65 0.18 80)';   // amber zone
-export const GAUGE_SUCCESS = 'oklch(0.55 0.17 145)';  // green zone
+// Semantic gauge zone colors — reuse WDL red/green, amber matched in brightness
+export const GAUGE_DANGER = WDL_LOSS;                    // red zone (same as loss)
+export const GAUGE_WARNING = 'oklch(0.50 0.14 80)';     // amber zone (L/C match WDL)
+export const GAUGE_SUCCESS = WDL_WIN;                    // green zone (same as win)
 
 /** A single zone in a semicircle gauge — fraction-based bounds and fill color. */
 export interface GaugeZone {

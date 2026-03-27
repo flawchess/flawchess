@@ -78,7 +78,7 @@ export function EndgameGauge({ value, maxValue = 100, label, zones = DEFAULT_GAU
             isAnimationActive={false}
           >
             {data.map((entry, i) => (
-              <Cell key={i} fill={entry.color} fillOpacity={0.6} />
+              <Cell key={i} fill={entry.color} />
             ))}
           </Pie>
         </PieChart>
