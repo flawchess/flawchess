@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: Game Statistics and Endgame Analysis
-status: Phase 32 Complete — Planning Phase 33
-last_updated: "2026-03-27T18:00:00.000Z"
+milestone: v1.4
+milestone_name: Improvements
+status: Ready to execute
+last_updated: "2026-03-27T18:38:37.729Z"
 last_activity: 2026-03-27
 progress:
   total_phases: 11
-  completed_phases: 9
-  total_plans: 18
+  completed_phases: 7
+  total_plans: 19
   completed_plans: 17
 ---
 
@@ -16,7 +16,8 @@ progress:
 
 ## Current Position
 
-Phase: 33 (homepage-readme-seo-update) — NOT STARTED
+Phase: 33 (homepage-readme-seo-update) — EXECUTING
+Plan: 2 of 3
 
 ## Project Reference
 
@@ -66,6 +67,8 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 - [Phase 31-01]: chunk_size reduced 1900->1700 for 19-column asyncpg safety margin; Float(24)/REAL alter_column noise removed (semantically equivalent in PostgreSQL)
 - [Phase 31-02]: ENDGAME_PLY_THRESHOLD = 6: games must spend 3+ full moves in a class to count — filters tactical transitions
 - [Phase 31-02]: endgame_games counts (game, class) combinations not unique games — intentional per D-02
+- [Phase 33]: Title changed to 'Chess Analysis for Human Players' to reflect v1.5 scope
+- [Phase 33]: README broadened to include endgame analytics, Zobrist hash mention, and updated screenshot reference
 
 ### Critical v1.5 Constraints
 
@@ -129,4 +132,4 @@ Current focus: Game Statistics & Endgame Analysis (v1.5)
 | 260327-q8j | Expand rolling window to include all games when recency filter is set in Win Rate Over Time chart | 2026-03-27 | b2b31a0 | [260327-q8j-expand-rolling-window-to-include-all-gam](./quick/260327-q8j-expand-rolling-window-to-include-all-gam/) |
 
 ---
-Last activity: 2026-03-27 - Completed quick task 260327-q8j: Expand rolling window to include all games when recency filter is set in Win Rate Over Time chart
+Last activity: 2026-03-27
