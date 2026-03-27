@@ -4,6 +4,13 @@ import { ChevronUp, ChevronDown, BarChart2Icon, Gamepad2Icon } from 'lucide-reac
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
@@ -18,6 +25,17 @@ import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
 
 const PAGE_SIZE = 20;
+
+const ENDGAME_CLASS_LABELS: Record<EndgameClass, string> = {
+  mixed: 'Mixed',
+  rook: 'Rook',
+  minor_piece: 'Minor Piece',
+  pawn: 'Pawn',
+  queen: 'Queen',
+  pawnless: 'Pawnless',
+};
+
+const DEFAULT_ENDGAME_CLASS: EndgameClass = 'mixed';
 
 export function EndgamesPage() {
   const location = useLocation();
@@ -36,7 +54,7 @@ export function EndgamesPage() {
   const debouncedFilters = useDebounce(filters, 300);
 
   // ── Category selection state ─────────────────────────────────────────────────
-  const [selectedCategory, setSelectedCategory] = useState<EndgameClass | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<EndgameClass>(DEFAULT_ENDGAME_CLASS);
   const [gamesOffset, setGamesOffset] = useState(0);
 
   // ── Mobile collapsible state ───────────────────────────────────────────────
@@ -63,9 +81,10 @@ export function EndgamesPage() {
   // ── Category selection handler ──────────────────────────────────────────────
 
   const handleCategorySelect = useCallback((category: EndgameClass) => {
-    // Select category and reset pagination — user navigates via link icon
+    // Select category, reset pagination, and scroll to top — user navigates via link icon
     setSelectedCategory(category);
     setGamesOffset(0);
+    window.scrollTo(0, 0);
   }, []);
 
   // ── Statistics tab content ───────────────────────────────────────────────────
@@ -155,20 +174,33 @@ export function EndgamesPage() {
 
   // ── Games tab content ────────────────────────────────────────────────────────
 
-  const selectedLabel =
-    selectedCategory && statsData
-      ? statsData.categories.find((c) => c.endgame_class === selectedCategory)?.label ?? null
-      : null;
+  // ── Endgame type dropdown (used in Games tab) ──────────────────────────────
+  const endgameTypeDropdown = (
+    <div className="flex items-center gap-2">
+      <p className="text-xs text-muted-foreground whitespace-nowrap">Endgame type</p>
+      <Select
+        value={selectedCategory}
+        onValueChange={(v) => {
+          setSelectedCategory(v as EndgameClass);
+          setGamesOffset(0);
+        }}
+      >
+        <SelectTrigger size="sm" data-testid="filter-endgame-type" className="min-h-11 sm:min-h-0 w-[160px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(Object.entries(ENDGAME_CLASS_LABELS) as [EndgameClass, string][]).map(([value, label]) => (
+            <SelectItem key={value} value={value}>{label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
 
   const gamesContent = (
     <div className="flex flex-col gap-4">
-      {selectedCategory === null ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <p className="text-sm text-muted-foreground">
-            Select an endgame category in the Statistics tab to view matching games.
-          </p>
-        </div>
-      ) : gamesLoading ? (
+      {endgameTypeDropdown}
+      {gamesLoading ? (
         <div className="flex items-center justify-center py-12">
           <p className="text-muted-foreground">Loading games...</p>
         </div>
@@ -180,19 +212,21 @@ export function EndgamesPage() {
           </p>
         </div>
       ) : gamesData ? (
-        <div>
-          {selectedLabel && (
-            <p className="text-lg font-medium mb-3">{selectedLabel} Endgames</p>
-          )}
-          <GameCardList
-            games={gamesData.games}
-            matchedCount={gamesData.matched_count}
-            totalGames={gamesData.matched_count}
-            offset={gamesOffset}
-            limit={PAGE_SIZE}
-            onPageChange={setGamesOffset}
-          />
-        </div>
+        <GameCardList
+          games={gamesData.games}
+          matchedCount={gamesData.matched_count}
+          totalGames={statsData?.endgame_games ?? gamesData.matched_count}
+          offset={gamesOffset}
+          limit={PAGE_SIZE}
+          onPageChange={setGamesOffset}
+          matchLabel={statsData ? (
+            <>
+              <span className="font-medium text-foreground">{gamesData.matched_count}</span> of{' '}
+              <span className="font-medium text-foreground">{statsData.endgame_games}</span>
+              {' '}({(gamesData.matched_count / statsData.endgame_games * 100).toFixed(1)}%) games with endgame matched
+            </>
+          ) : undefined}
+        />
       ) : null}
     </div>
   );
@@ -243,10 +277,8 @@ export function EndgamesPage() {
         {/* Mobile: single column */}
         <div className="md:hidden flex flex-col min-w-0">
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>
-            {/* Sticky: filters collapsible + divider + tab bar */}
-            <div className="sticky top-0 z-20 bg-background pb-2 flex flex-col gap-2">
-
-              {/* Filters collapsible — collapsed by default on mobile */}
+            {/* Sticky filters */}
+            <div className="sticky top-0 z-20 bg-background pb-2">
               <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
                 <CollapsibleTrigger asChild>
                   <Button
@@ -265,27 +297,25 @@ export function EndgamesPage() {
                   </div>
                 </CollapsibleContent>
               </Collapsible>
-
-              <div className="border-t border-border/40" />
-
-              {/* Tabs: Statistics / Games */}
-              <TabsList className="w-full h-11!" data-testid="endgames-tabs-mobile">
-                <TabsTrigger value="statistics" className="flex-1" data-testid="tab-statistics-mobile">
-                  <BarChart2Icon className="mr-1.5 h-4 w-4" />
-                  Statistics
-                  <span
-                    data-testid="badge-beta"
-                    className="text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full ml-1.5"
-                  >
-                    Beta
-                  </span>
-                </TabsTrigger>
-                <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
-                  <Gamepad2Icon className="mr-1.5 h-4 w-4" />
-                  Games
-                </TabsTrigger>
-              </TabsList>
             </div>
+
+            {/* Tabs: Statistics / Games */}
+            <TabsList className="w-full h-11!" data-testid="endgames-tabs-mobile">
+              <TabsTrigger value="statistics" className="flex-1" data-testid="tab-statistics-mobile">
+                <BarChart2Icon className="mr-1.5 h-4 w-4" />
+                Statistics
+                <span
+                  data-testid="badge-beta"
+                  className="text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full ml-1.5"
+                >
+                  Beta
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
+                <Gamepad2Icon className="mr-1.5 h-4 w-4" />
+                Games
+              </TabsTrigger>
+            </TabsList>
 
             <TabsContent value="statistics" className="mt-4">
               {statisticsContent}

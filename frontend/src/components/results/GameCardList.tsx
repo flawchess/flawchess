@@ -11,6 +11,7 @@ interface GameCardListProps {
   limit: number;
   onPageChange: (offset: number) => void;
   headerAction?: ReactNode;
+  matchLabel?: ReactNode;
 }
 
 type PaginationItem = number | 'ellipsis-start' | 'ellipsis-end';
@@ -64,6 +65,7 @@ export function GameCardList({
   limit,
   onPageChange,
   headerAction,
+  matchLabel,
 }: GameCardListProps) {
   const totalPages = Math.max(1, Math.ceil(matchedCount / limit));
   const currentPage = Math.floor(offset / limit) + 1;
@@ -82,8 +84,12 @@ export function GameCardList({
       {/* Matched count row */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{matchedCount}</span> of{' '}
-          <span className="font-medium text-foreground">{totalGames}</span> games matched
+          {matchLabel ?? (
+            <>
+              <span className="font-medium text-foreground">{matchedCount}</span> of{' '}
+              <span className="font-medium text-foreground">{totalGames}</span> games matched
+            </>
+          )}
         </p>
         {headerAction}
       </div>
