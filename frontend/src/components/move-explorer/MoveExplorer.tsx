@@ -95,9 +95,14 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
                 <span className="inline-flex items-center gap-1">
                   Move
                   <InfoPopover ariaLabel="Move arrows info" testId="move-arrows-info" side="top">
-                    These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings.
-                    <br /><br />
-                    On desktop, click a move to play it. On mobile, tap to highlight (shows the arrow on the board), then tap again to play.
+                    <div className="space-y-2">
+                      <p>
+                        These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings. Moves with fewer than 10 games have unreliable statistics and are shown as muted.
+                      </p>
+                      <p>
+                        On desktop, click a move to play it. On mobile, tap to highlight (shows the arrow on the board), then tap again to play.
+                      </p>
+                    </div>
                   </InfoPopover>
                 </span>
               </th>

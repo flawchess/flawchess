@@ -256,9 +256,14 @@ export function OpeningsPage() {
         canGoForward={chess.currentPly < chess.moveHistory.length}
         infoSlot={
           <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
-            Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.
-            <br/><br/>
-            The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.
+            <div className="space-y-2">
+              <p>
+                Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.
+              </p>
+              <p>
+                The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.
+              </p>
+            </div>
           </InfoPopover>
         }
       />
