@@ -6,7 +6,7 @@ status: Active
 last_updated: "2026-03-28T00:00:00Z"
 last_activity: 2026-03-28
 progress:
-  total_phases: 0
+  total_phases: 1
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -16,10 +16,10 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Phase 34 — Theme Improvements
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-28 — Milestone v1.6 started
+Status: Not started
+Last activity: 2026-03-28 — Roadmap created for v1.6
 
 ## Project Reference
 
@@ -31,6 +31,7 @@ Current focus: v1.6 UI Polish & Improvements
 
 | Phase | Goal | Status |
 |-------|------|--------|
+| 34. Theme Improvements | Users see a visually consistent, polished UI with centralized theme management | Not started |
 
 ## Key Context
 
@@ -92,6 +93,7 @@ Current focus: v1.6 UI Polish & Improvements
 - Phase 31 added: Endgame classification redesign — per-position instead of per-game
 - Phase 32 added: Endgame Performance Charts — endgame vs non-endgame WDL, strength gauge, rolling-window timelines
 - Phase 30 renumbered to Phase 33: Homepage, README & SEO Update (was skipped during v1.5 execution; phases 31 and 32 were inserted before it)
+- Phase 34 added: v1.6 Theme Improvements — centralized theme, charcoal containers, filter layout, WDL chart consistency, subtab highlighting
 
 ### Blockers/Concerns
 
@@ -136,4 +138,4 @@ Current focus: v1.6 UI Polish & Improvements
 | 260328-04a | Update SEO meta tags, README, and CLAUDE.md to match 5-feature homepage | 2026-03-27 | d039ba6 | [260328-04a-update-seo-readme-and-claude-md-based-on](./quick/260328-04a-update-seo-readme-and-claude-md-based-on/) |
 
 ---
-Last activity: 2026-03-28 - Milestone v1.5 complete. Phase 33 shipped, deployed to production.
+Last activity: 2026-03-28 - Roadmap created for v1.6. Phase 34 (Theme Improvements) defined.
