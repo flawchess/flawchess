@@ -428,7 +428,9 @@ export function OpeningsPage() {
   const moveExplorerContent = (
     <div className="flex flex-col gap-4">
       {nextMoves.data && nextMoves.data.position_stats.total > 0 && (
-        <WDLBar stats={nextMoves.data.position_stats} />
+        <div className="charcoal-texture rounded-md p-4">
+          <WDLBar stats={nextMoves.data.position_stats} />
+        </div>
       )}
       <div className="charcoal-texture rounded-md p-4">
         <MoveExplorer
@@ -470,7 +472,9 @@ export function OpeningsPage() {
         </div>
       ) : gamesData ? (
         <>
-          <WDLBar stats={gamesData.stats} />
+          <div className="charcoal-texture rounded-md p-4">
+            <WDLBar stats={gamesData.stats} />
+          </div>
           <GameCardList
             games={gamesData.games}
             matchedCount={gamesData.matched_count}
