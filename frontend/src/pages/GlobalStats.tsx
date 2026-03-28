@@ -88,7 +88,7 @@ export function GlobalStatsPage() {
         <div className="hidden md:grid md:grid-cols-[280px_1fr] md:gap-8">
           <div className="min-w-0">
             <div className="charcoal-texture rounded-md p-2">
-              <FilterPanel filters={filters} onChange={handleFilterChange} />
+              <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['platform', 'recency']} />
             </div>
           </div>
           <div className="min-w-0">
@@ -116,7 +116,7 @@ export function GlobalStatsPage() {
                 <CollapsibleContent>
                   <div className="border-t border-border/20" />
                   <div className="p-2">
-                    <FilterPanel filters={filters} onChange={handleFilterChange} />
+                    <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['platform', 'recency']} />
                   </div>
                 </CollapsibleContent>
               </Collapsible>
