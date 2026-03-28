@@ -105,6 +105,7 @@ Current focus: v1.6 UI Polish & Improvements
 - Phase 34 added: v1.6 Theme Improvements — centralized theme, charcoal containers, filter layout, WDL chart consistency, subtab highlighting
 - Phase 35 added: WDL Chart Refactoring — shared WDL chart component, replace all inconsistent implementations
 - Phase 36 added: Most Played Openings — top 5 openings by color as WDL charts in Opening Statistics subtab
+- Phase 37 added: Openings Reference Table & Most Played Openings Redesign — openings DB table from TSV, SQL-side WDL, filters, dedicated table UI, minimap popover
 
 ### Blockers/Concerns
 

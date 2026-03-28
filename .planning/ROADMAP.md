@@ -8,7 +8,7 @@
 - ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
 - ✅ **v1.4 Improvements** — Phase 24 (shipped 2026-03-22)
 - ✅ **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33 (shipped 2026-03-28)
-- 🚧 **v1.6 UI Polish & Improvements** — Phases 34-36 (in progress)
+- 🚧 **v1.6 UI Polish & Improvements** — Phases 34-37 (in progress)
 
 ## Phases
 
@@ -86,8 +86,25 @@
 - [x] **Phase 34: Theme Improvements** — Centralize theme constants, charcoal containers with noise texture, filter button layout, consistent WDL chart styling, active subtab highlighting (completed 2026-03-28)
 - [x] **Phase 35: WDL Chart Refactoring** — Create shared WDL chart component based on endgame charts, replace all inconsistent WDL charts (custom and Recharts), clean up unused code (completed 2026-03-28)
 - [x] **Phase 36: Most Played Openings** — Add "Most Played Openings" sections (White/Black) to Opening Statistics subtab with top 5 openings as WDL charts, ECO codes, minimum 10 games threshold (completed 2026-03-28)
+- [ ] **Phase 37: Openings Reference Table & Most Played Openings Redesign** — Create openings DB table from TSV dataset with PGN/FEN/ply_count, redesign most played openings with filter support, dedicated table UI, minimap popover, SQL-side WDL aggregation, top 10
 
 ## Phase Details
+
+### Phase 37: Openings Reference Table & Most Played Openings Redesign
+**Goal**: Create an openings reference table from the TSV dataset, then redesign the Most Played Openings feature with filter support, dedicated table UI, opening PGN/FEN display, minimap popover, and SQL-side WDL aggregation
+**Depends on**: Phase 36 (Most Played Openings baseline)
+**Requirements**: ORT-01, ORT-02, ORT-03, ORT-04, ORT-05
+**Success Criteria** (what must be TRUE):
+  1. openings table contains all ~3641 rows from TSV with correct ply_count and fen values computed via python-chess
+  2. Deduplicated view returns one row per (eco, name) pair
+  3. Endpoint returns top 10 openings per color with WDL stats computed in SQL, filtered by recency/time_control/platform/rated/opponent_type, excluding openings below ply threshold
+  4. Frontend renders a dedicated table with ECO/name/PGN, game count link, and mini WDL bar per row
+  5. Hovering/tapping a row shows a minimap popover of the opening position
+**Plans**: 0 plans
+**UI hint**: yes
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 37 to break down)
 
 ### Phase 36: Most Played Openings
 **Goal**: Opening Statistics subtab shows the user's top 5 most played openings for White and Black as WDL charts, with ECO codes and a minimum 10 games threshold
@@ -176,6 +193,7 @@ Plans:
 | 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
 | 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
 | 36. Most Played Openings | v1.6 | 1/1 | Complete    | 2026-03-28 |
+| 37. Openings Reference Table & Redesign | v1.6 | 0/0 | Not Started | — |
 
 ## Backlog
 
@@ -196,3 +214,4 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
+
