@@ -36,7 +36,6 @@ import { BoardControls } from '@/components/board/BoardControls';
 import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import { PositionBookmarkList } from '@/components/position-bookmarks/PositionBookmarkList';
 import { SuggestionsModal } from '@/components/position-bookmarks/SuggestionsModal';
-import { WDLBar } from '@/components/results/WDLBar';
 import { GameCardList } from '@/components/results/GameCardList';
 import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
@@ -429,7 +428,15 @@ export function OpeningsPage() {
     <div className="flex flex-col gap-4">
       {nextMoves.data && nextMoves.data.position_stats.total > 0 && (
         <div className="charcoal-texture rounded-md p-4">
-          <WDLBar stats={nextMoves.data.position_stats} />
+          <WDLChartRow
+            data={nextMoves.data.position_stats}
+            label="Position Results"
+            barHeight="h-6"
+            gamesLink="/openings/games"
+            gamesLinkTestId="btn-moves-to-games"
+            gamesLinkAriaLabel="View games for this position"
+            testId="wdl-moves-position"
+          />
         </div>
       )}
       <div className="charcoal-texture rounded-md p-4">
@@ -473,7 +480,12 @@ export function OpeningsPage() {
       ) : gamesData ? (
         <>
           <div className="charcoal-texture rounded-md p-4">
-            <WDLBar stats={gamesData.stats} />
+            <WDLChartRow
+              data={gamesData.stats}
+              label="Position Results"
+              barHeight="h-6"
+              testId="wdl-games-position"
+            />
           </div>
           <GameCardList
             games={gamesData.games}
