@@ -24,10 +24,10 @@ Requirements for v1.6 — UI Polish & Improvements.
 
 ### Most Played Openings
 
-- [ ] **MPO-01**: "Most Played Openings" section with White and Black subsections appears at the top of the Opening Statistics subtab in a shared charcoal container
-- [ ] **MPO-02**: Each subsection lists the top 5 openings by game count, based on opening_eco/opening_name from the games table
-- [ ] **MPO-03**: Openings with fewer than 10 games are excluded; if no openings meet the threshold, an explanatory message is shown
-- [ ] **MPO-04**: Openings are displayed as WDL charts (same WDLChartRow component) with ECO code in parentheses in the title label
+- [x] **MPO-01**: "Most Played Openings" section with White and Black subsections appears at the top of the Opening Statistics subtab in a shared charcoal container
+- [x] **MPO-02**: Each subsection lists the top 5 openings by game count, based on opening_eco/opening_name from the games table
+- [x] **MPO-03**: Openings with fewer than 10 games are excluded; if no openings meet the threshold, an explanatory message is shown
+- [x] **MPO-04**: Openings are displayed as WDL charts (same WDLChartRow component) with ECO code in parentheses in the title label
 
 ## Future Requirements
 

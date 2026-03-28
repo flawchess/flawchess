@@ -3,21 +3,21 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: UI Polish & Improvements
 status: verifying
-last_updated: "2026-03-28T13:32:24.489Z"
+last_updated: "2026-03-28T17:24:40.441Z"
 last_activity: 2026-03-28
 progress:
-  total_phases: 4
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_phases: 5
+  completed_phases: 3
+  total_plans: 5
+  completed_plans: 5
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 35 (wdl-chart-refactoring) — EXECUTING
-Plan: 2 of 2
+Phase: 36 (most-played-openings) — EXECUTING
+Plan: 1 of 1
 Status: Phase complete — ready for verification
 Last activity: 2026-03-28
 
@@ -79,6 +79,8 @@ Current focus: v1.6 UI Polish & Improvements
 - [Phase 35-wdl-chart-refactoring]: EndgameWDLChart simplifies data mapping to spread EndgameCategoryStats directly with added slug field — avoids re-mapping all WDL fields
 - [Phase 35-wdl-chart-refactoring]: EndgamePerformanceSection removes internal WDLRow component fully; delegates all WDL rendering to WDLChartRow including game count in header
 - [Phase 35-wdl-chart-refactoring]: Openings Statistics tab computes win_pct/draw_pct/loss_pct inline (wdlStatsMap has raw counts only) to satisfy WDLRowData interface
+- [Phase 36-most-played-openings]: Subquery-join pattern for top-N openings: SELECT top ECOs by COUNT HAVING >= min_games, then JOIN back for Python WDL aggregation — consistent with existing stats_repository patterns
+- [Phase 36-most-played-openings]: Most Played Openings uses all-time data (no filter params) per Phase 36 research recommendation
 
 ### Critical v1.5 Constraints
 
