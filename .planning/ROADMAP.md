@@ -97,8 +97,12 @@
   3. Filter buttons in the sidebar are laid out horizontally, spanning the full available width with even spacing
   4. WDL charts (both custom bar and Recharts-based) share identical corner rounding and rendering style across all pages
   5. The active subtab is clearly highlighted so the user always knows which sub-section they are viewing
-**Plans**: TBD
+**Plans**: 2 plans
 **UI hint**: yes
+
+Plans:
+- [ ] 34-01-PLAN.md — Theme infrastructure: CSS variables, charcoal texture class, tabs brand variant, filter layout, WDL chart rounding
+- [ ] 34-02-PLAN.md — Apply charcoal containers to pages, collapsible styling, nav header polish, subtab highlighting, visual checkpoint
 
 ## Progress
 
@@ -137,7 +141,7 @@
 | 31. Endgame classification redesign | v1.5 | 2/2 | Complete | 2026-03-26 |
 | 32. Endgame Performance Charts | v1.5 | 3/3 | Complete | 2026-03-27 |
 | 33. Homepage, README & SEO Update | v1.5 | 3/3 | Complete | 2026-03-28 |
-| 34. Theme Improvements | v1.6 | 0/? | Not started | - |
+| 34. Theme Improvements | v1.6 | 0/2 | Not started | - |
 
 ## Backlog
 
