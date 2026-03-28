@@ -78,7 +78,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ## Current State
 
-v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD and Sentry monitoring. v1.4 (Web Analytics, Password Reset) in progress. Phase 31 complete — endgame analytics redesigned from per-game single-transition-point to per-position classification. endgame_class SmallInteger column on game_positions enables multi-class-per-game counting with 6-ply minimum threshold.
+v1.5 shipped 2026-03-28. Phase 34 (Theme Improvements) complete — centralized theme CSS variables, charcoal-texture containers with noise overlay across all pages, brand subtab highlighting, consistent button/toggle styling, GlobalStats sidebar layout. v1.6 UI Polish milestone in progress.
 
 ## Context
 
@@ -124,4 +124,4 @@ v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD
 | Backend expose-only (no ports) | Caddy is sole internet-facing entry point | ✓ Good |
 
 ---
-*Last updated: 2026-03-28 after milestone v1.6 start*
+*Last updated: 2026-03-28 after Phase 34 completion*
