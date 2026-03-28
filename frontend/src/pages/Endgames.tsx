@@ -251,9 +251,9 @@ export function EndgamesPage() {
           onPageChange={setGamesOffset}
           matchLabel={statsData ? (
             <>
-              {gamesData.matched_count} of {statsData.endgame_games} games{' '}
-              (<span className="text-base font-semibold text-foreground">{(gamesData.matched_count / statsData.endgame_games * 100).toFixed(1)}%</span>)
-              {' '}matched
+              {gamesData.matched_count} of {statsData.endgame_games}{' '}
+              ({(gamesData.matched_count / statsData.endgame_games * 100).toFixed(1)}%){' '}
+              games with an endgame matched
             </>
           ) : undefined}
         />
