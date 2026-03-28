@@ -9,10 +9,10 @@ Requirements for v1.6 — UI Polish & Improvements.
 
 ### Theme
 
-- [ ] **THEME-01**: User sees all visual constants (container colors, spacing, chart styles) centralized in theme.ts and CSS variables
+- [x] **THEME-01**: User sees all visual constants (container colors, spacing, chart styles) centralized in theme.ts and CSS variables
 - [x] **THEME-02**: User sees content containers with charcoal background and subtle SVG feTurbulence noise texture, visually distinct from page background
-- [ ] **THEME-03**: User sees filter buttons in sidebar spaced horizontally across full available width
-- [ ] **THEME-04**: User sees consistent WDL chart styling (unified corners and rendering) across all chart types (custom and Recharts-based)
+- [x] **THEME-03**: User sees filter buttons in sidebar spaced horizontally across full available width
+- [x] **THEME-04**: User sees consistent WDL chart styling (unified corners and rendering) across all chart types (custom and Recharts-based)
 - [x] **THEME-05**: User sees clear visual highlighting on the active subtab
 
 ## Future Requirements
@@ -43,10 +43,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| THEME-01 | Phase 34 | Pending |
+| THEME-01 | Phase 34 | Complete |
 | THEME-02 | Phase 34 | Complete |
-| THEME-03 | Phase 34 | Pending |
-| THEME-04 | Phase 34 | Pending |
+| THEME-03 | Phase 34 | Complete |
+| THEME-04 | Phase 34 | Complete |
 | THEME-05 | Phase 34 | Complete |
 
 **Coverage:**

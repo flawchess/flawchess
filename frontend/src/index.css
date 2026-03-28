@@ -44,6 +44,8 @@
     --brand-brown-active: #6C4328;
     --charcoal: #161412;
     --charcoal-hover: #262220;
+    --inactive-bg: #171717;
+    --inactive-bg-hover: #262626;
     --sidebar-bg: #171513;
 }
 
@@ -126,6 +128,8 @@
     --color-brand-brown-active: var(--brand-brown-active);
     --color-charcoal: var(--charcoal);
     --color-charcoal-hover: var(--charcoal-hover);
+    --color-inactive-bg: var(--inactive-bg);
+    --color-inactive-bg-hover: var(--inactive-bg-hover);
     --color-sidebar-bg: var(--sidebar-bg);
 }
 
