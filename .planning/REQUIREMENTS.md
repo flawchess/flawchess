@@ -17,10 +17,10 @@ Requirements for v1.6 — UI Polish & Improvements.
 
 ### WDL Chart Refactoring
 
-- [ ] **WDL-01**: A shared WDL chart component exists with configurable title, games link, and optional game count bar
+- [x] **WDL-01**: A shared WDL chart component exists with configurable title, games link, and optional game count bar
 - [ ] **WDL-02**: All WDL charts across the app (Results by Time Control, Results by Color, Results by Opening, endgame type charts) use the shared component — except the moves list in the Moves tab
 - [ ] **WDL-03**: No unused WDL-related constants, CSS classes, or Recharts bar chart code remains
-- [ ] **WDL-04**: Visual appearance of all WDL charts matches the current endgame type WDL charts (glass overlay, inline legend, game count bars)
+- [x] **WDL-04**: Visual appearance of all WDL charts matches the current endgame type WDL charts (glass overlay, inline legend, game count bars)
 
 ## Future Requirements
 

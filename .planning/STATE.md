@@ -2,23 +2,23 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: UI Polish & Improvements
-status: verifying
-last_updated: "2026-03-28T12:52:56.747Z"
+status: executing
+last_updated: "2026-03-28T13:26:04.643Z"
 last_activity: 2026-03-28
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Phase complete — ready for verification
+Phase: 35 (wdl-chart-refactoring) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
 Last activity: 2026-03-28
 
 ## Project Reference
@@ -74,6 +74,8 @@ Current focus: v1.6 UI Polish & Improvements
 - [Phase 33]: orientation field removed from FEATURES type — all homepage sections now landscape with fixed 2fr/3fr grid ratio
 - [Phase 34-theme-improvements]: Nav active tab uses bg-white/10 (subtle lighter background) instead of border-b-2 underline per D-11
 - [Phase 34-theme-improvements]: charcoal-texture wraps each Collapsible block as a sibling div for correct rounded container rendering
+- [Phase 35-wdl-chart-refactoring]: WDLChartRow default barHeight is h-5 matching EndgameWDLChart reference; WDLBar wrapper overrides to h-6 to preserve existing height
+- [Phase 35-wdl-chart-refactoring]: WDLRowData uses structural duck-typing — WDLStats, WDLByCategory, EndgameWDLSummary all satisfy the interface without explicit implements
 
 ### Critical v1.5 Constraints
 

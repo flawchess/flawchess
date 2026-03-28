@@ -100,7 +100,7 @@
 **Plans**: 2 plans
 
 Plans:
-- [ ] 35-01-PLAN.md — Shared WDLChartRow component + WDLRowData type, reimplement WDLBar as wrapper
+- [x] 35-01-PLAN.md — Shared WDLChartRow component + WDLRowData type, reimplement WDLBar as wrapper
 - [ ] 35-02-PLAN.md — Replace GlobalStatsCharts/WDLBarChart/EndgameWDLChart/EndgamePerformanceSection with WDLChartRow, delete dead code
 
 ### Phase 34: Theme Improvements
@@ -158,7 +158,7 @@ Plans:
 | 32. Endgame Performance Charts | v1.5 | 3/3 | Complete | 2026-03-27 |
 | 33. Homepage, README & SEO Update | v1.5 | 3/3 | Complete | 2026-03-28 |
 | 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
-| 35. WDL Chart Refactoring | v1.6 | 0/2 | Not started | — |
+| 35. WDL Chart Refactoring | v1.6 | 1/2 | In Progress|  |
 
 ## Backlog
 
@@ -166,7 +166,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/2 plans complete
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
