@@ -1,0 +1,159 @@
+import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
+import { ExternalLink } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import {
+  WDL_WIN,
+  WDL_DRAW,
+  WDL_LOSS,
+  GLASS_OVERLAY,
+  MIN_GAMES_FOR_RELIABLE_STATS,
+  UNRELIABLE_OPACITY,
+} from '@/lib/theme';
+import type { WDLRowData } from '@/types/charts';
+
+interface WDLChartRowProps {
+  /** WDL statistics data */
+  data: WDLRowData;
+
+  /** Optional row label (left side of header) */
+  label?: string;
+
+  /** Optional info popover rendered after the label */
+  infoPopover?: ReactNode;
+
+  /** Optional games link — renders as a React Router Link with ExternalLink icon */
+  gamesLink?: string;
+  /** Optional click handler for the games link (e.g. for side effects before navigation) */
+  onGamesLinkClick?: () => void;
+  /** data-testid for the games link element */
+  gamesLinkTestId?: string;
+  /** aria-label for the games link */
+  gamesLinkAriaLabel?: string;
+
+  /** When present, renders a grey-outlined proportional game count bar. Value = max total across all rows for proportional sizing. */
+  maxTotal?: number;
+
+  /** Minimum games threshold for reliable stats. Below this, bar and legend are dimmed. Defaults to MIN_GAMES_FOR_RELIABLE_STATS (10). */
+  minGamesForReliable?: number;
+
+  /** Bar height class. Defaults to 'h-5' (reference implementation). */
+  barHeight?: 'h-5' | 'h-6';
+
+  /** Show "(low)" warning next to game count when below minGamesForReliable. Default false. */
+  showLowWarning?: boolean;
+
+  /** data-testid for the row container */
+  testId?: string;
+}
+
+export function WDLChartRow({
+  data,
+  label,
+  infoPopover,
+  gamesLink,
+  onGamesLinkClick,
+  gamesLinkTestId,
+  gamesLinkAriaLabel,
+  maxTotal,
+  minGamesForReliable = MIN_GAMES_FOR_RELIABLE_STATS,
+  barHeight = 'h-5',
+  showLowWarning = false,
+  testId,
+}: WDLChartRowProps) {
+  if (data.total === 0) {
+    return (
+      <div className="space-y-2" data-testid={testId}>
+        <div className={cn('w-full rounded bg-muted', barHeight)} />
+        <p className="text-center text-sm text-muted-foreground">No games matched</p>
+      </div>
+    );
+  }
+
+  const isUnreliable = data.total < minGamesForReliable;
+  const dimStyle = isUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined;
+
+  return (
+    <div data-testid={testId}>
+      {/* Header row — only rendered when label is provided */}
+      {label !== undefined && (
+        <div className="flex items-center justify-between mb-1">
+          <span className="inline-flex items-center gap-1">
+            <span className="text-sm font-medium">{label}</span>
+            {infoPopover}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">
+              {data.total} games
+              {showLowWarning && isUnreliable && (
+                <span
+                  className="text-amber-500 ml-1"
+                  title="Small sample size — percentages may be unreliable"
+                >
+                  (low)
+                </span>
+              )}
+            </span>
+            {gamesLink !== undefined && (
+              <Link
+                to={gamesLink}
+                onClick={onGamesLinkClick}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                aria-label={gamesLinkAriaLabel}
+                data-testid={gamesLinkTestId}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Link>
+            )}
+          </span>
+        </div>
+      )}
+
+      {/* Stacked WDL bar with glass overlay — dimmed for low sample size */}
+      <div
+        className={cn('flex w-full overflow-hidden rounded mb-0', barHeight)}
+        style={dimStyle}
+      >
+        {data.win_pct > 0 && (
+          <div
+            className="transition-all"
+            style={{ width: `${data.win_pct}%`, backgroundColor: WDL_WIN, backgroundImage: GLASS_OVERLAY }}
+          />
+        )}
+        {data.draw_pct > 0 && (
+          <div
+            className="transition-all"
+            style={{ width: `${data.draw_pct}%`, backgroundColor: WDL_DRAW, backgroundImage: GLASS_OVERLAY }}
+          />
+        )}
+        {data.loss_pct > 0 && (
+          <div
+            className="transition-all"
+            style={{ width: `${data.loss_pct}%`, backgroundColor: WDL_LOSS, backgroundImage: GLASS_OVERLAY }}
+          />
+        )}
+      </div>
+
+      {/* Grey-outlined game count bar — proportional to max total across all rows */}
+      {maxTotal !== undefined && (
+        <div className="h-2 mt-0.5 mb-1">
+          <div
+            className="h-full rounded-sm"
+            style={{
+              width: `${(data.total / maxTotal) * 100}%`,
+              border: '1px solid oklch(0.6 0 0)',
+              backgroundColor: 'transparent',
+            }}
+          />
+        </div>
+      )}
+
+      {/* WDL legend text row — dimmed for low sample size */}
+      <div className="flex justify-center gap-3 text-sm" style={dimStyle}>
+        <span style={{ color: WDL_WIN }}>W: {data.wins} ({Math.round(data.win_pct)}%)</span>
+        <span style={{ color: WDL_DRAW }}>D: {data.draws} ({Math.round(data.draw_pct)}%)</span>
+        <span style={{ color: WDL_LOSS }}>L: {data.losses} ({Math.round(data.loss_pct)}%)</span>
+      </div>
+    </div>
+  );
+}
