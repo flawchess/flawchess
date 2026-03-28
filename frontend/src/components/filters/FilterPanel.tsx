@@ -91,7 +91,7 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
       {/* Time controls */}
       <div>
         <p className="mb-1 text-xs text-muted-foreground">Time control</p>
-        <div className="flex flex-wrap gap-1">
+        <div className="grid grid-cols-4 gap-1">
           {TIME_CONTROLS.map((tc) => (
             <button
               key={tc}
@@ -100,7 +100,7 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
               aria-label={`${TIME_CONTROL_LABELS[tc]} time control`}
               aria-pressed={isTimeControlActive(tc)}
               className={cn(
-                'rounded border px-3 h-11 sm:h-7 sm:px-2 text-xs transition-colors',
+                'rounded border h-11 sm:h-7 text-xs transition-colors',
                 isTimeControlActive(tc)
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
@@ -115,7 +115,7 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
       {/* Platform */}
       <div>
         <p className="mb-1 text-xs text-muted-foreground">Platform</p>
-        <div className="flex flex-wrap gap-1">
+        <div className="grid grid-cols-2 gap-1">
           {PLATFORMS.map((p) => (
             <button
               key={p}
@@ -124,7 +124,7 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
               aria-label={`${PLATFORM_LABELS[p]} platform`}
               aria-pressed={isPlatformActive(p)}
               className={cn(
-                'rounded border px-3 h-11 sm:h-7 sm:px-2 text-xs transition-colors',
+                'rounded border h-11 sm:h-7 text-xs transition-colors',
                 isPlatformActive(p)
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
@@ -149,10 +149,11 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
           variant="outline"
           size="sm"
           data-testid="filter-rated"
+          className="w-full"
         >
-          <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0">All</ToggleGroupItem>
-          <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0">Rated</ToggleGroupItem>
-          <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0">Casual</ToggleGroupItem>
+          <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0 flex-1">All</ToggleGroupItem>
+          <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0 flex-1">Rated</ToggleGroupItem>
+          <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0 flex-1">Casual</ToggleGroupItem>
         </ToggleGroup>
       </div>
 
@@ -169,10 +170,11 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
           variant="outline"
           size="sm"
           data-testid="filter-opponent"
+          className="w-full"
         >
-          <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0">Human</ToggleGroupItem>
-          <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0">Bot</ToggleGroupItem>
-          <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0">Both</ToggleGroupItem>
+          <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0 flex-1">Human</ToggleGroupItem>
+          <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0 flex-1">Bot</ToggleGroupItem>
+          <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0 flex-1">Both</ToggleGroupItem>
         </ToggleGroup>
       </div>
 
