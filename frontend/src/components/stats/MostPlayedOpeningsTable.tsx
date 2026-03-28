@@ -57,7 +57,7 @@ function OpeningRow({ o, color, index, testIdPrefix, onOpenGames }: {
             <span className="text-muted-foreground mr-1.5">{o.opening_eco}</span>
             {formatName(o.opening_name)}
           </div>
-          <div className="text-xs text-muted-foreground mt-0.5 truncate">{o.pgn}</div>
+          <div className="text-xs text-muted-foreground mt-0.5 break-words sm:truncate">{o.pgn}</div>
         </div>
       </MinimapPopover>
 
