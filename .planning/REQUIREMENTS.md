@@ -15,6 +15,13 @@ Requirements for v1.6 — UI Polish & Improvements.
 - [x] **THEME-04**: User sees consistent WDL chart styling (unified corners and rendering) across all chart types (custom and Recharts-based)
 - [x] **THEME-05**: User sees clear visual highlighting on the active subtab
 
+### WDL Chart Refactoring
+
+- [x] **WDL-01**: A shared WDL chart component exists with configurable title, games link, and optional game count bar
+- [x] **WDL-02**: All WDL charts across the app (Results by Time Control, Results by Color, Results by Opening, endgame type charts) use the shared component — except the moves list in the Moves tab
+- [x] **WDL-03**: No unused WDL-related constants, CSS classes, or Recharts bar chart code remains
+- [x] **WDL-04**: Visual appearance of all WDL charts matches the current endgame type WDL charts (glass overlay, inline legend, game count bars)
+
 ## Future Requirements
 
 ### Pawn Structure Analysis
@@ -48,12 +55,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | THEME-03 | Phase 34 | Complete |
 | THEME-04 | Phase 34 | Complete |
 | THEME-05 | Phase 34 | Complete |
+| WDL-01 | Phase 35 | Not started |
+| WDL-02 | Phase 35 | Not started |
+| WDL-03 | Phase 35 | Not started |
+| WDL-04 | Phase 35 | Not started |
 
 **Coverage:**
-- v1.6 requirements: 5 total
-- Mapped to phases: 5
+- v1.6 requirements: 9 total
+- Mapped to phases: 9
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-28*
-*Last updated: 2026-03-28 after roadmap creation*
+*Last updated: 2026-03-28 after Phase 35 planning*

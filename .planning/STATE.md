@@ -3,21 +3,21 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: UI Polish & Improvements
 status: verifying
-last_updated: "2026-03-28T12:52:56.747Z"
+last_updated: "2026-03-28T13:32:24.489Z"
 last_activity: 2026-03-28
 progress:
-  total_phases: 3
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_phases: 4
+  completed_phases: 2
+  total_plans: 4
+  completed_plans: 4
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
+Phase: 35 (wdl-chart-refactoring) — EXECUTING
+Plan: 2 of 2
 Status: Phase complete — ready for verification
 Last activity: 2026-03-28
 
@@ -74,6 +74,11 @@ Current focus: v1.6 UI Polish & Improvements
 - [Phase 33]: orientation field removed from FEATURES type — all homepage sections now landscape with fixed 2fr/3fr grid ratio
 - [Phase 34-theme-improvements]: Nav active tab uses bg-white/10 (subtle lighter background) instead of border-b-2 underline per D-11
 - [Phase 34-theme-improvements]: charcoal-texture wraps each Collapsible block as a sibling div for correct rounded container rendering
+- [Phase 35-wdl-chart-refactoring]: WDLChartRow default barHeight is h-5 matching EndgameWDLChart reference; WDLBar wrapper overrides to h-6 to preserve existing height
+- [Phase 35-wdl-chart-refactoring]: WDLRowData uses structural duck-typing — WDLStats, WDLByCategory, EndgameWDLSummary all satisfy the interface without explicit implements
+- [Phase 35-wdl-chart-refactoring]: EndgameWDLChart simplifies data mapping to spread EndgameCategoryStats directly with added slug field — avoids re-mapping all WDL fields
+- [Phase 35-wdl-chart-refactoring]: EndgamePerformanceSection removes internal WDLRow component fully; delegates all WDL rendering to WDLChartRow including game count in header
+- [Phase 35-wdl-chart-refactoring]: Openings Statistics tab computes win_pct/draw_pct/loss_pct inline (wdlStatsMap has raw counts only) to satisfy WDLRowData interface
 
 ### Critical v1.5 Constraints
 
@@ -96,6 +101,7 @@ Current focus: v1.6 UI Polish & Improvements
 - Phase 32 added: Endgame Performance Charts — endgame vs non-endgame WDL, strength gauge, rolling-window timelines
 - Phase 30 renumbered to Phase 33: Homepage, README & SEO Update (was skipped during v1.5 execution; phases 31 and 32 were inserted before it)
 - Phase 34 added: v1.6 Theme Improvements — centralized theme, charcoal containers, filter layout, WDL chart consistency, subtab highlighting
+- Phase 35 added: WDL Chart Refactoring — shared WDL chart component, replace all inconsistent implementations
 
 ### Blockers/Concerns
 
@@ -138,6 +144,7 @@ Current focus: v1.6 UI Polish & Improvements
 | 260327-q8j | Expand rolling window to include all games when recency filter is set in Win Rate Over Time chart | 2026-03-27 | b2b31a0 | [260327-q8j-expand-rolling-window-to-include-all-gam](./quick/260327-q8j-expand-rolling-window-to-include-all-gam/) |
 | 260327-tun | In the Moves subtab of the Openings, show moves below the 10 game threshold as muted | 2026-03-27 | c9d28e4 | [260327-tun-in-the-moves-subtab-of-the-openings-show](./quick/260327-tun-in-the-moves-subtab-of-the-openings-show/) |
 | 260328-04a | Update SEO meta tags, README, and CLAUDE.md to match 5-feature homepage | 2026-03-27 | d039ba6 | [260328-04a-update-seo-readme-and-claude-md-based-on](./quick/260328-04a-update-seo-readme-and-claude-md-based-on/) |
+| 260328-mov | Endgames Games subtab WDL chart, games matched report with highlighted percent | 2026-03-28 | ee9b8e3 | [260328-mov-endgames-games-subtab-wdl-chart-games-ma](./quick/260328-mov-endgames-games-subtab-wdl-chart-games-ma/) |
 
 ---
-Last activity: 2026-03-28 - Phase 34 Plan 01 complete. Theme infrastructure: CSS vars, charcoal-texture, tabs brand variant, filter grid layout, WDL chart rounding.
+Last activity: 2026-03-28 - Completed quick task 260328-mov: Endgames Games subtab WDL chart, games matched report with highlighted percent

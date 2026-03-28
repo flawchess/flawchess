@@ -86,8 +86,9 @@ export function GameCardList({
         <p className="text-sm text-muted-foreground">
           {matchLabel ?? (
             <>
-              <span className="font-medium text-foreground">{matchedCount}</span> of{' '}
-              <span className="font-medium text-foreground">{totalGames}</span> games matched
+              {matchedCount} of {totalGames}{' '}
+              ({totalGames > 0 ? (matchedCount / totalGames * 100).toFixed(1) : '0.0'}%){' '}
+              games matched
             </>
           )}
         </p>

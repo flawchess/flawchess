@@ -19,6 +19,7 @@ import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart
 import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
 import { EndgameConvRecovTimelineChart } from '@/components/charts/EndgameConvRecovTimelineChart';
 import { GameCardList } from '@/components/results/GameCardList';
+import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { useEndgameStats, useEndgameGames, useEndgamePerformance, useEndgameTimeline, useEndgameConvRecovTimeline } from '@/hooks/useEndgames';
 import { useDebounce } from '@/hooks/useDebounce';
 import type { FilterState } from '@/components/filters/FilterPanel';
@@ -202,7 +203,7 @@ export function EndgamesPage() {
           setGamesOffset(0);
         }}
       >
-        <SelectTrigger size="sm" data-testid="filter-endgame-type" className="min-h-11 sm:min-h-0 w-[160px]">
+        <SelectTrigger size="sm" data-testid="filter-endgame-type" className="min-h-11 sm:min-h-0 w-full sm:w-[160px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -214,8 +215,20 @@ export function EndgamesPage() {
     </div>
   );
 
+  const selectedCategoryStats = statsData?.categories.find(c => c.endgame_class === selectedCategory);
+
   const gamesContent = (
     <div className="flex flex-col gap-4">
+      {selectedCategoryStats && selectedCategoryStats.total > 0 && (
+        <div className="charcoal-texture rounded-md p-4">
+          <WDLChartRow
+            data={selectedCategoryStats}
+            label={`${ENDGAME_CLASS_LABELS[selectedCategory]} Endgame Results`}
+            barHeight="h-6"
+            testId="wdl-endgame-games"
+          />
+        </div>
+      )}
       {endgameTypeDropdown}
       {gamesLoading ? (
         <div className="flex items-center justify-center py-12">
@@ -238,9 +251,9 @@ export function EndgamesPage() {
           onPageChange={setGamesOffset}
           matchLabel={statsData ? (
             <>
-              <span className="font-medium text-foreground">{gamesData.matched_count}</span> of{' '}
-              <span className="font-medium text-foreground">{statsData.endgame_games}</span>
-              {' '}({(gamesData.matched_count / statsData.endgame_games * 100).toFixed(1)}%) games with endgame matched
+              {gamesData.matched_count} of {statsData.endgame_games}{' '}
+              ({(gamesData.matched_count / statsData.endgame_games * 100).toFixed(1)}%){' '}
+              games with an endgame matched
             </>
           ) : undefined}
         />
