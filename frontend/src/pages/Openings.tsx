@@ -430,14 +430,16 @@ export function OpeningsPage() {
       {nextMoves.data && nextMoves.data.position_stats.total > 0 && (
         <WDLBar stats={nextMoves.data.position_stats} />
       )}
-      <MoveExplorer
-        moves={nextMoves.data?.moves ?? []}
-        isLoading={nextMoves.isLoading}
-        isError={nextMoves.isError}
-        position={chess.position}
-        onMoveClick={(from, to) => chess.makeMove(from, to)}
-        onMoveHover={setHoveredMove}
-      />
+      <div className="charcoal-texture rounded-md p-4">
+        <MoveExplorer
+          moves={nextMoves.data?.moves ?? []}
+          isLoading={nextMoves.isLoading}
+          isError={nextMoves.isError}
+          position={chess.position}
+          onMoveClick={(from, to) => chess.makeMove(from, to)}
+          onMoveHover={setHoveredMove}
+        />
+      </div>
     </div>
   );
 
