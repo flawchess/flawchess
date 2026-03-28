@@ -83,7 +83,7 @@
 
 ## v1.6 UI Polish & Improvements
 
-- [ ] **Phase 34: Theme Improvements** — Centralize theme constants, charcoal containers with noise texture, filter button layout, consistent WDL chart styling, active subtab highlighting
+- [x] **Phase 34: Theme Improvements** — Centralize theme constants, charcoal containers with noise texture, filter button layout, consistent WDL chart styling, active subtab highlighting (completed 2026-03-28)
 
 ## Phase Details
 
@@ -101,8 +101,8 @@
 **UI hint**: yes
 
 Plans:
-- [ ] 34-01-PLAN.md — Theme infrastructure: CSS variables, charcoal texture class, tabs brand variant, filter layout, WDL chart rounding
-- [ ] 34-02-PLAN.md — Apply charcoal containers to pages, collapsible styling, nav header polish, subtab highlighting, visual checkpoint
+- [x] 34-01-PLAN.md — Theme infrastructure: CSS variables, charcoal texture class, tabs brand variant, filter layout, WDL chart rounding
+- [x] 34-02-PLAN.md — Apply charcoal containers to pages, collapsible styling, nav header polish, subtab highlighting, visual checkpoint
 
 ## Progress
 
@@ -141,7 +141,7 @@ Plans:
 | 31. Endgame classification redesign | v1.5 | 2/2 | Complete | 2026-03-26 |
 | 32. Endgame Performance Charts | v1.5 | 3/3 | Complete | 2026-03-27 |
 | 33. Homepage, README & SEO Update | v1.5 | 3/3 | Complete | 2026-03-28 |
-| 34. Theme Improvements | v1.6 | 0/2 | Not started | - |
+| 34. Theme Improvements | v1.6 | 2/2 | Complete   | 2026-03-28 |
 
 ## Backlog
 
@@ -149,7 +149,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 0 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

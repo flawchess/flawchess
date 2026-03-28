@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: UI Polish & Improvements
-status: executing
-last_updated: "2026-03-28T10:54:17.747Z"
-last_activity: 2026-03-28 -- Phase 34 execution started
+status: verifying
+last_updated: "2026-03-28T11:06:25.185Z"
+last_activity: 2026-03-28
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State: FlawChess
@@ -18,8 +18,8 @@ progress:
 
 Phase: 34 (theme-improvements) — EXECUTING
 Plan: 2 of 2
-Status: Executing Phase 34
-Last activity: 2026-03-28 -- Phase 34 execution started
+Status: Phase complete — ready for verification
+Last activity: 2026-03-28
 
 ## Project Reference
 
@@ -72,6 +72,8 @@ Current focus: v1.6 UI Polish & Improvements
 - [Phase 33]: Title changed to 'Chess Analysis for Human Players' to reflect v1.5 scope
 - [Phase 33]: README broadened to include endgame analytics, Zobrist hash mention, and updated screenshot reference
 - [Phase 33]: orientation field removed from FEATURES type — all homepage sections now landscape with fixed 2fr/3fr grid ratio
+- [Phase 34-theme-improvements]: Nav active tab uses bg-white/10 (subtle lighter background) instead of border-b-2 underline per D-11
+- [Phase 34-theme-improvements]: charcoal-texture wraps each Collapsible block as a sibling div for correct rounded container rendering
 
 ### Critical v1.5 Constraints
 
