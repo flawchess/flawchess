@@ -203,7 +203,7 @@ export function EndgamesPage() {
           setGamesOffset(0);
         }}
       >
-        <SelectTrigger size="sm" data-testid="filter-endgame-type" className="min-h-11 sm:min-h-0 w-[160px]">
+        <SelectTrigger size="sm" data-testid="filter-endgame-type" className="min-h-11 sm:min-h-0 w-full sm:w-[160px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
