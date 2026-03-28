@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { statsApi } from '@/api/client';
-import type { Platform, Recency } from '@/types/api';
+import type { Platform, Recency, TimeControl, OpponentType } from '@/types/api';
 
 export function useRatingHistory(recency: Recency | null, platforms: Platform[] | null) {
   const normalizedRecency = recency === 'all' ? null : recency;
@@ -20,9 +20,27 @@ export function useGlobalStats(recency: Recency | null, platforms: Platform[] | 
   });
 }
 
-export function useMostPlayedOpenings() {
+export function useMostPlayedOpenings(filters?: {
+  recency: Recency | null;
+  timeControls: TimeControl[] | null;
+  platforms: Platform[] | null;
+  rated: boolean | null;
+  opponentType: OpponentType;
+}) {
+  const normalizedRecency = filters?.recency === 'all' ? null : (filters?.recency ?? null);
+  const timeControl = filters?.timeControls ?? null;
+  const platform = filters?.platforms ?? null;
+  const rated = filters?.rated ?? null;
+  const opponentType = filters?.opponentType ?? 'human';
+
   return useQuery({
-    queryKey: ['mostPlayedOpenings'],
-    queryFn: () => statsApi.getMostPlayedOpenings(),
+    queryKey: ['mostPlayedOpenings', normalizedRecency, timeControl, platform, rated, opponentType],
+    queryFn: () => statsApi.getMostPlayedOpenings({
+      recency: normalizedRecency,
+      time_control: timeControl,
+      platform: platform,
+      rated: rated,
+      opponent_type: opponentType,
+    }),
   });
 }

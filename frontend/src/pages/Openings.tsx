@@ -40,6 +40,7 @@ import { SuggestionsModal } from '@/components/position-bookmarks/SuggestionsMod
 import { GameCardList } from '@/components/results/GameCardList';
 import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
+import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTable';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
 import type { FilterState } from '@/components/filters/FilterPanel';
@@ -167,8 +168,14 @@ export function OpeningsPage() {
 
   const { data: tsData } = useTimeSeries(timeSeriesRequest);
 
-  // Most played openings — all-time, no filter params (shows top 5 per color across all games)
-  const { data: mostPlayedData } = useMostPlayedOpenings();
+  // Most played openings — filter params applied to show top openings per color
+  const { data: mostPlayedData } = useMostPlayedOpenings({
+    recency: debouncedFilters.recency,
+    timeControls: debouncedFilters.timeControls,
+    platforms: debouncedFilters.platforms,
+    rated: debouncedFilters.rated,
+    opponentType: debouncedFilters.opponentType,
+  });
 
   // Derive WDL stats per bookmark using aggregate fields (not rolling sub-counts)
   const wdlStatsMap = useMemo(() => {
@@ -504,13 +511,6 @@ export function OpeningsPage() {
     </div>
   );
 
-  const maxTotalWhite = mostPlayedData?.white.length
-    ? Math.max(...mostPlayedData.white.map(x => x.total))
-    : 0;
-  const maxTotalBlack = mostPlayedData?.black.length
-    ? Math.max(...mostPlayedData.black.map(x => x.total))
-    : 0;
-
   const statisticsContent = (
     <div className="flex flex-col gap-4">
       {mostPlayedData && (mostPlayedData.white.length > 0 || mostPlayedData.black.length > 0) && (
@@ -526,17 +526,10 @@ export function OpeningsPage() {
               {mostPlayedData.white.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Not enough games with White to show top openings (minimum 10 games per opening).</p>
               ) : (
-                <div className="space-y-2">
-                  {mostPlayedData.white.map((o) => (
-                    <WDLChartRow
-                      key={`${o.opening_eco}-white`}
-                      data={o}
-                      label={o.label}
-                      maxTotal={maxTotalWhite}
-                      testId={`mpo-white-${o.opening_eco}`}
-                    />
-                  ))}
-                </div>
+                <MostPlayedOpeningsTable
+                  openings={mostPlayedData.white}
+                  testIdPrefix="mpo-white"
+                />
               )}
             </div>
             {/* Black section */}
@@ -548,17 +541,10 @@ export function OpeningsPage() {
               {mostPlayedData.black.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Not enough games with Black to show top openings (minimum 10 games per opening).</p>
               ) : (
-                <div className="space-y-2">
-                  {mostPlayedData.black.map((o) => (
-                    <WDLChartRow
-                      key={`${o.opening_eco}-black`}
-                      data={o}
-                      label={o.label}
-                      maxTotal={maxTotalBlack}
-                      testId={`mpo-black-${o.opening_eco}`}
-                    />
-                  ))}
-                </div>
+                <MostPlayedOpeningsTable
+                  openings={mostPlayedData.black}
+                  testIdPrefix="mpo-black"
+                />
               )}
             </div>
           </div>

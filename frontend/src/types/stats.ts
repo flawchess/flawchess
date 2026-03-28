@@ -29,6 +29,8 @@ export interface OpeningWDL {
   opening_eco: string;
   opening_name: string;
   label: string;
+  pgn: string;
+  fen: string;
   wins: number;
   draws: number;
   losses: number;
