@@ -77,7 +77,7 @@ function NavHeader() {
   const { logout } = useAuth();
 
   return (
-    <header className="hidden sm:block bg-background px-6 overflow-hidden">
+    <header className="hidden sm:block bg-background border-b border-border px-6 overflow-hidden">
       <div className="mx-auto flex max-w-7xl items-stretch justify-between">
         <div className="flex items-center">
           <Link to="/" className="flex items-center gap-1 mr-3" data-testid="nav-home">
@@ -124,7 +124,7 @@ function MobileHeader() {
   return (
     <header
       data-testid="mobile-header"
-      className="block sm:hidden pt-safe flex items-center justify-between px-4 py-1 bg-background overflow-hidden"
+      className="block sm:hidden pt-safe flex items-center justify-between px-4 py-1 bg-background border-b border-border overflow-hidden"
     >
       <Link
         to="/"
