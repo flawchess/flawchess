@@ -7,11 +7,12 @@ const MINIMAP_BOARD_SIZE = 180;
 
 interface MinimapPopoverProps {
   fen: string;
+  boardOrientation?: "white" | "black";
   children: React.ReactNode;
   testId: string;
 }
 
-function MinimapPopover({ fen, children, testId }: MinimapPopoverProps) {
+function MinimapPopover({ fen, boardOrientation = "white", children, testId }: MinimapPopoverProps) {
   const [open, setOpen] = React.useState(false);
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -52,6 +53,7 @@ function MinimapPopover({ fen, children, testId }: MinimapPopoverProps) {
             options={{
               id: "minimap-board",
               position: fen,
+              boardOrientation,
               boardStyle: {
                 width: MINIMAP_BOARD_SIZE,
                 height: MINIMAP_BOARD_SIZE,

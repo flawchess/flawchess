@@ -263,6 +263,8 @@ async def query_top_openings_sql_wdl(
             Game.opening_eco.is_not(None),
             Game.opening_name.is_not(None),
             _openings_dedup.c.ply_count >= min_ply,
+            # White openings end on odd ply (white's last move), black on even ply
+            _openings_dedup.c.ply_count % 2 == (1 if color == "white" else 0),
         )
         .group_by(
             Game.opening_eco,

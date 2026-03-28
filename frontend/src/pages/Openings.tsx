@@ -513,41 +513,32 @@ export function OpeningsPage() {
 
   const statisticsContent = (
     <div className="flex flex-col gap-4">
-      {mostPlayedData && (mostPlayedData.white.length > 0 || mostPlayedData.black.length > 0) && (
-        <div className="charcoal-texture rounded-md p-4" data-testid="most-played-openings">
-          <h2 className="text-lg font-medium mb-3">Most Played Openings</h2>
-          <div className="space-y-6">
-            {/* White section */}
-            <div data-testid="mpo-white-section">
-              <h3 className="text-base font-medium mb-2 flex items-center gap-1.5">
-                <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white" />
-                White
-              </h3>
-              {mostPlayedData.white.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Not enough games with White to show top openings (minimum 10 games per opening).</p>
-              ) : (
-                <MostPlayedOpeningsTable
-                  openings={mostPlayedData.white}
-                  testIdPrefix="mpo-white"
-                />
-              )}
-            </div>
-            {/* Black section */}
-            <div data-testid="mpo-black-section">
-              <h3 className="text-base font-medium mb-2 flex items-center gap-1.5">
-                <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900" />
-                Black
-              </h3>
-              {mostPlayedData.black.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Not enough games with Black to show top openings (minimum 10 games per opening).</p>
-              ) : (
-                <MostPlayedOpeningsTable
-                  openings={mostPlayedData.black}
-                  testIdPrefix="mpo-black"
-                />
-              )}
-            </div>
-          </div>
+      {/* White openings */}
+      {mostPlayedData && mostPlayedData.white.length > 0 && (
+        <div className="charcoal-texture rounded-md p-4" data-testid="mpo-white-section">
+          <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
+            <span className="inline-block h-3.5 w-3.5 rounded-full border border-muted-foreground bg-white" />
+            White: Most Played Openings
+          </h2>
+          <MostPlayedOpeningsTable
+            openings={mostPlayedData.white}
+            color="white"
+            testIdPrefix="mpo-white"
+          />
+        </div>
+      )}
+      {/* Black openings */}
+      {mostPlayedData && mostPlayedData.black.length > 0 && (
+        <div className="charcoal-texture rounded-md p-4" data-testid="mpo-black-section">
+          <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
+            <span className="inline-block h-3.5 w-3.5 rounded-full border border-muted-foreground bg-zinc-900" />
+            Black: Most Played Openings
+          </h2>
+          <MostPlayedOpeningsTable
+            openings={mostPlayedData.black}
+            color="black"
+            testIdPrefix="mpo-black"
+          />
         </div>
       )}
       {bookmarks.length === 0 ? (
