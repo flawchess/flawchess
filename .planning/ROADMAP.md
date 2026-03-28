@@ -100,11 +100,13 @@
   3. Endpoint returns top 10 openings per color with WDL stats computed in SQL, filtered by recency/time_control/platform/rated/opponent_type, excluding openings below ply threshold
   4. Frontend renders a dedicated table with ECO/name/PGN, game count link, and mini WDL bar per row
   5. Hovering/tapping a row shows a minimap popover of the opening position
-**Plans**: 0 plans
+**Plans**: 3 plans
 **UI hint**: yes
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 37 to break down)
+- [ ] 37-01-PLAN.md — Opening model, Alembic migration with dedup view, seed script, tests
+- [ ] 37-02-PLAN.md — SQL-side WDL aggregation, filter params, updated schema/service/router, tests
+- [ ] 37-03-PLAN.md — Frontend table component, minimap popover, hook/API filter wiring, visual verification
 
 ### Phase 36: Most Played Openings
 **Goal**: Opening Statistics subtab shows the user's top 5 most played openings for White and Black as WDL charts, with ECO codes and a minimum 10 games threshold
@@ -193,7 +195,7 @@ Plans:
 | 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
 | 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
 | 36. Most Played Openings | v1.6 | 1/1 | Complete    | 2026-03-28 |
-| 37. Openings Reference Table & Redesign | v1.6 | 0/0 | Not Started | — |
+| 37. Openings Reference Table & Redesign | v1.6 | 0/3 | In Progress | — |
 
 ## Backlog
 
