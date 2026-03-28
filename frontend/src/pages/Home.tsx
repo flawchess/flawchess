@@ -168,8 +168,9 @@ export function HomePageContent() {
       </section>
 
       {/* Feature sections — alternating image left/right */}
-      <div id="features" data-testid="screenshots-section" className="max-w-5xl mx-auto px-4 py-4 lg:py-8 space-y-16 lg:space-y-24 scroll-mt-16">
-        {FEATURES.map(({ slug, icon: Icon, heading, desc, screenshot, imagePosition }) => {
+      <div id="features" data-testid="screenshots-section" className="scroll-mt-16">
+        {FEATURES.map(({ slug, icon: Icon, heading, desc, screenshot, imagePosition }, index) => {
+          const isCharcoal = index % 2 === 0;
           const gridCols = imagePosition === 'left'
             ? 'lg:grid-cols-[3fr_2fr]'
             : 'lg:grid-cols-[2fr_3fr]';
@@ -206,8 +207,12 @@ export function HomePageContent() {
             <section
               key={slug}
               data-testid={`feature-${slug}`}
-              className={cn('grid gap-8 lg:gap-12 items-center', gridCols)}
+              className={cn(
+                'py-12 lg:py-16',
+                isCharcoal ? 'bg-[#1a1a1a]' : '',
+              )}
             >
+              <div className={cn('max-w-5xl mx-auto px-4 grid gap-8 lg:gap-12 items-center', gridCols)}>
               {/* On mobile: always text first, image second.
                   On desktop: alternate via order classes. */}
               {imagePosition === 'left' ? (
@@ -221,6 +226,7 @@ export function HomePageContent() {
                   <div>{imageBlock}</div>
                 </>
               )}
+              </div>
             </section>
           );
         })}
