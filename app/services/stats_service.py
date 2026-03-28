@@ -9,6 +9,7 @@ from app.repositories.stats_repository import (
     query_results_by_color,
     query_results_by_time_control,
     query_top_openings_by_color,
+    query_top_openings_sql_wdl,
 )
 from app.schemas.stats import (
     GlobalStatsResponse,
@@ -24,7 +25,11 @@ from app.services.analysis_service import derive_user_result, recency_cutoff
 MIN_GAMES_FOR_OPENING = 10
 
 # Maximum number of top openings to return per color.
-TOP_OPENINGS_LIMIT = 5
+TOP_OPENINGS_LIMIT = 10
+
+# Minimum ply count for an opening to be included: white needs 1 ply, black needs 2.
+MIN_PLY_WHITE = 1
+MIN_PLY_BLACK = 2
 
 # Ordered time control buckets for consistent output ordering.
 _TIME_CONTROL_ORDER = ["bullet", "blitz", "rapid", "classical"]
@@ -236,30 +241,74 @@ def _aggregate_top_openings(rows: list[tuple]) -> list[OpeningWDL]:
 async def get_most_played_openings(
     session: AsyncSession,
     user_id: int,
+    recency: str | None = None,
+    time_control: list[str] | None = None,
+    platform: list[str] | None = None,
+    rated: bool | None = None,
+    opponent_type: str = "human",
 ) -> MostPlayedOpeningsResponse:
-    """Return top 5 most played openings per color (white/black) with WDL stats.
+    """Return top 10 most played openings per color with SQL-side WDL stats.
 
-    Calls query_top_openings_by_color for each color, aggregates individual game
-    rows into OpeningWDL objects, and returns a MostPlayedOpeningsResponse.
-
-    Openings with fewer than MIN_GAMES_FOR_OPENING games are excluded.
+    JOINs to openings_dedup for pgn/fen. Filters by recency, time_control,
+    platform, rated, and opponent_type. Excludes openings below ply threshold.
     """
-    white_rows = await query_top_openings_by_color(
+    cutoff = recency_cutoff(recency)
+
+    white_rows = await query_top_openings_sql_wdl(
         session,
         user_id=user_id,
         color="white",
         min_games=MIN_GAMES_FOR_OPENING,
         limit=TOP_OPENINGS_LIMIT,
+        min_ply=MIN_PLY_WHITE,
+        recency_cutoff=cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
     )
-    black_rows = await query_top_openings_by_color(
+    black_rows = await query_top_openings_sql_wdl(
         session,
         user_id=user_id,
         color="black",
         min_games=MIN_GAMES_FOR_OPENING,
         limit=TOP_OPENINGS_LIMIT,
+        min_ply=MIN_PLY_BLACK,
+        recency_cutoff=cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
     )
 
+    def rows_to_openings(rows: list[tuple]) -> list[OpeningWDL]:
+        openings = []
+        for eco, name, pgn, fen, total, wins, draws, losses in rows:
+            if total > 0:
+                win_pct = round(wins / total * 100, 1)
+                draw_pct = round(draws / total * 100, 1)
+                loss_pct = round(losses / total * 100, 1)
+            else:
+                win_pct = draw_pct = loss_pct = 0.0
+            openings.append(
+                OpeningWDL(
+                    opening_eco=eco,
+                    opening_name=name,
+                    label=f"{name} ({eco})",
+                    pgn=pgn,
+                    fen=fen,
+                    wins=wins,
+                    draws=draws,
+                    losses=losses,
+                    total=total,
+                    win_pct=win_pct,
+                    draw_pct=draw_pct,
+                    loss_pct=loss_pct,
+                )
+            )
+        return openings
+
     return MostPlayedOpeningsResponse(
-        white=_aggregate_top_openings(white_rows),
-        black=_aggregate_top_openings(black_rows),
+        white=rows_to_openings(white_rows),
+        black=rows_to_openings(black_rows),
     )
