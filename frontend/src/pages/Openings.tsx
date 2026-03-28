@@ -231,9 +231,11 @@ export function OpeningsPage() {
     }
   }, [chess, filters, boardFlipped, bookmarkLabel, createBookmark]);
 
-  /** Load opening PGN onto the board and navigate to the games subtab */
-  const handleOpenGames = useCallback((pgn: string) => {
+  /** Load opening PGN onto the board, set color/flip/filters, and navigate to games subtab */
+  const handleOpenGames = useCallback((pgn: string, color: "white" | "black") => {
     chess.loadMoves(pgnToSanArray(pgn));
+    setBoardFlipped(color === 'black');
+    setFilters(prev => ({ ...prev, color, matchSide: 'both' as MatchSide }));
     navigate('/openings/games');
   }, [chess, navigate]);
 

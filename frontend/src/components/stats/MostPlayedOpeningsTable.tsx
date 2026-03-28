@@ -12,7 +12,7 @@ interface MostPlayedOpeningsTableProps {
   color: "white" | "black";
   testIdPrefix: string;
   /** Load PGN moves onto the board and navigate to games tab */
-  onOpenGames: (pgn: string) => void;
+  onOpenGames: (pgn: string, color: "white" | "black") => void;
 }
 
 /** Format opening name: split on ": " — line break only on mobile. */
@@ -37,7 +37,7 @@ function OpeningRow({ o, color, index, testIdPrefix, onOpenGames }: {
   color: "white" | "black";
   index: number;
   testIdPrefix: string;
-  onOpenGames: (pgn: string) => void;
+  onOpenGames: (pgn: string, color: "white" | "black") => void;
 }) {
   const isEvenRow = index % 2 === 0;
 
@@ -66,7 +66,7 @@ function OpeningRow({ o, color, index, testIdPrefix, onOpenGames }: {
         className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
         aria-label={`View ${o.total} games for ${o.opening_name}`}
         data-testid={`${testIdPrefix}-games-${o.opening_eco}`}
-        onClick={() => onOpenGames(o.pgn)}
+        onClick={() => onOpenGames(o.pgn, color)}
       >
         <span className="tabular-nums">{o.total}</span>
         <FolderOpen className="h-3.5 w-3.5" />

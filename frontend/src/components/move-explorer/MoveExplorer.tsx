@@ -172,7 +172,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover }:
       </td>
       <td className="py-1 pl-2">
         {!hasWdl ? (
-          <div className="flex h-4 w-full overflow-hidden rounded-sm bg-muted" />
+          <div className="flex h-5 w-full overflow-hidden rounded-sm bg-muted" />
         ) : (
           <MiniWDLBar win_pct={entry.win_pct} draw_pct={entry.draw_pct} loss_pct={entry.loss_pct} />
         )}
