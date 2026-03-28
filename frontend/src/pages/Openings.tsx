@@ -41,6 +41,7 @@ import { GameCardList } from '@/components/results/GameCardList';
 import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTable';
+import { pgnToSanArray } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
 import type { FilterState } from '@/components/filters/FilterPanel';
@@ -229,6 +230,12 @@ export function OpeningsPage() {
       toast.error('Failed to save bookmark');
     }
   }, [chess, filters, boardFlipped, bookmarkLabel, createBookmark]);
+
+  /** Load opening PGN onto the board and navigate to the games subtab */
+  const handleOpenGames = useCallback((pgn: string) => {
+    chess.loadMoves(pgnToSanArray(pgn));
+    navigate('/openings/games');
+  }, [chess, navigate]);
 
   const handleLoadBookmark = useCallback((bkm: PositionBookmarkResponse) => {
     chess.loadMoves(bkm.moves);
@@ -524,6 +531,7 @@ export function OpeningsPage() {
             openings={mostPlayedData.white}
             color="white"
             testIdPrefix="mpo-white"
+            onOpenGames={handleOpenGames}
           />
         </div>
       )}
@@ -538,6 +546,7 @@ export function OpeningsPage() {
             openings={mostPlayedData.black}
             color="black"
             testIdPrefix="mpo-black"
+            onOpenGames={handleOpenGames}
           />
         </div>
       )}

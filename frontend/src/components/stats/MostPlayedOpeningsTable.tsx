@@ -1,12 +1,8 @@
 import * as React from "react"
-import { useNavigate } from "react-router-dom"
 import { FolderOpen, ChevronDown, ChevronUp } from "lucide-react"
 import type { OpeningWDL } from "@/types/stats"
 import { MinimapPopover } from "./MinimapPopover"
-import { WDL_WIN, WDL_DRAW, WDL_LOSS, GLASS_OVERLAY } from "@/lib/theme"
-
-// Minimum percentage to show label text inside a WDL bar segment
-const MIN_PCT_FOR_LABEL = 15;
+import { MiniWDLBar } from "./MiniWDLBar"
 
 // Number of openings to show before the "More" fold
 const INITIAL_VISIBLE_COUNT = 3;
@@ -15,6 +11,8 @@ interface MostPlayedOpeningsTableProps {
   openings: OpeningWDL[];
   color: "white" | "black";
   testIdPrefix: string;
+  /** Load PGN moves onto the board and navigate to games tab */
+  onOpenGames: (pgn: string) => void;
 }
 
 /** Format opening name: split on ": " — line break only on mobile. */
@@ -34,53 +32,18 @@ function formatName(name: string): React.ReactNode {
   return <span className="font-medium">{name}</span>;
 }
 
-function MiniWDLBar({ win_pct, draw_pct, loss_pct }: { win_pct: number; draw_pct: number; loss_pct: number }) {
-  return (
-    <div className="flex h-4 w-full min-w-[80px] overflow-hidden rounded-sm" data-testid="mini-wdl-bar">
-      {win_pct > 0 && (
-        <div
-          className="relative flex items-center justify-center text-[10px] font-medium"
-          style={{ width: `${win_pct}%`, backgroundColor: WDL_WIN }}
-        >
-          <div className="absolute inset-0" style={{ background: GLASS_OVERLAY }} />
-          <span className="relative z-10 text-white drop-shadow-sm">
-            {win_pct >= MIN_PCT_FOR_LABEL ? `${Math.round(win_pct)}%` : ""}
-          </span>
-        </div>
-      )}
-      {draw_pct > 0 && (
-        <div
-          className="relative flex items-center justify-center text-[10px] font-medium"
-          style={{ width: `${draw_pct}%`, backgroundColor: WDL_DRAW }}
-        >
-          <div className="absolute inset-0" style={{ background: GLASS_OVERLAY }} />
-          <span className="relative z-10 text-white drop-shadow-sm">
-            {draw_pct >= MIN_PCT_FOR_LABEL ? `${Math.round(draw_pct)}%` : ""}
-          </span>
-        </div>
-      )}
-      {loss_pct > 0 && (
-        <div
-          className="relative flex items-center justify-center text-[10px] font-medium"
-          style={{ width: `${loss_pct}%`, backgroundColor: WDL_LOSS }}
-        >
-          <div className="absolute inset-0" style={{ background: GLASS_OVERLAY }} />
-          <span className="relative z-10 text-white drop-shadow-sm">
-            {loss_pct >= MIN_PCT_FOR_LABEL ? `${Math.round(loss_pct)}%` : ""}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function OpeningRow({ o, color, testIdPrefix }: { o: OpeningWDL; color: "white" | "black"; testIdPrefix: string }) {
-  const navigate = useNavigate();
+function OpeningRow({ o, color, index, testIdPrefix, onOpenGames }: {
+  o: OpeningWDL;
+  color: "white" | "black";
+  index: number;
+  testIdPrefix: string;
+  onOpenGames: (pgn: string) => void;
+}) {
+  const isEvenRow = index % 2 === 0;
 
   return (
     <div
-      key={`${o.opening_eco}-${o.opening_name}`}
-      className="grid grid-cols-[1fr_auto_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-2 items-center rounded px-2 py-1.5 hover:bg-white/5 transition-colors"
+      className={`grid grid-cols-[1fr_auto_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-2 items-center rounded px-2 py-1.5 hover:bg-white/5 transition-colors ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
       data-testid={`${testIdPrefix}-row-${o.opening_eco}`}
     >
       {/* Column 1: ECO + Name + PGN */}
@@ -103,7 +66,7 @@ function OpeningRow({ o, color, testIdPrefix }: { o: OpeningWDL; color: "white" 
         className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
         aria-label={`View ${o.total} games for ${o.opening_name}`}
         data-testid={`${testIdPrefix}-games-${o.opening_eco}`}
-        onClick={() => navigate('/openings/games')}
+        onClick={() => onOpenGames(o.pgn)}
       >
         <span className="tabular-nums">{o.total}</span>
         <FolderOpen className="h-3.5 w-3.5" />
@@ -115,7 +78,7 @@ function OpeningRow({ o, color, testIdPrefix }: { o: OpeningWDL; color: "white" 
   );
 }
 
-export function MostPlayedOpeningsTable({ openings, color, testIdPrefix }: MostPlayedOpeningsTableProps) {
+export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenGames }: MostPlayedOpeningsTableProps) {
   const [expanded, setExpanded] = React.useState(false);
 
   if (openings.length === 0) return null;
@@ -134,9 +97,16 @@ export function MostPlayedOpeningsTable({ openings, color, testIdPrefix }: MostP
       </div>
 
       {/* Rows */}
-      <div className="space-y-0.5">
-        {visibleOpenings.map((o) => (
-          <OpeningRow key={`${o.opening_eco}-${o.opening_name}`} o={o} color={color} testIdPrefix={testIdPrefix} />
+      <div>
+        {visibleOpenings.map((o, i) => (
+          <OpeningRow
+            key={`${o.opening_eco}-${o.opening_name}`}
+            o={o}
+            color={color}
+            index={i}
+            testIdPrefix={testIdPrefix}
+            onOpenGames={onOpenGames}
+          />
         ))}
       </div>
 
@@ -164,3 +134,4 @@ export function MostPlayedOpeningsTable({ openings, color, testIdPrefix }: MostP
     </div>
   );
 }
+
