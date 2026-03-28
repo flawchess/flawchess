@@ -527,7 +527,19 @@ export function OpeningsPage() {
         <div className="charcoal-texture rounded-md p-4" data-testid="mpo-white-section">
           <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
             <span className="inline-block h-3.5 w-3.5 rounded-full border border-muted-foreground bg-white" />
-            White: Most Played Openings
+            <span className="inline-flex items-center gap-1">
+              White: Most Played Openings
+              <InfoPopover ariaLabel="White openings info" testId="mpo-white-info" side="top">
+                <div className="space-y-2">
+                  <p>
+                    Your most frequently played openings as White, based on how chess.com and lichess classified each game. Only openings where White made the last move are shown here.
+                  </p>
+                  <p>
+                    The game count reflects how many of your games received this specific opening name. Clicking the folder icon loads the opening on the board and shows all games that passed through that position — which is usually more, since many openings share the same early moves.
+                  </p>
+                </div>
+              </InfoPopover>
+            </span>
           </h2>
           <MostPlayedOpeningsTable
             openings={mostPlayedData.white}
@@ -542,7 +554,19 @@ export function OpeningsPage() {
         <div className="charcoal-texture rounded-md p-4" data-testid="mpo-black-section">
           <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
             <span className="inline-block h-3.5 w-3.5 rounded-full border border-muted-foreground bg-zinc-900" />
-            Black: Most Played Openings
+            <span className="inline-flex items-center gap-1">
+              Black: Most Played Openings
+              <InfoPopover ariaLabel="Black openings info" testId="mpo-black-info" side="top">
+                <div className="space-y-2">
+                  <p>
+                    Your most frequently played openings as Black, based on how chess.com and lichess classified each game. Only openings where Black made the last move are shown here.
+                  </p>
+                  <p>
+                    The game count reflects how many of your games received this specific opening name. Clicking the folder icon loads the opening on the board and shows all games that passed through that position — which is usually more, since many openings share the same early moves.
+                  </p>
+                </div>
+              </InfoPopover>
+            </span>
           </h2>
           <MostPlayedOpeningsTable
             openings={mostPlayedData.black}
