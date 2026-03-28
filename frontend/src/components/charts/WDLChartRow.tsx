@@ -17,7 +17,7 @@ interface WDLChartRowProps {
   data: WDLRowData;
 
   /** Optional row label (left side of header) */
-  label?: string;
+  label?: ReactNode;
 
   /** Optional info popover rendered after the label */
   infoPopover?: ReactNode;

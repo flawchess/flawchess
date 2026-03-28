@@ -524,8 +524,15 @@ export function OpeningsPage() {
                   .filter((b) => wdlStatsMap[b.id] && wdlStatsMap[b.id].total > 0)
                   .map((b) => {
                     const s = wdlStatsMap[b.id];
-                    const colorPrefix = b.color === 'white' ? '● ' : b.color === 'black' ? '○ ' : '';
-                    return { bookmark: b, label: colorPrefix + b.label, stats: s };
+                    const colorIcon = b.color === 'white' ? (
+                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white" />
+                    ) : b.color === 'black' ? (
+                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900" />
+                    ) : null;
+                    const label = colorIcon ? (
+                      <span className="inline-flex items-center gap-1.5">{colorIcon}{b.label}</span>
+                    ) : b.label;
+                    return { bookmark: b, label, stats: s };
                   })
                   .sort((a, b) => b.stats.total - a.stats.total);
 
