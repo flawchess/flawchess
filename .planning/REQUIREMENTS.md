@@ -1,60 +1,19 @@
 # Requirements: FlawChess
 
-**Defined:** 2026-03-23
-**Core Value:** Users can determine their success rate for any opening position they specify
+**Defined:** 2026-03-28
+**Core Value:** Users can determine their success rate for any opening position they specify, filtering by their own pieces only, regardless of how platforms categorize the opening.
 
-## v1.5 Requirements
+## v1.6 Requirements
 
-Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
+Requirements for v1.6 — UI Polish & Improvements.
 
-### Position Metadata
+### Theme
 
-- [x] **PMETA-01**: System computes game phase (opening/middlegame/endgame) for every position during import using material-weight thresholds
-- [x] **PMETA-02**: System computes material signature in canonical form (stronger side first, e.g., KRP_KR) for every position during import
-- [x] **PMETA-03**: System computes material imbalance in centipawns for every position during import
-- [x] **PMETA-04**: System classifies endgame type (rook/minor piece/pawn/queen/mixed/pawnless) for positions in endgame phase
-- [x] **PMETA-05**: System backfills position metadata for all previously imported games without requiring user re-import
-
-### Engine Analysis Import
-
-- [ ] **ENGINE-01**: System imports per-move eval (centipawns/mate) from lichess PGN annotations for games with prior computer analysis
-- [ ] **ENGINE-02**: System imports game-level accuracy scores from chess.com for games where analysis exists
-- [ ] **ENGINE-03**: System gracefully handles missing analysis data (null fields, no errors) for unanalyzed games
-- [x] **LMETRIC-01**: System stores per-player analysis metrics (ACPL, inaccuracy count, mistake count, blunder count) as nullable SmallInteger columns on the games table
-- [x] **LMETRIC-02**: System imports lichess per-player analysis metrics (ACPL, inaccuracy, mistake, blunder counts) from the API response during game normalization
-
-### Endgame Analytics
-
-- [x] **ENDGM-01**: User can view W/D/L rates for each endgame category in a dedicated Endgames tab
-- [x] **ENDGM-02**: User can filter endgame statistics by time control (bullet/blitz/rapid/classical)
-- [x] **ENDGM-03**: User can filter endgame statistics by color played (white/black/both)
-- [x] **ENDGM-04**: User can see game count per endgame category to assess statistical significance
-
-### Conversion & Recovery Statistics
-
-- [x] **CONV-01**: User can see win rate when up material, broken down by game phase (placement TBD: Stats tab or Endgames tab)
-- [x] **CONV-02**: User can see draw/win rate when down material, broken down by game phase
-- [x] **CONV-03**: User can filter conversion/recovery stats by time control
-
-### Endgame Performance Charts
-
-- [ ] **PERF-01**: User can see side-by-side WDL comparison of endgame games vs non-endgame games
-- [ ] **PERF-02**: User can see a Relative Endgame Strength gauge (endgame win rate / overall win rate * 100)
-- [ ] **PERF-03**: User can see an Endgame Skill gauge (0.6 * conversion_pct + 0.4 * recovery_pct)
-- [ ] **PERF-04**: User can see conversion and recovery percentages side by side for each endgame type in a grouped bar chart
-- [ ] **PERF-05**: User can see rolling 50-game win rate timeline for endgame vs non-endgame games
-- [ ] **PERF-06**: User can see rolling 50-game win rate timeline broken down by endgame type
-- [ ] **PERF-07**: All endgame performance charts respect existing filters (time control, platform, recency, rated, opponent)
-
-## v1.4 Requirements (Prior Milestone)
-
-### Analytics
-
-- [ ] **ANLY-01**: Site owner can view page visit counts and trends over time
-- [ ] **ANLY-02**: Site owner can see top pages/routes by visit count
-- [ ] **ANLY-03**: Site owner can see visitor referrer sources
-- [x] **ANLY-04**: Analytics collection respects user privacy (no cookie consent banner required)
-- [x] **ANLY-05**: Analytics solution has minimal server resource footprint (RAM/CPU)
+- [ ] **THEME-01**: User sees all visual constants (container colors, spacing, chart styles) centralized in theme.ts and CSS variables
+- [ ] **THEME-02**: User sees content containers with charcoal background and subtle SVG feTurbulence noise texture, visually distinct from page background
+- [ ] **THEME-03**: User sees filter buttons in sidebar spaced horizontally across full available width
+- [ ] **THEME-04**: User sees consistent WDL chart styling (unified corners and rendering) across all chart types (custom and Recharts-based)
+- [ ] **THEME-05**: User sees clear visual highlighting on the active subtab
 
 ## Future Requirements
 
@@ -74,45 +33,22 @@ Requirements for v1.5 Game Statistics & Endgame Analysis milestone.
 
 | Feature | Reason |
 |---------|--------|
-| Local Stockfish analysis | Too CPU-intensive for Hetzner VPS; only import existing platform analysis |
-| Per-phase accuracy for chess.com | chess.com API only provides game-level accuracy, not per-phase |
-| Per-move quality classification (computing blunder/mistake/inaccuracy from engine evals) | Requires engine eval for every move; importing pre-computed game-level counts from lichess is in scope (Phase 28.1) |
-| Chessboard in Endgames tab | Endgame positions too diverse for meaningful board-based exploration |
+| Dark/light mode toggle | Not requested for v1.6; current dark theme is the only mode |
+| Fine borders on containers | Explicitly excluded — charcoal background with texture only |
+| Image-based background textures | Use lightweight SVG feTurbulence instead of asset files |
 
 ## Traceability
 
+Which phases cover which requirements. Updated during roadmap creation.
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PMETA-01 | Phase 26 | Complete |
-| PMETA-02 | Phase 26 | Complete |
-| PMETA-03 | Phase 26 | Complete |
-| PMETA-04 | Phase 26 | Complete |
-| PMETA-05 | Phase 27 | Complete |
-| ENGINE-01 | Phase 29 | Pending |
-| ENGINE-02 | Phase 29 | Pending |
-| ENGINE-03 | Phase 29 | Pending |
-| ENDGM-01 | Phase 28 | Complete |
-| ENDGM-02 | Phase 28 | Complete |
-| ENDGM-03 | Phase 28 | Complete |
-| ENDGM-04 | Phase 28 | Complete |
-| CONV-01 | Phase 28 | Complete |
-| CONV-02 | Phase 28 | Complete |
-| CONV-03 | Phase 28 | Complete |
-| LMETRIC-01 | Phase 28.1 | Complete |
-| LMETRIC-02 | Phase 28.1 | Complete |
-| PERF-01 | Phase 32 | Pending |
-| PERF-02 | Phase 32 | Pending |
-| PERF-03 | Phase 32 | Pending |
-| PERF-04 | Phase 32 | Pending |
-| PERF-05 | Phase 32 | Pending |
-| PERF-06 | Phase 32 | Pending |
-| PERF-07 | Phase 32 | Pending |
 
 **Coverage:**
-- v1.5 requirements: 24 total
-- Mapped to phases: 24
-- Unmapped: 0
+- v1.6 requirements: 5 total
+- Mapped to phases: 0
+- Unmapped: 5 ⚠️
 
 ---
-*Requirements defined: 2026-03-23*
-*Last updated: 2026-03-26 after Phase 32 planning*
+*Requirements defined: 2026-03-28*
+*Last updated: 2026-03-28 after initial definition*
