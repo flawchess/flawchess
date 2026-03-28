@@ -39,7 +39,7 @@ import { SuggestionsModal } from '@/components/position-bookmarks/SuggestionsMod
 import { WDLBar } from '@/components/results/WDLBar';
 import { GameCardList } from '@/components/results/GameCardList';
 import { getArrowColor } from '@/lib/arrowColor';
-import { WDLBarChart } from '@/components/charts/WDLBarChart';
+import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
 import type { FilterState } from '@/components/filters/FilterPanel';
@@ -498,7 +498,58 @@ export function OpeningsPage() {
       ) : tsData ? (
         <>
           <div className="charcoal-texture rounded-md p-4">
-            <WDLBarChart bookmarks={bookmarks} wdlStatsMap={wdlStatsMap} />
+            <div>
+              <h2 className="text-lg font-medium mb-3">
+                <span className="inline-flex items-center gap-1">
+                  Results by Opening
+                  <InfoPopover ariaLabel="Results by opening info" testId="wdl-bar-chart-info" side="top">
+                    Shows your win, draw, and loss percentages for each saved position, based on the games that match the current filter settings. The length of the grey bar indicates game count relative to other openings.
+                  </InfoPopover>
+                </span>
+              </h2>
+              {(() => {
+                const rows = bookmarks
+                  .filter((b) => wdlStatsMap[b.id] && wdlStatsMap[b.id].total > 0)
+                  .map((b) => {
+                    const s = wdlStatsMap[b.id];
+                    const colorPrefix = b.color === 'white' ? '● ' : b.color === 'black' ? '○ ' : '';
+                    return { bookmark: b, label: colorPrefix + b.label, stats: s };
+                  })
+                  .sort((a, b) => b.stats.total - a.stats.total);
+
+                if (rows.length === 0) {
+                  return (
+                    <div className="text-center text-muted-foreground py-8">
+                      No stats available for saved positions yet.
+                    </div>
+                  );
+                }
+
+                const maxTotal = Math.max(...rows.map((r) => r.stats.total));
+
+                return (
+                  <div className="space-y-2">
+                    {rows.map((row) => (
+                      <WDLChartRow
+                        key={row.bookmark.id}
+                        data={{
+                          wins: row.stats.wins,
+                          draws: row.stats.draws,
+                          losses: row.stats.losses,
+                          total: row.stats.total,
+                          win_pct: row.stats.total > 0 ? (row.stats.wins / row.stats.total) * 100 : 0,
+                          draw_pct: row.stats.total > 0 ? (row.stats.draws / row.stats.total) * 100 : 0,
+                          loss_pct: row.stats.total > 0 ? (row.stats.losses / row.stats.total) * 100 : 0,
+                        }}
+                        label={row.label}
+                        maxTotal={maxTotal}
+                        testId={`wdl-opening-${row.bookmark.id}`}
+                      />
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
           </div>
           <div className="charcoal-texture rounded-md p-4">
             <WinRateChart bookmarks={bookmarks} series={tsData.series} />

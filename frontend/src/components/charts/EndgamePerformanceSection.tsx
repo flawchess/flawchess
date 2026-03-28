@@ -6,8 +6,9 @@
 
 import { EndgameGauge, type GaugeZone } from '@/components/charts/EndgameGauge';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { WDL_WIN, WDL_DRAW, WDL_LOSS, GLASS_OVERLAY, GAUGE_DANGER, GAUGE_WARNING, GAUGE_SUCCESS } from '@/lib/theme';
-import type { EndgamePerformanceResponse, EndgameWDLSummary } from '@/types/endgames';
+import { WDLChartRow } from '@/components/charts/WDLChartRow';
+import { GAUGE_DANGER, GAUGE_WARNING, GAUGE_SUCCESS } from '@/lib/theme';
+import type { EndgamePerformanceResponse } from '@/types/endgames';
 
 // Material advantage/deficit threshold in pawn points (backend uses 300 centipawns)
 export const MATERIAL_ADVANTAGE_POINTS = 3;
@@ -31,48 +32,6 @@ const ENDGAME_SKILL_ZONES: GaugeZone[] = [
   { from: 0.6,  to: 1.0,  color: GAUGE_SUCCESS },
 ];
 
-interface WDLRowProps {
-  label: string;
-  wdl: EndgameWDLSummary;
-  testId: string;
-}
-
-function WDLRow({ label, wdl, testId }: WDLRowProps) {
-  return (
-    <div className="space-y-1" data-testid={testId}>
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-medium">{label}</span>
-        <span className="text-xs text-muted-foreground">{wdl.total} games</span>
-      </div>
-      <div className="flex h-5 w-full overflow-hidden rounded">
-        {wdl.win_pct > 0 && (
-          <div
-            className="transition-all"
-            style={{ width: `${wdl.win_pct}%`, backgroundColor: WDL_WIN, backgroundImage: GLASS_OVERLAY }}
-          />
-        )}
-        {wdl.draw_pct > 0 && (
-          <div
-            className="transition-all"
-            style={{ width: `${wdl.draw_pct}%`, backgroundColor: WDL_DRAW, backgroundImage: GLASS_OVERLAY }}
-          />
-        )}
-        {wdl.loss_pct > 0 && (
-          <div
-            className="transition-all"
-            style={{ width: `${wdl.loss_pct}%`, backgroundColor: WDL_LOSS, backgroundImage: GLASS_OVERLAY }}
-          />
-        )}
-      </div>
-      <div className="flex justify-center gap-3 text-sm">
-        <span style={{ color: WDL_WIN }}>W: {wdl.wins} ({Math.round(wdl.win_pct)}%)</span>
-        <span style={{ color: WDL_DRAW }}>D: {wdl.draws} ({Math.round(wdl.draw_pct)}%)</span>
-        <span style={{ color: WDL_LOSS }}>L: {wdl.losses} ({Math.round(wdl.loss_pct)}%)</span>
-      </div>
-    </div>
-  );
-}
-
 interface EndgamePerformanceSectionProps {
   data: EndgamePerformanceResponse;
 }
@@ -91,14 +50,14 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
 
       {/* WDL comparison bars (D-03) */}
       <div className="space-y-3">
-        <WDLRow
+        <WDLChartRow
+          data={data.endgame_wdl}
           label="Endgame games"
-          wdl={data.endgame_wdl}
           testId="perf-wdl-endgame"
         />
-        <WDLRow
+        <WDLChartRow
+          data={data.non_endgame_wdl}
           label="Non-endgame games"
-          wdl={data.non_endgame_wdl}
           testId="perf-wdl-non-endgame"
         />
       </div>
