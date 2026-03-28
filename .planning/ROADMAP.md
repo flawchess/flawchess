@@ -98,11 +98,11 @@
   2. Each section lists the top 5 openings by game count, based on opening_eco/opening_name from the games table
   3. Openings with fewer than 10 games are excluded; if no openings meet the threshold, an explanatory message is shown
   4. Openings are displayed as WDL charts (same component as "Results by Opening") with ECO code in parentheses in the title
-**Plans**: 0 plans
+**Plans**: 1 plan
 **UI hint**: yes
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 36 to break down)
+- [ ] 36-01-PLAN.md — Backend endpoint + frontend rendering for most played openings by color
 
 ### Phase 35: WDL Chart Refactoring
 **Goal**: All WDL charts (except move list) use a single shared component, eliminating inconsistent custom and Recharts implementations
@@ -175,7 +175,7 @@ Plans:
 | 33. Homepage, README & SEO Update | v1.5 | 3/3 | Complete | 2026-03-28 |
 | 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
 | 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
-| 36. Most Played Openings | v1.6 | 0/0 | Not planned | — |
+| 36. Most Played Openings | v1.6 | 0/1 | In progress | — |
 
 ## Backlog
 
@@ -196,4 +196,3 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
-
