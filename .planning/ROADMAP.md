@@ -86,7 +86,7 @@
 - [x] **Phase 34: Theme Improvements** — Centralize theme constants, charcoal containers with noise texture, filter button layout, consistent WDL chart styling, active subtab highlighting (completed 2026-03-28)
 - [x] **Phase 35: WDL Chart Refactoring** — Create shared WDL chart component based on endgame charts, replace all inconsistent WDL charts (custom and Recharts), clean up unused code (completed 2026-03-28)
 - [x] **Phase 36: Most Played Openings** — Add "Most Played Openings" sections (White/Black) to Opening Statistics subtab with top 5 openings as WDL charts, ECO codes, minimum 10 games threshold (completed 2026-03-28)
-- [ ] **Phase 37: Openings Reference Table & Most Played Openings Redesign** — Create openings DB table from TSV dataset with PGN/FEN/ply_count, redesign most played openings with filter support, dedicated table UI, minimap popover, SQL-side WDL aggregation, top 10
+- [x] **Phase 37: Openings Reference Table & Most Played Openings Redesign** — Create openings DB table from TSV dataset with PGN/FEN/ply_count, redesign most played openings with filter support, dedicated table UI, minimap popover, SQL-side WDL aggregation, top 10 (completed 2026-03-28)
 
 ## Phase Details
 
@@ -105,8 +105,8 @@
 
 Plans:
 - [x] 37-01-PLAN.md — Opening model, Alembic migration with dedup view, seed script, tests
-- [ ] 37-02-PLAN.md — SQL-side WDL aggregation, filter params, updated schema/service/router, tests
-- [ ] 37-03-PLAN.md — Frontend table component, minimap popover, hook/API filter wiring, visual verification
+- [x] 37-02-PLAN.md — SQL-side WDL aggregation, filter params, updated schema/service/router, tests
+- [x] 37-03-PLAN.md — Frontend table component, minimap popover, hook/API filter wiring, visual verification
 
 ### Phase 36: Most Played Openings
 **Goal**: Opening Statistics subtab shows the user's top 5 most played openings for White and Black as WDL charts, with ECO codes and a minimum 10 games threshold
@@ -195,7 +195,7 @@ Plans:
 | 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
 | 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
 | 36. Most Played Openings | v1.6 | 1/1 | Complete    | 2026-03-28 |
-| 37. Openings Reference Table & Redesign | v1.6 | 1/3 | In Progress|  |
+| 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
 
 ## Backlog
 
@@ -203,7 +203,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 1/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

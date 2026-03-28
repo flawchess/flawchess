@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: UI Polish & Improvements
 status: verifying
-last_updated: "2026-03-28T19:52:16.500Z"
+last_updated: "2026-03-28T19:59:11.755Z"
 last_activity: 2026-03-28
 progress:
   total_phases: 6
-  completed_phases: 3
-  total_plans: 5
-  completed_plans: 6
+  completed_phases: 4
+  total_plans: 8
+  completed_plans: 8
 ---
 
 # Project State: FlawChess
@@ -84,6 +84,8 @@ Current focus: v1.6 UI Polish & Improvements
 - [Phase 37-02]: Standalone MetaData() for _openings_dedup Table — keeps view invisible to Alembic autogenerate
 - [Phase 37-02]: SQL-side WDL via func.count().filter() replaces Python-side aggregation loop
 - [Phase 37-02]: TOP_OPENINGS_LIMIT raised from 5 to 10; MIN_PLY_WHITE=1, MIN_PLY_BLACK=2
+- [Phase 37-03]: arePiecesDraggable not a valid prop in react-chessboard v5 — static minimap board achieved by omitting onPieceDrop/onSquareClick handlers
+- [Phase 37-03]: MostPlayedOpeningsTable replaces WDLChartRow in statisticsContent; filters from debouncedFilters now passed to useMostPlayedOpenings so Statistics tab openings react to filter changes
 
 ### Critical v1.5 Constraints
 
