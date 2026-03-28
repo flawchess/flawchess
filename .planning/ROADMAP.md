@@ -175,7 +175,7 @@ Plans:
 | 33. Homepage, README & SEO Update | v1.5 | 3/3 | Complete | 2026-03-28 |
 | 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
 | 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
-| 36. Most Played Openings | v1.6 | 1/1 | Complete   | 2026-03-28 |
+| 36. Most Played Openings | v1.6 | 1/1 | Complete    | 2026-03-28 |
 
 ## Backlog
 
