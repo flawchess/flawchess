@@ -1,34 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: Game Statistics & Endgame Analysis
-status: Complete
-last_updated: "2026-03-28T00:00:00Z"
+milestone: v1.6
+milestone_name: UI Polish & Improvements
+status: verifying
+last_updated: "2026-03-28T12:52:56.747Z"
 last_activity: 2026-03-28
 progress:
-  total_phases: 11
-  completed_phases: 11
-  total_plans: 19
-  completed_plans: 19
+  total_phases: 3
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone v1.5 complete. All phases shipped.
+Phase: 999.1
+Plan: Not started
+Status: Phase complete — ready for verification
+Last activity: 2026-03-28
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-23)
+See: .planning/PROJECT.md (updated 2026-03-28)
 Core value: Users can determine their success rate for any opening position they specify
-Milestone v1.5 shipped: Game Statistics & Endgame Analysis
+Current focus: v1.6 UI Polish & Improvements
 
 ## Phase Progress
 
 | Phase | Goal | Status |
 |-------|------|--------|
-| 33. Homepage, README & SEO Update | Update homepage content, README, and SEO metadata | Complete |
+| 34. Theme Improvements | Users see a visually consistent, polished UI with centralized theme management | Not started |
 
 ## Key Context
 
@@ -69,6 +72,8 @@ Milestone v1.5 shipped: Game Statistics & Endgame Analysis
 - [Phase 33]: Title changed to 'Chess Analysis for Human Players' to reflect v1.5 scope
 - [Phase 33]: README broadened to include endgame analytics, Zobrist hash mention, and updated screenshot reference
 - [Phase 33]: orientation field removed from FEATURES type — all homepage sections now landscape with fixed 2fr/3fr grid ratio
+- [Phase 34-theme-improvements]: Nav active tab uses bg-white/10 (subtle lighter background) instead of border-b-2 underline per D-11
+- [Phase 34-theme-improvements]: charcoal-texture wraps each Collapsible block as a sibling div for correct rounded container rendering
 
 ### Critical v1.5 Constraints
 
@@ -90,6 +95,7 @@ Milestone v1.5 shipped: Game Statistics & Endgame Analysis
 - Phase 31 added: Endgame classification redesign — per-position instead of per-game
 - Phase 32 added: Endgame Performance Charts — endgame vs non-endgame WDL, strength gauge, rolling-window timelines
 - Phase 30 renumbered to Phase 33: Homepage, README & SEO Update (was skipped during v1.5 execution; phases 31 and 32 were inserted before it)
+- Phase 34 added: v1.6 Theme Improvements — centralized theme, charcoal containers, filter layout, WDL chart consistency, subtab highlighting
 
 ### Blockers/Concerns
 
@@ -134,4 +140,4 @@ Milestone v1.5 shipped: Game Statistics & Endgame Analysis
 | 260328-04a | Update SEO meta tags, README, and CLAUDE.md to match 5-feature homepage | 2026-03-27 | d039ba6 | [260328-04a-update-seo-readme-and-claude-md-based-on](./quick/260328-04a-update-seo-readme-and-claude-md-based-on/) |
 
 ---
-Last activity: 2026-03-28 - Milestone v1.5 complete. Phase 33 shipped, deployed to production.
+Last activity: 2026-03-28 - Phase 34 Plan 01 complete. Theme infrastructure: CSS vars, charcoal-texture, tabs brand variant, filter grid layout, WDL chart rounding.

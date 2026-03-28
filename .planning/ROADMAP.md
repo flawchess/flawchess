@@ -8,6 +8,7 @@
 - ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
 - ✅ **v1.4 Improvements** — Phase 24 (shipped 2026-03-22)
 - ✅ **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33 (shipped 2026-03-28)
+- 🚧 **v1.6 UI Polish & Improvements** — Phase 34+ (in progress)
 
 ## Phases
 
@@ -80,6 +81,29 @@
 
 </details>
 
+## v1.6 UI Polish & Improvements
+
+- [x] **Phase 34: Theme Improvements** — Centralize theme constants, charcoal containers with noise texture, filter button layout, consistent WDL chart styling, active subtab highlighting (completed 2026-03-28)
+
+## Phase Details
+
+### Phase 34: Theme Improvements
+**Goal**: Users see a visually consistent, polished UI with centralized theme management across all pages
+**Depends on**: Nothing (first phase of v1.6)
+**Requirements**: THEME-01, THEME-02, THEME-03, THEME-04, THEME-05
+**Success Criteria** (what must be TRUE):
+  1. All theme-relevant constants (container colors, spacing, chart styles) are defined in theme.ts and CSS variables — no ad-hoc color values scattered across components
+  2. Content containers appear with a charcoal background and subtle noise texture, visually distinct from the page background
+  3. Filter buttons in the sidebar are laid out horizontally, spanning the full available width with even spacing
+  4. WDL charts (both custom bar and Recharts-based) share identical corner rounding and rendering style across all pages
+  5. The active subtab is clearly highlighted so the user always knows which sub-section they are viewing
+**Plans**: 2 plans
+**UI hint**: yes
+
+Plans:
+- [x] 34-01-PLAN.md — Theme infrastructure: CSS variables, charcoal texture class, tabs brand variant, filter layout, WDL chart rounding
+- [x] 34-02-PLAN.md — Apply charcoal containers to pages, collapsible styling, nav header polish, subtab highlighting, visual checkpoint
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -117,6 +141,7 @@
 | 31. Endgame classification redesign | v1.5 | 2/2 | Complete | 2026-03-26 |
 | 32. Endgame Performance Charts | v1.5 | 3/3 | Complete | 2026-03-27 |
 | 33. Homepage, README & SEO Update | v1.5 | 3/3 | Complete | 2026-03-28 |
+| 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
 
 ## Backlog
 
@@ -124,7 +149,7 @@
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 0 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

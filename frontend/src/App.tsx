@@ -77,35 +77,37 @@ function NavHeader() {
   const { logout } = useAuth();
 
   return (
-    <header className="hidden sm:block border-b border-border bg-background px-6 overflow-hidden">
-      <div className="mx-auto flex max-w-7xl items-center justify-between py-1">
-        <div className="flex items-center gap-1">
-          <img src="/icons/logo-128.png" alt="" className="h-11 w-11 self-end -mb-1" aria-hidden="true" />
-          <span className="mr-3 text-lg tracking-tight text-foreground font-brand">FlawChess</span>
-          <nav aria-label="Main navigation">
+    <header className="hidden sm:block bg-background px-6 overflow-hidden">
+      <div className="mx-auto flex max-w-7xl items-stretch justify-between">
+        <div className="flex items-center">
+          <Link to="/" className="flex items-center gap-1 mr-3" data-testid="nav-home">
+            <img src="/icons/logo-128.png" alt="" className="h-11 w-11 self-end -mb-1" aria-hidden="true" />
+            <span className="text-lg tracking-tight text-foreground font-brand">FlawChess</span>
+          </Link>
+          <nav aria-label="Main navigation" className="flex items-stretch h-full">
             {NAV_ITEMS.map(({ to, label, Icon }) => (
-              <Button
+              <Link
                 key={to}
-                asChild
-                variant="ghost"
-                size="sm"
-                className={
+                to={to}
+                data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 text-sm transition-colors',
                   isActive(to, location.pathname)
-                    ? 'border-b-2 border-primary rounded-none font-medium'
-                    : 'rounded-none text-muted-foreground'
-                }
+                    ? 'font-medium bg-white/10 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
               >
-                <Link to={to} data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}>
-                  <Icon className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                  {label}
-                </Link>
-              </Button>
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                {label}
+              </Link>
             ))}
           </nav>
         </div>
-        <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
-          Logout
-        </Button>
+        <div className="flex items-center">
+          <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
+            Logout
+          </Button>
+        </div>
       </div>
     </header>
   );
@@ -122,15 +124,16 @@ function MobileHeader() {
   return (
     <header
       data-testid="mobile-header"
-      className="block sm:hidden pt-safe flex items-center justify-between px-4 py-1 border-b border-border bg-background overflow-hidden"
+      className="block sm:hidden pt-safe flex items-center justify-between px-4 py-1 bg-background overflow-hidden"
     >
-      <span
-        data-testid="mobile-header-brand"
+      <Link
+        to="/"
+        data-testid="nav-home-mobile"
         className="flex items-center gap-1.5 text-xl tracking-tight text-foreground font-brand"
       >
         <img src="/icons/logo-128.png" alt="" className="h-11 w-11 self-end -mb-1" aria-hidden="true" />
         FlawChess
-      </span>
+      </Link>
       <span
         data-testid="mobile-header-page-title"
         className="text-sm text-muted-foreground"

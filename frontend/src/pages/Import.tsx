@@ -180,7 +180,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
           {/* chess.com platform row */}
           <div
             data-testid="import-platform-chess-com"
-            className="space-y-2 rounded-md border px-3 py-2"
+            className="charcoal-texture space-y-2 rounded-md px-3 py-2"
           >
             <div className="flex items-center gap-3">
               <div className="flex-1 space-y-1">
@@ -223,7 +223,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
           {/* lichess platform row */}
           <div
             data-testid="import-platform-lichess"
-            className="space-y-2 rounded-md border px-3 py-2"
+            className="charcoal-texture space-y-2 rounded-md px-3 py-2"
           >
             <div className="flex items-center gap-3">
               <div className="flex-1 space-y-1">

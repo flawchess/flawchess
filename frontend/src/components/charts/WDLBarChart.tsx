@@ -104,9 +104,11 @@ export function WDLBarChart({ bookmarks, wdlStatsMap }: WDLBarChartProps) {
           }}
         />
         <ChartLegend content={<ChartLegendContent />} />
-        <Bar xAxisId="pct" dataKey="win_pct" stackId="wdl" fill="var(--color-win_pct)" radius={[0, 0, 0, 0]} />
+        {/* Radius on outermost bars only — Recharts 2.x doesn't support BarStack (3.x feature).
+            If a segment is 0%, its radius has no visual effect since Recharts skips zero-value bars. */}
+        <Bar xAxisId="pct" dataKey="win_pct" stackId="wdl" fill="var(--color-win_pct)" radius={[4, 4, 0, 0]} />
         <Bar xAxisId="pct" dataKey="draw_pct" stackId="wdl" fill="var(--color-draw_pct)" />
-        <Bar xAxisId="pct" dataKey="loss_pct" stackId="wdl" fill="var(--color-loss_pct)" radius={[0, 0, 0, 0]} />
+        <Bar xAxisId="pct" dataKey="loss_pct" stackId="wdl" fill="var(--color-loss_pct)" radius={[0, 0, 4, 4]} />
         <Bar
           xAxisId="count"
           dataKey="game_count"

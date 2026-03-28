@@ -294,12 +294,13 @@ export function DashboardPage() {
   const leftColumn = (
     <div className="flex flex-col gap-2 min-w-0">
       {/* Section 1: Position filter */}
+      <div className="charcoal-texture rounded-md">
       <Collapsible open={positionFilterOpen} onOpenChange={setPositionFilterOpen}>
         <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-2 text-sm font-medium"
+            className="w-full justify-between px-3 text-sm font-medium rounded-none hover:bg-charcoal-hover!"
             data-testid="section-position-filter"
           >
             Position filter
@@ -307,7 +308,8 @@ export function DashboardPage() {
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="flex flex-col gap-3 pt-2">
+          <div className="border-t border-border/20" />
+          <div className="flex flex-col gap-3 p-2 pt-2">
             <ChessBoard
               position={chess.position}
               onPieceDrop={chess.makeMove}
@@ -343,47 +345,49 @@ export function DashboardPage() {
             />
 
             {/* Played as + Piece filter */}
-            <div className="flex flex-wrap gap-x-4 gap-y-3">
-              <div>
-                <p className="mb-1 text-xs text-muted-foreground">Played as</p>
-                <ToggleGroup
-                  type="single"
-                  value={filters.color}
-                  onValueChange={(v) => {
-                    if (!v) return;
-                    const color = v as Color;
-                    setFilters(prev => ({ ...prev, color }));
-                    setBoardFlipped(color === 'black');
-                  }}
-                  variant="outline"
-                  size="sm"
-                  data-testid="filter-played-as"
-                >
-                  <ToggleGroupItem value="white" data-testid="filter-played-as-white">
-                    <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
-                    White
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="black" data-testid="filter-played-as-black">
-                    <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
-                    Black
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
+            <div className="charcoal-texture rounded-md p-2">
+              <div className="flex flex-wrap gap-x-4 gap-y-3">
+                <div>
+                  <p className="mb-1 text-xs text-muted-foreground">Played as</p>
+                  <ToggleGroup
+                    type="single"
+                    value={filters.color}
+                    onValueChange={(v) => {
+                      if (!v) return;
+                      const color = v as Color;
+                      setFilters(prev => ({ ...prev, color }));
+                      setBoardFlipped(color === 'black');
+                    }}
+                    variant="outline"
+                    size="sm"
+                    data-testid="filter-played-as"
+                  >
+                    <ToggleGroupItem value="white" data-testid="filter-played-as-white">
+                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
+                      White
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="black" data-testid="filter-played-as-black">
+                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
+                      Black
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
 
-              <div>
-                <p className="mb-1 text-xs text-muted-foreground">Piece filter</p>
-                <ToggleGroup
-                  type="single"
-                  value={filters.matchSide}
-                  onValueChange={(v) => v && setFilters(prev => ({ ...prev, matchSide: v as MatchSide }))}
-                  variant="outline"
-                  size="sm"
-                  data-testid="filter-piece-filter"
-                >
-                  <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
-                  <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
-                  <ToggleGroupItem value="both" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
-                </ToggleGroup>
+                <div>
+                  <p className="mb-1 text-xs text-muted-foreground">Piece filter</p>
+                  <ToggleGroup
+                    type="single"
+                    value={filters.matchSide}
+                    onValueChange={(v) => v && setFilters(prev => ({ ...prev, matchSide: v as MatchSide }))}
+                    variant="outline"
+                    size="sm"
+                    data-testid="filter-piece-filter"
+                  >
+                    <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
+                    <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
+                    <ToggleGroupItem value="both" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
               </div>
             </div>
 
@@ -402,14 +406,16 @@ export function DashboardPage() {
           </div>
         </CollapsibleContent>
       </Collapsible>
+      </div>
 
       {/* Section 2: Position bookmarks */}
+      <div className="charcoal-texture rounded-md">
       <Collapsible open={positionBookmarksOpen} onOpenChange={setPositionBookmarksOpen}>
         <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-2 text-sm font-medium"
+            className="w-full justify-between px-3 text-sm font-medium rounded-none hover:bg-charcoal-hover!"
             data-testid="section-position-bookmarks"
           >
             Position bookmarks
@@ -417,7 +423,8 @@ export function DashboardPage() {
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="pt-2">
+          <div className="border-t border-border/20" />
+          <div className="p-2">
             <PositionBookmarkList
               bookmarks={bookmarks}
               onReorder={handleReorder}
@@ -426,14 +433,16 @@ export function DashboardPage() {
           </div>
         </CollapsibleContent>
       </Collapsible>
+      </div>
 
       {/* Section 3: More filters */}
+      <div className="charcoal-texture rounded-md">
       <Collapsible open={moreFiltersOpen} onOpenChange={setMoreFiltersOpen}>
         <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-2 text-sm font-medium"
+            className="w-full justify-between px-3 text-sm font-medium rounded-none hover:bg-charcoal-hover!"
             data-testid="section-more-filters"
           >
             More filters
@@ -441,11 +450,13 @@ export function DashboardPage() {
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="pt-2">
+          <div className="border-t border-border/20" />
+          <div className="p-2">
             <FilterPanel filters={filters} onChange={handleFiltersChange} />
           </div>
         </CollapsibleContent>
       </Collapsible>
+      </div>
 
       {/* Always-visible action buttons */}
       <div className="flex gap-2 pt-1">
