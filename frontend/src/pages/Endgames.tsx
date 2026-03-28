@@ -219,7 +219,6 @@ export function EndgamesPage() {
 
   const gamesContent = (
     <div className="flex flex-col gap-4">
-      {endgameTypeDropdown}
       {selectedCategoryStats && selectedCategoryStats.total > 0 && (
         <div className="charcoal-texture rounded-md p-4">
           <WDLChartRow
@@ -230,6 +229,7 @@ export function EndgamesPage() {
           />
         </div>
       )}
+      {endgameTypeDropdown}
       {gamesLoading ? (
         <div className="flex items-center justify-center py-12">
           <p className="text-muted-foreground">Loading games...</p>
