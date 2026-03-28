@@ -426,11 +426,11 @@ export function OpeningsPage() {
 
   const moveExplorerContent = (
     <div className="flex flex-col gap-4">
-      {nextMoves.data && nextMoves.data.position_stats.total > 0 && (
+      {gamesData && gamesData.stats.total > 0 && (
         <div className="charcoal-texture rounded-md p-4">
           <WDLChartRow
-            data={nextMoves.data.position_stats}
-            label="Position Results"
+            data={gamesData.stats}
+            label={filters.matchSide === 'both' ? 'Position Results' : `Position Results (Piece filter: ${filters.matchSide === 'mine' ? 'Mine' : 'Opponent'})`}
             barHeight="h-6"
             gamesLink="/openings/games"
             gamesLinkTestId="btn-moves-to-games"
