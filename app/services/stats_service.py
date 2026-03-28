@@ -19,7 +19,7 @@ from app.schemas.stats import (
 from app.services.analysis_service import recency_cutoff
 
 # Minimum number of games required for an opening to appear in top openings.
-MIN_GAMES_FOR_OPENING = 10
+MIN_GAMES_FOR_OPENING = 1
 
 # Maximum number of top openings to return per color.
 TOP_OPENINGS_LIMIT = 10
