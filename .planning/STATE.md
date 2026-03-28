@@ -102,6 +102,7 @@ Current focus: v1.6 UI Polish & Improvements
 - Phase 30 renumbered to Phase 33: Homepage, README & SEO Update (was skipped during v1.5 execution; phases 31 and 32 were inserted before it)
 - Phase 34 added: v1.6 Theme Improvements — centralized theme, charcoal containers, filter layout, WDL chart consistency, subtab highlighting
 - Phase 35 added: WDL Chart Refactoring — shared WDL chart component, replace all inconsistent implementations
+- Phase 36 added: Most Played Openings — top 5 openings by color as WDL charts in Opening Statistics subtab
 
 ### Blockers/Concerns
 

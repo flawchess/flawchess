@@ -8,7 +8,7 @@
 - ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
 - ✅ **v1.4 Improvements** — Phase 24 (shipped 2026-03-22)
 - ✅ **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33 (shipped 2026-03-28)
-- 🚧 **v1.6 UI Polish & Improvements** — Phase 34+ (in progress)
+- 🚧 **v1.6 UI Polish & Improvements** — Phases 34-36 (in progress)
 
 ## Phases
 
@@ -85,8 +85,24 @@
 
 - [x] **Phase 34: Theme Improvements** — Centralize theme constants, charcoal containers with noise texture, filter button layout, consistent WDL chart styling, active subtab highlighting (completed 2026-03-28)
 - [x] **Phase 35: WDL Chart Refactoring** — Create shared WDL chart component based on endgame charts, replace all inconsistent WDL charts (custom and Recharts), clean up unused code (completed 2026-03-28)
+- [ ] **Phase 36: Most Played Openings** — Add "Most Played Openings" sections (White/Black) to Opening Statistics subtab with top 5 openings as WDL charts, ECO codes, minimum 10 games threshold
 
 ## Phase Details
+
+### Phase 36: Most Played Openings
+**Goal**: Opening Statistics subtab shows the user's top 5 most played openings for White and Black as WDL charts, with ECO codes and a minimum 10 games threshold
+**Depends on**: Phase 35 (WDL chart infrastructure)
+**Requirements**: MPO-01, MPO-02, MPO-03, MPO-04
+**Success Criteria** (what must be TRUE):
+  1. "Most Played Openings: White" and "Most Played Openings: Black" sections appear at the top of the Opening Statistics subtab in a shared charcoal container
+  2. Each section lists the top 5 openings by game count, based on opening_eco/opening_name from the games table
+  3. Openings with fewer than 10 games are excluded; if no openings meet the threshold, an explanatory message is shown
+  4. Openings are displayed as WDL charts (same component as "Results by Opening") with ECO code in parentheses in the title
+**Plans**: 0 plans
+**UI hint**: yes
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 36 to break down)
 
 ### Phase 35: WDL Chart Refactoring
 **Goal**: All WDL charts (except move list) use a single shared component, eliminating inconsistent custom and Recharts implementations
@@ -159,6 +175,7 @@ Plans:
 | 33. Homepage, README & SEO Update | v1.5 | 3/3 | Complete | 2026-03-28 |
 | 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
 | 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
+| 36. Most Played Openings | v1.6 | 0/0 | Not planned | — |
 
 ## Backlog
 
@@ -179,3 +196,4 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
+
