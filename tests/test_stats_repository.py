@@ -27,6 +27,7 @@ from app.repositories.stats_repository import (
     query_results_by_color,
     query_results_by_time_control,
     query_top_openings_by_color,
+    query_top_openings_sql_wdl,
 )
 
 
@@ -467,3 +468,81 @@ class TestQueryTopOpeningsByColor:
         for opening_eco, opening_name, result, user_color in rows:
             assert user_color == "white"
             assert opening_eco == "A01"
+
+
+# ---------------------------------------------------------------------------
+# TestQueryTopOpeningsSqlWDL
+# ---------------------------------------------------------------------------
+
+
+class TestQueryTopOpeningsSqlWDL:
+    """Tests for the SQL-side WDL aggregation query (Phase 37)."""
+
+    @pytest.mark.asyncio
+    async def test_sql_wdl_returns_correct_counts(self, db_session: AsyncSession) -> None:
+        """SQL WDL should compute wins/draws/losses in SQL, not Python."""
+        # Seed 3 wins + 2 draws for King's Pawn Game as white.
+        # "King's Pawn Game" (B00, ply_count=1) exists in openings_dedup.
+        for _ in range(3):
+            await _seed_game(db_session, user_id=99999, result="1-0", user_color="white",
+                             opening_eco="B00", opening_name="King's Pawn Game")
+        for _ in range(2):
+            await _seed_game(db_session, user_id=99999, result="1/2-1/2", user_color="white",
+                             opening_eco="B00", opening_name="King's Pawn Game")
+
+        rows = await query_top_openings_sql_wdl(
+            db_session, user_id=99999, color="white", min_games=1, limit=10, min_ply=1)
+        assert len(rows) >= 1
+        # Find the King's Pawn Game row
+        kpg = [r for r in rows if r[0] == "B00" and r[1] == "King's Pawn Game"]
+        assert len(kpg) == 1
+        eco, name, pgn, fen, total, wins, draws, losses = kpg[0]
+        assert wins == 3
+        assert draws == 2
+        assert losses == 0
+        assert total == 5
+        assert pgn  # non-empty PGN from openings_dedup
+        assert fen  # non-empty FEN from openings_dedup
+        assert "/" in fen  # FEN has rank separators
+
+    @pytest.mark.asyncio
+    async def test_sql_wdl_excludes_below_min_games(self, db_session: AsyncSession) -> None:
+        """Openings below min_games threshold should not appear."""
+        await _seed_game(db_session, user_id=99999, result="1-0", user_color="white",
+                         opening_eco="B00", opening_name="King's Pawn Game")
+        rows = await query_top_openings_sql_wdl(
+            db_session, user_id=99999, color="white", min_games=100, limit=10, min_ply=1)
+        assert len(rows) == 0
+
+    @pytest.mark.asyncio
+    async def test_sql_wdl_filters_by_time_control(self, db_session: AsyncSession) -> None:
+        """time_control filter should restrict results."""
+        for _ in range(10):
+            await _seed_game(db_session, user_id=99999, result="1-0", user_color="white",
+                             opening_eco="B00", opening_name="King's Pawn Game",
+                             time_control_bucket="blitz")
+        for _ in range(10):
+            await _seed_game(db_session, user_id=99999, result="1-0", user_color="white",
+                             opening_eco="B00", opening_name="King's Pawn Game",
+                             time_control_bucket="rapid")
+
+        # Filter to blitz only
+        rows = await query_top_openings_sql_wdl(
+            db_session, user_id=99999, color="white", min_games=1, limit=10, min_ply=1,
+            time_control=["blitz"])
+        kpg = [r for r in rows if r[0] == "B00" and r[1] == "King's Pawn Game"]
+        assert len(kpg) == 1
+        assert kpg[0][4] == 10  # total = 10 blitz games only
+
+    @pytest.mark.asyncio
+    async def test_sql_wdl_ply_threshold_excludes_short_openings(self, db_session: AsyncSession) -> None:
+        """min_ply filter should exclude openings with ply_count below threshold."""
+        # King's Pawn Game has ply_count=1 (1. e4)
+        for _ in range(10):
+            await _seed_game(db_session, user_id=99999, result="1-0", user_color="white",
+                             opening_eco="B00", opening_name="King's Pawn Game")
+        # With min_ply=5, King's Pawn Game (ply=1) should be excluded
+        rows = await query_top_openings_sql_wdl(
+            db_session, user_id=99999, color="white", min_games=1, limit=10, min_ply=5)
+        kpg = [r for r in rows if r[0] == "B00" and r[1] == "King's Pawn Game"]
+        assert len(kpg) == 0

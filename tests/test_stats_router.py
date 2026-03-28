@@ -289,3 +289,49 @@ class TestGetMostPlayedOpenings:
         assert "black" in data
         assert isinstance(data["white"], list)
         assert isinstance(data["black"], list)
+
+    @pytest.mark.asyncio
+    async def test_most_played_openings_includes_pgn_fen(self, auth_headers: dict[str, str]) -> None:
+        """Response openings should include pgn and fen fields per ORT-03."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/stats/most-played-openings", headers=auth_headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # If there are openings, they must have pgn and fen fields
+        for opening in data.get("white", []) + data.get("black", []):
+            assert "pgn" in opening
+            assert "fen" in opening
+
+    @pytest.mark.asyncio
+    async def test_most_played_openings_accepts_filters(self, auth_headers: dict[str, str]) -> None:
+        """Endpoint should accept filter params without error."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/stats/most-played-openings",
+                params={"recency": "month", "time_control": "blitz", "rated": "true"},
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "white" in data
+        assert "black" in data
+
+    @pytest.mark.asyncio
+    async def test_most_played_openings_accepts_opponent_type(self, auth_headers: dict[str, str]) -> None:
+        """Endpoint should accept opponent_type param without error."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/stats/most-played-openings",
+                params={"opponent_type": "human"},
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 200
