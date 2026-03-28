@@ -168,13 +168,6 @@ export function WDLChartRow({
           />
         </div>
       )}
-
-      {/* WDL legend text row — dimmed for low sample size */}
-      <div className="flex justify-center gap-3 text-sm" style={dimStyle}>
-        <span style={{ color: WDL_WIN }}>W: {data.wins} ({Math.round(data.win_pct)}%)</span>
-        <span style={{ color: WDL_DRAW }}>D: {data.draws} ({Math.round(data.draw_pct)}%)</span>
-        <span style={{ color: WDL_LOSS }}>L: {data.losses} ({Math.round(data.loss_pct)}%)</span>
-      </div>
     </div>
   );
 }
