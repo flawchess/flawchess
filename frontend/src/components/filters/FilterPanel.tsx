@@ -185,7 +185,7 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
           value={filters.recency ?? 'all'}
           onValueChange={(v) => update({ recency: v === 'all' ? null : (v as Recency) })}
         >
-          <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0">
+          <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0 w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

@@ -290,68 +290,68 @@ export function OpeningsPage() {
       <div className="border-t border-border/40" />
 
       {/* Played as + Piece filter */}
-      <div className="flex flex-wrap gap-x-4 gap-y-3">
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">Played as</p>
-          <ToggleGroup
-            type="single"
-            value={filters.color}
-            onValueChange={(v) => {
-              if (!v) return;
-              const color = v as Color;
-              setFilters(prev => ({ ...prev, color }));
-              setBoardFlipped(color === 'black');
-            }}
-            variant="outline"
-            size="sm"
-            data-testid="filter-played-as"
-          >
-            <ToggleGroupItem value="white" data-testid="filter-played-as-white">
-              <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
-              White
-            </ToggleGroupItem>
-            <ToggleGroupItem value="black" data-testid="filter-played-as-black">
-              <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
-              Black
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </div>
-
-        <div className="ml-auto">
-          <div className="mb-1 flex items-center gap-1">
-            <p className="text-xs text-muted-foreground">Piece filter</p>
-            <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info" side="top">
-              Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
-            </InfoPopover>
+      <div className="charcoal-texture rounded-md p-2">
+        <div className="flex flex-wrap gap-x-4 gap-y-3">
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">Played as</p>
+            <ToggleGroup
+              type="single"
+              value={filters.color}
+              onValueChange={(v) => {
+                if (!v) return;
+                const color = v as Color;
+                setFilters(prev => ({ ...prev, color }));
+                setBoardFlipped(color === 'black');
+              }}
+              variant="outline"
+              size="sm"
+              data-testid="filter-played-as"
+            >
+              <ToggleGroupItem value="white" data-testid="filter-played-as-white">
+                <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
+                White
+              </ToggleGroupItem>
+              <ToggleGroupItem value="black" data-testid="filter-played-as-black">
+                <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
+                Black
+              </ToggleGroupItem>
+            </ToggleGroup>
           </div>
-          <ToggleGroup
-            type="single"
-            value={filters.matchSide}
-            onValueChange={(v) => {
-              if (!v) return;
-              setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
-            }}
-            variant="outline"
-            size="sm"
-            data-testid="filter-piece-filter"
-          >
-            <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
-            <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
-            <ToggleGroupItem value="both" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
-          </ToggleGroup>
+
+          <div className="ml-auto">
+            <div className="mb-1 flex items-center gap-1">
+              <p className="text-xs text-muted-foreground">Piece filter</p>
+              <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info" side="top">
+                Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
+              </InfoPopover>
+            </div>
+            <ToggleGroup
+              type="single"
+              value={filters.matchSide}
+              onValueChange={(v) => {
+                if (!v) return;
+                setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
+              }}
+              variant="outline"
+              size="sm"
+              data-testid="filter-piece-filter"
+            >
+              <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
+              <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
+              <ToggleGroupItem value="both" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
         </div>
       </div>
 
-      <div className="border-t border-border/40" />
-
       {/* Position bookmarks collapsible */}
-      <div className="charcoal-texture rounded-md p-2">
+      <div className="charcoal-texture rounded-md">
       <Collapsible open={positionBookmarksOpen} onOpenChange={setPositionBookmarksOpen}>
         <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-2 text-sm font-medium min-h-11 sm:min-h-0"
+            className="w-full justify-between px-3 text-sm font-medium min-h-11 sm:min-h-0 rounded-none hover:bg-charcoal-hover!"
             data-testid="section-position-bookmarks"
           >
             <span className="flex items-center gap-1">
@@ -366,7 +366,8 @@ export function OpeningsPage() {
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="pt-2">
+          <div className="border-t border-border/20" />
+          <div className="p-2">
             <div className="flex gap-2 mb-2">
               <Button
                 size="lg"
@@ -397,16 +398,14 @@ export function OpeningsPage() {
       </Collapsible>
       </div>
 
-      <div className="border-t border-border/40" />
-
       {/* More filters collapsible */}
-      <div className="charcoal-texture rounded-md p-2">
+      <div className="charcoal-texture rounded-md">
       <Collapsible open={moreFiltersOpen} onOpenChange={setMoreFiltersOpen}>
         <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-2 text-sm font-medium min-h-11 sm:min-h-0"
+            className="w-full justify-between px-3 text-sm font-medium min-h-11 sm:min-h-0 rounded-none hover:bg-charcoal-hover!"
             data-testid="section-more-filters"
           >
             More filters
@@ -414,7 +413,8 @@ export function OpeningsPage() {
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="pt-2">
+          <div className="border-t border-border/20" />
+          <div className="p-2">
             <FilterPanel filters={filters} onChange={handleFiltersChange} />
           </div>
         </CollapsibleContent>
@@ -657,13 +657,13 @@ export function OpeningsPage() {
           <div className="border-t border-border/40" />
 
           {/* More filters — collapsed by default on mobile */}
-          <div className="charcoal-texture rounded-md p-2">
+          <div className="charcoal-texture rounded-md">
           <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
             <CollapsibleTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-between px-2 text-sm font-medium min-h-11 sm:min-h-0"
+                className="w-full justify-between px-3 text-sm font-medium min-h-11 sm:min-h-0 rounded-none hover:bg-charcoal-hover!"
                 data-testid="section-more-filters-mobile"
               >
                 More filters
@@ -671,7 +671,8 @@ export function OpeningsPage() {
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <div className="pt-2">
+              <div className="border-t border-border/20" />
+              <div className="p-2">
                 <FilterPanel filters={filters} onChange={handleFiltersChange} />
               </div>
             </CollapsibleContent>
@@ -679,13 +680,13 @@ export function OpeningsPage() {
           </div>
 
           {/* Position bookmarks — collapsed by default */}
-          <div className="charcoal-texture rounded-md p-2">
+          <div className="charcoal-texture rounded-md">
           <Collapsible open={positionBookmarksOpen} onOpenChange={setPositionBookmarksOpen}>
             <CollapsibleTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-between px-2 text-sm font-medium min-h-11 sm:min-h-0"
+                className="w-full justify-between px-3 text-sm font-medium min-h-11 sm:min-h-0 rounded-none hover:bg-charcoal-hover!"
                 data-testid="section-position-bookmarks-mobile"
               >
                 <span className="flex items-center gap-1">
@@ -700,7 +701,8 @@ export function OpeningsPage() {
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <div className="pt-2">
+              <div className="border-t border-border/20" />
+              <div className="p-2">
                 <div className="flex gap-2 mb-2">
                   <Button
                     size="lg"
@@ -730,8 +732,6 @@ export function OpeningsPage() {
             </CollapsibleContent>
           </Collapsible>
           </div>
-
-          <div className="border-t border-border/40" />
 
           {/* Tabs: Moves / Games / Compare */}
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>

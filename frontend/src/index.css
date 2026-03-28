@@ -41,7 +41,9 @@
     --sidebar-ring: oklch(0.708 0 0);
     --brand-brown: #8B5E3C;
     --brand-brown-hover: #6B4226;
+    --brand-brown-active: #6C4328;
     --charcoal: #2A2520;
+    --charcoal-hover: #262626;
     --sidebar-bg: #171513;
 }
 
@@ -121,7 +123,9 @@
     --radius-4xl: calc(var(--radius) * 2.6);
     --color-brand-brown: var(--brand-brown);
     --color-brand-brown-hover: var(--brand-brown-hover);
+    --color-brand-brown-active: var(--brand-brown-active);
     --color-charcoal: var(--charcoal);
+    --color-charcoal-hover: var(--charcoal-hover);
     --color-sidebar-bg: var(--sidebar-bg);
 }
 

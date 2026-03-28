@@ -141,28 +141,28 @@ export function EndgamesPage() {
         <>
           {endgameSummary}
           {perfData && perfData.endgame_wdl.total > 0 && (
-            <div className="charcoal-texture rounded-md">
+            <div className="charcoal-texture rounded-md p-4">
               <EndgamePerformanceSection data={perfData} />
             </div>
           )}
           {convRecovData && (convRecovData.conversion.length > 0 || convRecovData.recovery.length > 0) && (
-            <div className="charcoal-texture rounded-md">
+            <div className="charcoal-texture rounded-md p-4">
               <EndgameConvRecovTimelineChart data={convRecovData} />
             </div>
           )}
-          <div className="charcoal-texture rounded-md">
+          <div className="charcoal-texture rounded-md p-4">
             <EndgameWDLChart
               categories={statsData.categories}
               onCategorySelect={handleCategorySelect}
             />
           </div>
           {statsData && statsData.categories.length > 0 && (
-            <div className="charcoal-texture rounded-md">
+            <div className="charcoal-texture rounded-md p-4">
               <EndgameConvRecovChart categories={statsData.categories} />
             </div>
           )}
           {timelineData && timelineData.overall.length > 0 && (
-            <div className="charcoal-texture rounded-md">
+            <div className="charcoal-texture rounded-md p-4">
               <EndgameTimelineChart data={timelineData} />
             </div>
           )}
@@ -261,7 +261,9 @@ export function EndgamesPage() {
         {/* Desktop: two-column layout */}
         <div className="hidden md:grid md:grid-cols-[280px_1fr] md:gap-8">
           <div className="min-w-0">
-            <FilterPanel filters={filters} onChange={handleFilterChange} />
+            <div className="charcoal-texture rounded-md p-2">
+              <FilterPanel filters={filters} onChange={handleFilterChange} />
+            </div>
           </div>
           <div className="min-w-0">
             <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>

@@ -1,130 +1,131 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { InfoPopover } from '@/components/ui/info-popover';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
 import { RatingChart } from '@/components/stats/RatingChart';
-import { cn } from '@/lib/utils';
-import type { Platform, Recency } from '@/types/api';
+import type { FilterState } from '@/components/filters/FilterPanel';
 
 export function GlobalStatsPage() {
-  const [recency, setRecency] = useState<Recency | null>(null);
-  const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[] | null>(null);
+  const [filters, setFilters] = useState<FilterState>({
+    ...DEFAULT_FILTERS,
+    color: 'white',
+    matchSide: 'both',
+  });
+
+  // Derive recency and platforms from FilterState for the stats hooks
+  const recency = filters.recency;
+  const selectedPlatforms = filters.platforms;
 
   const { data: ratingData, isLoading: ratingLoading } = useRatingHistory(recency, selectedPlatforms);
   const { data: globalStats, isLoading: statsLoading } = useGlobalStats(recency, selectedPlatforms);
 
   const isLoading = ratingLoading || statsLoading;
 
-  return (
-    <div data-testid="global-stats-page" className="mx-auto max-w-4xl space-y-6 px-6 py-6">
-      {/* Sticky filters */}
-      <div className="sticky top-0 z-10 bg-background pb-2 -mx-6 px-6 pt-1">
-        <div className="flex flex-wrap items-end gap-4">
-        {/* Recency filter */}
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">Recency</p>
-          <Select
-            value={recency ?? 'all'}
-            onValueChange={(v) => setRecency(v === 'all' ? null : (v as Recency))}
-          >
-            <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All time</SelectItem>
-              <SelectItem value="week">Past week</SelectItem>
-              <SelectItem value="month">Past month</SelectItem>
-              <SelectItem value="3months">3 months</SelectItem>
-              <SelectItem value="6months">6 months</SelectItem>
-              <SelectItem value="year">1 year</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+  // ── Mobile collapsible state ───────────────────────────────────────────────
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
-        {/* Platform filter */}
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">Platform</p>
-          <div className="flex gap-1">
-            {(['chess.com', 'lichess'] as Platform[]).map((p) => {
-              const isActive = selectedPlatforms === null || selectedPlatforms.includes(p);
-              return (
-                <button
-                  key={p}
-                  onClick={() => {
-                    setSelectedPlatforms((prev) => {
-                      if (prev === null) return [p === 'chess.com' ? 'lichess' : 'chess.com'] as Platform[];
-                      if (prev.length === 1 && prev[0] === p) return null; // re-select = show all
-                      if (prev.includes(p)) return prev.filter((x) => x !== p) as Platform[];
-                      return null; // both selected = all
-                    });
-                  }}
-                  data-testid={`filter-platform-${p === 'chess.com' ? 'chess-com' : p}`}
-                  aria-label={`${p} platform`}
-                  aria-pressed={isActive}
-                  className={cn(
-                    'rounded border px-3 h-11 sm:h-7 sm:px-2 text-xs transition-colors',
-                    isActive
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground',
-                  )}
-                >
-                  {p === 'chess.com' ? 'Chess.com' : 'Lichess'}
-                </button>
-              );
-            })}
+  const handleFilterChange = useCallback((newFilters: FilterState) => {
+    setFilters(newFilters);
+  }, []);
+
+  const content = isLoading ? (
+    <div className="text-muted-foreground">Loading...</div>
+  ) : (
+    <div className="space-y-6">
+      {/* Chess.com Rating section */}
+      {(selectedPlatforms === null || selectedPlatforms.includes('chess.com')) && (
+        <div className="charcoal-texture rounded-md p-4">
+          <section data-testid="rating-section-chess-com" className="space-y-3">
+            <h2 className="text-lg font-medium">
+              <span className="inline-flex items-center gap-1">
+                Chess.com Rating
+                <InfoPopover ariaLabel="Chess.com rating info" testId="rating-chess-com-info" side="top">
+                  Your Chess.com rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones.
+                </InfoPopover>
+              </span>
+            </h2>
+            <RatingChart data={ratingData?.chess_com ?? []} platform="Chess.com" />
+          </section>
+        </div>
+      )}
+
+      {/* Lichess Rating section */}
+      {(selectedPlatforms === null || selectedPlatforms.includes('lichess')) && (
+        <div className="charcoal-texture rounded-md p-4">
+          <section data-testid="rating-section-lichess" className="space-y-3">
+            <h2 className="text-lg font-medium">
+              <span className="inline-flex items-center gap-1">
+                Lichess Rating
+                <InfoPopover ariaLabel="Lichess rating info" testId="rating-lichess-info" side="top">
+                  Your Lichess rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones. Lichess uses Glicko-2 ratings which start at 1500 and tend to run 200-400 points higher than Chess.com, so the two are not directly comparable.
+                </InfoPopover>
+              </span>
+            </h2>
+            <RatingChart data={ratingData?.lichess ?? []} platform="Lichess" />
+          </section>
+        </div>
+      )}
+
+      {/* WDL charts */}
+      <div className="charcoal-texture rounded-md p-4">
+        <GlobalStatsCharts
+          byTimeControl={globalStats?.by_time_control ?? []}
+          byColor={globalStats?.by_color ?? []}
+        />
+      </div>
+    </div>
+  );
+
+  return (
+    <div data-testid="global-stats-page" className="flex min-h-0 flex-1 flex-col bg-background">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
+
+        {/* Desktop: two-column layout with sidebar */}
+        <div className="hidden md:grid md:grid-cols-[280px_1fr] md:gap-8">
+          <div className="min-w-0">
+            <div className="charcoal-texture rounded-md p-2">
+              <FilterPanel filters={filters} onChange={handleFilterChange} />
+            </div>
+          </div>
+          <div className="min-w-0">
+            {content}
           </div>
         </div>
+
+        {/* Mobile: single column */}
+        <div className="md:hidden flex flex-col gap-4 min-w-0">
+          {/* Mobile filters collapsible */}
+          <div className="sticky top-0 z-20 bg-background pb-2">
+            <div className="charcoal-texture rounded-md">
+              <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-between px-3 text-sm font-medium min-h-11 rounded-none hover:bg-charcoal-hover!"
+                    data-testid="section-filters-mobile"
+                  >
+                    Filters
+                    {mobileFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="border-t border-border/20" />
+                  <div className="p-2">
+                    <FilterPanel filters={filters} onChange={handleFilterChange} />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            </div>
+          </div>
+
+          {content}
         </div>
-      </div>
-
-      {isLoading ? (
-        <div className="text-muted-foreground">Loading...</div>
-      ) : (
-        <>
-          {/* Chess.com Rating section */}
-          {(selectedPlatforms === null || selectedPlatforms.includes('chess.com')) && (
-            <section data-testid="rating-section-chess-com" className="space-y-3">
-              <h2 className="text-lg font-medium">
-                <span className="inline-flex items-center gap-1">
-                  Chess.com Rating
-                  <InfoPopover ariaLabel="Chess.com rating info" testId="rating-chess-com-info" side="top">
-                    Your Chess.com rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones.
-                  </InfoPopover>
-                </span>
-              </h2>
-              <RatingChart data={ratingData?.chess_com ?? []} platform="Chess.com" />
-            </section>
-          )}
-
-          {/* Lichess Rating section */}
-          {(selectedPlatforms === null || selectedPlatforms.includes('lichess')) && (
-            <section data-testid="rating-section-lichess" className="space-y-3">
-              <h2 className="text-lg font-medium">
-                <span className="inline-flex items-center gap-1">
-                  Lichess Rating
-                  <InfoPopover ariaLabel="Lichess rating info" testId="rating-lichess-info" side="top">
-                    Your Lichess rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones. Lichess uses Glicko-2 ratings which start at 1500 and tend to run 200-400 points higher than Chess.com, so the two are not directly comparable.
-                  </InfoPopover>
-                </span>
-              </h2>
-              <RatingChart data={ratingData?.lichess ?? []} platform="Lichess" />
-            </section>
-          )}
-
-          {/* WDL charts — always shown */}
-          <GlobalStatsCharts
-            byTimeControl={globalStats?.by_time_control ?? []}
-            byColor={globalStats?.by_color ?? []}
-          />
-        </>
-      )}
+      </main>
     </div>
   );
 }

@@ -25,7 +25,7 @@ export function BoardControls({
   vertical = false,
 }: BoardControlsProps) {
   return (
-    <div className={`flex items-center justify-evenly rounded-lg bg-muted ${vertical ? 'flex-col' : ''}`}>
+    <div className={`flex items-center justify-evenly rounded-lg bg-charcoal ${vertical ? 'flex-col' : ''}`}>
       <Button
         variant="ghost"
         size="icon"
