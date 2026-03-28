@@ -96,6 +96,29 @@ export function FilterPanel({ filters, onChange, visibleFilters = ALL_FILTERS }:
 
   return (
     <div className="space-y-3">
+      {/* Recency */}
+      {show('recency') && (
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">Recency</p>
+          <Select
+            value={filters.recency ?? 'all'}
+            onValueChange={(v) => update({ recency: v === 'all' ? null : (v as Recency) })}
+          >
+            <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0 w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All time</SelectItem>
+              <SelectItem value="week">Past week</SelectItem>
+              <SelectItem value="month">Past month</SelectItem>
+              <SelectItem value="3months">3 months</SelectItem>
+              <SelectItem value="6months">6 months</SelectItem>
+              <SelectItem value="year">1 year</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {/* Time controls */}
       {show('timeControl') && (
         <div>
@@ -191,29 +214,6 @@ export function FilterPanel({ filters, onChange, visibleFilters = ALL_FILTERS }:
             <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0 flex-1">Bot</ToggleGroupItem>
             <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0 flex-1">Both</ToggleGroupItem>
           </ToggleGroup>
-        </div>
-      )}
-
-      {/* Recency */}
-      {show('recency') && (
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">Recency</p>
-          <Select
-            value={filters.recency ?? 'all'}
-            onValueChange={(v) => update({ recency: v === 'all' ? null : (v as Recency) })}
-          >
-            <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0 w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All time</SelectItem>
-              <SelectItem value="week">Past week</SelectItem>
-              <SelectItem value="month">Past month</SelectItem>
-              <SelectItem value="3months">3 months</SelectItem>
-              <SelectItem value="6months">6 months</SelectItem>
-              <SelectItem value="year">1 year</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       )}
     </div>

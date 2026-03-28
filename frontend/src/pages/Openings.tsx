@@ -491,10 +491,10 @@ export function OpeningsPage() {
         </div>
       ) : tsData ? (
         <>
-          <div>
+          <div className="charcoal-texture rounded-md p-4">
             <WDLBarChart bookmarks={bookmarks} wdlStatsMap={wdlStatsMap} />
           </div>
-          <div>
+          <div className="charcoal-texture rounded-md p-4">
             <WinRateChart bookmarks={bookmarks} series={tsData.series} />
           </div>
         </>
