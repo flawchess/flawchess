@@ -144,6 +144,7 @@ Current focus: v1.6 UI Polish & Improvements
 | 260327-q8j | Expand rolling window to include all games when recency filter is set in Win Rate Over Time chart | 2026-03-27 | b2b31a0 | [260327-q8j-expand-rolling-window-to-include-all-gam](./quick/260327-q8j-expand-rolling-window-to-include-all-gam/) |
 | 260327-tun | In the Moves subtab of the Openings, show moves below the 10 game threshold as muted | 2026-03-27 | c9d28e4 | [260327-tun-in-the-moves-subtab-of-the-openings-show](./quick/260327-tun-in-the-moves-subtab-of-the-openings-show/) |
 | 260328-04a | Update SEO meta tags, README, and CLAUDE.md to match 5-feature homepage | 2026-03-27 | d039ba6 | [260328-04a-update-seo-readme-and-claude-md-based-on](./quick/260328-04a-update-seo-readme-and-claude-md-based-on/) |
+| 260328-mov | Endgames Games subtab WDL chart, games matched report with highlighted percent | 2026-03-28 | ee9b8e3 | [260328-mov-endgames-games-subtab-wdl-chart-games-ma](./quick/260328-mov-endgames-games-subtab-wdl-chart-games-ma/) |
 
 ---
-Last activity: 2026-03-28 - Phase 34 Plan 01 complete. Theme infrastructure: CSS vars, charcoal-texture, tabs brand variant, filter grid layout, WDL chart rounding.
+Last activity: 2026-03-28 - Completed quick task 260328-mov: Endgames Games subtab WDL chart, games matched report with highlighted percent
