@@ -424,6 +424,10 @@ export function OpeningsPage() {
 
   // ── Tab content ─────────────────────────────────────────────────────────────
 
+  const hasNoGames = gameCount !== null && gameCount === 0;
+  const gamesData = gamesQuery.data;
+  const filtersMatchNothing = gamesData !== undefined && gamesData.matched_count === 0 && !hasNoGames;
+
   const moveExplorerContent = (
     <div className="flex flex-col gap-4">
       {gamesData && gamesData.stats.total > 0 && (
@@ -451,10 +455,6 @@ export function OpeningsPage() {
       </div>
     </div>
   );
-
-  const hasNoGames = gameCount !== null && gameCount === 0;
-  const gamesData = gamesQuery.data;
-  const filtersMatchNothing = gamesData !== undefined && gamesData.matched_count === 0 && !hasNoGames;
 
   const gamesContent = (
     <div className="flex flex-col gap-4">
