@@ -104,7 +104,7 @@
 **UI hint**: yes
 
 Plans:
-- [ ] 37-01-PLAN.md — Opening model, Alembic migration with dedup view, seed script, tests
+- [x] 37-01-PLAN.md — Opening model, Alembic migration with dedup view, seed script, tests
 - [ ] 37-02-PLAN.md — SQL-side WDL aggregation, filter params, updated schema/service/router, tests
 - [ ] 37-03-PLAN.md — Frontend table component, minimap popover, hook/API filter wiring, visual verification
 
@@ -195,7 +195,7 @@ Plans:
 | 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
 | 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
 | 36. Most Played Openings | v1.6 | 1/1 | Complete    | 2026-03-28 |
-| 37. Openings Reference Table & Redesign | v1.6 | 0/3 | In Progress | — |
+| 37. Openings Reference Table & Redesign | v1.6 | 1/3 | In Progress|  |
 
 ## Backlog
 
@@ -203,7 +203,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 1/1 plans complete
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

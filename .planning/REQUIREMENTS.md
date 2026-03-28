@@ -31,8 +31,8 @@ Requirements for v1.6 — UI Polish & Improvements.
 
 ### Openings Reference Table & Redesign
 
-- [ ] **ORT-01**: `openings` table contains all ~3641 rows from TSV with correct `ply_count` and `fen` values computed via python-chess
-- [ ] **ORT-02**: Deduplicated view returns one row per `(eco, name)` pair
+- [x] **ORT-01**: `openings` table contains all ~3641 rows from TSV with correct `ply_count` and `fen` values computed via python-chess
+- [x] **ORT-02**: Deduplicated view returns one row per `(eco, name)` pair
 - [ ] **ORT-03**: Endpoint returns top 10 openings per color with WDL stats computed in SQL, filtered by recency/time_control/platform/rated/opponent_type, excluding openings below ply threshold
 - [ ] **ORT-04**: Frontend renders a dedicated table with ECO/name/PGN, game count link, and mini WDL bar per row
 - [ ] **ORT-05**: Hovering/tapping a row shows a minimap popover of the opening position

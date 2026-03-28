@@ -2,23 +2,23 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: UI Polish & Improvements
-status: verifying
-last_updated: "2026-03-28T17:28:24.586Z"
+status: executing
+last_updated: "2026-03-28T19:44:41.304Z"
 last_activity: 2026-03-28
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 8
+  completed_plans: 6
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Phase complete — ready for verification
+Phase: 37 (openings-reference-table-redesign) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
 Last activity: 2026-03-28
 
 ## Project Reference
@@ -81,6 +81,8 @@ Current focus: v1.6 UI Polish & Improvements
 - [Phase 35-wdl-chart-refactoring]: Openings Statistics tab computes win_pct/draw_pct/loss_pct inline (wdlStatsMap has raw counts only) to satisfy WDLRowData interface
 - [Phase 36-most-played-openings]: Subquery-join pattern for top-N openings: SELECT top ECOs by COUNT HAVING >= min_games, then JOIN back for Python WDL aggregation — consistent with existing stats_repository patterns
 - [Phase 36-most-played-openings]: Most Played Openings uses all-time data (no filter params) per Phase 36 research recommendation
+- [Phase 37-01]: openings_dedup view uses DISTINCT ON (eco, name) ORDER BY eco, name, id — stable deterministic dedup picking lowest id per pair
+- [Phase 37-01]: Seed fixture uses asyncio.run() in sync session-scoped pytest fixture to avoid event loop conflicts with pytest-asyncio
 
 ### Critical v1.5 Constraints
 
