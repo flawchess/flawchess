@@ -12,6 +12,9 @@ import {
 } from '@/lib/theme';
 import type { WDLRowData } from '@/types/charts';
 
+// Minimum percentage for a segment to show its inline label
+const MIN_PCT_FOR_LABEL = 15;
+
 interface WDLChartRowProps {
   /** WDL statistics data */
   data: WDLRowData;
@@ -109,28 +112,46 @@ export function WDLChartRow({
         </div>
       )}
 
-      {/* Stacked WDL bar with glass overlay — dimmed for low sample size */}
+      {/* Stacked WDL bar with glass overlay and inline labels — dimmed for low sample size */}
       <div
         className={cn('flex w-full overflow-hidden rounded mb-0', barHeight)}
         style={dimStyle}
       >
         {data.win_pct > 0 && (
           <div
-            className="transition-all"
+            className="relative flex items-center justify-center text-xs font-medium transition-all"
             style={{ width: `${data.win_pct}%`, backgroundColor: WDL_WIN, backgroundImage: GLASS_OVERLAY }}
-          />
+          >
+            {data.win_pct >= MIN_PCT_FOR_LABEL && (
+              <span className="relative z-10 text-white drop-shadow-sm">
+                {Math.round(data.win_pct)}% ({data.wins})
+              </span>
+            )}
+          </div>
         )}
         {data.draw_pct > 0 && (
           <div
-            className="transition-all"
+            className="relative flex items-center justify-center text-xs font-medium transition-all"
             style={{ width: `${data.draw_pct}%`, backgroundColor: WDL_DRAW, backgroundImage: GLASS_OVERLAY }}
-          />
+          >
+            {data.draw_pct >= MIN_PCT_FOR_LABEL && (
+              <span className="relative z-10 text-white drop-shadow-sm">
+                {Math.round(data.draw_pct)}% ({data.draws})
+              </span>
+            )}
+          </div>
         )}
         {data.loss_pct > 0 && (
           <div
-            className="transition-all"
+            className="relative flex items-center justify-center text-xs font-medium transition-all"
             style={{ width: `${data.loss_pct}%`, backgroundColor: WDL_LOSS, backgroundImage: GLASS_OVERLAY }}
-          />
+          >
+            {data.loss_pct >= MIN_PCT_FOR_LABEL && (
+              <span className="relative z-10 text-white drop-shadow-sm">
+                {Math.round(data.loss_pct)}% ({data.losses})
+              </span>
+            )}
+          </div>
         )}
       </div>
 
