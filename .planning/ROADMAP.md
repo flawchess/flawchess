@@ -65,92 +65,20 @@
 
 </details>
 
-### v1.5 Game Statistics & Endgame Analysis
+<details>
+<summary>✅ v1.5 Game Statistics & Endgame Analysis (Phases 26-33) — SHIPPED 2026-03-28</summary>
 
-- [x] **Phase 26: Position Classifier & Schema** — Compute game phase, material signature, imbalance, and endgame class per position with schema migration (completed 2026-03-23)
-- [x] **Phase 27: Import Wiring & Backfill** — Wire classifier into live import pipeline and backfill all existing game_positions rows (completed 2026-03-24)
-- [x] **Phase 28: Engine Analysis Import** — Import chess.com accuracy scores and lichess per-move evals during game import (completed 2026-03-25)
-- [x] **Phase 29: Endgame Analytics** — Backend API + frontend Endgames tab delivering W/D/L by endgame category and material conversion/recovery stats (completed 2026-03-26)
-- [x] **Phase 33: Homepage, README & SEO Update** — Update homepage content, README, and SEO metadata to showcase new statistics features introduced in v1.5 (completed 2026-03-28)
+- [x] Phase 26: Position Classifier & Schema (2/2 plans) — completed 2026-03-23
+- [x] Phase 27: Import Wiring & Backfill (2/2 plans) — completed 2026-03-24
+- [x] Phase 27.1: Optimize game_positions columns (via quick tasks) — completed 2026-03-26
+- [x] Phase 28: Engine Analysis Import (2/3 plans, 28-03 deferred) — completed 2026-03-25
+- [x] Phase 28.1: Import lichess analysis metrics (1/1 plan) — completed 2026-03-26
+- [x] Phase 29: Endgame Analytics (3/3 plans) — completed 2026-03-26
+- [x] Phase 31: Endgame classification redesign (2/2 plans) — completed 2026-03-26
+- [x] Phase 32: Endgame Performance Charts (3/3 plans) — completed 2026-03-27
+- [x] Phase 33: Homepage, README & SEO Update (3/3 plans) — completed 2026-03-28
 
-## Phase Details
-
-### Phase 26: Position Classifier & Schema
-**Goal**: Every imported position carries computed game phase, material signature, material imbalance, and endgame class stored in the database
-**Depends on**: Phase 25
-**Requirements**: PMETA-01, PMETA-02, PMETA-03, PMETA-04
-**Success Criteria** (what must be TRUE):
-  1. Alembic migration adds seven nullable columns to game_positions (game_phase, material_signature, material_imbalance, endgame_class, has_bishop_pair_white, has_bishop_pair_black, has_opposite_color_bishops) and applies cleanly against the production schema
-  2. position_classifier.py correctly classifies a sample position across all edge cases: early queen trade is not classified as endgame, symmetric material produces the same canonical signature regardless of which color the user played, endgame_class is NULL for non-endgame positions
-  3. Unit tests cover all six endgame class categories and the phase boundary heuristic, and all tests pass
-**Plans:** 2/2 plans complete
-  - [x] 26-01-PLAN.md — TDD position classifier module (classify_position + unit tests)
-  - [x] 26-02-PLAN.md — GamePosition model columns, Alembic migration, chunk_size update
-
-### Phase 27: Import Wiring & Backfill
-**Goal**: All newly imported games populate the seven metadata columns at import time, and all previously imported games have those columns filled without requiring users to re-import
-**Depends on**: Phase 26
-**Requirements**: PMETA-05
-**Success Criteria** (what must be TRUE):
-  1. A newly imported game shows non-null game_phase values on all its game_positions rows
-  2. The backfill script completes against the production database without OOM error, using batch_size=10 and resuming correctly if interrupted
-  3. After backfill, zero rows in game_positions have a NULL game_phase value
-  4. A post-backfill VACUUM runs and dead tuple count drops to near zero
-**Plans:** 2/2 plans complete
-  - [x] 27-01-PLAN.md — Wire classify_position into import pipeline per-ply loop
-  - [x] 27-02-PLAN.md — Standalone backfill script with resumability, VACUUM, and tests
-
-### Phase 27.1: Optimize game_positions column types (INSERTED)
-
-**Goal:** Optimize game_positions with piece_count, backrank_sparse, and mixedness columns for endgame classification — implemented via quick tasks 260326-jo8 (piece_count + Lichess endgame threshold) and 260326-k94 (backrank_sparse + mixedness per Lichess Divider.scala algorithm)
-**Requirements**: N/A (implemented via quick tasks)
-**Depends on:** Phase 27
-**Status:** Complete (2026-03-26, via quick tasks — no formal plans)
-**Plans:** 0 formal plans
-
-### Phase 28: Engine Analysis Import
-**Goal**: The system imports available engine analysis data (chess.com accuracy scores, lichess per-move evals) during game import, storing them for future display
-**Depends on**: Phase 27
-**Requirements**: ENGINE-01, ENGINE-02, ENGINE-03
-**Success Criteria** (what must be TRUE):
-  1. A lichess game that has prior computer analysis imports with per-move eval values populated in the database
-  2. A chess.com game with an accuracy score imports with that score stored; a game without accuracy data imports without error and stores NULL
-  3. A game with no analysis data on either platform imports cleanly with all engine fields NULL and no error logged
-**Plans:** 2/3 plans complete (28-03 deferred — admin re-import script for backfilling existing games)
-  - [x] 28-01-PLAN.md — Schema migration, model updates, normalization accuracy extraction, lichess evals param, chunk_size fix
-  - [x] 28-02-PLAN.md — Wire eval extraction into _flush_batch import pipeline
-  - [ ] 28-03-PLAN.md — Admin re-import script for backfilling existing games (deferred)
-
-### Phase 28.1: Import lichess analysis metrics (INSERTED)
-
-**Goal:** Import lichess per-player analysis metrics (ACPL, inaccuracy count, mistake count, blunder count) into the games table during normalization -- storage only, no display
-**Depends on:** Phase 28
-**Requirements**: LMETRIC-01, LMETRIC-02
-**Success Criteria** (what must be TRUE):
-  1. Lichess games with computer analysis import with all 8 analysis metric columns populated (ACPL + 3 move quality counts per color)
-  2. Lichess games without analysis and all chess.com games import with all 8 columns as NULL
-  3. Alembic migration adds 8 nullable SmallInteger columns to games table and applies cleanly
-**Plans:** 1/1 plans complete
-
-Plans:
-- [x] 28.1-01-PLAN.md — Game model columns, Alembic migration, lichess normalizer extraction, tests
-
-### Phase 29: Endgame Analytics
-**Goal**: Users can view their endgame performance and material conversion/recovery statistics in a new Endgames tab with time control and color filters
-**Depends on**: Phase 28
-**Requirements**: ENDGM-01, ENDGM-02, ENDGM-03, ENDGM-04, CONV-01, CONV-02, CONV-03
-**Success Criteria** (what must be TRUE):
-  1. User can open the Endgames tab and see W/D/L rates broken down by endgame category (rook, minor piece, pawn, queen, mixed, pawnless), with game count per category
-  2. User can filter endgame statistics by time control (bullet/blitz/rapid/classical) and color (white/black/both) and the displayed numbers update correctly
-  3. User can see win rate when materially up and draw/win rate when materially down, each broken down by game phase (opening/middlegame/endgame)
-  4. User can filter conversion/recovery stats by time control and the displayed numbers update correctly
-  5. Users with no endgame data see a meaningful empty state rather than an error or blank page
-  6. The Endgame tab layout is usable on mobile (375px width) with the same filter and stats structure as the desktop layout
-**Plans**: 3 plans
-
-- [x] 29-01-PLAN.md — Backend endgame repository, service, router, schemas, and tests (TDD)
-- [x] 29-02-PLAN.md — Frontend Statistics sub-tab with EndgameWDLChart, filter sidebar, types and hooks
-- [x] 29-03-PLAN.md — Frontend Games sub-tab with GameCardList, navigation wiring, and visual checkpoint
+</details>
 
 ## Progress
 
@@ -189,58 +117,6 @@ Plans:
 | 31. Endgame classification redesign | v1.5 | 2/2 | Complete | 2026-03-26 |
 | 32. Endgame Performance Charts | v1.5 | 3/3 | Complete | 2026-03-27 |
 | 33. Homepage, README & SEO Update | v1.5 | 3/3 | Complete | 2026-03-28 |
-
-### Phase 31: Endgame classification redesign: per-position instead of per-game
-
-**Goal:** Redesign endgame analytics from per-game single-transition-point to per-position classification, storing endgame_class on game_positions and enabling multi-class-per-game counting with a 6-ply minimum threshold
-**Requirements**: TBD
-**Depends on:** Phase 29
-**Status:** Complete (2026-03-26)
-**Success Criteria** (what must be TRUE):
-  1. Every endgame position (piece_count <= 6) has a non-NULL endgame_class SmallInteger value
-  2. A game passing through multiple endgame classes counts in each category it spent >= 6 plies in
-  3. Games with fewer than 6 plies in an endgame class are excluded from that category
-  4. Conversion/recovery uses material_imbalance at the first ply of each endgame class span
-  5. No frontend changes — same API response shape, same Endgames tab UI
-**Plans:** 2/2 plans complete
-
-Plans:
-- [x] 31-01-PLAN.md — Schema migration (endgame_class column + backfill + index), IntEnum mapping, import pipeline wiring, chunk_size update
-- [x] 31-02-PLAN.md — Repository + service redesign for per-position multi-class grouping, test updates
-
-### Phase 32: Endgame Performance Charts
-
-**Goal:** Add endgame performance comparison charts: endgame vs non-endgame WDL, endgame strength gauge, and rolling-window timeline charts for overall and per-endgame-type win rates
-**Requirements**: PERF-01, PERF-02, PERF-03, PERF-04, PERF-05, PERF-06, PERF-07
-**Depends on:** Phase 31
-**Status:** Complete (2026-03-27)
-**Success Criteria** (what must be TRUE):
-  1. "Endgame Performance" section shows WDL chart for games reaching endgame and a separate WDL chart for games that don't
-  2. Endgame strength gauge compares endgame win rate against non-endgame win rate
-  3. Timeline chart shows rolling 50-game win rate for all endgame games
-  4. Timeline chart shows rolling 50-game win rate broken down by endgame type
-  5. All charts respect existing filters (time control, platform, recency, rated, opponent)
-**Plans:** 3/3 plans complete
-
-Plans:
-- [x] 32-01-PLAN.md — Backend schemas, repository queries, service functions, router endpoints, and tests
-- [x] 32-02-PLAN.md — Frontend performance section (WDL bars, gauges) and conversion/recovery bar chart
-- [x] 32-03-PLAN.md — Frontend timeline charts and visual verification
-
-### Phase 33: Homepage, README & SEO Update
-**Goal**: Update homepage content, README, and SEO metadata to showcase the new statistics features (endgame analytics, engine analysis) introduced in milestone v1.5
-**Depends on**: Phase 32
-**Requirements**: SC-01, SC-02, SC-03, SC-04, SC-05
-**Success Criteria** (what must be TRUE):
-  1. Homepage highlights endgame analytics and engine analysis features
-  2. README accurately describes the current feature set
-  3. SEO metadata (title, description, OG tags) reflects the new capabilities
-**Plans:** 3/3 plans complete
-
-Plans:
-- [x] 33-01-PLAN.md — Restructure homepage FEATURES array (6 to 5 sections), simplify layout, update hero and FAQ
-- [x] 33-02-PLAN.md — Update SEO meta tags in index.html and README feature list
-- [x] 33-03-PLAN.md — Fresh screenshots, under-construction callout, icon updates, bullet-point descriptions
 
 ## Backlog
 
