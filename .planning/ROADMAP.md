@@ -84,7 +84,7 @@
 ## v1.6 UI Polish & Improvements
 
 - [x] **Phase 34: Theme Improvements** — Centralize theme constants, charcoal containers with noise texture, filter button layout, consistent WDL chart styling, active subtab highlighting (completed 2026-03-28)
-- [ ] **Phase 35: WDL Chart Refactoring** — Create shared WDL chart component based on endgame charts, replace all inconsistent WDL charts (custom and Recharts), clean up unused code
+- [x] **Phase 35: WDL Chart Refactoring** — Create shared WDL chart component based on endgame charts, replace all inconsistent WDL charts (custom and Recharts), clean up unused code (completed 2026-03-28)
 
 ## Phase Details
 
@@ -101,7 +101,7 @@
 
 Plans:
 - [x] 35-01-PLAN.md — Shared WDLChartRow component + WDLRowData type, reimplement WDLBar as wrapper
-- [ ] 35-02-PLAN.md — Replace GlobalStatsCharts/WDLBarChart/EndgameWDLChart/EndgamePerformanceSection with WDLChartRow, delete dead code
+- [x] 35-02-PLAN.md — Replace GlobalStatsCharts/WDLBarChart/EndgameWDLChart/EndgamePerformanceSection with WDLChartRow, delete dead code
 
 ### Phase 34: Theme Improvements
 **Goal**: Users see a visually consistent, polished UI with centralized theme management across all pages
@@ -158,7 +158,7 @@ Plans:
 | 32. Endgame Performance Charts | v1.5 | 3/3 | Complete | 2026-03-27 |
 | 33. Homepage, README & SEO Update | v1.5 | 3/3 | Complete | 2026-03-28 |
 | 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
-| 35. WDL Chart Refactoring | v1.6 | 1/2 | In Progress|  |
+| 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
 
 ## Backlog
 
@@ -166,7 +166,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
