@@ -84,8 +84,23 @@
 ## v1.6 UI Polish & Improvements
 
 - [x] **Phase 34: Theme Improvements** — Centralize theme constants, charcoal containers with noise texture, filter button layout, consistent WDL chart styling, active subtab highlighting (completed 2026-03-28)
+- [ ] **Phase 35: WDL Chart Refactoring** — Create shared WDL chart component based on endgame charts, replace all inconsistent WDL charts (custom and Recharts), clean up unused code
 
 ## Phase Details
+
+### Phase 35: WDL Chart Refactoring
+**Goal**: All WDL charts (except move list) use a single shared component, eliminating inconsistent custom and Recharts implementations
+**Depends on**: Phase 34 (theme infrastructure)
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+  1. A shared WDL chart component exists with configurable title, games link, and optional game count bar
+  2. All WDL charts across the app (Results by Time Control, Results by Color, Results by Opening, endgame type charts, etc.) use the shared component — except the moves list in the Moves tab
+  3. No unused WDL-related constants, CSS classes, or Recharts chart code remains
+  4. Visual appearance matches the current endgame type WDL charts (the reference implementation)
+**Plans**: 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 35 to break down)
 
 ### Phase 34: Theme Improvements
 **Goal**: Users see a visually consistent, polished UI with centralized theme management across all pages
@@ -142,6 +157,7 @@ Plans:
 | 32. Endgame Performance Charts | v1.5 | 3/3 | Complete | 2026-03-27 |
 | 33. Homepage, README & SEO Update | v1.5 | 3/3 | Complete | 2026-03-28 |
 | 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
+| 35. WDL Chart Refactoring | v1.6 | 0/0 | Not started | — |
 
 ## Backlog
 
@@ -162,3 +178,4 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
+
