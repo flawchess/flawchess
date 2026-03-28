@@ -532,10 +532,10 @@ export function OpeningsPage() {
               <InfoPopover ariaLabel="White openings info" testId="mpo-white-info" side="top">
                 <div className="space-y-2">
                   <p>
-                    Your most frequently played openings as White, based on how chess.com and lichess classified each game. Only openings where White made the last move are shown here.
+                    Your most frequently played openings as White, based on the lichess opening table. Only openings where White made the last move are shown here.
                   </p>
                   <p>
-                    The game count reflects how many of your games received this specific opening name. Clicking the folder icon loads the opening on the board and shows all games that passed through that position — which is usually more, since many openings share the same early moves.
+                    The game count reflects how many of your games ended up with this specific opening name. Clicking the folder icon loads the opening on the board and shows all games that passed through that position — which is usually more, since many openings share the same early moves.
                   </p>
                 </div>
               </InfoPopover>
@@ -559,10 +559,10 @@ export function OpeningsPage() {
               <InfoPopover ariaLabel="Black openings info" testId="mpo-black-info" side="top">
                 <div className="space-y-2">
                   <p>
-                    Your most frequently played openings as Black, based on how chess.com and lichess classified each game. Only openings where Black made the last move are shown here.
+                    Your most frequently played openings as Black, based on the lichess opening table. Only openings where Black made the last move are shown here.
                   </p>
                   <p>
-                    The game count reflects how many of your games received this specific opening name. Clicking the folder icon loads the opening on the board and shows all games that passed through that position — which is usually more, since many openings share the same early moves.
+                    The game count reflects how many of your games ended up with this specific opening name. Clicking the folder icon loads the opening on the board and shows all games that passed through that position — which is usually more, since many openings share the same early moves.
                   </p>
                 </div>
               </InfoPopover>
