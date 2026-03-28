@@ -1,34 +1,36 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: Game Statistics & Endgame Analysis
-status: Complete
+milestone: v1.6
+milestone_name: UI Polish & Improvements
+status: Active
 last_updated: "2026-03-28T00:00:00Z"
 last_activity: 2026-03-28
 progress:
-  total_phases: 11
-  completed_phases: 11
-  total_plans: 19
-  completed_plans: 19
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone v1.5 complete. All phases shipped.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-28 — Milestone v1.6 started
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-23)
+See: .planning/PROJECT.md (updated 2026-03-28)
 Core value: Users can determine their success rate for any opening position they specify
-Milestone v1.5 shipped: Game Statistics & Endgame Analysis
+Current focus: v1.6 UI Polish & Improvements
 
 ## Phase Progress
 
 | Phase | Goal | Status |
 |-------|------|--------|
-| 33. Homepage, README & SEO Update | Update homepage content, README, and SEO metadata | Complete |
 
 ## Key Context
 

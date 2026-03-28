@@ -65,15 +65,16 @@ Users can determine their success rate for any opening position they specify, fi
 - Offline API data caching — chess data is user-specific + authenticated; caching risks stale analysis
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 
-## Current Milestone: v1.5 Game Statistics & Endgame Analysis
+## Current Milestone: v1.6 UI Polish & Improvements
 
-**Goal:** Enrich imported games with per-position metadata (game phase, material, endgame classification) and surface endgame performance analytics through a new Endgames tab.
+**Goal:** Improve visual consistency, theming, and layout polish across the application.
 
 **Target features:**
-- Position metadata at import: game phase, material signature, material imbalance, endgame class
-- Import existing engine analysis from chess.com/lichess APIs when available
-- Endgame analytics tab with filters and W/D/L statistics per endgame category
-- Material-based conversion & recovery statistics by game phase
+- Centralized theme configuration via theme.ts (containers, spacing, colors)
+- Visually distinct containers with charcoal backgrounds and CSS-only noise texture
+- Better filter button spacing in sidebar (horizontal, full-width layout)
+- Consistent chart styling across all WDL/Recharts visualizations (unified corners, rendering)
+- Improved active subtab highlighting
 
 ## Current State
 
@@ -123,4 +124,4 @@ v1.3 shipped 2026-03-22. FlawChess is live at flawchess.com with automated CI/CD
 | Backend expose-only (no ports) | Caddy is sole internet-facing entry point | ✓ Good |
 
 ---
-*Last updated: 2026-03-26 after Phase 31 completion*
+*Last updated: 2026-03-28 after milestone v1.6 start*
