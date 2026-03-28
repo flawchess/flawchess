@@ -2,8 +2,8 @@
 phase: 37
 slug: openings-reference-table-redesign
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-03-28
 ---
 
@@ -38,7 +38,7 @@ created: 2026-03-28
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 37-01-01 | 01 | 1 | ORT-01, ORT-02 | unit + migration | `uv run pytest tests/test_openings.py -x` | ❌ W0 | ⬜ pending |
+| 37-01-01 | 01 | 1 | ORT-01, ORT-02 | unit + migration | `uv run pytest tests/test_seed_openings.py -x` | ✅ (created by Plan 37-01 Task 2) | ⬜ pending |
 | 37-02-01 | 02 | 2 | ORT-03 | unit + integration | `uv run pytest tests/test_stats_repository.py tests/test_stats_router.py -x` | ✅ | ⬜ pending |
 | 37-03-01 | 03 | 2 | ORT-04, ORT-05 | build | `cd frontend && npm run build` | ✅ | ⬜ pending |
 
@@ -48,9 +48,7 @@ created: 2026-03-28
 
 ## Wave 0 Requirements
 
-- [ ] `tests/test_openings.py` — stubs for ORT-01, ORT-02 (opening model, seed, dedup view)
-
-*Existing test infrastructure covers ORT-03 through ORT-05.*
+*Existing infrastructure covers all phase requirements. Plan 37-01 Task 2 creates `tests/test_seed_openings.py` for ORT-01/ORT-02. Existing `tests/test_stats_repository.py` and `tests/test_stats_router.py` cover ORT-03.*
 
 ---
 
