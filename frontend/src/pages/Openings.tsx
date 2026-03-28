@@ -345,12 +345,13 @@ export function OpeningsPage() {
       <div className="border-t border-border/40" />
 
       {/* Position bookmarks collapsible */}
+      <div className="charcoal-texture rounded-md p-2">
       <Collapsible open={positionBookmarksOpen} onOpenChange={setPositionBookmarksOpen}>
         <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
+            className="w-full justify-between px-2 text-sm font-medium min-h-11 sm:min-h-0"
             data-testid="section-position-bookmarks"
           >
             <span className="flex items-center gap-1">
@@ -394,16 +395,18 @@ export function OpeningsPage() {
           </div>
         </CollapsibleContent>
       </Collapsible>
+      </div>
 
       <div className="border-t border-border/40" />
 
       {/* More filters collapsible */}
+      <div className="charcoal-texture rounded-md p-2">
       <Collapsible open={moreFiltersOpen} onOpenChange={setMoreFiltersOpen}>
         <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
+            className="w-full justify-between px-2 text-sm font-medium min-h-11 sm:min-h-0"
             data-testid="section-more-filters"
           >
             More filters
@@ -416,6 +419,7 @@ export function OpeningsPage() {
           </div>
         </CollapsibleContent>
       </Collapsible>
+      </div>
     </div>
   );
 
@@ -516,7 +520,7 @@ export function OpeningsPage() {
           <div className="min-w-0">{sidebar}</div>
           <div className="min-w-0">
             <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
-              <TabsList className="w-full" data-testid="openings-tabs">
+              <TabsList variant="brand" className="w-full" data-testid="openings-tabs">
                 <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
                   <ArrowRightLeft className="mr-1.5 h-4 w-4" />
                   Moves
@@ -653,12 +657,13 @@ export function OpeningsPage() {
           <div className="border-t border-border/40" />
 
           {/* More filters — collapsed by default on mobile */}
+          <div className="charcoal-texture rounded-md p-2">
           <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
             <CollapsibleTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
+                className="w-full justify-between px-2 text-sm font-medium min-h-11 sm:min-h-0"
                 data-testid="section-more-filters-mobile"
               >
                 More filters
@@ -671,14 +676,16 @@ export function OpeningsPage() {
               </div>
             </CollapsibleContent>
           </Collapsible>
+          </div>
 
           {/* Position bookmarks — collapsed by default */}
+          <div className="charcoal-texture rounded-md p-2">
           <Collapsible open={positionBookmarksOpen} onOpenChange={setPositionBookmarksOpen}>
             <CollapsibleTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
+                className="w-full justify-between px-2 text-sm font-medium min-h-11 sm:min-h-0"
                 data-testid="section-position-bookmarks-mobile"
               >
                 <span className="flex items-center gap-1">
@@ -722,12 +729,13 @@ export function OpeningsPage() {
               </div>
             </CollapsibleContent>
           </Collapsible>
+          </div>
 
           <div className="border-t border-border/40" />
 
           {/* Tabs: Moves / Games / Compare */}
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
-            <TabsList className="w-full h-11!" data-testid="openings-tabs-mobile">
+            <TabsList variant="brand" className="w-full h-11!" data-testid="openings-tabs-mobile">
               <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
                 <ArrowRightLeft className="mr-1.5 h-4 w-4" />
                 Moves

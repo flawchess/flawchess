@@ -77,11 +77,13 @@ function NavHeader() {
   const { logout } = useAuth();
 
   return (
-    <header className="hidden sm:block border-b border-border bg-background px-6 overflow-hidden">
+    <header className="hidden sm:block bg-background px-6 overflow-hidden">
       <div className="mx-auto flex max-w-7xl items-center justify-between py-1">
-        <div className="flex items-center gap-1">
-          <img src="/icons/logo-128.png" alt="" className="h-11 w-11 self-end -mb-1" aria-hidden="true" />
-          <span className="mr-3 text-lg tracking-tight text-foreground font-brand">FlawChess</span>
+        <div className="flex items-center">
+          <Link to="/" className="flex items-center gap-1 mr-3" data-testid="nav-home">
+            <img src="/icons/logo-128.png" alt="" className="h-11 w-11 self-end -mb-1" aria-hidden="true" />
+            <span className="text-lg tracking-tight text-foreground font-brand">FlawChess</span>
+          </Link>
           <nav aria-label="Main navigation">
             {NAV_ITEMS.map(({ to, label, Icon }) => (
               <Button
@@ -91,7 +93,7 @@ function NavHeader() {
                 size="sm"
                 className={
                   isActive(to, location.pathname)
-                    ? 'border-b-2 border-primary rounded-none font-medium'
+                    ? 'self-stretch rounded-none font-medium bg-white/10'
                     : 'rounded-none text-muted-foreground'
                 }
               >
@@ -122,15 +124,16 @@ function MobileHeader() {
   return (
     <header
       data-testid="mobile-header"
-      className="block sm:hidden pt-safe flex items-center justify-between px-4 py-1 border-b border-border bg-background overflow-hidden"
+      className="block sm:hidden pt-safe flex items-center justify-between px-4 py-1 bg-background overflow-hidden"
     >
-      <span
-        data-testid="mobile-header-brand"
+      <Link
+        to="/"
+        data-testid="nav-home-mobile"
         className="flex items-center gap-1.5 text-xl tracking-tight text-foreground font-brand"
       >
         <img src="/icons/logo-128.png" alt="" className="h-11 w-11 self-end -mb-1" aria-hidden="true" />
         FlawChess
-      </span>
+      </Link>
       <span
         data-testid="mobile-header-page-title"
         className="text-sm text-muted-foreground"

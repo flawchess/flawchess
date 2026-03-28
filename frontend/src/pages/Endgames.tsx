@@ -98,7 +98,7 @@ export function EndgamesPage() {
           ({(statsData.endgame_games / statsData.total_games * 100).toFixed(1)}%) reached an endgame phase
         </p>
         <Accordion type="single" collapsible>
-          <AccordionItem value="concepts" className="border rounded-md border-border px-4" data-testid="endgame-concepts-trigger">
+          <AccordionItem value="concepts" className="charcoal-texture rounded-md px-4" data-testid="endgame-concepts-trigger">
             <AccordionTrigger className="text-muted-foreground hover:no-underline">
               Endgame statistics concepts
             </AccordionTrigger>
@@ -141,20 +141,30 @@ export function EndgamesPage() {
         <>
           {endgameSummary}
           {perfData && perfData.endgame_wdl.total > 0 && (
-            <EndgamePerformanceSection data={perfData} />
+            <div className="charcoal-texture rounded-md">
+              <EndgamePerformanceSection data={perfData} />
+            </div>
           )}
           {convRecovData && (convRecovData.conversion.length > 0 || convRecovData.recovery.length > 0) && (
-            <EndgameConvRecovTimelineChart data={convRecovData} />
+            <div className="charcoal-texture rounded-md">
+              <EndgameConvRecovTimelineChart data={convRecovData} />
+            </div>
           )}
-          <EndgameWDLChart
-            categories={statsData.categories}
-            onCategorySelect={handleCategorySelect}
-          />
+          <div className="charcoal-texture rounded-md">
+            <EndgameWDLChart
+              categories={statsData.categories}
+              onCategorySelect={handleCategorySelect}
+            />
+          </div>
           {statsData && statsData.categories.length > 0 && (
-            <EndgameConvRecovChart categories={statsData.categories} />
+            <div className="charcoal-texture rounded-md">
+              <EndgameConvRecovChart categories={statsData.categories} />
+            </div>
           )}
           {timelineData && timelineData.overall.length > 0 && (
-            <EndgameTimelineChart data={timelineData} />
+            <div className="charcoal-texture rounded-md">
+              <EndgameTimelineChart data={timelineData} />
+            </div>
           )}
         </>
       ) : statsData && statsData.categories.length === 0 ? (
@@ -255,7 +265,7 @@ export function EndgamesPage() {
           </div>
           <div className="min-w-0">
             <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>
-              <TabsList className="w-full" data-testid="endgames-tabs">
+              <TabsList variant="brand" className="w-full" data-testid="endgames-tabs">
                 <TabsTrigger value="statistics" data-testid="tab-statistics" className="flex-1">
                   <BarChart2Icon className="mr-1.5 h-4 w-4" />
                   Statistics
@@ -307,7 +317,7 @@ export function EndgamesPage() {
             </div>
 
             {/* Tabs: Statistics / Games */}
-            <TabsList className="w-full h-11!" data-testid="endgames-tabs-mobile">
+            <TabsList variant="brand" className="w-full h-11!" data-testid="endgames-tabs-mobile">
               <TabsTrigger value="statistics" className="flex-1" data-testid="tab-statistics-mobile">
                 <BarChart2Icon className="mr-1.5 h-4 w-4" />
                 Statistics

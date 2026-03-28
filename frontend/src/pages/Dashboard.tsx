@@ -294,6 +294,7 @@ export function DashboardPage() {
   const leftColumn = (
     <div className="flex flex-col gap-2 min-w-0">
       {/* Section 1: Position filter */}
+      <div className="charcoal-texture rounded-md p-2">
       <Collapsible open={positionFilterOpen} onOpenChange={setPositionFilterOpen}>
         <CollapsibleTrigger asChild>
           <Button
@@ -402,8 +403,10 @@ export function DashboardPage() {
           </div>
         </CollapsibleContent>
       </Collapsible>
+      </div>
 
       {/* Section 2: Position bookmarks */}
+      <div className="charcoal-texture rounded-md p-2">
       <Collapsible open={positionBookmarksOpen} onOpenChange={setPositionBookmarksOpen}>
         <CollapsibleTrigger asChild>
           <Button
@@ -426,8 +429,10 @@ export function DashboardPage() {
           </div>
         </CollapsibleContent>
       </Collapsible>
+      </div>
 
       {/* Section 3: More filters */}
+      <div className="charcoal-texture rounded-md p-2">
       <Collapsible open={moreFiltersOpen} onOpenChange={setMoreFiltersOpen}>
         <CollapsibleTrigger asChild>
           <Button
@@ -446,6 +451,7 @@ export function DashboardPage() {
           </div>
         </CollapsibleContent>
       </Collapsible>
+      </div>
 
       {/* Always-visible action buttons */}
       <div className="flex gap-2 pt-1">
