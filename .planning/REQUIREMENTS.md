@@ -29,6 +29,14 @@ Requirements for v1.6 — UI Polish & Improvements.
 - [x] **MPO-03**: Openings with fewer than 10 games are excluded; if no openings meet the threshold, an explanatory message is shown
 - [x] **MPO-04**: Openings are displayed as WDL charts (same WDLChartRow component) with ECO code in parentheses in the title label
 
+### Openings Reference Table & Redesign
+
+- [x] **ORT-01**: `openings` table contains all ~3641 rows from TSV with correct `ply_count` and `fen` values computed via python-chess
+- [x] **ORT-02**: Deduplicated view returns one row per `(eco, name)` pair
+- [ ] **ORT-03**: Endpoint returns top 10 openings per color with WDL stats computed in SQL, filtered by recency/time_control/platform/rated/opponent_type, excluding openings below ply threshold
+- [x] **ORT-04**: Frontend renders a dedicated table with ECO/name/PGN, game count link, and mini WDL bar per row
+- [x] **ORT-05**: Hovering/tapping a row shows a minimap popover of the opening position
+
 ## Future Requirements
 
 ### Pawn Structure Analysis
@@ -66,16 +74,21 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WDL-02 | Phase 35 | Complete |
 | WDL-03 | Phase 35 | Complete |
 | WDL-04 | Phase 35 | Complete |
-| MPO-01 | Phase 36 | Not started |
-| MPO-02 | Phase 36 | Not started |
-| MPO-03 | Phase 36 | Not started |
-| MPO-04 | Phase 36 | Not started |
+| MPO-01 | Phase 36 | Complete |
+| MPO-02 | Phase 36 | Complete |
+| MPO-03 | Phase 36 | Complete |
+| MPO-04 | Phase 36 | Complete |
+| ORT-01 | Phase 37 | Not started |
+| ORT-02 | Phase 37 | Not started |
+| ORT-03 | Phase 37 | Not started |
+| ORT-04 | Phase 37 | Not started |
+| ORT-05 | Phase 37 | Not started |
 
 **Coverage:**
-- v1.6 requirements: 13 total
-- Mapped to phases: 13
+- v1.6 requirements: 18 total
+- Mapped to phases: 18
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-28*
-*Last updated: 2026-03-28 after Phase 36 planning*
+*Last updated: 2026-03-28 after Phase 37 planning*

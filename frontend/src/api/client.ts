@@ -98,9 +98,22 @@ export const statsApi = {
     apiClient.get<GlobalStatsResponse>('/stats/global', {
       params: { ...(recency ? { recency } : {}), ...(platform ? { platform } : {}) },
     }).then(r => r.data),
-  getMostPlayedOpenings: () =>
-    apiClient.get<MostPlayedOpeningsResponse>('/stats/most-played-openings')
-      .then(r => r.data),
+  getMostPlayedOpenings: (params?: {
+    recency?: string | null;
+    time_control?: string[] | null;
+    platform?: string[] | null;
+    rated?: boolean | null;
+    opponent_type?: string;
+  }) =>
+    apiClient.get<MostPlayedOpeningsResponse>('/stats/most-played-openings', {
+      params: {
+        ...(params?.recency ? { recency: params.recency } : {}),
+        ...(params?.time_control ? { time_control: params.time_control } : {}),
+        ...(params?.platform ? { platform: params.platform } : {}),
+        ...(params?.rated !== undefined && params?.rated !== null ? { rated: params.rated } : {}),
+        ...(params?.opponent_type && params.opponent_type !== 'all' ? { opponent_type: params.opponent_type } : {}),
+      },
+    }).then(r => r.data),
 };
 
 // ─── Endgame Analytics API ────────────────────────────────────────────────────

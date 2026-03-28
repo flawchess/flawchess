@@ -40,6 +40,8 @@ import { SuggestionsModal } from '@/components/position-bookmarks/SuggestionsMod
 import { GameCardList } from '@/components/results/GameCardList';
 import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
+import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTable';
+import { pgnToSanArray } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
 import type { FilterState } from '@/components/filters/FilterPanel';
@@ -167,8 +169,14 @@ export function OpeningsPage() {
 
   const { data: tsData } = useTimeSeries(timeSeriesRequest);
 
-  // Most played openings — all-time, no filter params (shows top 5 per color across all games)
-  const { data: mostPlayedData } = useMostPlayedOpenings();
+  // Most played openings — filter params applied to show top openings per color
+  const { data: mostPlayedData } = useMostPlayedOpenings({
+    recency: debouncedFilters.recency,
+    timeControls: debouncedFilters.timeControls,
+    platforms: debouncedFilters.platforms,
+    rated: debouncedFilters.rated,
+    opponentType: debouncedFilters.opponentType,
+  });
 
   // Derive WDL stats per bookmark using aggregate fields (not rolling sub-counts)
   const wdlStatsMap = useMemo(() => {
@@ -222,6 +230,14 @@ export function OpeningsPage() {
       toast.error('Failed to save bookmark');
     }
   }, [chess, filters, boardFlipped, bookmarkLabel, createBookmark]);
+
+  /** Load opening PGN onto the board, set color/flip/filters, and navigate to games subtab */
+  const handleOpenGames = useCallback((pgn: string, color: "white" | "black") => {
+    chess.loadMoves(pgnToSanArray(pgn));
+    setBoardFlipped(color === 'black');
+    setFilters(prev => ({ ...prev, color, matchSide: 'both' as MatchSide }));
+    navigate('/openings/games');
+  }, [chess, navigate]);
 
   const handleLoadBookmark = useCallback((bkm: PositionBookmarkResponse) => {
     chess.loadMoves(bkm.moves);
@@ -504,64 +520,60 @@ export function OpeningsPage() {
     </div>
   );
 
-  const maxTotalWhite = mostPlayedData?.white.length
-    ? Math.max(...mostPlayedData.white.map(x => x.total))
-    : 0;
-  const maxTotalBlack = mostPlayedData?.black.length
-    ? Math.max(...mostPlayedData.black.map(x => x.total))
-    : 0;
-
   const statisticsContent = (
     <div className="flex flex-col gap-4">
-      {mostPlayedData && (mostPlayedData.white.length > 0 || mostPlayedData.black.length > 0) && (
-        <div className="charcoal-texture rounded-md p-4" data-testid="most-played-openings">
-          <h2 className="text-lg font-medium mb-3">Most Played Openings</h2>
-          <div className="space-y-6">
-            {/* White section */}
-            <div data-testid="mpo-white-section">
-              <h3 className="text-base font-medium mb-2 flex items-center gap-1.5">
-                <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white" />
-                White
-              </h3>
-              {mostPlayedData.white.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Not enough games with White to show top openings (minimum 10 games per opening).</p>
-              ) : (
+      {/* White openings */}
+      {mostPlayedData && mostPlayedData.white.length > 0 && (
+        <div className="charcoal-texture rounded-md p-4" data-testid="mpo-white-section">
+          <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
+            <span className="inline-block h-3.5 w-3.5 rounded-full border border-muted-foreground bg-white" />
+            <span className="inline-flex items-center gap-1">
+              White: Most Played Openings
+              <InfoPopover ariaLabel="White openings info" testId="mpo-white-info" side="top">
                 <div className="space-y-2">
-                  {mostPlayedData.white.map((o) => (
-                    <WDLChartRow
-                      key={`${o.opening_eco}-white`}
-                      data={o}
-                      label={o.label}
-                      maxTotal={maxTotalWhite}
-                      testId={`mpo-white-${o.opening_eco}`}
-                    />
-                  ))}
+                  <p>
+                    Your most frequently played openings as White, based on the lichess opening table. Only openings where White made the last move are shown here.
+                  </p>
+                  <p>
+                    The game count reflects how many of your games ended up with this specific opening name. Clicking the folder icon loads the opening on the board and shows all games that passed through that position — which is usually more, since many openings share the same early moves.
+                  </p>
                 </div>
-              )}
-            </div>
-            {/* Black section */}
-            <div data-testid="mpo-black-section">
-              <h3 className="text-base font-medium mb-2 flex items-center gap-1.5">
-                <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900" />
-                Black
-              </h3>
-              {mostPlayedData.black.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Not enough games with Black to show top openings (minimum 10 games per opening).</p>
-              ) : (
+              </InfoPopover>
+            </span>
+          </h2>
+          <MostPlayedOpeningsTable
+            openings={mostPlayedData.white}
+            color="white"
+            testIdPrefix="mpo-white"
+            onOpenGames={handleOpenGames}
+          />
+        </div>
+      )}
+      {/* Black openings */}
+      {mostPlayedData && mostPlayedData.black.length > 0 && (
+        <div className="charcoal-texture rounded-md p-4" data-testid="mpo-black-section">
+          <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
+            <span className="inline-block h-3.5 w-3.5 rounded-full border border-muted-foreground bg-zinc-900" />
+            <span className="inline-flex items-center gap-1">
+              Black: Most Played Openings
+              <InfoPopover ariaLabel="Black openings info" testId="mpo-black-info" side="top">
                 <div className="space-y-2">
-                  {mostPlayedData.black.map((o) => (
-                    <WDLChartRow
-                      key={`${o.opening_eco}-black`}
-                      data={o}
-                      label={o.label}
-                      maxTotal={maxTotalBlack}
-                      testId={`mpo-black-${o.opening_eco}`}
-                    />
-                  ))}
+                  <p>
+                    Your most frequently played openings as Black, based on the lichess opening table. Only openings where Black made the last move are shown here.
+                  </p>
+                  <p>
+                    The game count reflects how many of your games ended up with this specific opening name. Clicking the folder icon loads the opening on the board and shows all games that passed through that position — which is usually more, since many openings share the same early moves.
+                  </p>
                 </div>
-              )}
-            </div>
-          </div>
+              </InfoPopover>
+            </span>
+          </h2>
+          <MostPlayedOpeningsTable
+            openings={mostPlayedData.black}
+            color="black"
+            testIdPrefix="mpo-black"
+            onOpenGames={handleOpenGames}
+          />
         </div>
       )}
       {bookmarks.length === 0 ? (

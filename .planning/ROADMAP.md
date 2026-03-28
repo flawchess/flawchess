@@ -86,7 +86,7 @@
 - [x] **Phase 34: Theme Improvements** — Centralize theme constants, charcoal containers with noise texture, filter button layout, consistent WDL chart styling, active subtab highlighting (completed 2026-03-28)
 - [x] **Phase 35: WDL Chart Refactoring** — Create shared WDL chart component based on endgame charts, replace all inconsistent WDL charts (custom and Recharts), clean up unused code (completed 2026-03-28)
 - [x] **Phase 36: Most Played Openings** — Add "Most Played Openings" sections (White/Black) to Opening Statistics subtab with top 5 openings as WDL charts, ECO codes, minimum 10 games threshold (completed 2026-03-28)
-- [ ] **Phase 37: Openings Reference Table & Most Played Openings Redesign** — Create openings DB table from TSV dataset with PGN/FEN/ply_count, redesign most played openings with filter support, dedicated table UI, minimap popover, SQL-side WDL aggregation, top 10
+- [x] **Phase 37: Openings Reference Table & Most Played Openings Redesign** — Create openings DB table from TSV dataset with PGN/FEN/ply_count, redesign most played openings with filter support, dedicated table UI, minimap popover, SQL-side WDL aggregation, top 10 (completed 2026-03-28)
 
 ## Phase Details
 
@@ -100,11 +100,13 @@
   3. Endpoint returns top 10 openings per color with WDL stats computed in SQL, filtered by recency/time_control/platform/rated/opponent_type, excluding openings below ply threshold
   4. Frontend renders a dedicated table with ECO/name/PGN, game count link, and mini WDL bar per row
   5. Hovering/tapping a row shows a minimap popover of the opening position
-**Plans**: 0 plans
+**Plans**: 3 plans
 **UI hint**: yes
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 37 to break down)
+- [x] 37-01-PLAN.md — Opening model, Alembic migration with dedup view, seed script, tests
+- [x] 37-02-PLAN.md — SQL-side WDL aggregation, filter params, updated schema/service/router, tests
+- [x] 37-03-PLAN.md — Frontend table component, minimap popover, hook/API filter wiring, visual verification
 
 ### Phase 36: Most Played Openings
 **Goal**: Opening Statistics subtab shows the user's top 5 most played openings for White and Black as WDL charts, with ECO codes and a minimum 10 games threshold
@@ -193,7 +195,7 @@ Plans:
 | 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
 | 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
 | 36. Most Played Openings | v1.6 | 1/1 | Complete    | 2026-03-28 |
-| 37. Openings Reference Table & Redesign | v1.6 | 0/0 | Not Started | — |
+| 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
 
 ## Backlog
 
@@ -201,7 +203,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 1/1 plans complete
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
@@ -209,6 +211,24 @@ Plans:
 ### Phase 999.2: Python Static Type Checker in CI (BACKLOG)
 
 **Goal:** Add a Python static type checker to the CI pipeline to catch type-level bugs (typos, bare `str` where `Literal` is needed, wrong function names) that ruff cannot detect. Evaluate [ty](https://docs.astral.sh/ty/) (from Astral, same team as ruff/uv) vs pyright vs mypy.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
+### Phase 999.3: SQL-Side Aggregation for Remaining Python-Side DB Queries (BACKLOG)
+
+**Goal:** Replace remaining Python-side row-by-row W/D/L counting with SQL GROUP BY + COUNT().filter() aggregation. High-impact targets: `analysis_service.analyze()` and `get_next_moves()` (N rows → 1), `endgame_service._aggregate_endgame_stats()` (K rows → 6). Lower priority: rolling-window functions that need chronological row data.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
+### Phase 999.4: Position-Based Most Played Openings via game_positions (BACKLOG)
+
+**Goal:** Redesign "Most Played Openings" to count how many games *passed through* each opening position (via `game_positions` Zobrist hash matching) instead of counting final opening name classifications from chess.com/lichess. Currently "1. e4" shows ~75 games (only games *classified* as "King's Pawn Game") while obscure specific lines rank higher. Position-based counting would show all ~2000+ games that played 1. e4, consistent with FlawChess's core Zobrist hash architecture. Requires JOIN from `openings` reference table to `game_positions` on FEN or precomputed hash, then `COUNT(DISTINCT game_id)`.
 **Requirements:** TBD
 **Plans:** 0 plans
 

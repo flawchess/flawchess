@@ -39,11 +39,13 @@ class GlobalStatsResponse(BaseModel):
 
 
 class OpeningWDL(BaseModel):
-    """WDL stats for a single opening, with ECO code and display label."""
+    """WDL stats for a single opening, with ECO code, PGN, FEN, and display label."""
 
     opening_eco: str
     opening_name: str
     label: str          # "Opening Name (ECO)" — precomputed for UI
+    pgn: str            # PGN move sequence for display
+    fen: str            # Piece-placement FEN for minimap popover
     wins: int
     draws: int
     losses: int

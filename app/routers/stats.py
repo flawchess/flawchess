@@ -48,6 +48,22 @@ async def get_global_stats(
 async def get_most_played_openings(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
+    recency: str | None = Query(default=None),
+    time_control: list[str] | None = Query(default=None),
+    platform: list[str] | None = Query(default=None),
+    rated: bool | None = Query(default=None),
+    opponent_type: str = Query(default="human"),
 ) -> MostPlayedOpeningsResponse:
-    """Return top 5 most played openings per color with WDL stats."""
-    return await stats_service.get_most_played_openings(session, user.id)
+    """Return top 10 most played openings per color with SQL-side WDL stats.
+
+    Optionally filtered by recency, time_control, platform, rated, opponent_type.
+    """
+    return await stats_service.get_most_played_openings(
+        session,
+        user.id,
+        recency=recency,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+    )

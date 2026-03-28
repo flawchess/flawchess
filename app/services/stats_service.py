@@ -1,14 +1,12 @@
 """Stats service: aggregation logic for rating history and global stats."""
 
-from collections import defaultdict
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.stats_repository import (
     query_rating_history,
     query_results_by_color,
     query_results_by_time_control,
-    query_top_openings_by_color,
+    query_top_openings_sql_wdl,
 )
 from app.schemas.stats import (
     GlobalStatsResponse,
@@ -18,22 +16,23 @@ from app.schemas.stats import (
     RatingHistoryResponse,
     WDLByCategory,
 )
-from app.services.analysis_service import derive_user_result, recency_cutoff
+from app.services.analysis_service import recency_cutoff
 
 # Minimum number of games required for an opening to appear in top openings.
 MIN_GAMES_FOR_OPENING = 10
 
 # Maximum number of top openings to return per color.
-TOP_OPENINGS_LIMIT = 5
+TOP_OPENINGS_LIMIT = 10
+
+# Minimum ply count for an opening to be included: white needs 1 ply, black needs 2.
+MIN_PLY_WHITE = 1
+MIN_PLY_BLACK = 2
 
 # Ordered time control buckets for consistent output ordering.
 _TIME_CONTROL_ORDER = ["bullet", "blitz", "rapid", "classical"]
 
 # Color ordering for consistent output.
 _COLOR_ORDER = ["white", "black"]
-
-# Maps derive_user_result() return values to WDL dict keys.
-_OUTCOME_KEY_MAP = {"win": "wins", "draw": "draws", "loss": "losses"}
 
 
 async def get_rating_history(
@@ -91,35 +90,22 @@ async def get_rating_history(
     )
 
 
-def _aggregate_wdl(
-    rows: list,
+def _rows_to_wdl_categories(
+    rows: list[tuple],
     label_fn,
     label_order: list[str],
 ) -> list[WDLByCategory]:
-    """Aggregate (label_key, result, user_color) rows into WDLByCategory list.
+    """Convert SQL-aggregated (label_key, total, wins, draws, losses) rows to WDLByCategory list.
 
-    Args:
-        rows: Iterable of (label_key, result, user_color) tuples.
-        label_fn: Callable from label_key to display label string.
-        label_order: Ordered list of label keys for output ordering.
+    Rows are already aggregated by the database — no Python-side counting needed.
     """
-    counts: dict[str, dict[str, int]] = defaultdict(
-        lambda: {"wins": 0, "draws": 0, "losses": 0}
-    )
-
-    for label_key, result, user_color in rows:
-        outcome = derive_user_result(result, user_color)
-        counts[label_key][_OUTCOME_KEY_MAP[outcome]] += 1
+    row_map = {row[0]: row for row in rows}
 
     categories = []
     for key in label_order:
-        if key not in counts:
+        if key not in row_map:
             continue
-        c = counts[key]
-        wins = c["wins"]
-        draws = c["draws"]
-        losses = c["losses"]
-        total = wins + draws + losses
+        _, total, wins, draws, losses = row_map[key]
         if total > 0:
             win_pct = round(wins / total * 100, 1)
             draw_pct = round(draws / total * 100, 1)
@@ -151,11 +137,7 @@ async def get_global_stats(
 ) -> GlobalStatsResponse:
     """Return global W/D/L breakdowns by time control and by color.
 
-    Calls recency_cutoff() to resolve the optional recency filter, queries
-    results by time control and by color, aggregates using derive_user_result(),
-    and returns a GlobalStatsResponse.
-
-    When platform is provided, only games from that platform are included.
+    Both queries return SQL-aggregated (label, total, wins, draws, losses) rows.
     """
     cutoff = recency_cutoff(recency)
 
@@ -166,15 +148,14 @@ async def get_global_stats(
         session, user_id=user_id, recency_cutoff=cutoff, platform=platform
     )
 
-    by_time_control = _aggregate_wdl(
+    by_time_control = _rows_to_wdl_categories(
         rows=tc_rows,
         label_fn=lambda key: key.title(),
         label_order=_TIME_CONTROL_ORDER,
     )
 
-    # color_rows are (user_color, result) — map to (label_key, result, user_color)
-    by_color = _aggregate_wdl(
-        rows=[(user_color, result, user_color) for user_color, result in color_rows],
+    by_color = _rows_to_wdl_categories(
+        rows=color_rows,
         label_fn=lambda key: key.title(),
         label_order=_COLOR_ORDER,
     )
@@ -185,81 +166,77 @@ async def get_global_stats(
     )
 
 
-def _aggregate_top_openings(rows: list[tuple]) -> list[OpeningWDL]:
-    """Aggregate (opening_eco, opening_name, result, user_color) rows into OpeningWDL list.
-
-    Groups rows by (opening_eco, opening_name), counts wins/draws/losses,
-    computes percentages, sets display label, and sorts by total descending.
-    """
-    counts: dict[tuple[str, str], dict[str, int]] = defaultdict(
-        lambda: {"wins": 0, "draws": 0, "losses": 0}
-    )
-
-    for opening_eco, opening_name, result, user_color in rows:
-        key = (opening_eco, opening_name)
-        outcome = derive_user_result(result, user_color)
-        counts[key][_OUTCOME_KEY_MAP[outcome]] += 1
-
-    openings = []
-    for (opening_eco, opening_name), c in counts.items():
-        wins = c["wins"]
-        draws = c["draws"]
-        losses = c["losses"]
-        total = wins + draws + losses
-        if total > 0:
-            win_pct = round(wins / total * 100, 1)
-            draw_pct = round(draws / total * 100, 1)
-            loss_pct = round(losses / total * 100, 1)
-        else:
-            win_pct = draw_pct = loss_pct = 0.0
-
-        openings.append(
-            OpeningWDL(
-                opening_eco=opening_eco,
-                opening_name=opening_name,
-                label=f"{opening_name} ({opening_eco})",
-                wins=wins,
-                draws=draws,
-                losses=losses,
-                total=total,
-                win_pct=win_pct,
-                draw_pct=draw_pct,
-                loss_pct=loss_pct,
-            )
-        )
-
-    # Sort by total descending (preserves top-N ordering from the repository query)
-    openings.sort(key=lambda o: o.total, reverse=True)
-    return openings
-
-
 async def get_most_played_openings(
     session: AsyncSession,
     user_id: int,
+    recency: str | None = None,
+    time_control: list[str] | None = None,
+    platform: list[str] | None = None,
+    rated: bool | None = None,
+    opponent_type: str = "human",
 ) -> MostPlayedOpeningsResponse:
-    """Return top 5 most played openings per color (white/black) with WDL stats.
+    """Return top 10 most played openings per color with SQL-side WDL stats.
 
-    Calls query_top_openings_by_color for each color, aggregates individual game
-    rows into OpeningWDL objects, and returns a MostPlayedOpeningsResponse.
-
-    Openings with fewer than MIN_GAMES_FOR_OPENING games are excluded.
+    JOINs to openings_dedup for pgn/fen. Filters by recency, time_control,
+    platform, rated, and opponent_type. Excludes openings below ply threshold.
     """
-    white_rows = await query_top_openings_by_color(
+    cutoff = recency_cutoff(recency)
+
+    white_rows = await query_top_openings_sql_wdl(
         session,
         user_id=user_id,
         color="white",
         min_games=MIN_GAMES_FOR_OPENING,
         limit=TOP_OPENINGS_LIMIT,
+        min_ply=MIN_PLY_WHITE,
+        recency_cutoff=cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
     )
-    black_rows = await query_top_openings_by_color(
+    black_rows = await query_top_openings_sql_wdl(
         session,
         user_id=user_id,
         color="black",
         min_games=MIN_GAMES_FOR_OPENING,
         limit=TOP_OPENINGS_LIMIT,
+        min_ply=MIN_PLY_BLACK,
+        recency_cutoff=cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
     )
 
+    def rows_to_openings(rows: list[tuple]) -> list[OpeningWDL]:
+        openings = []
+        for eco, name, pgn, fen, total, wins, draws, losses in rows:
+            if total > 0:
+                win_pct = round(wins / total * 100, 1)
+                draw_pct = round(draws / total * 100, 1)
+                loss_pct = round(losses / total * 100, 1)
+            else:
+                win_pct = draw_pct = loss_pct = 0.0
+            openings.append(
+                OpeningWDL(
+                    opening_eco=eco,
+                    opening_name=name,
+                    label=f"{name} ({eco})",
+                    pgn=pgn,
+                    fen=fen,
+                    wins=wins,
+                    draws=draws,
+                    losses=losses,
+                    total=total,
+                    win_pct=win_pct,
+                    draw_pct=draw_pct,
+                    loss_pct=loss_pct,
+                )
+            )
+        return openings
+
     return MostPlayedOpeningsResponse(
-        white=_aggregate_top_openings(white_rows),
-        black=_aggregate_top_openings(black_rows),
+        white=rows_to_openings(white_rows),
+        black=rows_to_openings(black_rows),
     )
