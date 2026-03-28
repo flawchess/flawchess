@@ -482,7 +482,7 @@ export function OpeningsPage() {
           <div className="charcoal-texture rounded-md p-4">
             <WDLChartRow
               data={gamesData.stats}
-              label="Position Results"
+              label={filters.matchSide === 'both' ? 'Position Results' : `Position Results (Piece filter: ${filters.matchSide === 'mine' ? 'Mine' : 'Opponent'})`}
               barHeight="h-6"
               testId="wdl-games-position"
             />
