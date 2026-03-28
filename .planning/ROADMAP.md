@@ -141,7 +141,7 @@ Plans:
 | 31. Endgame classification redesign | v1.5 | 2/2 | Complete | 2026-03-26 |
 | 32. Endgame Performance Charts | v1.5 | 3/3 | Complete | 2026-03-27 |
 | 33. Homepage, README & SEO Update | v1.5 | 3/3 | Complete | 2026-03-28 |
-| 34. Theme Improvements | v1.6 | 2/2 | Complete   | 2026-03-28 |
+| 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
 
 ## Backlog
 
