@@ -217,3 +217,12 @@ Plans:
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
 
+### Phase 999.3: SQL-Side Aggregation for Remaining Python-Side DB Queries (BACKLOG)
+
+**Goal:** Replace remaining Python-side row-by-row W/D/L counting with SQL GROUP BY + COUNT().filter() aggregation. High-impact targets: `analysis_service.analyze()` and `get_next_moves()` (N rows → 1), `endgame_service._aggregate_endgame_stats()` (K rows → 6). Lower priority: rolling-window functions that need chronological row data.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
