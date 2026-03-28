@@ -6,7 +6,7 @@
 - ✅ **v1.1 Opening Explorer & UI Restructuring** — Phases 11-16 (shipped 2024-03-20)
 - ✅ **v1.2 Mobile & PWA** — Phases 17-19 (shipped 2024-03-21)
 - ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
-- **v1.4 Improvements** — Phases 24-25
+- ✅ **v1.4 Improvements** — Phase 24 (shipped 2026-03-22)
 - ✅ **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33 (shipped 2026-03-28)
 
 ## Phases
@@ -58,22 +58,15 @@
 
 </details>
 
-### v1.4 Improvements
+<details>
+<summary>✅ v1.4 Improvements (Phase 24) — SHIPPED 2026-03-22</summary>
 
 - [x] Phase 24: Web Analytics (2/2 plans) — completed 2026-03-22
-  - **Goal:** Add privacy-friendly, low-resource web analytics to track page visits, top routes, and referrer sources
-  - **Requirements:** ANLY-01, ANLY-02, ANLY-03, ANLY-04, ANLY-05
-  - **Plans:** 2 plans
-    - [x] 24-01-PLAN.md — Add Umami service to Docker Compose, Caddy subdomain, and env vars
-    - [x] 24-02-PLAN.md — Deploy Umami, add tracking script to frontend, verify end-to-end
-  - **Success criteria:**
-    1. Site owner can view a dashboard showing page visit counts and trends
-    2. Top pages by visit count are visible
-    3. Referrer sources are tracked and displayed
-    4. No cookie consent banner is needed (privacy-friendly solution)
-    5. Analytics adds negligible RAM/CPU overhead to the Hetzner VPS
 
-- [ ] **Phase 25: Password Reset** — Add forgot-password / reset-password flow
+</details>
+
+### v1.5 Game Statistics & Endgame Analysis
+
 - [x] **Phase 26: Position Classifier & Schema** — Compute game phase, material signature, imbalance, and endgame class per position with schema migration (completed 2026-03-23)
 - [x] **Phase 27: Import Wiring & Backfill** — Wire classifier into live import pipeline and backfill all existing game_positions rows (completed 2026-03-24)
 - [x] **Phase 28: Engine Analysis Import** — Import chess.com accuracy scores and lichess per-move evals during game import (completed 2026-03-25)
@@ -81,16 +74,6 @@
 - [x] **Phase 33: Homepage, README & SEO Update** — Update homepage content, README, and SEO metadata to showcase new statistics features introduced in v1.5 (completed 2026-03-28)
 
 ## Phase Details
-
-### Phase 25: Password Reset
-**Goal**: Users can recover account access when they forget their password
-**Depends on**: Phase 24
-**Requirements**: TBD
-**Success Criteria** (what must be TRUE):
-  1. User can request a password reset link using their email address
-  2. User receives a reset email and can set a new password via the link
-  3. After resetting, user can log in with the new password
-**Plans**: TBD
 
 ### Phase 26: Position Classifier & Schema
 **Goal**: Every imported position carries computed game phase, material signature, material imbalance, and endgame class stored in the database
@@ -197,7 +180,6 @@ Plans:
 | 22. CI/CD & Monitoring | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 23. Launch Readiness | v1.3 | 4/4 | Complete | 2026-03-22 |
 | 24. Web Analytics | v1.4 | 2/2 | Complete | 2026-03-22 |
-| 25. Password Reset | v1.4 | 0/0 | Not started | — |
 | 26. Position Classifier & Schema | v1.5 | 2/2 | Complete    | 2026-03-23 |
 | 27. Import Wiring & Backfill | v1.5 | 2/2 | Complete    | 2026-03-24 |
 | 28. Engine Analysis Import | v1.5 | 2/3 | Complete (03 deferred) | 2026-03-25 |
@@ -262,7 +244,16 @@ Plans:
 
 ## Backlog
 
-### Phase 999.1: Python Static Type Checker in CI (BACKLOG)
+### Phase 999.1: Password Reset (BACKLOG)
+
+**Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
+### Phase 999.2: Python Static Type Checker in CI (BACKLOG)
 
 **Goal:** Add a Python static type checker to the CI pipeline to catch type-level bugs (typos, bare `str` where `Literal` is needed, wrong function names) that ruff cannot detect. Evaluate [ty](https://docs.astral.sh/ty/) (from Astral, same team as ruff/uv) vs pyright vs mypy.
 **Requirements:** TBD
