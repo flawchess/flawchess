@@ -28,6 +28,7 @@ import {
   useReorderPositionBookmarks,
   useTimeSeries,
 } from '@/hooks/usePositionBookmarks';
+import { useMostPlayedOpenings } from '@/hooks/useStats';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import { MoveExplorer } from '@/components/move-explorer/MoveExplorer';
 import { PRIMARY_BUTTON_CLASS } from '@/lib/theme';
@@ -165,6 +166,9 @@ export function OpeningsPage() {
   }, [bookmarks, debouncedFilters]);
 
   const { data: tsData } = useTimeSeries(timeSeriesRequest);
+
+  // Most played openings — all-time, no filter params (shows top 5 per color across all games)
+  const { data: mostPlayedData } = useMostPlayedOpenings();
 
   // Derive WDL stats per bookmark using aggregate fields (not rolling sub-counts)
   const wdlStatsMap = useMemo(() => {
@@ -500,8 +504,66 @@ export function OpeningsPage() {
     </div>
   );
 
+  const maxTotalWhite = mostPlayedData?.white.length
+    ? Math.max(...mostPlayedData.white.map(x => x.total))
+    : 0;
+  const maxTotalBlack = mostPlayedData?.black.length
+    ? Math.max(...mostPlayedData.black.map(x => x.total))
+    : 0;
+
   const statisticsContent = (
     <div className="flex flex-col gap-4">
+      {mostPlayedData && (mostPlayedData.white.length > 0 || mostPlayedData.black.length > 0) && (
+        <div className="charcoal-texture rounded-md p-4" data-testid="most-played-openings">
+          <h2 className="text-lg font-medium mb-3">Most Played Openings</h2>
+          <div className="space-y-6">
+            {/* White section */}
+            <div data-testid="mpo-white-section">
+              <h3 className="text-base font-medium mb-2 flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white" />
+                White
+              </h3>
+              {mostPlayedData.white.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Not enough games with White to show top openings (minimum 10 games per opening).</p>
+              ) : (
+                <div className="space-y-2">
+                  {mostPlayedData.white.map((o) => (
+                    <WDLChartRow
+                      key={`${o.opening_eco}-white`}
+                      data={o}
+                      label={o.label}
+                      maxTotal={maxTotalWhite}
+                      testId={`mpo-white-${o.opening_eco}`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* Black section */}
+            <div data-testid="mpo-black-section">
+              <h3 className="text-base font-medium mb-2 flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900" />
+                Black
+              </h3>
+              {mostPlayedData.black.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Not enough games with Black to show top openings (minimum 10 games per opening).</p>
+              ) : (
+                <div className="space-y-2">
+                  {mostPlayedData.black.map((o) => (
+                    <WDLChartRow
+                      key={`${o.opening_eco}-black`}
+                      data={o}
+                      label={o.label}
+                      maxTotal={maxTotalBlack}
+                      testId={`mpo-black-${o.opening_eco}`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {bookmarks.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center text-muted-foreground">
           <p className="text-base font-medium text-foreground">No bookmarks yet</p>
