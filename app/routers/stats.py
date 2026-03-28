@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.models.user import User
-from app.schemas.stats import GlobalStatsResponse, RatingHistoryResponse
+from app.schemas.stats import GlobalStatsResponse, MostPlayedOpeningsResponse, RatingHistoryResponse
 from app.services import stats_service
 from app.users import current_active_user
 
@@ -42,3 +42,12 @@ async def get_global_stats(
     and by platform (chess.com or lichess).
     """
     return await stats_service.get_global_stats(session, user.id, recency, platform)
+
+
+@router.get("/stats/most-played-openings", response_model=MostPlayedOpeningsResponse)
+async def get_most_played_openings(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> MostPlayedOpeningsResponse:
+    """Return top 5 most played openings per color with WDL stats."""
+    return await stats_service.get_most_played_openings(session, user.id)

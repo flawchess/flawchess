@@ -26,6 +26,7 @@ from app.repositories.stats_repository import (
     query_rating_history,
     query_results_by_color,
     query_results_by_time_control,
+    query_top_openings_by_color,
 )
 
 
@@ -58,6 +59,8 @@ async def _seed_game(
     white_rating: int | None = None,
     black_rating: int | None = None,
     played_at: datetime.datetime | None = None,
+    opening_eco: str | None = None,
+    opening_name: str | None = None,
 ) -> Game:
     """Insert a Game row and flush to obtain IDs.
 
@@ -82,6 +85,8 @@ async def _seed_game(
         rated=True,
         white_rating=white_rating,
         black_rating=black_rating,
+        opening_eco=opening_eco,
+        opening_name=opening_name,
     )
     game.played_at = played_at
     session.add(game)
@@ -380,3 +385,85 @@ class TestQueryResultsByColor:
         assert len(rows) == 2
         colors = {r[0] for r in rows}
         assert colors == {"white", "black"}
+
+
+# ---------------------------------------------------------------------------
+# TestQueryTopOpeningsByColor
+# ---------------------------------------------------------------------------
+
+
+class TestQueryTopOpeningsByColor:
+    """Tests for query_top_openings_by_color repository function."""
+
+    @pytest.mark.asyncio
+    async def test_top_openings_returns_top_n_by_game_count(self, db_session: AsyncSession) -> None:
+        """Returns top-N openings by game count; opening below min_games is excluded."""
+        # Opening A: 8 games, Opening B: 6 games, Opening C: 3 games (below min_games=5)
+        for _ in range(8):
+            await _seed_game(db_session, user_color="white", opening_eco="A01", opening_name="Opening A")
+        for _ in range(6):
+            await _seed_game(db_session, user_color="white", opening_eco="B01", opening_name="Opening B")
+        for _ in range(3):
+            await _seed_game(db_session, user_color="white", opening_eco="C01", opening_name="Opening C")
+
+        rows = await query_top_openings_by_color(
+            db_session, user_id=99999, color="white", min_games=5, limit=2
+        )
+
+        # C excluded by min_games; A+B included (8+6=14 rows)
+        assert len(rows) == 14
+        ecos = {r[0] for r in rows}
+        assert ecos == {"A01", "B01"}
+        assert "C01" not in ecos
+
+    @pytest.mark.asyncio
+    async def test_top_openings_excludes_below_min_games(self, db_session: AsyncSession) -> None:
+        """Openings with fewer than min_games games are not returned."""
+        for _ in range(4):
+            await _seed_game(db_session, user_color="white", opening_eco="A01", opening_name="Opening A")
+
+        rows = await query_top_openings_by_color(
+            db_session, user_id=99999, color="white", min_games=5, limit=5
+        )
+
+        assert rows == []
+
+    @pytest.mark.asyncio
+    async def test_top_openings_excludes_null_eco_name(self, db_session: AsyncSession) -> None:
+        """Games with NULL opening_eco or NULL opening_name are excluded."""
+        # Games with valid eco/name
+        for _ in range(10):
+            await _seed_game(db_session, user_color="white", opening_eco="A01", opening_name="Valid Opening")
+        # Games with NULL eco
+        for _ in range(5):
+            await _seed_game(db_session, user_color="white", opening_eco=None, opening_name="Has Name")
+        # Games with NULL name
+        for _ in range(5):
+            await _seed_game(db_session, user_color="white", opening_eco="B01", opening_name=None)
+
+        rows = await query_top_openings_by_color(
+            db_session, user_id=99999, color="white", min_games=5, limit=5
+        )
+
+        # Only the valid opening should appear
+        assert len(rows) == 10
+        for opening_eco, opening_name, result, user_color in rows:
+            assert opening_eco is not None
+            assert opening_name is not None
+
+    @pytest.mark.asyncio
+    async def test_top_openings_filters_by_color(self, db_session: AsyncSession) -> None:
+        """Only games for the requested color are returned."""
+        for _ in range(10):
+            await _seed_game(db_session, user_color="white", opening_eco="A01", opening_name="White Opening")
+        for _ in range(10):
+            await _seed_game(db_session, user_color="black", opening_eco="B01", opening_name="Black Opening")
+
+        rows = await query_top_openings_by_color(
+            db_session, user_id=99999, color="white", min_games=5, limit=5
+        )
+
+        assert len(rows) == 10
+        for opening_eco, opening_name, result, user_color in rows:
+            assert user_color == "white"
+            assert opening_eco == "A01"

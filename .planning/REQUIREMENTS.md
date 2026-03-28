@@ -22,6 +22,13 @@ Requirements for v1.6 — UI Polish & Improvements.
 - [x] **WDL-03**: No unused WDL-related constants, CSS classes, or Recharts bar chart code remains
 - [x] **WDL-04**: Visual appearance of all WDL charts matches the current endgame type WDL charts (glass overlay, inline legend, game count bars)
 
+### Most Played Openings
+
+- [x] **MPO-01**: "Most Played Openings" section with White and Black subsections appears at the top of the Opening Statistics subtab in a shared charcoal container
+- [x] **MPO-02**: Each subsection lists the top 5 openings by game count, based on opening_eco/opening_name from the games table
+- [x] **MPO-03**: Openings with fewer than 10 games are excluded; if no openings meet the threshold, an explanatory message is shown
+- [x] **MPO-04**: Openings are displayed as WDL charts (same WDLChartRow component) with ECO code in parentheses in the title label
+
 ## Future Requirements
 
 ### Pawn Structure Analysis
@@ -55,16 +62,20 @@ Which phases cover which requirements. Updated during roadmap creation.
 | THEME-03 | Phase 34 | Complete |
 | THEME-04 | Phase 34 | Complete |
 | THEME-05 | Phase 34 | Complete |
-| WDL-01 | Phase 35 | Not started |
-| WDL-02 | Phase 35 | Not started |
-| WDL-03 | Phase 35 | Not started |
-| WDL-04 | Phase 35 | Not started |
+| WDL-01 | Phase 35 | Complete |
+| WDL-02 | Phase 35 | Complete |
+| WDL-03 | Phase 35 | Complete |
+| WDL-04 | Phase 35 | Complete |
+| MPO-01 | Phase 36 | Not started |
+| MPO-02 | Phase 36 | Not started |
+| MPO-03 | Phase 36 | Not started |
+| MPO-04 | Phase 36 | Not started |
 
 **Coverage:**
-- v1.6 requirements: 9 total
-- Mapped to phases: 9
-- Unmapped: 0 ✓
+- v1.6 requirements: 13 total
+- Mapped to phases: 13
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-28*
-*Last updated: 2026-03-28 after Phase 35 planning*
+*Last updated: 2026-03-28 after Phase 36 planning*

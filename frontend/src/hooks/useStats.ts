@@ -19,3 +19,10 @@ export function useGlobalStats(recency: Recency | null, platforms: Platform[] | 
     queryFn: () => statsApi.getGlobalStats(normalizedRecency, platform),
   });
 }
+
+export function useMostPlayedOpenings() {
+  return useQuery({
+    queryKey: ['mostPlayedOpenings'],
+    queryFn: () => statsApi.getMostPlayedOpenings(),
+  });
+}

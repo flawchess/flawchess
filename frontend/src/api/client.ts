@@ -5,7 +5,7 @@ import type {
   PositionBookmarkReorderRequest, TimeSeriesRequest, TimeSeriesResponse,
   MatchSideUpdateRequest, SuggestionsResponse
 } from '@/types/position_bookmarks';
-import type { RatingHistoryResponse, GlobalStatsResponse } from '@/types/stats';
+import type { RatingHistoryResponse, GlobalStatsResponse, MostPlayedOpeningsResponse } from '@/types/stats';
 import type { EndgameStatsResponse, EndgameGamesResponse, EndgamePerformanceResponse, EndgameTimelineResponse, ConvRecovTimelineResponse } from '@/types/endgames';
 
 /**
@@ -98,6 +98,9 @@ export const statsApi = {
     apiClient.get<GlobalStatsResponse>('/stats/global', {
       params: { ...(recency ? { recency } : {}), ...(platform ? { platform } : {}) },
     }).then(r => r.data),
+  getMostPlayedOpenings: () =>
+    apiClient.get<MostPlayedOpeningsResponse>('/stats/most-played-openings')
+      .then(r => r.data),
 };
 
 // ─── Endgame Analytics API ────────────────────────────────────────────────────

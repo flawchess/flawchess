@@ -255,3 +255,37 @@ class TestGetGlobalStats:
         data = resp.json()
         assert isinstance(data["by_time_control"], list)
         assert isinstance(data["by_color"], list)
+
+
+# ---------------------------------------------------------------------------
+# GET /stats/most-played-openings
+# ---------------------------------------------------------------------------
+
+
+class TestGetMostPlayedOpenings:
+    """Tests for GET /stats/most-played-openings."""
+
+    @pytest.mark.asyncio
+    async def test_most_played_openings_requires_auth(self) -> None:
+        """Request without auth token returns 401."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/stats/most-played-openings")
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_most_played_openings_returns_structure(self, auth_headers: dict[str, str]) -> None:
+        """Request with valid auth returns 200 with white and black list keys."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/stats/most-played-openings", headers=auth_headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "white" in data
+        assert "black" in data
+        assert isinstance(data["white"], list)
+        assert isinstance(data["black"], list)

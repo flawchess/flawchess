@@ -24,3 +24,21 @@ export interface GlobalStatsResponse {
   by_time_control: WDLByCategory[];
   by_color: WDLByCategory[];
 }
+
+export interface OpeningWDL {
+  opening_eco: string;
+  opening_name: string;
+  label: string;
+  wins: number;
+  draws: number;
+  losses: number;
+  total: number;
+  win_pct: number;
+  draw_pct: number;
+  loss_pct: number;
+}
+
+export interface MostPlayedOpeningsResponse {
+  white: OpeningWDL[];
+  black: OpeningWDL[];
+}

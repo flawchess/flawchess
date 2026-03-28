@@ -8,14 +8,23 @@ from app.repositories.stats_repository import (
     query_rating_history,
     query_results_by_color,
     query_results_by_time_control,
+    query_top_openings_by_color,
 )
 from app.schemas.stats import (
     GlobalStatsResponse,
+    MostPlayedOpeningsResponse,
+    OpeningWDL,
     RatingDataPoint,
     RatingHistoryResponse,
     WDLByCategory,
 )
 from app.services.analysis_service import derive_user_result, recency_cutoff
+
+# Minimum number of games required for an opening to appear in top openings.
+MIN_GAMES_FOR_OPENING = 10
+
+# Maximum number of top openings to return per color.
+TOP_OPENINGS_LIMIT = 5
 
 # Ordered time control buckets for consistent output ordering.
 _TIME_CONTROL_ORDER = ["bullet", "blitz", "rapid", "classical"]
@@ -173,4 +182,84 @@ async def get_global_stats(
     return GlobalStatsResponse(
         by_time_control=by_time_control,
         by_color=by_color,
+    )
+
+
+def _aggregate_top_openings(rows: list[tuple]) -> list[OpeningWDL]:
+    """Aggregate (opening_eco, opening_name, result, user_color) rows into OpeningWDL list.
+
+    Groups rows by (opening_eco, opening_name), counts wins/draws/losses,
+    computes percentages, sets display label, and sorts by total descending.
+    """
+    counts: dict[tuple[str, str], dict[str, int]] = defaultdict(
+        lambda: {"wins": 0, "draws": 0, "losses": 0}
+    )
+
+    for opening_eco, opening_name, result, user_color in rows:
+        key = (opening_eco, opening_name)
+        outcome = derive_user_result(result, user_color)
+        counts[key][_OUTCOME_KEY_MAP[outcome]] += 1
+
+    openings = []
+    for (opening_eco, opening_name), c in counts.items():
+        wins = c["wins"]
+        draws = c["draws"]
+        losses = c["losses"]
+        total = wins + draws + losses
+        if total > 0:
+            win_pct = round(wins / total * 100, 1)
+            draw_pct = round(draws / total * 100, 1)
+            loss_pct = round(losses / total * 100, 1)
+        else:
+            win_pct = draw_pct = loss_pct = 0.0
+
+        openings.append(
+            OpeningWDL(
+                opening_eco=opening_eco,
+                opening_name=opening_name,
+                label=f"{opening_name} ({opening_eco})",
+                wins=wins,
+                draws=draws,
+                losses=losses,
+                total=total,
+                win_pct=win_pct,
+                draw_pct=draw_pct,
+                loss_pct=loss_pct,
+            )
+        )
+
+    # Sort by total descending (preserves top-N ordering from the repository query)
+    openings.sort(key=lambda o: o.total, reverse=True)
+    return openings
+
+
+async def get_most_played_openings(
+    session: AsyncSession,
+    user_id: int,
+) -> MostPlayedOpeningsResponse:
+    """Return top 5 most played openings per color (white/black) with WDL stats.
+
+    Calls query_top_openings_by_color for each color, aggregates individual game
+    rows into OpeningWDL objects, and returns a MostPlayedOpeningsResponse.
+
+    Openings with fewer than MIN_GAMES_FOR_OPENING games are excluded.
+    """
+    white_rows = await query_top_openings_by_color(
+        session,
+        user_id=user_id,
+        color="white",
+        min_games=MIN_GAMES_FOR_OPENING,
+        limit=TOP_OPENINGS_LIMIT,
+    )
+    black_rows = await query_top_openings_by_color(
+        session,
+        user_id=user_id,
+        color="black",
+        min_games=MIN_GAMES_FOR_OPENING,
+        limit=TOP_OPENINGS_LIMIT,
+    )
+
+    return MostPlayedOpeningsResponse(
+        white=_aggregate_top_openings(white_rows),
+        black=_aggregate_top_openings(black_rows),
     )

@@ -78,7 +78,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ## Current State
 
-v1.5 shipped 2026-03-28. Phase 34 (Theme Improvements) complete — centralized theme CSS variables, charcoal-texture containers with noise overlay across all pages, brand subtab highlighting, consistent button/toggle styling, GlobalStats sidebar layout. v1.6 UI Polish milestone in progress.
+v1.5 shipped 2026-03-28. Phase 36 (Most Played Openings) complete — GET /stats/most-played-openings endpoint returning top 5 openings per color with WDL stats, rendered in Opening Statistics subtab with WDLChartRow components. v1.6 UI Polish milestone in progress.
 
 ## Context
 
@@ -124,4 +124,4 @@ v1.5 shipped 2026-03-28. Phase 34 (Theme Improvements) complete — centralized 
 | Backend expose-only (no ports) | Caddy is sole internet-facing entry point | ✓ Good |
 
 ---
-*Last updated: 2026-03-28 after Phase 34 completion*
+*Last updated: 2026-03-28 after Phase 36 completion*
