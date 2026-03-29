@@ -215,7 +215,7 @@ Plans:
 | 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
 | 36. Most Played Openings | v1.6 | 1/1 | Complete    | 2026-03-28 |
 | 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
-| 38. Opening Statistics & Bookmark Rework | v1.6 | 0/2 | In Progress | — |
+| 38. Opening Statistics & Bookmark Rework | v1.6 | 0/2 | Planned    |  |
 
 ## Backlog
 
@@ -223,7 +223,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 0/2 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

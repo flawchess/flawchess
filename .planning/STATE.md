@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: UI Polish & Improvements
-status: verifying
-last_updated: "2026-03-28T19:59:11.755Z"
-last_activity: 2026-03-28
+status: executing
+last_updated: "2026-03-29T09:31:25.729Z"
+last_activity: 2026-03-29
 progress:
-  total_phases: 6
+  total_phases: 9
   completed_phases: 4
-  total_plans: 8
+  total_plans: 10
   completed_plans: 8
 ---
 
@@ -16,10 +16,10 @@ progress:
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-03-28
+Phase: 38 (opening-statistics-bookmark-suggestions-rework) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-03-29
 
 ## Project Reference
 
@@ -86,6 +86,9 @@ Current focus: v1.6 UI Polish & Improvements
 - [Phase 37-02]: TOP_OPENINGS_LIMIT raised from 5 to 10; MIN_PLY_WHITE=1, MIN_PLY_BLACK=2
 - [Phase 37-03]: arePiecesDraggable not a valid prop in react-chessboard v5 — static minimap board achieved by omitting onPieceDrop/onSquareClick handlers
 - [Phase 37-03]: MostPlayedOpeningsTable replaces WDLChartRow in statisticsContent; filters from debouncedFilters now passed to useMostPlayedOpenings so Statistics tab openings react to filter changes
+- [Phase 38-01]: full_hash computed server-side from FEN using python-chess Board + compute_hashes — avoids duplicate Zobrist logic on frontend
+- [Phase 38-01]: DEFAULT_CHART_LIMIT = 3 openings per color as default chart data when no bookmarks
+- [Phase 38-01]: Synthetic bookmark IDs use negative integers to avoid collision with real bookmark IDs
 
 ### Critical v1.5 Constraints
 
@@ -111,6 +114,7 @@ Current focus: v1.6 UI Polish & Improvements
 - Phase 35 added: WDL Chart Refactoring — shared WDL chart component, replace all inconsistent implementations
 - Phase 36 added: Most Played Openings — top 5 openings by color as WDL charts in Opening Statistics subtab
 - Phase 37 added: Openings Reference Table & Most Played Openings Redesign — openings DB table from TSV, SQL-side WDL, filters, dedicated table UI, minimap popover
+- Phase 38 added: Opening Statistics & Bookmark Suggestions Rework — reorder stats sections, most-played openings as default chart data, rework bookmark suggestions, chart-enable toggle, bookmark card layout redesign
 
 ### Blockers/Concerns
 

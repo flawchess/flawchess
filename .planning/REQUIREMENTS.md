@@ -39,8 +39,8 @@ Requirements for v1.6 — UI Polish & Improvements.
 
 ### Opening Statistics & Bookmark Suggestions Rework
 
-- [ ] **STAT-01**: Statistics tab sections appear in order: Results by Opening, Win Rate Over Time, Most Played Openings as White, Most Played Openings as Black
-- [ ] **STAT-02**: When no bookmarks exist, Results by Opening and Win Rate Over Time charts show data from top 3 most-played openings per color (white with played-as-white filter, black with played-as-black filter)
+- [x] **STAT-01**: Statistics tab sections appear in order: Results by Opening, Win Rate Over Time, Most Played Openings as White, Most Played Openings as Black
+- [x] **STAT-02**: When no bookmarks exist, Results by Opening and Win Rate Over Time charts show data from top 3 most-played openings per color (white with played-as-white filter, black with played-as-black filter)
 - [ ] **STAT-03**: Bookmark suggestions derive from most-played openings data (no backend suggestions API call), skip already-bookmarked positions, show fallback message when all are bookmarked
 - [ ] **STAT-04**: Each bookmark card has a chart-enable toggle (default: enabled, persisted in localStorage) controlling inclusion in Results by Opening and Win Rate Over Time charts
 - [ ] **STAT-05**: Bookmark card layout: bigger minimap (~72px), button row below piece filter with chart toggle (left), load (middle), delete (right)
