@@ -53,7 +53,7 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad, chartEnable
     <>
       {items.length === 0 ? (
         <p className="px-2 text-xs text-muted-foreground break-words">
-          No position bookmarks yet. Use the &apos;Bookmark&apos; button to save positions, or use &apos;Suggest&apos; to auto-generate from your most-played openings.
+          No position bookmarks yet. Use the &apos;Save&apos; button to save positions, or use &apos;Suggest&apos; to auto-generate from your most-played openings.
         </p>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
