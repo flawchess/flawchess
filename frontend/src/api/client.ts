@@ -3,7 +3,7 @@ import { queryClient } from '@/lib/queryClient';
 import type {
   PositionBookmarkResponse, PositionBookmarkCreate, PositionBookmarkUpdate,
   PositionBookmarkReorderRequest, TimeSeriesRequest, TimeSeriesResponse,
-  MatchSideUpdateRequest, SuggestionsResponse
+  MatchSideUpdateRequest
 } from '@/types/position_bookmarks';
 import type { RatingHistoryResponse, GlobalStatsResponse, MostPlayedOpeningsResponse } from '@/types/stats';
 import type { EndgameStatsResponse, EndgameGamesResponse, EndgamePerformanceResponse, EndgameTimelineResponse, ConvRecovTimelineResponse } from '@/types/endgames';
@@ -76,8 +76,6 @@ export const positionBookmarksApi = {
     apiClient.put<PositionBookmarkResponse[]>('/position-bookmarks/reorder', req).then(r => r.data),
   updateMatchSide: (id: number, data: MatchSideUpdateRequest) =>
     apiClient.patch<PositionBookmarkResponse>(`/position-bookmarks/${id}/match-side`, data).then(r => r.data),
-  getSuggestions: () =>
-    apiClient.get<SuggestionsResponse>('/position-bookmarks/suggestions').then(r => r.data),
 };
 
 // ─── Time Series API ──────────────────────────────────────────────────────────

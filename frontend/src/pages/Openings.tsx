@@ -1,4 +1,13 @@
 import { useState, useMemo, useCallback } from 'react';
+
+// localStorage helpers for per-bookmark chart-enable toggle (default: enabled)
+function getChartEnabled(bookmarkId: number): boolean {
+  const stored = localStorage.getItem(`bookmark-chart-enabled-${bookmarkId}`);
+  return stored === null ? true : stored === 'true';
+}
+function setChartEnabledStorage(bookmarkId: number, enabled: boolean): void {
+  localStorage.setItem(`bookmark-chart-enabled-${bookmarkId}`, String(enabled));
+}
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
@@ -102,6 +111,19 @@ export function OpeningsPage() {
   const [bookmarkLabel, setBookmarkLabel] = useState('');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
 
+  // ── Chart-enable toggle (persisted per bookmark in localStorage) ─────────────
+  // Version counter to force chartEnabledMap recompute when a toggle changes
+  const [chartToggleVersion, setChartToggleVersion] = useState(0);
+
+  const chartEnabledMap = useMemo(() => {
+    const map: Record<number, boolean> = {};
+    for (const b of bookmarks) {
+      map[b.id] = getChartEnabled(b.id);
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookmarks, chartToggleVersion]);
+
   // ── Moves data ──────────────────────────────────────────────────────
   const nextMoves = useNextMoves(chess.hashes.fullHash, debouncedFilters);
 
@@ -190,8 +212,10 @@ export function OpeningsPage() {
     return [...white, ...black];
   }, [bookmarks, mostPlayedData]);
 
-  // Chart entries: real bookmarks if any, else most-played defaults
-  const chartBookmarks = bookmarks.length > 0 ? bookmarks : defaultChartEntries;
+  // Chart entries: real bookmarks filtered by chart-enable toggle, else most-played defaults
+  const chartBookmarks = bookmarks.length > 0
+    ? bookmarks.filter(b => chartEnabledMap[b.id] !== false)
+    : defaultChartEntries;
 
   const timeSeriesRequest: TimeSeriesRequest | null = useMemo(() => {
     if (chartBookmarks.length === 0) return null;
@@ -227,6 +251,11 @@ export function OpeningsPage() {
   }, [tsData]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
+
+  const handleChartEnabledChange = useCallback((id: number, enabled: boolean) => {
+    setChartEnabledStorage(id, enabled);
+    setChartToggleVersion(v => v + 1);
+  }, []);
 
   const handleFiltersChange = useCallback((newFilters: FilterState) => {
     setFilters(newFilters);
@@ -411,7 +440,17 @@ export function OpeningsPage() {
               Position bookmarks
               <span onClick={(e) => e.stopPropagation()}>
                 <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info" side="top">
-                  Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                  <div className="space-y-2">
+                    <p>
+                      Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                    </p>
+                    <p>
+                      Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
+                    </p>
+                    <p>
+                      Use the chart toggle on each bookmark to include or exclude it from the Results by Opening and Win Rate Over Time charts.
+                    </p>
+                  </div>
                 </InfoPopover>
               </span>
             </span>
@@ -445,6 +484,8 @@ export function OpeningsPage() {
               bookmarks={bookmarks}
               onReorder={handleReorder}
               onLoad={handleLoadBookmark}
+              chartEnabledMap={chartEnabledMap}
+              onChartEnabledChange={handleChartEnabledChange}
             />
           </div>
         </CollapsibleContent>
@@ -876,7 +917,17 @@ export function OpeningsPage() {
                   Position bookmarks
                   <span onClick={(e) => e.stopPropagation()}>
                     <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info-mobile" side="top">
-                      Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                      <div className="space-y-2">
+                        <p>
+                          Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                        </p>
+                        <p>
+                          Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
+                        </p>
+                        <p>
+                          Use the chart toggle on each bookmark to include or exclude it from the Results by Opening and Win Rate Over Time charts.
+                        </p>
+                      </div>
                     </InfoPopover>
                   </span>
                 </span>
@@ -910,6 +961,8 @@ export function OpeningsPage() {
                   bookmarks={bookmarks}
                   onReorder={handleReorder}
                   onLoad={handleLoadBookmark}
+                  chartEnabledMap={chartEnabledMap}
+                  onChartEnabledChange={handleChartEnabledChange}
                 />
               </div>
             </CollapsibleContent>
@@ -976,7 +1029,12 @@ export function OpeningsPage() {
         </DialogContent>
       </Dialog>
 
-      <SuggestionsModal open={suggestionsOpen} onOpenChange={setSuggestionsOpen} />
+      <SuggestionsModal
+        open={suggestionsOpen}
+        onOpenChange={setSuggestionsOpen}
+        mostPlayedData={mostPlayedData}
+        bookmarks={bookmarks}
+      />
     </div>
   );
 }

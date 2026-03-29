@@ -38,6 +38,8 @@ export function useDeletePositionBookmark() {
       qc.setQueryData(['position-bookmarks'], (old: unknown) =>
         (old as PositionBookmarkResponse[])?.filter((b) => b.id !== id)
       );
+      // Clean up chart-enable toggle state so re-created bookmarks default to enabled
+      localStorage.removeItem(`bookmark-chart-enabled-${id}`);
       return { prev };
     },
     onError: (_: Error, __: number, ctx: DeleteContext | undefined) => {
@@ -90,11 +92,3 @@ export function useTimeSeries(req: TimeSeriesRequest | null) {
   });
 }
 
-export function usePositionSuggestions() {
-  return useQuery({
-    queryKey: ['position-bookmark-suggestions'],
-    queryFn: positionBookmarksApi.getSuggestions,
-    staleTime: 60_000,
-    enabled: false,  // only fetch when user clicks "Suggest bookmarks"
-  });
-}
