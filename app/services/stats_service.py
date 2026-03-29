@@ -272,6 +272,9 @@ async def get_most_played_openings(
                     loss_pct=loss_pct,
                 )
             )
+        # Sort by position-based game count descending (may differ from
+        # the opening-name-based order returned by the SQL query)
+        openings.sort(key=lambda o: o.total, reverse=True)
         return openings
 
     return MostPlayedOpeningsResponse(
