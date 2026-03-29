@@ -76,9 +76,23 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 10m
           script: |
+            set -e
             cd /opt/flawchess
+
+            # Fail fast if working tree is dirty — never auto-resolve
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "ERROR: Working tree has uncommitted changes — aborting deploy"
+              git status --short
+              exit 1
+            fi
+
             git pull origin main
-            docker compose up -d --build
+
+            # Verify the expected commit arrived
+            echo "Deployed commit: $(git log --oneline -1)"
+
+            docker compose build --no-cache backend caddy
+            docker compose up -d
 
       - name: Health check
         run: |
