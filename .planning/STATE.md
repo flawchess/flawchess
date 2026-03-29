@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: UI Polish & Improvements
-status: executing
-last_updated: "2026-03-29T09:31:25.729Z"
+status: verifying
+last_updated: "2026-03-29T09:41:11.100Z"
 last_activity: 2026-03-29
 progress:
   total_phases: 9
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 10
-  completed_plans: 8
+  completed_plans: 10
 ---
 
 # Project State: FlawChess
@@ -18,7 +18,7 @@ progress:
 
 Phase: 38 (opening-statistics-bookmark-suggestions-rework) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-03-29
 
 ## Project Reference
@@ -89,6 +89,8 @@ Current focus: v1.6 UI Polish & Improvements
 - [Phase 38-01]: full_hash computed server-side from FEN using python-chess Board + compute_hashes — avoids duplicate Zobrist logic on frontend
 - [Phase 38-01]: DEFAULT_CHART_LIMIT = 3 openings per color as default chart data when no bookmarks
 - [Phase 38-01]: Synthetic bookmark IDs use negative integers to avoid collision with real bookmark IDs
+- [Phase 38]: SuggestionsModal uses mostPlayedData prop directly — no backend suggestions endpoint call
+- [Phase 38]: chartToggleVersion state counter forces chartEnabledMap useMemo recompute without storing toggle state in React state
 
 ### Critical v1.5 Constraints
 

@@ -87,7 +87,7 @@
 - [x] **Phase 35: WDL Chart Refactoring** — Create shared WDL chart component based on endgame charts, replace all inconsistent WDL charts (custom and Recharts), clean up unused code (completed 2026-03-28)
 - [x] **Phase 36: Most Played Openings** — Add "Most Played Openings" sections (White/Black) to Opening Statistics subtab with top 5 openings as WDL charts, ECO codes, minimum 10 games threshold (completed 2026-03-28)
 - [x] **Phase 37: Openings Reference Table & Most Played Openings Redesign** — Create openings DB table from TSV dataset with PGN/FEN/ply_count, redesign most played openings with filter support, dedicated table UI, minimap popover, SQL-side WDL aggregation, top 10 (completed 2026-03-28)
-- [ ] **Phase 38: Opening Statistics & Bookmark Suggestions Rework** — Reorder stats sections, use most-played openings as default chart data, rework bookmark suggestions, add chart-enable toggle, redesign bookmark card layout
+- [x] **Phase 38: Opening Statistics & Bookmark Suggestions Rework** — Reorder stats sections, use most-played openings as default chart data, rework bookmark suggestions, add chart-enable toggle, redesign bookmark card layout (completed 2026-03-29)
 
 ## Phase Details
 
@@ -106,8 +106,8 @@
 **UI hint**: yes
 
 Plans:
-- [ ] 38-01-PLAN.md — Backend full_hash addition, section reordering, default chart data from most-played openings
-- [ ] 38-02-PLAN.md — Suggestions rework, chart-enable toggle, bookmark card redesign, dead code cleanup, visual verification
+- [x] 38-01-PLAN.md — Backend full_hash addition, section reordering, default chart data from most-played openings
+- [x] 38-02-PLAN.md — Suggestions rework, chart-enable toggle, bookmark card redesign, dead code cleanup, visual verification
 
 ### Phase 37: Openings Reference Table & Most Played Openings Redesign
 **Goal**: Create an openings reference table from the TSV dataset, then redesign the Most Played Openings feature with filter support, dedicated table UI, opening PGN/FEN display, minimap popover, and SQL-side WDL aggregation
@@ -215,7 +215,7 @@ Plans:
 | 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
 | 36. Most Played Openings | v1.6 | 1/1 | Complete    | 2026-03-28 |
 | 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
-| 38. Opening Statistics & Bookmark Rework | v1.6 | 0/2 | Planned    |  |
+| 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete   | 2026-03-29 |
 
 ## Backlog
 
@@ -223,7 +223,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 0/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
