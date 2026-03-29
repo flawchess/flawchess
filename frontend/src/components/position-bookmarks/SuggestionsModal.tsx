@@ -12,6 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { MiniBoard } from './MiniBoard';
 import { positionBookmarksApi } from '@/api/client';
+import { pgnToSanArray } from '@/lib/pgn';
 import type { MostPlayedOpeningsResponse, OpeningWDL } from '@/types/stats';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 
@@ -97,7 +98,7 @@ export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks
         label: opening.label,
         target_hash: opening.full_hash,
         fen: opening.fen,
-        moves: [],  // opening moves not needed for hash-based matching
+        moves: pgnToSanArray(opening.pgn),
         color: color,
         match_side: 'both',
         is_flipped: color === 'black',

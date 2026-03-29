@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ExternalLink, FolderOpen } from 'lucide-react';
+import { FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   WDL_WIN,
@@ -92,40 +92,42 @@ export function WDLChartRow({
             <span className="text-sm font-medium">{label}</span>
             {infoPopover}
           </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">
-              {data.total} games
-              {showLowWarning && isUnreliable && (
-                <span
-                  className="text-amber-500 ml-1"
-                  title="Small sample size — percentages may be unreliable"
-                >
-                  (low)
-                </span>
-              )}
+          {gamesLink !== undefined ? (
+            <Link
+              to={gamesLink}
+              onClick={onGamesLinkClick}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              aria-label={gamesLinkAriaLabel}
+              data-testid={gamesLinkTestId}
+            >
+              <span>{data.total} games</span>
+              <FolderOpen className="h-3.5 w-3.5" />
+            </Link>
+          ) : onOpenGames !== undefined ? (
+            <button
+              onClick={onOpenGames}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="View games for this opening"
+              data-testid={openGamesTestId}
+            >
+              <span>{data.total} games</span>
+              <FolderOpen className="h-3.5 w-3.5" />
+            </button>
+          ) : (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">
+                {data.total} games
+              </span>
             </span>
-            {gamesLink !== undefined && (
-              <Link
-                to={gamesLink}
-                onClick={onGamesLinkClick}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label={gamesLinkAriaLabel}
-                data-testid={gamesLinkTestId}
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </Link>
-            )}
-            {onOpenGames !== undefined && (
-              <button
-                onClick={onOpenGames}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label="View games for this opening"
-                data-testid={openGamesTestId}
-              >
-                <FolderOpen className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </span>
+          )}
+          {showLowWarning && isUnreliable && (
+            <span
+              className="text-xs text-amber-500 ml-1"
+              title="Small sample size — percentages may be unreliable"
+            >
+              (low)
+            </span>
+          )}
         </div>
       )}
 

@@ -553,6 +553,7 @@ export function OpeningsPage() {
             label={filters.matchSide === 'both' ? 'Position Results' : `Position Results (Piece filter: ${filters.matchSide === 'mine' ? 'Mine' : 'Opponent'})`}
             barHeight="h-6"
             gamesLink="/openings/games"
+            onGamesLinkClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             gamesLinkTestId="btn-moves-to-games"
             gamesLinkAriaLabel="View games for this position"
             testId="wdl-moves-position"
