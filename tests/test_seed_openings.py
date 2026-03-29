@@ -12,7 +12,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.opening import Opening
-from scripts.seed_openings import pgn_to_fen_and_ply, seed_openings
+from scripts.seed_openings import pgn_to_fen_ply_hashes, seed_openings
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -30,24 +30,28 @@ def seed_openings_for_tests(test_engine):
     asyncio.run(seed_openings())
 
 
-class TestPgnToFenAndPly:
-    """Unit tests for pgn_to_fen_and_ply helper."""
+class TestPgnToFenPlyHashes:
+    """Unit tests for pgn_to_fen_ply_hashes helper."""
 
     def test_single_move_opening(self) -> None:
         """1. e4 should produce ply_count=1 and correct FEN."""
-        fen, ply = pgn_to_fen_and_ply("1. e4")
+        fen, ply, wh, bh, fh = pgn_to_fen_ply_hashes("1. e4")
         assert ply == 1
         # After 1. e4, the board should have the pawn on e4
         assert "4P3" in fen  # e4 pawn in rank 4
+        # Hashes should be non-zero integers
+        assert isinstance(fh, int) and fh != 0
+        assert isinstance(wh, int) and wh != 0
+        assert isinstance(bh, int) and bh != 0
 
     def test_two_move_opening(self) -> None:
         """1. e4 e5 should produce ply_count=2."""
-        fen, ply = pgn_to_fen_and_ply("1. e4 e5")
+        fen, ply, _wh, _bh, _fh = pgn_to_fen_ply_hashes("1. e4 e5")
         assert ply == 2
 
     def test_uses_board_fen_not_full_fen(self) -> None:
         """FEN must be piece-placement only (no castling/en passant/move counters)."""
-        fen, _ = pgn_to_fen_and_ply("1. e4 e5")
+        fen, *_ = pgn_to_fen_ply_hashes("1. e4 e5")
         # board_fen() has exactly 7 slashes (8 ranks separated by /)
         assert fen.count("/") == 7
         # board_fen() does NOT contain spaces (full FEN has spaces for castling etc.)
@@ -56,7 +60,20 @@ class TestPgnToFenAndPly:
     def test_invalid_pgn_raises(self) -> None:
         """Invalid PGN should raise ValueError."""
         with pytest.raises(ValueError, match="Failed to parse PGN"):
-            pgn_to_fen_and_ply("")
+            pgn_to_fen_ply_hashes("")
+
+    def test_hashes_match_import_pipeline(self) -> None:
+        """full_hash from seed must match what hashes_for_game produces during import."""
+        from app.services.zobrist import hashes_for_game
+        pgn = "1. e4 e5 2. Nf3 Nc6 3. Bb5"
+        _fen, _ply, _wh, _bh, seed_full_hash = pgn_to_fen_ply_hashes(pgn)
+        # hashes_for_game returns list of (ply, wh, bh, fh, move, clock) tuples
+        hashes, _result_fen = hashes_for_game(pgn)
+        # Last entry is the final position (ply 3)
+        import_full_hash = hashes[-1][3]
+        assert seed_full_hash == import_full_hash, (
+            f"Seed hash {seed_full_hash} != import hash {import_full_hash}"
+        )
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -113,6 +130,14 @@ class TestSeedOpeningsIntegration:
 
         assert dedup_count < total, f"Dedup ({dedup_count}) should be < total ({total})"
         assert dedup_count >= 3200, f"Expected ~3301 dedup rows, got {dedup_count}"
+
+    async def test_openings_have_zobrist_hashes(self, db_session: AsyncSession) -> None:
+        """All openings should have non-null Zobrist hashes after seeding."""
+        result = await db_session.execute(
+            select(func.count()).select_from(Opening).where(Opening.full_hash.is_(None))
+        )
+        null_count = result.scalar_one()
+        assert null_count == 0, f"{null_count} openings have NULL full_hash"
 
     async def test_dedup_view_has_one_row_per_eco_name(self, db_session: AsyncSession) -> None:
         """Each (eco, name) pair appears exactly once in the dedup view."""

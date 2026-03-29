@@ -3,7 +3,7 @@
 import datetime
 from typing import Literal
 
-from sqlalchemy import Column, Date, MetaData, SmallInteger, String, Table, Text, and_, case, cast, func, or_, select
+from sqlalchemy import BigInteger, Column, Date, MetaData, SmallInteger, String, Table, Text, and_, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
@@ -18,6 +18,9 @@ _openings_dedup = Table(
     Column("pgn", Text),
     Column("ply_count", SmallInteger),
     Column("fen", String(100)),
+    Column("full_hash", BigInteger),
+    Column("white_hash", BigInteger),
+    Column("black_hash", BigInteger),
 )
 
 
@@ -213,6 +216,7 @@ async def query_top_openings_sql_wdl(
             Game.opening_name,
             _openings_dedup.c.pgn,
             _openings_dedup.c.fen,
+            _openings_dedup.c.full_hash,
             func.count().label("total"),
             func.count().filter(win_cond).label("wins"),
             func.count().filter(draw_cond).label("draws"),
@@ -239,6 +243,7 @@ async def query_top_openings_sql_wdl(
             Game.opening_name,
             _openings_dedup.c.pgn,
             _openings_dedup.c.fen,
+            _openings_dedup.c.full_hash,
         )
         .having(func.count() >= min_games)
         .order_by(func.count().desc())

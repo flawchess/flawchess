@@ -1,4 +1,4 @@
-from sqlalchemy import Index, SmallInteger, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Index, SmallInteger, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -17,3 +17,7 @@ class Opening(Base):
     pgn: Mapped[str] = mapped_column(Text, nullable=False)
     ply_count: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     fen: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Precomputed Zobrist hashes — avoids PGN replay at query time
+    full_hash: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    white_hash: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    black_hash: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

@@ -1,9 +1,5 @@
 """Stats service: aggregation logic for rating history and global stats."""
 
-import io
-
-import chess as chess_lib
-import chess.pgn
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.stats_repository import (
@@ -21,7 +17,6 @@ from app.schemas.stats import (
     WDLByCategory,
 )
 from app.services.analysis_service import recency_cutoff
-from app.services.zobrist import compute_hashes
 
 # Minimum number of games required for an opening to appear in top openings.
 MIN_GAMES_FOR_OPENING = 1
@@ -216,21 +211,13 @@ async def get_most_played_openings(
 
     def rows_to_openings(rows: list[tuple]) -> list[OpeningWDL]:
         openings = []
-        for eco, name, pgn, fen, total, wins, draws, losses in rows:
+        for eco, name, pgn, fen, full_hash, total, wins, draws, losses in rows:
             if total > 0:
                 win_pct = round(wins / total * 100, 1)
                 draw_pct = round(draws / total * 100, 1)
                 loss_pct = round(losses / total * 100, 1)
             else:
                 win_pct = draw_pct = loss_pct = 0.0
-            # Replay PGN to get correct board state (castling, en passant, side to move)
-            # — board_fen() loses these, producing wrong polyglot Zobrist hashes
-            board = chess_lib.Board()
-            pgn_game = chess.pgn.read_game(io.StringIO(pgn))
-            if pgn_game:
-                for move in pgn_game.mainline_moves():
-                    board.push(move)
-            _, _, full_hash = compute_hashes(board)
             openings.append(
                 OpeningWDL(
                     opening_eco=eco,
@@ -238,7 +225,7 @@ async def get_most_played_openings(
                     label=f"{name} ({eco})",
                     pgn=pgn,
                     fen=fen,
-                    full_hash=str(full_hash),
+                    full_hash=str(full_hash) if full_hash is not None else "",
                     wins=wins,
                     draws=draws,
                     losses=losses,

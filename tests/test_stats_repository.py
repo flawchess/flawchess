@@ -456,7 +456,7 @@ class TestQueryTopOpeningsSqlWDL:
         # Find the King's Pawn Game row
         kpg = [r for r in rows if r[0] == "B00" and r[1] == "King's Pawn Game"]
         assert len(kpg) == 1
-        eco, name, pgn, fen, total, wins, draws, losses = kpg[0]
+        eco, name, pgn, fen, full_hash, total, wins, draws, losses = kpg[0]
         assert wins == 3
         assert draws == 2
         assert losses == 0
@@ -464,6 +464,7 @@ class TestQueryTopOpeningsSqlWDL:
         assert pgn  # non-empty PGN from openings_dedup
         assert fen  # non-empty FEN from openings_dedup
         assert "/" in fen  # FEN has rank separators
+        assert full_hash is not None  # precomputed Zobrist hash from openings_dedup
 
     @pytest.mark.asyncio
     async def test_sql_wdl_excludes_below_min_games(self, db_session: AsyncSession) -> None:
@@ -492,7 +493,7 @@ class TestQueryTopOpeningsSqlWDL:
             time_control=["blitz"])
         kpg = [r for r in rows if r[0] == "B00" and r[1] == "King's Pawn Game"]
         assert len(kpg) == 1
-        assert kpg[0][4] == 10  # total = 10 blitz games only
+        assert kpg[0][5] == 10  # total = 10 blitz games only (index shifted by full_hash column)
 
     @pytest.mark.asyncio
     async def test_sql_wdl_ply_threshold_excludes_short_openings(self, db_session: AsyncSession) -> None:

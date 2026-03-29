@@ -1,7 +1,8 @@
 """Idempotent seed script: populate openings table from app/data/openings.tsv.
 
-Uses board.board_fen() (not board.fen()) per project convention.
-Uses INSERT ... ON CONFLICT DO NOTHING for idempotency.
+Uses board.board_fen() (not board.fen()) per project convention for the FEN column.
+Precomputes Zobrist hashes (full, white, black) from the replayed PGN board state.
+Uses INSERT ... ON CONFLICT DO UPDATE to backfill hashes on existing rows.
 Run with: uv run python -m scripts.seed_openings
 """
 import asyncio
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
+from app.services.zobrist import compute_hashes
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -24,10 +26,12 @@ logging.basicConfig(level=logging.INFO)
 TSV_PATH = Path(__file__).resolve().parent.parent / "app" / "data" / "openings.tsv"
 
 
-def pgn_to_fen_and_ply(pgn_str: str) -> tuple[str, int]:
-    """Compute piece-placement FEN and ply count from a PGN move sequence.
+def pgn_to_fen_ply_hashes(pgn_str: str) -> tuple[str, int, int, int, int]:
+    """Compute piece-placement FEN, ply count, and Zobrist hashes from a PGN.
 
-    Uses board.board_fen() (not board.fen()) per project convention.
+    Replays the PGN to get the correct board state (with castling rights,
+    en passant, side to move) for accurate polyglot Zobrist hash computation.
+    Returns (board_fen, ply_count, white_hash, black_hash, full_hash).
     """
     game = chess.pgn.read_game(io.StringIO(pgn_str))
     if game is None:
@@ -35,7 +39,8 @@ def pgn_to_fen_and_ply(pgn_str: str) -> tuple[str, int]:
     board = game.board()
     for move in game.mainline_moves():
         board.push(move)
-    return board.board_fen(), board.ply()
+    white_hash, black_hash, full_hash = compute_hashes(board)
+    return board.board_fen(), board.ply(), white_hash, black_hash, full_hash
 
 
 async def seed_openings() -> int:
@@ -55,7 +60,7 @@ async def seed_openings() -> int:
                 name = row["name"]
                 pgn_str = row["pgn"]
                 try:
-                    fen, ply_count = pgn_to_fen_and_ply(pgn_str)
+                    fen, ply_count, white_hash, black_hash, full_hash = pgn_to_fen_ply_hashes(pgn_str)
                 except Exception:
                     logger.warning("Row %d: failed to parse PGN %r — skipping", row_num, pgn_str)
                     errors += 1
@@ -63,13 +68,20 @@ async def seed_openings() -> int:
 
                 result = await session.execute(
                     text(
-                        "INSERT INTO openings (eco, name, pgn, ply_count, fen) "
-                        "VALUES (:eco, :name, :pgn, :ply_count, :fen) "
-                        "ON CONFLICT ON CONSTRAINT uq_openings_eco_name_pgn DO NOTHING"
+                        "INSERT INTO openings (eco, name, pgn, ply_count, fen, full_hash, white_hash, black_hash) "
+                        "VALUES (:eco, :name, :pgn, :ply_count, :fen, :full_hash, :white_hash, :black_hash) "
+                        "ON CONFLICT ON CONSTRAINT uq_openings_eco_name_pgn "
+                        "DO UPDATE SET full_hash = EXCLUDED.full_hash, "
+                        "white_hash = EXCLUDED.white_hash, black_hash = EXCLUDED.black_hash"
                     ),
-                    {"eco": eco, "name": name, "pgn": pgn_str, "ply_count": ply_count, "fen": fen},
+                    {
+                        "eco": eco, "name": name, "pgn": pgn_str,
+                        "ply_count": ply_count, "fen": fen,
+                        "full_hash": full_hash, "white_hash": white_hash, "black_hash": black_hash,
+                    },
                 )
                 if result.rowcount > 0:
+                    # Can't distinguish insert vs update with ON CONFLICT DO UPDATE
                     inserted += 1
                 else:
                     skipped += 1
@@ -77,7 +89,7 @@ async def seed_openings() -> int:
         await session.commit()
 
     await engine.dispose()
-    logger.info("Seed complete: %d inserted, %d skipped (already exist), %d errors", inserted, skipped, errors)
+    logger.info("Seed complete: %d upserted, %d skipped, %d errors", inserted, skipped, errors)
     return inserted
 
 
