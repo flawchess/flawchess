@@ -7,6 +7,7 @@ from sqlalchemy import BigInteger, Column, Date, MetaData, SmallInteger, String,
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
+from app.models.game_position import GamePosition
 
 # Standalone MetaData (not Base.metadata) keeps the view invisible to Alembic autogenerate.
 _openings_dedup = Table(
@@ -254,3 +255,42 @@ async def query_top_openings_sql_wdl(
 
     result = await session.execute(stmt)
     return list(result.fetchall())
+
+
+async def query_position_game_counts(
+    session: AsyncSession,
+    user_id: int,
+    hashes: list[int],
+    color: Literal["white", "black"] | None = None,
+    time_control: list[str] | None = None,
+    platform: list[str] | None = None,
+    rated: bool | None = None,
+    opponent_type: str = "human",
+    recency_cutoff: datetime.datetime | None = None,
+) -> dict[int, int]:
+    """Return {full_hash: game_count} for games passing through each position.
+
+    Uses DISTINCT game_id per hash to avoid double-counting games where the
+    same position appears at multiple plies.
+    """
+    if not hashes:
+        return {}
+
+    stmt = (
+        select(
+            GamePosition.full_hash,
+            func.count(func.distinct(GamePosition.game_id)).label("game_count"),
+        )
+        .join(Game, GamePosition.game_id == Game.id)
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.full_hash.in_(hashes),
+        )
+        .group_by(GamePosition.full_hash)
+    )
+    if color is not None:
+        stmt = stmt.where(Game.user_color == color)
+    stmt = _apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+
+    result = await session.execute(stmt)
+    return {row[0]: row[1] for row in result.fetchall()}

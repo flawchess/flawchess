@@ -707,7 +707,7 @@ export function OpeningsPage() {
                     Your most frequently played openings as White, based on the lichess opening table. Only openings where White made the last move are shown here.
                   </p>
                   <p>
-                    The game count reflects how many of your games ended up with this specific opening name. Clicking the folder icon loads the opening on the board and shows all games that passed through that position — which is usually more, since many openings share the same early moves.
+                    The game count shows how many of your games passed through that position — this is usually more than just the games classified under that specific opening name, since many openings share the same early moves. Clicking the folder icon loads the opening on the board and shows those games.
                   </p>
                 </div>
               </InfoPopover>
@@ -734,7 +734,7 @@ export function OpeningsPage() {
                     Your most frequently played openings as Black, based on the lichess opening table. Only openings where Black made the last move are shown here.
                   </p>
                   <p>
-                    The game count reflects how many of your games ended up with this specific opening name. Clicking the folder icon loads the opening on the board and shows all games that passed through that position — which is usually more, since many openings share the same early moves.
+                    The game count shows how many of your games passed through that position — this is usually more than just the games classified under that specific opening name, since many openings share the same early moves. Clicking the folder icon loads the opening on the board and shows those games.
                   </p>
                 </div>
               </InfoPopover>
