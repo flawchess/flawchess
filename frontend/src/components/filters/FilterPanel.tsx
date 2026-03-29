@@ -8,6 +8,8 @@ import {
 } from '@/components/ui/select';
 import type { MatchSide, TimeControl, Recency, Color, Platform, OpponentType } from '@/types/api';
 import { cn } from '@/lib/utils';
+import { PlatformIcon } from '@/components/icons/PlatformIcon';
+import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 
 export interface FilterState {
   matchSide: MatchSide;
@@ -138,7 +140,10 @@ export function FilterPanel({ filters, onChange, visibleFilters = ALL_FILTERS }:
                     : 'border-border bg-inactive-bg text-muted-foreground hover:bg-inactive-bg-hover hover:text-foreground',
                 )}
               >
-                {TIME_CONTROL_LABELS[tc]}
+                <span className="flex items-center justify-center gap-1">
+                  <TimeControlIcon timeControl={tc} className="h-3.5 w-3.5" />
+                  {TIME_CONTROL_LABELS[tc]}
+                </span>
               </button>
             ))}
           </div>
@@ -164,7 +169,10 @@ export function FilterPanel({ filters, onChange, visibleFilters = ALL_FILTERS }:
                     : 'border-border bg-inactive-bg text-muted-foreground hover:bg-inactive-bg-hover hover:text-foreground',
                 )}
               >
-                {PLATFORM_LABELS[p]}
+                <span className="flex items-center justify-center gap-1">
+                  <PlatformIcon platform={p} className="h-3.5 w-3.5" />
+                  {PLATFORM_LABELS[p]}
+                </span>
               </button>
             ))}
           </div>
