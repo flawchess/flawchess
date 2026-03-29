@@ -1,6 +1,9 @@
 """Stats service: aggregation logic for rating history and global stats."""
 
+import io
+
 import chess as chess_lib
+import chess.pgn
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.stats_repository import (
@@ -220,7 +223,13 @@ async def get_most_played_openings(
                 loss_pct = round(losses / total * 100, 1)
             else:
                 win_pct = draw_pct = loss_pct = 0.0
-            board = chess_lib.Board(fen)
+            # Replay PGN to get correct board state (castling, en passant, side to move)
+            # — board_fen() loses these, producing wrong polyglot Zobrist hashes
+            board = chess_lib.Board()
+            pgn_game = chess.pgn.read_game(io.StringIO(pgn))
+            if pgn_game:
+                for move in pgn_game.mainline_moves():
+                    board.push(move)
             _, _, full_hash = compute_hashes(board)
             openings.append(
                 OpeningWDL(

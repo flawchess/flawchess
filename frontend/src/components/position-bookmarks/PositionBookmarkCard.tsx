@@ -97,7 +97,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
         data-testid={`bookmark-mini-board-${bookmark.id}`}
         style={{ opacity: updateMatchSide.isPending ? 0.6 : 1, transition: 'opacity 0.15s' }}
       >
-        <MiniBoard fen={bookmark.fen} flipped={bookmark.is_flipped} size={72} />
+        <MiniBoard fen={bookmark.fen} flipped={bookmark.is_flipped} size={84} />
       </div>
 
       {/* Label + piece filter + button row stacked */}
@@ -178,7 +178,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
             aria-checked={chartEnabled}
             aria-label="Include in charts"
             onClick={() => onChartEnabledChange(bookmark.id, !chartEnabled)}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${chartEnabled ? 'bg-primary' : 'bg-muted'}`}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${chartEnabled ? 'bg-toggle-active' : 'bg-muted'}`}
             data-testid={`bookmark-chart-toggle-${bookmark.id}`}
           >
             <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${chartEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
