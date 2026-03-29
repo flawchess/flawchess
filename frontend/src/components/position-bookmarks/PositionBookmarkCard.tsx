@@ -9,6 +9,27 @@ import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 import type { MatchSide } from '@/types/api';
 import { MiniBoard } from './MiniBoard';
 
+// Max characters for displayed label before truncation (keeps ~2 lines in card)
+const MAX_DISPLAY_LABEL_LENGTH = 35;
+
+/** Truncate label while preserving the ECO code suffix e.g. "(B12)".
+ *  "Caro-Kann Defense: Advance Variation, Botvinnik-Carls Defense (B12)"
+ *  → "Caro-Kann Defense: Advance Va... (B12)" */
+function truncateLabel(label: string): string {
+  if (label.length <= MAX_DISPLAY_LABEL_LENGTH) return label;
+  // Extract trailing ECO suffix like " (B12)" or " (A00)"
+  const ecoMatch = label.match(/\s*\([A-E]\d{2}\)$/);
+  if (!ecoMatch) {
+    // No ECO suffix — simple truncation
+    return label.slice(0, MAX_DISPLAY_LABEL_LENGTH - 3).trimEnd() + '...';
+  }
+  const eco = ecoMatch[0]; // e.g. " (B12)"
+  const name = label.slice(0, label.length - eco.length);
+  const maxNameLen = MAX_DISPLAY_LABEL_LENGTH - eco.length - 3; // 3 for "..."
+  if (name.length <= maxNameLen) return label;
+  return name.slice(0, maxNameLen).trimEnd() + '...' + eco;
+}
+
 interface Props {
   bookmark: PositionBookmarkResponse;
   onLoad: (bookmark: PositionBookmarkResponse) => void;
@@ -135,7 +156,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
               data-testid={`bookmark-label-${bookmark.id}`}
               aria-label={`Edit bookmark label: ${bookmark.label}`}
             >
-              {bookmark.label}
+              {truncateLabel(bookmark.label)}
             </button>
           )}
         </div>
