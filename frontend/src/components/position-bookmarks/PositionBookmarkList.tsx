@@ -21,9 +21,11 @@ interface Props {
   bookmarks: PositionBookmarkResponse[];
   onReorder: (orderedIds: number[]) => void;
   onLoad: (bookmark: PositionBookmarkResponse) => void;
+  chartEnabledMap: Record<number, boolean>;
+  onChartEnabledChange: (id: number, enabled: boolean) => void;
 }
 
-export function PositionBookmarkList({ bookmarks, onReorder, onLoad }: Props) {
+export function PositionBookmarkList({ bookmarks, onReorder, onLoad, chartEnabledMap, onChartEnabledChange }: Props) {
   const [items, setItems] = useState(bookmarks);
 
   // Sync when server data refreshes (e.g., after delete or label edit)
@@ -58,7 +60,13 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad }: Props) {
           <SortableContext items={items.map((b) => b.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-2">
               {items.map((b) => (
-                <PositionBookmarkCard key={b.id} bookmark={b} onLoad={onLoad} />
+                <PositionBookmarkCard
+                  key={b.id}
+                  bookmark={b}
+                  onLoad={onLoad}
+                  chartEnabled={chartEnabledMap[b.id] !== false}
+                  onChartEnabledChange={onChartEnabledChange}
+                />
               ))}
             </div>
           </SortableContext>

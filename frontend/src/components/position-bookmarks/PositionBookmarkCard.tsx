@@ -12,9 +12,11 @@ import { MiniBoard } from './MiniBoard';
 interface Props {
   bookmark: PositionBookmarkResponse;
   onLoad: (bookmark: PositionBookmarkResponse) => void;
+  chartEnabled: boolean;
+  onChartEnabledChange: (id: number, enabled: boolean) => void;
 }
 
-export function PositionBookmarkCard({ bookmark, onLoad }: Props) {
+export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEnabledChange }: Props) {
   const updateLabel = useUpdatePositionBookmarkLabel();
   const deleteBookmark = useDeletePositionBookmark();
   const updateMatchSide = useUpdateMatchSide();
@@ -89,16 +91,16 @@ export function PositionBookmarkCard({ bookmark, onLoad }: Props) {
         ☰
       </span>
 
-      {/* Mini board thumbnail — always visible; smaller on mobile */}
+      {/* Mini board thumbnail — always visible; slightly larger for better readability */}
       <div
         className="shrink-0"
         data-testid={`bookmark-mini-board-${bookmark.id}`}
         style={{ opacity: updateMatchSide.isPending ? 0.6 : 1, transition: 'opacity 0.15s' }}
       >
-        <MiniBoard fen={bookmark.fen} flipped={bookmark.is_flipped} size={60} />
+        <MiniBoard fen={bookmark.fen} flipped={bookmark.is_flipped} size={72} />
       </div>
 
-      {/* Label + piece filter stacked */}
+      {/* Label + piece filter + button row stacked */}
       <div className="flex-1 min-w-0 flex flex-col gap-1">
         {/* Editable label with color circle */}
         <div className="flex items-center gap-1.5">
@@ -167,33 +169,39 @@ export function PositionBookmarkCard({ bookmark, onLoad }: Props) {
             Both
           </ToggleGroupItem>
         </ToggleGroup>
-      </div>
 
-      {/* Load & Delete buttons stacked */}
-      <div className="flex flex-col justify-between self-stretch shrink-0">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onMouseDown={() => { isDirtyRef.current = true; }}
-          onClick={handleLoad}
-          data-testid={`bookmark-btn-load-${bookmark.id}`}
-          aria-label="Load bookmark"
-        >
-          <Upload size={15} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-          onMouseDown={() => { isDirtyRef.current = true; }}
-          onClick={handleDelete}
-          disabled={deleteBookmark.isPending}
-          data-testid={`bookmark-btn-delete-${bookmark.id}`}
-          aria-label={`Delete bookmark: ${bookmark.label}`}
-        >
-          <Trash2 size={15} />
-        </Button>
+        {/* Button row: chart toggle, load, delete */}
+        <div className="flex items-center justify-between mt-1">
+          {/* Chart toggle on left */}
+          <button
+            role="switch"
+            aria-checked={chartEnabled}
+            aria-label="Include in charts"
+            onClick={() => onChartEnabledChange(bookmark.id, !chartEnabled)}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${chartEnabled ? 'bg-primary' : 'bg-muted'}`}
+            data-testid={`bookmark-chart-toggle-${bookmark.id}`}
+          >
+            <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${chartEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          </button>
+          {/* Load button in middle */}
+          <Button variant="ghost" size="icon" className="h-7 w-7"
+            onMouseDown={() => { isDirtyRef.current = true; }}
+            onClick={handleLoad}
+            data-testid={`bookmark-btn-load-${bookmark.id}`}
+            aria-label="Load bookmark">
+            <Upload size={15} />
+          </Button>
+          {/* Delete button on right */}
+          <Button variant="ghost" size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+            onMouseDown={() => { isDirtyRef.current = true; }}
+            onClick={handleDelete}
+            disabled={deleteBookmark.isPending}
+            data-testid={`bookmark-btn-delete-${bookmark.id}`}
+            aria-label={`Delete bookmark: ${bookmark.label}`}>
+            <Trash2 size={15} />
+          </Button>
+        </div>
       </div>
     </div>
   );
