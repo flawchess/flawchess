@@ -21,6 +21,7 @@ function forceExitAfterBuild(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
+  envDir: path.resolve(__dirname, '..'), // Load .env from project root
   plugins: [
     react(),
     tailwindcss(),

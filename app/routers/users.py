@@ -27,6 +27,7 @@ async def get_profile(
     counts = await game_repository.count_games_by_platform(session, user.id)
     return UserProfileResponse(
         email=user.email,
+        is_superuser=user.is_superuser,
         chess_com_username=profile.chess_com_username,
         lichess_username=profile.lichess_username,
         created_at=profile.created_at,
@@ -47,6 +48,7 @@ async def update_profile(
     counts = await game_repository.count_games_by_platform(session, user.id)
     return UserProfileResponse(
         email=user.email,
+        is_superuser=user.is_superuser,
         chess_com_username=updated.chess_com_username,
         lichess_username=updated.lichess_username,
         created_at=updated.created_at,

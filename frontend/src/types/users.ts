@@ -1,5 +1,6 @@
 export interface UserProfile {
   email: string;
+  is_superuser: boolean;
   chess_com_username: string | null;
   lichess_username: string | null;
   created_at: string;
