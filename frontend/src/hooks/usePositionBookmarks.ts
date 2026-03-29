@@ -92,11 +92,3 @@ export function useTimeSeries(req: TimeSeriesRequest | null) {
   });
 }
 
-export function usePositionSuggestions() {
-  return useQuery({
-    queryKey: ['position-bookmark-suggestions'],
-    queryFn: positionBookmarksApi.getSuggestions,
-    staleTime: 60_000,
-    enabled: false,  // only fetch when user clicks "Suggest bookmarks"
-  });
-}

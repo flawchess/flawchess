@@ -1,21 +1,5 @@
 import type { MatchSide } from './api';
 
-export interface PositionSuggestion {
-  white_hash: string;
-  black_hash: string;
-  full_hash: string;
-  fen: string;
-  moves: string[];
-  color: 'white' | 'black';
-  game_count: number;
-  opening_name: string | null;
-  opening_eco: string | null;
-}
-
-export interface SuggestionsResponse {
-  suggestions: PositionSuggestion[];
-}
-
 export interface PositionBookmarkResponse {
   id: number;
   label: string;
