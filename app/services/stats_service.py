@@ -1,5 +1,6 @@
 """Stats service: aggregation logic for rating history and global stats."""
 
+import chess as chess_lib
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.stats_repository import (
@@ -17,6 +18,7 @@ from app.schemas.stats import (
     WDLByCategory,
 )
 from app.services.analysis_service import recency_cutoff
+from app.services.zobrist import compute_hashes
 
 # Minimum number of games required for an opening to appear in top openings.
 MIN_GAMES_FOR_OPENING = 1
@@ -218,6 +220,8 @@ async def get_most_played_openings(
                 loss_pct = round(losses / total * 100, 1)
             else:
                 win_pct = draw_pct = loss_pct = 0.0
+            board = chess_lib.Board(fen)
+            _, _, full_hash = compute_hashes(board)
             openings.append(
                 OpeningWDL(
                     opening_eco=eco,
@@ -225,6 +229,7 @@ async def get_most_played_openings(
                     label=f"{name} ({eco})",
                     pgn=pgn,
                     fen=fen,
+                    full_hash=str(full_hash),
                     wins=wins,
                     draws=draws,
                     losses=losses,
