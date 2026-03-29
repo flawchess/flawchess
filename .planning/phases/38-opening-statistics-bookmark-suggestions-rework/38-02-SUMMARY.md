@@ -123,3 +123,12 @@ None - no external service configuration required.
 ---
 *Phase: 38-opening-statistics-bookmark-suggestions-rework*
 *Completed: 2026-03-29*
+
+## Self-Check: PASSED
+
+- FOUND: frontend/src/components/position-bookmarks/SuggestionsModal.tsx
+- FOUND: frontend/src/components/position-bookmarks/PositionBookmarkCard.tsx
+- FOUND: frontend/src/components/position-bookmarks/PositionBookmarkList.tsx
+- FOUND: frontend/src/pages/Openings.tsx
+- FOUND commit fe486b9 (Task 1)
+- FOUND commit 41e8823 (Task 2)

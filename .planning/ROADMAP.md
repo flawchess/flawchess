@@ -215,7 +215,7 @@ Plans:
 | 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
 | 36. Most Played Openings | v1.6 | 1/1 | Complete    | 2026-03-28 |
 | 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
-| 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete   | 2026-03-29 |
+| 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
 
 ## Backlog
 
