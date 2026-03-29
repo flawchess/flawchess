@@ -3,7 +3,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.stats_repository import (
-    query_position_game_counts,
+    query_position_wdl_batch,
     query_rating_history,
     query_results_by_color,
     query_results_by_time_control,
@@ -211,17 +211,9 @@ async def get_most_played_openings(
         opponent_type=opponent_type,
     )
 
-    # Collect all full_hashes to batch-query position-based game counts
-    all_hashes: list[int] = []
-    for rows in (white_rows, black_rows):
-        for row in rows:
-            full_hash = row[4]  # full_hash is at index 4
-            if full_hash is not None:
-                all_hashes.append(full_hash)
-
-    # Get position-based game counts — games passing through each position,
+    # Batch-query position-based WDL — games passing through each position,
     # which is typically higher than the opening-name count because many
-    # openings share early moves
+    # openings share early moves. This matches "Results by Opening" counts.
     filter_kwargs = dict(
         time_control=time_control,
         platform=platform,
@@ -229,12 +221,12 @@ async def get_most_played_openings(
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
     )
-    white_position_counts = await query_position_game_counts(
+    white_position_wdl = await query_position_wdl_batch(
         session, user_id,
         [row[4] for row in white_rows if row[4] is not None],
         color="white", **filter_kwargs,
     )
-    black_position_counts = await query_position_game_counts(
+    black_position_wdl = await query_position_wdl_batch(
         session, user_id,
         [row[4] for row in black_rows if row[4] is not None],
         color="black", **filter_kwargs,
@@ -242,13 +234,15 @@ async def get_most_played_openings(
 
     def rows_to_openings(
         rows: list[tuple],
-        position_counts: dict[int, int],
+        position_wdl: dict,
     ) -> list[OpeningWDL]:
         openings = []
         for eco, name, pgn, fen, full_hash, total, wins, draws, losses in rows:
-            # Use position-based game count if available, falling back to
-            # opening-name count for openings without a hash
-            display_total = position_counts.get(full_hash, total) if full_hash else total
+            # Use position-based WDL if available, falling back to
+            # opening-name WDL for openings without a hash
+            pos = position_wdl.get(full_hash) if full_hash else None
+            if pos:
+                total, wins, draws, losses = pos.total, pos.wins, pos.draws, pos.losses
             if total > 0:
                 win_pct = round(wins / total * 100, 1)
                 draw_pct = round(draws / total * 100, 1)
@@ -266,7 +260,7 @@ async def get_most_played_openings(
                     wins=wins,
                     draws=draws,
                     losses=losses,
-                    total=display_total,
+                    total=total,
                     win_pct=win_pct,
                     draw_pct=draw_pct,
                     loss_pct=loss_pct,
@@ -278,6 +272,6 @@ async def get_most_played_openings(
         return openings
 
     return MostPlayedOpeningsResponse(
-        white=rows_to_openings(white_rows, white_position_counts),
-        black=rows_to_openings(black_rows, black_position_counts),
+        white=rows_to_openings(white_rows, white_position_wdl),
+        black=rows_to_openings(black_rows, black_position_wdl),
     )

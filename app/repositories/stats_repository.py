@@ -257,7 +257,19 @@ async def query_top_openings_sql_wdl(
     return list(result.fetchall())
 
 
-async def query_position_game_counts(
+class PositionWDL:
+    """Position-based WDL stats for a single hash."""
+
+    __slots__ = ("total", "wins", "draws", "losses")
+
+    def __init__(self, total: int, wins: int, draws: int, losses: int):
+        self.total = total
+        self.wins = wins
+        self.draws = draws
+        self.losses = losses
+
+
+async def query_position_wdl_batch(
     session: AsyncSession,
     user_id: int,
     hashes: list[int],
@@ -267,30 +279,59 @@ async def query_position_game_counts(
     rated: bool | None = None,
     opponent_type: str = "human",
     recency_cutoff: datetime.datetime | None = None,
-) -> dict[int, int]:
-    """Return {full_hash: game_count} for games passing through each position.
+) -> dict[int, PositionWDL]:
+    """Return {full_hash: PositionWDL} for games passing through each position.
 
     Uses DISTINCT game_id per hash to avoid double-counting games where the
-    same position appears at multiple plies.
+    same position appears at multiple plies. WDL computed SQL-side using the
+    same conditions as query_top_openings_sql_wdl.
     """
     if not hashes:
         return {}
 
-    stmt = (
+    # Deduplicate game_id per hash first (subquery), then aggregate WDL
+    dedup = (
         select(
             GamePosition.full_hash,
-            func.count(func.distinct(GamePosition.game_id)).label("game_count"),
+            Game.id.label("game_id"),
+            Game.result,
+            Game.user_color,
         )
         .join(Game, GamePosition.game_id == Game.id)
         .where(
             GamePosition.user_id == user_id,
             GamePosition.full_hash.in_(hashes),
         )
-        .group_by(GamePosition.full_hash)
+        .distinct(GamePosition.full_hash, Game.id)
     )
     if color is not None:
-        stmt = stmt.where(Game.user_color == color)
-    stmt = _apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+        dedup = dedup.where(Game.user_color == color)
+    dedup = _apply_game_filters(dedup, time_control, platform, rated, opponent_type, recency_cutoff)
+    dedup = dedup.subquery()
+
+    stmt = (
+        select(
+            dedup.c.full_hash,
+            func.count().label("total"),
+            func.count().filter(
+                or_(
+                    and_(dedup.c.result == "1-0", dedup.c.user_color == "white"),
+                    and_(dedup.c.result == "0-1", dedup.c.user_color == "black"),
+                )
+            ).label("wins"),
+            func.count().filter(dedup.c.result == "1/2-1/2").label("draws"),
+            func.count().filter(
+                or_(
+                    and_(dedup.c.result == "0-1", dedup.c.user_color == "white"),
+                    and_(dedup.c.result == "1-0", dedup.c.user_color == "black"),
+                )
+            ).label("losses"),
+        )
+        .group_by(dedup.c.full_hash)
+    )
 
     result = await session.execute(stmt)
-    return {row[0]: row[1] for row in result.fetchall()}
+    return {
+        row[0]: PositionWDL(total=row[1], wins=row[2], draws=row[3], losses=row[4])
+        for row in result.fetchall()
+    }
