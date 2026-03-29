@@ -21,9 +21,11 @@ interface Props {
   bookmarks: PositionBookmarkResponse[];
   onReorder: (orderedIds: number[]) => void;
   onLoad: (bookmark: PositionBookmarkResponse) => void;
+  chartEnabledMap: Record<number, boolean>;
+  onChartEnabledChange: (id: number, enabled: boolean) => void;
 }
 
-export function PositionBookmarkList({ bookmarks, onReorder, onLoad }: Props) {
+export function PositionBookmarkList({ bookmarks, onReorder, onLoad, chartEnabledMap, onChartEnabledChange }: Props) {
   const [items, setItems] = useState(bookmarks);
 
   // Sync when server data refreshes (e.g., after delete or label edit)
@@ -51,14 +53,20 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad }: Props) {
     <>
       {items.length === 0 ? (
         <p className="px-2 text-xs text-muted-foreground break-words">
-          No position bookmarks yet. Use the &apos;Bookmark&apos; button to save positions, or use &apos;Suggest&apos; to auto-generate from your most-played openings.
+          No position bookmarks yet. Use the &apos;Save&apos; button to save positions, or use &apos;Suggest&apos; to auto-generate from your most-played openings.
         </p>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={items.map((b) => b.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-2">
               {items.map((b) => (
-                <PositionBookmarkCard key={b.id} bookmark={b} onLoad={onLoad} />
+                <PositionBookmarkCard
+                  key={b.id}
+                  bookmark={b}
+                  onLoad={onLoad}
+                  chartEnabled={chartEnabledMap[b.id] !== false}
+                  onChartEnabledChange={onChartEnabledChange}
+                />
               ))}
             </div>
           </SortableContext>

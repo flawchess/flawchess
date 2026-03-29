@@ -1,4 +1,13 @@
 import { useState, useMemo, useCallback } from 'react';
+
+// localStorage helpers for per-bookmark chart-enable toggle (default: enabled)
+function getChartEnabled(bookmarkId: number): boolean {
+  const stored = localStorage.getItem(`bookmark-chart-enabled-${bookmarkId}`);
+  return stored === null ? true : stored === 'true';
+}
+function setChartEnabledStorage(bookmarkId: number, enabled: boolean): void {
+  localStorage.setItem(`bookmark-chart-enabled-${bookmarkId}`, String(enabled));
+}
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
@@ -50,6 +59,8 @@ import { resolveMatchSide } from '@/types/api';
 import type { PositionBookmarkResponse, TimeSeriesRequest } from '@/types/position_bookmarks';
 
 const PAGE_SIZE = 20;
+// Number of most-played openings per color to use as default chart data when no bookmarks exist
+const DEFAULT_CHART_LIMIT = 3;
 
 export function OpeningsPage() {
   const location = useLocation();
@@ -99,6 +110,19 @@ export function OpeningsPage() {
   const [bookmarkDialogOpen, setBookmarkDialogOpen] = useState(false);
   const [bookmarkLabel, setBookmarkLabel] = useState('');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+
+  // ── Chart-enable toggle (persisted per bookmark in localStorage) ─────────────
+  // Version counter to force chartEnabledMap recompute when a toggle changes
+  const [chartToggleVersion, setChartToggleVersion] = useState(0);
+
+  const chartEnabledMap = useMemo(() => {
+    const map: Record<number, boolean> = {};
+    for (const b of bookmarks) {
+      map[b.id] = getChartEnabled(b.id);
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookmarks, chartToggleVersion]);
 
   // ── Moves data ──────────────────────────────────────────────────────
   const nextMoves = useNextMoves(chess.hashes.fullHash, debouncedFilters);
@@ -150,10 +174,53 @@ export function OpeningsPage() {
   const gameCount = gameCountData?.count ?? null;
 
   // ── Statistics tab data ────────────────────────────────────────────────────────
+
+  // Most played openings — filter params applied to show top openings per color
+  const { data: mostPlayedData } = useMostPlayedOpenings({
+    recency: debouncedFilters.recency,
+    timeControls: debouncedFilters.timeControls,
+    platforms: debouncedFilters.platforms,
+    rated: debouncedFilters.rated,
+    opponentType: debouncedFilters.opponentType,
+  });
+
+  // When no bookmarks exist, derive synthetic bookmark entries from most-played openings
+  const defaultChartEntries: PositionBookmarkResponse[] = useMemo(() => {
+    if (bookmarks.length > 0 || !mostPlayedData) return [];
+    const white = mostPlayedData.white.slice(0, DEFAULT_CHART_LIMIT).map((o, i) => ({
+      id: -(i + 1),
+      label: o.label,
+      target_hash: o.full_hash,
+      fen: o.fen,
+      moves: [],
+      color: 'white' as const,
+      match_side: 'both' as MatchSide,
+      is_flipped: false,
+      sort_order: i,
+    }));
+    const black = mostPlayedData.black.slice(0, DEFAULT_CHART_LIMIT).map((o, i) => ({
+      id: -(DEFAULT_CHART_LIMIT + i + 1),
+      label: o.label,
+      target_hash: o.full_hash,
+      fen: o.fen,
+      moves: [],
+      color: 'black' as const,
+      match_side: 'both' as MatchSide,
+      is_flipped: false,
+      sort_order: DEFAULT_CHART_LIMIT + i,
+    }));
+    return [...white, ...black];
+  }, [bookmarks, mostPlayedData]);
+
+  // Chart entries: real bookmarks filtered by chart-enable toggle, else most-played defaults
+  const chartBookmarks = bookmarks.length > 0
+    ? bookmarks.filter(b => chartEnabledMap[b.id] !== false)
+    : defaultChartEntries;
+
   const timeSeriesRequest: TimeSeriesRequest | null = useMemo(() => {
-    if (bookmarks.length === 0) return null;
+    if (chartBookmarks.length === 0) return null;
     return {
-      bookmarks: bookmarks.map((b) => ({
+      bookmarks: chartBookmarks.map((b) => ({
         bookmark_id: b.id,
         target_hash: b.target_hash,
         match_side: resolveMatchSide(b.match_side, (b.color ?? 'white') as Color),
@@ -165,18 +232,9 @@ export function OpeningsPage() {
       opponent_type: debouncedFilters.opponentType,
       recency: debouncedFilters.recency === 'all' ? null : debouncedFilters.recency,
     };
-  }, [bookmarks, debouncedFilters]);
+  }, [chartBookmarks, debouncedFilters]);
 
   const { data: tsData } = useTimeSeries(timeSeriesRequest);
-
-  // Most played openings — filter params applied to show top openings per color
-  const { data: mostPlayedData } = useMostPlayedOpenings({
-    recency: debouncedFilters.recency,
-    timeControls: debouncedFilters.timeControls,
-    platforms: debouncedFilters.platforms,
-    rated: debouncedFilters.rated,
-    opponentType: debouncedFilters.opponentType,
-  });
 
   // Derive WDL stats per bookmark using aggregate fields (not rolling sub-counts)
   const wdlStatsMap = useMemo(() => {
@@ -193,6 +251,11 @@ export function OpeningsPage() {
   }, [tsData]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
+
+  const handleChartEnabledChange = useCallback((id: number, enabled: boolean) => {
+    setChartEnabledStorage(id, enabled);
+    setChartToggleVersion(v => v + 1);
+  }, []);
 
   const handleFiltersChange = useCallback((newFilters: FilterState) => {
     setFilters(newFilters);
@@ -231,18 +294,40 @@ export function OpeningsPage() {
     }
   }, [chess, filters, boardFlipped, bookmarkLabel, createBookmark]);
 
+  /** Open games for a chart bookmark — loads position on board and navigates to games tab */
+  const handleOpenChartBookmarkGames = useCallback((bookmark: PositionBookmarkResponse) => {
+    if (bookmark.moves.length > 0) {
+      // Real bookmark — load its moves
+      chess.loadMoves(bookmark.moves);
+    } else if (mostPlayedData) {
+      // Default chart entry — find PGN from most-played data
+      const allOpenings = [...(mostPlayedData.white ?? []), ...(mostPlayedData.black ?? [])];
+      const opening = allOpenings.find(o => o.full_hash === bookmark.target_hash);
+      if (opening) {
+        chess.loadMoves(pgnToSanArray(opening.pgn));
+      }
+    }
+    const color = bookmark.color ?? 'white';
+    setBoardFlipped(color === 'black');
+    setFilters(prev => ({ ...prev, color, matchSide: bookmark.match_side }));
+    navigate('/openings/games');
+    window.scrollTo({ top: 0 });
+  }, [chess, navigate, mostPlayedData]);
+
   /** Load opening PGN onto the board, set color/flip/filters, and navigate to games subtab */
   const handleOpenGames = useCallback((pgn: string, color: "white" | "black") => {
     chess.loadMoves(pgnToSanArray(pgn));
     setBoardFlipped(color === 'black');
     setFilters(prev => ({ ...prev, color, matchSide: 'both' as MatchSide }));
     navigate('/openings/games');
+    window.scrollTo({ top: 0 });
   }, [chess, navigate]);
 
   const handleLoadBookmark = useCallback((bkm: PositionBookmarkResponse) => {
     chess.loadMoves(bkm.moves);
     setBoardFlipped(bkm.is_flipped ?? false);
     setFilters(prev => ({ ...prev, color: bkm.color ?? 'white', matchSide: bkm.match_side }));
+    window.scrollTo({ top: 0 });
   }, [chess]);
 
   const handleReorder = useCallback((orderedIds: number[]) => {
@@ -377,7 +462,17 @@ export function OpeningsPage() {
               Position bookmarks
               <span onClick={(e) => e.stopPropagation()}>
                 <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info" side="top">
-                  Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                  <div className="space-y-2">
+                    <p>
+                      Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                    </p>
+                    <p>
+                      Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
+                    </p>
+                    <p>
+                      Use the chart toggle on each bookmark to include or exclude it from the Results by Opening and Win Rate Over Time charts.
+                    </p>
+                  </div>
                 </InfoPopover>
               </span>
             </span>
@@ -411,6 +506,8 @@ export function OpeningsPage() {
               bookmarks={bookmarks}
               onReorder={handleReorder}
               onLoad={handleLoadBookmark}
+              chartEnabledMap={chartEnabledMap}
+              onChartEnabledChange={handleChartEnabledChange}
             />
           </div>
         </CollapsibleContent>
@@ -457,6 +554,7 @@ export function OpeningsPage() {
             label={filters.matchSide === 'both' ? 'Position Results' : `Position Results (Piece filter: ${filters.matchSide === 'mine' ? 'Mine' : 'Opponent'})`}
             barHeight="h-6"
             gamesLink="/openings/games"
+            onGamesLinkClick={() => window.scrollTo({ top: 0 })}
             gamesLinkTestId="btn-moves-to-games"
             gamesLinkAriaLabel="View games for this position"
             testId="wdl-moves-position"
@@ -522,22 +620,89 @@ export function OpeningsPage() {
 
   const statisticsContent = (
     <div className="flex flex-col gap-4">
-      {/* White openings */}
+      {/* Results by Opening — shown when chart data is available or loading */}
+      {chartBookmarks.length > 0 && (
+        <div className="charcoal-texture rounded-md p-4">
+          <div>
+            <h2 className="text-lg font-medium mb-3">
+              <span className="inline-flex items-center gap-1">
+                Results by Opening
+                <InfoPopover ariaLabel="Results by opening info" testId="wdl-bar-chart-info" side="top">
+                  Shows your win, draw, and loss percentages for each saved position, based on the games that match the current filter settings. The length of the grey bar indicates game count relative to other openings.
+                </InfoPopover>
+              </span>
+            </h2>
+            {!tsData ? (
+              <div className="text-center text-muted-foreground py-8">Loading chart data...</div>
+            ) : (() => {
+              const rows = chartBookmarks
+                .filter((b) => wdlStatsMap[b.id] && wdlStatsMap[b.id].total > 0)
+                .map((b) => {
+                  const s = wdlStatsMap[b.id];
+                  const colorIcon = b.color === 'white' ? (
+                    <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white" />
+                  ) : b.color === 'black' ? (
+                    <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900" />
+                  ) : null;
+                  const label = colorIcon ? (
+                    <span className="inline-flex items-center gap-1.5">{colorIcon}{b.label}</span>
+                  ) : b.label;
+                  return { bookmark: b, label, stats: s };
+                })
+                .sort((a, b) => b.stats.total - a.stats.total);
+
+              if (rows.length === 0) {
+                return (
+                  <div className="text-center text-muted-foreground py-8">
+                    No stats available for saved positions yet.
+                  </div>
+                );
+              }
+
+              const maxTotal = Math.max(...rows.map((r) => r.stats.total));
+
+              return (
+                <div className="space-y-2">
+                  {rows.map((row) => (
+                    <WDLChartRow
+                      key={row.bookmark.id}
+                      data={{
+                        wins: row.stats.wins,
+                        draws: row.stats.draws,
+                        losses: row.stats.losses,
+                        total: row.stats.total,
+                        win_pct: row.stats.total > 0 ? (row.stats.wins / row.stats.total) * 100 : 0,
+                        draw_pct: row.stats.total > 0 ? (row.stats.draws / row.stats.total) * 100 : 0,
+                        loss_pct: row.stats.total > 0 ? (row.stats.losses / row.stats.total) * 100 : 0,
+                      }}
+                      label={row.label}
+                      maxTotal={maxTotal}
+                      onOpenGames={() => handleOpenChartBookmarkGames(row.bookmark)}
+                      openGamesTestId={`wdl-opening-games-${row.bookmark.id}`}
+                      testId={`wdl-opening-${row.bookmark.id}`}
+                    />
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+      {/* Win Rate Over Time — shown when time series data is ready */}
+      {tsData && (
+        <div className="charcoal-texture rounded-md p-4">
+          <WinRateChart bookmarks={chartBookmarks} series={tsData.series} />
+        </div>
+      )}
+      {/* Most Played Openings as White */}
       {mostPlayedData && mostPlayedData.white.length > 0 && (
         <div className="charcoal-texture rounded-md p-4" data-testid="mpo-white-section">
           <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
             <span className="inline-block h-3.5 w-3.5 rounded-full border border-muted-foreground bg-white" />
             <span className="inline-flex items-center gap-1">
-              White: Most Played Openings
+              Most Played Openings as White
               <InfoPopover ariaLabel="White openings info" testId="mpo-white-info" side="top">
-                <div className="space-y-2">
-                  <p>
-                    Your most frequently played openings as White, based on the lichess opening table. Only openings where White made the last move are shown here.
-                  </p>
-                  <p>
-                    The game count reflects how many of your games ended up with this specific opening name. Clicking the folder icon loads the opening on the board and shows all games that passed through that position — which is usually more, since many openings share the same early moves.
-                  </p>
-                </div>
+                Your most frequently played openings as White, based on the lichess opening table. Only openings where White made the last move are shown here.
               </InfoPopover>
             </span>
           </h2>
@@ -549,22 +714,15 @@ export function OpeningsPage() {
           />
         </div>
       )}
-      {/* Black openings */}
+      {/* Most Played Openings as Black */}
       {mostPlayedData && mostPlayedData.black.length > 0 && (
         <div className="charcoal-texture rounded-md p-4" data-testid="mpo-black-section">
           <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
             <span className="inline-block h-3.5 w-3.5 rounded-full border border-muted-foreground bg-zinc-900" />
             <span className="inline-flex items-center gap-1">
-              Black: Most Played Openings
+              Most Played Openings as Black
               <InfoPopover ariaLabel="Black openings info" testId="mpo-black-info" side="top">
-                <div className="space-y-2">
-                  <p>
-                    Your most frequently played openings as Black, based on the lichess opening table. Only openings where Black made the last move are shown here.
-                  </p>
-                  <p>
-                    The game count reflects how many of your games ended up with this specific opening name. Clicking the folder icon loads the opening on the board and shows all games that passed through that position — which is usually more, since many openings share the same early moves.
-                  </p>
-                </div>
+                Your most frequently played openings as Black, based on the lichess opening table. Only openings where Black made the last move are shown here.
               </InfoPopover>
             </span>
           </h2>
@@ -576,79 +734,6 @@ export function OpeningsPage() {
           />
         </div>
       )}
-      {bookmarks.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center text-muted-foreground">
-          <p className="text-base font-medium text-foreground">No bookmarks yet</p>
-          <p className="mt-1 text-sm">Save positions on the Games tab to see opening stats here.</p>
-        </div>
-      ) : tsData ? (
-        <>
-          <div className="charcoal-texture rounded-md p-4">
-            <div>
-              <h2 className="text-lg font-medium mb-3">
-                <span className="inline-flex items-center gap-1">
-                  Results by Opening
-                  <InfoPopover ariaLabel="Results by opening info" testId="wdl-bar-chart-info" side="top">
-                    Shows your win, draw, and loss percentages for each saved position, based on the games that match the current filter settings. The length of the grey bar indicates game count relative to other openings.
-                  </InfoPopover>
-                </span>
-              </h2>
-              {(() => {
-                const rows = bookmarks
-                  .filter((b) => wdlStatsMap[b.id] && wdlStatsMap[b.id].total > 0)
-                  .map((b) => {
-                    const s = wdlStatsMap[b.id];
-                    const colorIcon = b.color === 'white' ? (
-                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white" />
-                    ) : b.color === 'black' ? (
-                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900" />
-                    ) : null;
-                    const label = colorIcon ? (
-                      <span className="inline-flex items-center gap-1.5">{colorIcon}{b.label}</span>
-                    ) : b.label;
-                    return { bookmark: b, label, stats: s };
-                  })
-                  .sort((a, b) => b.stats.total - a.stats.total);
-
-                if (rows.length === 0) {
-                  return (
-                    <div className="text-center text-muted-foreground py-8">
-                      No stats available for saved positions yet.
-                    </div>
-                  );
-                }
-
-                const maxTotal = Math.max(...rows.map((r) => r.stats.total));
-
-                return (
-                  <div className="space-y-2">
-                    {rows.map((row) => (
-                      <WDLChartRow
-                        key={row.bookmark.id}
-                        data={{
-                          wins: row.stats.wins,
-                          draws: row.stats.draws,
-                          losses: row.stats.losses,
-                          total: row.stats.total,
-                          win_pct: row.stats.total > 0 ? (row.stats.wins / row.stats.total) * 100 : 0,
-                          draw_pct: row.stats.total > 0 ? (row.stats.draws / row.stats.total) * 100 : 0,
-                          loss_pct: row.stats.total > 0 ? (row.stats.losses / row.stats.total) * 100 : 0,
-                        }}
-                        label={row.label}
-                        maxTotal={maxTotal}
-                        testId={`wdl-opening-${row.bookmark.id}`}
-                      />
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-          <div className="charcoal-texture rounded-md p-4">
-            <WinRateChart bookmarks={bookmarks} series={tsData.series} />
-          </div>
-        </>
-      ) : null}
     </div>
   );
 
@@ -843,7 +928,17 @@ export function OpeningsPage() {
                   Position bookmarks
                   <span onClick={(e) => e.stopPropagation()}>
                     <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info-mobile" side="top">
-                      Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                      <div className="space-y-2">
+                        <p>
+                          Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                        </p>
+                        <p>
+                          Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
+                        </p>
+                        <p>
+                          Use the chart toggle on each bookmark to include or exclude it from the Results by Opening and Win Rate Over Time charts.
+                        </p>
+                      </div>
                     </InfoPopover>
                   </span>
                 </span>
@@ -877,6 +972,8 @@ export function OpeningsPage() {
                   bookmarks={bookmarks}
                   onReorder={handleReorder}
                   onLoad={handleLoadBookmark}
+                  chartEnabledMap={chartEnabledMap}
+                  onChartEnabledChange={handleChartEnabledChange}
                 />
               </div>
             </CollapsibleContent>
@@ -943,7 +1040,12 @@ export function OpeningsPage() {
         </DialogContent>
       </Dialog>
 
-      <SuggestionsModal open={suggestionsOpen} onOpenChange={setSuggestionsOpen} />
+      <SuggestionsModal
+        open={suggestionsOpen}
+        onOpenChange={setSuggestionsOpen}
+        mostPlayedData={mostPlayedData}
+        bookmarks={bookmarks}
+      />
     </div>
   );
 }

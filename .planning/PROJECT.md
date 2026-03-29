@@ -78,7 +78,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ## Current State
 
-v1.5 shipped 2026-03-28. Phase 36 (Most Played Openings) complete — GET /stats/most-played-openings endpoint returning top 5 openings per color with WDL stats, rendered in Opening Statistics subtab with WDLChartRow components. v1.6 UI Polish milestone in progress.
+v1.5 shipped 2026-03-28. Phase 38 (Opening Statistics & Bookmark Suggestions Rework) complete — Statistics tab reordered (Results by Opening → Win Rate Over Time → Most Played), default chart data from top 3 most-played openings when no bookmarks, bookmark suggestions derived client-side from most-played data, chart-enable toggle on bookmark cards, position-based game counts and WDL in Most Played Openings, Zobrist hashes stored in openings table. v1.6 UI Polish milestone in progress.
 
 ## Context
 
@@ -124,4 +124,4 @@ v1.5 shipped 2026-03-28. Phase 36 (Most Played Openings) complete — GET /stats
 | Backend expose-only (no ports) | Caddy is sole internet-facing entry point | ✓ Good |
 
 ---
-*Last updated: 2026-03-28 after Phase 36 completion*
+*Last updated: 2026-03-29 after Phase 38 completion*

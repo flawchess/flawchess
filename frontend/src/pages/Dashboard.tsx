@@ -1,4 +1,13 @@
 import { useState, useCallback, useMemo } from 'react';
+
+// localStorage helpers for per-bookmark chart-enable toggle (default: enabled)
+function getChartEnabled(bookmarkId: number): boolean {
+  const stored = localStorage.getItem(`bookmark-chart-enabled-${bookmarkId}`);
+  return stored === null ? true : stored === 'true';
+}
+function setChartEnabledStorage(bookmarkId: number, enabled: boolean): void {
+  localStorage.setItem(`bookmark-chart-enabled-${bookmarkId}`, String(enabled));
+}
 import { Chess } from 'chess.js';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -58,6 +67,21 @@ export function DashboardPage() {
   const reorder = useReorderPositionBookmarks();
   const [bookmarkDialogOpen, setBookmarkDialogOpen] = useState(false);
   const [bookmarkLabel, setBookmarkLabel] = useState('');
+
+  // Chart-enable toggle (persisted per bookmark in localStorage)
+  const [chartToggleVersion, setChartToggleVersion] = useState(0);
+  const chartEnabledMap = useMemo(() => {
+    const map: Record<number, boolean> = {};
+    for (const b of bookmarks) {
+      map[b.id] = getChartEnabled(b.id);
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookmarks, chartToggleVersion]);
+  const handleChartEnabledChange = useCallback((id: number, enabled: boolean) => {
+    setChartEnabledStorage(id, enabled);
+    setChartToggleVersion(v => v + 1);
+  }, []);
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
@@ -429,6 +453,8 @@ export function DashboardPage() {
               bookmarks={bookmarks}
               onReorder={handleReorder}
               onLoad={handleLoadBookmark}
+              chartEnabledMap={chartEnabledMap}
+              onChartEnabledChange={handleChartEnabledChange}
             />
           </div>
         </CollapsibleContent>

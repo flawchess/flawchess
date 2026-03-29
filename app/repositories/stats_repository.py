@@ -3,10 +3,11 @@
 import datetime
 from typing import Literal
 
-from sqlalchemy import Column, Date, MetaData, SmallInteger, String, Table, Text, and_, case, cast, func, or_, select
+from sqlalchemy import BigInteger, Column, Date, MetaData, SmallInteger, String, Table, Text, and_, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
+from app.models.game_position import GamePosition
 
 # Standalone MetaData (not Base.metadata) keeps the view invisible to Alembic autogenerate.
 _openings_dedup = Table(
@@ -18,6 +19,9 @@ _openings_dedup = Table(
     Column("pgn", Text),
     Column("ply_count", SmallInteger),
     Column("fen", String(100)),
+    Column("full_hash", BigInteger),
+    Column("white_hash", BigInteger),
+    Column("black_hash", BigInteger),
 )
 
 
@@ -213,6 +217,7 @@ async def query_top_openings_sql_wdl(
             Game.opening_name,
             _openings_dedup.c.pgn,
             _openings_dedup.c.fen,
+            _openings_dedup.c.full_hash,
             func.count().label("total"),
             func.count().filter(win_cond).label("wins"),
             func.count().filter(draw_cond).label("draws"),
@@ -239,6 +244,7 @@ async def query_top_openings_sql_wdl(
             Game.opening_name,
             _openings_dedup.c.pgn,
             _openings_dedup.c.fen,
+            _openings_dedup.c.full_hash,
         )
         .having(func.count() >= min_games)
         .order_by(func.count().desc())
@@ -249,3 +255,83 @@ async def query_top_openings_sql_wdl(
 
     result = await session.execute(stmt)
     return list(result.fetchall())
+
+
+class PositionWDL:
+    """Position-based WDL stats for a single hash."""
+
+    __slots__ = ("total", "wins", "draws", "losses")
+
+    def __init__(self, total: int, wins: int, draws: int, losses: int):
+        self.total = total
+        self.wins = wins
+        self.draws = draws
+        self.losses = losses
+
+
+async def query_position_wdl_batch(
+    session: AsyncSession,
+    user_id: int,
+    hashes: list[int],
+    color: Literal["white", "black"] | None = None,
+    time_control: list[str] | None = None,
+    platform: list[str] | None = None,
+    rated: bool | None = None,
+    opponent_type: str = "human",
+    recency_cutoff: datetime.datetime | None = None,
+) -> dict[int, PositionWDL]:
+    """Return {full_hash: PositionWDL} for games passing through each position.
+
+    Uses DISTINCT game_id per hash to avoid double-counting games where the
+    same position appears at multiple plies. WDL computed SQL-side using the
+    same conditions as query_top_openings_sql_wdl.
+    """
+    if not hashes:
+        return {}
+
+    # Deduplicate game_id per hash first (subquery), then aggregate WDL
+    dedup = (
+        select(
+            GamePosition.full_hash,
+            Game.id.label("game_id"),
+            Game.result,
+            Game.user_color,
+        )
+        .join(Game, GamePosition.game_id == Game.id)
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.full_hash.in_(hashes),
+        )
+        .distinct(GamePosition.full_hash, Game.id)
+    )
+    if color is not None:
+        dedup = dedup.where(Game.user_color == color)
+    dedup = _apply_game_filters(dedup, time_control, platform, rated, opponent_type, recency_cutoff)
+    dedup = dedup.subquery()
+
+    stmt = (
+        select(
+            dedup.c.full_hash,
+            func.count().label("total"),
+            func.count().filter(
+                or_(
+                    and_(dedup.c.result == "1-0", dedup.c.user_color == "white"),
+                    and_(dedup.c.result == "0-1", dedup.c.user_color == "black"),
+                )
+            ).label("wins"),
+            func.count().filter(dedup.c.result == "1/2-1/2").label("draws"),
+            func.count().filter(
+                or_(
+                    and_(dedup.c.result == "0-1", dedup.c.user_color == "white"),
+                    and_(dedup.c.result == "1-0", dedup.c.user_color == "black"),
+                )
+            ).label("losses"),
+        )
+        .group_by(dedup.c.full_hash)
+    )
+
+    result = await session.execute(stmt)
+    return {
+        row[0]: PositionWDL(total=row[1], wins=row[2], draws=row[3], losses=row[4])
+        for row in result.fetchall()
+    }

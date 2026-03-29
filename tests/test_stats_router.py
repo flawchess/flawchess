@@ -300,10 +300,13 @@ class TestGetMostPlayedOpenings:
 
         assert resp.status_code == 200
         data = resp.json()
-        # If there are openings, they must have pgn and fen fields
+        # If there are openings, they must have pgn, fen, and full_hash fields
         for opening in data.get("white", []) + data.get("black", []):
             assert "pgn" in opening
             assert "fen" in opening
+            assert "full_hash" in opening
+            assert isinstance(opening["full_hash"], str)
+            assert len(opening["full_hash"]) > 0
 
     @pytest.mark.asyncio
     async def test_most_played_openings_accepts_filters(self, auth_headers: dict[str, str]) -> None:

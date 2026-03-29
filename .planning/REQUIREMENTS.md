@@ -37,6 +37,15 @@ Requirements for v1.6 — UI Polish & Improvements.
 - [x] **ORT-04**: Frontend renders a dedicated table with ECO/name/PGN, game count link, and mini WDL bar per row
 - [x] **ORT-05**: Hovering/tapping a row shows a minimap popover of the opening position
 
+### Opening Statistics & Bookmark Suggestions Rework
+
+- [x] **STAT-01**: Statistics tab sections appear in order: Results by Opening, Win Rate Over Time, Most Played Openings as White, Most Played Openings as Black
+- [x] **STAT-02**: When no bookmarks exist, Results by Opening and Win Rate Over Time charts show data from top 3 most-played openings per color (white with played-as-white filter, black with played-as-black filter)
+- [x] **STAT-03**: Bookmark suggestions derive from most-played openings data (no backend suggestions API call), skip already-bookmarked positions, show fallback message when all are bookmarked
+- [x] **STAT-04**: Each bookmark card has a chart-enable toggle (default: enabled, persisted in localStorage) controlling inclusion in Results by Opening and Win Rate Over Time charts
+- [x] **STAT-05**: Bookmark card layout: bigger minimap (~72px), button row below piece filter with chart toggle (left), load (middle), delete (right)
+- [x] **STAT-06**: Position Bookmarks popover explains Piece filter and chart-enable toggle functionality
+
 ## Future Requirements
 
 ### Pawn Structure Analysis
@@ -78,17 +87,23 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MPO-02 | Phase 36 | Complete |
 | MPO-03 | Phase 36 | Complete |
 | MPO-04 | Phase 36 | Complete |
-| ORT-01 | Phase 37 | Not started |
-| ORT-02 | Phase 37 | Not started |
+| ORT-01 | Phase 37 | Complete |
+| ORT-02 | Phase 37 | Complete |
 | ORT-03 | Phase 37 | Not started |
-| ORT-04 | Phase 37 | Not started |
-| ORT-05 | Phase 37 | Not started |
+| ORT-04 | Phase 37 | Complete |
+| ORT-05 | Phase 37 | Complete |
+| STAT-01 | Phase 38 | Not started |
+| STAT-02 | Phase 38 | Not started |
+| STAT-03 | Phase 38 | Not started |
+| STAT-04 | Phase 38 | Not started |
+| STAT-05 | Phase 38 | Not started |
+| STAT-06 | Phase 38 | Not started |
 
 **Coverage:**
-- v1.6 requirements: 18 total
-- Mapped to phases: 18
+- v1.6 requirements: 24 total
+- Mapped to phases: 24
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-28*
-*Last updated: 2026-03-28 after Phase 37 planning*
+*Last updated: 2026-03-29 after Phase 38 planning*

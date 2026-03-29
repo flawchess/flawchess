@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ExternalLink } from 'lucide-react';
+import { FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   WDL_WIN,
@@ -34,6 +34,11 @@ interface WDLChartRowProps {
   /** aria-label for the games link */
   gamesLinkAriaLabel?: string;
 
+  /** Optional button-based games action — renders a FolderOpen icon next to game count */
+  onOpenGames?: () => void;
+  /** data-testid for the open games button */
+  openGamesTestId?: string;
+
   /** When present, renders a grey-outlined proportional game count bar. Value = max total across all rows for proportional sizing. */
   maxTotal?: number;
 
@@ -58,6 +63,8 @@ export function WDLChartRow({
   onGamesLinkClick,
   gamesLinkTestId,
   gamesLinkAriaLabel,
+  onOpenGames,
+  openGamesTestId,
   maxTotal,
   minGamesForReliable = MIN_GAMES_FOR_RELIABLE_STATS,
   barHeight = 'h-5',
@@ -85,30 +92,42 @@ export function WDLChartRow({
             <span className="text-sm font-medium">{label}</span>
             {infoPopover}
           </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">
-              {data.total} games
-              {showLowWarning && isUnreliable && (
-                <span
-                  className="text-amber-500 ml-1"
-                  title="Small sample size — percentages may be unreliable"
-                >
-                  (low)
-                </span>
-              )}
+          {gamesLink !== undefined ? (
+            <Link
+              to={gamesLink}
+              onClick={onGamesLinkClick}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              aria-label={gamesLinkAriaLabel}
+              data-testid={gamesLinkTestId}
+            >
+              <span>{data.total} games</span>
+              <FolderOpen className="h-3.5 w-3.5" />
+            </Link>
+          ) : onOpenGames !== undefined ? (
+            <button
+              onClick={onOpenGames}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="View games for this opening"
+              data-testid={openGamesTestId}
+            >
+              <span>{data.total} games</span>
+              <FolderOpen className="h-3.5 w-3.5" />
+            </button>
+          ) : (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">
+                {data.total} games
+              </span>
             </span>
-            {gamesLink !== undefined && (
-              <Link
-                to={gamesLink}
-                onClick={onGamesLinkClick}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label={gamesLinkAriaLabel}
-                data-testid={gamesLinkTestId}
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </Link>
-            )}
-          </span>
+          )}
+          {showLowWarning && isUnreliable && (
+            <span
+              className="text-xs text-amber-500 ml-1"
+              title="Small sample size — percentages may be unreliable"
+            >
+              (low)
+            </span>
+          )}
         </div>
       )}
 

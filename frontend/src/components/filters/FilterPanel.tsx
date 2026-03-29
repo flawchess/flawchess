@@ -134,7 +134,7 @@ export function FilterPanel({ filters, onChange, visibleFilters = ALL_FILTERS }:
                 className={cn(
                   'rounded border h-11 sm:h-7 text-xs transition-colors',
                   isTimeControlActive(tc)
-                    ? 'border-primary bg-primary text-primary-foreground'
+                    ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground'
                     : 'border-border bg-inactive-bg text-muted-foreground hover:bg-inactive-bg-hover hover:text-foreground',
                 )}
               >
@@ -160,7 +160,7 @@ export function FilterPanel({ filters, onChange, visibleFilters = ALL_FILTERS }:
                 className={cn(
                   'rounded border h-11 sm:h-7 text-xs transition-colors',
                   isPlatformActive(p)
-                    ? 'border-primary bg-primary text-primary-foreground'
+                    ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground'
                     : 'border-border bg-inactive-bg text-muted-foreground hover:bg-inactive-bg-hover hover:text-foreground',
                 )}
               >

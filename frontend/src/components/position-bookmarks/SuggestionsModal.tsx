@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Dialog,
@@ -11,64 +11,80 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { MiniBoard } from './MiniBoard';
-import { usePositionSuggestions } from '@/hooks/usePositionBookmarks';
 import { positionBookmarksApi } from '@/api/client';
-import type { PositionSuggestion } from '@/types/position_bookmarks';
+import { pgnToSanArray } from '@/lib/pgn';
+import type { MostPlayedOpeningsResponse, OpeningWDL } from '@/types/stats';
+import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
+
+// Maximum openings per color to consider before filtering already-bookmarked ones
+const SUGGESTIONS_POOL_SIZE = 10;
+// Maximum suggestions to show per color after filtering
+const SUGGESTIONS_PER_COLOR = 5;
 
 interface SuggestionsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  mostPlayedData: MostPlayedOpeningsResponse | undefined;
+  bookmarks: PositionBookmarkResponse[];
 }
 
-export function SuggestionsModal({ open, onOpenChange }: SuggestionsModalProps) {
+export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks }: SuggestionsModalProps) {
   const qc = useQueryClient();
-  const { data, isFetching, refetch } = usePositionSuggestions();
-  const suggestions = data?.suggestions ?? [];
 
-  // Per-suggestion state: selected for saving
-  const [selected, setSelected] = useState<Set<number>>(new Set());
+  // Per-suggestion state: selected for saving (keyed by color+index string)
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [saving, setSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState(0);
 
-  // Fetch on open
-  useEffect(() => {
-    if (open) {
-      refetch();
-    }
-  }, [open, refetch]);
+  // Derive suggestions from mostPlayedData, filtering out already-bookmarked positions
+  const bookmarkedHashes = new Set(
+    bookmarks.filter(b => b.match_side === 'both').map(b => b.target_hash)
+  );
 
-  // Reset selection when suggestions load
-  /* eslint-disable react-hooks/set-state-in-effect -- intentional: reset state on new data */
-  useEffect(() => {
-    if (suggestions.length > 0) {
-      setSelected(new Set());
-      setSaveProgress(0);
-    }
-  }, [suggestions]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  const whiteSuggestions: OpeningWDL[] = mostPlayedData
+    ? mostPlayedData.white
+        .slice(0, SUGGESTIONS_POOL_SIZE)
+        .filter(o => !bookmarkedHashes.has(o.full_hash))
+        .slice(0, SUGGESTIONS_PER_COLOR)
+    : [];
 
-  const whiteSuggestions = suggestions.filter(s => s.color === 'white');
-  const blackSuggestions = suggestions.filter(s => s.color === 'black');
+  const blackSuggestions: OpeningWDL[] = mostPlayedData
+    ? mostPlayedData.black
+        .slice(0, SUGGESTIONS_POOL_SIZE)
+        .filter(o => !bookmarkedHashes.has(o.full_hash))
+        .slice(0, SUGGESTIONS_PER_COLOR)
+    : [];
 
-  const getIndexInSuggestions = (s: PositionSuggestion) => suggestions.indexOf(s);
+  const allSuggestions = whiteSuggestions.length === 0 && blackSuggestions.length === 0;
+  const allBookmarked =
+    mostPlayedData !== undefined &&
+    mostPlayedData.white.slice(0, SUGGESTIONS_POOL_SIZE).every(o => bookmarkedHashes.has(o.full_hash)) &&
+    mostPlayedData.black.slice(0, SUGGESTIONS_POOL_SIZE).every(o => bookmarkedHashes.has(o.full_hash));
 
-  const toggleSelected = (index: number) => {
+  const makeKey = (color: 'white' | 'black', index: number) => `${color}-${index}`;
+
+  const toggleSelected = (color: 'white' | 'black', index: number) => {
+    const key = makeKey(color, index);
     setSelected(prev => {
       const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
+      if (next.has(key)) {
+        next.delete(key);
       } else {
-        next.add(index);
+        next.add(key);
       }
       return next;
     });
   };
 
   const handleSave = async () => {
-    const toSave = suggestions
-      .map((s, i) => ({ suggestion: s, index: i }))
-      .filter(({ index }) => selected.has(index));
+    const toSave: { opening: OpeningWDL; color: 'white' | 'black' }[] = [];
+    whiteSuggestions.forEach((o, i) => {
+      if (selected.has(makeKey('white', i))) toSave.push({ opening: o, color: 'white' });
+    });
+    blackSuggestions.forEach((o, i) => {
+      if (selected.has(makeKey('black', i))) toSave.push({ opening: o, color: 'black' });
+    });
 
     if (toSave.length === 0) return;
 
@@ -76,19 +92,16 @@ export function SuggestionsModal({ open, onOpenChange }: SuggestionsModalProps) 
     setSaveProgress(0);
 
     for (let i = 0; i < toSave.length; i++) {
-      const { suggestion, index } = toSave[i];
-
-      const label = suggestion.opening_name
-        ?? `${suggestion.color} opening #${index + 1}`;
+      const { opening, color } = toSave[i];
 
       await positionBookmarksApi.create({
-        label,
-        target_hash: suggestion.full_hash,
-        fen: suggestion.fen,
-        moves: suggestion.moves,
-        color: suggestion.color,
+        label: opening.label,
+        target_hash: opening.full_hash,
+        fen: opening.fen,
+        moves: pgnToSanArray(opening.pgn),
+        color: color,
         match_side: 'both',
-        is_flipped: suggestion.color === 'black',
+        is_flipped: color === 'black',
       });
 
       setSaveProgress(i + 1);
@@ -97,6 +110,7 @@ export function SuggestionsModal({ open, onOpenChange }: SuggestionsModalProps) 
     await qc.invalidateQueries({ queryKey: ['position-bookmarks'] });
     await qc.refetchQueries({ queryKey: ['position-bookmarks'] });
     setSaving(false);
+    setSelected(new Set());
     onOpenChange(false);
   };
 
@@ -107,52 +121,50 @@ export function SuggestionsModal({ open, onOpenChange }: SuggestionsModalProps) 
       ? `Save ${selectedCount} bookmark${selectedCount !== 1 ? 's' : ''}`
       : 'Save selected';
 
-  const renderSuggestionCard = (suggestion: PositionSuggestion) => {
-    const globalIndex = getIndexInSuggestions(suggestion);
-    const isSelected = selected.has(globalIndex);
-    const openingLabel = suggestion.opening_name ?? 'Unknown opening';
-    const ecoLabel = suggestion.opening_eco ? ` (${suggestion.opening_eco})` : '';
+  const renderSuggestionCard = (opening: OpeningWDL, color: 'white' | 'black', index: number) => {
+    const key = makeKey(color, index);
+    const isSelected = selected.has(key);
 
     return (
       <div
-        key={globalIndex}
-        data-testid={`suggestion-card-${globalIndex}`}
+        key={key}
+        data-testid={`suggestion-card-${key}`}
         className={`flex gap-3 items-start p-3 rounded-lg border transition-colors ${
           isSelected ? 'border-primary/50 bg-primary/5' : 'border-border bg-muted/30'
         }`}
       >
         <Checkbox
           checked={isSelected}
-          onCheckedChange={() => toggleSelected(globalIndex)}
-          aria-label={`Select ${openingLabel}`}
+          onCheckedChange={() => toggleSelected(color, index)}
+          aria-label={`Select ${opening.label}`}
           className="mt-1 flex-shrink-0"
-          data-testid={`suggestion-checkbox-${globalIndex}`}
+          data-testid={`suggestion-checkbox-${key}`}
         />
         <MiniBoard
-          fen={suggestion.fen}
-          flipped={suggestion.color === 'black'}
+          fen={opening.fen}
+          flipped={color === 'black'}
           size={100}
         />
         <div className="flex flex-col gap-1 flex-1 min-w-0">
           <span className="font-medium text-sm truncate">
-            {openingLabel}{ecoLabel}
+            {opening.label}
           </span>
           <Badge variant="secondary" className="w-fit text-xs">
-            {suggestion.game_count} {suggestion.game_count === 1 ? 'game' : 'games'}
+            {opening.total} {opening.total === 1 ? 'game' : 'games'}
           </Badge>
         </div>
       </div>
     );
   };
 
-  const renderSection = (title: string, sectionSuggestions: PositionSuggestion[]) => {
+  const renderSection = (title: string, sectionSuggestions: OpeningWDL[], color: 'white' | 'black') => {
     if (sectionSuggestions.length === 0) return null;
     return (
       <div className="space-y-2">
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           {title}
         </h3>
-        {sectionSuggestions.map((s) => renderSuggestionCard(s))}
+        {sectionSuggestions.map((o, i) => renderSuggestionCard(o, color, i))}
       </div>
     );
   };
@@ -168,27 +180,33 @@ export function SuggestionsModal({ open, onOpenChange }: SuggestionsModalProps) 
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-          {isFetching && (
+          {mostPlayedData === undefined && (
             <div className="text-center py-8 text-muted-foreground text-sm">
               Loading suggestions...
             </div>
           )}
 
-          {!isFetching && suggestions.length === 0 && (
+          {mostPlayedData !== undefined && allSuggestions && allBookmarked && (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              All your most-played openings are already bookmarked. Try creating custom bookmarks on the board and experimenting with the Piece filter.
+            </div>
+          )}
+
+          {mostPlayedData !== undefined && allSuggestions && !allBookmarked && (
             <div className="text-center py-8 text-muted-foreground text-sm">
               No suggestions available. Import games to get bookmark suggestions based on your most-played openings.
             </div>
           )}
 
-          {!isFetching && suggestions.length > 0 && (
+          {mostPlayedData !== undefined && !allSuggestions && (
             <>
-              {renderSection('White openings', whiteSuggestions)}
-              {renderSection('Black openings', blackSuggestions)}
+              {renderSection('White openings', whiteSuggestions, 'white')}
+              {renderSection('Black openings', blackSuggestions, 'black')}
             </>
           )}
         </div>
 
-        {!isFetching && suggestions.length > 0 && (
+        {mostPlayedData !== undefined && !allSuggestions && (
           <DialogFooter>
             <Button
               data-testid="btn-save-suggestions"

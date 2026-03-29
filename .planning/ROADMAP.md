@@ -8,7 +8,7 @@
 - ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
 - ✅ **v1.4 Improvements** — Phase 24 (shipped 2026-03-22)
 - ✅ **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33 (shipped 2026-03-28)
-- 🚧 **v1.6 UI Polish & Improvements** — Phases 34-37 (in progress)
+- 🚧 **v1.6 UI Polish & Improvements** — Phases 34-38 (in progress)
 
 ## Phases
 
@@ -87,8 +87,27 @@
 - [x] **Phase 35: WDL Chart Refactoring** — Create shared WDL chart component based on endgame charts, replace all inconsistent WDL charts (custom and Recharts), clean up unused code (completed 2026-03-28)
 - [x] **Phase 36: Most Played Openings** — Add "Most Played Openings" sections (White/Black) to Opening Statistics subtab with top 5 openings as WDL charts, ECO codes, minimum 10 games threshold (completed 2026-03-28)
 - [x] **Phase 37: Openings Reference Table & Most Played Openings Redesign** — Create openings DB table from TSV dataset with PGN/FEN/ply_count, redesign most played openings with filter support, dedicated table UI, minimap popover, SQL-side WDL aggregation, top 10 (completed 2026-03-28)
+- [x] **Phase 38: Opening Statistics & Bookmark Suggestions Rework** — Reorder stats sections, use most-played openings as default chart data, rework bookmark suggestions, add chart-enable toggle, redesign bookmark card layout (completed 2026-03-29)
 
 ## Phase Details
+
+### Phase 38: Opening Statistics & Bookmark Suggestions Rework
+**Goal**: Reorder Opening Statistics sections, use top most-played openings as default chart data when no bookmarks exist, rework bookmark suggestion system using most-played openings data, add chart-enable toggle to bookmarks, redesign bookmark card layout
+**Depends on**: Phase 37
+**Requirements**: STAT-01, STAT-02, STAT-03, STAT-04, STAT-05, STAT-06
+**Success Criteria** (what must be TRUE):
+  1. Statistics tab sections appear in order: Results by Opening, Win Rate Over Time, Most Played White, Most Played Black
+  2. When no bookmarks exist, charts show data from top 3 most-played openings per color
+  3. Bookmark suggestions derive from most-played openings, skip already-bookmarked positions
+  4. Each bookmark card has a chart-enable toggle (localStorage-persisted) controlling chart inclusion
+  5. Bookmark card layout: bigger minimap (72px), button row (toggle, load, delete) below piece filter
+  6. Position Bookmarks popover explains Piece filter and chart-enable toggle
+**Plans**: 2 plans
+**UI hint**: yes
+
+Plans:
+- [x] 38-01-PLAN.md — Backend full_hash addition, section reordering, default chart data from most-played openings
+- [x] 38-02-PLAN.md — Suggestions rework, chart-enable toggle, bookmark card redesign, dead code cleanup, visual verification
 
 ### Phase 37: Openings Reference Table & Most Played Openings Redesign
 **Goal**: Create an openings reference table from the TSV dataset, then redesign the Most Played Openings feature with filter support, dedicated table UI, opening PGN/FEN display, minimap popover, and SQL-side WDL aggregation
@@ -196,6 +215,7 @@ Plans:
 | 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
 | 36. Most Played Openings | v1.6 | 1/1 | Complete    | 2026-03-28 |
 | 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
+| 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
 
 ## Backlog
 
@@ -203,7 +223,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
@@ -234,4 +254,3 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
-
