@@ -5,7 +5,7 @@ HTTP layer only — all DB access via user_repository.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -56,3 +56,13 @@ async def update_profile(
         chess_com_game_count=counts.get("chess.com", 0),
         lichess_game_count=counts.get("lichess", 0),
     )
+
+
+@router.post("/sentry-test-error", status_code=500)
+async def sentry_test_error(
+    user: Annotated[User, Depends(current_active_user)],
+) -> None:
+    """Superuser-only: raise an unhandled error to test Sentry backend reporting."""
+    if not user.is_superuser:
+        raise HTTPException(status_code=403, detail="Superuser access required")
+    raise RuntimeError("[Sentry Test] Backend error")

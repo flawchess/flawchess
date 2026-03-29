@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
+import { apiClient } from '@/api/client';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
@@ -59,6 +60,14 @@ function SentryTestButtons() {
           onClick={() => setShouldCrash(true)}
         >
           React render error
+        </Button>
+        <Button
+          size="sm"
+          variant="destructive"
+          data-testid="btn-sentry-test-backend"
+          onClick={() => apiClient.post('/users/sentry-test-error')}
+        >
+          Backend error
         </Button>
       </div>
     </div>
