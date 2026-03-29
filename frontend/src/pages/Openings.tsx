@@ -294,12 +294,33 @@ export function OpeningsPage() {
     }
   }, [chess, filters, boardFlipped, bookmarkLabel, createBookmark]);
 
+  /** Open games for a chart bookmark — loads position on board and navigates to games tab */
+  const handleOpenChartBookmarkGames = useCallback((bookmark: PositionBookmarkResponse) => {
+    if (bookmark.moves.length > 0) {
+      // Real bookmark — load its moves
+      chess.loadMoves(bookmark.moves);
+    } else if (mostPlayedData) {
+      // Default chart entry — find PGN from most-played data
+      const allOpenings = [...(mostPlayedData.white ?? []), ...(mostPlayedData.black ?? [])];
+      const opening = allOpenings.find(o => o.full_hash === bookmark.target_hash);
+      if (opening) {
+        chess.loadMoves(pgnToSanArray(opening.pgn));
+      }
+    }
+    const color = bookmark.color ?? 'white';
+    setBoardFlipped(color === 'black');
+    setFilters(prev => ({ ...prev, color, matchSide: bookmark.match_side }));
+    navigate('/openings/games');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [chess, navigate, mostPlayedData]);
+
   /** Load opening PGN onto the board, set color/flip/filters, and navigate to games subtab */
   const handleOpenGames = useCallback((pgn: string, color: "white" | "black") => {
     chess.loadMoves(pgnToSanArray(pgn));
     setBoardFlipped(color === 'black');
     setFilters(prev => ({ ...prev, color, matchSide: 'both' as MatchSide }));
     navigate('/openings/games');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [chess, navigate]);
 
   const handleLoadBookmark = useCallback((bkm: PositionBookmarkResponse) => {
@@ -654,6 +675,8 @@ export function OpeningsPage() {
                       }}
                       label={row.label}
                       maxTotal={maxTotal}
+                      onOpenGames={() => handleOpenChartBookmarkGames(row.bookmark)}
+                      openGamesTestId={`wdl-opening-games-${row.bookmark.id}`}
                       testId={`wdl-opening-${row.bookmark.id}`}
                     />
                   ))}
