@@ -311,7 +311,7 @@ export function OpeningsPage() {
     setBoardFlipped(color === 'black');
     setFilters(prev => ({ ...prev, color, matchSide: bookmark.match_side }));
     navigate('/openings/games');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0 });
   }, [chess, navigate, mostPlayedData]);
 
   /** Load opening PGN onto the board, set color/flip/filters, and navigate to games subtab */
@@ -320,14 +320,14 @@ export function OpeningsPage() {
     setBoardFlipped(color === 'black');
     setFilters(prev => ({ ...prev, color, matchSide: 'both' as MatchSide }));
     navigate('/openings/games');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0 });
   }, [chess, navigate]);
 
   const handleLoadBookmark = useCallback((bkm: PositionBookmarkResponse) => {
     chess.loadMoves(bkm.moves);
     setBoardFlipped(bkm.is_flipped ?? false);
     setFilters(prev => ({ ...prev, color: bkm.color ?? 'white', matchSide: bkm.match_side }));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0 });
   }, [chess]);
 
   const handleReorder = useCallback((orderedIds: number[]) => {
@@ -554,7 +554,7 @@ export function OpeningsPage() {
             label={filters.matchSide === 'both' ? 'Position Results' : `Position Results (Piece filter: ${filters.matchSide === 'mine' ? 'Mine' : 'Opponent'})`}
             barHeight="h-6"
             gamesLink="/openings/games"
-            onGamesLinkClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            onGamesLinkClick={() => window.scrollTo({ top: 0 })}
             gamesLinkTestId="btn-moves-to-games"
             gamesLinkAriaLabel="View games for this position"
             testId="wdl-moves-position"
