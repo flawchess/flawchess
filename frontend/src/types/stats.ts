@@ -31,6 +31,7 @@ export interface OpeningWDL {
   label: string;
   pgn: string;
   fen: string;
+  full_hash: string;
   wins: number;
   draws: number;
   losses: number;
