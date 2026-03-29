@@ -48,7 +48,7 @@ const TIME_CONTROL_LABELS: Record<TimeControl, string> = {
   bullet: 'Bullet',
   blitz: 'Blitz',
   rapid: 'Rapid',
-  classical: 'Classical',
+  classical: 'Classic',
 };
 
 const PLATFORMS: Platform[] = ['chess.com', 'lichess'];

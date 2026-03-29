@@ -19,7 +19,7 @@ const chartConfig = {
   bullet: { label: 'Bullet', color: 'oklch(0.60 0.22 30)' },
   blitz: { label: 'Blitz', color: 'oklch(0.65 0.20 260)' },
   rapid: { label: 'Rapid', color: 'oklch(0.70 0.18 80)' },
-  classical: { label: 'Classical', color: 'oklch(0.60 0.22 310)' },
+  classical: { label: 'Classic', color: 'oklch(0.60 0.22 310)' },
 };
 
 function determineGranularity(data: RatingDataPoint[]): Granularity {
