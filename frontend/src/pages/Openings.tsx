@@ -628,7 +628,7 @@ export function OpeningsPage() {
               <span className="inline-flex items-center gap-1">
                 Results by Opening
                 <InfoPopover ariaLabel="Results by opening info" testId="wdl-bar-chart-info" side="top">
-                  Shows your win, draw, and loss percentages for each saved position, based on the games that match the current filter settings. The length of the grey bar indicates game count relative to other openings.
+                  Shows your win, draw, and loss percentages for each saved or most played position, based on the games that match the current filter settings. The length of the grey bar indicates game count relative to other openings.
                 </InfoPopover>
               </span>
             </h2>

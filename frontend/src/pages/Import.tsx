@@ -17,7 +17,7 @@ import { useImportTrigger, useImportPolling } from '@/hooks/useImport';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
-import type { UserProfile } from '@/types/users';
+
 
 const GAME_COUNT_REFRESH_INTERVAL_MS = 5000;
 
@@ -96,9 +96,13 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
   const trigger = useImportTrigger();
   const queryClient = useQueryClient();
 
-  // Username state — always editable, synced from profile
+  // Username state — always editable, synced from profile on first load only
   const [chessComUsername, setChessComUsername] = useState('');
   const [lichessUsername, setLichessUsername] = useState('');
+  // Track whether username fields have been initialized from profile.
+  // Without this guard, periodic profile refetches (game count refresh during import)
+  // would overwrite whatever the user was typing in the other platform's input.
+  const [initialized, setInitialized] = useState(false);
 
   // Per-platform error state
   const [chessComError, setChessComError] = useState<string | null>(null);
@@ -107,12 +111,11 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
   // Track jobId→platform for active imports — disables sync button while running
   const [jobPlatforms, setJobPlatforms] = useState<Map<string, string>>(new Map());
 
-  // Track previous profile to detect changes and sync input fields (derived state pattern)
-  const [prevProfile, setPrevProfile] = useState<UserProfile | undefined>(undefined);
-  if (profile !== prevProfile) {
-    setPrevProfile(profile);
-    setChessComUsername(profile?.chess_com_username ?? '');
-    setLichessUsername(profile?.lichess_username ?? '');
+  // Sync usernames from profile only on first load, not on every refetch
+  if (profile && !initialized) {
+    setInitialized(true);
+    setChessComUsername(profile.chess_com_username ?? '');
+    setLichessUsername(profile.lichess_username ?? '');
   }
 
   // Delete all games dialog state
