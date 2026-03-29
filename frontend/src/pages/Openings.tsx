@@ -702,14 +702,7 @@ export function OpeningsPage() {
             <span className="inline-flex items-center gap-1">
               Most Played Openings as White
               <InfoPopover ariaLabel="White openings info" testId="mpo-white-info" side="top">
-                <div className="space-y-2">
-                  <p>
-                    Your most frequently played openings as White, based on the lichess opening table. Only openings where White made the last move are shown here.
-                  </p>
-                  <p>
-                    The game count shows how many of your games passed through that position — this is usually more than just the games classified under that specific opening name, since many openings share the same early moves. Clicking the folder icon loads the opening on the board and shows those games.
-                  </p>
-                </div>
+                Your most frequently played openings as White, based on the lichess opening table. Only openings where White made the last move are shown here.
               </InfoPopover>
             </span>
           </h2>
@@ -729,14 +722,7 @@ export function OpeningsPage() {
             <span className="inline-flex items-center gap-1">
               Most Played Openings as Black
               <InfoPopover ariaLabel="Black openings info" testId="mpo-black-info" side="top">
-                <div className="space-y-2">
-                  <p>
-                    Your most frequently played openings as Black, based on the lichess opening table. Only openings where Black made the last move are shown here.
-                  </p>
-                  <p>
-                    The game count shows how many of your games passed through that position — this is usually more than just the games classified under that specific opening name, since many openings share the same early moves. Clicking the folder icon loads the opening on the board and shows those games.
-                  </p>
-                </div>
+                Your most frequently played openings as Black, based on the lichess opening table. Only openings where Black made the last move are shown here.
               </InfoPopover>
             </span>
           </h2>
