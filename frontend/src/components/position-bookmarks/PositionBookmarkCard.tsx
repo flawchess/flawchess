@@ -52,7 +52,14 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
 
   const handleLabelKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      e.currentTarget.blur();
+      // Save directly on Enter — don't rely on blur chain which can be
+      // interrupted by sortable container focus management
+      const trimmed = labelValue.trim();
+      if (trimmed && trimmed !== bookmark.label) {
+        updateLabel.mutate({ id: bookmark.id, data: { label: trimmed } });
+      }
+      isDirtyRef.current = true; // prevent double-save from subsequent blur
+      setIsEditing(false);
     } else if (e.key === 'Escape') {
       isDirtyRef.current = true;
       setLabelValue(bookmark.label);
@@ -141,14 +148,14 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
           variant="outline"
           size="sm"
           data-testid={`bookmark-match-side-${bookmark.id}`}
-          className="justify-start"
+          className="w-full"
           aria-label="Piece filter"
         >
           <ToggleGroupItem
             value="mine"
             data-testid={`bookmark-match-side-${bookmark.id}-mine`}
             aria-label="Match my pieces only"
-            className="text-xs h-6 px-2"
+            className="text-xs h-6 px-2 flex-1"
           >
             Mine
           </ToggleGroupItem>
@@ -156,7 +163,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
             value="opponent"
             data-testid={`bookmark-match-side-${bookmark.id}-opponent`}
             aria-label="Match opponent pieces only"
-            className="text-xs h-6 px-2"
+            className="text-xs h-6 px-2 flex-1"
           >
             Opponent
           </ToggleGroupItem>
@@ -164,7 +171,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
             value="both"
             data-testid={`bookmark-match-side-${bookmark.id}-both`}
             aria-label="Match both sides"
-            className="text-xs h-6 px-2"
+            className="text-xs h-6 px-2 flex-1"
           >
             Both
           </ToggleGroupItem>

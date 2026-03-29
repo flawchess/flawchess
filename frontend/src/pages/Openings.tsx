@@ -327,6 +327,7 @@ export function OpeningsPage() {
     chess.loadMoves(bkm.moves);
     setBoardFlipped(bkm.is_flipped ?? false);
     setFilters(prev => ({ ...prev, color: bkm.color ?? 'white', matchSide: bkm.match_side }));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [chess]);
 
   const handleReorder = useCallback((orderedIds: number[]) => {
