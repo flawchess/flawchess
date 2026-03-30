@@ -332,6 +332,7 @@ export function EndgamesPage() {
             </div>
 
             {/* Tabs: Statistics / Games */}
+            <hr className="border-t border-white/10 mb-3" />
             <TabsList variant="brand" className="w-full h-11!" data-testid="endgames-tabs-mobile">
               <TabsTrigger value="statistics" className="flex-1" data-testid="tab-statistics-mobile">
                 <BarChart2Icon className="mr-1.5 h-4 w-4" />

@@ -1023,6 +1023,7 @@ export function OpeningsPage() {
           />
 
           {/* Tabs: Moves / Games / Compare */}
+          <hr className="border-t border-white/10 mb-3" />
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
             <TabsList variant="brand" className="w-full h-11!" data-testid="openings-tabs-mobile">
               <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
