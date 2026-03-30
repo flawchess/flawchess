@@ -274,7 +274,7 @@ function ChartLegendContent({
   return (
     <div
       className={cn(
-        "flex items-center justify-center gap-4",
+        "grid grid-cols-2 gap-x-4 gap-y-1 sm:flex sm:flex-wrap sm:items-center sm:justify-center sm:gap-4",
         verticalAlign === "top" ? "pb-3" : "pt-3",
         className
       )}
@@ -290,7 +290,7 @@ function ChartLegendContent({
             <div
               key={item.value}
               className={cn(
-                "flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground",
+                "flex min-w-0 items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground",
                 onClickItem && "cursor-pointer",
                 isHidden && "opacity-50 line-through"
               )}
@@ -306,7 +306,7 @@ function ChartLegendContent({
                   }}
                 />
               )}
-              {itemConfig?.label}
+              <span className="truncate sm:max-w-[14rem]">{itemConfig?.label}</span>
             </div>
           )
         })}
