@@ -12,6 +12,8 @@ interface BoardControlsProps {
   infoSlot?: React.ReactNode;
   /** Render buttons in a vertical column (used on mobile beside the board) */
   vertical?: boolean;
+  /** Additional CSS classes for the root container */
+  className?: string;
 }
 
 export function BoardControls({
@@ -23,9 +25,10 @@ export function BoardControls({
   canGoForward,
   infoSlot,
   vertical = false,
+  className,
 }: BoardControlsProps) {
   return (
-    <div className={`flex items-center justify-evenly rounded-lg charcoal-texture ${vertical ? 'flex-col' : ''}`}>
+    <div className={`flex items-center justify-evenly rounded-lg charcoal-texture ${vertical ? 'flex-col' : ''} ${className ?? ''}`}>
       <Button
         variant="ghost"
         size="icon"

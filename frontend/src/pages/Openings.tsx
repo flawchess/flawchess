@@ -826,72 +826,55 @@ export function OpeningsPage() {
                   arrows={boardArrows}
                 />
               </div>
-              {/* Vertical board controls beside the board on mobile */}
-              <BoardControls
-                vertical
-                onBack={chess.goBack}
-                onForward={chess.goForward}
-                onReset={() => { chess.reset(); setGamesOffset(0); }}
-                onFlip={() => setBoardFlipped((f) => !f)}
-                canGoBack={chess.currentPly > 0}
-                canGoForward={chess.currentPly < chess.moveHistory.length}
-                infoSlot={
-                  <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="left">
-                    Play moves on the board by tapping squares or dragging pieces.
-                    <br /><br />
-                    The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.
-                  </InfoPopover>
-                }
-              />
-            </div>
-          </div>
-
-          {/* Opening name */}
-          <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
-            {chess.openingName ? (
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
-                <span className="text-foreground">{chess.openingName.name}</span>
+              {/* Vertical controls column: board nav + sidebar triggers */}
+              <div className="flex flex-col gap-0.5">
+                <BoardControls
+                  vertical
+                  className="flex-1"
+                  onBack={chess.goBack}
+                  onForward={chess.goForward}
+                  onReset={() => { chess.reset(); setGamesOffset(0); }}
+                  onFlip={() => setBoardFlipped((f) => !f)}
+                  canGoBack={chess.currentPly > 0}
+                  canGoForward={chess.currentPly < chess.moveHistory.length}
+                  infoSlot={
+                    <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="left">
+                      Play moves on the board by tapping squares or dragging pieces.
+                      <br /><br />
+                      The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.
+                    </InfoPopover>
+                  }
+                />
+                {/* Sidebar trigger buttons — icon-only, separated from nav buttons */}
+                <div className="mt-1 flex flex-col gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                    onClick={openFilterSidebar}
+                    data-testid="btn-open-filter-sidebar"
+                    aria-label="Open filters"
+                  >
+                    <SlidersHorizontal className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                    onClick={openBookmarkSidebar}
+                    data-testid="btn-open-bookmark-sidebar"
+                    aria-label="Open bookmarks"
+                  >
+                    <BookMarked className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-            ) : (
-              <span className="text-muted-foreground italic">Play some moves</span>
-            )}
-          </div>
-
-          {/* Move list */}
-          <MoveList
-            moveHistory={chess.moveHistory}
-            currentPly={chess.currentPly}
-            onMoveClick={chess.goToMove}
-          />
-
-          {/* Sidebar trigger buttons (D-02: outside BoardControls, D-03: distinct via style) */}
-          <div className="flex gap-2 w-full">
-            <Button
-              variant={filterSidebarOpen ? undefined : 'ghost'}
-              className={`flex-1 h-11 ${filterSidebarOpen ? PRIMARY_BUTTON_CLASS : 'hover:bg-accent'}`}
-              onClick={openFilterSidebar}
-              data-testid="btn-open-filter-sidebar"
-              aria-label="Open filters"
-            >
-              <SlidersHorizontal className="h-4 w-4 mr-1.5" />
-              Filters
-            </Button>
-            <Button
-              variant={bookmarkSidebarOpen ? undefined : 'ghost'}
-              className={`flex-1 h-11 ${bookmarkSidebarOpen ? PRIMARY_BUTTON_CLASS : 'hover:bg-accent'}`}
-              onClick={openBookmarkSidebar}
-              data-testid="btn-open-bookmark-sidebar"
-              aria-label="Open bookmarks"
-            >
-              <BookMarked className="h-4 w-4 mr-1.5" />
-              Bookmarks
-            </Button>
+            </div>
           </div>
 
           {/* Filter sidebar (D-04, D-05, D-06, D-10, D-12) */}
           <Drawer open={filterSidebarOpen} onOpenChange={handleFilterSidebarOpenChange} direction="right">
-            <DrawerContent data-testid="drawer-filter-sidebar">
+            <DrawerContent className="!w-full sm:!w-3/4" data-testid="drawer-filter-sidebar">
               <DrawerHeader className="flex flex-row items-center justify-between">
                 <DrawerTitle>Filters</DrawerTitle>
                 <DrawerClose asChild>
@@ -901,54 +884,54 @@ export function OpeningsPage() {
                 </DrawerClose>
               </DrawerHeader>
               <div className="overflow-y-auto flex-1 p-4 space-y-4">
-                {/* Played as (color) — not in FilterPanel, must render manually */}
-                <div>
-                  <p className="mb-1 text-xs text-muted-foreground">Played as</p>
-                  <ToggleGroup
-                    type="single"
-                    value={localFilters.color}
-                    onValueChange={(v) => {
-                      if (!v) return;
-                      setLocalFilters(prev => ({ ...prev, color: v as Color }));
-                    }}
-                    variant="outline"
-                    size="sm"
-                    data-testid="filter-played-as-sidebar"
-                  >
-                    <ToggleGroupItem value="white" data-testid="filter-played-as-white-sidebar" className="min-h-11">
-                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
-                      White
-                    </ToggleGroupItem>
-                    <ToggleGroupItem value="black" data-testid="filter-played-as-black-sidebar" className="min-h-11">
-                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
-                      Black
-                    </ToggleGroupItem>
-                  </ToggleGroup>
-                </div>
-
-                {/* Piece filter (matchSide) — not in FilterPanel, must render manually */}
-                <div>
-                  <div className="mb-1 flex items-center gap-1">
-                    <p className="text-xs text-muted-foreground">Piece filter</p>
-                    <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info-sidebar" side="top">
-                      Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
-                    </InfoPopover>
+                {/* Played as + Piece filter — same row like desktop */}
+                <div className="flex flex-wrap gap-x-4 gap-y-3">
+                  <div>
+                    <p className="mb-1 text-xs text-muted-foreground">Played as</p>
+                    <ToggleGroup
+                      type="single"
+                      value={localFilters.color}
+                      onValueChange={(v) => {
+                        if (!v) return;
+                        setLocalFilters(prev => ({ ...prev, color: v as Color }));
+                      }}
+                      variant="outline"
+                      size="sm"
+                      data-testid="filter-played-as-sidebar"
+                    >
+                      <ToggleGroupItem value="white" data-testid="filter-played-as-white-sidebar" className="min-h-11">
+                        <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
+                        White
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="black" data-testid="filter-played-as-black-sidebar" className="min-h-11">
+                        <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
+                        Black
+                      </ToggleGroupItem>
+                    </ToggleGroup>
                   </div>
-                  <ToggleGroup
-                    type="single"
-                    value={localFilters.matchSide}
-                    onValueChange={(v) => {
-                      if (!v) return;
-                      setLocalFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
-                    }}
-                    variant="outline"
-                    size="sm"
-                    data-testid="filter-piece-filter-sidebar"
-                  >
-                    <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-sidebar" className="min-h-11">Mine</ToggleGroupItem>
-                    <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-sidebar" className="min-h-11">Opponent</ToggleGroupItem>
-                    <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-sidebar" className="min-h-11">Both</ToggleGroupItem>
-                  </ToggleGroup>
+                  <div className="ml-auto">
+                    <div className="mb-1 flex items-center gap-1">
+                      <p className="text-xs text-muted-foreground">Piece filter</p>
+                      <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info-sidebar" side="top">
+                        Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
+                      </InfoPopover>
+                    </div>
+                    <ToggleGroup
+                      type="single"
+                      value={localFilters.matchSide}
+                      onValueChange={(v) => {
+                        if (!v) return;
+                        setLocalFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
+                      }}
+                      variant="outline"
+                      size="sm"
+                      data-testid="filter-piece-filter-sidebar"
+                    >
+                      <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-sidebar" className="min-h-11">Mine</ToggleGroupItem>
+                      <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-sidebar" className="min-h-11">Opponent</ToggleGroupItem>
+                      <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-sidebar" className="min-h-11">Both</ToggleGroupItem>
+                    </ToggleGroup>
+                  </div>
                 </div>
 
                 {/* Remaining filters (5 fields: timeControl, platform, rated, opponent, recency) */}
@@ -959,7 +942,7 @@ export function OpeningsPage() {
 
           {/* Bookmark sidebar (D-04, D-05, D-06, D-13, D-14) */}
           <Drawer open={bookmarkSidebarOpen} onOpenChange={setBookmarkSidebarOpen} direction="right">
-            <DrawerContent data-testid="drawer-bookmark-sidebar">
+            <DrawerContent className="!w-full sm:!w-3/4" data-testid="drawer-bookmark-sidebar">
               <DrawerHeader className="flex flex-row items-center justify-between">
                 <DrawerTitle>Position Bookmarks</DrawerTitle>
                 <DrawerClose asChild>
@@ -1017,6 +1000,25 @@ export function OpeningsPage() {
               </div>
             </DrawerContent>
           </Drawer>
+
+          {/* Opening name */}
+          <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
+            {chess.openingName ? (
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
+                <span className="text-foreground">{chess.openingName.name}</span>
+              </div>
+            ) : (
+              <span className="text-muted-foreground italic">Play some moves</span>
+            )}
+          </div>
+
+          {/* Move list */}
+          <MoveList
+            moveHistory={chess.moveHistory}
+            currentPly={chess.currentPly}
+            onMoveClick={chess.goToMove}
+          />
 
           {/* Tabs: Moves / Games / Compare */}
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
