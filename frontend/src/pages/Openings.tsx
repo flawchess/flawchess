@@ -477,6 +477,31 @@ export function OpeningsPage() {
         </div>
       </div>
 
+      {/* More filters collapsible */}
+      <div className="charcoal-texture rounded-md">
+      <Collapsible open={moreFiltersOpen} onOpenChange={setMoreFiltersOpen}>
+        <CollapsibleTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-between px-3 text-sm font-medium min-h-11 sm:min-h-0 rounded-none hover:bg-charcoal-hover!"
+            data-testid="section-more-filters"
+          >
+            More filters
+            {moreFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="border-t border-border/20" />
+          <div className="p-2">
+            <FilterPanel filters={filters} onChange={handleFiltersChange} />
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+      </div>
+
+      <div className="border-t border-border/40" />
+
       {/* Position bookmarks collapsible */}
       <div className="charcoal-texture rounded-md">
       <Collapsible open={positionBookmarksOpen} onOpenChange={setPositionBookmarksOpen}>
@@ -538,29 +563,6 @@ export function OpeningsPage() {
               chartEnabledMap={chartEnabledMap}
               onChartEnabledChange={handleChartEnabledChange}
             />
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-      </div>
-
-      {/* More filters collapsible */}
-      <div className="charcoal-texture rounded-md">
-      <Collapsible open={moreFiltersOpen} onOpenChange={setMoreFiltersOpen}>
-        <CollapsibleTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-between px-3 text-sm font-medium min-h-11 sm:min-h-0 rounded-none hover:bg-charcoal-hover!"
-            data-testid="section-more-filters"
-          >
-            More filters
-            {moreFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="border-t border-border/20" />
-          <div className="p-2">
-            <FilterPanel filters={filters} onChange={handleFiltersChange} />
           </div>
         </CollapsibleContent>
       </Collapsible>
