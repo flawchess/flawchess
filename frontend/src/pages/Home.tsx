@@ -71,7 +71,7 @@ const FEATURES: {
     heading: 'Endgame Statistics',
     desc: [
         'Measure your endgame performance, conversion, and recovery ability.',
-        'Track your win/draw/loss rates by endgame type \u2014 rook, minor piece, pawn, queen, and more.',
+        'Track your win/draw/loss rates by endgame type: rook, minor piece, pawn, queen, and more.',
         'Find out for each endgame type how often you convert material advantages and recover from deficits.',
     ],
     screenshot: { src: '/screenshots/endgame-analysis.png', alt: 'Endgame analytics showing WDL rates by endgame category' },
