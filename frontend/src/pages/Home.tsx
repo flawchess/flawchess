@@ -304,6 +304,104 @@ export function HomePageContent() {
         </Accordion>
       </section>
 
+      {/* Acknowledgements */}
+      <section data-testid="acknowledgements-section" className="max-w-2xl mx-auto px-4 py-12">
+        <h2 className="text-xl font-bold mb-6">Acknowledgements</h2>
+        <p className="text-base text-muted-foreground leading-relaxed mb-4">
+          FlawChess is built with and inspired by these projects:
+        </p>
+        <ul className="list-disc pl-5 space-y-1.5 text-base text-muted-foreground">
+          <li>
+            <a
+              href="https://lichess.org"
+              className="text-primary underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Lichess
+            </a>{' '}
+            &mdash; open-source chess platform and game data API
+          </li>
+          <li>
+            <a
+              href="https://chess.com"
+              className="text-primary underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Chess.com
+            </a>{' '}
+            &mdash; chess platform and game data API
+          </li>
+          <li>
+            <a
+              href="https://www.openingtree.com"
+              className="text-primary underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              OpeningTree.com
+            </a>{' '}
+            &mdash; inspiration for position-based opening analysis
+          </li>
+          <li>
+            <a
+              href="https://python-chess.readthedocs.io"
+              className="text-primary underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              python-chess
+            </a>{' '}
+            &mdash; chess logic, move generation, and Zobrist hashing
+          </li>
+          <li>
+            <a
+              href="https://fastapi.tiangolo.com"
+              className="text-primary underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              FastAPI
+            </a>{' '}
+            &mdash; async Python web framework
+          </li>
+          <li>
+            <a
+              href="https://github.com/jhlywa/chess.js"
+              className="text-primary underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              chess.js
+            </a>{' '}
+            &mdash; chess move validation and game state
+          </li>
+          <li>
+            <a
+              href="https://github.com/Clariity/react-chessboard"
+              className="text-primary underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              react-chessboard
+            </a>{' '}
+            &mdash; interactive chessboard component
+          </li>
+          <li>
+            <a
+              href="https://recharts.org"
+              className="text-primary underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Recharts
+            </a>{' '}
+            &mdash; composable chart library
+          </li>
+        </ul>
+      </section>
+
       {/* Footer CTA */}
       <section className="text-center py-16" data-testid="footer-cta">
         <p className="text-muted-foreground mb-4">Free to use. No credit card required.</p>
