@@ -1,5 +1,20 @@
 # Milestones: FlawChess
 
+## v1.6 UI Polish & Improvements (Shipped: 2026-03-30)
+
+**Phases completed:** 6 phases, 11 plans
+
+**Key accomplishments:**
+
+- Centralized theme system with CSS variables, charcoal containers with SVG noise texture, brand subtab highlighting
+- Shared WDLChartRow component replacing all inconsistent WDL chart implementations across the app
+- Openings reference table (3641 entries from TSV) with SQL-side WDL aggregation and filter support
+- Most Played Openings redesign: top 10 per color, dedicated table UI with minimap popovers
+- Opening Statistics rework: smart default chart data from most-played openings, chart-enable toggles on bookmarks
+- Mobile drawer sidebars for filters and bookmarks with deferred filter apply on close
+
+---
+
 ## v1.3 Project Launch (Shipped: 2026-03-22)
 
 **Phases completed:** 4 phases, 10 plans, 12 tasks

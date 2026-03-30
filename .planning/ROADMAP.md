@@ -8,7 +8,7 @@
 - ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
 - ✅ **v1.4 Improvements** — Phase 24 (shipped 2026-03-22)
 - ✅ **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33 (shipped 2026-03-28)
-- 🚧 **v1.6 UI Polish & Improvements** — Phases 34-39 (in progress)
+- ✅ **v1.6 UI Polish & Improvements** — Phases 34-39 (shipped 2026-03-30)
 
 ## Phases
 
@@ -81,117 +81,17 @@
 
 </details>
 
-## v1.6 UI Polish & Improvements
+<details>
+<summary>✅ v1.6 UI Polish & Improvements (Phases 34-39) — SHIPPED 2026-03-30</summary>
 
-- [x] **Phase 34: Theme Improvements** — Centralize theme constants, charcoal containers with noise texture, filter button layout, consistent WDL chart styling, active subtab highlighting (completed 2026-03-28)
-- [x] **Phase 35: WDL Chart Refactoring** — Create shared WDL chart component based on endgame charts, replace all inconsistent WDL charts (custom and Recharts), clean up unused code (completed 2026-03-28)
-- [x] **Phase 36: Most Played Openings** — Add "Most Played Openings" sections (White/Black) to Opening Statistics subtab with top 5 openings as WDL charts, ECO codes, minimum 10 games threshold (completed 2026-03-28)
-- [x] **Phase 37: Openings Reference Table & Most Played Openings Redesign** — Create openings DB table from TSV dataset with PGN/FEN/ply_count, redesign most played openings with filter support, dedicated table UI, minimap popover, SQL-side WDL aggregation, top 10 (completed 2026-03-28)
-- [x] **Phase 38: Opening Statistics & Bookmark Suggestions Rework** — Reorder stats sections, use most-played openings as default chart data, rework bookmark suggestions, add chart-enable toggle, redesign bookmark card layout (completed 2026-03-29)
-- [x] **Phase 39: Mobile Opening Explorer Sidebars** — Replace mobile collapsible filter/bookmark sections with right-side drawer sidebars, compact board action buttons, deferred filter apply on close (completed 2026-03-30)
+- [x] Phase 34: Theme Improvements (2/2 plans) — completed 2026-03-28
+- [x] Phase 35: WDL Chart Refactoring (2/2 plans) — completed 2026-03-28
+- [x] Phase 36: Most Played Openings (1/1 plan) — completed 2026-03-28
+- [x] Phase 37: Openings Reference Table & Redesign (3/3 plans) — completed 2026-03-28
+- [x] Phase 38: Opening Statistics & Bookmark Rework (2/2 plans) — completed 2026-03-29
+- [x] Phase 39: Mobile Opening Explorer Sidebars (1/1 plan) — completed 2026-03-30
 
-## Phase Details
-
-### Phase 39: Mobile Opening Explorer Sidebars for Filters and Bookmarks
-**Goal**: Replace mobile collapsible filter/bookmark sections on the Opening Explorer with two Vaul-based right-side drawer sidebars triggered from buttons below the board, compact board action buttons, and implement deferred filter apply on sidebar close
-**Depends on**: Phase 38
-**Requirements**: MOB-01, MOB-02, MOB-03, MOB-04, MOB-05, MOB-06, MOB-07
-**Success Criteria** (what must be TRUE):
-  1. Mobile board action buttons are compact (h-9 w-9 instead of h-11 w-11)
-  2. Trigger buttons (Filters + Bookmarks) appear below the board controls on mobile
-  3. Filter sidebar slides in from right containing all filters (Played as, Piece filter, and all other filters)
-  4. Filter changes are deferred — only applied when the sidebar is closed
-  5. Bookmark sidebar slides in from right containing save, suggest, and bookmark list
-  6. Loading a bookmark from the sidebar closes the sidebar and applies the position
-  7. Desktop sidebar layout is completely unchanged
-**Plans**: 1 plan
-**UI hint**: yes
-
-Plans:
-- [x] 39-01-PLAN.md — Compact board buttons, filter/bookmark drawer sidebars with deferred apply, remove mobile collapsibles
-
-### Phase 38: Opening Statistics & Bookmark Suggestions Rework
-**Goal**: Reorder Opening Statistics sections, use top most-played openings as default chart data when no bookmarks exist, rework bookmark suggestion system using most-played openings data, add chart-enable toggle to bookmarks, redesign bookmark card layout
-**Depends on**: Phase 37
-**Requirements**: STAT-01, STAT-02, STAT-03, STAT-04, STAT-05, STAT-06
-**Success Criteria** (what must be TRUE):
-  1. Statistics tab sections appear in order: Results by Opening, Win Rate Over Time, Most Played White, Most Played Black
-  2. When no bookmarks exist, charts show data from top 3 most-played openings per color
-  3. Bookmark suggestions derive from most-played openings, skip already-bookmarked positions
-  4. Each bookmark card has a chart-enable toggle (localStorage-persisted) controlling chart inclusion
-  5. Bookmark card layout: bigger minimap (72px), button row (toggle, load, delete) below piece filter
-  6. Position Bookmarks popover explains Piece filter and chart-enable toggle
-**Plans**: 2 plans
-**UI hint**: yes
-
-Plans:
-- [x] 38-01-PLAN.md — Backend full_hash addition, section reordering, default chart data from most-played openings
-- [x] 38-02-PLAN.md — Suggestions rework, chart-enable toggle, bookmark card redesign, dead code cleanup, visual verification
-
-### Phase 37: Openings Reference Table & Most Played Openings Redesign
-**Goal**: Create an openings reference table from the TSV dataset, then redesign the Most Played Openings feature with filter support, dedicated table UI, opening PGN/FEN display, minimap popover, and SQL-side WDL aggregation
-**Depends on**: Phase 36 (Most Played Openings baseline)
-**Requirements**: ORT-01, ORT-02, ORT-03, ORT-04, ORT-05
-**Success Criteria** (what must be TRUE):
-  1. openings table contains all ~3641 rows from TSV with correct ply_count and fen values computed via python-chess
-  2. Deduplicated view returns one row per (eco, name) pair
-  3. Endpoint returns top 10 openings per color with WDL stats computed in SQL, filtered by recency/time_control/platform/rated/opponent_type, excluding openings below ply threshold
-  4. Frontend renders a dedicated table with ECO/name/PGN, game count link, and mini WDL bar per row
-  5. Hovering/tapping a row shows a minimap popover of the opening position
-**Plans**: 3 plans
-**UI hint**: yes
-
-Plans:
-- [x] 37-01-PLAN.md — Opening model, Alembic migration with dedup view, seed script, tests
-- [x] 37-02-PLAN.md — SQL-side WDL aggregation, filter params, updated schema/service/router, tests
-- [x] 37-03-PLAN.md — Frontend table component, minimap popover, hook/API filter wiring, visual verification
-
-### Phase 36: Most Played Openings
-**Goal**: Opening Statistics subtab shows the user's top 5 most played openings for White and Black as WDL charts, with ECO codes and a minimum 10 games threshold
-**Depends on**: Phase 35 (WDL chart infrastructure)
-**Requirements**: MPO-01, MPO-02, MPO-03, MPO-04
-**Success Criteria** (what must be TRUE):
-  1. "Most Played Openings: White" and "Most Played Openings: Black" sections appear at the top of the Opening Statistics subtab in a shared charcoal container
-  2. Each section lists the top 5 openings by game count, based on opening_eco/opening_name from the games table
-  3. Openings with fewer than 10 games are excluded; if no openings meet the threshold, an explanatory message is shown
-  4. Openings are displayed as WDL charts (same component as "Results by Opening") with ECO code in parentheses in the title
-**Plans**: 1 plan
-**UI hint**: yes
-
-Plans:
-- [x] 36-01-PLAN.md — Backend endpoint + frontend rendering for most played openings by color
-
-### Phase 35: WDL Chart Refactoring
-**Goal**: All WDL charts (except move list) use a single shared component, eliminating inconsistent custom and Recharts implementations
-**Depends on**: Phase 34 (theme infrastructure)
-**Requirements**: WDL-01, WDL-02, WDL-03, WDL-04
-**Success Criteria** (what must be TRUE):
-  1. A shared WDL chart component exists with configurable title, games link, and optional game count bar
-  2. All WDL charts across the app (Results by Time Control, Results by Color, Results by Opening, endgame type charts, etc.) use the shared component — except the moves list in the Moves tab
-  3. No unused WDL-related constants, CSS classes, or Recharts chart code remains
-  4. Visual appearance matches the current endgame type WDL charts (the reference implementation)
-**Plans**: 2 plans
-
-Plans:
-- [x] 35-01-PLAN.md — Shared WDLChartRow component + WDLRowData type, reimplement WDLBar as wrapper
-- [x] 35-02-PLAN.md — Replace GlobalStatsCharts/WDLBarChart/EndgameWDLChart/EndgamePerformanceSection with WDLChartRow, delete dead code
-
-### Phase 34: Theme Improvements
-**Goal**: Users see a visually consistent, polished UI with centralized theme management across all pages
-**Depends on**: Nothing (first phase of v1.6)
-**Requirements**: THEME-01, THEME-02, THEME-03, THEME-04, THEME-05
-**Success Criteria** (what must be TRUE):
-  1. All theme-relevant constants (container colors, spacing, chart styles) are defined in theme.ts and CSS variables — no ad-hoc color values scattered across components
-  2. Content containers appear with a charcoal background and subtle noise texture, visually distinct from the page background
-  3. Filter buttons in the sidebar are laid out horizontally, spanning the full available width with even spacing
-  4. WDL charts (both custom bar and Recharts-based) share identical corner rounding and rendering style across all pages
-  5. The active subtab is clearly highlighted so the user always knows which sub-section they are viewing
-**Plans**: 2 plans
-**UI hint**: yes
-
-Plans:
-- [x] 34-01-PLAN.md — Theme infrastructure: CSS variables, charcoal texture class, tabs brand variant, filter layout, WDL chart rounding
-- [x] 34-02-PLAN.md — Apply charcoal containers to pages, collapsible styling, nav header polish, subtab highlighting, visual checkpoint
+</details>
 
 ## Progress
 

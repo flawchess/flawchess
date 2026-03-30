@@ -2,7 +2,7 @@
 
 ## What This Is
 
-FlawChess — a multi-user chess analysis platform that lets players import their games from chess.com and lichess, then analyze win/draw/loss rates for specific board positions. It solves the problem of inconsistent opening categorization on existing platforms — instead of relying on opening names, users define positions visually and filter by actual piece placement. Includes an interactive move explorer showing next moves with W/D/L stats per position. Works as an installable PWA on mobile with touch-optimized UI.
+FlawChess — a multi-user chess analysis platform that lets players import their games from chess.com and lichess, then analyze win/draw/loss rates for specific board positions. It solves the problem of inconsistent opening categorization on existing platforms — instead of relying on opening names, users define positions visually and filter by actual piece placement. Includes an interactive move explorer showing next moves with W/D/L stats per position, endgame performance analytics with conversion/recovery metrics, and a polished mobile PWA experience with drawer-based sidebars.
 
 ## Core Value
 
@@ -45,17 +45,26 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Privacy policy page at /privacy — v1.3
 - ✓ Per-platform import rate limiter preventing chess.com/lichess bans — v1.3
 - ✓ Professional README with screenshots and self-hosting instructions — v1.3
+- ✓ Web analytics via self-hosted Umami — v1.4
+- ✓ Game phase classification (opening/middlegame/endgame) per position at import — v1.5
+- ✓ Material signature, imbalance, and endgame class per position at import — v1.5
+- ✓ Engine analysis data import (eval, accuracy, move quality) from chess.com/lichess — v1.5
+- ✓ Endgame performance statistics in dedicated Endgames tab — v1.5
+- ✓ Endgame stats filterable by type (rook, minor piece, pawn, queen, mixed) — v1.5
+- ✓ Conversion stats (win rate when up material) with timeline charts — v1.5
+- ✓ Recovery stats (draw/win rate when down material) with timeline charts — v1.5
+- ✓ Homepage with feature showcase, FAQ, acknowledgements — v1.5
+- ✓ Centralized theme system (CSS variables, charcoal containers, noise texture) — v1.6
+- ✓ Shared WDL chart component replacing all inconsistent implementations — v1.6
+- ✓ Openings reference table (3641 entries from TSV) with SQL-side WDL aggregation — v1.6
+- ✓ Most played openings (top 10 per color) with filter support and minimap popovers — v1.6
+- ✓ Smart default chart data from most-played openings when no bookmarks exist — v1.6
+- ✓ Chart-enable toggle on bookmark cards with localStorage persistence — v1.6
+- ✓ Mobile drawer sidebars for filters and bookmarks with deferred apply — v1.6
 
 ### Active
 
-- [x] System computes game phase (opening/middlegame/endgame) for every position during import — Validated in Phase 27: import-wiring-backfill
-- [x] System computes material signature, material imbalance, and endgame class for every position during import — Validated in Phase 27: import-wiring-backfill
-- [ ] System imports existing engine analysis data (eval, accuracy, move quality) from chess.com/lichess when available
-- [ ] User can view endgame performance statistics in a dedicated Endgames tab
-- [ ] User can filter endgame stats by endgame type (rook, minor piece, pawn, queen endgames, etc.)
-- [ ] User can filter endgame stats by material configuration (e.g., KRP vs KR)
-- [ ] User can see conversion stats (win rate when up material) broken down by game phase
-- [ ] User can see recovery stats (draw/win rate when down material) broken down by game phase
+(None — planning next milestone)
 
 ### Out of Scope
 
@@ -64,25 +73,15 @@ Users can determine their success rate for any opening position they specify, fi
 - Human-like engine analysis — future: engine evaluation filtered by human move plausibility at target Elo (see Maia Chess approach)
 - Offline API data caching — chess data is user-specific + authenticated; caching risks stale analysis
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
-
-## Current Milestone: v1.6 UI Polish & Improvements
-
-**Goal:** Improve visual consistency, theming, and layout polish across the application.
-
-**Target features:**
-- Centralized theme configuration via theme.ts (containers, spacing, colors)
-- Visually distinct containers with charcoal backgrounds and CSS-only noise texture
-- Better filter button spacing in sidebar (horizontal, full-width layout)
-- Consistent chart styling across all WDL/Recharts visualizations (unified corners, rendering)
-- Improved active subtab highlighting
+- Material configuration filter for endgames — deferred to future milestone
 
 ## Current State
 
-v1.5 shipped 2026-03-28. Phase 38 (Opening Statistics & Bookmark Suggestions Rework) complete — Statistics tab reordered (Results by Opening → Win Rate Over Time → Most Played), default chart data from top 3 most-played openings when no bookmarks, bookmark suggestions derived client-side from most-played data, chart-enable toggle on bookmark cards, position-based game counts and WDL in Most Played Openings, Zobrist hashes stored in openings table. v1.6 UI Polish milestone in progress.
+v1.6 shipped 2026-03-30. Six milestones complete (v1.0–v1.6), 39 phases, live at flawchess.com. The platform now has a polished, consistent UI with centralized theming, shared WDL chart components, an openings reference table with SQL-side aggregation, smart bookmark defaults, and mobile drawer sidebars. Planning next milestone.
 
 ## Context
 
-- **Current state:** v1.3 shipped. 28 phases complete across 4 milestones. Live at flawchess.com with CI/CD and Sentry.
+- **Current state:** v1.6 shipped. 39 phases complete across 7 milestones. Live at flawchess.com with CI/CD and Sentry.
 - **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui
 - **Auth:** FastAPI-Users (JWT + Google SSO)
 - **Core algorithm:** Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import for indexed integer equality lookups
@@ -117,6 +116,13 @@ v1.5 shipped 2026-03-28. Phase 38 (Opening Statistics & Bookmark Suggestions Rew
 | vaul for mobile drawer | Handles scroll lock, backdrop, iOS momentum natively | ✓ Good |
 | Click-to-move only on mobile | HTML5 DnD absent on iOS Safari; drag causes black screen | ✓ Good |
 | Duplicate mobile Openings layout | Sticky board incompatible with sidebar's flex-column | ⚠️ Revisit |
+| CSS variables + Tailwind utilities for theme | Centralized colors without abandoning Tailwind workflow | ✓ Good |
+| SVG feTurbulence noise texture | Lightweight CSS-only texture, no image assets | ✓ Good |
+| Shared WDLChartRow component | Single source of truth for all WDL visualizations | ✓ Good |
+| Openings reference table from TSV | 3641 curated openings with ECO/PGN/FEN for position lookup | ✓ Good |
+| SQL-side WDL aggregation (func.count.filter) | Moves counting from Python loops to SQL for performance | ✓ Good |
+| Deferred filter apply on mobile sidebar close | Prevents API spam while user adjusts multiple filters | ✓ Good |
+| Vaul drawers for mobile sidebars | Consistent with existing More drawer pattern, good touch UX | ✓ Good |
 | Hetzner CX32 + Docker Compose + Caddy | Simple single-VPS deployment for solo dev | ✓ Good |
 | Plausible over Google Analytics | No cookie consent required, GDPR-simple | ✓ Good |
 | Sentry for both backend + frontend | Single project, DSN baked at Docker build time | ✓ Good |
@@ -124,4 +130,4 @@ v1.5 shipped 2026-03-28. Phase 38 (Opening Statistics & Bookmark Suggestions Rew
 | Backend expose-only (no ports) | Caddy is sole internet-facing entry point | ✓ Good |
 
 ---
-*Last updated: 2026-03-29 after Phase 38 completion*
+*Last updated: 2026-03-30 after v1.6 milestone*

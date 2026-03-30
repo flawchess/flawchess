@@ -127,6 +127,49 @@
 
 ---
 
+## Milestone: v1.6 — UI Polish & Improvements
+
+**Shipped:** 2026-03-30
+**Phases:** 6 | **Plans:** 11
+
+### What Was Built
+- Centralized theme system: CSS variables, brand-brown/charcoal Tailwind utilities, SVG feTurbulence noise texture class
+- Charcoal containers with noise texture applied across all pages, brand subtab highlighting
+- Shared WDLChartRow component replacing all inconsistent WDL chart implementations (custom bars, Recharts)
+- Openings reference table: 3641 entries from TSV dataset, openings_dedup view, SQL-side WDL aggregation
+- Most Played Openings redesign: top 10 per color, filter support, dedicated table UI, minimap popover
+- Opening Statistics rework: section reordering, default chart data from most-played when no bookmarks, chart-enable toggle
+- Bookmark card redesign: bigger minimap (72px), chart-enable toggle in button row, suggestions from most-played data
+- Mobile drawer sidebars: Vaul-based right-side drawers for filters and bookmarks, deferred filter apply on close
+- 26 quick tasks across the milestone
+
+### What Worked
+- Theme-first phase ordering (34→35→36→37→38→39) meant each phase built on the previous — shared components before consuming features
+- WDL chart refactoring (Phase 35) paid off immediately — Phases 36-38 could use WDLChartRow without reimplementing
+- SQL-side WDL aggregation (func.count.filter) moved counting from Python loops to SQL, measurable performance improvement
+- Deferred filter apply pattern on mobile prevents API spam — filters accumulate, single request on sidebar close
+- PR-based workflow for phases kept main clean while allowing iterative development
+
+### What Was Inefficient
+- Traceability table in REQUIREMENTS.md went stale — ORT-03 was implemented but unchecked, MOB-01-07 showed "Not started" despite completion
+- Phase count in MILESTONES.md shows 8 instead of 6 (includes backlog phases in count) — CLI counting is approximate
+- No milestone audit was run before completion — requirement drift went undetected until manual check
+
+### Patterns Established
+- `charcoal-texture` CSS class for consistent container styling with SVG noise
+- WDLChartRow as single source of truth for all WDL visualizations
+- Deferred state pattern: local state in sidebar, commit on close
+- Openings reference table with precomputed FEN/ply_count for position lookup
+- chart-enable toggle with localStorage persistence for user preferences
+
+### Key Lessons
+1. Requirement traceability tables need automated updates — manual status tracking drifts as soon as execution begins
+2. Theme/component infrastructure phases early in a UI milestone pay compound dividends across subsequent phases
+3. Milestone audits should be run proactively, not skipped — catching stale requirements at completion adds unnecessary friction
+4. SQL-side aggregation (func.count.filter) is worth the migration cost — Python-side counting doesn't scale
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -137,12 +180,17 @@
 | v1.1 | 6 | 15 | Added human verification phases, heavy quick task usage |
 | v1.2 | 3 | 5 | Frontend-only scope, mobile-first patterns, CSS specificity lessons |
 | v1.3 | 4 | 10 | First production deployment, CI/CD, monitoring, launch readiness, 14 quick tasks |
+| v1.4 | 1 | 2 | Self-hosted Umami analytics, minimal-scope milestone |
+| v1.5 | 9 | 18 | Backend-heavy: position classifier, endgame analytics, engine analysis import |
+| v1.6 | 6 | 11 | UI polish: theme system, shared components, openings table, mobile drawers, 26 quick tasks |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. DB wipe for schema changes is worth it in early development — migration complexity slows iteration
 2. Human verification catches integration issues that unit tests miss
-3. Quick tasks are the right tool for UI polish — confirmed across v1.1 (19 tasks), v1.2 (7 tasks), v1.3 (14 tasks)
+3. Quick tasks are the right tool for UI polish — confirmed across v1.1 (19 tasks), v1.2 (7 tasks), v1.3 (14 tasks), v1.6 (26 tasks)
 4. CSS specificity with component libraries requires understanding the full chain — min-h/h/important patterns now documented
 5. Production memory constraints need upfront planning — swap file and batch size tuning should be in initial deployment config
 6. Human verification checkpoints (manual deploy steps) don't fit automated plan execution — use milestone gates instead
+7. Infrastructure-first ordering pays off — theme/shared components early in UI milestones, DB schema early in backend milestones
+8. Requirement traceability tables drift under manual maintenance — consider automated status syncing
