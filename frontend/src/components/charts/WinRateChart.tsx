@@ -38,9 +38,17 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
     });
   }, []);
 
+  // Collect all unique dates across series, sorted chronologically
+  const allDates = useMemo(() => [
+    ...new Set(
+      series.flatMap((s) => s.data.map((p) => p.date))
+    ),
+  ].sort(), [series]);
+
+  const formatDateTick = useMemo(() => createDateTickFormatter(allDates), [allDates]);
+
   // Empty state: no series data
-  const hasData = series.some((s) => s.data.length > 0);
-  if (!hasData) {
+  if (allDates.length === 0) {
     return (
       <div className="text-center text-muted-foreground py-8">
         No game history available for saved positions yet.
@@ -55,15 +63,6 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
       { label: b.label, color: CHART_COLORS[i % CHART_COLORS.length] },
     ]),
   );
-
-  // Collect all unique dates across series, sorted chronologically
-  const allDates = [
-    ...new Set(
-      series.flatMap((s) => s.data.map((p) => p.date))
-    ),
-  ].sort();
-
-  const formatDateTick = useMemo(() => createDateTickFormatter(allDates), [allDates]);
 
   // Build data array with win_rate, game_count and window_size per bookmark
   const data = allDates.map((date) => {

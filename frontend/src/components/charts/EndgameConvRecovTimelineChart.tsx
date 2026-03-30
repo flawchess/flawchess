@@ -31,42 +31,43 @@ export function EndgameConvRecovTimelineChart({ data }: EndgameConvRecovTimeline
     });
   }, []);
 
-  // Empty state: both series empty — don't render
-  if (data.conversion.length === 0 && data.recovery.length === 0) {
-    return null;
-  }
-
   // Merge conversion and recovery series by date into a single data array.
   // Each unique date gets conversion_rate, recovery_rate, and game counts.
-  const dateMap = new Map<string, Record<string, string | number | undefined>>();
+  const { mergedData, sortedDates } = useMemo(() => {
+    const dateMap = new Map<string, Record<string, string | number | undefined>>();
 
-  for (const point of data.conversion) {
-    if (!dateMap.has(point.date)) {
-      dateMap.set(point.date, { date: point.date });
+    for (const point of data.conversion) {
+      if (!dateMap.has(point.date)) {
+        dateMap.set(point.date, { date: point.date });
+      }
+      const entry = dateMap.get(point.date)!;
+      entry.conversion = point.rate;
+      entry.conversion_game_count = point.game_count;
+      entry.conversion_window_size = point.window_size;
     }
-    const entry = dateMap.get(point.date)!;
-    entry.conversion = point.rate;
-    entry.conversion_game_count = point.game_count;
-    entry.conversion_window_size = point.window_size;
-  }
 
-  for (const point of data.recovery) {
-    if (!dateMap.has(point.date)) {
-      dateMap.set(point.date, { date: point.date });
+    for (const point of data.recovery) {
+      if (!dateMap.has(point.date)) {
+        dateMap.set(point.date, { date: point.date });
+      }
+      const entry = dateMap.get(point.date)!;
+      entry.recovery = point.rate;
+      entry.recovery_game_count = point.game_count;
+      entry.recovery_window_size = point.window_size;
     }
-    const entry = dateMap.get(point.date)!;
-    entry.recovery = point.rate;
-    entry.recovery_game_count = point.game_count;
-    entry.recovery_window_size = point.window_size;
-  }
 
-  // Sort by date chronologically
-  const mergedData = [...dateMap.values()].sort((a, b) =>
-    (a.date as string).localeCompare(b.date as string),
-  );
+    const merged = [...dateMap.values()].sort((a, b) =>
+      (a.date as string).localeCompare(b.date as string),
+    );
+    return { mergedData: merged, sortedDates: merged.map((d) => d.date as string) };
+  }, [data.conversion, data.recovery]);
 
-  const sortedDates = mergedData.map((d) => d.date as string);
   const formatDateTick = useMemo(() => createDateTickFormatter(sortedDates), [sortedDates]);
+
+  // Empty state: both series empty — don't render
+  if (mergedData.length === 0) {
+    return null;
+  }
 
   return (
     <div>

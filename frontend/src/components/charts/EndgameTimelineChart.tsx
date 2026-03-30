@@ -44,6 +44,19 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
     });
   }, []);
 
+  // ── Win Rate by Endgame Type ──────────────────────────────────────────────
+
+  const typeKeys = Object.keys(data.per_type);
+
+  // Collect all unique dates across all per-type series, sorted chronologically
+  const allTypeDates = useMemo(() => [
+    ...new Set(
+      typeKeys.flatMap((key) => data.per_type[key].map((p) => p.date))
+    ),
+  ].sort(), [data.per_type, typeKeys]);
+
+  const formatDateTick = useMemo(() => createDateTickFormatter(allTypeDates), [allTypeDates]);
+
   // Empty state: no overall data
   if (data.overall.length === 0) {
     return (
@@ -52,19 +65,6 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
       </div>
     );
   }
-
-  // ── Win Rate by Endgame Type ──────────────────────────────────────────────
-
-  const typeKeys = Object.keys(data.per_type);
-
-  // Collect all unique dates across all per-type series, sorted chronologically
-  const allTypeDates = [
-    ...new Set(
-      typeKeys.flatMap((key) => data.per_type[key].map((p) => p.date))
-    ),
-  ].sort();
-
-  const formatDateTick = useMemo(() => createDateTickFormatter(allTypeDates), [allTypeDates]);
 
   // Build merged data array: one row per date with a win_rate value per type (or undefined if no data)
   const perTypeData = allTypeDates.map((date) => {
