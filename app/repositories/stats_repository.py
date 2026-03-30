@@ -31,32 +31,33 @@ async def query_rating_history(
     platform: str,
     recency_cutoff: datetime.datetime | None,
 ) -> list[tuple]:
-    """Return per-game rating data points for a given platform.
+    """Return one rating data point per (date, time_control_bucket) for a given platform.
 
     Each row is a (date, rating, time_control_bucket) tuple where date is a
     Python date object (UTC-normalized from the timestamptz column).
 
-    Excludes games where the derived user_rating or played_at is NULL.
-    Results are ordered chronologically by played_at.
+    Uses DISTINCT ON to keep only the last game's rating per day per time control,
+    avoiding redundant per-game rows when multiple games are played on the same day.
     """
     user_rating_expr = case(
         (Game.user_color == "white", Game.white_rating),
         else_=Game.black_rating,
     ).label("user_rating")
 
+    date_col = cast(func.timezone("UTC", Game.played_at), Date).label("date")
+
     stmt = (
-        select(
-            cast(func.timezone("UTC", Game.played_at), Date),
-            user_rating_expr,
-            Game.time_control_bucket,
-        )
+        select(date_col, user_rating_expr, Game.time_control_bucket)
+        .distinct(date_col, Game.time_control_bucket)
         .where(
             Game.user_id == user_id,
             Game.platform == platform,
             user_rating_expr.is_not(None),
             Game.played_at.is_not(None),
         )
-        .order_by(Game.played_at)
+        # DISTINCT ON requires ORDER BY to start with the same columns;
+        # played_at DESC picks the last game of each day per time control.
+        .order_by(date_col, Game.time_control_bucket, Game.played_at.desc())
     )
 
     if recency_cutoff is not None:

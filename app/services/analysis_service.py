@@ -222,9 +222,10 @@ async def get_time_series(
 
         # Build rolling-window datapoints from chronological per-game rows.
         # rows: (played_at, result, user_color) tuples ordered by played_at ASC.
+        # Dict keyed by date keeps only the last game's rolling window per day.
         results_so_far: list[str] = []  # "win", "draw", or "loss" per game
         total_wins = total_draws = total_losses = 0
-        data: list[TimeSeriesPoint] = []
+        data_by_date: dict[str, TimeSeriesPoint] = {}
 
         for played_at, result, user_color in rows:
             outcome = derive_user_result(result, user_color)
@@ -244,16 +245,15 @@ async def get_time_series(
             window_total = len(window)
             win_rate = window_wins / window_total if window_total > 0 else 0.0
 
-            data.append(
-                TimeSeriesPoint(
-                    date=played_at.strftime("%Y-%m-%d"),
-                    win_rate=round(win_rate, 4),
-                    game_count=window_total,
-                    window_size=ROLLING_WINDOW_SIZE,
-                )
+            data_by_date[played_at.strftime("%Y-%m-%d")] = TimeSeriesPoint(
+                date=played_at.strftime("%Y-%m-%d"),
+                win_rate=round(win_rate, 4),
+                game_count=window_total,
+                window_size=ROLLING_WINDOW_SIZE,
             )
 
         # Filter output to recency window (rolling window was computed over full history)
+        data = list(data_by_date.values())
         if cutoff_str:
             data = [pt for pt in data if pt.date >= cutoff_str]
             # Recompute totals from filtered period only

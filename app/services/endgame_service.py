@@ -440,9 +440,10 @@ def _compute_rolling_series(rows: list[tuple], window: int) -> list[dict]:
 
     Returns:
         List of dicts with keys: date, win_rate, game_count, window_size.
+        One entry per date (last game of the day), not per game.
     """
     results_so_far: list[Literal["win", "draw", "loss"]] = []
-    data: list[dict] = []
+    data_by_date: dict[str, dict] = {}
 
     for played_at, result, user_color in rows:
         outcome = derive_user_result(result, user_color)
@@ -454,14 +455,15 @@ def _compute_rolling_series(rows: list[tuple], window: int) -> list[dict]:
         window_total = len(window_slice)
         win_rate = win_count / window_total if window_total > 0 else 0.0
 
-        data.append({
-            "date": played_at.strftime("%Y-%m-%d"),
+        date_key = played_at.strftime("%Y-%m-%d")
+        data_by_date[date_key] = {
+            "date": date_key,
             "win_rate": round(win_rate, 4),
             "game_count": window_total,
             "window_size": window,
-        })
+        }
 
-    return data
+    return list(data_by_date.values())
 
 
 async def get_endgame_performance(
@@ -675,12 +677,13 @@ def _compute_conv_recov_rolling_series(
                  and returning a float rate (0.0-1.0).
 
     Partial windows (fewer games than `window`) are included from the start.
+    Returns one point per date (last game of the day), not per game.
     """
     if not rows:
         return []
 
     outcomes: list[Literal["win", "draw", "loss"]] = []
-    points: list[ConvRecovTimelinePoint] = []
+    points_by_date: dict[str, ConvRecovTimelinePoint] = {}
 
     for played_at, result, user_color, *_rest in rows:
         outcome = derive_user_result(result, user_color)
@@ -690,14 +693,14 @@ def _compute_conv_recov_rolling_series(
         # Rolling window: trailing `window` results (partial windows included)
         trailing = outcomes[-window:]
         rate = rate_fn(trailing)
-        points.append(ConvRecovTimelinePoint(
+        points_by_date[date] = ConvRecovTimelinePoint(
             date=date,
             rate=round(rate, 4),
             game_count=len(trailing),
             window_size=window,
-        ))
+        )
 
-    return points
+    return list(points_by_date.values())
 
 
 async def get_conv_recov_timeline(
