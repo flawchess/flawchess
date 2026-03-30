@@ -12,6 +12,8 @@ interface BoardControlsProps {
   infoSlot?: React.ReactNode;
   /** Render buttons in a vertical column (used on mobile beside the board) */
   vertical?: boolean;
+  /** Additional CSS classes for the root container */
+  className?: string;
 }
 
 export function BoardControls({
@@ -23,13 +25,14 @@ export function BoardControls({
   canGoForward,
   infoSlot,
   vertical = false,
+  className,
 }: BoardControlsProps) {
   return (
-    <div className={`flex items-center justify-evenly rounded-lg charcoal-texture ${vertical ? 'flex-col' : ''}`}>
+    <div className={`flex items-center justify-evenly rounded-lg charcoal-texture ${vertical ? 'flex-col' : ''} ${className ?? ''}`}>
       <Button
         variant="ghost"
         size="icon"
-        className="h-11 w-11 sm:h-8 sm:w-8 hover:bg-accent"
+        className="h-9 w-9 sm:h-8 sm:w-8 hover:bg-accent"
         onClick={onReset}
         disabled={!canGoBack}
         title="Reset to start"
@@ -41,7 +44,7 @@ export function BoardControls({
       <Button
         variant="ghost"
         size="icon"
-        className="h-11 w-11 sm:h-8 sm:w-8 hover:bg-accent"
+        className="h-9 w-9 sm:h-8 sm:w-8 hover:bg-accent"
         onClick={onBack}
         disabled={!canGoBack}
         title="Previous move"
@@ -53,7 +56,7 @@ export function BoardControls({
       <Button
         variant="ghost"
         size="icon"
-        className="h-11 w-11 sm:h-8 sm:w-8 hover:bg-accent"
+        className="h-9 w-9 sm:h-8 sm:w-8 hover:bg-accent"
         onClick={onForward}
         disabled={!canGoForward}
         title="Next move"
@@ -65,7 +68,7 @@ export function BoardControls({
       <Button
         variant="ghost"
         size="icon"
-        className="h-11 w-11 sm:h-8 sm:w-8 hover:bg-accent"
+        className="h-9 w-9 sm:h-8 sm:w-8 hover:bg-accent"
         onClick={onFlip}
         title="Flip board"
         aria-label="Flip board"

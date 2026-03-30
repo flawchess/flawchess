@@ -3,23 +3,23 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: UI Polish & Improvements
 status: verifying
-last_updated: "2026-03-29T11:56:09.323Z"
-last_activity: 2026-03-29
+last_updated: "2026-03-30T12:35:25.617Z"
+last_activity: 2026-03-30
 progress:
-  total_phases: 9
-  completed_phases: 5
-  total_plans: 10
-  completed_plans: 10
+  total_phases: 10
+  completed_phases: 6
+  total_plans: 11
+  completed_plans: 11
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
+Phase: 39 (mobile-opening-explorer-sidebars-for-filters-and-bookmarks) — EXECUTING
+Plan: 1 of 1
 Status: Phase complete — ready for verification
-Last activity: 2026-03-29
+Last activity: 2026-03-30
 
 ## Project Reference
 
@@ -91,6 +91,8 @@ Current focus: v1.6 UI Polish & Improvements
 - [Phase 38-01]: Synthetic bookmark IDs use negative integers to avoid collision with real bookmark IDs
 - [Phase 38]: SuggestionsModal uses mostPlayedData prop directly — no backend suggestions endpoint call
 - [Phase 38]: chartToggleVersion state counter forces chartEnabledMap useMemo recompute without storing toggle state in React state
+- [Phase 39-mobile-opening-explorer-sidebars-for-filters-and-bookmarks]: Deferred filter apply on sidebar close: localFilters state committed to main filters only when drawer closes to avoid API calls while adjusting settings
+- [Phase 39-mobile-opening-explorer-sidebars-for-filters-and-bookmarks]: Board flip applied on filter sidebar close: setBoardFlipped(localFilters.color === 'black') in handleFilterSidebarOpenChange alongside filter commit
 
 ### Critical v1.5 Constraints
 
@@ -117,6 +119,7 @@ Current focus: v1.6 UI Polish & Improvements
 - Phase 36 added: Most Played Openings — top 5 openings by color as WDL charts in Opening Statistics subtab
 - Phase 37 added: Openings Reference Table & Most Played Openings Redesign — openings DB table from TSV, SQL-side WDL, filters, dedicated table UI, minimap popover
 - Phase 38 added: Opening Statistics & Bookmark Suggestions Rework — reorder stats sections, most-played openings as default chart data, rework bookmark suggestions, chart-enable toggle, bookmark card layout redesign
+- Phase 39 added: Mobile Opening Explorer sidebars for filters and bookmarks
 
 ### Blockers/Concerns
 
