@@ -8,7 +8,7 @@
 - ✅ **v1.3 Project Launch** — Phases 20-23 (shipped 2026-03-22)
 - ✅ **v1.4 Improvements** — Phase 24 (shipped 2026-03-22)
 - ✅ **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33 (shipped 2026-03-28)
-- 🚧 **v1.6 UI Polish & Improvements** — Phases 34-38 (in progress)
+- 🚧 **v1.6 UI Polish & Improvements** — Phases 34-39 (in progress)
 
 ## Phases
 
@@ -88,8 +88,27 @@
 - [x] **Phase 36: Most Played Openings** — Add "Most Played Openings" sections (White/Black) to Opening Statistics subtab with top 5 openings as WDL charts, ECO codes, minimum 10 games threshold (completed 2026-03-28)
 - [x] **Phase 37: Openings Reference Table & Most Played Openings Redesign** — Create openings DB table from TSV dataset with PGN/FEN/ply_count, redesign most played openings with filter support, dedicated table UI, minimap popover, SQL-side WDL aggregation, top 10 (completed 2026-03-28)
 - [x] **Phase 38: Opening Statistics & Bookmark Suggestions Rework** — Reorder stats sections, use most-played openings as default chart data, rework bookmark suggestions, add chart-enable toggle, redesign bookmark card layout (completed 2026-03-29)
+- [ ] **Phase 39: Mobile Opening Explorer Sidebars** — Replace mobile collapsible filter/bookmark sections with right-side drawer sidebars, compact board action buttons, deferred filter apply on close
 
 ## Phase Details
+
+### Phase 39: Mobile Opening Explorer Sidebars for Filters and Bookmarks
+**Goal**: Replace mobile collapsible filter/bookmark sections on the Opening Explorer with two Vaul-based right-side drawer sidebars triggered from buttons below the board, compact board action buttons, and implement deferred filter apply on sidebar close
+**Depends on**: Phase 38
+**Requirements**: MOB-01, MOB-02, MOB-03, MOB-04, MOB-05, MOB-06, MOB-07
+**Success Criteria** (what must be TRUE):
+  1. Mobile board action buttons are compact (h-9 w-9 instead of h-11 w-11)
+  2. Trigger buttons (Filters + Bookmarks) appear below the board controls on mobile
+  3. Filter sidebar slides in from right containing all filters (Played as, Piece filter, and all other filters)
+  4. Filter changes are deferred — only applied when the sidebar is closed
+  5. Bookmark sidebar slides in from right containing save, suggest, and bookmark list
+  6. Loading a bookmark from the sidebar closes the sidebar and applies the position
+  7. Desktop sidebar layout is completely unchanged
+**Plans**: 1 plan
+**UI hint**: yes
+
+Plans:
+- [ ] 39-01-PLAN.md — Compact board buttons, filter/bookmark drawer sidebars with deferred apply, remove mobile collapsibles
 
 ### Phase 38: Opening Statistics & Bookmark Suggestions Rework
 **Goal**: Reorder Opening Statistics sections, use top most-played openings as default chart data when no bookmarks exist, rework bookmark suggestion system using most-played openings data, add chart-enable toggle to bookmarks, redesign bookmark card layout
@@ -216,6 +235,7 @@ Plans:
 | 36. Most Played Openings | v1.6 | 1/1 | Complete    | 2026-03-28 |
 | 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
 | 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
+| 39. Mobile Opening Explorer Sidebars | v1.6 | 0/1 | In Progress | — |
 
 ## Backlog
 

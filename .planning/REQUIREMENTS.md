@@ -46,6 +46,16 @@ Requirements for v1.6 — UI Polish & Improvements.
 - [x] **STAT-05**: Bookmark card layout: bigger minimap (~72px), button row below piece filter with chart toggle (left), load (middle), delete (right)
 - [x] **STAT-06**: Position Bookmarks popover explains Piece filter and chart-enable toggle functionality
 
+### Mobile Opening Explorer Sidebars
+
+- [ ] **MOB-01**: Mobile board action buttons use compact size (h-9 w-9) instead of h-11 w-11 to free vertical space
+- [ ] **MOB-02**: Trigger buttons (Filters + Bookmarks) appear below the board controls on mobile, visually distinct from board navigation buttons
+- [ ] **MOB-03**: Filter sidebar slides in from the right containing all filters (Played as, Piece filter, Recency, Time controls, Platforms, Rated, Opponent)
+- [ ] **MOB-04**: Filter changes inside the sidebar are deferred — only applied when the sidebar is closed (any close method: overlay tap, X button, swipe)
+- [ ] **MOB-05**: Bookmark sidebar slides in from the right containing save, suggest, and full bookmark list with all existing functionality
+- [ ] **MOB-06**: Loading a bookmark from the sidebar closes the sidebar and applies the position to the board
+- [ ] **MOB-07**: Desktop sidebar layout is completely unchanged — mobile-only modifications
+
 ## Future Requirements
 
 ### Pawn Structure Analysis
@@ -92,18 +102,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ORT-03 | Phase 37 | Not started |
 | ORT-04 | Phase 37 | Complete |
 | ORT-05 | Phase 37 | Complete |
-| STAT-01 | Phase 38 | Not started |
-| STAT-02 | Phase 38 | Not started |
-| STAT-03 | Phase 38 | Not started |
-| STAT-04 | Phase 38 | Not started |
-| STAT-05 | Phase 38 | Not started |
-| STAT-06 | Phase 38 | Not started |
+| STAT-01 | Phase 38 | Complete |
+| STAT-02 | Phase 38 | Complete |
+| STAT-03 | Phase 38 | Complete |
+| STAT-04 | Phase 38 | Complete |
+| STAT-05 | Phase 38 | Complete |
+| STAT-06 | Phase 38 | Complete |
+| MOB-01 | Phase 39 | Not started |
+| MOB-02 | Phase 39 | Not started |
+| MOB-03 | Phase 39 | Not started |
+| MOB-04 | Phase 39 | Not started |
+| MOB-05 | Phase 39 | Not started |
+| MOB-06 | Phase 39 | Not started |
+| MOB-07 | Phase 39 | Not started |
 
 **Coverage:**
-- v1.6 requirements: 24 total
-- Mapped to phases: 24
+- v1.6 requirements: 31 total
+- Mapped to phases: 31
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-28*
-*Last updated: 2026-03-29 after Phase 38 planning*
+*Last updated: 2026-03-30 after Phase 39 planning*
