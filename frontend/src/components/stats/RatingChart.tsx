@@ -54,11 +54,36 @@ function formatBucketLabel(key: string, granularity: Granularity): string {
       year: '2-digit',
     });
   }
-  // 'day' and 'week': show "Mar 15"
+  if (granularity === 'week') {
+    // Week granularity spans 1-3 years — include abbreviated year to avoid ambiguity
+    const [year, month, day] = key.split('-');
+    return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-US', {
+      month: 'short',
+      year: '2-digit',
+    });
+  }
+  // 'day' (< 1 year): "Mar 15" — year is unambiguous
   const [year, month, day] = key.split('-');
   return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
+  });
+}
+
+/** Tooltip label — always includes year for context. */
+function formatBucketTooltip(key: string, granularity: Granularity): string {
+  if (granularity === 'month') {
+    const [year, month] = key.split('-');
+    return new Date(Number(year), Number(month) - 1).toLocaleDateString('en-US', {
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+  const [year, month, day] = key.split('-');
+  return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
   });
 }
 
@@ -172,7 +197,7 @@ export function RatingChart({ data, platform }: RatingChartProps) {
         <ChartTooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
-            const dateLabel = formatBucketLabel(label as string, granularity);
+            const dateLabel = formatBucketTooltip(label as string, granularity);
             return (
               <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
                 <div className="font-medium">{dateLabel}</div>

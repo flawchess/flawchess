@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 import type { BookmarkTimeSeries } from '@/types/position_bookmarks';
 
@@ -21,23 +22,6 @@ const CHART_COLORS = [
   'oklch(0.55 0.22 350)',   // magenta
   'oklch(0.70 0.15 110)',   // lime
 ];
-
-const formatDate = (d: string) => {
-  const [year, month, day] = d.split('-');
-  return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
-};
-
-const formatDateWithYear = (d: string) => {
-  const [year, month, day] = d.split('-');
-  return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-};
 
 export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
@@ -79,6 +63,8 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
     ),
   ].sort();
 
+  const formatDateTick = useMemo(() => createDateTickFormatter(allDates), [allDates]);
+
   // Build data array with win_rate, game_count and window_size per bookmark
   const data = allDates.map((date) => {
     const point: Record<string, string | number | undefined> = { date };
@@ -107,7 +93,7 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
     <ChartContainer config={chartConfig} className="w-full h-72">
       <LineChart data={data}>
         <CartesianGrid vertical={false} />
-        <XAxis dataKey="date" tickFormatter={formatDate} />
+        <XAxis dataKey="date" tickFormatter={formatDateTick} />
         <YAxis domain={[0, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
         <ChartTooltip
           content={({ active, payload, label }) => {

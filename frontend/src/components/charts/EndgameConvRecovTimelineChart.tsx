@@ -1,30 +1,14 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { GAUGE_SUCCESS } from '@/lib/theme';
+import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import type { ConvRecovTimelineResponse } from '@/types/endgames';
 
 interface EndgameConvRecovTimelineChartProps {
   data: ConvRecovTimelineResponse;
 }
-
-const formatDate = (d: string) => {
-  const [year, month, day] = d.split('-');
-  return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
-};
-
-const formatDateWithYear = (d: string) => {
-  const [year, month, day] = d.split('-');
-  return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-};
 
 const chartConfig = {
   conversion: { label: 'Conversion', color: GAUGE_SUCCESS },
@@ -81,6 +65,9 @@ export function EndgameConvRecovTimelineChart({ data }: EndgameConvRecovTimeline
     (a.date as string).localeCompare(b.date as string),
   );
 
+  const sortedDates = mergedData.map((d) => d.date as string);
+  const formatDateTick = useMemo(() => createDateTickFormatter(sortedDates), [sortedDates]);
+
   return (
     <div>
       <h3 className="text-base font-semibold mb-3">
@@ -104,7 +91,7 @@ export function EndgameConvRecovTimelineChart({ data }: EndgameConvRecovTimeline
       <ChartContainer config={chartConfig} className="w-full h-72" data-testid="conv-recov-timeline-chart">
         <LineChart data={mergedData}>
           <CartesianGrid vertical={false} />
-          <XAxis dataKey="date" tickFormatter={formatDate} />
+          <XAxis dataKey="date" tickFormatter={formatDateTick} />
           <YAxis domain={[0, 1]} tickFormatter={(v: number) => `${Math.round(v * 100)}%`} />
           <ChartTooltip
             content={({ active, payload, label }) => {

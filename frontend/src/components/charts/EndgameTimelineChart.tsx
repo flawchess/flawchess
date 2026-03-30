@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import type { EndgameTimelineResponse } from '@/types/endgames';
 
 interface EndgameTimelineChartProps {
@@ -26,23 +27,6 @@ const TYPE_LABELS: Record<string, string> = {
   queen: 'Queen',
   mixed: 'Mixed',
   pawnless: 'Pawnless',
-};
-
-const formatDate = (d: string) => {
-  const [year, month, day] = d.split('-');
-  return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
-};
-
-const formatDateWithYear = (d: string) => {
-  const [year, month, day] = d.split('-');
-  return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
 };
 
 export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
@@ -79,6 +63,8 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
       typeKeys.flatMap((key) => data.per_type[key].map((p) => p.date))
     ),
   ].sort();
+
+  const formatDateTick = useMemo(() => createDateTickFormatter(allTypeDates), [allTypeDates]);
 
   // Build merged data array: one row per date with a win_rate value per type (or undefined if no data)
   const perTypeData = allTypeDates.map((date) => {
@@ -128,7 +114,7 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
       >
         <LineChart data={perTypeData}>
           <CartesianGrid vertical={false} />
-          <XAxis dataKey="date" tickFormatter={formatDate} />
+          <XAxis dataKey="date" tickFormatter={formatDateTick} />
           <YAxis domain={[0, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
           <ChartTooltip
             content={({ active, payload, label }) => {
