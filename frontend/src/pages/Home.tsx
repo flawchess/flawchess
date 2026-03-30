@@ -150,7 +150,7 @@ export function HomePageContent() {
             Open source
           </span>
           <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Mobile friendly
+            Mobile app
           </span>
           <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
             Opening explorer
