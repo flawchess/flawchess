@@ -117,6 +117,7 @@ Current focus: v1.6 UI Polish & Improvements
 - Phase 36 added: Most Played Openings — top 5 openings by color as WDL charts in Opening Statistics subtab
 - Phase 37 added: Openings Reference Table & Most Played Openings Redesign — openings DB table from TSV, SQL-side WDL, filters, dedicated table UI, minimap popover
 - Phase 38 added: Opening Statistics & Bookmark Suggestions Rework — reorder stats sections, most-played openings as default chart data, rework bookmark suggestions, chart-enable toggle, bookmark card layout redesign
+- Phase 39 added: Mobile Opening Explorer sidebars for filters and bookmarks
 
 ### Blockers/Concerns
 
