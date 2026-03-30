@@ -163,6 +163,7 @@ Current focus: v1.6 UI Polish & Improvements
 | 260327-tun | In the Moves subtab of the Openings, show moves below the 10 game threshold as muted | 2026-03-27 | c9d28e4 | [260327-tun-in-the-moves-subtab-of-the-openings-show](./quick/260327-tun-in-the-moves-subtab-of-the-openings-show/) |
 | 260328-04a | Update SEO meta tags, README, and CLAUDE.md to match 5-feature homepage | 2026-03-27 | d039ba6 | [260328-04a-update-seo-readme-and-claude-md-based-on](./quick/260328-04a-update-seo-readme-and-claude-md-based-on/) |
 | 260328-mov | Endgames Games subtab WDL chart, games matched report with highlighted percent | 2026-03-28 | ee9b8e3 | [260328-mov-endgames-games-subtab-wdl-chart-games-ma](./quick/260328-mov-endgames-games-subtab-wdl-chart-games-ma/) |
+| 260330-qj0 | Create Acknowledgements section on homepage crediting platforms and libraries | 2026-03-30 | 09f4b0d | [260330-qj0-create-acknowledgements-section-on-homep](./quick/260330-qj0-create-acknowledgements-section-on-homep/) |
 
 ---
-Last activity: 2026-03-28 - Completed quick task 260328-mov: Endgames Games subtab WDL chart, games matched report with highlighted percent
+Last activity: 2026-03-30 - Completed quick task 260330-qj0: Create Acknowledgements section on homepage crediting platforms and libraries
