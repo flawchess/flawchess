@@ -56,7 +56,7 @@ const FEATURES: {
   {
     slug: 'system-openings',
     icon: Filter,
-    heading: 'System Opening Filtering',
+    heading: 'System Opening Filter',
     desc: [
         "You play the London, but your analysis tool scatters your games across 5 different opening names.",
         "FlawChess lets you filter by your pieces only, ignoring your opponent\u2019s responses.",

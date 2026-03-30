@@ -31,7 +31,7 @@ A free, open-source chess analysis platform. Import games from chess.com and lic
 
 - **Interactive opening explorer** — step through any opening and see your win/draw/loss rate for every move, scout opponents before a match, discover which moves you struggle against
 - **Opening comparison and tracking** — bookmark openings and compare their performance, track how your opening study impacts your win rate over time, filter by time control
-- **System opening filtering** — filter by your pieces only to analyze system openings like the London across all opponent variations
+- **System opening filter** — filter by your pieces only to analyze system openings like the London across all opponent variations
 - **Endgame analytics** — win/draw/loss rates by endgame type (rook, minor piece, pawn, queen, mixed), material conversion and recovery statistics, performance gauges and timelines
 - **Cross-platform import** — import from chess.com and lichess, sync new games, scout opponents by importing their games
 - **Mobile-friendly PWA** — installable on Android and iOS, optimized for touch
