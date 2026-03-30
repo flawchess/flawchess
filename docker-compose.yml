@@ -4,7 +4,11 @@ services:
     command:
       - "postgres"
       - "-c"
-      - "shared_buffers=512MB"
+      - "shared_buffers=2GB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "effective_cache_size=6GB"
       - "-c"
       - "shared_preload_libraries=pg_stat_statements"
       - "-c"
