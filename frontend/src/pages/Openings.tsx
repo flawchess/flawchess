@@ -874,7 +874,7 @@ export function OpeningsPage() {
 
           {/* Filter sidebar (D-04, D-05, D-06, D-10, D-12) */}
           <Drawer open={filterSidebarOpen} onOpenChange={handleFilterSidebarOpenChange} direction="right">
-            <DrawerContent className="!w-full sm:!w-3/4" data-testid="drawer-filter-sidebar">
+            <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-filter-sidebar">
               <DrawerHeader className="flex flex-row items-center justify-between">
                 <DrawerTitle>Filters</DrawerTitle>
                 <DrawerClose asChild>
@@ -942,7 +942,7 @@ export function OpeningsPage() {
 
           {/* Bookmark sidebar (D-04, D-05, D-06, D-13, D-14) */}
           <Drawer open={bookmarkSidebarOpen} onOpenChange={setBookmarkSidebarOpen} direction="right">
-            <DrawerContent className="!w-full sm:!w-3/4" data-testid="drawer-bookmark-sidebar">
+            <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-bookmark-sidebar">
               <DrawerHeader className="flex flex-row items-center justify-between">
                 <DrawerTitle>Position Bookmarks</DrawerTitle>
                 <DrawerClose asChild>
