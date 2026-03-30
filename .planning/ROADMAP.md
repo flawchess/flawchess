@@ -88,7 +88,7 @@
 - [x] **Phase 36: Most Played Openings** — Add "Most Played Openings" sections (White/Black) to Opening Statistics subtab with top 5 openings as WDL charts, ECO codes, minimum 10 games threshold (completed 2026-03-28)
 - [x] **Phase 37: Openings Reference Table & Most Played Openings Redesign** — Create openings DB table from TSV dataset with PGN/FEN/ply_count, redesign most played openings with filter support, dedicated table UI, minimap popover, SQL-side WDL aggregation, top 10 (completed 2026-03-28)
 - [x] **Phase 38: Opening Statistics & Bookmark Suggestions Rework** — Reorder stats sections, use most-played openings as default chart data, rework bookmark suggestions, add chart-enable toggle, redesign bookmark card layout (completed 2026-03-29)
-- [ ] **Phase 39: Mobile Opening Explorer Sidebars** — Replace mobile collapsible filter/bookmark sections with right-side drawer sidebars, compact board action buttons, deferred filter apply on close
+- [x] **Phase 39: Mobile Opening Explorer Sidebars** — Replace mobile collapsible filter/bookmark sections with right-side drawer sidebars, compact board action buttons, deferred filter apply on close (completed 2026-03-30)
 
 ## Phase Details
 
@@ -108,7 +108,7 @@
 **UI hint**: yes
 
 Plans:
-- [ ] 39-01-PLAN.md — Compact board buttons, filter/bookmark drawer sidebars with deferred apply, remove mobile collapsibles
+- [x] 39-01-PLAN.md — Compact board buttons, filter/bookmark drawer sidebars with deferred apply, remove mobile collapsibles
 
 ### Phase 38: Opening Statistics & Bookmark Suggestions Rework
 **Goal**: Reorder Opening Statistics sections, use top most-played openings as default chart data when no bookmarks exist, rework bookmark suggestion system using most-played openings data, add chart-enable toggle to bookmarks, redesign bookmark card layout
@@ -235,7 +235,7 @@ Plans:
 | 36. Most Played Openings | v1.6 | 1/1 | Complete    | 2026-03-28 |
 | 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
 | 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
-| 39. Mobile Opening Explorer Sidebars | v1.6 | 0/1 | In Progress | — |
+| 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete   | 2026-03-30 |
 
 ## Backlog
 
@@ -243,7 +243,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/2 plans complete
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

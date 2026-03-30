@@ -48,13 +48,13 @@ Requirements for v1.6 — UI Polish & Improvements.
 
 ### Mobile Opening Explorer Sidebars
 
-- [ ] **MOB-01**: Mobile board action buttons use compact size (h-9 w-9) instead of h-11 w-11 to free vertical space
-- [ ] **MOB-02**: Trigger buttons (Filters + Bookmarks) appear below the board controls on mobile, visually distinct from board navigation buttons
-- [ ] **MOB-03**: Filter sidebar slides in from the right containing all filters (Played as, Piece filter, Recency, Time controls, Platforms, Rated, Opponent)
-- [ ] **MOB-04**: Filter changes inside the sidebar are deferred — only applied when the sidebar is closed (any close method: overlay tap, X button, swipe)
-- [ ] **MOB-05**: Bookmark sidebar slides in from the right containing save, suggest, and full bookmark list with all existing functionality
-- [ ] **MOB-06**: Loading a bookmark from the sidebar closes the sidebar and applies the position to the board
-- [ ] **MOB-07**: Desktop sidebar layout is completely unchanged — mobile-only modifications
+- [x] **MOB-01**: Mobile board action buttons use compact size (h-9 w-9) instead of h-11 w-11 to free vertical space
+- [x] **MOB-02**: Trigger buttons (Filters + Bookmarks) appear below the board controls on mobile, visually distinct from board navigation buttons
+- [x] **MOB-03**: Filter sidebar slides in from the right containing all filters (Played as, Piece filter, Recency, Time controls, Platforms, Rated, Opponent)
+- [x] **MOB-04**: Filter changes inside the sidebar are deferred — only applied when the sidebar is closed (any close method: overlay tap, X button, swipe)
+- [x] **MOB-05**: Bookmark sidebar slides in from the right containing save, suggest, and full bookmark list with all existing functionality
+- [x] **MOB-06**: Loading a bookmark from the sidebar closes the sidebar and applies the position to the board
+- [x] **MOB-07**: Desktop sidebar layout is completely unchanged — mobile-only modifications
 
 ## Future Requirements
 
