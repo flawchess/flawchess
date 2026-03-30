@@ -11,7 +11,8 @@ function setChartEnabledStorage(bookmarkId: number, enabled: boolean): void {
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronUp, ChevronDown, Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2 } from 'lucide-react';
+import { ChevronUp, ChevronDown, Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, SlidersHorizontal, BookMarked, X } from 'lucide-react';
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
@@ -90,8 +91,11 @@ export function OpeningsPage() {
   // ── Collapsible section state ───────────────────────────────────────────────
   const [positionBookmarksOpen, setPositionBookmarksOpen] = useState(false);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
-  // Mobile-only collapsible state — filters start collapsed on mobile (separate from desktop sidebar state)
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+
+  // ── Mobile sidebar state ────────────────────────────────────────────────────
+  const [filterSidebarOpen, setFilterSidebarOpen] = useState(false);
+  const [bookmarkSidebarOpen, setBookmarkSidebarOpen] = useState(false);
+  const [localFilters, setLocalFilters] = useState<FilterState>(DEFAULT_FILTERS);
 
   // ── Games tab pagination ────────────────────────────────────────────────────
   const [gamesOffset, setGamesOffset] = useState(0);
@@ -333,6 +337,31 @@ export function OpeningsPage() {
   const handleReorder = useCallback((orderedIds: number[]) => {
     reorder.mutate(orderedIds);
   }, [reorder]);
+
+  // ── Mobile sidebar handlers ──────────────────────────────────────────────────
+
+  const openFilterSidebar = useCallback(() => {
+    setLocalFilters({ ...filters });
+    setFilterSidebarOpen(true);
+  }, [filters]);
+
+  const handleFilterSidebarOpenChange = useCallback((open: boolean) => {
+    if (!open && filterSidebarOpen) {
+      // Commit deferred filters on close (D-10, D-12)
+      handleFiltersChange(localFilters);
+      setBoardFlipped(localFilters.color === 'black');
+    }
+    setFilterSidebarOpen(open);
+  }, [filterSidebarOpen, localFilters, handleFiltersChange]);
+
+  const openBookmarkSidebar = useCallback(() => {
+    setBookmarkSidebarOpen(true);
+  }, []);
+
+  const handleLoadBookmarkFromSidebar = useCallback((bkm: PositionBookmarkResponse) => {
+    handleLoadBookmark(bkm);
+    setBookmarkSidebarOpen(false);
+  }, [handleLoadBookmark]);
 
   // ── Sidebar ─────────────────────────────────────────────────────────────────
 
@@ -836,98 +865,114 @@ export function OpeningsPage() {
             onMoveClick={chess.goToMove}
           />
 
-          {/* Played as + Piece filter */}
-          <div className="flex flex-wrap gap-x-4 gap-y-3">
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Played as</p>
-              <ToggleGroup
-                type="single"
-                value={filters.color}
-                onValueChange={(v) => {
-                  if (!v) return;
-                  const color = v as Color;
-                  setFilters(prev => ({ ...prev, color }));
-                  setBoardFlipped(color === 'black');
-                }}
-                variant="outline"
-                size="sm"
-                data-testid="filter-played-as-mobile"
-              >
-                <ToggleGroupItem value="white" data-testid="filter-played-as-white-mobile" className="min-h-11">
-                  <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
-                  White
-                </ToggleGroupItem>
-                <ToggleGroupItem value="black" data-testid="filter-played-as-black-mobile" className="min-h-11">
-                  <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
-                  Black
-                </ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-
-            <div className="ml-auto">
-              <div className="mb-1 flex items-center gap-1">
-                <p className="text-xs text-muted-foreground">Piece filter</p>
-                <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info-mobile" side="top">
-                  Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
-                </InfoPopover>
-              </div>
-              <ToggleGroup
-                type="single"
-                value={filters.matchSide}
-                onValueChange={(v) => {
-                  if (!v) return;
-                  setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
-                }}
-                variant="outline"
-                size="sm"
-                data-testid="filter-piece-filter-mobile"
-              >
-                <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-mobile" className="min-h-11">Mine</ToggleGroupItem>
-                <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-mobile" className="min-h-11">Opponent</ToggleGroupItem>
-                <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-mobile" className="min-h-11">Both</ToggleGroupItem>
-              </ToggleGroup>
-            </div>
+          {/* Sidebar trigger buttons (D-02: outside BoardControls, D-03: distinct via style) */}
+          <div className="flex gap-2 w-full">
+            <Button
+              variant={filterSidebarOpen ? undefined : 'ghost'}
+              className={`flex-1 h-11 ${filterSidebarOpen ? PRIMARY_BUTTON_CLASS : 'hover:bg-accent'}`}
+              onClick={openFilterSidebar}
+              data-testid="btn-open-filter-sidebar"
+              aria-label="Open filters"
+            >
+              <SlidersHorizontal className="h-4 w-4 mr-1.5" />
+              Filters
+            </Button>
+            <Button
+              variant={bookmarkSidebarOpen ? undefined : 'ghost'}
+              className={`flex-1 h-11 ${bookmarkSidebarOpen ? PRIMARY_BUTTON_CLASS : 'hover:bg-accent'}`}
+              onClick={openBookmarkSidebar}
+              data-testid="btn-open-bookmark-sidebar"
+              aria-label="Open bookmarks"
+            >
+              <BookMarked className="h-4 w-4 mr-1.5" />
+              Bookmarks
+            </Button>
           </div>
 
-          <div className="border-t border-border/40" />
+          {/* Filter sidebar (D-04, D-05, D-06, D-10, D-12) */}
+          <Drawer open={filterSidebarOpen} onOpenChange={handleFilterSidebarOpenChange} direction="right">
+            <DrawerContent data-testid="drawer-filter-sidebar">
+              <DrawerHeader className="flex flex-row items-center justify-between">
+                <DrawerTitle>Filters</DrawerTitle>
+                <DrawerClose asChild>
+                  <Button variant="ghost" size="icon" aria-label="Close filters" data-testid="btn-close-filter-sidebar">
+                    <X className="h-4 w-4" />
+                  </Button>
+                </DrawerClose>
+              </DrawerHeader>
+              <div className="overflow-y-auto flex-1 p-4 space-y-4">
+                {/* Played as (color) — not in FilterPanel, must render manually */}
+                <div>
+                  <p className="mb-1 text-xs text-muted-foreground">Played as</p>
+                  <ToggleGroup
+                    type="single"
+                    value={localFilters.color}
+                    onValueChange={(v) => {
+                      if (!v) return;
+                      setLocalFilters(prev => ({ ...prev, color: v as Color }));
+                    }}
+                    variant="outline"
+                    size="sm"
+                    data-testid="filter-played-as-sidebar"
+                  >
+                    <ToggleGroupItem value="white" data-testid="filter-played-as-white-sidebar" className="min-h-11">
+                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
+                      White
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="black" data-testid="filter-played-as-black-sidebar" className="min-h-11">
+                      <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
+                      Black
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
 
-          {/* More filters — collapsed by default on mobile */}
-          <div className="charcoal-texture rounded-md">
-          <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-between px-3 text-sm font-medium min-h-11 sm:min-h-0 rounded-none hover:bg-charcoal-hover!"
-                data-testid="section-more-filters-mobile"
-              >
-                More filters
-                {mobileFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="border-t border-border/20" />
-              <div className="p-2">
-                <FilterPanel filters={filters} onChange={handleFiltersChange} />
+                {/* Piece filter (matchSide) — not in FilterPanel, must render manually */}
+                <div>
+                  <div className="mb-1 flex items-center gap-1">
+                    <p className="text-xs text-muted-foreground">Piece filter</p>
+                    <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info-sidebar" side="top">
+                      Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
+                    </InfoPopover>
+                  </div>
+                  <ToggleGroup
+                    type="single"
+                    value={localFilters.matchSide}
+                    onValueChange={(v) => {
+                      if (!v) return;
+                      setLocalFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
+                    }}
+                    variant="outline"
+                    size="sm"
+                    data-testid="filter-piece-filter-sidebar"
+                  >
+                    <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-sidebar" className="min-h-11">Mine</ToggleGroupItem>
+                    <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-sidebar" className="min-h-11">Opponent</ToggleGroupItem>
+                    <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-sidebar" className="min-h-11">Both</ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+
+                {/* Remaining filters (5 fields: timeControl, platform, rated, opponent, recency) */}
+                <FilterPanel filters={localFilters} onChange={setLocalFilters} />
               </div>
-            </CollapsibleContent>
-          </Collapsible>
-          </div>
+            </DrawerContent>
+          </Drawer>
 
-          {/* Position bookmarks — collapsed by default */}
-          <div className="charcoal-texture rounded-md">
-          <Collapsible open={positionBookmarksOpen} onOpenChange={setPositionBookmarksOpen}>
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-between px-3 text-sm font-medium min-h-11 sm:min-h-0 rounded-none hover:bg-charcoal-hover!"
-                data-testid="section-position-bookmarks-mobile"
-              >
-                <span className="flex items-center gap-1">
-                  Position bookmarks
-                  <span onClick={(e) => e.stopPropagation()}>
-                    <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info-mobile" side="top">
+          {/* Bookmark sidebar (D-04, D-05, D-06, D-13, D-14) */}
+          <Drawer open={bookmarkSidebarOpen} onOpenChange={setBookmarkSidebarOpen} direction="right">
+            <DrawerContent data-testid="drawer-bookmark-sidebar">
+              <DrawerHeader className="flex flex-row items-center justify-between">
+                <DrawerTitle>Position Bookmarks</DrawerTitle>
+                <DrawerClose asChild>
+                  <Button variant="ghost" size="icon" aria-label="Close bookmarks" data-testid="btn-close-bookmark-sidebar">
+                    <X className="h-4 w-4" />
+                  </Button>
+                </DrawerClose>
+              </DrawerHeader>
+              <div className="overflow-y-auto flex-1 p-4">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-1 mb-1">
+                    <span className="text-sm font-medium">Position Bookmarks</span>
+                    <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info-sidebar" side="top">
                       <div className="space-y-2">
                         <p>
                           Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
@@ -940,45 +985,38 @@ export function OpeningsPage() {
                         </p>
                       </div>
                     </InfoPopover>
-                  </span>
-                </span>
-                {positionBookmarksOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="border-t border-border/20" />
-              <div className="p-2">
-                <div className="flex gap-2 mb-2">
-                  <Button
-                    size="lg"
-                    className={`flex-1 ${PRIMARY_BUTTON_CLASS}`}
-                    onClick={openBookmarkDialog}
-                    data-testid="btn-bookmark-mobile"
-                  >
-                    <Save className="h-4 w-4" />
-                    Save
-                  </Button>
-                  <Button
-                    size="lg"
-                    className={`flex-1 ${PRIMARY_BUTTON_CLASS}`}
-                    onClick={() => setSuggestionsOpen(true)}
-                    data-testid="btn-suggest-bookmarks-mobile"
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    Suggest
-                  </Button>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="lg"
+                      className={`flex-1 ${PRIMARY_BUTTON_CLASS}`}
+                      onClick={openBookmarkDialog}
+                      data-testid="btn-bookmark-sidebar"
+                    >
+                      <Save className="h-4 w-4" />
+                      Save
+                    </Button>
+                    <Button
+                      size="lg"
+                      className={`flex-1 ${PRIMARY_BUTTON_CLASS}`}
+                      onClick={() => setSuggestionsOpen(true)}
+                      data-testid="btn-suggest-bookmarks-sidebar"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      Suggest
+                    </Button>
+                  </div>
+                  <PositionBookmarkList
+                    bookmarks={bookmarks}
+                    onReorder={handleReorder}
+                    onLoad={handleLoadBookmarkFromSidebar}
+                    chartEnabledMap={chartEnabledMap}
+                    onChartEnabledChange={handleChartEnabledChange}
+                  />
                 </div>
-                <PositionBookmarkList
-                  bookmarks={bookmarks}
-                  onReorder={handleReorder}
-                  onLoad={handleLoadBookmark}
-                  chartEnabledMap={chartEnabledMap}
-                  onChartEnabledChange={handleChartEnabledChange}
-                />
               </div>
-            </CollapsibleContent>
-          </Collapsible>
-          </div>
+            </DrawerContent>
+          </Drawer>
 
           {/* Tabs: Moves / Games / Compare */}
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
