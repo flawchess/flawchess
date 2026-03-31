@@ -68,7 +68,9 @@ async def fetch_lichess_games(
     url = f"{LICHESS_API_URL}/{username}"
     headers = {"Accept": "application/x-ndjson"}
 
-    last_attempt_error: Exception | None = None
+    # Initialize with a sentinel so raise always has a valid exception even if no
+    # attempt captured a specific error (e.g., _MAX_RETRIES == 0).
+    last_attempt_error: Exception = Exception("Exhausted retries without capturing an error")
 
     for attempt in range(_MAX_RETRIES + 1):
         if attempt > 0:
@@ -121,4 +123,4 @@ async def fetch_lichess_games(
             continue
 
     # All retries exhausted — re-raise the last error
-    raise last_attempt_error  # type: ignore[misc]
+    raise last_attempt_error

@@ -1,9 +1,8 @@
 """Tests for PositionBookmarkResponse Pydantic schema validation."""
 
 import json
-from unittest.mock import MagicMock
 
-
+from app.models.position_bookmark import PositionBookmark
 from app.schemas.position_bookmarks import PositionBookmarkResponse
 
 
@@ -11,8 +10,13 @@ class TestPositionBookmarkResponseFromORM:
     """Test PositionBookmarkResponse.model_validate with ORM-like objects (int target_hash)."""
 
     def _make_orm_bookmark(self, target_hash=123456789012345678, moves=None, is_flipped=False):
-        """Create a mock ORM PositionBookmark object."""
-        obj = MagicMock()
+        """Create a real PositionBookmark ORM object (without DB session).
+
+        Uses the PositionBookmark model directly so isinstance() checks in the
+        model_validator work correctly. Previously used MagicMock but that broke
+        when the validator was changed from hasattr() to isinstance() for type safety.
+        """
+        obj = PositionBookmark()
         obj.id = 1
         obj.label = "Queen's Gambit"
         obj.target_hash = target_hash

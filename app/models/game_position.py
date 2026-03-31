@@ -81,4 +81,4 @@ class GamePosition(Base):
     # Per D-06: SmallInteger for fastest GROUP BY, 2 bytes per row.
     endgame_class: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
 
-    game: Mapped["Game"] = relationship(back_populates="positions")  # type: ignore[name-defined]
+    game: Mapped["Game"] = relationship(back_populates="positions")  # ty: ignore[unresolved-reference]

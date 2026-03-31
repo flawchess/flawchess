@@ -25,6 +25,6 @@ class User(SQLAlchemyBaseUserTable[int], Base):
     )
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    oauth_accounts: Mapped[List["OAuthAccount"]] = relationship(  # noqa: F821
+    oauth_accounts: Mapped[List["OAuthAccount"]] = relationship(  # ty: ignore[unresolved-reference]
         "OAuthAccount", lazy="joined"
     )

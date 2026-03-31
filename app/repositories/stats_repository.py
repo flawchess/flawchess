@@ -1,9 +1,10 @@
 """Stats repository: DB queries for rating history and global game stats."""
 
 import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import BigInteger, Column, Date, MetaData, SmallInteger, String, Table, Text, and_, case, cast, func, or_, select
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
@@ -30,7 +31,7 @@ async def query_rating_history(
     user_id: int,
     platform: str,
     recency_cutoff: datetime.datetime | None,
-) -> list[tuple]:
+) -> list[Row[Any]]:
     """Return one rating data point per (date, time_control_bucket) for a given platform.
 
     Each row is a (date, rating, time_control_bucket) tuple where date is a
@@ -72,7 +73,7 @@ async def query_results_by_time_control(
     user_id: int,
     recency_cutoff: datetime.datetime | None,
     platform: str | None = None,
-) -> list[tuple]:
+) -> list[Row[Any]]:
     """Return (time_control_bucket, total, wins, draws, losses) via SQL aggregation.
 
     Excludes games where time_control_bucket is NULL.
@@ -118,7 +119,7 @@ async def query_results_by_color(
     user_id: int,
     recency_cutoff: datetime.datetime | None,
     platform: str | None = None,
-) -> list[tuple]:
+) -> list[Row[Any]]:
     """Return (user_color, total, wins, draws, losses) via SQL aggregation.
 
     Excludes games where user_color is NULL.
@@ -195,7 +196,7 @@ async def query_top_openings_sql_wdl(
     platform: list[str] | None = None,
     rated: bool | None = None,
     opponent_type: str = "human",
-) -> list[tuple]:
+) -> list[Row[Any]]:
     """Return top openings with SQL-side WDL aggregation.
 
     JOINs games to openings_dedup to get pgn/fen and filter by min_ply.

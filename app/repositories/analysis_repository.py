@@ -4,6 +4,7 @@ import datetime
 from typing import Any
 
 from sqlalchemy import case, func, select
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -88,7 +89,7 @@ async def query_time_series(
     rated: bool | None = None,
     opponent_type: str = "human",
     recency_cutoff: datetime.datetime | None = None,
-) -> list[tuple]:
+) -> list[Row[Any]]:
     """Return (played_at, result, user_color) tuples for matching games, ordered chronologically.
 
     Returns per-game rows ordered by played_at ASC so the service can compute
@@ -141,7 +142,7 @@ async def query_all_results(
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     color: str | None,
-) -> list[tuple[str, str]]:
+) -> list[Row[Any]]:
     """Return (result, user_color) tuples for ALL matching games (for stats).
 
     Lightweight — only fetches the two columns needed for W/D/L computation.
