@@ -117,7 +117,7 @@
 **Plans**: 2 plans
 
 Plans:
-- [ ] 40-01-PLAN.md — ty configuration, CI integration, and mechanical type error fixes (models, repositories, schemas, routers)
+- [x] 40-01-PLAN.md — ty configuration, CI integration, and mechanical type error fixes (models, repositories, schemas, routers)
 - [ ] 40-02-PLAN.md — Service-layer TypedDicts/Pydantic models and test file type error fixes
 
 ### Phase 41: Code Quality & Dead Code
@@ -195,7 +195,7 @@ Plans:
 | 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
 | 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
 | 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete   | 2026-03-30 |
-| 40. Static Type Checking | v1.7 | 0/2 | Not started | - |
+| 40. Static Type Checking | v1.7 | 1/2 | In Progress|  |
 | 41. Code Quality & Dead Code | v1.7 | 0/TBD | Not started | - |
 | 42. Backend Optimization | v1.7 | 0/TBD | Not started | - |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
@@ -206,7 +206,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 1/1 plans complete
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
