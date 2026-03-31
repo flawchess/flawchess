@@ -51,23 +51,23 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TOOL-01 | — | Pending |
-| TOOL-02 | — | Pending |
-| TOOL-03 | — | Pending |
-| TOOL-04 | — | Pending |
-| QUAL-01 | — | Pending |
-| QUAL-02 | — | Pending |
-| QUAL-03 | — | Pending |
-| BOPT-01 | — | Pending |
-| BOPT-02 | — | Pending |
-| BOPT-03 | — | Pending |
-| FCLN-01 | — | Pending |
+| TOOL-01 | Phase 40 | Pending |
+| TOOL-02 | Phase 40 | Pending |
+| TOOL-03 | Phase 41 | Pending |
+| TOOL-04 | Phase 43 | Pending |
+| QUAL-01 | Phase 41 | Pending |
+| QUAL-02 | Phase 41 | Pending |
+| QUAL-03 | Phase 41 | Pending |
+| BOPT-01 | Phase 42 | Pending |
+| BOPT-02 | Phase 42 | Pending |
+| BOPT-03 | Phase 42 | Pending |
+| FCLN-01 | Phase 43 | Pending |
 
 **Coverage:**
 - v1.7 requirements: 11 total
-- Mapped to phases: 0
-- Unmapped: 11 ⚠️
+- Mapped to phases: 11
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-31*
-*Last updated: 2026-03-31 after initial definition*
+*Last updated: 2026-03-31 after roadmap creation*

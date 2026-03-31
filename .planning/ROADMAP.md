@@ -9,6 +9,7 @@
 - ✅ **v1.4 Improvements** — Phase 24 (shipped 2026-03-22)
 - ✅ **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33 (shipped 2026-03-28)
 - ✅ **v1.6 UI Polish & Improvements** — Phases 34-39 (shipped 2026-03-30)
+- 🚧 **v1.7 Consolidation, Tooling & Refactoring** — Phases 40-43 (in progress)
 
 ## Phases
 
@@ -93,6 +94,60 @@
 
 </details>
 
+### 🚧 v1.7 Consolidation, Tooling & Refactoring (In Progress)
+
+**Milestone Goal:** Clean up and tighten the codebase for long-term maintainability and extendability — no new user-facing features.
+
+- [ ] **Phase 40: Static Type Checking** — Integrate `ty` into CI and fix type safety gaps in backend code
+- [ ] **Phase 41: Code Quality & Dead Code** — Naming improvements, deduplication, dead code removal, frontend dead export detection
+- [ ] **Phase 42: Backend Optimization** — DB query aggregation, column type optimization, API schema consistency
+- [ ] **Phase 43: Frontend Cleanup** — Refactor button brand colors to CSS variables; optional test coverage analysis
+
+## Phase Details
+
+### Phase 40: Static Type Checking
+**Goal**: Backend type errors are caught at CI time, not at runtime
+**Depends on**: Nothing (first phase of v1.7)
+**Requirements**: TOOL-01, TOOL-02
+**Success Criteria** (what must be TRUE):
+  1. `ty` runs in CI pipeline and fails the build on type errors
+  2. All backend functions have explicit type annotations on parameters and return values
+  3. Untyped `dict` usage replaced with TypedDicts or Pydantic models where semantically meaningful
+  4. `ty` passes clean (zero errors) on the backend codebase
+**Plans**: TBD
+
+### Phase 41: Code Quality & Dead Code
+**Goal**: Codebase naming is clear, duplication is eliminated, and dead code is removed
+**Depends on**: Phase 40
+**Requirements**: TOOL-03, QUAL-01, QUAL-02, QUAL-03
+**Success Criteria** (what must be TRUE):
+  1. API endpoint paths, route names, and key variables follow a consistent, self-documenting naming convention
+  2. Repeated logic is extracted into shared utilities or helpers — no significant copy-paste duplication remains
+  3. Unreachable backend code and unused frontend exports are identified and removed
+  4. knip.dev (or equivalent) report reviewed; actionable dead exports eliminated
+**Plans**: TBD
+
+### Phase 42: Backend Optimization
+**Goal**: Backend DB queries are efficient and all API responses use consistent Pydantic schemas
+**Depends on**: Phase 40
+**Requirements**: BOPT-01, BOPT-02, BOPT-03
+**Success Criteria** (what must be TRUE):
+  1. Identified row-level W/D/L counting loops replaced with SQL aggregations (GROUP BY / COUNT().filter())
+  2. `game_positions` BIGINT/DOUBLE columns migrated to SmallInteger/REAL where applicable, with Alembic migration
+  3. All API endpoints return typed Pydantic response models — no bare `dict` or untyped returns
+**Plans**: TBD
+
+### Phase 43: Frontend Cleanup
+**Goal**: Button brand colors are driven by CSS variables and the frontend has no hard-coded semantic color values
+**Depends on**: Phase 41
+**Requirements**: FCLN-01, TOOL-04
+**Success Criteria** (what must be TRUE):
+  1. Button brand color values are defined as CSS variables and imported consistently — no hard-coded hex/rgb values for brand buttons remain in components
+  2. Brand color changes require editing only CSS variable definitions, not individual components
+  3. (Optional) Test coverage report generated and baseline documented for future reference
+**Plans**: TBD
+**UI hint**: yes
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -136,6 +191,10 @@
 | 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
 | 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
 | 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete   | 2026-03-30 |
+| 40. Static Type Checking | v1.7 | 0/TBD | Not started | - |
+| 41. Code Quality & Dead Code | v1.7 | 0/TBD | Not started | - |
+| 42. Backend Optimization | v1.7 | 0/TBD | Not started | - |
+| 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
 
 ## Backlog
 
