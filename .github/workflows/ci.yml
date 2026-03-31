@@ -43,6 +43,9 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check .
 
+      - name: Type check (ty)
+        run: uv run ty check app/ tests/
+
       - name: Run pytest
         env:
           TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/flawchess_test
