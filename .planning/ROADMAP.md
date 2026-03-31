@@ -94,7 +94,7 @@
 
 </details>
 
-### 🚧 v1.7 Consolidation, Tooling & Refactoring (In Progress)
+### v1.7 Consolidation, Tooling & Refactoring (In Progress)
 
 **Milestone Goal:** Clean up and tighten the codebase for long-term maintainability and extendability — no new user-facing features.
 
@@ -114,7 +114,11 @@
   2. All backend functions have explicit type annotations on parameters and return values
   3. Untyped `dict` usage replaced with TypedDicts or Pydantic models where semantically meaningful
   4. `ty` passes clean (zero errors) on the backend codebase
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 40-01-PLAN.md — ty configuration, CI integration, and mechanical type error fixes (models, repositories, schemas, routers)
+- [ ] 40-02-PLAN.md — Service-layer TypedDicts/Pydantic models and test file type error fixes
 
 ### Phase 41: Code Quality & Dead Code
 **Goal**: Codebase naming is clear, duplication is eliminated, and dead code is removed
@@ -191,7 +195,7 @@
 | 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
 | 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
 | 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete   | 2026-03-30 |
-| 40. Static Type Checking | v1.7 | 0/TBD | Not started | - |
+| 40. Static Type Checking | v1.7 | 0/2 | Not started | - |
 | 41. Code Quality & Dead Code | v1.7 | 0/TBD | Not started | - |
 | 42. Backend Optimization | v1.7 | 0/TBD | Not started | - |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
