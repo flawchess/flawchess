@@ -64,7 +64,17 @@ Users can determine their success rate for any opening position they specify, fi
 
 ### Active
 
-(None — planning next milestone)
+- [ ] Static type checking with astral `ty` + CI/CD integration
+- [ ] Type safety review & improvement (replace untyped dicts with TypedDicts/Pydantic models, add missing type hints)
+- [ ] Evaluate knip.dev (or similar) for frontend dead export detection
+- [ ] Naming improvements across codebase (API endpoints, routes, variables)
+- [ ] Code deduplication (DRY principle)
+- [ ] Dead code identification and removal
+- [ ] DB query optimization (inefficient queries → aggregations)
+- [ ] DB column type optimization (game_positions BIGINT/DOUBLE → SmallInteger/REAL)
+- [ ] Refactor button brand colors to CSS variables
+- [ ] API response schema consistency (consistent Pydantic models across all endpoints)
+- [ ] Test coverage analysis (maybe)
 
 ### Out of Scope
 
@@ -75,9 +85,26 @@ Users can determine their success rate for any opening position they specify, fi
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
+## Current Milestone: v1.7 Consolidation, Tooling & Refactoring
+
+**Goal:** Clean up and tighten the codebase for long-term maintainability and extendability.
+
+**Target features:**
+- Static type checking with astral `ty` + CI/CD integration
+- Type safety review & improvement (replace untyped dicts, add missing type hints)
+- Evaluate knip.dev (or similar) for frontend dead export detection
+- Naming improvements across codebase (API endpoints, routes, variables)
+- Code deduplication (DRY principle)
+- Dead code identification and removal
+- DB query optimization (inefficient queries → aggregations)
+- DB column type optimization (game_positions BIGINT/DOUBLE → SmallInteger/REAL)
+- Refactor button brand colors to CSS variables
+- API response schema consistency (consistent Pydantic models across all endpoints)
+- Test coverage analysis (maybe)
+
 ## Current State
 
-v1.6 shipped 2026-03-30. Six milestones complete (v1.0–v1.6), 39 phases, live at flawchess.com. The platform now has a polished, consistent UI with centralized theming, shared WDL chart components, an openings reference table with SQL-side aggregation, smart bookmark defaults, and mobile drawer sidebars. Planning next milestone.
+v1.6 shipped 2026-03-30. Seven milestones complete (v1.0–v1.6), 39 phases, live at flawchess.com. The platform has a polished, consistent UI with centralized theming, shared WDL chart components, an openings reference table with SQL-side aggregation, smart bookmark defaults, and mobile drawer sidebars. Starting v1.7 consolidation milestone.
 
 ## Context
 
@@ -129,5 +156,22 @@ v1.6 shipped 2026-03-30. Six milestones complete (v1.0–v1.6), 39 phases, live 
 | asyncio.Semaphore rate limiter | Per-platform concurrency control without Redis/Celery | ✓ Good |
 | Backend expose-only (no ports) | Caddy is sole internet-facing entry point | ✓ Good |
 
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd:transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd:complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
 ---
-*Last updated: 2026-03-30 after v1.6 milestone*
+*Last updated: 2026-03-31 after v1.7 milestone start*

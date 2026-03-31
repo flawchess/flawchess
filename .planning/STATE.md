@@ -1,30 +1,31 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.6
-milestone_name: UI Polish & Improvements
-status: complete
-last_updated: "2026-03-30T19:30:00.000Z"
-last_activity: 2026-03-30
+milestone: v1.7
+milestone_name: Consolidation, Tooling & Refactoring
+status: active
+last_updated: "2026-03-31T00:00:00.000Z"
+last_activity: 2026-03-31
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 11
-  completed_plans: 11
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: v1.6 UI Polish & Improvements — COMPLETE
-Status: Milestone archived, planning next milestone
-Last activity: 2026-03-30
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-31 — Milestone v1.7 started
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-30)
+See: .planning/PROJECT.md (updated 2026-03-31)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Planning next milestone
+Current focus: v1.7 Consolidation, Tooling & Refactoring
 
 ## Key Context
 
@@ -40,8 +41,6 @@ Current focus: Planning next milestone
 
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
-- **Refactor button brand colors to CSS variables** (ui) — move PRIMARY_BUTTON_CLASS from theme.ts to @theme inline CSS variables
-- **Optimize game_positions column types for storage efficiency** (database) — downsize ply/clock_seconds/material_imbalance from BIGINT/DOUBLE to SmallInteger/REAL
 
 ### Blockers/Concerns
 
@@ -49,4 +48,4 @@ Current focus: Planning next milestone
 - bulk_insert_positions chunk_size tuning required when adding columns — asyncpg 32767 arg limit
 
 ---
-Last activity: 2026-03-30 - Milestone v1.6 archived
+Last activity: 2026-03-31 - Milestone v1.7 started
