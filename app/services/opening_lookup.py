@@ -12,9 +12,19 @@ from pathlib import Path
 
 _OPENINGS_TSV = Path(__file__).resolve().parent.parent / "data" / "openings.tsv"
 
-# Trie: nested dicts keyed by SAN move string.
-# Terminal nodes have a '_result' key storing (eco, name).
-_TRIE: dict = {}
+
+class TrieNode:
+    """A node in the opening lookup trie.
+
+    Created per D-04: typed class for recursive structures (not Pydantic).
+    Replaces bare dict trie to eliminate unresolved-attribute ty errors.
+    """
+
+    __slots__ = ("children", "result")
+
+    def __init__(self) -> None:
+        self.children: dict[str, TrieNode] = {}
+        self.result: tuple[str, str] | None = None
 
 
 def _normalize_pgn_to_san_sequence(pgn: str | None) -> list[str]:
@@ -53,9 +63,9 @@ def _normalize_pgn_to_san_sequence(pgn: str | None) -> list[str]:
     return tokens
 
 
-def _build_trie() -> dict:
-    """Load openings.tsv and build a move-keyed trie."""
-    trie: dict = {}
+def _build_trie() -> TrieNode:
+    """Load openings.tsv and build a move-keyed trie using TrieNode objects."""
+    root = TrieNode()
     with open(_OPENINGS_TSV, encoding="utf-8") as f:
         next(f)  # skip header line
         for line in f:
@@ -67,18 +77,18 @@ def _build_trie() -> dict:
             moves = _normalize_pgn_to_san_sequence(pgn)
             if not moves:
                 continue
-            node = trie
+            node = root
             for move in moves:
-                if move not in node:
-                    node[move] = {}
-                node = node[move]
+                if move not in node.children:
+                    node.children[move] = TrieNode()
+                node = node.children[move]
             # Store result at terminal node (last entry wins for same sequence)
-            node["_result"] = (eco, name)
-    return trie
+            node.result = (eco, name)
+    return root
 
 
 # Build the trie once at module load time
-_TRIE = _build_trie()
+_TRIE: TrieNode = _build_trie()
 
 
 # ---------------------------------------------------------------------------
@@ -99,11 +109,11 @@ def find_opening(pgn: str | None) -> tuple[str | None, str | None]:
     last_result: tuple[str, str] | None = None
 
     for move in moves:
-        if move not in node:
+        if move not in node.children:
             break
-        node = node[move]
-        if "_result" in node:
-            last_result = node["_result"]
+        node = node.children[move]
+        if node.result is not None:
+            last_result = node.result
 
     if last_result is None:
         return None, None

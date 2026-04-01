@@ -9,6 +9,7 @@ Functions:
 
 import asyncio
 import datetime
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import case, func, select, type_coerce
@@ -39,8 +40,8 @@ ENDGAME_PLY_THRESHOLD = 6
 async def count_filtered_games(
     session: AsyncSession,
     user_id: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -59,8 +60,8 @@ async def count_filtered_games(
 async def query_endgame_entry_rows(
     session: AsyncSession,
     user_id: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -139,8 +140,8 @@ async def query_endgame_games(
     session: AsyncSession,
     user_id: int,
     endgame_class: EndgameClass,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -207,8 +208,8 @@ async def query_endgame_games(
 async def query_conv_recov_timeline_rows(
     session: AsyncSession,
     user_id: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -279,8 +280,8 @@ async def query_conv_recov_timeline_rows(
 
 def _apply_game_filters(
     stmt,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -314,8 +315,8 @@ _ENDGAME_CLASS_INTS = range(1, 7)
 async def query_endgame_performance_rows(
     session: AsyncSession,
     user_id: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -380,8 +381,8 @@ async def query_endgame_performance_rows(
 async def query_endgame_timeline_rows(
     session: AsyncSession,
     user_id: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,

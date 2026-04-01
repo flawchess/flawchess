@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator, Callable
 import httpx
 
 from app.core.rate_limiters import get_lichess_semaphore
+from app.schemas.normalization import NormalizedGame
 from app.services.normalization import normalize_lichess_game
 
 logger = logging.getLogger(__name__)
@@ -33,8 +34,8 @@ async def fetch_lichess_games(
     user_id: int,
     since_ms: int | None = None,
     on_game_fetched: Callable[[], None] | None = None,
-) -> AsyncIterator[dict]:
-    """Async generator that yields normalized game dicts for a lichess user.
+) -> AsyncIterator[NormalizedGame]:
+    """Async generator that yields normalized NormalizedGame objects for a lichess user.
 
     Streams NDJSON from the lichess API line-by-line using httpx streaming,
     so large exports never need to be buffered in memory. Retries on transient

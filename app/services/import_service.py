@@ -23,6 +23,7 @@ import httpx
 from app.core.database import async_session_maker
 from app.repositories import game_repository, import_job_repository
 from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD
+from app.schemas.normalization import NormalizedGame
 from app.services import chesscom_client, lichess_client
 from app.services.endgame_service import _CLASS_TO_INT, classify_endgame_class
 from app.services.position_classifier import classify_position
@@ -209,7 +210,7 @@ async def run_import(job_id: str) -> None:
                     game_iter = _make_game_iterator(
                         client, job, previous_job, _on_game_fetched
                     )
-                    batch: list[dict[str, Any]] = []
+                    batch: list[NormalizedGame] = []
 
                     async for game_dict in game_iter:
                         batch.append(game_dict)
@@ -357,29 +358,36 @@ async def _make_game_iterator(
 
 async def _flush_batch(
     session: Any,
-    batch: list[dict[str, Any]],
+    batch: list[NormalizedGame],
     user_id: int,
 ) -> int:
-    """Insert a batch of game dicts, compute hashes, insert positions.
+    """Insert a batch of NormalizedGame objects, compute hashes, insert positions.
 
     Args:
         session: AsyncSession to use.
-        batch: List of normalized game dicts from platform client.
+        batch: List of NormalizedGame objects from platform client.
         user_id: Denormalized user ID for position rows.
 
     Returns:
         Number of newly inserted games (duplicates excluded).
     """
-    new_game_ids = await game_repository.bulk_insert_games(session, batch)
+    # Convert NormalizedGame objects to dicts for bulk insert.
+    # Also handles plain dicts for backward compatibility (e.g. test mocks).
+    game_dicts = [g.model_dump() if isinstance(g, NormalizedGame) else g for g in batch]  # type: ignore[union-attr]
+    new_game_ids = await game_repository.bulk_insert_games(session, game_dicts)
 
     if not new_game_ids:
         await session.commit()
         return 0
 
     # Map platform_game_id -> pgn so we can look up PGN for new games
+    # Handle both NormalizedGame objects and plain dicts (the latter used in tests)
     pgn_by_idx: dict[int, str] = {}
     for i, game_dict in enumerate(batch):
-        pgn_by_idx[i] = game_dict.get("pgn", "")
+        if isinstance(game_dict, NormalizedGame):
+            pgn_by_idx[i] = game_dict.pgn
+        else:
+            pgn_by_idx[i] = game_dict.get("pgn", "")  # type: ignore[union-attr]
 
     # Build a map from game row index to new game ID by matching order of returned IDs.
     # bulk_insert_games returns IDs in insertion order for newly inserted rows.

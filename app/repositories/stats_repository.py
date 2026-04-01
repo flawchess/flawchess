@@ -1,6 +1,7 @@
 """Stats repository: DB queries for rating history and global game stats."""
 
 import datetime
+from collections.abc import Sequence
 from typing import Any, Literal
 
 from sqlalchemy import BigInteger, Column, Date, MetaData, SmallInteger, String, Table, Text, and_, case, cast, func, or_, select
@@ -162,8 +163,8 @@ async def query_results_by_color(
 
 def _apply_game_filters(
     stmt,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -192,8 +193,8 @@ async def query_top_openings_sql_wdl(
     limit: int,
     min_ply: int,
     recency_cutoff: datetime.datetime | None = None,
-    time_control: list[str] | None = None,
-    platform: list[str] | None = None,
+    time_control: Sequence[str] | None = None,
+    platform: Sequence[str] | None = None,
     rated: bool | None = None,
     opponent_type: str = "human",
 ) -> list[Row[Any]]:
@@ -276,8 +277,8 @@ async def query_position_wdl_batch(
     user_id: int,
     hashes: list[int],
     color: Literal["white", "black"] | None = None,
-    time_control: list[str] | None = None,
-    platform: list[str] | None = None,
+    time_control: Sequence[str] | None = None,
+    platform: Sequence[str] | None = None,
     rated: bool | None = None,
     opponent_type: str = "human",
     recency_cutoff: datetime.datetime | None = None,

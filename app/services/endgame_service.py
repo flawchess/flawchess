@@ -14,8 +14,9 @@ Exposes:
 import asyncio
 from collections import defaultdict
 from enum import IntEnum
-from typing import Literal
+from typing import Any, Literal
 
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.endgame_repository import (
@@ -141,7 +142,7 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
 _MATERIAL_ADVANTAGE_THRESHOLD = 300
 
 
-def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
+def _aggregate_endgame_stats(rows: list[Row[Any]]) -> list[EndgameCategoryStats]:
     """Aggregate raw per-(game, class) endgame rows into EndgameCategoryStats list.
 
     Each row is: (game_id, endgame_class_int, result, user_color, user_material_imbalance)
@@ -159,16 +160,16 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
     if not rows:
         return []
 
-    # Accumulators per endgame class
-    wdl: dict[str, dict[str, int]] = defaultdict(
+    # Accumulators per endgame class (per D-02: TypedDicts for internal data structures)
+    wdl: dict[EndgameClass, dict[str, int]] = defaultdict(
         lambda: {"wins": 0, "draws": 0, "losses": 0}
     )
     # Conversion: games where user was up material at endgame entry
-    conv: dict[str, dict[str, int]] = defaultdict(
+    conv: dict[EndgameClass, dict[str, int]] = defaultdict(
         lambda: {"games": 0, "wins": 0, "draws": 0}
     )
     # Recovery: games where user was down material at endgame entry
-    recov: dict[str, dict[str, int]] = defaultdict(
+    recov: dict[EndgameClass, dict[str, int]] = defaultdict(
         lambda: {"games": 0, "wins": 0, "draws": 0}
     )
 
@@ -254,7 +255,9 @@ def _aggregate_endgame_stats(rows: list[tuple]) -> list[EndgameCategoryStats]:
             recovery_draws=recovery_draws,
         )
 
-        label = _ENDGAME_CATEGORY_LABELS.get(endgame_class, endgame_class.replace("_", " ").title())
+        # _ENDGAME_CATEGORY_LABELS is exhaustive for all EndgameClass values — direct lookup.
+        # endgame_class is always a valid EndgameClass because _INT_TO_CLASS only contains them.
+        label = _ENDGAME_CATEGORY_LABELS[endgame_class]
 
         categories.append(
             EndgameCategoryStats(
@@ -400,7 +403,7 @@ _ENDGAME_SKILL_CONVERSION_WEIGHT = 0.6
 _ENDGAME_SKILL_RECOVERY_WEIGHT = 0.4
 
 
-def _build_wdl_summary(rows: list[tuple]) -> EndgameWDLSummary:
+def _build_wdl_summary(rows: list[Row[Any]]) -> EndgameWDLSummary:
     """Build EndgameWDLSummary from a list of (played_at, result, user_color) rows."""
     wins = draws = losses = 0
     for _played_at, result, user_color in rows:
@@ -429,7 +432,7 @@ def _build_wdl_summary(rows: list[tuple]) -> EndgameWDLSummary:
     )
 
 
-def _compute_rolling_series(rows: list[tuple], window: int) -> list[dict]:
+def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:
     """Compute a rolling-window win-rate series from chronological game rows.
 
     Mirrors the pattern in analysis_service.get_time_series.
@@ -664,7 +667,7 @@ async def get_endgame_timeline(
 
 
 def _compute_conv_recov_rolling_series(
-    rows: list[tuple],
+    rows: list[Row[Any]],
     window: int,
     rate_fn,
 ) -> list[ConvRecovTimelinePoint]:

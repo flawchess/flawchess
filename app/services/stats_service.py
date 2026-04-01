@@ -1,5 +1,9 @@
 """Stats service: aggregation logic for rating history and global stats."""
 
+import datetime
+from typing import Any, TypedDict
+
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.stats_repository import (
@@ -34,6 +38,19 @@ _TIME_CONTROL_ORDER = ["bullet", "blitz", "rapid", "classical"]
 
 # Color ordering for consistent output.
 _COLOR_ORDER = ["white", "black"]
+
+
+class FilterParams(TypedDict):
+    """Typed filter parameters for position WDL batch queries.
+
+    Created per D-02: TypedDicts for internal data structures.
+    Matches keyword parameters of query_position_wdl_batch in stats_repository.py.
+    """
+    time_control: list[str] | None
+    platform: list[str] | None
+    rated: bool | None
+    opponent_type: str
+    recency_cutoff: datetime.datetime | None
 
 
 async def get_rating_history(
@@ -92,7 +109,7 @@ async def get_rating_history(
 
 
 def _rows_to_wdl_categories(
-    rows: list[tuple],
+    rows: list[Row[Any]],
     label_fn,
     label_order: list[str],
 ) -> list[WDLByCategory]:
@@ -214,7 +231,8 @@ async def get_most_played_openings(
     # Batch-query position-based WDL — games passing through each position,
     # which is typically higher than the opening-name count because many
     # openings share early moves. This matches "Results by Opening" counts.
-    filter_kwargs = dict(
+    # FilterParams TypedDict per D-02. Passed explicitly (not via **) for ty compatibility.
+    filter_params: FilterParams = FilterParams(
         time_control=time_control,
         platform=platform,
         rated=rated,
@@ -224,16 +242,26 @@ async def get_most_played_openings(
     white_position_wdl = await query_position_wdl_batch(
         session, user_id,
         [row[4] for row in white_rows if row[4] is not None],
-        color="white", **filter_kwargs,
+        color="white",
+        time_control=filter_params["time_control"],
+        platform=filter_params["platform"],
+        rated=filter_params["rated"],
+        opponent_type=filter_params["opponent_type"],
+        recency_cutoff=filter_params["recency_cutoff"],
     )
     black_position_wdl = await query_position_wdl_batch(
         session, user_id,
         [row[4] for row in black_rows if row[4] is not None],
-        color="black", **filter_kwargs,
+        color="black",
+        time_control=filter_params["time_control"],
+        platform=filter_params["platform"],
+        rated=filter_params["rated"],
+        opponent_type=filter_params["opponent_type"],
+        recency_cutoff=filter_params["recency_cutoff"],
     )
 
     def rows_to_openings(
-        rows: list[tuple],
+        rows: list[Row[Any]],
         position_wdl: dict,
     ) -> list[OpeningWDL]:
         openings = []

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import httpx
 
 from app.core.rate_limiters import get_chesscom_semaphore
+from app.schemas.normalization import NormalizedGame
 from app.services.normalization import normalize_chesscom_game
 
 logger = logging.getLogger(__name__)
@@ -64,8 +65,8 @@ async def fetch_chesscom_games(
     user_id: int,
     since_timestamp: datetime | None = None,
     on_game_fetched: Callable[[], None] | None = None,
-) -> AsyncIterator[dict]:
-    """Async generator that yields normalized game dicts for a chess.com user.
+) -> AsyncIterator[NormalizedGame]:
+    """Async generator that yields normalized NormalizedGame objects for a chess.com user.
 
     Args:
         client: Shared httpx.AsyncClient instance.

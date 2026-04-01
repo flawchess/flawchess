@@ -1,6 +1,7 @@
 """Analysis repository: DB queries for position-based W/D/L lookups."""
 
 import datetime
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import case, func, select
@@ -24,8 +25,8 @@ def _build_base_query(
     user_id: int,
     hash_column: Any | None,
     target_hash: int | None,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -84,8 +85,8 @@ async def query_time_series(
     hash_column: Any,
     target_hash: int,
     color: str | None,
-    time_control: list[str] | None = None,
-    platform: list[str] | None = None,
+    time_control: Sequence[str] | None = None,
+    platform: Sequence[str] | None = None,
     rated: bool | None = None,
     opponent_type: str = "human",
     recency_cutoff: datetime.datetime | None = None,
@@ -136,8 +137,8 @@ async def query_all_results(
     user_id: int,
     hash_column: Any | None,
     target_hash: int | None,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -170,8 +171,8 @@ async def query_matching_games(
     user_id: int,
     hash_column: Any | None,
     target_hash: int | None,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -242,8 +243,8 @@ async def query_matching_games(
 
 def _apply_game_filters(
     stmt: Any,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -276,8 +277,8 @@ async def query_next_moves(
     session: AsyncSession,
     user_id: int,
     target_hash: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -349,8 +350,8 @@ async def query_transposition_counts(
     session: AsyncSession,
     user_id: int,
     result_hash_list: list[int],
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
