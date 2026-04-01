@@ -57,7 +57,7 @@ class GamePosition(Base):
 
     # Position metadata — computed by position_classifier.py, populated during import (Phase 27)
     material_count: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
-    material_signature: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    material_signature: Mapped[Optional[str]] = mapped_column(String(65), nullable=True)
     material_imbalance: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     has_opposite_color_bishops: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
 
