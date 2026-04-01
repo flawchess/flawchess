@@ -126,7 +126,7 @@ ssh flawchess "cd /opt/flawchess && docker compose down && docker compose up -d"
 
 - Domain: flawchess.com (Caddy handles auto-TLS)
 - Stack: PostgreSQL 18 + FastAPI/Uvicorn + Caddy 2.11.2
-- Hetzner Cloud, 2 vCPUs, 3.7 GB RAM + 2 GB swap (`/swapfile`), 75 GB NVMe
+- Hetzner Cloud, 4 vCPUs, 7.6 GB RAM + 2 GB swap (`/swapfile`), 75 GB NVMe (upgraded 2026-04-01, disk unchanged — can downgrade)
 - Swap added 2026-03-22 after PostgreSQL was OOM-killed during a large game import. Import batch size was also reduced from 50 to 10 games (see `_BATCH_SIZE` in `import_service.py`).
 - Hetzner Cloud Firewall configured with inbound TCP 22/80/443 + ICMP from any
 - Alembic migrations run automatically on backend container startup via `deploy/entrypoint.sh`
@@ -175,6 +175,32 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
   - Use `# ty: ignore[rule-name]` (not `# type: ignore`) to suppress errors that can't be fixed (e.g., SQLAlchemy forward refs, FastAPI-Users generics). Always include the rule name and a brief reason.
 - **Comment bug fixes** — when fixing a bug, add a comment at the fix site explaining what broke and why. Future readers shouldn't have to dig through git history to understand why non-obvious code exists.
 - **Always check mobile variants** — when modifying a component that has separate desktop and mobile sections (e.g. Openings page sidebar vs mobile layout), apply the change to both. Search for duplicated markup before considering a change complete.
+
+## Error Handling & Sentry
+
+Sentry is initialized in both backend (`app/main.py`) and frontend (`frontend/src/instrument.ts`). These rules ensure errors are captured consistently.
+
+### Backend Rules
+
+- **Always call `sentry_sdk.capture_exception()`** in every non-trivial `except` block in `app/services/` and `app/routers/`. Do not rely on logging alone — errors logged to DB or console do NOT reach Sentry unless explicitly captured.
+- **Skip trivial/expected exceptions** — `ValueError` from parsing user input (e.g. time control strings), `UserAlreadyExists` from FastAPI-Users, and similar expected conditions are not bugs and should not be reported.
+- **Retry loops: capture on last attempt only** — for retry patterns (chess.com/lichess API retries), do NOT call `capture_exception` on each transient failure. Let the final exception propagate to the top-level handler which captures it once.
+- **Never embed variables in error messages** — this fragments Sentry grouping. Pass variable data via `sentry_sdk.set_context()` or `sentry_sdk.set_tag()`:
+  ```python
+  # WRONG — fragments grouping (each job_id creates a separate Sentry issue)
+  raise RuntimeError(f"Import failed for job {job_id}")
+
+  # RIGHT — preserves grouping, variables as context
+  sentry_sdk.set_context("import", {"job_id": job_id, "user_id": user_id})
+  sentry_sdk.capture_exception(exc)
+  ```
+- **Use tags for filterable dimensions** — `source` (import/api/auth), `platform` (chess.com/lichess). Use `set_context` for structured data (job_id, game_id, user_id).
+
+### Frontend Rules
+
+- **Global TanStack Query errors** are already captured in `frontend/src/lib/queryClient.ts` via `QueryCache.onError` and `MutationCache.onError`. Do NOT add duplicate `Sentry.captureException()` in components that use `useQuery`/`useMutation` — the global handler covers them.
+- **Manual fetch/axios calls in catch blocks** (auth forms, direct API calls outside TanStack Query) MUST call `Sentry.captureException(error, { tags: { source: '...' } })`.
+- **Skip expected failures** — e.g. checking if Google OAuth is available (`.catch(() => setGoogleAvailable(false))`) is expected to fail in dev environments.
 
 ## Critical Constraints
 
