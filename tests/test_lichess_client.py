@@ -99,9 +99,9 @@ class TestFetchLichessGames:
             results.append(g)
 
         assert len(results) == 1
-        assert results[0]["platform"] == "lichess"
-        assert results[0]["platform_game_id"] == "abcd1234"
-        assert results[0]["user_id"] == 1
+        assert results[0].platform == "lichess"
+        assert results[0].platform_game_id == "abcd1234"
+        assert results[0].user_id == 1
 
     @pytest.mark.asyncio
     async def test_404_raises_value_error(self):
@@ -159,7 +159,7 @@ class TestFetchLichessGames:
             results.append(g)
 
         assert len(results) == 1
-        assert results[0]["platform_game_id"] == "std1"
+        assert results[0].platform_game_id == "std1"
 
     @pytest.mark.asyncio
     async def test_malformed_json_lines_skipped(self):

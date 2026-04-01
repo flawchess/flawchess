@@ -146,12 +146,13 @@ class TestNormalizeChesscomGame:
         }
         return game
 
-    def test_returns_dict_for_standard_game(self):
+    def test_returns_normalized_game_for_standard_game(self):
+        from app.schemas.normalization import NormalizedGame
         from app.services.normalization import normalize_chesscom_game
         game = self._make_chesscom_game()
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert isinstance(result, dict)
+        assert isinstance(result, NormalizedGame)
 
     def test_returns_none_for_chess960(self):
         from app.services.normalization import normalize_chesscom_game
@@ -170,14 +171,14 @@ class TestNormalizeChesscomGame:
         game = self._make_chesscom_game(white_user="Magnus", black_user="Hikaru")
         result = normalize_chesscom_game(game, "magnus", user_id=1)  # case insensitive
         assert result is not None
-        assert result["user_color"] == "white"
+        assert result.user_color == "white"
 
     def test_black_user_color(self):
         from app.services.normalization import normalize_chesscom_game
         game = self._make_chesscom_game(white_user="Magnus", black_user="Hikaru")
         result = normalize_chesscom_game(game, "hikaru", user_id=1)  # case insensitive
         assert result is not None
-        assert result["user_color"] == "black"
+        assert result.user_color == "black"
 
     def test_win_on_white_gives_1_0(self):
         """When user plays white and result='win', result should be '1-0'."""
@@ -185,7 +186,7 @@ class TestNormalizeChesscomGame:
         game = self._make_chesscom_game(white_user="Magnus", white_result="win", black_result="checkmated")
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["result"] == "1-0"
+        assert result.result == "1-0"
 
     def test_loss_on_white_gives_0_1(self):
         """When user plays white and result='checkmated', result should be '0-1'."""
@@ -193,7 +194,7 @@ class TestNormalizeChesscomGame:
         game = self._make_chesscom_game(white_user="Magnus", white_result="checkmated", black_result="win")
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["result"] == "0-1"
+        assert result.result == "0-1"
 
     def test_draw_gives_1_2_1_2(self):
         """When result is a draw type, result should be '1/2-1/2'."""
@@ -201,14 +202,14 @@ class TestNormalizeChesscomGame:
         game = self._make_chesscom_game(white_user="Magnus", white_result="agreed", black_result="agreed")
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["result"] == "1/2-1/2"
+        assert result.result == "1/2-1/2"
 
     def test_stalemate_is_draw(self):
         from app.services.normalization import normalize_chesscom_game
         game = self._make_chesscom_game(white_user="Magnus", white_result="stalemate", black_result="stalemate")
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["result"] == "1/2-1/2"
+        assert result.result == "1/2-1/2"
 
     def test_timeout_loss_for_black(self):
         """When white times out and black wins, result should be '0-1'."""
@@ -219,21 +220,21 @@ class TestNormalizeChesscomGame:
         result = normalize_chesscom_game(game, "Hikaru", user_id=1)
         assert result is not None
         # white timed out -> black wins -> "0-1" (black wins in standard chess notation)
-        assert result["result"] == "0-1"
+        assert result.result == "0-1"
 
     def test_platform_is_chesscom(self):
         from app.services.normalization import normalize_chesscom_game
         game = self._make_chesscom_game()
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["platform"] == "chess.com"
+        assert result.platform == "chess.com"
 
     def test_platform_game_id_is_uuid(self):
         from app.services.normalization import normalize_chesscom_game
         game = self._make_chesscom_game(uuid="abc123")
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["platform_game_id"] == "abc123"
+        assert result.platform_game_id == "abc123"
 
     def test_played_at_is_datetime(self):
         """end_time (Unix seconds) should be converted to a datetime."""
@@ -242,7 +243,7 @@ class TestNormalizeChesscomGame:
         game = self._make_chesscom_game()
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert isinstance(result["played_at"], datetime.datetime)
+        assert isinstance(result.played_at, datetime.datetime)
 
     def test_time_control_parsed(self):
         from app.services.normalization import normalize_chesscom_game
@@ -250,9 +251,9 @@ class TestNormalizeChesscomGame:
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
         # "+0" suffix is normalized away
-        assert result["time_control_str"] == "600"
-        assert result["time_control_bucket"] == "rapid"
-        assert result["time_control_seconds"] == 600
+        assert result.time_control_str == "600"
+        assert result.time_control_bucket == "rapid"
+        assert result.time_control_seconds == 600
 
     def test_opening_eco_from_pgn(self):
         """ECO code should come from openings.tsv PGN matching (Italian Game = C50)."""
@@ -262,14 +263,14 @@ class TestNormalizeChesscomGame:
         )
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["opening_eco"] == "C50"
+        assert result.opening_eco == "C50"
 
     def test_user_id_included(self):
         from app.services.normalization import normalize_chesscom_game
         game = self._make_chesscom_game()
         result = normalize_chesscom_game(game, "Magnus", user_id=42)
         assert result is not None
-        assert result["user_id"] == 42
+        assert result.user_id == 42
 
     def test_computer_opponent_flagged(self):
         """User plays white, opponent (black) has is_computer=True -> is_computer_game=True."""
@@ -278,7 +279,7 @@ class TestNormalizeChesscomGame:
                                          black_is_computer=True)
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["is_computer_game"] is True
+        assert result.is_computer_game is True
 
     def test_computer_opponent_as_black_flagged(self):
         """User plays black, opponent (white) has is_computer=True -> is_computer_game=True."""
@@ -288,7 +289,7 @@ class TestNormalizeChesscomGame:
                                          white_is_computer=True)
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["is_computer_game"] is True
+        assert result.is_computer_game is True
 
     def test_human_opponent_not_flagged(self):
         """Neither player has is_computer field -> is_computer_game=False."""
@@ -296,7 +297,7 @@ class TestNormalizeChesscomGame:
         game = self._make_chesscom_game()
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["is_computer_game"] is False
+        assert result.is_computer_game is False
 
     def test_play_vs_coach_pgn_event_flagged(self):
         """PGN Event 'Play vs Coach' without is_computer field -> is_computer_game=True."""
@@ -304,7 +305,7 @@ class TestNormalizeChesscomGame:
         game = self._make_chesscom_game(event="Play vs Coach")
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["is_computer_game"] is True
+        assert result.is_computer_game is True
 
     def test_play_vs_computer_pgn_event_flagged(self):
         """PGN Event 'Play vs Computer' without is_computer field -> is_computer_game=True."""
@@ -312,7 +313,7 @@ class TestNormalizeChesscomGame:
         game = self._make_chesscom_game(event="Play vs Computer")
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["is_computer_game"] is True
+        assert result.is_computer_game is True
 
     def test_opening_name_from_pgn_match(self):
         """Game with known PGN moves gets correct opening_name from TSV (Italian Game)."""
@@ -323,7 +324,7 @@ class TestNormalizeChesscomGame:
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
         # 1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 is covered by C50 Italian Game variants
-        assert result["opening_name"] is not None
+        assert result.opening_name is not None
 
     def test_opening_none_when_no_moves_in_pgn(self):
         """Game with empty PGN gets opening_name=None and opening_eco=None."""
@@ -331,8 +332,8 @@ class TestNormalizeChesscomGame:
         game = self._make_chesscom_game(pgn="")
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["opening_name"] is None
-        assert result["opening_eco"] is None
+        assert result.opening_name is None
+        assert result.opening_eco is None
 
 
 class TestChesscomAccuracy:
@@ -361,8 +362,8 @@ class TestChesscomAccuracy:
         game = self._make_chesscom_game(accuracies={"white": 83.53, "black": 76.21})
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["white_accuracy"] == 83.53
-        assert result["black_accuracy"] == 76.21
+        assert result.white_accuracy == 83.53
+        assert result.black_accuracy == 76.21
 
     def test_no_accuracies_key(self):
         """No accuracies key -> both accuracy fields are None."""
@@ -370,8 +371,8 @@ class TestChesscomAccuracy:
         game = self._make_chesscom_game()  # no accuracies key
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["white_accuracy"] is None
-        assert result["black_accuracy"] is None
+        assert result.white_accuracy is None
+        assert result.black_accuracy is None
 
     def test_partial_accuracies(self):
         """Only white accuracy present -> white_accuracy=float, black_accuracy=None."""
@@ -379,8 +380,8 @@ class TestChesscomAccuracy:
         game = self._make_chesscom_game(accuracies={"white": 90.0})
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["white_accuracy"] == 90.0
-        assert result["black_accuracy"] is None
+        assert result.white_accuracy == 90.0
+        assert result.black_accuracy is None
 
     def test_lichess_no_accuracy(self):
         """Lichess game without analysis returns None accuracy."""
@@ -405,8 +406,8 @@ class TestChesscomAccuracy:
         }
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["white_accuracy"] is None
-        assert result["black_accuracy"] is None
+        assert result.white_accuracy is None
+        assert result.black_accuracy is None
 
     def test_lichess_with_accuracy(self):
         """Lichess game with analysis returns accuracy values."""
@@ -439,8 +440,8 @@ class TestChesscomAccuracy:
         }
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["white_accuracy"] == 94
-        assert result["black_accuracy"] == 82
+        assert result.white_accuracy == 94
+        assert result.black_accuracy == 82
 
 
 class TestLichessAnalysisMetrics:
@@ -477,14 +478,14 @@ class TestLichessAnalysisMetrics:
         }
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["white_acpl"] == 15
-        assert result["black_acpl"] == 30
-        assert result["white_inaccuracies"] == 1
-        assert result["black_inaccuracies"] == 2
-        assert result["white_mistakes"] == 0
-        assert result["black_mistakes"] == 1
-        assert result["white_blunders"] == 0
-        assert result["black_blunders"] == 0
+        assert result.white_acpl == 15
+        assert result.black_acpl == 30
+        assert result.white_inaccuracies == 1
+        assert result.black_inaccuracies == 2
+        assert result.white_mistakes == 0
+        assert result.black_mistakes == 1
+        assert result.white_blunders == 0
+        assert result.black_blunders == 0
 
     def test_lichess_analysis_metrics_absent(self):
         """Lichess game without analysis key returns all 8 metric fields as None."""
@@ -509,14 +510,14 @@ class TestLichessAnalysisMetrics:
         }
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["white_acpl"] is None
-        assert result["black_acpl"] is None
-        assert result["white_inaccuracies"] is None
-        assert result["black_inaccuracies"] is None
-        assert result["white_mistakes"] is None
-        assert result["black_mistakes"] is None
-        assert result["white_blunders"] is None
-        assert result["black_blunders"] is None
+        assert result.white_acpl is None
+        assert result.black_acpl is None
+        assert result.white_inaccuracies is None
+        assert result.black_inaccuracies is None
+        assert result.white_mistakes is None
+        assert result.black_mistakes is None
+        assert result.white_blunders is None
+        assert result.black_blunders is None
 
     def test_chesscom_no_analysis_metrics(self):
         """Chess.com normalized game does NOT contain the 8 analysis metric keys."""
@@ -589,12 +590,13 @@ class TestNormalizeLichessGame:
             game["winner"] = winner
         return game
 
-    def test_returns_dict_for_standard_game(self):
+    def test_returns_normalized_game_for_standard_game(self):
+        from app.schemas.normalization import NormalizedGame
         from app.services.normalization import normalize_lichess_game
         game = self._make_lichess_game()
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert isinstance(result, dict)
+        assert isinstance(result, NormalizedGame)
 
     def test_returns_none_for_chess960(self):
         from app.services.normalization import normalize_lichess_game
@@ -613,14 +615,14 @@ class TestNormalizeLichessGame:
         game = self._make_lichess_game(white_user="Magnus", black_user="Hikaru")
         result = normalize_lichess_game(game, "magnus", user_id=1)
         assert result is not None
-        assert result["user_color"] == "white"
+        assert result.user_color == "white"
 
     def test_black_user_color(self):
         from app.services.normalization import normalize_lichess_game
         game = self._make_lichess_game(white_user="Magnus", black_user="Hikaru")
         result = normalize_lichess_game(game, "Hikaru", user_id=1)
         assert result is not None
-        assert result["user_color"] == "black"
+        assert result.user_color == "black"
 
     def test_white_wins(self):
         """winner='white' -> result='1-0'."""
@@ -628,7 +630,7 @@ class TestNormalizeLichessGame:
         game = self._make_lichess_game(winner="white")
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["result"] == "1-0"
+        assert result.result == "1-0"
 
     def test_black_wins(self):
         """winner='black' -> result='0-1'."""
@@ -636,7 +638,7 @@ class TestNormalizeLichessGame:
         game = self._make_lichess_game(winner="black")
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["result"] == "0-1"
+        assert result.result == "0-1"
 
     def test_draw_no_winner(self):
         """No winner field -> result='1/2-1/2'."""
@@ -644,7 +646,7 @@ class TestNormalizeLichessGame:
         game = self._make_lichess_game(winner=None)  # No winner key
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["result"] == "1/2-1/2"
+        assert result.result == "1/2-1/2"
 
     def test_played_at_from_ms(self):
         """createdAt in ms should be converted to datetime."""
@@ -653,38 +655,38 @@ class TestNormalizeLichessGame:
         game = self._make_lichess_game()
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert isinstance(result["played_at"], datetime.datetime)
+        assert isinstance(result.played_at, datetime.datetime)
         # 1700000000000 ms = 1700000000 s
         expected = datetime.datetime.fromtimestamp(1700000000, tz=datetime.timezone.utc)
-        assert result["played_at"] == expected
+        assert result.played_at == expected
 
     def test_platform_is_lichess(self):
         from app.services.normalization import normalize_lichess_game
         game = self._make_lichess_game()
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["platform"] == "lichess"
+        assert result.platform == "lichess"
 
     def test_platform_url_constructed(self):
         from app.services.normalization import normalize_lichess_game
         game = self._make_lichess_game(game_id="q7ZvsdUF")
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["platform_url"] == "https://lichess.org/q7ZvsdUF"
+        assert result.platform_url == "https://lichess.org/q7ZvsdUF"
 
     def test_platform_game_id(self):
         from app.services.normalization import normalize_lichess_game
         game = self._make_lichess_game(game_id="q7ZvsdUF")
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["platform_game_id"] == "q7ZvsdUF"
+        assert result.platform_game_id == "q7ZvsdUF"
 
     def test_time_control_str_formatted(self):
         from app.services.normalization import normalize_lichess_game
         game = self._make_lichess_game(clock_initial=600, clock_increment=5)
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["time_control_str"] == "600+5"
+        assert result.time_control_str == "600+5"
 
     def test_opening_eco_and_name_from_pgn(self):
         """Opening ECO and name come from openings.tsv PGN matching, not lichess API field."""
@@ -693,15 +695,15 @@ class TestNormalizeLichessGame:
         game = self._make_lichess_game()
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["opening_eco"] == "B27"
-        assert result["opening_name"] == "Sicilian Defense"
+        assert result.opening_eco == "B27"
+        assert result.opening_name == "Sicilian Defense"
 
     def test_user_id_included(self):
         from app.services.normalization import normalize_lichess_game
         game = self._make_lichess_game()
         result = normalize_lichess_game(game, "Magnus", user_id=99)
         assert result is not None
-        assert result["user_id"] == 99
+        assert result.user_id == 99
 
     def test_no_clock_handles_gracefully(self):
         """Games without clock info should still normalize (no crash)."""
@@ -710,8 +712,8 @@ class TestNormalizeLichessGame:
         del game["clock"]
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["time_control_str"] is None
-        assert result["time_control_bucket"] is None
+        assert result.time_control_str is None
+        assert result.time_control_bucket is None
 
     def test_bot_opponent_flagged(self):
         """Opponent (black) has title='BOT' -> is_computer_game=True."""
@@ -720,7 +722,7 @@ class TestNormalizeLichessGame:
                                         black_title="BOT")
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["is_computer_game"] is True
+        assert result.is_computer_game is True
 
     def test_human_opponent_not_flagged(self):
         """No title field on opponent -> is_computer_game=False."""
@@ -728,7 +730,7 @@ class TestNormalizeLichessGame:
         game = self._make_lichess_game()
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["is_computer_game"] is False
+        assert result.is_computer_game is False
 
     def test_bot_title_case_insensitive(self):
         """Opponent title='bot' (lowercase) -> is_computer_game=True."""
@@ -737,7 +739,7 @@ class TestNormalizeLichessGame:
                                         black_title="bot")
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result["is_computer_game"] is True
+        assert result.is_computer_game is True
 
 
 class TestChesscomTermination:
@@ -762,8 +764,8 @@ class TestChesscomTermination:
         game = self._make_chesscom_game(white_result="win", black_result="checkmated")
         result = normalize_chesscom_game(game, "Alice", user_id=1)
         assert result is not None
-        assert result["termination_raw"] == "checkmated"
-        assert result["termination"] == "checkmate"
+        assert result.termination_raw == "checkmated"
+        assert result.termination == "checkmate"
 
     def test_resignation_termination(self):
         """black_result='resigned' -> termination='resignation'."""
@@ -771,8 +773,8 @@ class TestChesscomTermination:
         game = self._make_chesscom_game(white_result="win", black_result="resigned")
         result = normalize_chesscom_game(game, "Alice", user_id=1)
         assert result is not None
-        assert result["termination_raw"] == "resigned"
-        assert result["termination"] == "resignation"
+        assert result.termination_raw == "resigned"
+        assert result.termination == "resignation"
 
     def test_draw_agreed_termination(self):
         """Both results='agreed' -> termination='draw'."""
@@ -780,8 +782,8 @@ class TestChesscomTermination:
         game = self._make_chesscom_game(white_result="agreed", black_result="agreed")
         result = normalize_chesscom_game(game, "Alice", user_id=1)
         assert result is not None
-        assert result["termination_raw"] == "agreed"
-        assert result["termination"] == "draw"
+        assert result.termination_raw == "agreed"
+        assert result.termination == "draw"
 
     def test_timeout_termination(self):
         """black_result='timeout' -> termination='timeout'."""
@@ -789,8 +791,8 @@ class TestChesscomTermination:
         game = self._make_chesscom_game(white_result="win", black_result="timeout")
         result = normalize_chesscom_game(game, "Alice", user_id=1)
         assert result is not None
-        assert result["termination_raw"] == "timeout"
-        assert result["termination"] == "timeout"
+        assert result.termination_raw == "timeout"
+        assert result.termination == "timeout"
 
 
 class TestLichessTermination:
@@ -823,8 +825,8 @@ class TestLichessTermination:
         game = self._make_lichess_game(status="mate", winner="white")
         result = normalize_lichess_game(game, "Alice", user_id=1)
         assert result is not None
-        assert result["termination_raw"] == "mate"
-        assert result["termination"] == "checkmate"
+        assert result.termination_raw == "mate"
+        assert result.termination == "checkmate"
 
     def test_resignation_termination(self):
         """status='resign' -> termination='resignation'."""
@@ -832,8 +834,8 @@ class TestLichessTermination:
         game = self._make_lichess_game(status="resign", winner="white")
         result = normalize_lichess_game(game, "Alice", user_id=1)
         assert result is not None
-        assert result["termination_raw"] == "resign"
-        assert result["termination"] == "resignation"
+        assert result.termination_raw == "resign"
+        assert result.termination == "resignation"
 
     def test_timeout_termination(self):
         """status='outoftime' -> termination='timeout'."""
@@ -841,8 +843,8 @@ class TestLichessTermination:
         game = self._make_lichess_game(status="outoftime", winner="white")
         result = normalize_lichess_game(game, "Alice", user_id=1)
         assert result is not None
-        assert result["termination_raw"] == "outoftime"
-        assert result["termination"] == "timeout"
+        assert result.termination_raw == "outoftime"
+        assert result.termination == "timeout"
 
     def test_draw_termination(self):
         """status='draw' -> termination='draw'."""
@@ -850,8 +852,8 @@ class TestLichessTermination:
         game = self._make_lichess_game(status="draw", winner=None)
         result = normalize_lichess_game(game, "Alice", user_id=1)
         assert result is not None
-        assert result["termination_raw"] == "draw"
-        assert result["termination"] == "draw"
+        assert result.termination_raw == "draw"
+        assert result.termination == "draw"
 
 
 class TestNormalizeTcStr:
@@ -897,8 +899,8 @@ class TestTcStrConsistency:
         }
         result = normalize_chesscom_game(game, "Alice", user_id=1)
         assert result is not None
-        assert result["time_control_str"] == "180"
-        assert "+" not in result["time_control_str"]
+        assert result.time_control_str == "180"
+        assert "+" not in result.time_control_str
 
     def test_lichess_zero_increment_no_plus_zero(self):
         """lichess game with clock_increment=0 -> time_control_str has no '+0' suffix."""
@@ -922,8 +924,8 @@ class TestTcStrConsistency:
         }
         result = normalize_lichess_game(game, "Alice", user_id=1)
         assert result is not None
-        assert result["time_control_str"] == "600"
-        assert "+" not in result["time_control_str"]
+        assert result.time_control_str == "600"
+        assert "+" not in result.time_control_str
 
     def test_chesscom_and_lichess_consistent_for_same_time_control(self):
         """Both platforms produce same time_control_str for equivalent zero-increment games."""
@@ -959,7 +961,7 @@ class TestTcStrConsistency:
         cc = normalize_chesscom_game(chesscom_game, "Alice", user_id=1)
         li = normalize_lichess_game(lichess_game, "Alice", user_id=1)
         assert cc is not None and li is not None
-        assert cc["time_control_str"] == li["time_control_str"] == "600"
+        assert cc.time_control_str == li.time_control_str == "600"
 
 
 class TestNormalizeChesscomResult:
@@ -981,7 +983,7 @@ class TestNormalizeChesscomResult:
         }
         result = normalize_chesscom_game(game, "Alice", user_id=1)
         assert result is not None
-        assert result["result"] == "1-0"
+        assert result.result == "1-0"
 
     def test_resigned_as_loss(self):
         """Black has 'resigned' -> white wins -> '1-0'."""
@@ -1000,7 +1002,7 @@ class TestNormalizeChesscomResult:
         result = normalize_chesscom_game(game, "Bob", user_id=1)
         assert result is not None
         # Bob plays black and resigned -> white wins = "1-0"
-        assert result["result"] == "1-0"
+        assert result.result == "1-0"
 
     def test_insufficient_material_is_draw(self):
         from app.services.normalization import normalize_chesscom_game
@@ -1017,7 +1019,7 @@ class TestNormalizeChesscomResult:
         }
         result = normalize_chesscom_game(game, "Alice", user_id=1)
         assert result is not None
-        assert result["result"] == "1/2-1/2"
+        assert result.result == "1/2-1/2"
 
     def test_repetition_is_draw(self):
         from app.services.normalization import normalize_chesscom_game
@@ -1034,4 +1036,4 @@ class TestNormalizeChesscomResult:
         }
         result = normalize_chesscom_game(game, "Alice", user_id=1)
         assert result is not None
-        assert result["result"] == "1/2-1/2"
+        assert result.result == "1/2-1/2"

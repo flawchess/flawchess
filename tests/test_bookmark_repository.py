@@ -47,11 +47,11 @@ def _make_create(
 ) -> PositionBookmarkCreate:
     return PositionBookmarkCreate(
         label=label,
-        target_hash=target_hash,
+        target_hash=target_hash,  # ty: ignore[invalid-argument-type]  # coerced from str by field_validator
         fen=fen,
         moves=moves or ["e4"],
-        color=color,
-        match_side=match_side,
+        color=color,  # ty: ignore[invalid-argument-type]  # Pydantic validates to Color | None
+        match_side=match_side,  # ty: ignore[invalid-argument-type]  # Pydantic validates to BookmarkMatchSide
     )
 
 
@@ -600,7 +600,7 @@ class TestMatchSideUpdate:
             user_id=700,
             data=PositionBookmarkCreate(
                 label="Test Both",
-                target_hash=str(fh),
+                target_hash=str(fh),  # ty: ignore[invalid-argument-type]  # coerced from str by field_validator
                 fen=fen,
                 moves=["e4"],
                 color="white",
@@ -630,7 +630,7 @@ class TestMatchSideUpdate:
             user_id=701,
             data=PositionBookmarkCreate(
                 label="Test Mine",
-                target_hash=str(wh),
+                target_hash=str(wh),  # ty: ignore[invalid-argument-type]  # coerced from str by field_validator
                 fen=fen,
                 moves=["e4"],
                 color="white",
@@ -656,7 +656,7 @@ class TestMatchSideUpdate:
             user_id=710,
             data=PositionBookmarkCreate(
                 label="Private",
-                target_hash=str(fh),
+                target_hash=str(fh),  # ty: ignore[invalid-argument-type]  # coerced from str by field_validator
                 fen=fen,
                 moves=[],
                 color="white",

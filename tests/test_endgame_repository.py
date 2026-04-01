@@ -382,7 +382,7 @@ class TestQueryEndgameGames:
         games, matched_count = await query_endgame_games(
             db_session,
             user_id=99999,
-            endgame_class="nonexistent_class",
+            endgame_class="nonexistent_class",  # ty: ignore[invalid-argument-type]  # intentionally testing invalid class
             time_control=None,
             platform=None,
             rated=None,

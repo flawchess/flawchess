@@ -108,7 +108,7 @@ class TestAggregateEndgameStats:
             (3, 3, "1-0", "white", 0),
             (4, 3, "0-1", "white", -100),
         ]
-        result = _aggregate_endgame_stats(rows)
+        result = _aggregate_endgame_stats(rows)  # ty: ignore[invalid-argument-type]  # test tuples are structurally compatible with Row[Any]
         # Pawn category has 3 games, rook has 1 — pawn should come first
         assert len(result) >= 2
         # Verify sorting is descending by total
@@ -122,7 +122,7 @@ class TestAggregateEndgameStats:
             (2, 1, "1/2-1/2", "white", 0),   # rook draw
             (3, 1, "0-1", "white", 0),        # rook loss
         ]
-        result = _aggregate_endgame_stats(rows)
+        result = _aggregate_endgame_stats(rows)  # ty: ignore[invalid-argument-type]  # test tuples are structurally compatible with Row[Any]
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.wins == 1
         assert rook.draws == 1
@@ -139,7 +139,7 @@ class TestAggregateEndgameStats:
             (4, 1, "1-0", "white", 200),        # rook, up 200cp (below threshold) → NOT a conversion game
             (5, 1, "1-0", "white", -400),       # rook, down, won → not a conversion game
         ]
-        result = _aggregate_endgame_stats(rows)
+        result = _aggregate_endgame_stats(rows)  # ty: ignore[invalid-argument-type]  # test tuples are structurally compatible with Row[Any]
         rook = next(c for c in result if c.endgame_class == "rook")
         # 3 games >= 300cp up: 1 win, 1 draw, 1 loss → 33.3% conversion
         assert rook.conversion.conversion_games == 3
@@ -156,7 +156,7 @@ class TestAggregateEndgameStats:
             (3, 1, "0-1", "white", -300),      # rook, down 300cp (threshold), lost → not recovered
             (4, 1, "0-1", "white", -200),      # rook, down 200cp (below threshold) → NOT a recovery game
         ]
-        result = _aggregate_endgame_stats(rows)
+        result = _aggregate_endgame_stats(rows)  # ty: ignore[invalid-argument-type]  # test tuples are structurally compatible with Row[Any]
         rook = next(c for c in result if c.endgame_class == "rook")
         # 3 games <= -300cp down, 2 saves (win + draw) → 66.7%
         assert rook.conversion.recovery_games == 3
@@ -170,7 +170,7 @@ class TestAggregateEndgameStats:
         rows = [
             (1, 1, "1-0", "white", 100),  # rook, endgame_class_int=1
         ]
-        result = _aggregate_endgame_stats(rows)
+        result = _aggregate_endgame_stats(rows)  # ty: ignore[invalid-argument-type]  # test tuples are structurally compatible with Row[Any]
         rook = next(c for c in result if c.endgame_class == "rook")
         # Verify flat structure: conversion/recovery are inline properties, not nested by phase
         assert hasattr(rook, "conversion")
@@ -186,7 +186,7 @@ class TestAggregateEndgameStats:
             (2, 1, "0-1", "white", 0),      # rook loss
             (3, 4, "1-0", "white", 0),      # queen win (endgame_class_int=4)
         ]
-        result = _aggregate_endgame_stats(rows)
+        result = _aggregate_endgame_stats(rows)  # ty: ignore[invalid-argument-type]  # test tuples are structurally compatible with Row[Any]
         rook = next(c for c in result if c.endgame_class == "rook")
         queen = next(c for c in result if c.endgame_class == "queen")
         assert rook.total == 2
@@ -201,7 +201,7 @@ class TestAggregateEndgameStats:
             (1, 1, "1-0", "white", -100),   # rook, down, won → recovery only
             (2, 1, "0-1", "white", 0),       # rook, equal, lost → neither
         ]
-        result = _aggregate_endgame_stats(rows)
+        result = _aggregate_endgame_stats(rows)  # ty: ignore[invalid-argument-type]  # test tuples are structurally compatible with Row[Any]
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.conversion.conversion_games == 0
         assert rook.conversion.conversion_pct == 0.0
@@ -212,7 +212,7 @@ class TestAggregateEndgameStats:
             (1, 1, "1-0", "white", 200),    # rook, up, won → conversion only
             (2, 1, "0-1", "white", 0),       # rook, equal, lost → neither
         ]
-        result = _aggregate_endgame_stats(rows)
+        result = _aggregate_endgame_stats(rows)  # ty: ignore[invalid-argument-type]  # test tuples are structurally compatible with Row[Any]
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.conversion.recovery_games == 0
         assert rook.conversion.recovery_pct == 0.0
@@ -226,7 +226,7 @@ class TestAggregateEndgameStats:
             # Another game in rook only
             (2, 1, "0-1", "white", 0),
         ]
-        result = _aggregate_endgame_stats(rows)
+        result = _aggregate_endgame_stats(rows)  # ty: ignore[invalid-argument-type]  # test tuples are structurally compatible with Row[Any]
         rook = next(c for c in result if c.endgame_class == "rook")
         pawn = next(c for c in result if c.endgame_class == "pawn")
         # Rook class: 2 rows (game 1 + game 2), pawn class: 1 row (game 1)
@@ -613,6 +613,7 @@ class TestGetEndgameTimeline:
         # Find the last endgame point in overall that has endgame data
         endgame_points = [p for p in result.overall if p.endgame_win_rate is not None]
         last = endgame_points[-1]
+        assert last.endgame_win_rate is not None
         assert abs(last.endgame_win_rate - 2/3) < 1e-4
         assert last.endgame_game_count == 3
 

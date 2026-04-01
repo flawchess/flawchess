@@ -4,6 +4,7 @@ import pytest
 import pytest_asyncio
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
+from collections.abc import AsyncGenerator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -99,7 +100,7 @@ async def ensure_test_user(session: AsyncSession, user_id: int) -> None:
 
 
 @pytest_asyncio.fixture
-async def db_session(test_engine) -> AsyncSession:
+async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     """Provide an AsyncSession wrapped in a transaction that is rolled back after each test.
 
     Uses the test DB engine (flawchess_test) bound by the test_engine fixture.

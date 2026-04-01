@@ -272,6 +272,7 @@ class TestRunImport:
         job = get_job(job_id)
         assert job is not None
         assert job.status == JobStatus.FAILED
+        assert job.error is not None
         assert "nonexistent" in job.error
 
     @pytest.mark.asyncio
@@ -915,6 +916,7 @@ class TestEvalExtraction:
 
         pgn = "1. e4 { [%eval 0.18] } 1... e5 { [%eval 0.17] } 2. Nf3 { [%eval #3] } *"
         game = chess.pgn.read_game(io.StringIO(pgn))
+        assert game is not None  # PGN is valid test data
         nodes = list(game.mainline())
         evals = []
         for node in nodes:
@@ -935,6 +937,7 @@ class TestEvalExtraction:
 
         pgn = "1. e4 e5 2. Nf3 *"
         game = chess.pgn.read_game(io.StringIO(pgn))
+        assert game is not None  # PGN is valid test data
         nodes = list(game.mainline())
         evals = []
         for node in nodes:
@@ -953,8 +956,10 @@ class TestEvalExtraction:
 
         pgn = "1. e4 { [%eval #-7] } *"
         game = chess.pgn.read_game(io.StringIO(pgn))
+        assert game is not None  # PGN is valid test data
         node = list(game.mainline())[0]
         pov = node.eval()
+        assert pov is not None  # Test PGN contains eval annotations
         w = pov.white()
         assert w.score(mate_score=None) is None
         assert w.mate() == -7
@@ -967,6 +972,7 @@ class TestEvalExtraction:
 
         pgn = "1. e4 { [%eval 0.18] } 1... e5 { [%eval 0.17] } *"
         game = chess.pgn.read_game(io.StringIO(pgn))
+        assert game is not None  # PGN is valid test data
         nodes = list(game.mainline())
         evals = []
         for node in nodes:
@@ -993,6 +999,7 @@ class TestEvalExtraction:
         # Verify the implementation produces eval rows — check rows captured in the flush loop
         pgn_with_eval = "1. e4 { [%eval 0.18] } 1... e5 { [%eval -0.17] } *"
         game = chess.pgn.read_game(io.StringIO(pgn_with_eval))
+        assert game is not None  # PGN is valid test data
         classify_nodes = list(game.mainline())
 
         evals: list[tuple[int | None, int | None]] = []
