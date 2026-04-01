@@ -15,9 +15,9 @@ export const MATERIAL_ADVANTAGE_POINTS = 3;
 
 // Per-gauge zone definitions — thresholds differ per metric, colors from theme constants
 const CONVERSION_ZONES: GaugeZone[] = [
-  { from: 0,    to: 0.6,  color: GAUGE_DANGER },
-  { from: 0.6,  to: 0.8,  color: GAUGE_WARNING },
-  { from: 0.8,  to: 1.0,  color: GAUGE_SUCCESS },
+  { from: 0,    to: 0.5,  color: GAUGE_DANGER },
+  { from: 0.5,  to: 0.7,  color: GAUGE_WARNING },
+  { from: 0.7,  to: 1.0,  color: GAUGE_SUCCESS },
 ];
 
 const RECOVERY_ZONES: GaugeZone[] = [
@@ -71,8 +71,6 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
             <span>Conversion</span>
             <InfoPopover ariaLabel="Conversion info" testId="gauge-conversion-info" side="top">
               Your win rate when entering an endgame with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} points.
-              <br /><br />
-              Color zones: below 60% (red), 60–80% (amber), above 80% (green).
             </InfoPopover>
           </div>
           <EndgameGauge
@@ -89,8 +87,6 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
             <span>Recovery</span>
             <InfoPopover ariaLabel="Recovery info" testId="gauge-recovery-info" side="top">
               Your draw or win rate when entering an endgame with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} points.
-              <br /><br />
-              Color zones: below 10% (red), 10–30% (amber), above 30% (green).
             </InfoPopover>
           </div>
           <EndgameGauge
@@ -107,8 +103,6 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
             <span>Endgame Skill</span>
             <InfoPopover ariaLabel="Endgame Skill info" testId="gauge-endgame-skill-info" side="top">
               A weighted average of your conversion rate (70%) and recovery rate (30%). Measures overall endgame proficiency.
-              <br /><br />
-              Color zones: below 40% (red), 40–60% (amber), above 60% (green).
             </InfoPopover>
           </div>
           <EndgameGauge
