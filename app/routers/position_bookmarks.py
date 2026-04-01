@@ -8,6 +8,7 @@ from typing import Annotated
 
 import chess
 import chess.pgn
+import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -104,6 +105,9 @@ async def get_suggestions(
                     board.push(move)
                 position_fen = board.fen()
             except Exception:
+                sentry_sdk.set_context("suggestion", {"game_id": game_id, "ply": ply})
+                sentry_sdk.set_tag("source", "api")
+                sentry_sdk.capture_exception()
                 continue
 
             # Look up opening name from SAN moves
