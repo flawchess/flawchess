@@ -372,7 +372,7 @@ async def _flush_batch(
         Number of newly inserted games (duplicates excluded).
     """
     # Convert NormalizedGame objects to dicts for bulk insert.
-    # Also handles plain dicts for backward compatibility (e.g. test mocks).
+    # Also handles plain dicts from test mocks that yield raw dicts instead of NormalizedGame.
     game_dicts = [g.model_dump() if isinstance(g, NormalizedGame) else g for g in batch]  # type: ignore[union-attr]
     new_game_ids = await game_repository.bulk_insert_games(session, game_dicts)
 
@@ -381,7 +381,6 @@ async def _flush_batch(
         return 0
 
     # Map platform_game_id -> pgn so we can look up PGN for new games
-    # Handle both NormalizedGame objects and plain dicts (the latter used in tests)
     pgn_by_idx: dict[int, str] = {}
     for i, game_dict in enumerate(batch):
         if isinstance(game_dict, NormalizedGame):

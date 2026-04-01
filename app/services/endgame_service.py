@@ -13,6 +13,7 @@ Exposes:
 
 import asyncio
 from collections import defaultdict
+from collections.abc import Sequence
 from enum import IntEnum
 from typing import Any, Literal
 
@@ -142,7 +143,7 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
 _MATERIAL_ADVANTAGE_THRESHOLD = 300
 
 
-def _aggregate_endgame_stats(rows: list[Row[Any]]) -> list[EndgameCategoryStats]:
+def _aggregate_endgame_stats(rows: Sequence[Row[Any] | tuple[Any, ...]]) -> list[EndgameCategoryStats]:
     """Aggregate raw per-(game, class) endgame rows into EndgameCategoryStats list.
 
     Each row is: (game_id, endgame_class_int, result, user_color, user_material_imbalance)

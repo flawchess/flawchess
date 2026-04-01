@@ -5,8 +5,6 @@ Converts chess.com and lichess game objects into NormalizedGame Pydantic models 
 
 import datetime
 import re
-from typing import cast
-
 from app.schemas.normalization import (
     Color,
     GameResult,
@@ -28,7 +26,7 @@ def _normalize_tc_str(tc_str: str) -> str | None:
     return tc_str
 
 
-def parse_time_control(tc_str: str) -> tuple[str | None, int | None]:
+def parse_time_control(tc_str: str) -> tuple[TimeControlBucket | None, int | None]:
     """Parse a time control string into (bucket, estimated_seconds).
 
     Examples:
@@ -76,7 +74,7 @@ def parse_time_control(tc_str: str) -> tuple[str | None, int | None]:
 
 
 # chess.com termination string mapping (losing player's result -> normalized termination)
-_CHESSCOM_TERMINATION_MAP = {
+_CHESSCOM_TERMINATION_MAP: dict[str, Termination] = {
     "checkmated": "checkmate",
     "resigned": "resignation",
     "timeout": "timeout",
@@ -90,7 +88,7 @@ _CHESSCOM_TERMINATION_MAP = {
 }
 
 # lichess game status -> normalized termination
-_LICHESS_STATUS_MAP = {
+_LICHESS_STATUS_MAP: dict[str, Termination] = {
     "mate": "checkmate",
     "resign": "resignation",
     "outoftime": "timeout",
@@ -197,13 +195,11 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> Normaliz
         termination_raw = black_result_str  # loser's result describes termination
     else:  # 0-1
         termination_raw = white_result_str
-    # cast: _CHESSCOM_TERMINATION_MAP values are all Termination literals; .get default "unknown" is also Termination
-    termination = cast(Termination, _CHESSCOM_TERMINATION_MAP.get(termination_raw, "unknown"))
+    termination = _CHESSCOM_TERMINATION_MAP.get(termination_raw, "unknown")
 
     # Time control
     tc_str = game.get("time_control", "")
-    # cast: parse_time_control returns str | None but the set of possible strings is TimeControlBucket
-    tc_bucket, tc_seconds = cast(tuple[TimeControlBucket | None, int | None], parse_time_control(tc_str))
+    tc_bucket, tc_seconds = parse_time_control(tc_str)
 
     # Timestamps
     end_time = game.get("end_time")
@@ -301,8 +297,7 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
     # Termination from status field
     status = game.get("status", "unknown")
     termination_raw = status
-    # cast: _LICHESS_STATUS_MAP values are all Termination literals; .get default "unknown" is also Termination
-    termination = cast(Termination, _LICHESS_STATUS_MAP.get(status, "unknown"))
+    termination = _LICHESS_STATUS_MAP.get(status, "unknown")
 
     # Time control from clock
     clock = game.get("clock")
@@ -311,8 +306,7 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
         clock_initial = clock.get("initial", 0)
         clock_increment = clock.get("increment", 0)
         tc_str_raw = f"{clock_initial}+{clock_increment}"
-        # cast: parse_time_control returns str | None but the set of possible strings is TimeControlBucket
-        tc_bucket, tc_seconds = cast(tuple[TimeControlBucket | None, int | None], parse_time_control(tc_str_raw))
+        tc_bucket, tc_seconds = parse_time_control(tc_str_raw)
         tc_str = _normalize_tc_str(tc_str_raw)
     else:
         tc_str = None
