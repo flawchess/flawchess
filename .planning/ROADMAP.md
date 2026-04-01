@@ -98,7 +98,7 @@
 
 **Milestone Goal:** Clean up and tighten the codebase for long-term maintainability and extendability — no new user-facing features.
 
-- [ ] **Phase 40: Static Type Checking** — Integrate `ty` into CI and fix type safety gaps in backend code
+- [x] **Phase 40: Static Type Checking** — Integrate `ty` into CI and fix type safety gaps in backend code (completed 2026-04-01)
 - [ ] **Phase 41: Code Quality & Dead Code** — Naming improvements, deduplication, dead code removal, frontend dead export detection
 - [ ] **Phase 42: Backend Optimization** — DB query aggregation, column type optimization, API schema consistency
 - [ ] **Phase 43: Frontend Cleanup** — Refactor button brand colors to CSS variables; optional test coverage analysis
@@ -118,7 +118,7 @@
 
 Plans:
 - [x] 40-01-PLAN.md — ty configuration, CI integration, and mechanical type error fixes (models, repositories, schemas, routers)
-- [ ] 40-02-PLAN.md — Service-layer TypedDicts/Pydantic models and test file type error fixes
+- [x] 40-02-PLAN.md — Service-layer TypedDicts/Pydantic models and test file type error fixes
 
 ### Phase 41: Code Quality & Dead Code
 **Goal**: Codebase naming is clear, duplication is eliminated, and dead code is removed
@@ -195,7 +195,7 @@ Plans:
 | 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
 | 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
 | 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete   | 2026-03-30 |
-| 40. Static Type Checking | v1.7 | 1/2 | In Progress|  |
+| 40. Static Type Checking | v1.7 | 2/2 | Complete   | 2026-04-01 |
 | 41. Code Quality & Dead Code | v1.7 | 0/TBD | Not started | - |
 | 42. Backend Optimization | v1.7 | 0/TBD | Not started | - |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
@@ -206,7 +206,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
