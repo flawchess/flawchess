@@ -9,6 +9,8 @@ export interface BoardArrow {
   color: string;
   /** Normalized width 0–1 (0 = thinnest, 1 = thickest) */
   width: number;
+  /** Whether this arrow's move is currently hovered in the move list */
+  isHovered?: boolean;
 }
 
 interface ChessBoardProps {
@@ -38,8 +40,11 @@ const MIN_HEAD_WIDTH = 0.25;
 const MAX_HEAD_WIDTH = 0.65;
 const HEAD_LENGTH_RATIO = 0.7; // head length = head width * this
 const ARROW_OPACITY = 0.75;
+const ARROW_HOVER_OPACITY = 0.9;
 const ARROW_OUTLINE_COLOR = 'rgba(0, 0, 0, 0.5)';
 const ARROW_OUTLINE_WIDTH = 1;
+// Hovered arrows are slightly larger so they pop out (multiplicative scale)
+const ARROW_HOVER_SCALE = 1.3;
 // How far past target square center the arrow tip extends (fraction of square size)
 const ARROW_TIP_OVERSHOOT = 0.15;
 
@@ -128,8 +133,9 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
         const y2 = cy2 + (ady / alen) * ARROW_TIP_OVERSHOOT;
 
         const w = arrow.width; // 0–1 normalized frequency
-        const shaftHalf = ((MIN_SHAFT_WIDTH + (MAX_SHAFT_WIDTH - MIN_SHAFT_WIDTH) * w) * sqSize) / 2;
-        const headWidth = (MIN_HEAD_WIDTH + (MAX_HEAD_WIDTH - MIN_HEAD_WIDTH) * w) * sqSize;
+        const scale = arrow.isHovered ? ARROW_HOVER_SCALE : 1;
+        const shaftHalf = ((MIN_SHAFT_WIDTH + (MAX_SHAFT_WIDTH - MIN_SHAFT_WIDTH) * w) * sqSize * scale) / 2;
+        const headWidth = (MIN_HEAD_WIDTH + (MAX_HEAD_WIDTH - MIN_HEAD_WIDTH) * w) * sqSize * scale;
         const headLen = headWidth * HEAD_LENGTH_RATIO;
 
         const d = buildArrowPath(
@@ -142,7 +148,7 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
             key={i}
             d={d}
             fill={arrow.color}
-            opacity={ARROW_OPACITY}
+            opacity={arrow.isHovered ? ARROW_HOVER_OPACITY : ARROW_OPACITY}
             stroke={ARROW_OUTLINE_COLOR}
             strokeWidth={ARROW_OUTLINE_WIDTH}
             strokeLinejoin="round"

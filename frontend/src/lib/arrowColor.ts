@@ -8,7 +8,7 @@
 //   - dark red    (loss rate 60%+, i.e. win rate below 40%)
 //
 // Moves with fewer than MIN_GAMES_FOR_COLOR games remain grey regardless of win/loss rate.
-// Hover variants are lighter versions of each color.
+// Hovered arrows turn blue to stand out from the WDL color scheme.
 //
 // Frequency is encoded as arrow thickness (handled by ChessBoard).
 
@@ -20,19 +20,13 @@ const DARK_COLOR_THRESHOLD = 60;  // >= 60% triggers dark green/red
 
 // Categorical color constants — hex strings for direct equality checks
 export const GREY = '#B0B0B0';
-export const GREY_HOVER = '#D8D8D8';
-
 export const LIGHT_GREEN = '#6BBF59';
-export const LIGHT_GREEN_HOVER = '#9DD490';
-
 export const DARK_GREEN = '#1E6B1E';
-export const DARK_GREEN_HOVER = '#3E9B3E';
-
 export const LIGHT_RED = '#E07070';
-export const LIGHT_RED_HOVER = '#F0A0A0';
-
 export const DARK_RED = '#9B1C1C';
-export const DARK_RED_HOVER = '#C04040';
+
+// Hovered arrow color — blue stands out from the green/grey/red WDL palette
+export const HOVER_BLUE = '#3B82F6';
 
 /**
  * Returns a categorical hex color string for a board arrow.
@@ -43,10 +37,11 @@ export const DARK_RED_HOVER = '#C04040';
  * @param isHovered Whether this arrow is currently hovered
  */
 export function getArrowColor(winPct: number, lossPct: number, gameCount: number, isHovered: boolean): string {
+  // Hovered arrows always turn blue to pop out from the WDL color scheme
+  if (isHovered) return HOVER_BLUE;
+
   // Below minimum game threshold — always grey
-  if (gameCount < MIN_GAMES_FOR_COLOR) {
-    return isHovered ? GREY_HOVER : GREY;
-  }
+  if (gameCount < MIN_GAMES_FOR_COLOR) return GREY;
 
   // Determine if win or loss rate qualifies for coloring.
   // When both exceed the threshold, the higher rate wins.
@@ -55,47 +50,33 @@ export function getArrowColor(winPct: number, lossPct: number, gameCount: number
   const lossColored = lossPct > LIGHT_COLOR_THRESHOLD;
 
   if (winColored && (!lossColored || winPct >= lossPct)) {
-    // Green territory
-    if (winPct >= DARK_COLOR_THRESHOLD) {
-      return isHovered ? DARK_GREEN_HOVER : DARK_GREEN;
-    }
-    return isHovered ? LIGHT_GREEN_HOVER : LIGHT_GREEN;
+    return winPct >= DARK_COLOR_THRESHOLD ? DARK_GREEN : LIGHT_GREEN;
   }
 
   if (lossColored) {
-    // Red territory
-    if (lossPct >= DARK_COLOR_THRESHOLD) {
-      return isHovered ? DARK_RED_HOVER : DARK_RED;
-    }
-    return isHovered ? LIGHT_RED_HOVER : LIGHT_RED;
+    return lossPct >= DARK_COLOR_THRESHOLD ? DARK_RED : LIGHT_RED;
   }
 
-  // Neutral zone
-  return isHovered ? GREY_HOVER : GREY;
+  return GREY;
 }
 
 /**
  * Returns a sort key for an arrow color string, used to determine rendering order.
- * Green variants → 0 (drawn last = on top), red variants → 1, grey variants → 2 (drawn first = bottom).
- *
- * Uses simple string equality against the 10 known color constants.
+ * Hovered (blue) → -1 (always on top), green → 0, red → 1, grey → 2 (drawn first = bottom).
  *
  * @param color hex CSS color string produced by getArrowColor
  */
 export function arrowSortKey(color: string): number {
   switch (color) {
+    case HOVER_BLUE:
+      return -1; // Hovered arrow always drawn last = on top
     case DARK_GREEN:
-    case DARK_GREEN_HOVER:
     case LIGHT_GREEN:
-    case LIGHT_GREEN_HOVER:
       return 0;
     case DARK_RED:
-    case DARK_RED_HOVER:
     case LIGHT_RED:
-    case LIGHT_RED_HOVER:
       return 1;
     default:
-      // Grey variants and any unknown colors go to bottom
       return 2;
   }
 }

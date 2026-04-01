@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import * as Sentry from '@sentry/react';
 import { X } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
@@ -137,6 +138,10 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       onImportStarted(result.job_id);
       setJobPlatforms((prev) => new Map(prev).set(result.job_id, platform));
     } catch (err) {
+      Sentry.captureException(err, {
+        tags: { source: 'import' },
+        extra: { platform },
+      });
       const message = err instanceof Error ? err.message : 'Import failed. Please check the username and try again.';
       if (platform === 'chess.com') setChessComError(message);
       else setLichessError(message);
@@ -153,8 +158,10 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       queryClient.invalidateQueries({ queryKey: ['games'] });
       queryClient.invalidateQueries({ queryKey: ['gameCount'] });
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
-    } catch {
-      // Error handled by axios interceptor
+    } catch (err) {
+      Sentry.captureException(err, {
+        tags: { source: 'import' },
+      });
     } finally {
       setIsDeleting(false);
     }

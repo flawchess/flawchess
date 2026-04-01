@@ -16,6 +16,7 @@ import io
 import chess
 import chess.pgn
 import chess.polyglot
+import sentry_sdk
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -109,6 +110,7 @@ def hashes_for_game(
     try:
         game = chess.pgn.read_game(io.StringIO(pgn_text))
     except Exception:
+        sentry_sdk.capture_exception()
         return [], None
 
     if game is None:

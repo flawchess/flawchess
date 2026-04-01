@@ -176,6 +176,25 @@ export function useChessGame(): ChessGameState {
     [hashes],
   );
 
+  // Arrow key navigation: left = back, right = forward
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't capture when user is typing in an input/textarea
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        goForward();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [goBack, goForward]);
+
   // Update opening name whenever the viewed ply changes
   useEffect(() => {
     const movesAtPly = moveHistory.slice(0, currentPly);

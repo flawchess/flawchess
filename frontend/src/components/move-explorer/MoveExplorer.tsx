@@ -144,8 +144,8 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover }:
     <tr
       data-testid={`move-explorer-row-${entry.move_san}`}
       className={cn(
-        'cursor-pointer hover:bg-accent min-h-[44px]',
-        selectedMove === entry.move_san && 'bg-accent',
+        'cursor-pointer hover:bg-blue-500/15 min-h-[44px]',
+        selectedMove === entry.move_san && 'bg-blue-500/15',
       )}
       style={isBelowThreshold ? { opacity: UNRELIABLE_OPACITY } : undefined}
       role="button"

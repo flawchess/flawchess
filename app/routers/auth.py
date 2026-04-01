@@ -3,6 +3,7 @@
 import json
 import secrets
 
+import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi_users import schemas as fapi_schemas
@@ -110,6 +111,8 @@ async def google_callback(
     try:
         decode_jwt(state, settings.SECRET_KEY, [_OAUTH_STATE_AUDIENCE])
     except Exception:
+        sentry_sdk.set_tag("source", "auth")
+        sentry_sdk.capture_exception()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state")
 
     # Decode id_token from Google (avoids People API dependency).

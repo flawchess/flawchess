@@ -15,9 +15,9 @@ export const MATERIAL_ADVANTAGE_POINTS = 3;
 
 // Per-gauge zone definitions — thresholds differ per metric, colors from theme constants
 const CONVERSION_ZONES: GaugeZone[] = [
-  { from: 0,    to: 0.6,  color: GAUGE_DANGER },
-  { from: 0.6,  to: 0.8,  color: GAUGE_WARNING },
-  { from: 0.8,  to: 1.0,  color: GAUGE_SUCCESS },
+  { from: 0,    to: 0.5,  color: GAUGE_DANGER },
+  { from: 0.5,  to: 0.7,  color: GAUGE_WARNING },
+  { from: 0.7,  to: 1.0,  color: GAUGE_SUCCESS },
 ];
 
 const RECOVERY_ZONES: GaugeZone[] = [
@@ -63,7 +63,7 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
       </div>
 
       {/* Gauge charts: Conversion, Recovery, Endgame Skill (D-04, D-05, D-06) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 mt-8 mb-6" data-testid="perf-gauges">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-4 mt-8 mb-6" data-testid="perf-gauges">
 
         {/* Conversion gauge */}
         <div className="flex flex-col items-center gap-0">
@@ -102,7 +102,7 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
           <div className="relative z-10 flex items-center gap-1 text-sm text-foreground text-center">
             <span>Endgame Skill</span>
             <InfoPopover ariaLabel="Endgame Skill info" testId="gauge-endgame-skill-info" side="top">
-              A weighted average of your conversion rate (60%) and recovery rate (40%). Measures overall endgame proficiency.
+              A weighted average of your conversion rate (70%) and recovery rate (30%). Measures overall endgame proficiency.
             </InfoPopover>
           </div>
           <EndgameGauge

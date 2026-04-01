@@ -95,6 +95,8 @@ async def fetch_chesscom_games(
                 )
                 await asyncio.sleep(backoff)
             else:
+                # Sentry capture omitted — last-attempt error re-raises to run_import()
+                # top-level handler which calls capture_exception (per D-02).
                 raise
 
     if archives_resp.status_code == 404:
@@ -133,6 +135,8 @@ async def fetch_chesscom_games(
                         )
                         await asyncio.sleep(backoff)
                         continue
+                    # Sentry capture omitted — last-attempt error re-raises to run_import()
+                    # top-level handler which calls capture_exception (per D-02).
                     raise
 
                 if resp.status_code == 429:
