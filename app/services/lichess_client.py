@@ -120,6 +120,8 @@ async def fetch_lichess_games(
             # Transient stream errors (e.g. "peer closed connection without
             # sending complete message body"). Safe to retry because
             # bulk_insert_games deduplicates already-imported games.
+            # Sentry capture omitted — last-attempt error propagates to run_import()
+            # top-level handler which calls capture_exception (per D-02).
             last_attempt_error = exc
             continue
 

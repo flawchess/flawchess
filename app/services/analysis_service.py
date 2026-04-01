@@ -4,6 +4,8 @@ import datetime
 import io
 from typing import Literal
 
+import sentry_sdk
+
 import chess
 import chess.pgn
 from sqlalchemy import select
@@ -331,6 +333,7 @@ async def _fetch_result_fens(
         try:
             game = chess.pgn.read_game(io.StringIO(pgn_str))
         except Exception:
+            sentry_sdk.capture_exception()
             continue
         if not game:
             continue

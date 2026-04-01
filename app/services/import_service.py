@@ -19,6 +19,7 @@ from typing import Any
 
 import chess.pgn
 import httpx
+import sentry_sdk
 
 from app.core.database import async_session_maker
 from app.repositories import game_repository, import_job_repository
@@ -273,6 +274,8 @@ async def run_import(job_id: str) -> None:
         logger.warning("Import job %s timed out after %d seconds", job_id, IMPORT_TIMEOUT_SECONDS)
         job.status = JobStatus.FAILED
         job.error = "Import timed out — re-sync to continue where it left off"
+        sentry_sdk.set_context("import", {"job_id": job_id, "user_id": job.user_id, "platform": job.platform})
+        sentry_sdk.capture_exception()
 
         try:
             async with async_session_maker() as session:
@@ -288,11 +291,14 @@ async def run_import(job_id: str) -> None:
                 await session.commit()
         except Exception:
             logger.exception("Failed to record timeout for job %s", job_id)
+            sentry_sdk.capture_exception()
 
     except Exception as exc:
         logger.exception("Import job %s failed: %s", job_id, exc)
         job.status = JobStatus.FAILED
         job.error = str(exc)
+        sentry_sdk.set_context("import", {"job_id": job_id, "user_id": job.user_id, "platform": job.platform})
+        sentry_sdk.capture_exception(exc)
 
         # Attempt to record failure in DB (best-effort)
         try:
@@ -309,6 +315,7 @@ async def run_import(job_id: str) -> None:
                 await session.commit()
         except Exception:
             logger.exception("Failed to record failure state for job %s", job_id)
+            sentry_sdk.capture_exception()
 
 
 async def _make_game_iterator(
@@ -419,6 +426,8 @@ async def _flush_batch(
             hash_tuples, result_fen = hashes_for_game(pgn)
         except Exception:
             logger.warning("Failed to compute hashes for game_id=%s", game_id)
+            sentry_sdk.set_context("import", {"game_id": game_id})
+            sentry_sdk.capture_exception()
             continue
 
         # Second PGN parse for board state — classify_position needs the board BEFORE each move.
@@ -430,6 +439,8 @@ async def _flush_batch(
             classify_board = game_obj_for_classify.board() if game_obj_for_classify else None
         except Exception:
             logger.warning("Failed to parse PGN for classification for game_id=%s", game_id)
+            sentry_sdk.set_context("import", {"game_id": game_id})
+            sentry_sdk.capture_exception()
             classify_board = None
             classify_nodes = []
 
@@ -519,6 +530,8 @@ async def _flush_batch(
                 )
         except Exception:
             logger.warning("Failed to compute move_count for game_id=%s", game_id)
+            sentry_sdk.set_context("import", {"game_id": game_id})
+            sentry_sdk.capture_exception()
 
     if position_rows:
         await game_repository.bulk_insert_positions(session, position_rows)
