@@ -77,20 +77,23 @@ uv run pytest        # Run all tests
 uv run pytest -x     # Stop on first failure
 ```
 
-### Linting
+### Linting & Type Checking
 
 ```bash
-uv run ruff check .  # Backend lint
-uv run ruff format . # Backend format
-cd frontend && npm run lint  # Frontend lint
+uv run ruff check .           # Backend lint
+uv run ruff format .          # Backend format
+uv run ty check app/ tests/   # Backend type check (zero errors required)
+cd frontend && npm run lint   # Frontend lint
 ```
+
+The CI pipeline runs these in order: ruff (lint) → [ty](https://github.com/astral-sh/ty) (type check) → pytest (tests). All three must pass.
 
 ## Contributing
 
 Contributions are welcome. Please open an issue to discuss a feature or bug before submitting a pull request — this keeps effort aligned and avoids duplicate work.
 
 Code style:
-- Python: [Ruff](https://docs.astral.sh/ruff/) for linting and formatting (`uv run ruff check .` / `uv run ruff format .`)
+- Python: [Ruff](https://docs.astral.sh/ruff/) for linting and formatting, [ty](https://github.com/astral-sh/ty) for static type checking — `uv run ty check app/ tests/` must pass with zero errors
 - TypeScript: ESLint (`npm run lint` in the `frontend/` directory)
 
 ## License

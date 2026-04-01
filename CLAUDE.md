@@ -49,6 +49,7 @@ uv run pytest tests/test_foo.py::test_bar  # Run single test
 uv run pytest -x               # Stop on first failure
 uv run ruff check .             # Lint
 uv run ruff format .            # Format
+uv run ty check app/ tests/     # Type check (must pass with zero errors)
 uv run alembic upgrade head     # Run migrations
 uv run alembic revision --autogenerate -m "description"  # Create migration
 
@@ -167,6 +168,11 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
 - **No magic numbers** — extract thresholds, limits, and configuration values into named constants. Example: `const MIN_GAMES_FOR_COLOR = 10` not a bare `10` in a conditional.
 - **Theme constants in theme.ts** — all theme-relevant color constants (WDL colors, gauge zone colors, glass overlays, opacity factors) must be defined in `frontend/src/lib/theme.ts` and imported from there. Never hard-code color values that have semantic meaning (win/loss/draw, danger/warning/success, muted states) directly in components.
 - **Type safety** — leverage TypeScript's type system and Python type hints fully. Avoid `any`, prefer explicit types for function signatures, props, and return values. Use discriminated unions over loose string types. On the backend, use Pydantic models for validation and typed dataclasses/TypedDicts where appropriate. Never use bare `str` for fields with a fixed set of values — use `Literal["a", "b", "c"]` in Pydantic schemas, function signatures, and return types. This applies to both schemas and service/repository function parameters.
+- **ty compliance** — all backend code must pass `uv run ty check app/ tests/` with zero errors. ty runs in CI between ruff and pytest and blocks the build. When writing new code:
+  - Add explicit return type annotations on all functions.
+  - Use `Sequence[str]` (not `list[str]`) for function parameters that accept `list[Literal[...]]` values — list is invariant, Sequence is covariant.
+  - Use Pydantic models at system boundaries (external API input/output) and TypedDicts for internal structured data (filter params, accumulators). See `app/schemas/normalization.py` and `app/services/stats_service.py` for examples.
+  - Use `# ty: ignore[rule-name]` (not `# type: ignore`) to suppress errors that can't be fixed (e.g., SQLAlchemy forward refs, FastAPI-Users generics). Always include the rule name and a brief reason.
 - **Comment bug fixes** — when fixing a bug, add a comment at the fix site explaining what broke and why. Future readers shouldn't have to dig through git history to understand why non-obvious code exists.
 - **Always check mobile variants** — when modifying a component that has separate desktop and mobile sections (e.g. Openings page sidebar vs mobile layout), apply the change to both. Search for duplicated markup before considering a change complete.
 
