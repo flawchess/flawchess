@@ -152,6 +152,7 @@ export function OpeningsPage() {
           endSquare: squares.to,
           color: getArrowColor(entry.win_pct, entry.loss_pct, entry.game_count, isHovered),
           width: entry.game_count / maxCount,
+          isHovered,
         };
       })
       .filter((a): a is NonNullable<typeof a> => a !== null);
