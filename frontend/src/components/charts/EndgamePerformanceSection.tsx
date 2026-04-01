@@ -71,6 +71,8 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
             <span>Conversion</span>
             <InfoPopover ariaLabel="Conversion info" testId="gauge-conversion-info" side="top">
               Your win rate when entering an endgame with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} points.
+              <br /><br />
+              Color zones: below 60% (red), 60–80% (amber), above 80% (green).
             </InfoPopover>
           </div>
           <EndgameGauge
@@ -87,6 +89,8 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
             <span>Recovery</span>
             <InfoPopover ariaLabel="Recovery info" testId="gauge-recovery-info" side="top">
               Your draw or win rate when entering an endgame with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} points.
+              <br /><br />
+              Color zones: below 10% (red), 10–30% (amber), above 30% (green).
             </InfoPopover>
           </div>
           <EndgameGauge
