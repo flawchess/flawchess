@@ -398,10 +398,10 @@ async def get_endgame_games(
 
 # --- Performance chart service functions (Phase 32) ---
 
-# Weights for endgame_skill score. Conversion (winning when up) weighted more
-# than recovery (drawing/winning when down) per D-06.
-_ENDGAME_SKILL_CONVERSION_WEIGHT = 0.6
-_ENDGAME_SKILL_RECOVERY_WEIGHT = 0.4
+# Weights for endgame_skill score. Conversion (winning when up) weighted 70/30
+# over recovery (drawing/winning when down) per D-06 (updated from 60/40).
+_ENDGAME_SKILL_CONVERSION_WEIGHT = 0.7
+_ENDGAME_SKILL_RECOVERY_WEIGHT = 0.3
 
 
 def _build_wdl_summary(rows: list[Row[Any]]) -> EndgameWDLSummary:

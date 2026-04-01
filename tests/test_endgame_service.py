@@ -524,9 +524,9 @@ class TestEndgameGaugeCalculations:
 
     @pytest.mark.asyncio
     async def test_endgame_skill_formula(self):
-        """endgame_skill = 0.6 * conversion_pct + 0.4 * recovery_pct."""
+        """endgame_skill = 0.7 * conversion_pct + 0.3 * recovery_pct."""
         # conversion: 8 wins / 10 games up material = 80%
-        # recovery: 6 saves / 10 games down material = 60% → skill = 0.6*80 + 0.4*60 = 72
+        # recovery: 6 saves / 10 games down material = 60% → skill = 0.7*80 + 0.3*60 = 74
         entry_rows = (
             # 10 games with positive imbalance (rook=1): 8 wins, 2 losses
             [self._entry_row(i, 1, "1-0", "white", 500) for i in range(1, 9)]
@@ -549,7 +549,7 @@ class TestEndgameGaugeCalculations:
                 recency=None, rated=None, opponent_type="human",
             )
 
-        assert abs(result.endgame_skill - 72.0) < 0.2
+        assert abs(result.endgame_skill - 74.0) < 0.2
 
     @pytest.mark.asyncio
     async def test_endgame_skill_zero_with_no_conversion_recovery_data(self):
