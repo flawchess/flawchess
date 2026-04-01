@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import axios from 'axios';
+import * as Sentry from '@sentry/react';
 
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -72,6 +73,9 @@ export function RegisterForm() {
       await register(email, password);
       navigate('/', { replace: true });
     } catch (err: unknown) {
+      Sentry.captureException(err, {
+        tags: { source: 'auth' },
+      });
       let message = 'Registration failed. Please try again.';
       if (axios.isAxiosError(err) && err.response?.status === 400) {
         const detail = err.response.data?.detail;
@@ -94,7 +98,10 @@ export function RegisterForm() {
         '/auth/google/authorize',
       );
       window.location.href = response.data.authorization_url;
-    } catch {
+    } catch (err) {
+      Sentry.captureException(err, {
+        tags: { source: 'auth' },
+      });
       toast.error('Could not start Google sign-in. Please try again.');
       setGoogleLoading(false);
     }
