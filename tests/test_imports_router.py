@@ -269,6 +269,7 @@ class TestGetImportStatus:
 
             # Simulate some progress by mutating in-memory state
             job = import_service.get_job(job_id)
+            assert job is not None  # job was just created
             job.games_fetched = 42
             job.games_imported = 40
 

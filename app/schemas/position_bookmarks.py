@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_serializer, field_validator, model_validator
 
+from app.models.position_bookmark import PositionBookmark
+
 Color = Literal["white", "black"]
 BookmarkMatchSide = Literal["mine", "opponent", "both", "full"]
 
@@ -102,7 +104,7 @@ class PositionBookmarkResponse(BaseModel):
     @classmethod
     def deserialize_moves(cls, data: object) -> object:
         """Deserialize moves from JSON string (ORM) or pass through list (dict input)."""
-        if hasattr(data, "moves"):
+        if isinstance(data, PositionBookmark):
             # ORM object — deserialize moves from JSON string
             raw = data.moves
             if isinstance(raw, str):
@@ -119,7 +121,7 @@ class PositionBookmarkResponse(BaseModel):
                     "sort_order": data.sort_order,
                 }
         if isinstance(data, dict) and "moves" in data:
-            if isinstance(data["moves"], str):
+            if isinstance(data["moves"], str):  # ty: ignore[invalid-argument-type]  # ty doesn't narrow dict[Unknown, Unknown] key access
                 data = dict(data)
                 data["moves"] = json.loads(data["moves"])
         return data

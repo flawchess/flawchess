@@ -136,7 +136,7 @@ async def google_callback(
         )
 
     try:
-        user = await user_manager.oauth_callback(
+        user = await user_manager.oauth_callback(  # ty: ignore[invalid-argument-type]  # FastAPI-Users generic typing not resolved by ty beta
             oauth_name=google_oauth_client.name,
             access_token=token["access_token"],
             account_id=account_id,
@@ -167,7 +167,7 @@ async def google_callback(
         await session.commit()
 
     strategy = auth_backend.get_strategy()
-    access_token = await strategy.write_token(user)
+    access_token = await strategy.write_token(user)  # ty: ignore[unresolved-attribute]  # FastAPI-Users generic typing not resolved by ty beta
 
     # Redirect to frontend callback page with token in fragment
     frontend_redirect = f"{settings.FRONTEND_URL}/auth/callback#token={access_token}"

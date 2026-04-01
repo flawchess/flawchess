@@ -26,7 +26,12 @@ from app.repositories.position_bookmark_repository import (
     update_bookmark,
     update_match_side,
 )
-from app.schemas.position_bookmarks import PositionBookmarkCreate, PositionBookmarkUpdate
+from app.schemas.position_bookmarks import (
+    BookmarkMatchSide,
+    Color,
+    PositionBookmarkCreate,
+    PositionBookmarkUpdate,
+)
 from app.services.zobrist import compute_hashes
 
 import chess
@@ -39,11 +44,11 @@ import chess
 
 def _make_create(
     label: str = "Test Bookmark",
-    target_hash: str = "1234567890",
+    target_hash: int = 1234567890,
     fen: str = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
     moves: list[str] | None = None,
-    color: str | None = "white",
-    match_side: str = "full",
+    color: Color | None = "white",
+    match_side: BookmarkMatchSide = "full",
 ) -> PositionBookmarkCreate:
     return PositionBookmarkCreate(
         label=label,
@@ -600,7 +605,7 @@ class TestMatchSideUpdate:
             user_id=700,
             data=PositionBookmarkCreate(
                 label="Test Both",
-                target_hash=str(fh),
+                target_hash=fh,
                 fen=fen,
                 moves=["e4"],
                 color="white",
@@ -630,7 +635,7 @@ class TestMatchSideUpdate:
             user_id=701,
             data=PositionBookmarkCreate(
                 label="Test Mine",
-                target_hash=str(wh),
+                target_hash=wh,
                 fen=fen,
                 moves=["e4"],
                 color="white",
@@ -656,7 +661,7 @@ class TestMatchSideUpdate:
             user_id=710,
             data=PositionBookmarkCreate(
                 label="Private",
-                target_hash=str(fh),
+                target_hash=fh,
                 fen=fen,
                 moves=[],
                 color="white",

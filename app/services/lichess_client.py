@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator, Callable
 import httpx
 
 from app.core.rate_limiters import get_lichess_semaphore
+from app.schemas.normalization import NormalizedGame
 from app.services.normalization import normalize_lichess_game
 
 logger = logging.getLogger(__name__)
@@ -33,8 +34,8 @@ async def fetch_lichess_games(
     user_id: int,
     since_ms: int | None = None,
     on_game_fetched: Callable[[], None] | None = None,
-) -> AsyncIterator[dict]:
-    """Async generator that yields normalized game dicts for a lichess user.
+) -> AsyncIterator[NormalizedGame]:
+    """Async generator that yields normalized NormalizedGame objects for a lichess user.
 
     Streams NDJSON from the lichess API line-by-line using httpx streaming,
     so large exports never need to be buffered in memory. Retries on transient
@@ -68,7 +69,9 @@ async def fetch_lichess_games(
     url = f"{LICHESS_API_URL}/{username}"
     headers = {"Accept": "application/x-ndjson"}
 
-    last_attempt_error: Exception | None = None
+    # Initialize with a sentinel so raise always has a valid exception even if no
+    # attempt captured a specific error (e.g., _MAX_RETRIES == 0).
+    last_attempt_error: Exception = Exception("Exhausted retries without capturing an error")
 
     for attempt in range(_MAX_RETRIES + 1):
         if attempt > 0:
@@ -121,4 +124,4 @@ async def fetch_lichess_games(
             continue
 
     # All retries exhausted — re-raise the last error
-    raise last_attempt_error  # type: ignore[misc]
+    raise last_attempt_error

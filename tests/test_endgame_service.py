@@ -613,6 +613,7 @@ class TestGetEndgameTimeline:
         # Find the last endgame point in overall that has endgame data
         endgame_points = [p for p in result.overall if p.endgame_win_rate is not None]
         last = endgame_points[-1]
+        assert last.endgame_win_rate is not None
         assert abs(last.endgame_win_rate - 2/3) < 1e-4
         assert last.endgame_game_count == 3
 

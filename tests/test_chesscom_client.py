@@ -109,9 +109,9 @@ class TestFetchChesscomGames:
                 results.append(game)
 
         assert len(results) == 1
-        assert results[0]["platform"] == "chess.com"
-        assert results[0]["platform_game_id"] == "game-uuid-1"
-        assert results[0]["user_id"] == 1
+        assert results[0].platform == "chess.com"
+        assert results[0].platform_game_id == "game-uuid-1"
+        assert results[0].user_id == 1
 
     @pytest.mark.asyncio
     async def test_404_raises_value_error(self):
@@ -197,7 +197,7 @@ class TestFetchChesscomGames:
                 results.append(game)
 
         assert len(results) == 1
-        assert results[0]["platform_game_id"] == "standard-game"
+        assert results[0].platform_game_id == "standard-game"
 
     @pytest.mark.asyncio
     async def test_on_game_fetched_callback_called(self):

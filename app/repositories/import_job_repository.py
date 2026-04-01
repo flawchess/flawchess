@@ -172,4 +172,4 @@ async def fail_orphaned_jobs(session: AsyncSession) -> int:
         )
     )
     await session.flush()
-    return result.rowcount
+    return result.rowcount  # ty: ignore[unresolved-attribute]  # SQLAlchemy async execute returns Result; rowcount is available on DML results

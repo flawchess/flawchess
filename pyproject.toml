@@ -18,11 +18,12 @@ dependencies = [
     "sentry-sdk[fastapi]>=2.54.0",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "ruff>=0.4.0",
+    "ty>=0.0.26",
 ]
 
 [tool.pytest.ini_options]
@@ -36,3 +37,7 @@ line-length = 100
 [tool.ruff.lint.per-file-ignores]
 "app/models/*.py" = ["F821"]  # SQLAlchemy forward references in relationship() strings
 "alembic/versions/*.py" = ["F401"]  # Alembic auto-imports sa/op that may appear unused
+
+[tool.ty.rules]
+# Warn on unused suppression comments so stale ignores don't accumulate
+unused-ignore-comment = "warn"

@@ -9,8 +9,8 @@ Requirements for the consolidation, tooling & refactoring milestone. Each maps t
 
 ### Tooling & Type Safety
 
-- [ ] **TOOL-01**: Backend static type checking with astral `ty` integrated into CI/CD pipeline
-- [ ] **TOOL-02**: Backend type safety review — replace untyped dicts with TypedDicts/Pydantic models, add missing type hints
+- [x] **TOOL-01**: Backend static type checking with astral `ty` integrated into CI/CD pipeline
+- [x] **TOOL-02**: Backend type safety review — replace untyped dicts with TypedDicts/Pydantic models, add missing type hints
 - [ ] **TOOL-03**: Evaluate and optionally integrate knip.dev (or similar) for frontend dead export detection
 - [ ] **TOOL-04**: Add test coverage analysis and reporting (maybe)
 
@@ -51,8 +51,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TOOL-01 | Phase 40 | Pending |
-| TOOL-02 | Phase 40 | Pending |
+| TOOL-01 | Phase 40 | Complete |
+| TOOL-02 | Phase 40 | Complete |
 | TOOL-03 | Phase 41 | Pending |
 | TOOL-04 | Phase 43 | Pending |
 | QUAL-01 | Phase 41 | Pending |

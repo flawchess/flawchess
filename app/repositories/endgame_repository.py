@@ -9,9 +9,12 @@ Functions:
 
 import asyncio
 import datetime
+from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import case, func, select, type_coerce
 from sqlalchemy.dialects.postgresql import ARRAY, aggregate_order_by
+from sqlalchemy.engine import Row
 from sqlalchemy.types import SmallInteger as SmallIntegerType
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,8 +40,8 @@ ENDGAME_PLY_THRESHOLD = 6
 async def count_filtered_games(
     session: AsyncSession,
     user_id: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -57,12 +60,12 @@ async def count_filtered_games(
 async def query_endgame_entry_rows(
     session: AsyncSession,
     user_id: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
-) -> list[tuple]:
+) -> list[Row[Any]]:
     """Return one row per (game, endgame_class) span meeting the ply threshold.
 
     Per D-02: a game can appear in MULTIPLE endgame classes if it spent >= ENDGAME_PLY_THRESHOLD
@@ -137,8 +140,8 @@ async def query_endgame_games(
     session: AsyncSession,
     user_id: int,
     endgame_class: EndgameClass,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -205,12 +208,12 @@ async def query_endgame_games(
 async def query_conv_recov_timeline_rows(
     session: AsyncSession,
     user_id: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
-) -> list[tuple]:
+) -> list[Row[Any]]:
     """Return rows for conversion/recovery timeline: games with significant material imbalance.
 
     Only includes games where abs(material_imbalance) >= 300 at endgame entry
@@ -277,8 +280,8 @@ async def query_conv_recov_timeline_rows(
 
 def _apply_game_filters(
     stmt,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
@@ -312,12 +315,12 @@ _ENDGAME_CLASS_INTS = range(1, 7)
 async def query_endgame_performance_rows(
     session: AsyncSession,
     user_id: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
-) -> tuple[list[tuple], list[tuple]]:
+) -> tuple[list[Row[Any]], list[Row[Any]]]:
     """Return endgame and non-endgame game rows for performance comparison.
 
     Endgame games: games where the user spent >= ENDGAME_PLY_THRESHOLD plies
@@ -378,12 +381,12 @@ async def query_endgame_performance_rows(
 async def query_endgame_timeline_rows(
     session: AsyncSession,
     user_id: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
-) -> tuple[list[tuple], list[tuple], dict[int, list[tuple]]]:
+) -> tuple[list[Row[Any]], list[Row[Any]], dict[int, list[Row[Any]]]]:
     """Return rows for rolling-window time series (overall and per endgame class).
 
     Runs 8 queries concurrently via asyncio.gather:
@@ -460,7 +463,7 @@ async def query_endgame_timeline_rows(
 
     endgame_rows = list(all_results[0].fetchall())
     non_endgame_rows = list(all_results[1].fetchall())
-    per_type_rows: dict[int, list[tuple]] = {
+    per_type_rows: dict[int, list[Row[Any]]] = {
         class_int: list(all_results[2 + i].fetchall())
         for i, class_int in enumerate(class_ints)
     }

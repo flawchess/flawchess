@@ -1,11 +1,17 @@
 """Platform-agnostic normalization utilities.
 
-Converts chess.com and lichess game objects into dicts matching the Game model columns.
+Converts chess.com and lichess game objects into NormalizedGame Pydantic models (D-01).
 """
 
 import datetime
 import re
-
+from app.schemas.normalization import (
+    Color,
+    GameResult,
+    NormalizedGame,
+    Termination,
+    TimeControlBucket,
+)
 from app.services.opening_lookup import find_opening
 
 
@@ -20,7 +26,7 @@ def _normalize_tc_str(tc_str: str) -> str | None:
     return tc_str
 
 
-def parse_time_control(tc_str: str) -> tuple[str | None, int | None]:
+def parse_time_control(tc_str: str) -> tuple[TimeControlBucket | None, int | None]:
     """Parse a time control string into (bucket, estimated_seconds).
 
     Examples:
@@ -68,7 +74,7 @@ def parse_time_control(tc_str: str) -> tuple[str | None, int | None]:
 
 
 # chess.com termination string mapping (losing player's result -> normalized termination)
-_CHESSCOM_TERMINATION_MAP = {
+_CHESSCOM_TERMINATION_MAP: dict[str, Termination] = {
     "checkmated": "checkmate",
     "resigned": "resignation",
     "timeout": "timeout",
@@ -82,7 +88,7 @@ _CHESSCOM_TERMINATION_MAP = {
 }
 
 # lichess game status -> normalized termination
-_LICHESS_STATUS_MAP = {
+_LICHESS_STATUS_MAP: dict[str, Termination] = {
     "mate": "checkmate",
     "resign": "resignation",
     "outoftime": "timeout",
@@ -114,7 +120,7 @@ _CHESSCOM_DRAW_RESULTS = {
 }
 
 
-def _normalize_chesscom_result(white_result: str, black_result: str) -> str:
+def _normalize_chesscom_result(white_result: str, black_result: str) -> GameResult:
     """Convert chess.com result strings to standard "1-0"/"0-1"/"1/2-1/2".
 
     chess.com stores results from each player's perspective:
@@ -138,7 +144,7 @@ def _normalize_chesscom_result(white_result: str, black_result: str) -> str:
         return "1/2-1/2"  # safe fallback
 
 
-def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | None:
+def normalize_chesscom_game(game: dict, username: str, user_id: int) -> NormalizedGame | None:
     """Normalize a chess.com JSON game object to a dict matching Game model columns.
 
     Returns None if the game is not a standard chess variant.
@@ -209,36 +215,36 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> dict | N
     white_accuracy: float | None = accuracies.get("white")
     black_accuracy: float | None = accuracies.get("black")
 
-    return {
-        "user_id": user_id,
-        "platform": "chess.com",
-        "platform_game_id": game["uuid"],
-        "platform_url": game.get("url"),
-        "pgn": pgn_str,
-        "variant": "Standard",
-        "result": result,
-        "user_color": user_color,
-        "termination_raw": termination_raw,
-        "termination": termination,
-        "time_control_str": _normalize_tc_str(tc_str),
-        "time_control_bucket": tc_bucket,
-        "time_control_seconds": tc_seconds,
-        "rated": bool(game.get("rated", True)),
-        "is_computer_game": is_computer_game,
-        "white_username": white_username,
-        "black_username": black_username,
-        "white_rating": white.get("rating"),
-        "black_rating": black.get("rating"),
-        "opening_name": opening_name,
-        "opening_eco": opening_eco,
-        "white_accuracy": white_accuracy,
-        "black_accuracy": black_accuracy,
-        "played_at": played_at,
-    }
+    return NormalizedGame(
+        user_id=user_id,
+        platform="chess.com",
+        platform_game_id=game["uuid"],
+        platform_url=game.get("url"),
+        pgn=pgn_str,
+        variant="Standard",
+        result=result,
+        user_color=user_color,
+        termination_raw=termination_raw,
+        termination=termination,
+        time_control_str=_normalize_tc_str(tc_str),
+        time_control_bucket=tc_bucket,
+        time_control_seconds=tc_seconds,
+        rated=bool(game.get("rated", True)),
+        is_computer_game=is_computer_game,
+        white_username=white_username,
+        black_username=black_username,
+        white_rating=white.get("rating"),
+        black_rating=black.get("rating"),
+        opening_name=opening_name,
+        opening_eco=opening_eco,
+        white_accuracy=white_accuracy,
+        black_accuracy=black_accuracy,
+        played_at=played_at,
+    )
 
 
-def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | None:
-    """Normalize a lichess NDJSON game object to a dict matching Game model columns.
+def normalize_lichess_game(game: dict, username: str, user_id: int) -> NormalizedGame | None:
+    """Normalize a lichess NDJSON game object to a NormalizedGame model.
 
     Returns None if the game is not a standard chess variant.
 
@@ -269,7 +275,7 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
     # Determine user's color (case-insensitive)
     username_lower = username.lower()
     if white_username.lower() == username_lower:
-        user_color = "white"
+        user_color: Color = "white"
         opponent_player = black_player
     else:
         user_color = "black"
@@ -282,7 +288,7 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
     # Result from winner field
     winner = game.get("winner")
     if winner == "white":
-        result = "1-0"
+        result: GameResult = "1-0"
     elif winner == "black":
         result = "0-1"
     else:
@@ -295,6 +301,7 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
 
     # Time control from clock
     clock = game.get("clock")
+    tc_bucket: TimeControlBucket | None
     if clock:
         clock_initial = clock.get("initial", 0)
         clock_increment = clock.get("increment", 0)
@@ -325,37 +332,37 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> dict | No
     white_analysis = white_player.get("analysis", {})
     black_analysis = black_player.get("analysis", {})
 
-    return {
-        "user_id": user_id,
-        "platform": "lichess",
-        "platform_game_id": game_id,
-        "platform_url": f"https://lichess.org/{game_id}",
-        "pgn": pgn,
-        "variant": "Standard",
-        "result": result,
-        "user_color": user_color,
-        "termination_raw": termination_raw,
-        "termination": termination,
-        "time_control_str": tc_str,
-        "time_control_bucket": tc_bucket,
-        "time_control_seconds": tc_seconds,
-        "rated": bool(game.get("rated", True)),
-        "is_computer_game": is_computer_game,
-        "white_username": white_username,
-        "black_username": black_username,
-        "white_rating": white_player.get("rating"),
-        "black_rating": black_player.get("rating"),
-        "opening_name": opening_name,
-        "opening_eco": opening_eco,
-        "white_accuracy": white_analysis.get("accuracy"),
-        "black_accuracy": black_analysis.get("accuracy"),
-        "white_acpl": white_analysis.get("acpl"),
-        "black_acpl": black_analysis.get("acpl"),
-        "white_inaccuracies": white_analysis.get("inaccuracy"),
-        "black_inaccuracies": black_analysis.get("inaccuracy"),
-        "white_mistakes": white_analysis.get("mistake"),
-        "black_mistakes": black_analysis.get("mistake"),
-        "white_blunders": white_analysis.get("blunder"),
-        "black_blunders": black_analysis.get("blunder"),
-        "played_at": played_at,
-    }
+    return NormalizedGame(
+        user_id=user_id,
+        platform="lichess",
+        platform_game_id=game_id,
+        platform_url=f"https://lichess.org/{game_id}",
+        pgn=pgn,
+        variant="Standard",
+        result=result,
+        user_color=user_color,
+        termination_raw=termination_raw,
+        termination=termination,
+        time_control_str=tc_str,
+        time_control_bucket=tc_bucket,
+        time_control_seconds=tc_seconds,
+        rated=bool(game.get("rated", True)),
+        is_computer_game=is_computer_game,
+        white_username=white_username,
+        black_username=black_username,
+        white_rating=white_player.get("rating"),
+        black_rating=black_player.get("rating"),
+        opening_name=opening_name,
+        opening_eco=opening_eco,
+        white_accuracy=white_analysis.get("accuracy"),
+        black_accuracy=black_analysis.get("accuracy"),
+        white_acpl=white_analysis.get("acpl"),
+        black_acpl=black_analysis.get("acpl"),
+        white_inaccuracies=white_analysis.get("inaccuracy"),
+        black_inaccuracies=black_analysis.get("inaccuracy"),
+        white_mistakes=white_analysis.get("mistake"),
+        black_mistakes=black_analysis.get("mistake"),
+        white_blunders=white_analysis.get("blunder"),
+        black_blunders=black_analysis.get("blunder"),
+        played_at=played_at,
+    )

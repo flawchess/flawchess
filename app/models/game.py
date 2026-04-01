@@ -80,6 +80,6 @@ class Game(Base):
         server_default=func.now(),
     )
 
-    positions: Mapped[list["GamePosition"]] = relationship(  # type: ignore[name-defined]
+    positions: Mapped[list["GamePosition"]] = relationship(  # ty: ignore[unresolved-reference]
         back_populates="game", cascade="all, delete-orphan"
     )
