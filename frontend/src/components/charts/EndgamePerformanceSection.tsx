@@ -63,7 +63,7 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
       </div>
 
       {/* Gauge charts: Conversion, Recovery, Endgame Skill (D-04, D-05, D-06) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 mt-8 mb-6" data-testid="perf-gauges">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-4 mt-8 mb-6" data-testid="perf-gauges">
 
         {/* Conversion gauge */}
         <div className="flex flex-col items-center gap-0">
@@ -71,6 +71,8 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
             <span>Conversion</span>
             <InfoPopover ariaLabel="Conversion info" testId="gauge-conversion-info" side="top">
               Your win rate when entering an endgame with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} points.
+              <br /><br />
+              Color zones: below 60% (red), 60–80% (amber), above 80% (green).
             </InfoPopover>
           </div>
           <EndgameGauge
@@ -87,6 +89,8 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
             <span>Recovery</span>
             <InfoPopover ariaLabel="Recovery info" testId="gauge-recovery-info" side="top">
               Your draw or win rate when entering an endgame with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} points.
+              <br /><br />
+              Color zones: below 10% (red), 10–30% (amber), above 30% (green).
             </InfoPopover>
           </div>
           <EndgameGauge
@@ -102,7 +106,9 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
           <div className="relative z-10 flex items-center gap-1 text-sm text-foreground text-center">
             <span>Endgame Skill</span>
             <InfoPopover ariaLabel="Endgame Skill info" testId="gauge-endgame-skill-info" side="top">
-              A weighted average of your conversion rate (60%) and recovery rate (40%). Measures overall endgame proficiency.
+              A weighted average of your conversion rate (70%) and recovery rate (30%). Measures overall endgame proficiency.
+              <br /><br />
+              Color zones: below 40% (red), 40–60% (amber), above 60% (green).
             </InfoPopover>
           </div>
           <EndgameGauge
