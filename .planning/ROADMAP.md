@@ -195,7 +195,7 @@ Plans:
 | 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
 | 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
 | 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete   | 2026-03-30 |
-| 40. Static Type Checking | v1.7 | 2/2 | Complete   | 2026-04-01 |
+| 40. Static Type Checking | v1.7 | 2/2 | Complete    | 2026-04-01 |
 | 41. Code Quality & Dead Code | v1.7 | 0/TBD | Not started | - |
 | 42. Backend Optimization | v1.7 | 0/TBD | Not started | - |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
