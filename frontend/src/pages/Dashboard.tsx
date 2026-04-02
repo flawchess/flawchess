@@ -148,7 +148,7 @@ export function DashboardPage() {
   const { data: gameCountData, refetch: refetchGameCount } = useQuery<{ count: number }>({
     queryKey: ['gameCount'],
     queryFn: async () => {
-      const response = await apiClient.get<{ count: number }>('/games/count');
+      const response = await apiClient.get<{ count: number }>('/users/games/count');
       return response.data;
     },
     staleTime: 30_000,

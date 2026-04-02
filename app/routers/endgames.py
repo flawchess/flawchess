@@ -1,10 +1,10 @@
 """Endgames router: HTTP endpoints for endgame analytics.
 
-Endpoints:
-- GET /api/endgames/stats: W/D/L per endgame category with inline conversion/recovery stats
-- GET /api/endgames/games: paginated game list filtered by endgame class
-- GET /api/endgames/performance: WDL comparison + gauge values for endgame vs non-endgame
-- GET /api/endgames/timeline: rolling-window win-rate time series
+Endpoints (all mounted under /api/endgames):
+- GET /stats: W/D/L per endgame category with inline conversion/recovery stats
+- GET /games: paginated game list filtered by endgame class
+- GET /performance: WDL comparison + gauge values for endgame vs non-endgame
+- GET /timeline: rolling-window win-rate time series
 """
 
 from typing import Annotated
@@ -25,10 +25,10 @@ from app.schemas.endgames import (
 from app.services import endgame_service
 from app.users import current_active_user
 
-router = APIRouter(tags=["endgames"])
+router = APIRouter(prefix="/endgames", tags=["endgames"])
 
 
-@router.get("/endgames/stats", response_model=EndgameStatsResponse)
+@router.get("/stats", response_model=EndgameStatsResponse)
 async def get_endgame_stats(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
@@ -57,7 +57,7 @@ async def get_endgame_stats(
     )
 
 
-@router.get("/endgames/games", response_model=EndgameGamesResponse)
+@router.get("/games", response_model=EndgameGamesResponse)
 async def get_endgame_games(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
@@ -91,7 +91,7 @@ async def get_endgame_games(
     )
 
 
-@router.get("/endgames/performance", response_model=EndgamePerformanceResponse)
+@router.get("/performance", response_model=EndgamePerformanceResponse)
 async def get_endgame_performance(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
@@ -120,7 +120,7 @@ async def get_endgame_performance(
     )
 
 
-@router.get("/endgames/timeline", response_model=EndgameTimelineResponse)
+@router.get("/timeline", response_model=EndgameTimelineResponse)
 async def get_endgame_timeline(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
@@ -151,7 +151,7 @@ async def get_endgame_timeline(
     )
 
 
-@router.get("/endgames/conv-recov-timeline", response_model=ConvRecovTimelineResponse)
+@router.get("/conv-recov-timeline", response_model=ConvRecovTimelineResponse)
 async def get_conv_recov_timeline(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],

@@ -1,4 +1,4 @@
-"""Analysis router: POST /analysis/positions and GET /games/count endpoints.
+"""Analysis router: POST /analysis/positions, /analysis/time-series, /analysis/next-moves.
 
 HTTP layer only — all business logic lives in analysis_service / repositories.
 """
@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.models.user import User
-from app.repositories import game_repository
 from app.schemas.analysis import (
     AnalysisRequest,
     AnalysisResponse,
@@ -22,10 +21,10 @@ from app.schemas.analysis import (
 from app.services import analysis_service
 from app.users import current_active_user
 
-router = APIRouter(tags=["analysis"])
+router = APIRouter(prefix="/analysis", tags=["analysis"])
 
 
-@router.post("/analysis/positions", response_model=AnalysisResponse)
+@router.post("/positions", response_model=AnalysisResponse)
 async def query_positions(
     request: AnalysisRequest,
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -39,7 +38,7 @@ async def query_positions(
     return await analysis_service.analyze(session, user.id, request)
 
 
-@router.post("/analysis/time-series", response_model=TimeSeriesResponse)
+@router.post("/time-series", response_model=TimeSeriesResponse)
 async def get_time_series(
     request: TimeSeriesRequest,
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -49,7 +48,7 @@ async def get_time_series(
     return await analysis_service.get_time_series(session, user.id, request)
 
 
-@router.post("/analysis/next-moves", response_model=NextMovesResponse)
+@router.post("/next-moves", response_model=NextMovesResponse)
 async def get_next_moves(
     request: NextMovesRequest,
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -61,13 +60,3 @@ async def get_next_moves(
     the resulting position's hash and FEN, and a transposition count.
     """
     return await analysis_service.get_next_moves(session, user.id, request)
-
-
-@router.get("/games/count")
-async def get_game_count(
-    session: Annotated[AsyncSession, Depends(get_async_session)],
-    user: Annotated[User, Depends(current_active_user)],
-) -> dict[str, int]:
-    """Return the total number of games imported by the current user."""
-    count = await game_repository.count_games_for_user(session, user.id)
-    return {"count": count}
