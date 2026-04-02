@@ -180,6 +180,13 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
 
 Sentry is initialized in both backend (`app/main.py`) and frontend (`frontend/src/instrument.ts`). These rules ensure errors are captured consistently.
 
+### Sentry Dashboard
+
+- **URL**: https://flawchess.sentry.io
+- **Organization**: flawchess
+- **Project**: flawchess (ID: 4508610042675280)
+- **Region**: de.sentry.io
+
 ### Backend Rules
 
 - **Always call `sentry_sdk.capture_exception()`** in every non-trivial `except` block in `app/services/` and `app/routers/`. Do not rely on logging alone — errors logged to DB or console do NOT reach Sentry unless explicitly captured.

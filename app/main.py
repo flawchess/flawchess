@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import sentry_sdk
+from asyncpg.exceptions import CannotConnectNowError, ConnectionDoesNotExistError
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -12,6 +13,28 @@ from app.routers.endgames import router as endgames_router
 from app.routers.stats import router as stats_router
 from app.routers.users import router as users_router
 from app.services.import_service import cleanup_orphaned_jobs
+
+_DB_TRANSIENT_ERRORS = (ConnectionDoesNotExistError, CannotConnectNowError)
+_MAX_CAUSE_CHAIN_DEPTH = 5
+
+
+def _sentry_before_send(event: dict, hint: dict) -> dict:
+    """Group transient DB connection errors into a single Sentry issue.
+
+    SQLAlchemy wraps asyncpg errors in DBAPIError, so we walk the __cause__
+    chain to detect the underlying asyncpg exception type.
+    """
+    exc_info = hint.get("exc_info")
+    if exc_info is not None:
+        exc = exc_info[1]
+        depth = 0
+        while exc is not None and depth < _MAX_CAUSE_CHAIN_DEPTH:
+            if isinstance(exc, _DB_TRANSIENT_ERRORS):
+                event["fingerprint"] = ["db-connection-lost"]
+                break
+            exc = exc.__cause__
+            depth += 1
+    return event
 
 
 @asynccontextmanager
@@ -26,6 +49,7 @@ if settings.SENTRY_DSN:
         environment=settings.ENVIRONMENT,
         traces_sample_rate=0.1,  # 10% of requests traced for performance visibility
         send_default_pii=False,  # Do not send user PII (emails, IPs)
+        before_send=_sentry_before_send,
     )
 
 app = FastAPI(title="FlawChess", version="0.1.0", lifespan=lifespan)
