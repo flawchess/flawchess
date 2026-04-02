@@ -135,7 +135,7 @@ Plans:
 - [x] 41-01-PLAN.md — Install Knip, configure dead export detection, add frontend build/test/knip to CI
 - [x] 41-02-PLAN.md — Backend router prefix consistency, shared apply_game_filters, frontend filter params dedup, dead code review
 - [ ] 41-03-PLAN.md — Run Knip report, review and remove confirmed dead frontend exports
-- [ ] 41-04-PLAN.md — Enable noUncheckedIndexedAccess in TypeScript, fix 56 type errors across 14 files
+- [x] 41-04-PLAN.md — Enable noUncheckedIndexedAccess in TypeScript, fix 56 type errors across 14 files
 
 ### Phase 42: Backend Optimization
 **Goal**: Backend DB queries are efficient and all API responses use consistent Pydantic schemas
@@ -202,7 +202,7 @@ Plans:
 | 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
 | 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete   | 2026-03-30 |
 | 40. Static Type Checking | v1.7 | 2/2 | Complete    | 2026-04-01 |
-| 41. Code Quality & Dead Code | v1.7 | 2/4 | In Progress|  |
+| 41. Code Quality & Dead Code | v1.7 | 3/4 | In Progress|  |
 | 42. Backend Optimization | v1.7 | 0/TBD | Not started | - |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
 
@@ -212,7 +212,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

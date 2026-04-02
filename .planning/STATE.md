@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Consolidation, Tooling & Refactoring
 status: executing
-last_updated: "2026-04-02T20:02:05.957Z"
+last_updated: "2026-04-02T20:16:03.027Z"
 last_activity: 2026-04-02
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
   percent: 100
 ---
 
@@ -18,7 +18,7 @@ progress:
 ## Current Position
 
 Phase: 41 (code-quality-dead-code) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-04-02
 
@@ -77,5 +77,11 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **/games/count moved to users router** — It is a user account stat, not an analysis result; accessible at /api/users/games/count
 - **apply_game_filters uses Any for stmt parameter** — Matches existing repository pattern; avoids ty errors with SQLAlchemy Select generics
 
+### Decisions Made (Phase 41, Plan 04)
+
+- **flatMap over filter+map for Record access narrowing in Openings.tsx** — TypeScript cannot narrow computed property access through separate filter/map chain; flatMap combines both into a single pass
+- **Non-null assertion ! preferred over as T cast** — Narrower and more explicit about safety invariant; used only when index is provably in bounds
+- **Remove unused local functions after Plan 03 export removals** — With noUnusedLocals: true, functions that lost their exports (CardAction, ChartTooltipContent, etc.) become TS6133 errors; removing them is correct
+
 ---
-Last activity: 2026-04-02 - Completed 41-02-PLAN.md: Router prefix standardization, shared filter utility, frontend deduplication
+Last activity: 2026-04-02 - Completed 41-04-PLAN.md: noUncheckedIndexedAccess enabled, all 56 type errors fixed across 14 files
