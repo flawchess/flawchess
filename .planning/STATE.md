@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Consolidation, Tooling & Refactoring
 status: executing
-last_updated: "2026-04-02T19:53:36.554Z"
+last_updated: "2026-04-02T20:02:05.957Z"
 last_activity: 2026-04-02
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 6
-  completed_plans: 3
+  completed_plans: 4
   percent: 100
 ---
 
@@ -18,7 +18,7 @@ progress:
 ## Current Position
 
 Phase: 41 (code-quality-dead-code) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-04-02
 
@@ -71,5 +71,11 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **CI step ordering: eslint -> build -> test -> knip** — type errors caught before test failures, dead code last
 - **Knip exit 1 acceptable during Plan 01** — existing dead code will be cleaned up in Plan 03; CI gate enforces no new dead code after cleanup
 
+### Decisions Made (Phase 41, Plan 02)
+
+- **Router prefix= in APIRouter() constructor** — Not duplicated in each route path decorator; consistent with imports.py and users.py pattern
+- **/games/count moved to users router** — It is a user account stat, not an analysis result; accessible at /api/users/games/count
+- **apply_game_filters uses Any for stmt parameter** — Matches existing repository pattern; avoids ty errors with SQLAlchemy Select generics
+
 ---
-Last activity: 2026-04-02 - Completed 41-01-PLAN.md: Install Knip and add frontend CI steps
+Last activity: 2026-04-02 - Completed 41-02-PLAN.md: Router prefix standardization, shared filter utility, frontend deduplication
