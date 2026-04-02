@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Consolidation, Tooling & Refactoring
-status: executing
-last_updated: "2026-04-02T20:16:03.027Z"
+status: verifying
+last_updated: "2026-04-02T20:17:12.376Z"
 last_activity: 2026-04-02
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
   percent: 100
 ---
 
@@ -19,7 +19,7 @@ progress:
 
 Phase: 41 (code-quality-dead-code) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-02
 
 Progress: [██████████] 100%
@@ -77,6 +77,12 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **/games/count moved to users router** — It is a user account stat, not an analysis result; accessible at /api/users/games/count
 - **apply_game_filters uses Any for stmt parameter** — Matches existing repository pattern; avoids ty errors with SQLAlchemy Select generics
 
+### Decisions Made (Phase 41, Plan 03)
+
+- **Delete entire dead files vs. just removing exports** — Dashboard.tsx and its exclusive dependencies (ImportModal, ImportProgress, GameTable, WDLBar) deleted; table.tsx and tooltip.tsx also deleted
+- **ignoreDependencies for CSS-imported packages** — clsx, tailwind-merge, shadcn, tw-animate-css, tailwindcss-safe-area added to knip.json ignoreDependencies; knip doesn't scan CSS files
+- **Add @dnd-kit/core and @dnd-kit/utilities as direct deps** — Were being imported directly but only listed as transitive deps of @dnd-kit/sortable
+
 ### Decisions Made (Phase 41, Plan 04)
 
 - **flatMap over filter+map for Record access narrowing in Openings.tsx** — TypeScript cannot narrow computed property access through separate filter/map chain; flatMap combines both into a single pass
@@ -84,4 +90,4 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **Remove unused local functions after Plan 03 export removals** — With noUnusedLocals: true, functions that lost their exports (CardAction, ChartTooltipContent, etc.) become TS6133 errors; removing them is correct
 
 ---
-Last activity: 2026-04-02 - Completed 41-04-PLAN.md: noUncheckedIndexedAccess enabled, all 56 type errors fixed across 14 files
+Last activity: 2026-04-02 - Completed 41-03-PLAN.md: Knip dead code cleanup — 7 files deleted, zero dead exports, knip CI gate now enforced
