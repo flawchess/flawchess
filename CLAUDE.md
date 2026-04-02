@@ -96,6 +96,23 @@ services/         # Business logic (import, analysis)
 repositories/     # DB access (no SQL in services)
 ```
 
+### Router Convention
+
+All routers use `APIRouter(prefix="/resource", tags=["resource"])` with relative paths in decorators. Never embed the resource prefix in individual route paths:
+```python
+# CORRECT
+router = APIRouter(prefix="/analysis", tags=["analysis"])
+@router.post("/positions", ...)
+
+# WRONG — duplicates prefix in every route
+router = APIRouter(tags=["analysis"])
+@router.post("/analysis/positions", ...)
+```
+
+### Shared Query Filters
+
+`app/repositories/query_utils.py` contains `apply_game_filters()` — the single implementation for time control, platform, rated, opponent type, recency, and color filtering. All repositories import from here. Never duplicate filter logic in individual repositories.
+
 ### Database Design Rules
 
 - **Foreign key constraints are mandatory.** Every column referencing another table's primary key must use `ForeignKey()` with an explicit `ondelete` policy (typically `CASCADE` for user-owned data). Never use bare integer columns as implicit references — PostgreSQL must enforce referential integrity.
@@ -177,6 +194,8 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
 - **No magic numbers** — extract thresholds, limits, and configuration values into named constants. Example: `const MIN_GAMES_FOR_COLOR = 10` not a bare `10` in a conditional.
 - **Theme constants in theme.ts** — all theme-relevant color constants (WDL colors, gauge zone colors, glass overlays, opacity factors) must be defined in `frontend/src/lib/theme.ts` and imported from there. Never hard-code color values that have semantic meaning (win/loss/draw, danger/warning/success, muted states) directly in components.
 - **Type safety** — leverage TypeScript's type system and Python type hints fully. Avoid `any`, prefer explicit types for function signatures, props, and return values. Use discriminated unions over loose string types. On the backend, use Pydantic models for validation and typed dataclasses/TypedDicts where appropriate. Never use bare `str` for fields with a fixed set of values — use `Literal["a", "b", "c"]` in Pydantic schemas, function signatures, and return types. This applies to both schemas and service/repository function parameters.
+- **`noUncheckedIndexedAccess` is enabled** — every array/Record index access in TypeScript returns `T | undefined`. You must narrow before use: assign to a local variable and check (`const val = arr[i]; if (val) { ... }`), use `!` non-null assertion when the index is provably in bounds, or use `?? fallback` for Records. Never use `// @ts-ignore` to suppress these errors.
+- **Knip runs in CI** — `npm run knip` in the frontend detects dead exports and unused dependencies. CI fails if knip finds issues. When removing a feature, also remove its exports. When adding exports, ensure they're actually imported somewhere.
 - **ty compliance** — all backend code must pass `uv run ty check app/ tests/` with zero errors. ty runs in CI between ruff and pytest and blocks the build. When writing new code:
   - Add explicit return type annotations on all functions.
   - Use `Sequence[str]` (not `list[str]`) for function parameters that accept `list[Literal[...]]` values — list is invariant, Sequence is covariant.
