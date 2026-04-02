@@ -184,7 +184,7 @@ Sentry is initialized in both backend (`app/main.py`) and frontend (`frontend/sr
 
 - **URL**: https://flawchess.sentry.io
 - **Organization**: flawchess
-- **Project**: flawchess (ID: 4508610042675280)
+- **Project**: flawchess (ID: 4511084868272208)
 - **Region**: de.sentry.io
 
 ### Backend Rules
