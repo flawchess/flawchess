@@ -1,5 +1,14 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/main.tsx", "src/prerender.tsx"],
-  "project": ["src/**/*.{ts,tsx}"]
+  "entry": ["src/prerender.tsx"],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignoreDependencies": [
+    "clsx",
+    "tailwind-merge",
+    "shadcn",
+    "tailwindcss",
+    "tailwindcss-safe-area",
+    "tw-animate-css"
+  ],
+  "ignoreBinaries": ["cloudflared"]
 }
