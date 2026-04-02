@@ -26,7 +26,8 @@ export function MoveList({ moveHistory, currentPly, onMoveClick }: MoveListProps
   // Build pairs: [[white_move, black_move?], ...]
   const movePairs: Array<[string, string | null]> = [];
   for (let i = 0; i < moveHistory.length; i += 2) {
-    movePairs.push([moveHistory[i], moveHistory[i + 1] ?? null]);
+    // safe: loop bounds guarantee i < moveHistory.length
+    movePairs.push([moveHistory[i]!, moveHistory[i + 1] ?? null]);
   }
 
   return (

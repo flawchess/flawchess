@@ -11,10 +11,10 @@ from app.schemas.stats import GlobalStatsResponse, MostPlayedOpeningsResponse, R
 from app.services import stats_service
 from app.users import current_active_user
 
-router = APIRouter(tags=["stats"])
+router = APIRouter(prefix="/stats", tags=["stats"])
 
 
-@router.get("/stats/rating-history", response_model=RatingHistoryResponse)
+@router.get("/rating-history", response_model=RatingHistoryResponse)
 async def get_rating_history(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
@@ -29,7 +29,7 @@ async def get_rating_history(
     return await stats_service.get_rating_history(session, user.id, recency, platform)
 
 
-@router.get("/stats/global", response_model=GlobalStatsResponse)
+@router.get("/global", response_model=GlobalStatsResponse)
 async def get_global_stats(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
@@ -44,7 +44,7 @@ async def get_global_stats(
     return await stats_service.get_global_stats(session, user.id, recency, platform)
 
 
-@router.get("/stats/most-played-openings", response_model=MostPlayedOpeningsResponse)
+@router.get("/most-played-openings", response_model=MostPlayedOpeningsResponse)
 async def get_most_played_openings(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],

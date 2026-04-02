@@ -4,7 +4,8 @@ import type { Platform, Recency, TimeControl, OpponentType } from '@/types/api';
 
 export function useRatingHistory(recency: Recency | null, platforms: Platform[] | null) {
   const normalizedRecency = recency === 'all' ? null : recency;
-  const platform = platforms && platforms.length === 1 ? platforms[0] : null;
+  // safe: length === 1 check guarantees index 0 exists
+  const platform = platforms && platforms.length === 1 ? platforms[0]! : null;
   return useQuery({
     queryKey: ['ratingHistory', normalizedRecency, platform],
     queryFn: () => statsApi.getRatingHistory(normalizedRecency, platform),
@@ -13,7 +14,8 @@ export function useRatingHistory(recency: Recency | null, platforms: Platform[] 
 
 export function useGlobalStats(recency: Recency | null, platforms: Platform[] | null) {
   const normalizedRecency = recency === 'all' ? null : recency;
-  const platform = platforms && platforms.length === 1 ? platforms[0] : null;
+  // safe: length === 1 check guarantees index 0 exists
+  const platform = platforms && platforms.length === 1 ? platforms[0]! : null;
   return useQuery({
     queryKey: ['globalStats', normalizedRecency, platform],
     queryFn: () => statsApi.getGlobalStats(normalizedRecency, platform),

@@ -7,7 +7,7 @@ import type { Opening } from '@/lib/openings';
 import type { MatchSide, Color } from '@/types/api';
 import { resolveMatchSide } from '@/types/api';
 
-export interface ChessGameState {
+interface ChessGameState {
   /** Current FEN for react-chessboard */
   position: string;
   /** SAN move history */
@@ -67,7 +67,8 @@ export function useChessGame(): ChessGameState {
     let fromSq: string | null = null;
     let toSq: string | null = null;
     for (let i = 0; i < ply; i++) {
-      const move = chess.move(history[i]);
+      // safe: loop bound ensures i < ply <= history.length
+      const move = chess.move(history[i]!);
       if (i === ply - 1 && move) {
         fromSq = move.from;
         toSq = move.to;

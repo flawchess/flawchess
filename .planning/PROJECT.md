@@ -61,15 +61,15 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Smart default chart data from most-played openings when no bookmarks exist — v1.6
 - ✓ Chart-enable toggle on bookmark cards with localStorage persistence — v1.6
 - ✓ Mobile drawer sidebars for filters and bookmarks with deferred apply — v1.6
+- ✓ Knip for frontend dead export detection with CI integration — v1.7
+- ✓ Naming improvements (router prefixes, endpoint relocation) — v1.7
+- ✓ Code deduplication (shared apply_game_filters, frontend buildFilterParams) — v1.7
+- ✓ Dead code removal (7 dead files, unused hooks/types/exports, -1522 lines) — v1.7
+- ✓ noUncheckedIndexedAccess TypeScript strictness (56 type errors fixed) — v1.7
 
 ### Active
 
 - [ ] Static type checking with astral `ty` + CI/CD integration
-- [ ] Type safety review & improvement (replace untyped dicts with TypedDicts/Pydantic models, add missing type hints)
-- [ ] Evaluate knip.dev (or similar) for frontend dead export detection
-- [ ] Naming improvements across codebase (API endpoints, routes, variables)
-- [ ] Code deduplication (DRY principle)
-- [ ] Dead code identification and removal
 - [ ] DB query optimization (inefficient queries → aggregations)
 - [ ] DB column type optimization (game_positions BIGINT/DOUBLE → SmallInteger/REAL)
 - [ ] Refactor button brand colors to CSS variables
@@ -104,7 +104,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ## Current State
 
-v1.6 shipped 2026-03-30. Seven milestones complete (v1.0–v1.6), 39 phases, live at flawchess.com. The platform has a polished, consistent UI with centralized theming, shared WDL chart components, an openings reference table with SQL-side aggregation, smart bookmark defaults, and mobile drawer sidebars. v1.7 consolidation in progress — Phase 40 (static type checking) complete.
+v1.6 shipped 2026-03-30. Seven milestones complete (v1.0–v1.6), 39 phases, live at flawchess.com. The platform has a polished, consistent UI with centralized theming, shared WDL chart components, an openings reference table with SQL-side aggregation, smart bookmark defaults, and mobile drawer sidebars. v1.7 consolidation in progress — Phase 40 (static type checking) and Phase 41 (code quality & dead code) complete.
 
 ## Context
 

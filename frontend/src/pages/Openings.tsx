@@ -171,7 +171,7 @@ export function OpeningsPage() {
   const { data: gameCountData } = useQuery<{ count: number }>({
     queryKey: ['gameCount'],
     queryFn: async () => {
-      const response = await apiClient.get<{ count: number }>('/games/count');
+      const response = await apiClient.get<{ count: number }>('/users/games/count');
       return response.data;
     },
     staleTime: 30_000,
@@ -675,9 +675,10 @@ export function OpeningsPage() {
               <div className="text-center text-muted-foreground py-8">Loading chart data...</div>
             ) : (() => {
               const rows = chartBookmarks
-                .filter((b) => wdlStatsMap[b.id] && wdlStatsMap[b.id].total > 0)
-                .map((b) => {
+                .flatMap((b) => {
                   const s = wdlStatsMap[b.id];
+                  // skip bookmarks with no stats or zero games
+                  if (!s || s.total <= 0) return [];
                   const colorIcon = b.color === 'white' ? (
                     <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white" />
                   ) : b.color === 'black' ? (
@@ -686,7 +687,7 @@ export function OpeningsPage() {
                   const label = colorIcon ? (
                     <span className="inline-flex items-center gap-1.5">{colorIcon}{b.label}</span>
                   ) : b.label;
-                  return { bookmark: b, label, stats: s };
+                  return [{ bookmark: b, label, stats: s }];
                 })
                 .sort((a, b) => b.stats.total - a.stats.total);
 

@@ -99,7 +99,7 @@
 **Milestone Goal:** Clean up and tighten the codebase for long-term maintainability and extendability — no new user-facing features.
 
 - [x] **Phase 40: Static Type Checking** — Integrate `ty` into CI and fix type safety gaps in backend code (completed 2026-04-01)
-- [ ] **Phase 41: Code Quality & Dead Code** — Naming improvements, deduplication, dead code removal, frontend dead export detection
+- [x] **Phase 41: Code Quality & Dead Code** — Naming improvements, deduplication, dead code removal, frontend dead export detection (completed 2026-04-02)
 - [ ] **Phase 42: Backend Optimization** — DB query aggregation, column type optimization, API schema consistency
 - [ ] **Phase 43: Frontend Cleanup** — Refactor button brand colors to CSS variables; optional test coverage analysis
 
@@ -129,7 +129,23 @@ Plans:
   2. Repeated logic is extracted into shared utilities or helpers — no significant copy-paste duplication remains
   3. Unreachable backend code and unused frontend exports are identified and removed
   4. knip.dev (or equivalent) report reviewed; actionable dead exports eliminated
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [x] 41-01-PLAN.md — Install Knip, configure dead export detection, add frontend build/test/knip to CI
+- [x] 41-02-PLAN.md — Backend router prefix consistency, shared apply_game_filters, frontend filter params dedup, dead code review
+- [x] 41-03-PLAN.md — Run Knip report, review and remove confirmed dead frontend exports
+- [x] 41-04-PLAN.md — Enable noUncheckedIndexedAccess in TypeScript, fix 56 type errors across 14 files
+
+### Phase 41.1: Import Speed Optimization (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 41
+**Plans:** 4/4 plans complete
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 41.1 to break down)
 
 ### Phase 42: Backend Optimization
 **Goal**: Backend DB queries are efficient and all API responses use consistent Pydantic schemas
@@ -196,7 +212,7 @@ Plans:
 | 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
 | 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete   | 2026-03-30 |
 | 40. Static Type Checking | v1.7 | 2/2 | Complete    | 2026-04-01 |
-| 41. Code Quality & Dead Code | v1.7 | 0/TBD | Not started | - |
+| 41. Code Quality & Dead Code | v1.7 | 4/4 | Complete    | 2026-04-02 |
 | 42. Backend Optimization | v1.7 | 0/TBD | Not started | - |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
 
@@ -206,7 +222,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/2 plans complete
+**Plans:** 4/4 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

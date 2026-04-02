@@ -11,14 +11,14 @@ Requirements for the consolidation, tooling & refactoring milestone. Each maps t
 
 - [x] **TOOL-01**: Backend static type checking with astral `ty` integrated into CI/CD pipeline
 - [x] **TOOL-02**: Backend type safety review — replace untyped dicts with TypedDicts/Pydantic models, add missing type hints
-- [ ] **TOOL-03**: Evaluate and optionally integrate knip.dev (or similar) for frontend dead export detection
+- [x] **TOOL-03**: Evaluate and optionally integrate knip.dev (or similar) for frontend dead export detection
 - [ ] **TOOL-04**: Add test coverage analysis and reporting (maybe)
 
 ### Code Quality
 
-- [ ] **QUAL-01**: Review and improve naming across codebase (API endpoints, routes, variables)
-- [ ] **QUAL-02**: Identify and eliminate code duplication (DRY principle)
-- [ ] **QUAL-03**: Identify and remove dead code across backend and frontend
+- [x] **QUAL-01**: Review and improve naming across codebase (API endpoints, routes, variables)
+- [x] **QUAL-02**: Identify and eliminate code duplication (DRY principle)
+- [x] **QUAL-03**: Identify and remove dead code across backend and frontend
 
 ### Backend Optimization
 
@@ -53,11 +53,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | TOOL-01 | Phase 40 | Complete |
 | TOOL-02 | Phase 40 | Complete |
-| TOOL-03 | Phase 41 | Pending |
+| TOOL-03 | Phase 41 | Complete |
 | TOOL-04 | Phase 43 | Pending |
-| QUAL-01 | Phase 41 | Pending |
-| QUAL-02 | Phase 41 | Pending |
-| QUAL-03 | Phase 41 | Pending |
+| QUAL-01 | Phase 41 | Complete |
+| QUAL-02 | Phase 41 | Complete |
+| QUAL-03 | Phase 41 | Complete |
 | BOPT-01 | Phase 42 | Pending |
 | BOPT-02 | Phase 42 | Pending |
 | BOPT-03 | Phase 42 | Pending |

@@ -830,7 +830,8 @@ const PIECE_TYPE_MAP: Record<PieceSymbol, number> = {
  */
 function squareToIndex(square: Square): number {
   const file = square.charCodeAt(0) - 97; // 'a' = 0, 'h' = 7
-  const rank = parseInt(square[1]) - 1;   // '1' = 0, '8' = 7
+  // safe: square is always a 2-char chess square string like "e4"
+  const rank = parseInt(square[1]!) - 1;   // '1' = 0, '8' = 7
   return rank * 8 + file;
 }
 
@@ -890,16 +891,18 @@ export function computeHashes(chess: Chess): ZobristHashes {
         //   fullHash pivot  = 1 (matches ZobristHasher where occupied_co[1] = WHITE)
         const whIdx = 64 * ((pieceType - 1) * 2 + 0) + squareIdx;
         const fhIdx = 64 * ((pieceType - 1) * 2 + 1) + squareIdx;
-        whiteHashRaw ^= POLYGLOT_RANDOM_ARRAY[whIdx];
-        fullHashRaw  ^= POLYGLOT_RANDOM_ARRAY[fhIdx];
+        // safe: pieceType in [1..6], squareIdx in [0..63] → indices in [0..767]
+        whiteHashRaw ^= POLYGLOT_RANDOM_ARRAY[whIdx]!;
+        fullHashRaw  ^= POLYGLOT_RANDOM_ARRAY[fhIdx]!;
       } else {
         // Black pieces:
         //   blackHash pivot = 1 (matches _color_hash(board, BLACK) with color_pivot=1)
         //   fullHash pivot  = 0 (matches ZobristHasher where occupied_co[0] = BLACK)
         const bhIdx = 64 * ((pieceType - 1) * 2 + 1) + squareIdx;
         const fhIdx = 64 * ((pieceType - 1) * 2 + 0) + squareIdx;
-        blackHashRaw ^= POLYGLOT_RANDOM_ARRAY[bhIdx];
-        fullHashRaw  ^= POLYGLOT_RANDOM_ARRAY[fhIdx];
+        // safe: pieceType in [1..6], squareIdx in [0..63] → indices in [0..767]
+        blackHashRaw ^= POLYGLOT_RANDOM_ARRAY[bhIdx]!;
+        fullHashRaw  ^= POLYGLOT_RANDOM_ARRAY[fhIdx]!;
       }
     }
   }
@@ -913,10 +916,11 @@ export function computeHashes(chess: Chess): ZobristHashes {
   const activeColor = fenParts[1] ?? 'w';
 
   // Castling rights (indices 768-771)
-  if (castling.includes('K')) fullHashRaw ^= POLYGLOT_RANDOM_ARRAY[768]; // white kingside
-  if (castling.includes('Q')) fullHashRaw ^= POLYGLOT_RANDOM_ARRAY[769]; // white queenside
-  if (castling.includes('k')) fullHashRaw ^= POLYGLOT_RANDOM_ARRAY[770]; // black kingside
-  if (castling.includes('q')) fullHashRaw ^= POLYGLOT_RANDOM_ARRAY[771]; // black queenside
+  // safe: indices 768-771 are within the 781-element POLYGLOT_RANDOM_ARRAY
+  if (castling.includes('K')) fullHashRaw ^= POLYGLOT_RANDOM_ARRAY[768]!; // white kingside
+  if (castling.includes('Q')) fullHashRaw ^= POLYGLOT_RANDOM_ARRAY[769]!; // white queenside
+  if (castling.includes('k')) fullHashRaw ^= POLYGLOT_RANDOM_ARRAY[770]!; // black kingside
+  if (castling.includes('q')) fullHashRaw ^= POLYGLOT_RANDOM_ARRAY[771]!; // black queenside
 
   // En passant (indices 772-779: file a=772 ... h=779)
   // Only XOR if an enemy pawn can actually capture — we follow python-chess convention
@@ -926,12 +930,14 @@ export function computeHashes(chess: Chess): ZobristHashes {
   // FEN only sets ep_square immediately after a double pawn push when capture is possible.
   if (epSquare !== '-') {
     const epFile = epSquare.charCodeAt(0) - 97; // 'a' = 0
-    fullHashRaw ^= POLYGLOT_RANDOM_ARRAY[772 + epFile];
+    // safe: epFile in [0..7], so 772 + epFile in [772..779] (within array bounds)
+    fullHashRaw ^= POLYGLOT_RANDOM_ARRAY[772 + epFile]!;
   }
 
   // Turn: XOR index 780 if WHITE to move (NOT black — opposite of what's intuitive)
+  // safe: index 780 is the last entry in the 781-element POLYGLOT_RANDOM_ARRAY
   if (activeColor === 'w') {
-    fullHashRaw ^= POLYGLOT_RANDOM_ARRAY[780];
+    fullHashRaw ^= POLYGLOT_RANDOM_ARRAY[780]!;
   }
 
   return {

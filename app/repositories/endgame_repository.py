@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.repositories.query_utils import apply_game_filters
 from app.schemas.endgames import EndgameClass
 
 # Piece-count threshold for endgame classification (Lichess definition).
@@ -51,7 +52,7 @@ async def count_filtered_games(
     used to provide context like "X of Y games reached an endgame".
     """
     stmt = select(func.count()).select_from(Game).where(Game.user_id == user_id)
-    stmt = _apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+    stmt = apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
     result = await session.execute(stmt)
     return result.scalar_one()
 
@@ -129,7 +130,7 @@ async def query_endgame_entry_rows(
     )
 
     # Apply standard game filters
-    stmt = _apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+    stmt = apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
 
     result = await session.execute(stmt)
     return list(result.fetchall())
@@ -181,7 +182,7 @@ async def query_endgame_games(
         Game.user_id == user_id,
         Game.id.in_(select(span_subq.c.game_id)),
     )
-    base_stmt = _apply_game_filters(base_stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+    base_stmt = apply_game_filters(base_stmt, time_control, platform, rated, opponent_type, recency_cutoff)
 
     # Count total matching games (before pagination)
     count_stmt = select(func.count()).select_from(base_stmt.subquery())
@@ -271,39 +272,10 @@ async def query_conv_recov_timeline_rows(
         .order_by(Game.played_at.asc())
     )
 
-    stmt = _apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+    stmt = apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
 
     result = await session.execute(stmt)
     return list(result.fetchall())
-
-
-def _apply_game_filters(
-    stmt,
-    time_control: Sequence[str] | None,
-    platform: Sequence[str] | None,
-    rated: bool | None,
-    opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
-):
-    """Apply standard game filter WHERE clauses to a statement.
-
-    Consistent with analysis_repository._apply_game_filters but without color filter
-    (per D-02: no color filter on endgame endpoints).
-    """
-    if time_control is not None:
-        stmt = stmt.where(Game.time_control_bucket.in_(time_control))
-    if platform is not None:
-        stmt = stmt.where(Game.platform.in_(platform))
-    if rated is not None:
-        stmt = stmt.where(Game.rated == rated)
-    if opponent_type == "human":
-        stmt = stmt.where(Game.is_computer_game == False)  # noqa: E712
-    elif opponent_type == "bot":
-        stmt = stmt.where(Game.is_computer_game == True)  # noqa: E712
-    # "both" = no filter
-    if recency_cutoff is not None:
-        stmt = stmt.where(Game.played_at >= recency_cutoff)
-    return stmt
 
 
 # Integer values for all six endgame classes — used in per-type timeline queries.
@@ -356,7 +328,7 @@ async def query_endgame_performance_rows(
         game_cols.where(Game.id.in_(select(endgame_game_ids_subq.c.game_id)))
         .order_by(Game.played_at.asc())
     )
-    endgame_stmt = _apply_game_filters(
+    endgame_stmt = apply_game_filters(
         endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff
     )
 
@@ -365,7 +337,7 @@ async def query_endgame_performance_rows(
         game_cols.where(Game.id.notin_(select(endgame_game_ids_subq.c.game_id)))
         .order_by(Game.played_at.asc())
     )
-    non_endgame_stmt = _apply_game_filters(
+    non_endgame_stmt = apply_game_filters(
         non_endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff
     )
 
@@ -418,7 +390,7 @@ async def query_endgame_timeline_rows(
         game_cols.where(Game.id.in_(select(endgame_game_ids_subq.c.game_id)))
         .order_by(Game.played_at.asc())
     )
-    endgame_stmt = _apply_game_filters(
+    endgame_stmt = apply_game_filters(
         endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff
     )
 
@@ -426,7 +398,7 @@ async def query_endgame_timeline_rows(
         game_cols.where(Game.id.notin_(select(endgame_game_ids_subq.c.game_id)))
         .order_by(Game.played_at.asc())
     )
-    non_endgame_stmt = _apply_game_filters(
+    non_endgame_stmt = apply_game_filters(
         non_endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff
     )
 
@@ -446,7 +418,7 @@ async def query_endgame_timeline_rows(
             game_cols.where(Game.id.in_(select(per_class_game_ids_subq.c.game_id)))
             .order_by(Game.played_at.asc())
         )
-        return _apply_game_filters(
+        return apply_game_filters(
             stmt, time_control, platform, rated, opponent_type, recency_cutoff
         )
 

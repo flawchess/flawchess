@@ -1,6 +1,6 @@
-"""Users router: profile GET/PUT endpoints.
+"""Users router: profile GET/PUT endpoints and user account stats.
 
-HTTP layer only — all DB access via user_repository.
+HTTP layer only — all DB access via user_repository and game_repository.
 """
 
 from typing import Annotated
@@ -56,6 +56,16 @@ async def update_profile(
         chess_com_game_count=counts.get("chess.com", 0),
         lichess_game_count=counts.get("lichess", 0),
     )
+
+
+@router.get("/games/count")
+async def get_game_count(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> dict[str, int]:
+    """Return the total number of games imported by the current user."""
+    count = await game_repository.count_games_for_user(session, user.id)
+    return {"count": count}
 
 
 @router.post("/sentry-test-error", status_code=500)

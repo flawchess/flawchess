@@ -30,12 +30,12 @@ from app.schemas.position_bookmarks import (
 from app.services.opening_lookup import find_opening
 from app.users import current_active_user
 
-router = APIRouter(tags=["position-bookmarks"])
+router = APIRouter(prefix="/position-bookmarks", tags=["position-bookmarks"])
 
 
-# NOTE: /position-bookmarks/suggestions MUST be defined BEFORE /position-bookmarks/{id} so
-# FastAPI does not attempt to parse "suggestions" as an integer bookmark ID.
-@router.get("/position-bookmarks/suggestions", response_model=SuggestionsResponse)
+# NOTE: /suggestions MUST be defined BEFORE /{id} so FastAPI does not attempt to
+# parse "suggestions" as an integer bookmark ID.
+@router.get("/suggestions", response_model=SuggestionsResponse)
 async def get_suggestions(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
@@ -131,7 +131,7 @@ async def get_suggestions(
     return SuggestionsResponse(suggestions=suggestions)
 
 
-@router.get("/position-bookmarks", response_model=list[PositionBookmarkResponse])
+@router.get("", response_model=list[PositionBookmarkResponse])
 async def list_bookmarks(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
@@ -141,7 +141,7 @@ async def list_bookmarks(
     return [PositionBookmarkResponse.model_validate(b) for b in bookmarks]
 
 
-@router.post("/position-bookmarks", response_model=PositionBookmarkResponse, status_code=201)
+@router.post("", response_model=PositionBookmarkResponse, status_code=201)
 async def create_bookmark(
     data: PositionBookmarkCreate,
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -152,9 +152,9 @@ async def create_bookmark(
     return PositionBookmarkResponse.model_validate(bookmark)
 
 
-# NOTE: /position-bookmarks/reorder MUST be defined BEFORE /position-bookmarks/{id} so FastAPI
-# does not interpret "reorder" as an integer bookmark ID.
-@router.put("/position-bookmarks/reorder", response_model=list[PositionBookmarkResponse])
+# NOTE: /reorder MUST be defined BEFORE /{id} so FastAPI does not interpret
+# "reorder" as an integer bookmark ID.
+@router.put("/reorder", response_model=list[PositionBookmarkResponse])
 async def reorder_bookmarks(
     data: PositionBookmarkReorderRequest,
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -165,7 +165,7 @@ async def reorder_bookmarks(
     return [PositionBookmarkResponse.model_validate(b) for b in bookmarks]
 
 
-@router.put("/position-bookmarks/{bookmark_id}", response_model=PositionBookmarkResponse)
+@router.put("/{bookmark_id}", response_model=PositionBookmarkResponse)
 async def update_bookmark(
     bookmark_id: int,
     data: PositionBookmarkUpdate,
@@ -181,7 +181,7 @@ async def update_bookmark(
     return PositionBookmarkResponse.model_validate(bookmark)
 
 
-@router.delete("/position-bookmarks/{bookmark_id}", status_code=204)
+@router.delete("/{bookmark_id}", status_code=204)
 async def delete_bookmark(
     bookmark_id: int,
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -195,7 +195,7 @@ async def delete_bookmark(
 
 
 @router.patch(
-    "/position-bookmarks/{bookmark_id}/match-side",
+    "/{bookmark_id}/match-side",
     response_model=PositionBookmarkResponse,
 )
 async def update_match_side(

@@ -83,7 +83,8 @@ export function RatingChart({ data, platform }: RatingChartProps) {
 
     // Pick the largest step where range/step >= 4 (aim for 4-8 ticks)
     const STEP_CANDIDATES = [10, 20, 50, 100, 200, 500];
-    let step = STEP_CANDIDATES[0];
+    // start with a known numeric value to avoid noUncheckedIndexedAccess widening to number | undefined
+    let step: number = 10;
     for (const candidate of STEP_CANDIDATES) {
       if (range / candidate >= 4) {
         step = candidate;

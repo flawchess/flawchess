@@ -142,9 +142,11 @@ function fractionToAngleDeg(frac: number): number {
 /** Return the zone color for a given fraction. */
 function getZoneColor(pct: number, zones: GaugeZone[]): string {
   for (let i = zones.length - 1; i >= 0; i--) {
-    if (pct >= zones[i].from) return zones[i].color;
+    // safe: loop bounds guarantee i is a valid index
+    if (pct >= zones[i]!.from) return zones[i]!.color;
   }
-  return zones[0].color;
+  // safe: zones is a non-empty array defined by callers
+  return zones[0]!.color;
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
@@ -201,15 +203,17 @@ function GaugeArcs({ zones, glassId, pct }: { zones: GaugeZone[]; glassId: strin
       <g clipPath={`url(#${clipId})`}>
         {/* Layer 1: Full arc at reduced opacity (muted background) */}
         <g opacity="0.3">
-          <circle cx={capStart.x} cy={capStart.y} r={CAP_R} fill={zones[0].color} />
-          <circle cx={capEnd.x} cy={capEnd.y} r={CAP_R} fill={zones[zones.length - 1].color} />
+          {/* safe: zones is always non-empty (callers provide gauge zone definitions) */}
+          <circle cx={capStart.x} cy={capStart.y} r={CAP_R} fill={zones[0]!.color} />
+          <circle cx={capEnd.x} cy={capEnd.y} r={CAP_R} fill={zones[zones.length - 1]!.color} />
           {segments.map((seg, i) => (
             <path key={i} d={seg.path} fill={seg.color} />
           ))}
         </g>
 
         {/* Layer 2: Progress portion at full opacity */}
-        <circle cx={capStart.x} cy={capStart.y} r={CAP_R} fill={zones[0].color} />
+        {/* safe: zones is always non-empty (callers provide gauge zone definitions) */}
+        <circle cx={capStart.x} cy={capStart.y} r={CAP_R} fill={zones[0]!.color} />
         {progressSegments.map((seg, i) => (
           <path key={`p-${i}`} d={seg.path} fill={seg.color} />
         ))}

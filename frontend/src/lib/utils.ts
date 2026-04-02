@@ -14,8 +14,9 @@ function parseDate(d: string): Date {
 /** Days between first and last date in a sorted YYYY-MM-DD array. */
 function dateRangeDays(dates: string[]): number {
   if (dates.length < 2) return 0;
-  const first = parseDate(dates[0]);
-  const last = parseDate(dates[dates.length - 1]);
+  // safe: length check above guarantees both indices are in bounds
+  const first = parseDate(dates[0]!);
+  const last = parseDate(dates[dates.length - 1]!);
   return Math.round((last.getTime() - first.getTime()) / (1000 * 60 * 60 * 24));
 }
 

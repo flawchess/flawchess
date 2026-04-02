@@ -22,9 +22,13 @@ function buildLookup(): Promise<Map<string, Opening>> {
       const lines = text.split('\n');
       // Skip header row
       for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
+        // safe: loop bound guarantees i < lines.length
+        const line = lines[i]!.trim();
         if (!line) continue;
-        const [eco, name, pgn] = line.split('\t');
+        const parts = line.split('\t');
+        const eco = parts[0];
+        const name = parts[1];
+        const pgn = parts[2];
         if (eco && name && pgn) {
           map.set(pgnToSanSequence(pgn), { eco, name });
         }

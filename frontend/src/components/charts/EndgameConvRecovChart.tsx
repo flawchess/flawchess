@@ -80,14 +80,16 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
             <ChartTooltip
               content={({ active, payload }) => {
                 if (!active || !payload?.length) return null;
-                const d = payload[0].payload as ConvRecovDataPoint;
+                // safe: payload.length check above guarantees index 0 exists
+                const d = payload[0]!.payload as ConvRecovDataPoint;
                 return (
                   <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
                     <div className="font-medium">{d.label}</div>
-                    <div style={{ color: chartConfig.conversion_pct.color }}>
+                    {/* safe: chartConfig keys are defined as literal string constants above */}
+                    <div style={{ color: chartConfig['conversion_pct']?.color }}>
                       Conversion: {d.conversion_pct.toFixed(1)}% ({d.conversion_games} games)
                     </div>
-                    <div style={{ color: chartConfig.recovery_pct.color }}>
+                    <div style={{ color: chartConfig['recovery_pct']?.color }}>
                       Recovery: {d.recovery_pct.toFixed(1)}% ({d.recovery_games} games)
                     </div>
                   </div>
