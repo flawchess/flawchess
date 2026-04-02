@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Consolidation, Tooling & Refactoring
 status: verifying
-last_updated: "2026-04-02T20:17:12.376Z"
+last_updated: "2026-04-02T20:23:37.802Z"
 last_activity: 2026-04-02
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 2
   total_plans: 6
   completed_plans: 6
@@ -17,8 +17,8 @@ progress:
 
 ## Current Position
 
-Phase: 41 (code-quality-dead-code) — EXECUTING
-Plan: 4 of 4
+Phase: 41.1
+Plan: Not started
 Status: Phase complete — ready for verification
 Last activity: 2026-04-02
 
@@ -44,6 +44,10 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
+
+### Roadmap Evolution
+
+- Phase 41.1 inserted after Phase 41: Import Speed Optimization (URGENT)
 
 ### Blockers/Concerns
 

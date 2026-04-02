@@ -137,6 +137,16 @@ Plans:
 - [x] 41-03-PLAN.md — Run Knip report, review and remove confirmed dead frontend exports
 - [x] 41-04-PLAN.md — Enable noUncheckedIndexedAccess in TypeScript, fix 56 type errors across 14 files
 
+### Phase 41.1: Import Speed Optimization (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 41
+**Plans:** 4/4 plans complete
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 41.1 to break down)
+
 ### Phase 42: Backend Optimization
 **Goal**: Backend DB queries are efficient and all API responses use consistent Pydantic schemas
 **Depends on**: Phase 40
@@ -202,7 +212,7 @@ Plans:
 | 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
 | 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete   | 2026-03-30 |
 | 40. Static Type Checking | v1.7 | 2/2 | Complete    | 2026-04-01 |
-| 41. Code Quality & Dead Code | v1.7 | 4/4 | Complete   | 2026-04-02 |
+| 41. Code Quality & Dead Code | v1.7 | 4/4 | Complete    | 2026-04-02 |
 | 42. Backend Optimization | v1.7 | 0/TBD | Not started | - |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
 
