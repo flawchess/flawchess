@@ -55,6 +55,7 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260402-psb | Fix frontend cache-busting so deployed updates reach users without manual refresh | 2026-04-02 | 85e7657 | [260402-psb-fix-frontend-cache-busting-so-deployed-u](./quick/260402-psb-fix-frontend-cache-busting-so-deployed-u/) |
+| 260402-qms | Document Sentry access in CLAUDE.md and add error fingerprinting hooks for DB and HTTP errors | 2026-04-02 | d3bbe5f | [260402-qms-document-sentry-access-in-claude-md-and-](./quick/260402-qms-document-sentry-access-in-claude-md-and-/) |
 
 ### Decisions Made (Phase 40)
 
@@ -65,4 +66,4 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **NormalizedGame model_dump() in _flush_batch** — isinstance check maintains dict compat for test mocks
 
 ---
-Last activity: 2026-04-02 - Completed quick task 260402-psb: Fix frontend cache-busting so deployed updates reach users without manual refresh
+Last activity: 2026-04-02 - Completed quick task 260402-qms: Document Sentry access in CLAUDE.md and add error fingerprinting hooks for DB and HTTP errors
