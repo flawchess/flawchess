@@ -68,6 +68,15 @@ gh run watch <run-id>           # Watch a run in progress
 gh pr checks <pr-number>        # Check PR status
 ```
 
+## Database Access (MCP)
+
+Two PostgreSQL MCP servers are configured for direct database queries:
+
+- **`flawchess-db`** — local dev database (Docker on `localhost:5432`). Requires dev DB running: `docker compose -f docker-compose.dev.yml -p flawchess-dev up -d`
+- **`flawchess-prod-db`** — production database via read-only user. Requires SSH tunnel: `bin/prod_db_tunnel.sh` (forwards `localhost:15432` → prod DB on port 5432). Stop with `bin/prod_db_tunnel.sh stop`.
+
+Both are read-only query tools (`mcp__flawchess-db__query`, `mcp__flawchess-prod-db__query`).
+
 ## Architecture
 
 ### Core Concept: Zobrist Hash Position Matching
