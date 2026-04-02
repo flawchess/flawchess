@@ -63,6 +63,18 @@ jobs:
         run: npm run lint
         working-directory: frontend
 
+      - name: Type check and build (tsc + vite)
+        run: npm run build
+        working-directory: frontend
+
+      - name: Run tests (vitest)
+        run: npm test
+        working-directory: frontend
+
+      - name: Dead code check (knip)
+        run: npm run knip
+        working-directory: frontend
+
   deploy:
     needs: test
     if: >-
