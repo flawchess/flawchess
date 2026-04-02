@@ -92,7 +92,8 @@ export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks
     setSaveProgress(0);
 
     for (let i = 0; i < toSave.length; i++) {
-      const { opening, color } = toSave[i];
+      // safe: loop bound guarantees i < toSave.length
+      const { opening, color } = toSave[i]!;
 
       await positionBookmarksApi.create({
         label: opening.label,

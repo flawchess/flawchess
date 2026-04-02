@@ -51,7 +51,8 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
   // Collect all unique dates across all per-type series, sorted chronologically
   const allTypeDates = useMemo(() => [
     ...new Set(
-      typeKeys.flatMap((key) => data.per_type[key].map((p) => p.date))
+      // safe: typeKeys comes from Object.keys(data.per_type), so each key exists
+      typeKeys.flatMap((key) => (data.per_type[key] ?? []).map((p) => p.date))
     ),
   ].sort(), [data.per_type, typeKeys]);
 
@@ -70,7 +71,8 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
   const perTypeData = allTypeDates.map((date) => {
     const point: Record<string, string | number | undefined> = { date };
     for (const key of typeKeys) {
-      const found = data.per_type[key].find((p) => p.date === date);
+      // safe: typeKeys comes from Object.keys(data.per_type), so each key exists
+      const found = (data.per_type[key] ?? []).find((p) => p.date === date);
       if (found) {
         point[key] = found.win_rate;
         point[`${key}_game_count`] = found.game_count;

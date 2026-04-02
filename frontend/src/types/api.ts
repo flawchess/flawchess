@@ -23,7 +23,7 @@ export type TimeControl = 'bullet' | 'blitz' | 'rapid' | 'classical';
 /** Frontend representation: mine/opponent/both (relative to the user's color) */
 export type MatchSide = 'mine' | 'opponent' | 'both';
 /** Backend API representation: white/black/full */
-export type ApiMatchSide = 'white' | 'black' | 'full';
+type ApiMatchSide = 'white' | 'black' | 'full';
 export type Recency = 'week' | 'month' | '3months' | '6months' | 'year' | 'all';
 export type Color = 'white' | 'black';
 export type OpponentType = 'human' | 'bot' | 'both';
@@ -37,20 +37,6 @@ export function resolveMatchSide(matchSide: MatchSide, color: Color): ApiMatchSi
   return color === 'white' ? 'black' : 'white';
 }
 
-
-export interface AnalysisRequest {
-  /** Hash sent as string to avoid JS precision loss. Optional -- omit to get all games. */
-  target_hash?: string;
-  match_side?: ApiMatchSide;
-  time_control?: TimeControl[] | null;
-  platform?: Platform[] | null;
-  rated?: boolean | null;
-  opponent_type?: OpponentType;
-  recency?: Recency | null;
-  color?: Color | null;
-  offset?: number;
-  limit?: number;
-}
 
 export interface WDLStats {
   wins: number;
@@ -91,17 +77,6 @@ export interface AnalysisResponse {
 }
 
 // ─── Next Moves ──────────────────────────────────────────────────────────────
-
-export interface NextMovesRequest {
-  target_hash: string;         // BigInt as decimal string (hashToString output)
-  time_control?: TimeControl[] | null;
-  platform?: Platform[] | null;
-  rated?: boolean | null;
-  opponent_type?: OpponentType;
-  recency?: Recency | null;
-  color?: Color | null;
-  sort_by?: 'frequency' | 'win_rate';
-}
 
 export interface NextMoveEntry {
   move_san: string;

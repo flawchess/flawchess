@@ -3,7 +3,7 @@ import { Chessboard } from 'react-chessboard';
 import { arrowSortKey } from '../../lib/arrowColor';
 import { darkSquareStyle, lightSquareStyle, BOARD_DARK_SQUARE, BOARD_LIGHT_SQUARE } from '../../lib/theme';
 
-export interface BoardArrow {
+interface BoardArrow {
   startSquare: string;
   endSquare: string;
   color: string;
@@ -51,8 +51,9 @@ const ARROW_TIP_OVERSHOOT = 0.15;
 const FILES = 'abcdefgh';
 
 function squareToCoords(square: string, flipped: boolean): [number, number] {
-  const file = FILES.indexOf(square[0]);
-  const rank = parseInt(square[1], 10) - 1;
+  // safe: square is always a 2-char chess square string like "e4"
+  const file = FILES.indexOf(square[0]!);
+  const rank = parseInt(square[1]!, 10) - 1;
   const x = flipped ? 7 - file + 0.5 : file + 0.5;
   const y = flipped ? rank + 0.5 : 7 - rank + 0.5;
   return [x, y];

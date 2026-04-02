@@ -18,7 +18,10 @@ function LazyMiniBoard({ fen, flipped }: { fen: string; flipped: boolean }) {
     const el = ref.current;
     if (!el) return;
     const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) { setVisible(true); observer.disconnect(); } },
+      (entries) => {
+        // safe: IntersectionObserver always provides at least 1 entry when observing 1 element
+        if (entries[0]!.isIntersecting) { setVisible(true); observer.disconnect(); }
+      },
       { rootMargin: '200px' },
     );
     observer.observe(el);
