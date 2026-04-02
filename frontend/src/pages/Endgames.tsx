@@ -62,7 +62,7 @@ export function EndgamesPage() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // ── Data ─────────────────────────────────────────────────────────────────────
-  const { data: statsData, isLoading: statsLoading } = useEndgameStats(debouncedFilters);
+  const { data: statsData, isLoading: statsLoading, isError: statsError } = useEndgameStats(debouncedFilters);
   const { data: perfData } = useEndgamePerformance(debouncedFilters);
   const { data: timelineData } = useEndgameTimeline(debouncedFilters);
   const { data: convRecovData } = useEndgameConvRecovTimeline(debouncedFilters);
@@ -168,6 +168,13 @@ export function EndgamesPage() {
             </div>
           )}
         </>
+      ) : statsError ? (
+        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
+          <p className="mb-2 text-base font-medium text-foreground">Failed to load endgame data</p>
+          <p className="text-sm text-muted-foreground">
+            Something went wrong. Please try again in a moment.
+          </p>
+        </div>
       ) : statsData && statsData.categories.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
           <p className="mb-2 text-base font-medium text-foreground">No endgame data yet</p>

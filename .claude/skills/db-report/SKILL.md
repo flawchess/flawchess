@@ -15,15 +15,12 @@ Generate a database storage and performance report by querying the FlawChess Pos
 
 ## Connections
 
-### Local dev database
-```
-docker compose -f docker-compose.dev.yml -p flawchess-dev exec -T db psql -U flawchess -d flawchess -c "<SQL>"
-```
+Use the PostgreSQL MCP servers for direct database queries (no SSH or psql needed):
 
-### Production database
-```
-ssh flawchess "cd /opt/flawchess && docker compose exec -T db psql -U flawchess -d flawchess -c \"<SQL>\""
-```
+- **Local dev**: `mcp__flawchess-db__query` — requires dev DB running: `docker compose -f docker-compose.dev.yml -p flawchess-dev up -d`
+- **Production**: `mcp__flawchess-prod-db__query` — requires SSH tunnel: `bin/prod_db_tunnel.sh`
+
+Both accept a single `sql` parameter. Run one SQL statement per call (no semicolon-separated multi-statements).
 
 ## Report scope
 
@@ -33,13 +30,21 @@ The report has two sections. By default, run **both** sections. If the user only
 
 ## Section 1: Storage Report
 
-Run all three queries in parallel (separate Bash tool calls in a single message) since they are independent.
+Run all queries in parallel (separate MCP tool calls in a single message) since they are independent.
 
-### Query 1 — Overview
+### Query 1a — Database size
 ```sql
-SELECT pg_size_pretty(pg_database_size('flawchess')) AS db_size;
-SELECT count(*) AS total_games FROM games;
-SELECT count(*) AS total_positions FROM game_positions;
+SELECT pg_size_pretty(pg_database_size('flawchess')) AS db_size
+```
+
+### Query 1b — Game count
+```sql
+SELECT count(*) AS total_games FROM games
+```
+
+### Query 1c — Position count
+```sql
+SELECT count(*) AS total_positions FROM game_positions
 ```
 
 ### Query 2 — Per-table sizes
@@ -66,7 +71,7 @@ End with a brief summary highlighting notable findings (e.g., index-to-data rati
 
 ## Section 2: Performance Analysis
 
-Run all five queries in parallel (separate Bash tool calls in a single message) since they are independent.
+Run all five queries in parallel (separate MCP tool calls in a single message) since they are independent.
 
 ### Query 4 — Top 20 queries by average execution time (requires pg_stat_statements)
 ```sql

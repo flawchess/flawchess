@@ -11,7 +11,6 @@ Exposes:
 - get_endgame_timeline: orchestrator for GET /api/endgames/timeline
 """
 
-import asyncio
 from collections import defaultdict
 from collections.abc import Sequence
 from enum import IntEnum
@@ -491,26 +490,26 @@ async def get_endgame_performance(
     cutoff = recency_cutoff(recency)
 
     # Fetch entry rows directly (not via get_endgame_stats) to avoid redundant
-    # count_filtered_games query and enable concurrent execution with performance rows.
-    (endgame_rows, non_endgame_rows), entry_rows = await asyncio.gather(
-        query_endgame_performance_rows(
-            session,
-            user_id=user_id,
-            time_control=time_control,
-            platform=platform,
-            rated=rated,
-            opponent_type=opponent_type,
-            recency_cutoff=cutoff,
-        ),
-        query_endgame_entry_rows(
-            session,
-            user_id=user_id,
-            time_control=time_control,
-            platform=platform,
-            rated=rated,
-            opponent_type=opponent_type,
-            recency_cutoff=cutoff,
-        ),
+    # count_filtered_games query.
+    # Execute sequentially — AsyncSession is not safe for concurrent use from
+    # multiple coroutines, and shares a single DB connection anyway.
+    endgame_rows, non_endgame_rows = await query_endgame_performance_rows(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+    )
+    entry_rows = await query_endgame_entry_rows(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
     )
 
     # Build WDL summaries for each group
