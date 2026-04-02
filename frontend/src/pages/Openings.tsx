@@ -627,6 +627,13 @@ export function OpeningsPage() {
           <p className="text-base font-medium text-foreground">No games matched</p>
           <p className="mt-1 text-sm">Try adjusting the time control, opponent, rated, or recency filters.</p>
         </div>
+      ) : gamesQuery.isError ? (
+        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
+          <p className="mb-2 text-base font-medium text-foreground">Failed to load games</p>
+          <p className="text-sm text-muted-foreground">
+            Something went wrong. Please try again in a moment.
+          </p>
+        </div>
       ) : gamesData ? (
         <>
           <div className="charcoal-texture rounded-md p-4">

@@ -217,9 +217,11 @@ Sentry is initialized in both backend (`app/main.py`) and frontend (`frontend/sr
 - **Global TanStack Query errors** are already captured in `frontend/src/lib/queryClient.ts` via `QueryCache.onError` and `MutationCache.onError`. Do NOT add duplicate `Sentry.captureException()` in components that use `useQuery`/`useMutation` — the global handler covers them.
 - **Manual fetch/axios calls in catch blocks** (auth forms, direct API calls outside TanStack Query) MUST call `Sentry.captureException(error, { tags: { source: '...' } })`.
 - **Skip expected failures** — e.g. checking if Google OAuth is available (`.catch(() => setGoogleAvailable(false))`) is expected to fail in dev environments.
+- **Always handle `isError` in data-loading ternary chains** — every `useQuery` result rendered with a loading/data/empty chain must include an `isError` branch showing "Failed to load [X]. Something went wrong. Please try again in a moment." Never let errors fall through to empty-state messages like "No games imported yet" — this misleads users into thinking they have no data when the API simply failed.
 
 ## Critical Constraints
 
+- **Never use `asyncio.gather` on the same `AsyncSession`** — SQLAlchemy's `AsyncSession` is not safe for concurrent use from multiple coroutines. A single session uses one DB connection, so gather provides no concurrency benefit anyway. Execute queries sequentially within the same session.
 - Always use `httpx.AsyncClient` for external HTTP calls — `requests` blocks the event loop
 - lichess `since`/`until` parameters use millisecond timestamps, not seconds
 - Only import `Standard` variant games — filter out Chess960, crazyhouse, etc.

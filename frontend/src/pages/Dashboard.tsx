@@ -580,6 +580,13 @@ export function DashboardPage() {
           <div className="flex items-center justify-center py-12">
             <p className="text-muted-foreground">Loading games...</p>
           </div>
+        ) : defaultGames.isError ? (
+          <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
+            <p className="mb-2 text-base font-medium text-foreground">Failed to load games</p>
+            <p className="text-sm text-muted-foreground">
+              Something went wrong. Please try again in a moment.
+            </p>
+          </div>
         ) : defaultGames.data ? (
           <>
             <GameCardList
