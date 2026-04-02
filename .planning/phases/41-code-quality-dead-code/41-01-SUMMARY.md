@@ -109,6 +109,16 @@ None - no external service configuration required.
 - Plan 03 (dead code cleanup) can now use `npm run knip` to identify and verify removal of dead exports
 - CI will block PRs that introduce new dead exports once Plan 03 cleans up existing findings
 
+## Self-Check: PASSED
+
+- FOUND: frontend/knip.json
+- FOUND: frontend/package.json (knip devDependency + knip script)
+- FOUND: .github/workflows/ci.yml (3 new frontend steps)
+- FOUND: .planning/phases/41-code-quality-dead-code/41-01-SUMMARY.md
+- FOUND: commit cdfed5f (chore: install knip)
+- FOUND: commit 3784689 (feat: add CI steps)
+- FOUND: commit 4dd2b2b (docs: plan metadata)
+
 ---
 *Phase: 41-code-quality-dead-code*
 *Completed: 2026-04-02*
