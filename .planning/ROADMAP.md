@@ -129,7 +129,13 @@ Plans:
   2. Repeated logic is extracted into shared utilities or helpers — no significant copy-paste duplication remains
   3. Unreachable backend code and unused frontend exports are identified and removed
   4. knip.dev (or equivalent) report reviewed; actionable dead exports eliminated
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 41-01-PLAN.md — Install Knip, configure dead export detection, add frontend build/test/knip to CI
+- [ ] 41-02-PLAN.md — Backend router prefix consistency, shared apply_game_filters, frontend filter params dedup, dead code review
+- [ ] 41-03-PLAN.md — Run Knip report, review and remove confirmed dead frontend exports
+- [ ] 41-04-PLAN.md — Enable noUncheckedIndexedAccess in TypeScript, fix 56 type errors across 14 files
 
 ### Phase 42: Backend Optimization
 **Goal**: Backend DB queries are efficient and all API responses use consistent Pydantic schemas
@@ -196,7 +202,7 @@ Plans:
 | 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
 | 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete   | 2026-03-30 |
 | 40. Static Type Checking | v1.7 | 2/2 | Complete    | 2026-04-01 |
-| 41. Code Quality & Dead Code | v1.7 | 0/TBD | Not started | - |
+| 41. Code Quality & Dead Code | v1.7 | 0/4 | In progress | - |
 | 42. Backend Optimization | v1.7 | 0/TBD | Not started | - |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
 
