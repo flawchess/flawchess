@@ -7,7 +7,6 @@ Functions:
 - query_endgame_timeline_rows: rows for rolling-window time series, overall and per-type
 """
 
-import asyncio
 import datetime
 from collections.abc import Sequence
 from typing import Any
@@ -370,10 +369,11 @@ async def query_endgame_performance_rows(
         non_endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff
     )
 
-    endgame_result, non_endgame_result = await asyncio.gather(
-        session.execute(endgame_stmt),
-        session.execute(non_endgame_stmt),
-    )
+    # Execute sequentially — AsyncSession is not safe for concurrent use from
+    # multiple coroutines, and a single session uses one DB connection so there's
+    # no concurrency benefit from asyncio.gather here.
+    endgame_result = await session.execute(endgame_stmt)
+    non_endgame_result = await session.execute(non_endgame_stmt)
 
     return list(endgame_result.fetchall()), list(non_endgame_result.fetchall())
 
@@ -389,9 +389,8 @@ async def query_endgame_timeline_rows(
 ) -> tuple[list[Row[Any]], list[Row[Any]], dict[int, list[Row[Any]]]]:
     """Return rows for rolling-window time series (overall and per endgame class).
 
-    Runs 8 queries concurrently via asyncio.gather:
-    - 2 overall queries (endgame games, non-endgame games)
-    - 6 per-type queries (one per endgame class integer 1-6)
+    Runs 8 queries sequentially (AsyncSession is not safe for concurrent use
+    from multiple coroutines, and shares a single DB connection anyway).
 
     Returns: (endgame_rows, non_endgame_rows, per_type_rows)
     where per_type_rows is dict[class_int, list[(played_at, result, user_color)]].
@@ -454,18 +453,16 @@ async def query_endgame_timeline_rows(
     class_ints = list(_ENDGAME_CLASS_INTS)
     per_class_stmts = [_per_class_stmt(ci) for ci in class_ints]
 
-    # Run all 8 queries concurrently
-    all_results = await asyncio.gather(
-        session.execute(endgame_stmt),
-        session.execute(non_endgame_stmt),
-        *[session.execute(s) for s in per_class_stmts],
-    )
+    # Execute sequentially — AsyncSession is not safe for concurrent use.
+    endgame_result = await session.execute(endgame_stmt)
+    endgame_rows = list(endgame_result.fetchall())
 
-    endgame_rows = list(all_results[0].fetchall())
-    non_endgame_rows = list(all_results[1].fetchall())
-    per_type_rows: dict[int, list[Row[Any]]] = {
-        class_int: list(all_results[2 + i].fetchall())
-        for i, class_int in enumerate(class_ints)
-    }
+    non_endgame_result = await session.execute(non_endgame_stmt)
+    non_endgame_rows = list(non_endgame_result.fetchall())
+
+    per_type_rows: dict[int, list[Row[Any]]] = {}
+    for i, class_int in enumerate(class_ints):
+        result = await session.execute(per_class_stmts[i])
+        per_type_rows[class_int] = list(result.fetchall())
 
     return endgame_rows, non_endgame_rows, per_type_rows
