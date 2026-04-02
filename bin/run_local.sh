@@ -44,7 +44,7 @@ BACKEND_PID=$!
 # Start frontend
 echo "Starting frontend..."
 cd frontend
-[ ! -d node_modules ] && npm install
+npm install
 npm run dev:mobile &
 FRONTEND_PID=$!
 cd ..
