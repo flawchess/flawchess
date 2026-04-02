@@ -61,6 +61,27 @@ apiClient.interceptors.response.use(
   },
 );
 
+// ─── Filter Params Builder ────────────────────────────────────────────────────
+
+/** Build query params object from standard filter parameters, omitting empty/default values. */
+function buildFilterParams(params: {
+  time_control?: string[] | null;
+  platform?: string[] | null;
+  recency?: string | null;
+  rated?: boolean | null;
+  opponent_type?: string;
+  window?: number;
+}): Record<string, string | string[] | number | boolean> {
+  const result: Record<string, string | string[] | number | boolean> = {};
+  if (params.time_control) result.time_control = params.time_control;
+  if (params.platform) result.platform = params.platform;
+  if (params.recency && params.recency !== 'all') result.recency = params.recency;
+  if (params.rated !== null && params.rated !== undefined) result.rated = params.rated;
+  if (params.opponent_type && params.opponent_type !== 'all') result.opponent_type = params.opponent_type;
+  if (params.window) result.window = params.window;
+  return result;
+}
+
 // ─── Position Bookmarks API ───────────────────────────────────────────────────
 
 export const positionBookmarksApi = {
@@ -104,13 +125,7 @@ export const statsApi = {
     opponent_type?: string;
   }) =>
     apiClient.get<MostPlayedOpeningsResponse>('/stats/most-played-openings', {
-      params: {
-        ...(params?.recency ? { recency: params.recency } : {}),
-        ...(params?.time_control ? { time_control: params.time_control } : {}),
-        ...(params?.platform ? { platform: params.platform } : {}),
-        ...(params?.rated !== undefined && params?.rated !== null ? { rated: params.rated } : {}),
-        ...(params?.opponent_type && params.opponent_type !== 'all' ? { opponent_type: params.opponent_type } : {}),
-      },
+      params: buildFilterParams(params ?? {}),
     }).then(r => r.data),
 };
 
@@ -126,13 +141,7 @@ export const endgameApi = {
     opponent_type?: string;
   }) =>
     apiClient.get<EndgameStatsResponse>('/endgames/stats', {
-      params: {
-        ...(params.time_control ? { time_control: params.time_control } : {}),
-        ...(params.platform ? { platform: params.platform } : {}),
-        ...(params.recency && params.recency !== 'all' ? { recency: params.recency } : {}),
-        ...(params.rated !== null && params.rated !== undefined ? { rated: params.rated } : {}),
-        ...(params.opponent_type && params.opponent_type !== 'all' ? { opponent_type: params.opponent_type } : {}),
-      },
+      params: buildFilterParams(params),
     }).then(r => r.data),
 
   getGames: (params: {
@@ -148,11 +157,7 @@ export const endgameApi = {
     apiClient.get<EndgameGamesResponse>('/endgames/games', {
       params: {
         endgame_class: params.endgame_class,
-        ...(params.time_control ? { time_control: params.time_control } : {}),
-        ...(params.platform ? { platform: params.platform } : {}),
-        ...(params.recency && params.recency !== 'all' ? { recency: params.recency } : {}),
-        ...(params.rated !== null && params.rated !== undefined ? { rated: params.rated } : {}),
-        ...(params.opponent_type && params.opponent_type !== 'all' ? { opponent_type: params.opponent_type } : {}),
+        ...buildFilterParams(params),
         offset: params.offset ?? 0,
         limit: params.limit ?? 20,
       },
@@ -166,13 +171,7 @@ export const endgameApi = {
     opponent_type?: string;
   }) =>
     apiClient.get<EndgamePerformanceResponse>('/endgames/performance', {
-      params: {
-        ...(params.time_control ? { time_control: params.time_control } : {}),
-        ...(params.platform ? { platform: params.platform } : {}),
-        ...(params.recency && params.recency !== 'all' ? { recency: params.recency } : {}),
-        ...(params.rated !== null && params.rated !== undefined ? { rated: params.rated } : {}),
-        ...(params.opponent_type && params.opponent_type !== 'all' ? { opponent_type: params.opponent_type } : {}),
-      },
+      params: buildFilterParams(params),
     }).then(r => r.data),
 
   getTimeline: (params: {
@@ -184,14 +183,7 @@ export const endgameApi = {
     window?: number;
   }) =>
     apiClient.get<EndgameTimelineResponse>('/endgames/timeline', {
-      params: {
-        ...(params.time_control ? { time_control: params.time_control } : {}),
-        ...(params.platform ? { platform: params.platform } : {}),
-        ...(params.recency && params.recency !== 'all' ? { recency: params.recency } : {}),
-        ...(params.rated !== null && params.rated !== undefined ? { rated: params.rated } : {}),
-        ...(params.opponent_type && params.opponent_type !== 'all' ? { opponent_type: params.opponent_type } : {}),
-        ...(params.window ? { window: params.window } : {}),
-      },
+      params: buildFilterParams(params),
     }).then(r => r.data),
 
   getConvRecovTimeline: (params: {
@@ -203,13 +195,6 @@ export const endgameApi = {
     window?: number;
   }) =>
     apiClient.get<ConvRecovTimelineResponse>('/endgames/conv-recov-timeline', {
-      params: {
-        ...(params.time_control ? { time_control: params.time_control } : {}),
-        ...(params.platform ? { platform: params.platform } : {}),
-        ...(params.recency && params.recency !== 'all' ? { recency: params.recency } : {}),
-        ...(params.rated !== null && params.rated !== undefined ? { rated: params.rated } : {}),
-        ...(params.opponent_type && params.opponent_type !== 'all' ? { opponent_type: params.opponent_type } : {}),
-        ...(params.window ? { window: params.window } : {}),
-      },
+      params: buildFilterParams(params),
     }).then(r => r.data),
 };

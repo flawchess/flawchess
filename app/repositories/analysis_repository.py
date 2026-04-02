@@ -11,6 +11,7 @@ from sqlalchemy.orm import aliased
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.repositories.query_utils import apply_game_filters
 
 # Maps match_side values to the corresponding GamePosition hash column.
 HASH_COLUMN_MAP = {
@@ -241,38 +242,6 @@ async def query_matching_games(
     return games, total
 
 
-def _apply_game_filters(
-    stmt: Any,
-    time_control: Sequence[str] | None,
-    platform: Sequence[str] | None,
-    rated: bool | None,
-    opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
-    color: str | None,
-) -> Any:
-    """Apply standard game filter WHERE clauses to a statement.
-
-    Shared by query_next_moves and query_transposition_counts to ensure
-    consistent filter application without duplicating logic.
-    """
-    if time_control is not None:
-        stmt = stmt.where(Game.time_control_bucket.in_(time_control))
-    if platform is not None:
-        stmt = stmt.where(Game.platform.in_(platform))
-    if rated is not None:
-        stmt = stmt.where(Game.rated == rated)
-    if opponent_type == "human":
-        stmt = stmt.where(Game.is_computer_game == False)  # noqa: E712
-    elif opponent_type == "bot":
-        stmt = stmt.where(Game.is_computer_game == True)  # noqa: E712
-    # "both" = no filter
-    if recency_cutoff is not None:
-        stmt = stmt.where(Game.played_at >= recency_cutoff)
-    if color is not None:
-        stmt = stmt.where(Game.user_color == color)
-    return stmt
-
-
 async def query_next_moves(
     session: AsyncSession,
     user_id: int,
@@ -340,7 +309,7 @@ async def query_next_moves(
         .group_by(gp1.move_san, gp2.full_hash)
     )
 
-    stmt = _apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff, color)
+    stmt = apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff, color)
 
     rows = await session.execute(stmt)
     return list(rows.all())
@@ -382,7 +351,7 @@ async def query_transposition_counts(
         .group_by(GamePosition.full_hash)
     )
 
-    stmt = _apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff, color)
+    stmt = apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff, color)
 
     rows = await session.execute(stmt)
     return {row.result_hash: row.transposition_count for row in rows}

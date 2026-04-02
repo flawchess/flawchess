@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.repositories.query_utils import apply_game_filters
 
 # Standalone MetaData (not Base.metadata) keeps the view invisible to Alembic autogenerate.
 _openings_dedup = Table(
@@ -161,30 +162,6 @@ async def query_results_by_color(
     return list(result.fetchall())
 
 
-def _apply_game_filters(
-    stmt,
-    time_control: Sequence[str] | None,
-    platform: Sequence[str] | None,
-    rated: bool | None,
-    opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
-):
-    """Apply standard game filter WHERE clauses to a statement."""
-    if time_control is not None:
-        stmt = stmt.where(Game.time_control_bucket.in_(time_control))
-    if platform is not None:
-        stmt = stmt.where(Game.platform.in_(platform))
-    if rated is not None:
-        stmt = stmt.where(Game.rated == rated)
-    if opponent_type == "human":
-        stmt = stmt.where(Game.is_computer_game == False)  # noqa: E712
-    elif opponent_type == "bot":
-        stmt = stmt.where(Game.is_computer_game == True)  # noqa: E712
-    if recency_cutoff is not None:
-        stmt = stmt.where(Game.played_at >= recency_cutoff)
-    return stmt
-
-
 async def query_top_openings_sql_wdl(
     session: AsyncSession,
     user_id: int,
@@ -254,7 +231,7 @@ async def query_top_openings_sql_wdl(
         .limit(limit)
     )
 
-    stmt = _apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+    stmt = apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
 
     result = await session.execute(stmt)
     return list(result.fetchall())
@@ -309,7 +286,7 @@ async def query_position_wdl_batch(
     )
     if color is not None:
         dedup = dedup.where(Game.user_color == color)
-    dedup = _apply_game_filters(dedup, time_control, platform, rated, opponent_type, recency_cutoff)
+    dedup = apply_game_filters(dedup, time_control, platform, rated, opponent_type, recency_cutoff)
     dedup = dedup.subquery()
 
     stmt = (
