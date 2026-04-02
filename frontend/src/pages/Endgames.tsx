@@ -66,7 +66,7 @@ export function EndgamesPage() {
   const { data: perfData } = useEndgamePerformance(debouncedFilters);
   const { data: timelineData } = useEndgameTimeline(debouncedFilters);
   const { data: convRecovData } = useEndgameConvRecovTimeline(debouncedFilters);
-  const { data: gamesData, isLoading: gamesLoading } = useEndgameGames(
+  const { data: gamesData, isLoading: gamesLoading, isError: gamesError } = useEndgameGames(
     selectedCategory,
     debouncedFilters,
     gamesOffset,
@@ -240,6 +240,13 @@ export function EndgamesPage() {
       {gamesLoading ? (
         <div className="flex items-center justify-center py-12">
           <p className="text-muted-foreground">Loading games...</p>
+        </div>
+      ) : gamesError ? (
+        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
+          <p className="mb-2 text-base font-medium text-foreground">Failed to load games</p>
+          <p className="text-sm text-muted-foreground">
+            Something went wrong. Please try again in a moment.
+          </p>
         </div>
       ) : gamesData && gamesData.games.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
