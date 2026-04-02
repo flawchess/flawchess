@@ -50,6 +50,12 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
 - bulk_insert_positions chunk_size tuning required when adding columns — asyncpg 32767 arg limit
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260402-psb | Fix frontend cache-busting so deployed updates reach users without manual refresh | 2026-04-02 | 85e7657 | [260402-psb-fix-frontend-cache-busting-so-deployed-u](./quick/260402-psb-fix-frontend-cache-busting-so-deployed-u/) |
+
 ### Decisions Made (Phase 40)
 
 - **Row[Any] return types in repositories** — Service layer will adopt TypedDicts/named tuples in Plan 02
@@ -59,4 +65,4 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **NormalizedGame model_dump() in _flush_batch** — isinstance check maintains dict compat for test mocks
 
 ---
-Last activity: 2026-04-01 - Phase 40 Plan 02 complete: service-layer typing, zero ty errors achieved
+Last activity: 2026-04-02 - Completed quick task 260402-psb: Fix frontend cache-busting so deployed updates reach users without manual refresh
