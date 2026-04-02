@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Consolidation, Tooling & Refactoring
-status: verifying
-last_updated: "2026-04-01T05:28:53.767Z"
-last_activity: 2026-04-01
+status: executing
+last_updated: "2026-04-02T19:53:36.554Z"
+last_activity: 2026-04-02
 progress:
   total_phases: 8
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 6
+  completed_plans: 3
   percent: 100
 ---
 
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-04-01
+Phase: 41 (code-quality-dead-code) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-04-02
 
 Progress: [██████████] 100%
 
@@ -65,5 +65,11 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **cast() for API dict values to Literal types** — Narrow values from external API dicts without runtime overhead
 - **NormalizedGame model_dump() in _flush_batch** — isinstance check maintains dict compat for test mocks
 
+### Decisions Made (Phase 41, Plan 01)
+
+- **Minimal knip.json config** — Vite/Vitest plugins auto-activate from devDependencies; no explicit plugin config needed
+- **CI step ordering: eslint -> build -> test -> knip** — type errors caught before test failures, dead code last
+- **Knip exit 1 acceptable during Plan 01** — existing dead code will be cleaned up in Plan 03; CI gate enforces no new dead code after cleanup
+
 ---
-Last activity: 2026-04-02 - Completed quick task 260402-qms: Document Sentry access in CLAUDE.md and add error fingerprinting hooks for DB and HTTP errors
+Last activity: 2026-04-02 - Completed 41-01-PLAN.md: Install Knip and add frontend CI steps
