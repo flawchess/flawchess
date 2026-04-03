@@ -64,6 +64,7 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 | 260403-ci9 | Full rename of analysis modules to openings — files, imports, comments, variables, parameters | 2026-04-03 | c81612d | [260403-ci9-full-rename-of-analysis-modules-to-openi](./quick/260403-ci9-full-rename-of-analysis-modules-to-openi/) |
 | 260403-dh2 | Rename /openings/compare to /openings/stats and /endgames/statistics to /endgames/stats | 2026-04-03 | 027c2f9 | [260403-dh2-rename-openings-compare-to-openings-stat](./quick/260403-dh2-rename-openings-compare-to-openings-stat/) |
 | 260403-kwm | Write meaningful tests for biggest coverage gaps: bookmarks router, stats service, openings time series | 2026-04-03 | fb184f1 | [260403-kwm-write-meaningful-tests-for-the-biggest-c](./quick/260403-kwm-write-meaningful-tests-for-the-biggest-c/) |
+| 260403-ld8 | Frontend unit tests: resolveMatchSide, pgnToSanArray, date tick formatters, Zobrist hash vectors | 2026-04-03 | e757227 | [260403-ld8-frontend-component-test-coverage-add-tes](./quick/260403-ld8-frontend-component-test-coverage-add-tes/) |
 
 ### Decisions Made (Phase 40)
 
@@ -128,4 +129,4 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **tabs.tsx glass overlay unchanged** — Tailwind variant prefixes only compose with Tailwind utilities, not arbitrary CSS classes; inline `bg-[image:...]` is the correct approach
 
 ---
-Last activity: 2026-04-03 - Completed quick task 260403-kwm (meaningful tests for coverage gaps)
+Last activity: 2026-04-03 - Completed quick task 260403-ld8 (frontend unit tests: resolveMatchSide, pgnToSanArray, date formatters, Zobrist hash vectors)
