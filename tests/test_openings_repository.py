@@ -1025,3 +1025,200 @@ class TestNextMovesNullMoveExcluded:
         )
 
         assert rows == [], f"Expected no rows, got: {rows}"
+
+
+# ---------------------------------------------------------------------------
+# TestQueryWDLCounts — SQL aggregation replacing Python W/D/L loops
+# ---------------------------------------------------------------------------
+
+WDL_TARGET_HASH = 800000  # distinct hash for WDL count tests
+
+
+class TestQueryWDLCounts:
+    """query_wdl_counts() returns correct (total, wins, draws, losses) from SQL aggregation.
+
+    Coverage:
+    - BOPT-01: SQL aggregation returns same W/D/L as manual Python counting
+    - target_hash=None (all-games mode) returns correct counts
+    - Filter parameters (time_control, color) narrow counts correctly
+    - No matching games returns (0, 0, 0, 0)
+    - Transposition dedup: game counted once even if hash appears at multiple plies
+    """
+
+    @pytest.mark.asyncio
+    async def test_basic_wdl_counts_with_target_hash(self, db_session: AsyncSession) -> None:
+        """Seed 3 games (1W 1D 1L) at WDL_TARGET_HASH, assert SQL aggregate matches."""
+        from app.repositories.openings_repository import query_wdl_counts
+        from app.models.game_position import GamePosition
+
+        await _seed_game(db_session, result="1-0", user_color="white", full_hash=WDL_TARGET_HASH)
+        await _seed_game(db_session, result="1/2-1/2", user_color="white", full_hash=WDL_TARGET_HASH)
+        await _seed_game(db_session, result="0-1", user_color="white", full_hash=WDL_TARGET_HASH)
+
+        row = await query_wdl_counts(
+            db_session,
+            user_id=1,
+            hash_column=GamePosition.full_hash,
+            target_hash=WDL_TARGET_HASH,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+
+        assert row.total == 3
+        assert row.wins == 1
+        assert row.draws == 1
+        assert row.losses == 1
+
+    @pytest.mark.asyncio
+    async def test_wdl_counts_no_target_hash(self, db_session: AsyncSession) -> None:
+        """target_hash=None (all-games mode) sums all user's games regardless of position."""
+        from app.repositories.openings_repository import query_wdl_counts
+
+        # Seed 2 wins for user 1 (at different hashes — no position filter)
+        await _seed_game(db_session, result="1-0", user_color="white", full_hash=WDL_TARGET_HASH + 1)
+        await _seed_game(db_session, result="1-0", user_color="white", full_hash=WDL_TARGET_HASH + 2)
+        # Seed 1 loss for user 2 (must not appear in user 1's count)
+        await _seed_game(db_session, user_id=2, result="0-1", user_color="white", full_hash=WDL_TARGET_HASH + 1)
+
+        row = await query_wdl_counts(
+            db_session,
+            user_id=1,
+            hash_column=None,
+            target_hash=None,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+
+        assert row.wins == 2
+        assert row.losses == 0
+
+    @pytest.mark.asyncio
+    async def test_wdl_counts_with_filters(self, db_session: AsyncSession) -> None:
+        """time_control and color filters narrow the aggregate correctly."""
+        from app.repositories.openings_repository import query_wdl_counts
+        from app.models.game_position import GamePosition
+
+        # Blitz win as white
+        await _seed_game(
+            db_session, result="1-0", user_color="white",
+            time_control_bucket="blitz", full_hash=WDL_TARGET_HASH + 10,
+        )
+        # Rapid loss as white (excluded by time_control filter)
+        await _seed_game(
+            db_session, result="0-1", user_color="white",
+            time_control_bucket="rapid", full_hash=WDL_TARGET_HASH + 10,
+        )
+        # Blitz win as black (excluded by color filter)
+        await _seed_game(
+            db_session, result="0-1", user_color="black",
+            time_control_bucket="blitz", full_hash=WDL_TARGET_HASH + 10,
+        )
+
+        row = await query_wdl_counts(
+            db_session,
+            user_id=1,
+            hash_column=GamePosition.full_hash,
+            target_hash=WDL_TARGET_HASH + 10,
+            time_control=["blitz"],
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color="white",
+        )
+
+        assert row.total == 1
+        assert row.wins == 1
+        assert row.draws == 0
+        assert row.losses == 0
+
+    @pytest.mark.asyncio
+    async def test_wdl_counts_no_matches_returns_zeros(self, db_session: AsyncSession) -> None:
+        """When no games match, query_wdl_counts returns (0, 0, 0, 0) — not an empty result."""
+        from app.repositories.openings_repository import query_wdl_counts
+        from app.models.game_position import GamePosition
+
+        row = await query_wdl_counts(
+            db_session,
+            user_id=1,
+            hash_column=GamePosition.full_hash,
+            target_hash=999999999,  # hash that was never inserted
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+
+        assert row.total == 0
+        assert row.wins == 0
+        assert row.draws == 0
+        assert row.losses == 0
+
+    @pytest.mark.asyncio
+    async def test_wdl_counts_transposition_dedup(self, db_session: AsyncSession) -> None:
+        """A game with target hash at two plies is counted once (not twice)."""
+        from app.repositories.openings_repository import query_wdl_counts
+        from app.models.game_position import GamePosition
+
+        DEDUP_WDL_HASH = 801000
+
+        game = Game(
+            user_id=1,
+            platform="chess.com",
+            platform_game_id=_unique_game_id(),
+            platform_url=None,
+            pgn="1. e4 e5 2. Nf3 *",
+            variant="Standard",
+            result="1-0",
+            user_color="white",
+            time_control_str="600+0",
+            time_control_bucket="blitz",
+            time_control_seconds=600,
+            rated=True,
+            white_username="testuser",
+            black_username="opp",
+        )
+        game.played_at = datetime.datetime.now(tz=datetime.timezone.utc)
+        db_session.add(game)
+        await db_session.flush()
+
+        # Same hash appears at two different plies
+        for ply in (2, 4):
+            pos = GamePosition(
+                game_id=game.id,
+                user_id=1,
+                ply=ply,
+                full_hash=DEDUP_WDL_HASH,
+                white_hash=0,
+                black_hash=0,
+            )
+            db_session.add(pos)
+        await db_session.flush()
+
+        row = await query_wdl_counts(
+            db_session,
+            user_id=1,
+            hash_column=GamePosition.full_hash,
+            target_hash=DEDUP_WDL_HASH,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+
+        assert row.total == 1, f"Expected total=1 (dedup), got {row.total}"
+        assert row.wins == 1
+        assert row.draws == 0
+        assert row.losses == 0
