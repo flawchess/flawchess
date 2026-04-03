@@ -68,6 +68,19 @@ gh run watch <run-id>           # Watch a run in progress
 gh pr checks <pr-number>        # Check PR status
 ```
 
+## Scripts
+
+### `bin/`
+- **`deploy.sh`** — Triggers GitHub Actions CI/deploy workflow for main and monitors progress
+- **`run_local.sh`** — Starts local dev environment with backend and frontend servers
+- **`reset_db.sh`** — Tears down and recreates the dev database from scratch, then runs migrations
+- **`prod_db_tunnel.sh`** — Opens/closes SSH tunnel forwarding production PostgreSQL to localhost:15432
+
+### `scripts/`
+- **`seed_openings.py`** — Populates openings table from `app/data/openings.tsv` with precomputed Zobrist hashes
+- **`reimport_games.py`** — Deletes and re-imports all games for a user or all users to backfill new data fields
+- **`reclassify_positions.py`** — Reclassifies existing game positions with updated metadata by replaying stored PGNs
+
 ## Database Access (MCP)
 
 Two PostgreSQL MCP servers are configured for direct database queries:
