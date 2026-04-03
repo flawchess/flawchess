@@ -12,7 +12,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
+import { FilterPanel } from '@/components/filters/FilterPanel';
+import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
 import { EndgamePerformanceSection } from '@/components/charts/EndgamePerformanceSection';
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
@@ -48,12 +49,8 @@ export function EndgamesPage() {
   const needsLegacyRedirect = location.pathname.endsWith('/statistics');
   const activeTab = location.pathname.includes('/games') ? 'games' : 'stats';
 
-  // ── Filter state — color and matchSide are fixed (not used for endgames per D-02) ──
-  const [filters, setFilters] = useState<FilterState>({
-    ...DEFAULT_FILTERS,
-    color: 'white',    // Fixed — not used, FilterState requires it
-    matchSide: 'both', // Fixed — not used
-  });
+  // ── Filter state (shared across pages) — color and matchSide are not used for endgames ──
+  const [filters, setFilters] = useFilterStore();
   const debouncedFilters = useDebounce(filters, 300);
 
   // ── Category selection state ─────────────────────────────────────────────────
@@ -79,7 +76,7 @@ export function EndgamesPage() {
   const handleFilterChange = useCallback((newFilters: FilterState) => {
     setFilters(newFilters);
     setGamesOffset(0); // D-03: reset pagination on filter change
-  }, []);
+  }, [setFilters]);
 
   // ── Category selection handler ──────────────────────────────────────────────
 

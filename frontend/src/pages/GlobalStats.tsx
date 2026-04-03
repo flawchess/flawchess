@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/api/client';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
+import { FilterPanel } from '@/components/filters/FilterPanel';
+import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
 import { RatingChart } from '@/components/stats/RatingChart';
@@ -82,11 +83,8 @@ function AdminTools() {
 }
 
 export function GlobalStatsPage() {
-  const [filters, setFilters] = useState<FilterState>({
-    ...DEFAULT_FILTERS,
-    color: 'white',
-    matchSide: 'both',
-  });
+  // Filter state shared across pages — GlobalStats only uses recency + platforms
+  const [filters, setFilters] = useFilterStore();
 
   // Derive recency and platforms from FilterState for the stats hooks
   const recency = filters.recency;
@@ -102,7 +100,7 @@ export function GlobalStatsPage() {
 
   const handleFilterChange = useCallback((newFilters: FilterState) => {
     setFilters(newFilters);
-  }, []);
+  }, [setFilters]);
 
   const content = isLoading ? (
     <div className="text-muted-foreground">Loading...</div>

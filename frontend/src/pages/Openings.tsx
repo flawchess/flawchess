@@ -43,7 +43,8 @@ import { ChessBoard } from '@/components/board/ChessBoard';
 import { MoveExplorer } from '@/components/move-explorer/MoveExplorer';
 import { MoveList } from '@/components/board/MoveList';
 import { BoardControls } from '@/components/board/BoardControls';
-import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
+import { FilterPanel } from '@/components/filters/FilterPanel';
+import { useFilterStore } from '@/hooks/useFilterStore';
 import { PositionBookmarkList } from '@/components/position-bookmarks/PositionBookmarkList';
 import { SuggestionsModal } from '@/components/position-bookmarks/SuggestionsModal';
 import { GameCardList } from '@/components/results/GameCardList';
@@ -80,8 +81,8 @@ export function OpeningsPage() {
   const chess = useChessGame();
   const [boardFlipped, setBoardFlipped] = useState(false);
 
-  // ── Filter state ────────────────────────────────────────────────────────────
-  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  // ── Filter state (shared across pages) ───────────────────────────────────────
+  const [filters, setFilters] = useFilterStore();
   const debouncedFilters = useDebounce(filters, 300);
 
   // ── Board arrows (hovered move) ─────────────────────────────────────────────
@@ -94,7 +95,7 @@ export function OpeningsPage() {
   // ── Mobile sidebar state ────────────────────────────────────────────────────
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(false);
   const [bookmarkSidebarOpen, setBookmarkSidebarOpen] = useState(false);
-  const [localFilters, setLocalFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  const [localFilters, setLocalFilters] = useState<FilterState>(filters);
 
   // ── Games tab pagination ────────────────────────────────────────────────────
   const [gamesOffset, setGamesOffset] = useState(0);
@@ -264,7 +265,7 @@ export function OpeningsPage() {
   const handleFiltersChange = useCallback((newFilters: FilterState) => {
     setFilters(newFilters);
     setGamesOffset(0);
-  }, []);
+  }, [setFilters]);
 
   const openBookmarkDialog = useCallback(() => {
     // Use currentPly, not full moveHistory length — user may have navigated back
@@ -316,7 +317,7 @@ export function OpeningsPage() {
     setFilters(prev => ({ ...prev, color, matchSide: bookmark.match_side }));
     navigate('/openings/games');
     window.scrollTo({ top: 0 });
-  }, [chess, navigate, mostPlayedData]);
+  }, [chess, navigate, mostPlayedData, setFilters]);
 
   /** Load opening PGN onto the board, set color/flip/filters, and navigate to games subtab */
   const handleOpenGames = useCallback((pgn: string, color: "white" | "black") => {
@@ -325,14 +326,14 @@ export function OpeningsPage() {
     setFilters(prev => ({ ...prev, color, matchSide: 'both' as MatchSide }));
     navigate('/openings/games');
     window.scrollTo({ top: 0 });
-  }, [chess, navigate]);
+  }, [chess, navigate, setFilters]);
 
   const handleLoadBookmark = useCallback((bkm: PositionBookmarkResponse) => {
     chess.loadMoves(bkm.moves);
     setBoardFlipped(bkm.is_flipped ?? false);
     setFilters(prev => ({ ...prev, color: bkm.color ?? 'white', matchSide: bkm.match_side }));
     window.scrollTo({ top: 0 });
-  }, [chess]);
+  }, [chess, setFilters]);
 
   const handleReorder = useCallback((orderedIds: number[]) => {
     reorder.mutate(orderedIds);
