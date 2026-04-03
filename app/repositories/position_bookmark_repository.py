@@ -280,7 +280,11 @@ async def update_match_side(
     user_id: int,
     new_match_side: str,
 ) -> PositionBookmark | None:
-    """Update match_side and recompute target_hash from the bookmark's stored FEN.
+    """Update match_side and recompute target_hash by replaying the bookmark's moves.
+
+    Replays moves instead of parsing FEN because old bookmarks may have board-only
+    FENs (missing side-to-move/castling metadata), which produce wrong full_hash
+    values. Also repairs the stored FEN to a full FEN if it was board-only.
 
     Returns None if the bookmark does not exist or belongs to a different user.
     """
@@ -288,8 +292,18 @@ async def update_match_side(
     if bookmark is None:
         return None
 
-    board = chess.Board(bookmark.fen)
+    # Replay moves to get accurate board state — board-only FENs lack side-to-move
+    # metadata, which corrupts the polyglot zobrist full_hash.
+    board = chess.Board()
+    for san in json.loads(bookmark.moves):
+        board.push_san(san)
+
     white_hash, black_hash, full_hash = compute_hashes(board)
+
+    # Repair FEN if it was stored as board-only (no side-to-move metadata)
+    correct_fen = board.fen()
+    if bookmark.fen != correct_fen:
+        bookmark.fen = correct_fen
 
     # Resolve target_hash based on new match_side and bookmark color
     if new_match_side == "both":

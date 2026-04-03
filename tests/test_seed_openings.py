@@ -49,13 +49,17 @@ class TestPgnToFenPlyHashes:
         fen, ply, _wh, _bh, _fh = pgn_to_fen_ply_hashes("1. e4 e5")
         assert ply == 2
 
-    def test_uses_board_fen_not_full_fen(self) -> None:
-        """FEN must be piece-placement only (no castling/en passant/move counters)."""
+    def test_uses_full_fen_with_metadata(self) -> None:
+        """FEN must include side-to-move and castling — not board-only.
+
+        Full FEN is needed so downstream consumers (bookmark creation, match_side
+        toggling) can reconstruct an accurate Board for Zobrist hash computation.
+        """
         fen, *_ = pgn_to_fen_ply_hashes("1. e4 e5")
-        # board_fen() has exactly 7 slashes (8 ranks separated by /)
-        assert fen.count("/") == 7
-        # board_fen() does NOT contain spaces (full FEN has spaces for castling etc.)
-        assert " " not in fen
+        # Full FEN has spaces separating piece placement, side-to-move, castling, etc.
+        assert " " in fen
+        # After 1. e4 e5, it's white's turn
+        assert " w " in fen
 
     def test_invalid_pgn_raises(self) -> None:
         """Invalid PGN should raise ValueError."""

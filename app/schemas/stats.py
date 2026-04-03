@@ -45,7 +45,7 @@ class OpeningWDL(BaseModel):
     opening_name: str
     label: str          # "Opening Name (ECO)" — precomputed for UI
     pgn: str            # PGN move sequence for display
-    fen: str            # Piece-placement FEN for minimap popover
+    fen: str            # Full FEN (with side-to-move/castling) for miniboard and bookmark creation
     full_hash: str      # String representation of 64-bit Zobrist full hash for synthetic bookmark construction
     wins: int
     draws: int

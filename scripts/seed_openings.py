@@ -1,6 +1,8 @@
 """Idempotent seed script: populate openings table from app/data/openings.tsv.
 
-Uses board.board_fen() (not board.fen()) per project convention for the FEN column.
+Uses board.fen() (full FEN with side-to-move/castling metadata) so downstream
+consumers (bookmark creation, stats API) get position metadata needed for
+correct Zobrist hash recomputation.
 Precomputes Zobrist hashes (full, white, black) from the replayed PGN board state.
 Uses INSERT ... ON CONFLICT DO UPDATE to backfill hashes on existing rows.
 Run with: uv run python -m scripts.seed_openings
@@ -27,11 +29,15 @@ TSV_PATH = Path(__file__).resolve().parent.parent / "app" / "data" / "openings.t
 
 
 def pgn_to_fen_ply_hashes(pgn_str: str) -> tuple[str, int, int, int, int]:
-    """Compute piece-placement FEN, ply count, and Zobrist hashes from a PGN.
+    """Compute full FEN, ply count, and Zobrist hashes from a PGN.
 
     Replays the PGN to get the correct board state (with castling rights,
     en passant, side to move) for accurate polyglot Zobrist hash computation.
-    Returns (board_fen, ply_count, white_hash, black_hash, full_hash).
+    Returns (fen, ply_count, white_hash, black_hash, full_hash).
+
+    Uses board.fen() (not board_fen()) so that side-to-move and castling metadata
+    are preserved — needed when the FEN is used to reconstruct a Board for hash
+    computation (e.g. bookmark match_side toggling).
     """
     game = chess.pgn.read_game(io.StringIO(pgn_str))
     if game is None:
@@ -40,7 +46,7 @@ def pgn_to_fen_ply_hashes(pgn_str: str) -> tuple[str, int, int, int, int]:
     for move in game.mainline_moves():
         board.push(move)
     white_hash, black_hash, full_hash = compute_hashes(board)
-    return board.board_fen(), board.ply(), white_hash, black_hash, full_hash
+    return board.fen(), board.ply(), white_hash, black_hash, full_hash
 
 
 async def seed_openings() -> int:
@@ -71,7 +77,7 @@ async def seed_openings() -> int:
                         "INSERT INTO openings (eco, name, pgn, ply_count, fen, full_hash, white_hash, black_hash) "
                         "VALUES (:eco, :name, :pgn, :ply_count, :fen, :full_hash, :white_hash, :black_hash) "
                         "ON CONFLICT ON CONSTRAINT uq_openings_eco_name_pgn "
-                        "DO UPDATE SET full_hash = EXCLUDED.full_hash, "
+                        "DO UPDATE SET fen = EXCLUDED.fen, full_hash = EXCLUDED.full_hash, "
                         "white_hash = EXCLUDED.white_hash, black_hash = EXCLUDED.black_hash"
                     ),
                     {
