@@ -1,4 +1,4 @@
-"""Analysis router: POST /analysis/positions, /analysis/time-series, /analysis/next-moves.
+"""Openings router: POST /openings/positions, /openings/time-series, /openings/next-moves.
 
 HTTP layer only — all business logic lives in analysis_service / repositories.
 """
@@ -21,7 +21,7 @@ from app.schemas.analysis import (
 from app.services import analysis_service
 from app.users import current_active_user
 
-router = APIRouter(prefix="/analysis", tags=["analysis"])
+router = APIRouter(prefix="/openings", tags=["openings"])
 
 
 @router.post("/positions", response_model=AnalysisResponse)

@@ -118,12 +118,12 @@ class TestLogin:
 class TestAuthProtection:
     @pytest.mark.asyncio
     async def test_analysis_requires_auth(self):
-        """POST /analysis/positions without Authorization header should return 401."""
+        """POST /openings/positions without Authorization header should return 401."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.post(
-                "/api/analysis/positions",
+                "/api/openings/positions",
                 json={"target_hash": 0},
             )
 
@@ -144,7 +144,7 @@ class TestAuthProtection:
 
     @pytest.mark.asyncio
     async def test_analysis_with_valid_token_does_not_return_401(self):
-        """POST /analysis/positions with valid Bearer token should not return 401."""
+        """POST /openings/positions with valid Bearer token should not return 401."""
         email = unique_email("eve")
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -154,7 +154,7 @@ class TestAuthProtection:
             token = login_resp.json()["access_token"]
 
             resp = await client.post(
-                "/api/analysis/positions",
+                "/api/openings/positions",
                 json={"target_hash": 0},
                 headers={"Authorization": f"Bearer {token}"},
             )

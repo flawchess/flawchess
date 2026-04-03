@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class AnalysisRequest(BaseModel):
-    """Request body for POST /analysis/positions."""
+    """Request body for POST /openings/positions."""
 
     target_hash: int | None = None
 
@@ -78,7 +78,7 @@ class GameRecord(BaseModel):
 
 
 class AnalysisResponse(BaseModel):
-    """Response from POST /analysis/positions."""
+    """Response from POST /openings/positions."""
 
     stats: WDLStats
     games: list[GameRecord]
@@ -105,7 +105,7 @@ class TimeSeriesBookmarkParam(BaseModel):
 
 
 class TimeSeriesRequest(BaseModel):
-    """Request body for POST /analysis/time-series."""
+    """Request body for POST /openings/time-series."""
 
     bookmarks: list[TimeSeriesBookmarkParam]
 
@@ -138,13 +138,13 @@ class BookmarkTimeSeries(BaseModel):
 
 
 class TimeSeriesResponse(BaseModel):
-    """Response from POST /analysis/time-series."""
+    """Response from POST /openings/time-series."""
 
     series: list[BookmarkTimeSeries]
 
 
 class NextMovesRequest(BaseModel):
-    """Request body for POST /analysis/next-moves."""
+    """Request body for POST /openings/next-moves."""
 
     target_hash: int  # required — no None allowed (unlike AnalysisRequest)
 
@@ -190,7 +190,7 @@ class NextMoveEntry(BaseModel):
 
 
 class NextMovesResponse(BaseModel):
-    """Response from POST /analysis/next-moves."""
+    """Response from POST /openings/next-moves."""
 
     position_stats: WDLStats
     moves: list[NextMoveEntry]
