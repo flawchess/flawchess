@@ -27,7 +27,7 @@ from app.repositories.endgame_repository import (
     query_endgame_performance_rows,
     query_endgame_timeline_rows,
 )
-from app.schemas.analysis import GameRecord
+from app.schemas.openings import GameRecord
 from app.schemas.endgames import (
     ConvRecovTimelinePoint,
     ConvRecovTimelineResponse,
@@ -43,7 +43,7 @@ from app.schemas.endgames import (
     EndgameTimelineResponse,
     EndgameWDLSummary,
 )
-from app.services.analysis_service import derive_user_result, recency_cutoff
+from app.services.openings_service import derive_user_result, recency_cutoff
 
 class EndgameClassInt(IntEnum):
     """Integer encoding for endgame_class column (SmallInteger, 2 bytes per row).
@@ -435,7 +435,7 @@ def _build_wdl_summary(rows: list[Row[Any]]) -> EndgameWDLSummary:
 def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:
     """Compute a rolling-window win-rate series from chronological game rows.
 
-    Mirrors the pattern in analysis_service.get_time_series.
+    Mirrors the pattern in openings_service.get_time_series.
 
     Args:
         rows: List of (played_at, result, user_color) tuples ordered by played_at ASC.

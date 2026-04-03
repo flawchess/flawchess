@@ -75,7 +75,7 @@ async def get_endgame_games(
     endgame_class must be one of: rook, minor_piece, pawn, queen, mixed, pawnless.
     Returns empty results (not an error) for unknown classes or users with no matching games.
 
-    Games are reused with the GameRecord schema consistent with the analysis endpoints.
+    Games are reused with the GameRecord schema consistent with the openings endpoints.
     """
     return await endgame_service.get_endgame_games(
         session,

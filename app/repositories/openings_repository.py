@@ -1,4 +1,4 @@
-"""Analysis repository: DB queries for position-based W/D/L lookups."""
+"""Openings repository: DB queries for position-based W/D/L lookups."""
 
 import datetime
 from collections.abc import Sequence

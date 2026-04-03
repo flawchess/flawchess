@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app.schemas.analysis import GameRecord
+from app.schemas.openings import GameRecord
 
 EndgameClass = Literal["rook", "minor_piece", "pawn", "queen", "mixed", "pawnless"]
 EndgameLabel = Literal["Rook", "Minor Piece", "Pawn", "Queen", "Mixed", "Pawnless"]

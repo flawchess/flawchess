@@ -1,6 +1,6 @@
 """Openings router: POST /openings/positions, /openings/time-series, /openings/next-moves.
 
-HTTP layer only — all business logic lives in analysis_service / repositories.
+HTTP layer only — all business logic lives in openings_service / repositories.
 """
 
 from typing import Annotated
@@ -10,32 +10,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.models.user import User
-from app.schemas.analysis import (
-    AnalysisRequest,
-    AnalysisResponse,
+from app.schemas.openings import (
+    OpeningsRequest,
+    OpeningsResponse,
     NextMovesRequest,
     NextMovesResponse,
     TimeSeriesRequest,
     TimeSeriesResponse,
 )
-from app.services import analysis_service
+from app.services import openings_service
 from app.users import current_active_user
 
 router = APIRouter(prefix="/openings", tags=["openings"])
 
 
-@router.post("/positions", response_model=AnalysisResponse)
+@router.post("/positions", response_model=OpeningsResponse)
 async def query_positions(
-    request: AnalysisRequest,
+    request: OpeningsRequest,
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
-) -> AnalysisResponse:
+) -> OpeningsResponse:
     """Return W/D/L stats and paginated game list for a target board position.
 
     The target position is identified by its Zobrist hash. match_side controls
     which hash column is queried (white pieces, black pieces, or full position).
     """
-    return await analysis_service.analyze(session, user.id, request)
+    return await openings_service.analyze(session, user.id, request)
 
 
 @router.post("/time-series", response_model=TimeSeriesResponse)
@@ -45,7 +45,7 @@ async def get_time_series(
     user: Annotated[User, Depends(current_active_user)],
 ) -> TimeSeriesResponse:
     """Return monthly win-rate time series for a list of bookmark positions."""
-    return await analysis_service.get_time_series(session, user.id, request)
+    return await openings_service.get_time_series(session, user.id, request)
 
 
 @router.post("/next-moves", response_model=NextMovesResponse)
@@ -59,4 +59,4 @@ async def get_next_moves(
     Each move entry includes game count, win/draw/loss counts and percentages,
     the resulting position's hash and FEN, and a transposition count.
     """
-    return await analysis_service.get_next_moves(session, user.id, request)
+    return await openings_service.get_next_moves(session, user.id, request)

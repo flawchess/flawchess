@@ -1,4 +1,4 @@
-"""Analysis service: W/D/L derivation, stats computation, and orchestration."""
+"""Openings service: W/D/L derivation, stats computation, and orchestration."""
 
 import datetime
 import io
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.repositories.analysis_repository import (
+from app.repositories.openings_repository import (
     HASH_COLUMN_MAP,
     query_all_results,
     query_matching_games,
@@ -21,9 +21,9 @@ from app.repositories.analysis_repository import (
     query_time_series,
     query_transposition_counts,
 )
-from app.schemas.analysis import (
-    AnalysisRequest,
-    AnalysisResponse,
+from app.schemas.openings import (
+    OpeningsRequest,
+    OpeningsResponse,
     BookmarkTimeSeries,
     GameRecord,
     NextMoveEntry,
@@ -83,9 +83,9 @@ def recency_cutoff(recency: str | None) -> datetime.datetime | None:
 async def analyze(
     session: AsyncSession,
     user_id: int,
-    request: AnalysisRequest,
-) -> AnalysisResponse:
-    """Orchestrate a position analysis query and return W/D/L stats + games.
+    request: OpeningsRequest,
+) -> OpeningsResponse:
+    """Orchestrate a position openings query and return W/D/L stats + games.
 
     Steps:
     1. Resolve hash column from match_side.
@@ -93,7 +93,7 @@ async def analyze(
     3. Fetch all (result, user_color) rows for aggregate stats.
     4. Compute W/D/L counts and percentages.
     5. Fetch paginated Game objects.
-    6. Build GameRecord list and return AnalysisResponse.
+    6. Build GameRecord list and return OpeningsResponse.
     """
     # When target_hash is None, skip position filtering entirely
     hash_column = HASH_COLUMN_MAP[request.match_side] if request.target_hash is not None else None
@@ -180,7 +180,7 @@ async def analyze(
         for g in games
     ]
 
-    return AnalysisResponse(
+    return OpeningsResponse(
         stats=stats,
         games=game_records,
         matched_count=matched_count,

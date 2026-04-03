@@ -1,4 +1,4 @@
-"""Pydantic v2 schemas for the analysis API."""
+"""Pydantic v2 schemas for the openings API."""
 
 import datetime
 from typing import Annotated, Literal
@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, field_validator
 
 
-class AnalysisRequest(BaseModel):
+class OpeningsRequest(BaseModel):
     """Request body for POST /openings/positions."""
 
     target_hash: int | None = None
@@ -77,7 +77,7 @@ class GameRecord(BaseModel):
     result_fen: str | None = None
 
 
-class AnalysisResponse(BaseModel):
+class OpeningsResponse(BaseModel):
     """Response from POST /openings/positions."""
 
     stats: WDLStats
@@ -146,7 +146,7 @@ class TimeSeriesResponse(BaseModel):
 class NextMovesRequest(BaseModel):
     """Request body for POST /openings/next-moves."""
 
-    target_hash: int  # required — no None allowed (unlike AnalysisRequest)
+    target_hash: int  # required — no None allowed (unlike OpeningsRequest)
 
     @field_validator("target_hash", mode="before")
     @classmethod
@@ -163,7 +163,7 @@ class NextMovesRequest(BaseModel):
             return int(v)
         return v
 
-    # Optional filters — same as AnalysisRequest but no match_side, offset, or limit
+    # Optional filters — same as OpeningsRequest but no match_side, offset, or limit
     time_control: list[Literal["bullet", "blitz", "rapid", "classical"]] | None = None
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None

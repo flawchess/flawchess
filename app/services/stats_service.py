@@ -21,7 +21,7 @@ from app.schemas.stats import (
     RatingHistoryResponse,
     WDLByCategory,
 )
-from app.services.analysis_service import recency_cutoff
+from app.services.openings_service import recency_cutoff
 
 # Minimum number of games required for an opening to appear in top openings.
 MIN_GAMES_FOR_OPENING = 1
