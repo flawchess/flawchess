@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Consolidation, Tooling & Refactoring
-status: executing
-last_updated: "2026-04-03T11:38:39.856Z"
+status: verifying
+last_updated: "2026-04-03T12:34:16.704Z"
 last_activity: 2026-04-03
 progress:
   total_phases: 9
-  completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
+  completed_phases: 5
+  total_plans: 11
+  completed_plans: 11
   percent: 100
 ---
 
@@ -17,9 +17,9 @@ progress:
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Executing Phase 42
+Phase: 43 (frontend-cleanup) — COMPLETE
+Plan: 1 of 1 (complete)
+Status: Phase 43 complete — ready for verification
 Last activity: 2026-04-03
 
 Progress: [██████████] 100%
@@ -120,5 +120,11 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **New app/schemas/auth.py for auth router** — auth router had no schema file unlike users and imports routers; created alongside existing schemas files
 - **Direct return of GoogleOAuthAuthorizeResponse** — the `response = {...}; return response` pattern replaced with direct `return GoogleOAuthAuthorizeResponse(...)` for consistency
 
+### Decisions Made (Phase 43, Plan 01)
+
+- **CSS utility class .btn-brand over JS constant** — Styling concern belongs in CSS; eliminates JS import dependency in 3 component files (Home, Openings, PublicHeader)
+- **GLASS_OVERLAY JS constant retained** — WDL bar components need JS-level access for inline `backgroundImage` styles; .glass-overlay CSS class is additive for Tailwind className context
+- **tabs.tsx glass overlay unchanged** — Tailwind variant prefixes only compose with Tailwind utilities, not arbitrary CSS classes; inline `bg-[image:...]` is the correct approach
+
 ---
-Last activity: 2026-04-03 - Completed Phase 42 Plan 01 and Plan 02
+Last activity: 2026-04-03 - Completed Phase 43 Plan 01 (brand button CSS refactor)
