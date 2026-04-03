@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Consolidation, Tooling & Refactoring
 status: verifying
-last_updated: "2026-04-02T20:23:37.802Z"
-last_activity: 2026-04-02
+last_updated: "2026-04-03T00:00:00.000Z"
+last_activity: 2026-04-03
 progress:
   total_phases: 9
   completed_phases: 2
@@ -60,6 +60,7 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 |---|-------------|------|--------|-----------|
 | 260402-psb | Fix frontend cache-busting so deployed updates reach users without manual refresh | 2026-04-02 | 85e7657 | [260402-psb-fix-frontend-cache-busting-so-deployed-u](./quick/260402-psb-fix-frontend-cache-busting-so-deployed-u/) |
 | 260402-qms | Document Sentry access in CLAUDE.md and add error fingerprinting hooks for DB and HTTP errors | 2026-04-02 | d3bbe5f | [260402-qms-document-sentry-access-in-claude-md-and-](./quick/260402-qms-document-sentry-access-in-claude-md-and-/) |
+| 260403-c83 | Rename /api/analysis to /api/openings for URL consistency with /api/endgames | 2026-04-03 | 212a69f | [260403-c83-rename-api-analysis-to-api-openings-for-](./quick/260403-c83-rename-api-analysis-to-api-openings-for-/) |
 
 ### Decisions Made (Phase 40)
 
@@ -94,4 +95,4 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **Remove unused local functions after Plan 03 export removals** — With noUnusedLocals: true, functions that lost their exports (CardAction, ChartTooltipContent, etc.) become TS6133 errors; removing them is correct
 
 ---
-Last activity: 2026-04-02 - Completed 41-03-PLAN.md: Knip dead code cleanup — 7 files deleted, zero dead exports, knip CI gate now enforced
+Last activity: 2026-04-03 - Completed quick/260403-c83: Renamed /api/analysis/* to /api/openings/* for URL consistency with /api/endgames
