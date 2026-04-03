@@ -954,7 +954,22 @@ export function OpeningsPage() {
           <Drawer open={bookmarkSidebarOpen} onOpenChange={setBookmarkSidebarOpen} direction="right">
             <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-bookmark-sidebar">
               <DrawerHeader className="flex flex-row items-center justify-between">
-                <DrawerTitle>Position Bookmarks</DrawerTitle>
+                <DrawerTitle className="flex items-center gap-1">
+                  Position Bookmarks
+                  <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info-sidebar" side="top">
+                    <div className="space-y-2">
+                      <p>
+                        Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Stats tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                      </p>
+                      <p>
+                        Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
+                      </p>
+                      <p>
+                        Use the chart toggle on each bookmark to include or exclude it from the Results by Opening and Win Rate Over Time charts.
+                      </p>
+                    </div>
+                  </InfoPopover>
+                </DrawerTitle>
                 <DrawerClose asChild>
                   <Button variant="ghost" size="icon" aria-label="Close bookmarks" data-testid="btn-close-bookmark-sidebar">
                     <X className="h-4 w-4" />
@@ -963,22 +978,6 @@ export function OpeningsPage() {
               </DrawerHeader>
               <div className="overflow-y-auto flex-1 p-4">
                 <div className="space-y-3">
-                  <div className="flex items-center gap-1 mb-1">
-                    <span className="text-sm font-medium">Position Bookmarks</span>
-                    <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info-sidebar" side="top">
-                      <div className="space-y-2">
-                        <p>
-                          Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Stats tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
-                        </p>
-                        <p>
-                          Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
-                        </p>
-                        <p>
-                          Use the chart toggle on each bookmark to include or exclude it from the Results by Opening and Win Rate Over Time charts.
-                        </p>
-                      </div>
-                    </InfoPopover>
-                  </div>
                   <div className="flex gap-2">
                     <Button
                       size="lg"
