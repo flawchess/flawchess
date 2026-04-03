@@ -20,7 +20,7 @@ Coverage:
 
 import datetime
 import uuid
-from typing import Any, Literal, cast
+from typing import Literal
 
 import pytest
 import pytest_asyncio
