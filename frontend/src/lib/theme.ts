@@ -11,14 +11,6 @@ export const BOARD_LIGHT_SQUARE = '#F0DAB7';
 export const darkSquareStyle = { backgroundColor: BOARD_DARK_SQUARE } as const;
 export const lightSquareStyle = { backgroundColor: BOARD_LIGHT_SQUARE } as const;
 
-/**
- * Tailwind classes for branded primary buttons.
- * Hex values must be written as literals here (not interpolated from constants)
- * because Tailwind scans source files at build time and can't resolve dynamic strings.
- * Update both the class string and the constants below when changing button colors.
- */
-export const PRIMARY_BUTTON_CLASS = 'bg-brand-brown hover:bg-brand-brown-hover text-white';
-
 // WDL colors — used in all win/draw/loss visualizations
 // Richer base colors; the glass overlay softens them visually when applied
 export const WDL_WIN = 'oklch(0.50 0.14 145)';
