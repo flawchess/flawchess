@@ -8,7 +8,13 @@ import chess
 import chess.pgn
 import pytest
 
-from app.services.zobrist import compute_hashes, hashes_for_game
+from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD
+from app.services.position_classifier import classify_position
+from app.services.zobrist import (
+    compute_hashes,
+    hashes_for_game,
+    process_game_pgn,
+)
 
 INT64_MIN = -(2**63)
 INT64_MAX = 2**63 - 1
@@ -317,3 +323,131 @@ def test_hashes_for_game_without_clk_clock_seconds_are_none():
     results, _ = hashes_for_game(PGN_WITHOUT_CLK)
     for r in results:
         assert r[5] is None
+
+
+# ---------------------------------------------------------------------------
+# process_game_pgn — unified function tests
+# ---------------------------------------------------------------------------
+
+SIMPLE_PGN_3_MOVES = "1. e4 e5 2. Nf3 *"
+PGN_WITH_EVAL = '[Event "?"]\n\n1. e4 {[%eval 0.3]} e5 {[%eval 0.2]} *'
+
+
+def test_process_game_pgn_returns_correct_ply_count():
+    """PGN '1. e4 e5 2. Nf3 *' has 3 half-moves, so 4 plies (ply 0 through 3)."""
+    result = process_game_pgn(SIMPLE_PGN_3_MOVES)
+    assert result is not None
+    assert len(result["plies"]) == 4
+    plies = [p["ply"] for p in result["plies"]]
+    assert plies == [0, 1, 2, 3]
+
+
+def test_process_game_pgn_empty_pgn_returns_none():
+    """Empty string returns None."""
+    assert process_game_pgn("") is None
+
+
+def test_process_game_pgn_invalid_pgn_returns_none():
+    """Garbage string returns None."""
+    assert process_game_pgn("not valid pgn!!!") is None
+
+
+def test_process_game_pgn_hashes_match_compute_hashes():
+    """Ply 0 hashes match compute_hashes(chess.Board()) — starting position."""
+    result = process_game_pgn(SIMPLE_PGN_3_MOVES)
+    assert result is not None
+    ply0 = result["plies"][0]
+    expected_wh, expected_bh, expected_fh = compute_hashes(chess.Board())
+    assert ply0["white_hash"] == expected_wh
+    assert ply0["black_hash"] == expected_bh
+    assert ply0["full_hash"] == expected_fh
+
+
+def test_process_game_pgn_move_san_correct():
+    """Ply 0 has move_san='e4' (first move); final ply has move_san=None."""
+    result = process_game_pgn(SIMPLE_PGN_3_MOVES)
+    assert result is not None
+    assert result["plies"][0]["move_san"] == "e4"
+    assert result["plies"][-1]["move_san"] is None
+
+
+def test_process_game_pgn_move_count():
+    """PGN '1. e4 e5 2. Nf3 *' has move_count=2 (2 full moves)."""
+    result = process_game_pgn(SIMPLE_PGN_3_MOVES)
+    assert result is not None
+    assert result["move_count"] == 2
+
+
+def test_process_game_pgn_result_fen():
+    """result_fen is not None and contains 'N' (knight on f3)."""
+    result = process_game_pgn(SIMPLE_PGN_3_MOVES)
+    assert result is not None
+    assert result["result_fen"] is not None
+    assert "N" in result["result_fen"]  # White knight present after 2. Nf3
+
+
+def test_process_game_pgn_classification_matches_classify_position():
+    """Ply 0 classification fields match classify_position(chess.Board())."""
+    result = process_game_pgn(SIMPLE_PGN_3_MOVES)
+    assert result is not None
+    ply0 = result["plies"][0]
+    expected = classify_position(chess.Board())
+    assert ply0["material_count"] == expected.material_count
+    assert ply0["material_signature"] == expected.material_signature
+    assert ply0["material_imbalance"] == expected.material_imbalance
+    assert ply0["has_opposite_color_bishops"] == expected.has_opposite_color_bishops
+    assert ply0["piece_count"] == expected.piece_count
+    assert ply0["backrank_sparse"] == expected.backrank_sparse
+    assert ply0["mixedness"] == expected.mixedness
+
+
+def test_process_game_pgn_eval_extraction():
+    """PGN with %eval annotations returns non-None eval_cp values."""
+    result = process_game_pgn(PGN_WITH_EVAL)
+    assert result is not None
+    # ply 0 has eval from %eval 0.3 on the e4 move node (30 centipawns from white's POV)
+    assert result["plies"][0]["eval_cp"] == 30
+    assert result["plies"][0]["eval_mate"] is None
+    # ply 1 has eval from %eval 0.2 on the e5 move node (20 centipawns from white's POV)
+    assert result["plies"][1]["eval_cp"] == 20
+    # final ply has no eval annotation
+    assert result["plies"][-1]["eval_cp"] is None
+
+
+def test_process_game_pgn_clock_extraction():
+    """PGN with %clk annotations returns correct clock_seconds values."""
+    result = process_game_pgn(PGN_WITH_CLK)
+    assert result is not None
+    # ply 0 clock = 9*60 + 58.3 = 598.3
+    assert result["plies"][0]["clock_seconds"] == pytest.approx(598.3, abs=0.01)
+    # ply 1 clock = 9*60 + 56.1 = 596.1
+    assert result["plies"][1]["clock_seconds"] == pytest.approx(596.1, abs=0.01)
+    # final ply has no clock annotation
+    assert result["plies"][-1]["clock_seconds"] is None
+
+
+def test_process_game_pgn_endgame_class_none_for_opening():
+    """Ply 0 of a standard game has endgame_class=None (piece_count > threshold)."""
+    result = process_game_pgn(SIMPLE_PGN_3_MOVES)
+    assert result is not None
+    ply0 = result["plies"][0]
+    # Starting position has piece_count=14 which is > ENDGAME_PIECE_COUNT_THRESHOLD (6)
+    assert ply0["piece_count"] > ENDGAME_PIECE_COUNT_THRESHOLD
+    assert ply0["endgame_class"] is None
+
+
+def test_hashes_for_game_wrapper_matches_process_game_pgn():
+    """hashes_for_game and process_game_pgn return identical hash/move_san/clock values."""
+    pgn = SIMPLE_PGN_3_MOVES
+    hash_tuples, fen1 = hashes_for_game(pgn)
+    result = process_game_pgn(pgn)
+    assert result is not None
+    assert fen1 == result["result_fen"]
+    assert len(hash_tuples) == len(result["plies"])
+    for (ply, wh, bh, fh, move_san, clock), ply_data in zip(hash_tuples, result["plies"]):
+        assert ply == ply_data["ply"]
+        assert wh == ply_data["white_hash"]
+        assert bh == ply_data["black_hash"]
+        assert fh == ply_data["full_hash"]
+        assert move_san == ply_data["move_san"]
+        assert clock == ply_data["clock_seconds"]

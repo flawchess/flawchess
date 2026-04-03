@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Consolidation, Tooling & Refactoring
 status: verifying
-last_updated: "2026-04-03T00:00:00.000Z"
+last_updated: "2026-04-03T10:10:43.189Z"
 last_activity: 2026-04-03
 progress:
   total_phases: 9
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
+  completed_phases: 3
+  total_plans: 8
+  completed_plans: 8
   percent: 100
 ---
 
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 41.1
+Phase: 999.1
 Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-04-02
+Last activity: 2026-04-03
 
 Progress: [██████████] 100%
 
@@ -96,5 +96,18 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **Non-null assertion ! preferred over as T cast** — Narrower and more explicit about safety invariant; used only when index is provably in bounds
 - **Remove unused local functions after Plan 03 export removals** — With noUnusedLocals: true, functions that lost their exports (CardAction, ChartTooltipContent, etc.) become TS6133 errors; removing them is correct
 
+### Decisions Made (Phase 41.1, Plan 01)
+
+- **process_game_pgn as unified single-pass function** — walks PGN mainline once instead of 3 times, returns PlyData TypedDicts for all per-ply data and GameProcessingResult for game-level data
+- **hashes_for_game as thin wrapper** — keeps unchanged return type and behavior for backward compat; all existing callers (import_service.py, test_seed_openings.py, test_reclassify.py) continue to work without modification
+- **endgame_class computed inline** — PositionClassification fields are never None, so no null checks needed before calling classify_endgame_class
+
+### Decisions Made (Phase 41.1, Plan 02)
+
+- **case(move_counts, value=Game.id) for bulk CASE UPDATE** — replaces N per-game UPDATEs with 1 SQL statement per batch (D-04)
+- **pgn_by_platform_id dict lookup** — avoids SELECT Game.pgn from DB; PGN already in memory from batch (D-03)
+- **_BATCH_SIZE increased 10→28** — safe for production 7.6GB + 2GB swap server at ~1.8MB per batch (D-05); 2.8x fewer commits per import
+- **type: ignore[union-attr] instead of ty: ignore** — union-attr is not a known ty rule name; mypy-style suppression used for dict fallback compat
+
 ---
-Last activity: 2026-04-03 - Completed quick task 260403-dh2: Rename /openings/compare to /openings/stats and /endgames/statistics to /endgames/stats
+Last activity: 2026-04-03 - Completed Phase 41.1 Plan 02: _flush_batch optimization
