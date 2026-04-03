@@ -152,7 +152,7 @@ Plans:
 
 Plans:
 - [x] 41.1-01-PLAN.md — Unified process_game_pgn function with PlyData/GameProcessingResult TypedDicts, hashes_for_game thin wrapper
-- [ ] 41.1-02-PLAN.md — Refactor _flush_batch to use process_game_pgn, platform_game_id lookup, bulk CASE UPDATE, batch size 28
+- [x] 41.1-02-PLAN.md — Refactor _flush_batch to use process_game_pgn, platform_game_id lookup, bulk CASE UPDATE, batch size 28
 
 ### Phase 42: Backend Optimization
 **Goal**: Backend DB queries are efficient and all API responses use consistent Pydantic schemas
@@ -220,7 +220,7 @@ Plans:
 | 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete   | 2026-03-30 |
 | 40. Static Type Checking | v1.7 | 2/2 | Complete    | 2026-04-01 |
 | 41. Code Quality & Dead Code | v1.7 | 4/4 | Complete    | 2026-04-02 |
-| 41.1. Import Speed Optimization | v1.7 | 1/2 | In Progress|  |
+| 41.1. Import Speed Optimization | v1.7 | 2/2 | Complete   | 2026-04-03 |
 | 42. Backend Optimization | v1.7 | 0/TBD | Not started | - |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
 
@@ -230,7 +230,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
