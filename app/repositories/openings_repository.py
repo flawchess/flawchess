@@ -4,7 +4,7 @@ import datetime
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -165,6 +165,64 @@ async def query_all_results(
     )
     rows = await session.execute(stmt)
     return list(rows.all())
+
+
+async def query_wdl_counts(
+    session: AsyncSession,
+    user_id: int,
+    hash_column: Any | None,
+    target_hash: int | None,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+    color: str | None,
+) -> Row[Any]:
+    """Return a single row (total, wins, draws, losses) via SQL aggregation.
+
+    Wraps _build_base_query() as a subquery to get deduplicated (result,
+    user_color) pairs, then applies func.count().filter() on the subquery
+    columns to compute W/D/L counts in a single SQL round-trip.
+
+    Always returns exactly one row even when no games match (all counts = 0).
+    Uses the same win/draw/loss conditions as stats_repository.py to ensure
+    consistent counting across all W/D/L aggregations in the codebase.
+    """
+    # Deduplicated (result, user_color) pairs — one row per game (DISTINCT by game_id)
+    dedup = _build_base_query(
+        select_entity=[Game.result, Game.user_color],
+        user_id=user_id,
+        hash_column=hash_column,
+        target_hash=target_hash,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=recency_cutoff,
+        color=color,
+    ).subquery("dedup")
+
+    # W/D/L conditions on the subquery columns (same logic as stats_repository.py)
+    win_cond = or_(
+        and_(dedup.c.result == "1-0", dedup.c.user_color == "white"),
+        and_(dedup.c.result == "0-1", dedup.c.user_color == "black"),
+    )
+    draw_cond = dedup.c.result == "1/2-1/2"
+    loss_cond = or_(
+        and_(dedup.c.result == "0-1", dedup.c.user_color == "white"),
+        and_(dedup.c.result == "1-0", dedup.c.user_color == "black"),
+    )
+
+    stmt = select(
+        func.count().label("total"),
+        func.count().filter(win_cond).label("wins"),
+        func.count().filter(draw_cond).label("draws"),
+        func.count().filter(loss_cond).label("losses"),
+    ).select_from(dedup)
+
+    result = await session.execute(stmt)
+    return result.one()
 
 
 async def query_matching_games(
