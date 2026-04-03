@@ -61,7 +61,7 @@ const FEATURES: {
         "FlawChess lets you filter by your pieces only, ignoring your opponent\u2019s responses.",
         "Calculate win/draw/loss rates for your system openings across all variations."
     ],
-    screenshot: { src: '/screenshots/system-openings.png', alt: 'Position bookmarks grouping system opening variations' },
+    screenshot: { src: '/screenshots/system-openings.png', alt: 'Opening bookmarks grouping system opening variations' },
     imagePosition: 'right',
   },
   {

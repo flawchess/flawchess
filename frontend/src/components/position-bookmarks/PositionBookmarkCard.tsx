@@ -35,9 +35,11 @@ interface Props {
   onLoad: (bookmark: PositionBookmarkResponse) => void;
   chartEnabled: boolean;
   onChartEnabledChange: (id: number, enabled: boolean) => void;
+  /** When provided, overrides the internal mutation — used for deferred updates (mobile drawer). */
+  onMatchSideChange?: (id: number, matchSide: MatchSide) => void;
 }
 
-export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEnabledChange }: Props) {
+export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEnabledChange, onMatchSideChange }: Props) {
   const updateLabel = useUpdatePositionBookmarkLabel();
   const deleteBookmark = useDeletePositionBookmark();
   const updateMatchSide = useUpdateMatchSide();
@@ -99,7 +101,11 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
 
   const handleMatchSideChange = (value: string) => {
     if (!value) return; // ToggleGroup fires empty string when clicking the active item
-    updateMatchSide.mutate({ id: bookmark.id, data: { match_side: value as MatchSide } });
+    if (onMatchSideChange) {
+      onMatchSideChange(bookmark.id, value as MatchSide);
+    } else {
+      updateMatchSide.mutate({ id: bookmark.id, data: { match_side: value as MatchSide } });
+    }
   };
 
   return (

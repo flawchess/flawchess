@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import { BookMarked } from 'lucide-react';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
@@ -83,7 +84,8 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
     <div>
       <h2 className="text-lg font-medium mb-3">
         <span className="inline-flex items-center gap-1">
-          Win Rate Over Time
+          <BookMarked className="h-5 w-5" />
+          Bookmarked Openings: Win Rate Over Time
           <InfoPopover ariaLabel="Win rate chart info" testId="win-rate-chart-info" side="top">
             Shows your win rate for each saved or most played position over time. Each point is the win rate over your last 50 games through that position. This helps you track and compare your success rate for each opening.
           </InfoPopover>

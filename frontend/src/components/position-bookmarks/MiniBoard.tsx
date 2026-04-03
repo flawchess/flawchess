@@ -8,7 +8,7 @@ interface MiniBoardProps {
 }
 
 /**
- * Reusable read-only mini chess board thumbnail for position bookmark suggestions.
+ * Reusable read-only mini chess board thumbnail for opening bookmark suggestions.
  */
 export function MiniBoard({ fen, flipped = false, size = 100 }: MiniBoardProps) {
   return (

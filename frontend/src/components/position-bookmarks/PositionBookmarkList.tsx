@@ -15,6 +15,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
+import type { MatchSide } from '@/types/api';
 import { PositionBookmarkCard } from './PositionBookmarkCard';
 
 interface Props {
@@ -23,9 +24,11 @@ interface Props {
   onLoad: (bookmark: PositionBookmarkResponse) => void;
   chartEnabledMap: Record<number, boolean>;
   onChartEnabledChange: (id: number, enabled: boolean) => void;
+  /** When provided, overrides the internal mutation — used for deferred updates (mobile drawer). */
+  onMatchSideChange?: (id: number, matchSide: MatchSide) => void;
 }
 
-export function PositionBookmarkList({ bookmarks, onReorder, onLoad, chartEnabledMap, onChartEnabledChange }: Props) {
+export function PositionBookmarkList({ bookmarks, onReorder, onLoad, chartEnabledMap, onChartEnabledChange, onMatchSideChange }: Props) {
   const [items, setItems] = useState(bookmarks);
 
   // Sync when server data refreshes (e.g., after delete or label edit)
@@ -53,7 +56,7 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad, chartEnable
     <>
       {items.length === 0 ? (
         <p className="px-2 text-xs text-muted-foreground break-words">
-          No position bookmarks yet. Use the &apos;Save&apos; button to save positions, or use &apos;Suggest&apos; to auto-generate from your most-played openings.
+          No opening bookmarks yet. Use the &apos;Save&apos; button to save positions, or use &apos;Suggest&apos; to auto-generate from your most-played openings.
         </p>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -66,6 +69,7 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad, chartEnable
                   onLoad={onLoad}
                   chartEnabled={chartEnabledMap[b.id] !== false}
                   onChartEnabledChange={onChartEnabledChange}
+                  onMatchSideChange={onMatchSideChange}
                 />
               ))}
             </div>

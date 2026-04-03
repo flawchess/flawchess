@@ -35,6 +35,7 @@ import {
   usePositionBookmarks,
   useCreatePositionBookmark,
   useReorderPositionBookmarks,
+  useUpdateMatchSide,
   useTimeSeries,
 } from '@/hooks/usePositionBookmarks';
 import { useMostPlayedOpenings } from '@/hooks/useStats';
@@ -60,7 +61,6 @@ import type { PositionBookmarkResponse, TimeSeriesRequest } from '@/types/positi
 
 const PAGE_SIZE = 20;
 // Number of most-played openings per color to use as default chart data when no bookmarks exist
-const DEFAULT_CHART_LIMIT = 3;
 
 export function OpeningsPage() {
   const location = useLocation();
@@ -93,6 +93,8 @@ export function OpeningsPage() {
   // ── Mobile sidebar state ────────────────────────────────────────────────────
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(false);
   const [bookmarkSidebarOpen, setBookmarkSidebarOpen] = useState(false);
+  const [localChartEnabled, setLocalChartEnabled] = useState<Record<number, boolean>>({});
+  const [localMatchSides, setLocalMatchSides] = useState<Record<number, MatchSide>>({});
   const [localFilters, setLocalFilters] = useState<FilterState>(filters);
 
   // ── Games tab pagination ────────────────────────────────────────────────────
@@ -187,38 +189,8 @@ export function OpeningsPage() {
     opponentType: debouncedFilters.opponentType,
   });
 
-  // When no bookmarks exist, derive synthetic bookmark entries from most-played openings
-  const defaultChartEntries: PositionBookmarkResponse[] = useMemo(() => {
-    if (bookmarks.length > 0 || !mostPlayedData) return [];
-    const white = mostPlayedData.white.slice(0, DEFAULT_CHART_LIMIT).map((o, i) => ({
-      id: -(i + 1),
-      label: o.label,
-      target_hash: o.full_hash,
-      fen: o.fen,
-      moves: [],
-      color: 'white' as const,
-      match_side: 'both' as MatchSide,
-      is_flipped: false,
-      sort_order: i,
-    }));
-    const black = mostPlayedData.black.slice(0, DEFAULT_CHART_LIMIT).map((o, i) => ({
-      id: -(DEFAULT_CHART_LIMIT + i + 1),
-      label: o.label,
-      target_hash: o.full_hash,
-      fen: o.fen,
-      moves: [],
-      color: 'black' as const,
-      match_side: 'both' as MatchSide,
-      is_flipped: false,
-      sort_order: DEFAULT_CHART_LIMIT + i,
-    }));
-    return [...white, ...black];
-  }, [bookmarks, mostPlayedData]);
-
-  // Chart entries: real bookmarks filtered by chart-enable toggle, else most-played defaults
-  const chartBookmarks = bookmarks.length > 0
-    ? bookmarks.filter(b => chartEnabledMap[b.id] !== false)
-    : defaultChartEntries;
+  // Chart entries: real bookmarks filtered by chart-enable toggle
+  const chartBookmarks = bookmarks.filter(b => chartEnabledMap[b.id] !== false);
 
   const timeSeriesRequest: TimeSeriesRequest | null = useMemo(() => {
     if (chartBookmarks.length === 0) return null;
@@ -291,7 +263,7 @@ export function OpeningsPage() {
     try {
       await createBookmark.mutateAsync(data);
       setBookmarkDialogOpen(false);
-      toast.success('Position bookmarked');
+      toast.success('Opening bookmarked');
     } catch {
       toast.error('Failed to save bookmark');
     }
@@ -353,9 +325,52 @@ export function OpeningsPage() {
     setFilterSidebarOpen(open);
   }, [filterSidebarOpen, localFilters, handleFiltersChange]);
 
+  const updateMatchSide = useUpdateMatchSide();
+
   const openBookmarkSidebar = useCallback(() => {
+    setLocalChartEnabled({ ...chartEnabledMap });
+    setLocalMatchSides({});
     setBookmarkSidebarOpen(true);
+  }, [chartEnabledMap]);
+
+  const handleBookmarkSidebarOpenChange = useCallback((open: boolean) => {
+    if (!open && bookmarkSidebarOpen) {
+      // Commit deferred chart toggle changes on close
+      for (const [idStr, enabled] of Object.entries(localChartEnabled)) {
+        const id = Number(idStr);
+        if (chartEnabledMap[id] !== enabled) {
+          setChartEnabledStorage(id, enabled);
+        }
+      }
+      // Commit deferred match side changes on close
+      for (const [idStr, matchSide] of Object.entries(localMatchSides)) {
+        const id = Number(idStr);
+        updateMatchSide.mutate({ id, data: { match_side: matchSide } });
+      }
+      // Bump chart toggle version to refresh chartEnabledMap
+      if (Object.keys(localChartEnabled).some(idStr => chartEnabledMap[Number(idStr)] !== localChartEnabled[Number(idStr)])) {
+        setChartToggleVersion(v => v + 1);
+      }
+    }
+    setBookmarkSidebarOpen(open);
+  }, [bookmarkSidebarOpen, localChartEnabled, localMatchSides, chartEnabledMap, updateMatchSide]);
+
+  const handleLocalChartEnabledChange = useCallback((id: number, enabled: boolean) => {
+    setLocalChartEnabled(prev => ({ ...prev, [id]: enabled }));
   }, []);
+
+  const handleLocalMatchSideChange = useCallback((id: number, matchSide: MatchSide) => {
+    setLocalMatchSides(prev => ({ ...prev, [id]: matchSide }));
+  }, []);
+
+  // Bookmarks with local match_side overrides applied for visual feedback in mobile drawer
+  const localBookmarks = useMemo(() => {
+    if (Object.keys(localMatchSides).length === 0) return bookmarks;
+    return bookmarks.map(b => {
+      const localSide = localMatchSides[b.id];
+      return localSide ? { ...b, match_side: localSide } : b;
+    });
+  }, [bookmarks, localMatchSides]);
 
   const handleLoadBookmarkFromSidebar = useCallback((bkm: PositionBookmarkResponse) => {
     handleLoadBookmark(bkm);
@@ -422,8 +437,9 @@ export function OpeningsPage() {
       <div className="border-t border-border/40" />
 
       {/* Sidebar tabs: Filters & Bookmarks */}
-      <Tabs value={sidebarTab} onValueChange={setSidebarTab}>
-        <TabsList variant="brand" className="w-full" data-testid="sidebar-tabs">
+      <div className="charcoal-texture rounded-md">
+      <Tabs value={sidebarTab} onValueChange={setSidebarTab} className="gap-0">
+        <TabsList variant="brand" className="w-full rounded-b-none" data-testid="sidebar-tabs">
           <TabsTrigger value="filters" data-testid="sidebar-tab-filters" className="flex-1">
             <SlidersHorizontal className="mr-1.5 h-4 w-4" />
             Filters
@@ -434,7 +450,7 @@ export function OpeningsPage() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="filters">
-          <div className="charcoal-texture rounded-md p-2 space-y-3">
+          <div className="p-2 space-y-3">
             {/* Played as + Piece filter */}
             <div className="flex flex-wrap gap-x-4 gap-y-3">
               <div>
@@ -493,40 +509,45 @@ export function OpeningsPage() {
           </div>
         </TabsContent>
         <TabsContent value="bookmarks">
-          <div className="charcoal-texture rounded-md p-2">
-            {/* Save/Suggest buttons + info */}
-            <div className="flex gap-2 mb-2">
+          <div className="p-2">
+            {/* Save/Suggest buttons */}
+            <div className="flex items-center gap-2 mb-2">
               <Button
                 size="lg"
-                className="flex-1 btn-brand"
+                variant="outline"
+                className="flex-1"
                 onClick={openBookmarkDialog}
                 data-testid="btn-bookmark"
               >
                 <Save className="h-4 w-4" />
                 Save
               </Button>
+              <div className="px-1">
+                <InfoPopover ariaLabel="Opening bookmarks info" testId="position-bookmarks-info" side="top">
+                <div className="space-y-2">
+                  <p>
+                    Save the current position on the chess board as an opening bookmark.
+                    Bookmarked openings appear in the Stats tab, showing your win/draw/loss breakdown and win rate over time for each bookmark.
+                  </p>
+                  <p>
+                    Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
+                  </p>
+                  <p>
+                    Use the chart toggle on each bookmark to include or exclude it from the Bookmarked Openings charts.
+                  </p>
+                </div>
+              </InfoPopover>
+              </div>
               <Button
                 size="lg"
-                className="flex-1 btn-brand"
+                variant="outline"
+                className="flex-1"
                 onClick={() => setSuggestionsOpen(true)}
                 data-testid="btn-suggest-bookmarks"
               >
                 <Sparkles className="h-4 w-4" />
                 Suggest
               </Button>
-              <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info" side="top">
-                <div className="space-y-2">
-                  <p>
-                    Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Stats tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
-                  </p>
-                  <p>
-                    Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
-                  </p>
-                  <p>
-                    Use the chart toggle on each bookmark to include or exclude it from the Results by Opening and Win Rate Over Time charts.
-                  </p>
-                </div>
-              </InfoPopover>
             </div>
             <PositionBookmarkList
               bookmarks={bookmarks}
@@ -538,6 +559,7 @@ export function OpeningsPage() {
           </div>
         </TabsContent>
       </Tabs>
+      </div>
     </div>
   );
 
@@ -629,13 +651,36 @@ export function OpeningsPage() {
 
   const statisticsContent = (
     <div className="flex flex-col gap-4">
-      {/* Results by Opening — shown when chart data is available or loading */}
-      {chartBookmarks.length > 0 && (
+      {/* Bookmarked Openings: Results — empty state when no bookmarks, chart when data available */}
+      {bookmarks.length === 0 ? (
+        <div className="charcoal-texture rounded-md p-4">
+          <h2 className="text-lg font-medium mb-3">
+            <span className="inline-flex items-center gap-1">
+              <BookMarked className="h-5 w-5" />
+              Bookmarked Openings
+            </span>
+          </h2>
+          <p className="text-sm text-muted-foreground mb-3">
+            Save some openings as bookmarks to see your results and win rate over time here. Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. Use the Suggest button to pick from your most-played positions.
+          </p>
+          <Button
+            size="lg"
+            variant="outline"
+            className="w-full"
+            onClick={() => setSuggestionsOpen(true)}
+            data-testid="btn-suggest-bookmarks-empty"
+          >
+            <Sparkles className="h-4 w-4" />
+            Suggest
+          </Button>
+        </div>
+      ) : chartBookmarks.length > 0 && (
         <div className="charcoal-texture rounded-md p-4">
           <div>
             <h2 className="text-lg font-medium mb-3">
               <span className="inline-flex items-center gap-1">
-                Results by Opening
+                <BookMarked className="h-5 w-5" />
+                Bookmarked Openings: Results
                 <InfoPopover ariaLabel="Results by opening info" testId="wdl-bar-chart-info" side="top">
                   Shows your win, draw, and loss percentages for each saved or most played position, based on the games that match the current filter settings. The length of the grey bar indicates game count relative to other openings.
                 </InfoPopover>
@@ -698,7 +743,7 @@ export function OpeningsPage() {
           </div>
         </div>
       )}
-      {/* Win Rate Over Time — shown when time series data is ready */}
+      {/* Win Rate Over Time — shown when bookmarks have time series data */}
       {tsData && (
         <div className="charcoal-texture rounded-md p-4">
           <WinRateChart bookmarks={chartBookmarks} series={tsData.series} />
@@ -922,21 +967,22 @@ export function OpeningsPage() {
           </Drawer>
 
           {/* Bookmark sidebar (D-04, D-05, D-06, D-13, D-14) */}
-          <Drawer open={bookmarkSidebarOpen} onOpenChange={setBookmarkSidebarOpen} direction="right">
+          <Drawer open={bookmarkSidebarOpen} onOpenChange={handleBookmarkSidebarOpenChange} direction="right">
             <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-bookmark-sidebar">
               <DrawerHeader className="flex flex-row items-center justify-between">
                 <DrawerTitle className="flex items-center gap-1">
-                  Position Bookmarks
-                  <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info-sidebar" side="top">
+                  Opening Bookmarks
+                  <InfoPopover ariaLabel="Opening bookmarks info" testId="position-bookmarks-info-sidebar" side="top">
                     <div className="space-y-2">
-                      <p>
-                        Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Stats tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
-                      </p>
+                    <p>
+                      Save the current position on the chess board as an opening bookmark.
+                      Bookmarked openings appear in the Stats tab, showing your win/draw/loss breakdown and win rate over time for each bookmark.
+                    </p>
                       <p>
                         Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
                       </p>
                       <p>
-                        Use the chart toggle on each bookmark to include or exclude it from the Results by Opening and Win Rate Over Time charts.
+                        Use the chart toggle on each bookmark to include or exclude it from the Bookmarked Openings charts.
                       </p>
                     </div>
                   </InfoPopover>
@@ -949,19 +995,37 @@ export function OpeningsPage() {
               </DrawerHeader>
               <div className="overflow-y-auto flex-1 p-4">
                 <div className="space-y-3">
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
                     <Button
                       size="lg"
-                      className="flex-1 btn-brand"
+                      variant="outline"
+                      className="flex-1"
                       onClick={openBookmarkDialog}
                       data-testid="btn-bookmark-sidebar"
                     >
                       <Save className="h-4 w-4" />
                       Save
                     </Button>
+                    <div className="px-1">
+                      <InfoPopover ariaLabel="Opening bookmarks info" testId="position-bookmarks-info-mobile" side="bottom">
+                        <div className="space-y-2">
+                          <p>
+                            Save the current position on the chess board as an opening bookmark.
+                            Bookmarked openings appear in the Stats tab, showing your win/draw/loss breakdown and win rate over time for each bookmark.
+                          </p>
+                          <p>
+                            Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
+                          </p>
+                          <p>
+                            Use the chart toggle on each bookmark to include or exclude it from the Bookmarked Openings charts.
+                          </p>
+                        </div>
+                      </InfoPopover>
+                    </div>
                     <Button
                       size="lg"
-                      className="flex-1 btn-brand"
+                      variant="outline"
+                      className="flex-1"
                       onClick={() => setSuggestionsOpen(true)}
                       data-testid="btn-suggest-bookmarks-sidebar"
                     >
@@ -970,11 +1034,12 @@ export function OpeningsPage() {
                     </Button>
                   </div>
                   <PositionBookmarkList
-                    bookmarks={bookmarks}
+                    bookmarks={localBookmarks}
                     onReorder={handleReorder}
                     onLoad={handleLoadBookmarkFromSidebar}
-                    chartEnabledMap={chartEnabledMap}
-                    onChartEnabledChange={handleChartEnabledChange}
+                    chartEnabledMap={localChartEnabled}
+                    onChartEnabledChange={handleLocalChartEnabledChange}
+                    onMatchSideChange={handleLocalMatchSideChange}
                   />
                 </div>
               </div>
@@ -1036,7 +1101,7 @@ export function OpeningsPage() {
           <DialogHeader>
             <DialogTitle>Save Bookmark</DialogTitle>
             <DialogDescription>
-              Enter a label for this position bookmark.
+              Enter a label for this opening bookmark.
             </DialogDescription>
           </DialogHeader>
           <Input
