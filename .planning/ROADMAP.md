@@ -220,7 +220,7 @@ Plans:
 | 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete   | 2026-03-30 |
 | 40. Static Type Checking | v1.7 | 2/2 | Complete    | 2026-04-01 |
 | 41. Code Quality & Dead Code | v1.7 | 4/4 | Complete    | 2026-04-02 |
-| 41.1. Import Speed Optimization | v1.7 | 2/2 | Complete   | 2026-04-03 |
+| 41.1. Import Speed Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
 | 42. Backend Optimization | v1.7 | 0/TBD | Not started | - |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
 
