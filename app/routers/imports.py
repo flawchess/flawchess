@@ -14,7 +14,7 @@ from app.core.database import get_async_session
 from app.models.import_job import ImportJob
 from app.models.user import User
 from app.repositories import game_repository, import_job_repository, user_repository
-from app.schemas.imports import ImportRequest, ImportStartedResponse, ImportStatusResponse
+from app.schemas.imports import DeleteGamesResponse, ImportRequest, ImportStartedResponse, ImportStatusResponse
 from app.services import import_service
 from app.users import current_active_user
 
@@ -159,11 +159,11 @@ async def get_import_status(
     raise HTTPException(status_code=404, detail="Job not found")
 
 
-@router.delete("/games")
+@router.delete("/games", response_model=DeleteGamesResponse)
 async def delete_all_games(
     user: Annotated[User, Depends(current_active_user)],
     session: Annotated[AsyncSession, Depends(get_async_session)],
-) -> dict:
+) -> DeleteGamesResponse:
     """Delete all games, positions, and import jobs for the authenticated user.
 
     Returns the count of deleted games.
@@ -171,4 +171,4 @@ async def delete_all_games(
     deleted_count = await game_repository.delete_all_games_for_user(session, user.id)
     await session.execute(delete(ImportJob).where(ImportJob.user_id == user.id))
     await session.commit()
-    return {"deleted_count": deleted_count}
+    return DeleteGamesResponse(deleted_count=deleted_count)

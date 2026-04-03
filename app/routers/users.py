@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_async_session
 from app.models.user import User
 from app.repositories import game_repository, user_repository
-from app.schemas.users import UserProfileResponse, UserProfileUpdate
+from app.schemas.users import GameCountResponse, UserProfileResponse, UserProfileUpdate
 from app.users import current_active_user
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -58,14 +58,14 @@ async def update_profile(
     )
 
 
-@router.get("/games/count")
+@router.get("/games/count", response_model=GameCountResponse)
 async def get_game_count(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
-) -> dict[str, int]:
+) -> GameCountResponse:
     """Return the total number of games imported by the current user."""
     count = await game_repository.count_games_for_user(session, user.id)
-    return {"count": count}
+    return GameCountResponse(count=count)
 
 
 @router.post("/sentry-test-error", status_code=500)

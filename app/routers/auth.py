@@ -14,6 +14,7 @@ from sqlalchemy import func, update as sa_update
 from app.core.config import settings
 from app.core.database import async_session_maker
 from app.models.user import User
+from app.schemas.auth import GoogleOAuthAvailableResponse, GoogleOAuthAuthorizeResponse
 from app.users import UserManager, auth_backend, fastapi_users, get_user_manager, google_oauth_client
 
 router = APIRouter()
@@ -47,17 +48,17 @@ _OAUTH_STATE_AUDIENCE = "fastapi-users:oauth-state"
 _CSRF_COOKIE = "flawchess_oauth_csrf"
 
 
-@router.get("/auth/google/available", tags=["auth"])
-async def google_oauth_available() -> dict:
+@router.get("/auth/google/available", tags=["auth"], response_model=GoogleOAuthAvailableResponse)
+async def google_oauth_available() -> GoogleOAuthAvailableResponse:
     """Return whether Google OAuth is configured on this server."""
     available = bool(
         settings.GOOGLE_OAUTH_CLIENT_ID and settings.GOOGLE_OAUTH_CLIENT_SECRET
     )
-    return {"available": available}
+    return GoogleOAuthAvailableResponse(available=available)
 
 
-@router.get("/auth/google/authorize", tags=["auth"])
-async def google_authorize(request: Request) -> dict:
+@router.get("/auth/google/authorize", tags=["auth"], response_model=GoogleOAuthAuthorizeResponse)
+async def google_authorize(request: Request) -> GoogleOAuthAuthorizeResponse:
     """Return the Google OAuth authorization URL for the frontend to redirect to."""
     csrf_token = secrets.token_urlsafe(32)
     state_data = {"csrftoken": csrf_token, "aud": _OAUTH_STATE_AUDIENCE}
@@ -76,8 +77,7 @@ async def google_authorize(request: Request) -> dict:
         scope=["openid", "email", "profile"],
     )
 
-    response = {"authorization_url": authorization_url}
-    return response
+    return GoogleOAuthAuthorizeResponse(authorization_url=authorization_url)
 
 
 @router.get("/auth/google/callback", name=_CALLBACK_ROUTE_NAME, tags=["auth"])

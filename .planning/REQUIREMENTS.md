@@ -32,7 +32,7 @@ Requirements for the consolidation, tooling & refactoring milestone. Each maps t
 
 - [ ] **BOPT-01**: Identify and refactor inefficient DB queries (replace row-level processing with aggregations)
 - [ ] **BOPT-02**: Optimize game_positions column types (BIGINT/DOUBLE → SmallInteger/REAL)
-- [ ] **BOPT-03**: Ensure consistent Pydantic response models across all API endpoints
+- [x] **BOPT-03**: Ensure consistent Pydantic response models across all API endpoints
 
 ### Frontend Cleanup
 
@@ -73,7 +73,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | IMP-05 | Phase 41.1 | Complete |
 | BOPT-01 | Phase 42 | Pending |
 | BOPT-02 | Phase 42 | Pending |
-| BOPT-03 | Phase 42 | Pending |
+| BOPT-03 | Phase 42 | Complete |
 | FCLN-01 | Phase 43 | Pending |
 
 **Coverage:**
