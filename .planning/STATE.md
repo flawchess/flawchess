@@ -62,6 +62,7 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 | 260402-qms | Document Sentry access in CLAUDE.md and add error fingerprinting hooks for DB and HTTP errors | 2026-04-02 | d3bbe5f | [260402-qms-document-sentry-access-in-claude-md-and-](./quick/260402-qms-document-sentry-access-in-claude-md-and-/) |
 | 260403-c83 | Rename /api/analysis to /api/openings for consistency with /api/endgames | 2026-04-03 | 52851c0 | [260403-c83-rename-api-analysis-to-api-openings-for-](./quick/260403-c83-rename-api-analysis-to-api-openings-for-/) |
 | 260403-ci9 | Full rename of analysis modules to openings — files, imports, comments, variables, parameters | 2026-04-03 | c81612d | [260403-ci9-full-rename-of-analysis-modules-to-openi](./quick/260403-ci9-full-rename-of-analysis-modules-to-openi/) |
+| 260403-dh2 | Rename /openings/compare to /openings/stats and /endgames/statistics to /endgames/stats | 2026-04-03 | 027c2f9 | [260403-dh2-rename-openings-compare-to-openings-stat](./quick/260403-dh2-rename-openings-compare-to-openings-stat/) |
 
 ### Decisions Made (Phase 40)
 
@@ -96,4 +97,4 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **Remove unused local functions after Plan 03 export removals** — With noUnusedLocals: true, functions that lost their exports (CardAction, ChartTooltipContent, etc.) become TS6133 errors; removing them is correct
 
 ---
-Last activity: 2026-04-03 - Completed quick/260403-ci9: Full rename of analysis modules to openings (all internal identifiers aligned)
+Last activity: 2026-04-03 - Completed quick task 260403-dh2: Rename /openings/compare to /openings/stats and /endgames/statistics to /endgames/stats
