@@ -113,7 +113,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
       ref={setNodeRef}
       style={style}
       {...attributes}
-      className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2"
+      className="flex items-center gap-2 rounded-md bg-card px-3 py-2"
       data-testid={`bookmark-card-${bookmark.id}`}
     >
       {/* Drag handle */}

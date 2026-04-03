@@ -159,7 +159,7 @@ export function GlobalStatsPage() {
         {/* Desktop: two-column layout with sidebar */}
         <div className="hidden md:grid md:grid-cols-[280px_1fr] md:gap-8">
           <div className="min-w-0">
-            <div className="charcoal-texture rounded-md p-2">
+            <div className="border border-border rounded-md p-2">
               <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['platform', 'recency']} />
             </div>
           </div>
@@ -172,7 +172,7 @@ export function GlobalStatsPage() {
         <div className="md:hidden flex flex-col gap-4 min-w-0">
           {/* Mobile filters collapsible */}
           <div className="sticky top-0 z-20 bg-background pb-2">
-            <div className="charcoal-texture rounded-md">
+            <div className="border border-border rounded-md">
               <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
                 <CollapsibleTrigger asChild>
                   <Button

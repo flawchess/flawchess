@@ -291,7 +291,7 @@ export function EndgamesPage() {
         {/* Desktop: two-column layout */}
         <div className="hidden md:grid md:grid-cols-[280px_1fr] md:gap-8">
           <div className="min-w-0">
-            <div className="charcoal-texture rounded-md p-2">
+            <div className="border border-border rounded-md p-2">
               <FilterPanel filters={filters} onChange={handleFilterChange} />
             </div>
           </div>

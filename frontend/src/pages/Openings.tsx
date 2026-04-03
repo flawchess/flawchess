@@ -437,7 +437,7 @@ export function OpeningsPage() {
       <div className="border-t border-border/40" />
 
       {/* Sidebar tabs: Filters & Bookmarks */}
-      <div className="charcoal-texture rounded-md">
+      <div className="border border-border rounded-md">
       <Tabs value={sidebarTab} onValueChange={setSidebarTab} className="gap-0">
         <TabsList variant="brand" className="w-full rounded-b-none" data-testid="sidebar-tabs">
           <TabsTrigger value="filters" data-testid="sidebar-tab-filters" className="flex-1">
