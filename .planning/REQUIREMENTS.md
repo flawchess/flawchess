@@ -36,7 +36,7 @@ Requirements for the consolidation, tooling & refactoring milestone. Each maps t
 
 ### Frontend Cleanup
 
-- [ ] **FCLN-01**: Refactor button brand colors from theme.ts constants to CSS variables
+- [x] **FCLN-01**: Refactor button brand colors from theme.ts constants to CSS variables
 
 ## Future Requirements
 
@@ -74,7 +74,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BOPT-01 | Phase 42 | Pending |
 | BOPT-02 | Phase 42 | Pending |
 | BOPT-03 | Phase 42 | Complete |
-| FCLN-01 | Phase 43 | Pending |
+| FCLN-01 | Phase 43 | Complete |
 
 **Coverage:**
 - v1.7 requirements: 16 total

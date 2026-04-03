@@ -12,7 +12,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { PRIMARY_BUTTON_CLASS } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import { ArrowRightLeft, Scale, Filter, TrophyIcon, DownloadIcon, Loader2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -136,7 +135,7 @@ export function HomePageContent() {
         <Button
           size="lg"
           asChild
-          className={cn(PRIMARY_BUTTON_CLASS, 'min-h-11 min-w-48 mt-8')}
+          className={cn('btn-brand', 'min-h-11 min-w-48 mt-8')}
           data-testid="hero-cta-signup"
         >
           <Link to="/login?tab=register">Sign up free</Link>
@@ -408,7 +407,7 @@ export function HomePageContent() {
         <Button
           size="lg"
           asChild
-          className={cn(PRIMARY_BUTTON_CLASS, 'min-h-11 min-w-48')}
+          className={cn('btn-brand', 'min-h-11 min-w-48')}
           data-testid="footer-cta-signup"
         >
           <Link to="/login?tab=register">Sign up free</Link>

@@ -104,7 +104,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ## Current State
 
-v1.6 shipped 2026-03-30. Seven milestones complete (v1.0–v1.6), 39 phases, live at flawchess.com. The platform has a polished, consistent UI with centralized theming, shared WDL chart components, an openings reference table with SQL-side aggregation, smart bookmark defaults, and mobile drawer sidebars. v1.7 consolidation in progress — Phase 40 (static type checking), Phase 41 (code quality & dead code), Phase 41.1 (import speed optimization), and Phase 42 (backend optimization — SQL aggregation, typed response models) complete.
+v1.6 shipped 2026-03-30. Seven milestones complete (v1.0–v1.6), 39 phases, live at flawchess.com. The platform has a polished, consistent UI with centralized theming, shared WDL chart components, an openings reference table with SQL-side aggregation, smart bookmark defaults, and mobile drawer sidebars. v1.7 consolidation in progress — Phase 40 (static type checking), Phase 41 (code quality & dead code), Phase 41.1 (import speed optimization), Phase 42 (backend optimization — SQL aggregation, typed response models), and Phase 43 (frontend cleanup — brand button CSS variable migration) complete.
 
 ## Context
 
@@ -174,4 +174,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after Phase 42 completion*
+*Last updated: 2026-04-03 after Phase 43 completion*
