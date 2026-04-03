@@ -101,12 +101,12 @@ repositories/     # DB access (no SQL in services)
 All routers use `APIRouter(prefix="/resource", tags=["resource"])` with relative paths in decorators. Never embed the resource prefix in individual route paths:
 ```python
 # CORRECT
-router = APIRouter(prefix="/analysis", tags=["analysis"])
+router = APIRouter(prefix="/openings", tags=["openings"])
 @router.post("/positions", ...)
 
 # WRONG — duplicates prefix in every route
-router = APIRouter(tags=["analysis"])
-@router.post("/analysis/positions", ...)
+router = APIRouter(tags=["openings"])
+@router.post("/openings/positions", ...)
 ```
 
 ### Shared Query Filters
@@ -137,11 +137,8 @@ ssh flawchess "cd /opt/flawchess && docker compose ps"
 # View backend logs
 ssh flawchess "cd /opt/flawchess && docker compose logs --tail=50 backend"
 
-# Deploy via GitHub Actions (preferred — runs tests first)
+# Deploy (always use this — runs CI tests before deploying)
 bin/deploy.sh
-
-# Deploy via SSH (direct — skips CI tests)
-ssh flawchess "cd /opt/flawchess && git pull origin main && docker compose up -d --build"
 
 # Restart backend only
 ssh flawchess "cd /opt/flawchess && docker compose restart backend"
