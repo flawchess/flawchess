@@ -68,13 +68,13 @@ export function OpeningsPage() {
   const navigate = useNavigate();
 
   const needsRedirect = location.pathname === '/openings' || location.pathname === '/openings/';
-  // Redirect old /openings/statistics URL to /openings/compare after tab rename
-  const needsStatisticsRedirect = location.pathname.endsWith('/statistics');
+  // Redirect old /openings/compare and /openings/statistics URLs to /openings/stats after tab rename
+  const needsLegacyRedirect = location.pathname.endsWith('/statistics') || location.pathname.endsWith('/compare');
 
   const activeTab = location.pathname.includes('/games')
     ? 'games'
-    : location.pathname.includes('/compare')
-      ? 'compare'
+    : location.pathname.includes('/stats')
+      ? 'stats'
       : 'explorer';
 
   // ── Board state ─────────────────────────────────────────────────────────────
@@ -783,8 +783,8 @@ export function OpeningsPage() {
     return <Navigate to="/openings/explorer" replace />;
   }
 
-  if (needsStatisticsRedirect) {
-    return <Navigate to="/openings/compare" replace />;
+  if (needsLegacyRedirect) {
+    return <Navigate to="/openings/stats" replace />;
   }
 
   return (
@@ -804,7 +804,7 @@ export function OpeningsPage() {
                   <Gamepad2 className="mr-1.5 h-4 w-4" />
                   Games
                 </TabsTrigger>
-                <TabsTrigger value="compare" data-testid="tab-compare" className="flex-1">
+                <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
                   <BarChart2 className="mr-1.5 h-4 w-4" />
                   Statistics
                 </TabsTrigger>
@@ -815,7 +815,7 @@ export function OpeningsPage() {
               <TabsContent value="games" className="mt-4">
                 {gamesContent}
               </TabsContent>
-              <TabsContent value="compare" className="mt-4">
+              <TabsContent value="stats" className="mt-4">
                 {statisticsContent}
               </TabsContent>
             </Tabs>
@@ -1043,7 +1043,7 @@ export function OpeningsPage() {
                 <Gamepad2 className="mr-1.5 h-4 w-4" />
                 Games
               </TabsTrigger>
-              <TabsTrigger value="compare" className="flex-1" data-testid="tab-compare-mobile">
+              <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
                 <BarChart2 className="mr-1.5 h-4 w-4" />
                 Statistics
               </TabsTrigger>
@@ -1054,7 +1054,7 @@ export function OpeningsPage() {
             <TabsContent value="games" className="mt-4">
               {gamesContent}
             </TabsContent>
-            <TabsContent value="compare" className="mt-4">
+            <TabsContent value="stats" className="mt-4">
               {statisticsContent}
             </TabsContent>
           </Tabs>
