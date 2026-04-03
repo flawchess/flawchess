@@ -23,3 +23,9 @@ class UserProfileUpdate(BaseModel):
 
     chess_com_username: str | None = None
     lichess_username: str | None = None
+
+
+class GameCountResponse(BaseModel):
+    """Response for GET /users/games/count."""
+
+    count: int
