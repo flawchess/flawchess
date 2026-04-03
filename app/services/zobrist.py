@@ -12,11 +12,58 @@ in PostgreSQL BIGINT columns.
 
 import ctypes
 import io
+from typing import TypedDict
 
 import chess
 import chess.pgn
 import chess.polyglot
 import sentry_sdk
+
+from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD
+from app.services.endgame_service import _CLASS_TO_INT, classify_endgame_class
+from app.services.position_classifier import classify_position
+
+
+# ---------------------------------------------------------------------------
+# TypedDicts for unified PGN processing
+# ---------------------------------------------------------------------------
+
+
+class PlyData(TypedDict):
+    """Per-ply data returned by process_game_pgn.
+
+    Contains all data needed for a single game_positions row, computed in
+    a single PGN mainline walk (eliminates the triple-parse bottleneck D-01/D-02).
+    """
+
+    ply: int
+    white_hash: int
+    black_hash: int
+    full_hash: int
+    move_san: str | None
+    clock_seconds: float | None
+    eval_cp: int | None
+    eval_mate: int | None
+    material_count: int
+    material_signature: str
+    material_imbalance: int
+    has_opposite_color_bishops: bool
+    piece_count: int
+    backrank_sparse: bool
+    mixedness: int
+    endgame_class: int | None
+
+
+class GameProcessingResult(TypedDict):
+    """Game-level result returned by process_game_pgn.
+
+    Contains the list of per-ply data plus game-level aggregates derived
+    from the same single PGN parse.
+    """
+
+    plies: list[PlyData]
+    result_fen: str | None
+    move_count: int
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -75,6 +122,126 @@ def compute_hashes(board: chess.Board) -> tuple[int, int, int]:
     return white_hash, black_hash, full_hash
 
 
+def process_game_pgn(pgn_text: str) -> GameProcessingResult | None:
+    """Parse pgn_text and return all per-ply data from a single mainline walk.
+
+    Replaces the triple-PGN-parse pattern (D-01). Walks the mainline once,
+    computing hashes, classification, eval, clock, and move SAN for each ply.
+    Also derives move_count and result_fen (D-02).
+
+    Returns None for empty, unparseable, or moveless PGNs.
+
+    Args:
+        pgn_text: A PGN-formatted string. May contain a single game.
+
+    Returns:
+        A ``GameProcessingResult`` TypedDict with ``plies`` (list of ``PlyData``),
+        ``result_fen``, and ``move_count``. Returns ``None`` when *pgn_text* is
+        empty, unparseable, or contains no moves.
+    """
+    try:
+        game = chess.pgn.read_game(io.StringIO(pgn_text))
+    except Exception:
+        sentry_sdk.capture_exception()
+        return None
+
+    if game is None:
+        return None
+
+    nodes = list(game.mainline())
+    if not nodes:
+        return None
+
+    board = game.board()
+    plies: list[PlyData] = []
+
+    for ply, node in enumerate(nodes):
+        # 1. Pre-push: hashes from current board state
+        wh, bh, fh = compute_hashes(board)
+        # 2. Pre-push: classification from current board state
+        classification = classify_position(board)
+        # 3. Pre-push: move SAN (board must be in pre-move state)
+        move_san: str = board.san(node.move)
+        # 4. On node: clock annotation
+        clock_seconds: float | None = node.clock()
+        # 5. On node: eval annotation (eval of position AFTER this move, stored on the move node)
+        eval_cp: int | None = None
+        eval_mate: int | None = None
+        pov = node.eval()
+        if pov is not None:
+            w = pov.white()
+            eval_cp = w.score(mate_score=None)
+            eval_mate = w.mate()
+
+        # Compute endgame_class for endgame positions (piece_count <= threshold)
+        endgame_class: int | None = None
+        if classification.piece_count <= ENDGAME_PIECE_COUNT_THRESHOLD:
+            ec_str = classify_endgame_class(classification.material_signature)
+            endgame_class = _CLASS_TO_INT[ec_str]
+
+        # 6. Advance board to next ply
+        board.push(node.move)
+
+        plies.append(
+            PlyData(
+                ply=ply,
+                white_hash=wh,
+                black_hash=bh,
+                full_hash=fh,
+                move_san=move_san,
+                clock_seconds=clock_seconds,
+                eval_cp=eval_cp,
+                eval_mate=eval_mate,
+                material_count=classification.material_count,
+                material_signature=classification.material_signature,
+                material_imbalance=classification.material_imbalance,
+                has_opposite_color_bishops=classification.has_opposite_color_bishops,
+                piece_count=classification.piece_count,
+                backrank_sparse=classification.backrank_sparse,
+                mixedness=classification.mixedness,
+                endgame_class=endgame_class,
+            )
+        )
+
+    # Final position: no move is played from here
+    wh, bh, fh = compute_hashes(board)
+    classification = classify_position(board)
+    endgame_class_final: int | None = None
+    if classification.piece_count <= ENDGAME_PIECE_COUNT_THRESHOLD:
+        ec_str_final = classify_endgame_class(classification.material_signature)
+        endgame_class_final = _CLASS_TO_INT[ec_str_final]
+
+    plies.append(
+        PlyData(
+            ply=len(nodes),
+            white_hash=wh,
+            black_hash=bh,
+            full_hash=fh,
+            move_san=None,
+            clock_seconds=None,
+            eval_cp=None,
+            eval_mate=None,
+            material_count=classification.material_count,
+            material_signature=classification.material_signature,
+            material_imbalance=classification.material_imbalance,
+            has_opposite_color_bishops=classification.has_opposite_color_bishops,
+            piece_count=classification.piece_count,
+            backrank_sparse=classification.backrank_sparse,
+            mixedness=classification.mixedness,
+            endgame_class=endgame_class_final,
+        )
+    )
+
+    result_fen = board.board_fen()
+    move_count = (len(nodes) + 1) // 2
+
+    return GameProcessingResult(
+        plies=plies,
+        result_fen=result_fen,
+        move_count=move_count,
+    )
+
+
 def hashes_for_game(
     pgn_text: str,
 ) -> tuple[list[tuple[int, int, int, int, str | None, float | None]], str | None]:
@@ -107,32 +274,11 @@ def hashes_for_game(
         (``board.board_fen()``).  Both are ``([], None)`` when *pgn_text* is empty,
         unparseable, or contains no moves.
     """
-    try:
-        game = chess.pgn.read_game(io.StringIO(pgn_text))
-    except Exception:
-        sentry_sdk.capture_exception()
+    result = process_game_pgn(pgn_text)
+    if result is None:
         return [], None
-
-    if game is None:
-        return [], None
-
-    nodes = list(game.mainline())
-    if not nodes:
-        return [], None
-
-    results: list[tuple[int, int, int, int, str | None, float | None]] = []
-    board = game.board()
-
-    for ply, node in enumerate(nodes):
-        move_san: str = board.san(node.move)  # BEFORE push: board must be in pre-move position
-        clock_seconds: float | None = node.clock()
-        wh, bh, fh = compute_hashes(board)
-        results.append((ply, wh, bh, fh, move_san, clock_seconds))
-        board.push(node.move)
-
-    # Final position: no move is played from here
-    wh, bh, fh = compute_hashes(board)
-    results.append((len(nodes), wh, bh, fh, None, None))
-    result_fen = board.board_fen()
-
-    return results, result_fen
+    hash_tuples: list[tuple[int, int, int, int, str | None, float | None]] = [
+        (p["ply"], p["white_hash"], p["black_hash"], p["full_hash"], p["move_san"], p["clock_seconds"])
+        for p in result["plies"]
+    ]
+    return hash_tuples, result["result_fen"]
