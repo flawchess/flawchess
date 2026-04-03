@@ -44,7 +44,9 @@ export function EndgamesPage() {
 
   const needsRedirect =
     location.pathname === '/endgames' || location.pathname === '/endgames/';
-  const activeTab = location.pathname.includes('/games') ? 'games' : 'statistics';
+  // Redirect old /endgames/statistics URL to /endgames/stats after tab rename
+  const needsLegacyRedirect = location.pathname.endsWith('/statistics');
+  const activeTab = location.pathname.includes('/games') ? 'games' : 'stats';
 
   // ── Filter state — color and matchSide are fixed (not used for endgames per D-02) ──
   const [filters, setFilters] = useState<FilterState>({
@@ -278,7 +280,11 @@ export function EndgamesPage() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   if (needsRedirect) {
-    return <Navigate to="/endgames/statistics" replace />;
+    return <Navigate to="/endgames/stats" replace />;
+  }
+
+  if (needsLegacyRedirect) {
+    return <Navigate to="/endgames/stats" replace />;
   }
 
   return (
@@ -295,7 +301,7 @@ export function EndgamesPage() {
           <div className="min-w-0">
             <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>
               <TabsList variant="brand" className="w-full" data-testid="endgames-tabs">
-                <TabsTrigger value="statistics" data-testid="tab-statistics" className="flex-1">
+                <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
                   <BarChart2Icon className="mr-1.5 h-4 w-4" />
                   Statistics
                   <span
@@ -310,7 +316,7 @@ export function EndgamesPage() {
                   Games
                 </TabsTrigger>
               </TabsList>
-              <TabsContent value="statistics" className="mt-4">
+              <TabsContent value="stats" className="mt-4">
                 {statisticsContent}
               </TabsContent>
               <TabsContent value="games" className="mt-4">
@@ -348,7 +354,7 @@ export function EndgamesPage() {
             {/* Tabs: Statistics / Games */}
             <hr className="border-t border-white/10 mb-3" />
             <TabsList variant="brand" className="w-full h-11!" data-testid="endgames-tabs-mobile">
-              <TabsTrigger value="statistics" className="flex-1" data-testid="tab-statistics-mobile">
+              <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
                 <BarChart2Icon className="mr-1.5 h-4 w-4" />
                 Statistics
                 <span
@@ -364,7 +370,7 @@ export function EndgamesPage() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="statistics" className="mt-4">
+            <TabsContent value="stats" className="mt-4">
               {statisticsContent}
             </TabsContent>
             <TabsContent value="games" className="mt-4">
