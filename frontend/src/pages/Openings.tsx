@@ -11,11 +11,10 @@ function setChartEnabledStorage(bookmarkId: number, enabled: boolean): void {
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronUp, ChevronDown, Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, SlidersHorizontal, BookMarked, X } from 'lucide-react';
+import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, SlidersHorizontal, BookMarked, X } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -88,9 +87,8 @@ export function OpeningsPage() {
   // ── Board arrows (hovered move) ─────────────────────────────────────────────
   const [hoveredMove, setHoveredMove] = useState<string | null>(null);
 
-  // ── Collapsible section state ───────────────────────────────────────────────
-  const [positionBookmarksOpen, setPositionBookmarksOpen] = useState(false);
-  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  // ── Sidebar tab state (desktop only) ────────────────────────────────────────
+  const [sidebarTab, setSidebarTab] = useState<string>('filters');
 
   // ── Mobile sidebar state ────────────────────────────────────────────────────
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(false);
@@ -423,120 +421,80 @@ export function OpeningsPage() {
 
       <div className="border-t border-border/40" />
 
-      {/* Played as + Piece filter */}
-      <div className="charcoal-texture rounded-md p-2">
-        <div className="flex flex-wrap gap-x-4 gap-y-3">
-          <div>
-            <p className="mb-1 text-xs text-muted-foreground">Played as</p>
-            <ToggleGroup
-              type="single"
-              value={filters.color}
-              onValueChange={(v) => {
-                if (!v) return;
-                const color = v as Color;
-                setFilters(prev => ({ ...prev, color }));
-                setBoardFlipped(color === 'black');
-              }}
-              variant="outline"
-              size="sm"
-              data-testid="filter-played-as"
-            >
-              <ToggleGroupItem value="white" data-testid="filter-played-as-white">
-                <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
-                White
-              </ToggleGroupItem>
-              <ToggleGroupItem value="black" data-testid="filter-played-as-black">
-                <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
-                Black
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
+      {/* Sidebar tabs: Filters & Bookmarks */}
+      <Tabs value={sidebarTab} onValueChange={setSidebarTab}>
+        <TabsList variant="brand" className="w-full" data-testid="sidebar-tabs">
+          <TabsTrigger value="filters" data-testid="sidebar-tab-filters" className="flex-1">
+            <SlidersHorizontal className="mr-1.5 h-4 w-4" />
+            Filters
+          </TabsTrigger>
+          <TabsTrigger value="bookmarks" data-testid="sidebar-tab-bookmarks" className="flex-1">
+            <BookMarked className="mr-1.5 h-4 w-4" />
+            Bookmarks
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="filters">
+          <div className="charcoal-texture rounded-md p-2 space-y-3">
+            {/* Played as + Piece filter */}
+            <div className="flex flex-wrap gap-x-4 gap-y-3">
+              <div>
+                <p className="mb-1 text-xs text-muted-foreground">Played as</p>
+                <ToggleGroup
+                  type="single"
+                  value={filters.color}
+                  onValueChange={(v) => {
+                    if (!v) return;
+                    const color = v as Color;
+                    setFilters(prev => ({ ...prev, color }));
+                    setBoardFlipped(color === 'black');
+                  }}
+                  variant="outline"
+                  size="sm"
+                  data-testid="filter-played-as"
+                >
+                  <ToggleGroupItem value="white" data-testid="filter-played-as-white">
+                    <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
+                    White
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="black" data-testid="filter-played-as-black">
+                    <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
+                    Black
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
 
-          <div className="ml-auto">
-            <div className="mb-1 flex items-center gap-1">
-              <p className="text-xs text-muted-foreground">Piece filter</p>
-              <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info" side="top">
-                Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
-              </InfoPopover>
+              <div className="ml-auto">
+                <div className="mb-1 flex items-center gap-1">
+                  <p className="text-xs text-muted-foreground">Piece filter</p>
+                  <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info" side="top">
+                    Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
+                  </InfoPopover>
+                </div>
+                <ToggleGroup
+                  type="single"
+                  value={filters.matchSide}
+                  onValueChange={(v) => {
+                    if (!v) return;
+                    setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
+                  }}
+                  variant="outline"
+                  size="sm"
+                  data-testid="filter-piece-filter"
+                >
+                  <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
+                  <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
+                  <ToggleGroupItem value="both" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
+                </ToggleGroup>
+              </div>
             </div>
-            <ToggleGroup
-              type="single"
-              value={filters.matchSide}
-              onValueChange={(v) => {
-                if (!v) return;
-                setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
-              }}
-              variant="outline"
-              size="sm"
-              data-testid="filter-piece-filter"
-            >
-              <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
-              <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
-              <ToggleGroupItem value="both" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-        </div>
-      </div>
-
-      {/* More filters collapsible */}
-      <div className="charcoal-texture rounded-md">
-      <Collapsible open={moreFiltersOpen} onOpenChange={setMoreFiltersOpen}>
-        <CollapsibleTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-between px-3 text-sm font-medium min-h-11 sm:min-h-0 rounded-none hover:bg-charcoal-hover!"
-            data-testid="section-more-filters"
-          >
-            More filters
-            {moreFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="border-t border-border/20" />
-          <div className="p-2">
+            <div className="border-t border-border/20" />
+            {/* FilterPanel — all filter controls */}
             <FilterPanel filters={filters} onChange={handleFiltersChange} />
           </div>
-        </CollapsibleContent>
-      </Collapsible>
-      </div>
-
-      <div className="border-t border-border/40" />
-
-      {/* Position bookmarks collapsible */}
-      <div className="charcoal-texture rounded-md">
-      <Collapsible open={positionBookmarksOpen} onOpenChange={setPositionBookmarksOpen}>
-        <CollapsibleTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-between px-3 text-sm font-medium min-h-11 sm:min-h-0 rounded-none hover:bg-charcoal-hover!"
-            data-testid="section-position-bookmarks"
-          >
-            <span className="flex items-center gap-1">
-              Position bookmarks
-              <span onClick={(e) => e.stopPropagation()}>
-                <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info" side="top">
-                  <div className="space-y-2">
-                    <p>
-                      Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Stats tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
-                    </p>
-                    <p>
-                      Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
-                    </p>
-                    <p>
-                      Use the chart toggle on each bookmark to include or exclude it from the Results by Opening and Win Rate Over Time charts.
-                    </p>
-                  </div>
-                </InfoPopover>
-              </span>
-            </span>
-            {positionBookmarksOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="border-t border-border/20" />
-          <div className="p-2">
+        </TabsContent>
+        <TabsContent value="bookmarks">
+          <div className="charcoal-texture rounded-md p-2">
+            {/* Save/Suggest buttons + info */}
             <div className="flex gap-2 mb-2">
               <Button
                 size="lg"
@@ -556,6 +514,19 @@ export function OpeningsPage() {
                 <Sparkles className="h-4 w-4" />
                 Suggest
               </Button>
+              <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info" side="top">
+                <div className="space-y-2">
+                  <p>
+                    Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Stats tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                  </p>
+                  <p>
+                    Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
+                  </p>
+                  <p>
+                    Use the chart toggle on each bookmark to include or exclude it from the Results by Opening and Win Rate Over Time charts.
+                  </p>
+                </div>
+              </InfoPopover>
             </div>
             <PositionBookmarkList
               bookmarks={bookmarks}
@@ -565,9 +536,8 @@ export function OpeningsPage() {
               onChartEnabledChange={handleChartEnabledChange}
             />
           </div>
-        </CollapsibleContent>
-      </Collapsible>
-      </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 
