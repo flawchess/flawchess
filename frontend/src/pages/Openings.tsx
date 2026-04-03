@@ -1006,22 +1006,6 @@ export function OpeningsPage() {
                       <Save className="h-4 w-4" />
                       Save
                     </Button>
-                    <div className="px-1">
-                      <InfoPopover ariaLabel="Opening bookmarks info" testId="position-bookmarks-info-mobile" side="bottom">
-                        <div className="space-y-2">
-                          <p>
-                            Save the current position on the chess board as an opening bookmark.
-                            Bookmarked openings appear in the Stats tab, showing your win/draw/loss breakdown and win rate over time for each bookmark.
-                          </p>
-                          <p>
-                            Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
-                          </p>
-                          <p>
-                            Use the chart toggle on each bookmark to include or exclude it from the Bookmarked Openings charts.
-                          </p>
-                        </div>
-                      </InfoPopover>
-                    </div>
                     <Button
                       size="lg"
                       variant="outline"
