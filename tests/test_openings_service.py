@@ -1,4 +1,4 @@
-"""Unit and integration tests for the analysis service.
+"""Unit and integration tests for the openings service.
 
 Coverage:
 - ANL-03: derive_user_result for all 6 result × color combinations
@@ -19,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.schemas.analysis import AnalysisRequest, NextMovesRequest
-from app.services.analysis_service import (
+from app.schemas.openings import OpeningsRequest, NextMovesRequest
+from app.services.openings_service import (
     analyze,
     derive_user_result,
     get_next_moves,
@@ -175,7 +175,7 @@ class TestWDLStats:
         await _seed_game(db_session, result="1/2-1/2", user_color="white", full_hash=WDL_HASH)
         await _seed_game(db_session, result="0-1", user_color="white", full_hash=WDL_HASH)
 
-        request = AnalysisRequest(target_hash=WDL_HASH, match_side="full")
+        request = OpeningsRequest(target_hash=WDL_HASH, match_side="full")
         response = await analyze(db_session, user_id=1, request=request)
 
         assert response.stats.wins == 1
@@ -189,7 +189,7 @@ class TestWDLStats:
     @pytest.mark.asyncio
     async def test_zero_matches(self, db_session: AsyncSession) -> None:
         """Hash that matches no games returns all-zero stats and empty list."""
-        request = AnalysisRequest(target_hash=999999999, match_side="full")
+        request = OpeningsRequest(target_hash=999999999, match_side="full")
         response = await analyze(db_session, user_id=1, request=request)
 
         assert response.stats.wins == 0
@@ -230,7 +230,7 @@ class TestGameRecord:
             full_hash=RECORD_HASH,
         )
 
-        request = AnalysisRequest(target_hash=RECORD_HASH, match_side="full")
+        request = OpeningsRequest(target_hash=RECORD_HASH, match_side="full")
         response = await analyze(db_session, user_id=1, request=request)
 
         assert len(response.games) == 1
@@ -252,7 +252,7 @@ class TestGameRecord:
         url = "https://www.chess.com/game/live/77777"
         await _seed_game(db_session, platform_url=url, full_hash=RECORD_HASH)
 
-        request = AnalysisRequest(target_hash=RECORD_HASH, match_side="full")
+        request = OpeningsRequest(target_hash=RECORD_HASH, match_side="full")
         response = await analyze(db_session, user_id=1, request=request)
 
         for rec in response.games:
@@ -275,7 +275,7 @@ class TestPaginationResponse:
         for _ in range(10):
             await _seed_game(db_session, full_hash=PAGINATION_HASH)
 
-        request = AnalysisRequest(target_hash=PAGINATION_HASH, match_side="full", limit=3, offset=0)
+        request = OpeningsRequest(target_hash=PAGINATION_HASH, match_side="full", limit=3, offset=0)
         response = await analyze(db_session, user_id=1, request=request)
 
         assert response.matched_count == 10

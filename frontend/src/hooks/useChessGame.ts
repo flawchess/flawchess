@@ -29,7 +29,7 @@ interface ChessGameState {
   /** Reset to starting position */
   reset: () => void;
   /** Get the hash to send for analysis based on match side and user color */
-  getHashForAnalysis: (matchSide: MatchSide, color: Color) => string;
+  getHashForOpenings: (matchSide: MatchSide, color: Color) => string;
   /** Current opening name from the lichess database, or null */
   openingName: Opening | null;
   /** Load a saved sequence of SAN moves onto a fresh board */
@@ -167,7 +167,7 @@ export function useChessGame(): ChessGameState {
     setLastMove(null);
   }, []);
 
-  const getHashForAnalysis = useCallback(
+  const getHashForOpenings = useCallback(
     (matchSide: MatchSide, color: Color): string => {
       const resolved = resolveMatchSide(matchSide, color);
       if (resolved === 'white') return hashToString(hashes.whiteHash);
@@ -213,7 +213,7 @@ export function useChessGame(): ChessGameState {
     goForward,
     goBack,
     reset,
-    getHashForAnalysis,
+    getHashForOpenings,
     openingName,
     loadMoves,
   };

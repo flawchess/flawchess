@@ -1,4 +1,4 @@
-"""Integration tests for the analysis repository.
+"""Integration tests for the openings repository.
 
 All tests use a real PostgreSQL database through the db_session fixture,
 which wraps each test in a rolled-back transaction for isolation.
@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.repositories.analysis_repository import (
+from app.repositories.openings_repository import (
     HASH_COLUMN_MAP,
     query_all_results,
     query_matching_games,
@@ -537,7 +537,7 @@ class TestTimeSeries:
     @pytest.mark.asyncio
     async def test_returns_monthly_buckets(self, db_session: AsyncSession) -> None:
         """BKM-03: 3 games in Jan 2025 (2W 1L) and 2 games in Mar 2025 (1W 1D) → 2 rows."""
-        from app.repositories.analysis_repository import query_time_series
+        from app.repositories.openings_repository import query_time_series
 
         jan = datetime.datetime(2025, 1, 15, tzinfo=datetime.timezone.utc)
         mar = datetime.datetime(2025, 3, 10, tzinfo=datetime.timezone.utc)
@@ -576,7 +576,7 @@ class TestTimeSeries:
     @pytest.mark.asyncio
     async def test_gap_months(self, db_session: AsyncSession) -> None:
         """BKM-04: Feb 2025 has no games — it must NOT appear in results."""
-        from app.repositories.analysis_repository import query_time_series
+        from app.repositories.openings_repository import query_time_series
 
         jan = datetime.datetime(2025, 1, 20, tzinfo=datetime.timezone.utc)
         mar = datetime.datetime(2025, 3, 5, tzinfo=datetime.timezone.utc)
@@ -598,7 +598,7 @@ class TestTimeSeries:
     @pytest.mark.asyncio
     async def test_user_isolation(self, db_session: AsyncSession) -> None:
         """Games belonging to user B do not appear in user A's time series."""
-        from app.repositories.analysis_repository import query_time_series
+        from app.repositories.openings_repository import query_time_series
 
         played = datetime.datetime(2025, 6, 1, tzinfo=datetime.timezone.utc)
 
@@ -620,7 +620,7 @@ class TestTimeSeries:
     @pytest.mark.asyncio
     async def test_color_filter(self, db_session: AsyncSession) -> None:
         """When color='white', only games where user_color='white' are counted."""
-        from app.repositories.analysis_repository import query_time_series
+        from app.repositories.openings_repository import query_time_series
 
         played = datetime.datetime(2025, 7, 1, tzinfo=datetime.timezone.utc)
 
@@ -642,7 +642,7 @@ class TestTimeSeries:
     @pytest.mark.asyncio
     async def test_match_side_white(self, db_session: AsyncSession) -> None:
         """hash_column=GamePosition.white_hash: only games with matching white_hash returned."""
-        from app.repositories.analysis_repository import query_time_series
+        from app.repositories.openings_repository import query_time_series
 
         played = datetime.datetime(2025, 8, 15, tzinfo=datetime.timezone.utc)
 
@@ -682,7 +682,7 @@ class TestNextMoves:
         - e4: game_count=2, wins=1, draws=1, losses=0, result_hash=NM_E4_HASH
         - d4: game_count=1, wins=0, draws=0, losses=1, result_hash=NM_D4_HASH
         """
-        from app.repositories.analysis_repository import query_next_moves
+        from app.repositories.openings_repository import query_next_moves
 
         # Game 1: e4 → win
         game1, _ = await _seed_game(
@@ -769,7 +769,7 @@ class TestNextMovesTranspositions:
 
         query_next_moves must return game_count=1 for 'Nf3', not 2.
         """
-        from app.repositories.analysis_repository import query_next_moves
+        from app.repositories.openings_repository import query_next_moves
 
         game = Game(
             user_id=1,
@@ -828,7 +828,7 @@ class TestNextMovesFilters:
     @pytest.mark.asyncio
     async def test_time_control_filter(self, db_session: AsyncSession) -> None:
         """2 games at same position (blitz vs rapid), filter blitz → only blitz counted."""
-        from app.repositories.analysis_repository import query_next_moves
+        from app.repositories.openings_repository import query_next_moves
 
         # Blitz game plays e4
         game_blitz, _ = await _seed_game(
@@ -866,7 +866,7 @@ class TestNextMovesFilters:
     @pytest.mark.asyncio
     async def test_rated_filter(self, db_session: AsyncSession) -> None:
         """2 games at same position (rated vs unrated), filter rated=True → only rated counted."""
-        from app.repositories.analysis_repository import query_next_moves
+        from app.repositories.openings_repository import query_next_moves
 
         # Rated game
         game_rated, _ = await _seed_game(
@@ -920,7 +920,7 @@ class TestTranspositionCounts:
 
         query_transposition_counts([600]) must return {600: 2}.
         """
-        from app.repositories.analysis_repository import query_transposition_counts
+        from app.repositories.openings_repository import query_transposition_counts
 
         # Game A: plays e4 from source_hash=100 → result_hash=600
         game_a, _ = await _seed_game(
@@ -970,7 +970,7 @@ class TestTranspositionCounts:
     @pytest.mark.asyncio
     async def test_empty_hash_list(self, db_session: AsyncSession) -> None:
         """Empty result_hash_list returns empty dict."""
-        from app.repositories.analysis_repository import query_transposition_counts
+        from app.repositories.openings_repository import query_transposition_counts
 
         counts = await query_transposition_counts(
             db_session,
@@ -1003,7 +1003,7 @@ class TestNextMovesNullMoveExcluded:
 
         query_next_moves must return no rows for this source hash.
         """
-        from app.repositories.analysis_repository import query_next_moves
+        from app.repositories.openings_repository import query_next_moves
 
         # Game with only a NULL move_san position (final position)
         game, _ = await _seed_game(

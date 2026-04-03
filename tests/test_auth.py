@@ -117,7 +117,7 @@ class TestLogin:
 
 class TestAuthProtection:
     @pytest.mark.asyncio
-    async def test_analysis_requires_auth(self):
+    async def test_openings_requires_auth(self):
         """POST /openings/positions without Authorization header should return 401."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -143,7 +143,7 @@ class TestAuthProtection:
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_analysis_with_valid_token_does_not_return_401(self):
+    async def test_openings_with_valid_token_does_not_return_401(self):
         """POST /openings/positions with valid Bearer token should not return 401."""
         email = unique_email("eve")
         async with httpx.AsyncClient(
@@ -170,14 +170,14 @@ class TestAuthProtection:
 
 class TestUserIsolation:
     @pytest.mark.asyncio
-    async def test_user_isolation_analysis(self, db_session):
+    async def test_user_isolation_openings(self, db_session):
         """User B cannot see User A's games in analysis results."""
         import datetime
 
         from app.models.game import Game
         from app.models.game_position import GamePosition
-        from app.schemas.analysis import AnalysisRequest
-        from app.services import analysis_service
+        from app.schemas.openings import OpeningsRequest
+        from app.services import openings_service
 
         email_a = unique_email("userA")
         email_b = unique_email("userB")
@@ -223,13 +223,13 @@ class TestUserIsolation:
         await db_session.flush()
 
         # Query as user B — should see 0 games
-        request = AnalysisRequest(target_hash=KNOWN_HASH)
-        result = await analysis_service.analyze(db_session, user_b_id, request)
+        request = OpeningsRequest(target_hash=KNOWN_HASH)
+        result = await openings_service.analyze(db_session, user_b_id, request)
 
         assert result.stats.total == 0
         assert result.stats.wins == 0
         assert result.games == []
 
         # Query as user A — should see 1 game
-        result_a = await analysis_service.analyze(db_session, user_a_id, request)
+        result_a = await openings_service.analyze(db_session, user_a_id, request)
         assert result_a.stats.total == 1

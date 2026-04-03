@@ -1,19 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
-import type { AnalysisResponse } from '@/types/api';
+import type { OpeningsResponse } from '@/types/api';
 import { resolveMatchSide } from '@/types/api';
 import type { FilterState } from '@/components/filters/FilterPanel';
 
-export function usePositionAnalysisQuery(params: {
+export function useOpeningsPositionQuery(params: {
   targetHash: string;
   filters: FilterState;
   offset: number;
   limit: number;
 }) {
-  return useQuery<AnalysisResponse>({
-    queryKey: ['positionAnalysis', params.targetHash, params.filters, params.offset, params.limit],
+  return useQuery<OpeningsResponse>({
+    queryKey: ['openingsPosition', params.targetHash, params.filters, params.offset, params.limit],
     queryFn: async () => {
-      const response = await apiClient.post<AnalysisResponse>('/openings/positions', {
+      const response = await apiClient.post<OpeningsResponse>('/openings/positions', {
         target_hash: params.targetHash,
         match_side: resolveMatchSide(params.filters.matchSide, params.filters.color),
         time_control: params.filters.timeControls,

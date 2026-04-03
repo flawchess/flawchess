@@ -30,7 +30,7 @@ import {
 import { toast } from 'sonner';
 import { useChessGame } from '@/hooks/useChessGame';
 import { useNextMoves } from '@/hooks/useNextMoves';
-import { usePositionAnalysisQuery } from '@/hooks/useAnalysis';
+import { useOpeningsPositionQuery } from '@/hooks/useOpenings';
 import { useDebounce } from '@/hooks/useDebounce';
 import {
   usePositionBookmarks,
@@ -159,8 +159,8 @@ export function OpeningsPage() {
   }, [nextMoves.data, chess.position, hoveredMove]);
 
   // ── Games tab data ──────────────────────────────────────────────────────────
-  const targetHash = chess.getHashForAnalysis(filters.matchSide, filters.color);
-  const gamesQuery = usePositionAnalysisQuery({
+  const targetHash = chess.getHashForOpenings(filters.matchSide, filters.color);
+  const gamesQuery = useOpeningsPositionQuery({
     targetHash,
     filters: debouncedFilters,
     offset: gamesOffset,
@@ -279,7 +279,7 @@ export function OpeningsPage() {
     if (!label) return;
 
     const matchSide = filters.matchSide;
-    const targetHash = chess.getHashForAnalysis(matchSide, filters.color);
+    const targetHash = chess.getHashForOpenings(matchSide, filters.color);
     const data = {
       label,
       target_hash: targetHash,

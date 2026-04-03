@@ -949,7 +949,7 @@ export function computeHashes(chess: Chess): ZobristHashes {
 
 /**
  * Convert a signed BigInt hash to string for the analysis API.
- * The backend AnalysisRequest.target_hash accepts string via a field_validator.
+ * The backend OpeningsRequest.target_hash accepts string via a field_validator.
  */
 export function hashToString(hash: bigint): string {
   return hash.toString();

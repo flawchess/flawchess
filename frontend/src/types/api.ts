@@ -17,7 +17,7 @@ export interface LoginResponse {
   token_type: string;
 }
 
-// ─── Analysis ────────────────────────────────────────────────────────────────
+// ─── Openings ────────────────────────────────────────────────────────────────
 
 export type TimeControl = 'bullet' | 'blitz' | 'rapid' | 'classical';
 /** Frontend representation: mine/opponent/both (relative to the user's color) */
@@ -68,7 +68,7 @@ export interface GameRecord {
   result_fen: string | null;
 }
 
-export interface AnalysisResponse {
+export interface OpeningsResponse {
   stats: WDLStats;
   games: GameRecord[];
   matched_count: number;
