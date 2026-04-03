@@ -22,8 +22,8 @@ Requirements for the consolidation, tooling & refactoring milestone. Each maps t
 
 ### Import Speed Optimization
 
-- [ ] **IMP-01**: Unified PGN processing function — single mainline walk per game replacing triple PGN parse
-- [ ] **IMP-02**: Eliminate redundant data extraction — move_count and result_fen derived from unified function, no third PGN parse
+- [x] **IMP-01**: Unified PGN processing function — single mainline walk per game replacing triple PGN parse
+- [x] **IMP-02**: Eliminate redundant data extraction — move_count and result_fen derived from unified function, no third PGN parse
 - [ ] **IMP-03**: Eliminate redundant DB round-trip — use in-memory platform_game_id lookup instead of SELECT Game.pgn
 - [ ] **IMP-04**: Bulk UPDATE for move_count/result_fen — single CASE expression query per batch instead of per-game UPDATEs
 - [ ] **IMP-05**: Increase batch size from 10 to 28 — fewer DB commits per import run
@@ -66,8 +66,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | QUAL-01 | Phase 41 | Complete |
 | QUAL-02 | Phase 41 | Complete |
 | QUAL-03 | Phase 41 | Complete |
-| IMP-01 | Phase 41.1 | Pending |
-| IMP-02 | Phase 41.1 | Pending |
+| IMP-01 | Phase 41.1 | Complete |
+| IMP-02 | Phase 41.1 | Complete |
 | IMP-03 | Phase 41.1 | Pending |
 | IMP-04 | Phase 41.1 | Pending |
 | IMP-05 | Phase 41.1 | Pending |
