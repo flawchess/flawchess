@@ -19,6 +19,36 @@ from app.services.import_service import (
 )
 
 
+def _make_mock_processing_result(
+    plies: list[dict] | None = None,
+    result_fen: str = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR",
+    move_count: int = 1,
+) -> dict:
+    """Build a mock GameProcessingResult dict for testing."""
+    if plies is None:
+        plies = [
+            {
+                "ply": 0, "white_hash": 1, "black_hash": 2, "full_hash": 3,
+                "move_san": "e4", "clock_seconds": None,
+                "eval_cp": None, "eval_mate": None,
+                "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
+                "material_imbalance": 0, "has_opposite_color_bishops": False,
+                "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
+                "endgame_class": None,
+            },
+            {
+                "ply": 1, "white_hash": 4, "black_hash": 5, "full_hash": 6,
+                "move_san": None, "clock_seconds": None,
+                "eval_cp": None, "eval_mate": None,
+                "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
+                "material_imbalance": 0, "has_opposite_color_bishops": False,
+                "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
+                "endgame_class": None,
+            },
+        ]
+    return {"plies": plies, "result_fen": result_fen, "move_count": move_count}
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -374,7 +404,7 @@ class TestRunImport:
 
     @pytest.mark.asyncio
     async def test_hashes_computed_for_newly_inserted_games(self):
-        """run_import should call hashes_for_game for each newly inserted game's PGN."""
+        """run_import should call process_game_pgn for each newly inserted game's PGN."""
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
 
         pgn = "1. e4 e5 *"
@@ -388,9 +418,9 @@ class TestRunImport:
             }
 
         mock_session = _make_mock_session()
-        # Make execute return game id=999 with the pgn
+        # Make execute return game id=999 with platform_game_id (D-03: no PGN in SELECT)
         result_mock = MagicMock()
-        result_mock.fetchall.return_value = [(999, pgn)]
+        result_mock.fetchall.return_value = [(999, "game-1")]
         mock_session.execute.return_value = result_mock
 
         mock_maker = _mock_session_maker(mock_session)
@@ -423,9 +453,9 @@ class TestRunImport:
                 new=AsyncMock(),
             ),
             patch(
-                "app.services.import_service.hashes_for_game",
-                return_value=([(0, 1, 2, 3, "e4", None), (1, 4, 5, 6, None, None)], "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR"),
-            ) as mock_hashes,
+                "app.services.import_service.process_game_pgn",
+                return_value=_make_mock_processing_result(),
+            ) as mock_process,
         ):
             mock_http_ctx = AsyncMock()
             mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
@@ -434,7 +464,7 @@ class TestRunImport:
 
             await run_import(job_id)
 
-        mock_hashes.assert_called_once_with(pgn)
+        mock_process.assert_called_once_with(pgn)
 
     @pytest.mark.asyncio
     async def test_position_rows_include_move_san(self):
@@ -453,7 +483,7 @@ class TestRunImport:
 
         mock_session = _make_mock_session()
         result_mock = MagicMock()
-        result_mock.fetchall.return_value = [(999, pgn)]
+        result_mock.fetchall.return_value = [(999, "game-moveSan-1")]
         mock_session.execute.return_value = result_mock
 
         mock_maker = _mock_session_maker(mock_session)
@@ -461,6 +491,39 @@ class TestRunImport:
 
         async def _capture_bulk_insert_positions(session, position_rows):
             captured_positions.extend(position_rows)
+
+        three_ply_result = _make_mock_processing_result(
+            plies=[
+                {
+                    "ply": 0, "white_hash": 100, "black_hash": 200, "full_hash": 300,
+                    "move_san": "e4", "clock_seconds": None,
+                    "eval_cp": None, "eval_mate": None,
+                    "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
+                    "material_imbalance": 0, "has_opposite_color_bishops": False,
+                    "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
+                    "endgame_class": None,
+                },
+                {
+                    "ply": 1, "white_hash": 400, "black_hash": 500, "full_hash": 600,
+                    "move_san": "e5", "clock_seconds": None,
+                    "eval_cp": None, "eval_mate": None,
+                    "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
+                    "material_imbalance": 0, "has_opposite_color_bishops": False,
+                    "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
+                    "endgame_class": None,
+                },
+                {
+                    "ply": 2, "white_hash": 700, "black_hash": 800, "full_hash": 900,
+                    "move_san": None, "clock_seconds": None,
+                    "eval_cp": None, "eval_mate": None,
+                    "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
+                    "material_imbalance": 0, "has_opposite_color_bishops": False,
+                    "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
+                    "endgame_class": None,
+                },
+            ],
+            move_count=1,
+        )
 
         with (
             patch("app.services.import_service.async_session_maker", mock_maker),
@@ -490,8 +553,8 @@ class TestRunImport:
                 new=AsyncMock(side_effect=_capture_bulk_insert_positions),
             ),
             patch(
-                "app.services.import_service.hashes_for_game",
-                return_value=([(0, 100, 200, 300, "e4", None), (1, 400, 500, 600, "e5", None), (2, 700, 800, 900, None, None)], "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR"),
+                "app.services.import_service.process_game_pgn",
+                return_value=three_ply_result,
             ),
         ):
             mock_http_ctx = AsyncMock()
@@ -556,10 +619,10 @@ class TestRunImport:
 
     @pytest.mark.asyncio
     async def test_move_count_populated(self):
-        """After importing a game, move_count is set correctly from PGN (1.e4 e5 = 1 full move)."""
+        """After importing a game, move_count is set correctly via bulk CASE UPDATE (D-04)."""
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
 
-        # 1. e4 e5 = 2 plies = 1 full move => move_count = (2+1)//2 = 1
+        # 1. e4 e5 = 2 plies = 1 full move => move_count = 1
         pgn = "1. e4 e5 *"
 
         async def _yield_one_game(*args, **kwargs):
@@ -572,7 +635,7 @@ class TestRunImport:
 
         mock_session = _make_mock_session()
         result_mock = MagicMock()
-        result_mock.fetchall.return_value = [(999, pgn)]
+        result_mock.fetchall.return_value = [(999, "game-mc-1")]
         mock_session.execute.return_value = result_mock
 
         mock_maker = _mock_session_maker(mock_session)
@@ -605,8 +668,8 @@ class TestRunImport:
                 new=AsyncMock(),
             ),
             patch(
-                "app.services.import_service.hashes_for_game",
-                return_value=([(0, 1, 2, 3, "e4", None), (1, 4, 5, 6, None, None)], "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR"),
+                "app.services.import_service.process_game_pgn",
+                return_value=_make_mock_processing_result(),
             ),
         ):
             mock_http_ctx = AsyncMock()
@@ -616,8 +679,7 @@ class TestRunImport:
 
             await run_import(job_id)
 
-        # Verify session.execute was called with an update that sets move_count
-        # The mock session's execute is called multiple times; we look for the UPDATE call
+        # Verify session.execute was called with a bulk UPDATE for move_count (D-04)
         execute_calls = mock_session.execute.call_args_list
         update_calls = [
             call for call in execute_calls
@@ -630,7 +692,7 @@ class TestRunImport:
         """After importing a game, all position_rows dicts have a non-null material_count field."""
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
 
-        # Use a real PGN with moves so classify_position can run on actual board states
+        # Use a real PGN so process_game_pgn runs on actual board states
         pgn = "1. e4 e5 *"
 
         async def _yield_one_game(*args, **kwargs):
@@ -643,7 +705,7 @@ class TestRunImport:
 
         mock_session = _make_mock_session()
         result_mock = MagicMock()
-        result_mock.fetchall.return_value = [(999, pgn)]
+        result_mock.fetchall.return_value = [(999, "game-mc-1")]
         mock_session.execute.return_value = result_mock
 
         mock_maker = _mock_session_maker(mock_session)
@@ -710,7 +772,7 @@ class TestRunImport:
 
         mock_session = _make_mock_session()
         result_mock = MagicMock()
-        result_mock.fetchall.return_value = [(999, pgn)]
+        result_mock.fetchall.return_value = [(999, "game-ms-1")]
         mock_session.execute.return_value = result_mock
 
         mock_maker = _mock_session_maker(mock_session)
@@ -776,7 +838,7 @@ class TestRunImport:
 
         mock_session = _make_mock_session()
         result_mock = MagicMock()
-        result_mock.fetchall.return_value = [(999, pgn)]
+        result_mock.fetchall.return_value = [(999, "game-sp-1")]
         mock_session.execute.return_value = result_mock
 
         mock_maker = _mock_session_maker(mock_session)
@@ -828,7 +890,10 @@ class TestRunImport:
 
     @pytest.mark.asyncio
     async def test_classification_failure_degrades_gracefully(self):
-        """When classify_position fails, import still succeeds with NULL metadata columns."""
+        """When process_game_pgn raises, import still succeeds — no positions for that game."""
+        # Classification is now inside process_game_pgn; if it raises, _flush_batch catches it
+        # and continues. The game is skipped (no position rows inserted), but the import job
+        # still completes successfully.
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
 
         pgn = "1. e4 e5 *"
@@ -843,7 +908,7 @@ class TestRunImport:
 
         mock_session = _make_mock_session()
         result_mock = MagicMock()
-        result_mock.fetchall.return_value = [(999, pgn)]
+        result_mock.fetchall.return_value = [(999, "game-degrade-1")]
         mock_session.execute.return_value = result_mock
 
         mock_maker = _mock_session_maker(mock_session)
@@ -880,8 +945,8 @@ class TestRunImport:
                 new=AsyncMock(side_effect=_capture),
             ),
             patch(
-                "app.services.import_service.classify_position",
-                side_effect=Exception("Simulated classification failure"),
+                "app.services.import_service.process_game_pgn",
+                side_effect=Exception("Simulated PGN processing failure"),
             ),
         ):
             mock_http_ctx = AsyncMock()
@@ -893,12 +958,10 @@ class TestRunImport:
 
         job = import_service._jobs[job_id]
         assert job.status == JobStatus.COMPLETED, (
-            f"Expected COMPLETED, got {job.status} — classification failure must not fail the import"
+            f"Expected COMPLETED, got {job.status} — PGN processing failure must not fail the import"
         )
-        assert len(captured_positions) > 0, "Position rows should still be inserted despite classify failure"
-        for row in captured_positions:
-            # When classify fails, metadata keys should not be present (or be None)
-            assert "material_count" not in row or row["material_count"] is None
+        # No position rows inserted for the failed game — bulk_insert_positions not called
+        assert len(captured_positions) == 0, "No position rows should be inserted when process_game_pgn fails"
 
 
 # ---------------------------------------------------------------------------
@@ -1095,8 +1158,8 @@ class TestIncrementalProgress:
                 new=AsyncMock(),
             ),
             patch(
-                "app.services.import_service.hashes_for_game",
-                return_value=([(0, 1, 2, 3, None, None)], "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR"),
+                "app.services.import_service.process_game_pgn",
+                return_value=_make_mock_processing_result(),
             ),
         ):
             mock_http_ctx = AsyncMock()
@@ -1178,8 +1241,8 @@ class TestIncrementalProgress:
                 new=AsyncMock(),
             ),
             patch(
-                "app.services.import_service.hashes_for_game",
-                return_value=([(0, 1, 2, 3, None, None)], "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR"),
+                "app.services.import_service.process_game_pgn",
+                return_value=_make_mock_processing_result(),
             ),
         ):
             mock_http_ctx = AsyncMock()

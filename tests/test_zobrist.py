@@ -11,8 +11,6 @@ import pytest
 from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD
 from app.services.position_classifier import classify_position
 from app.services.zobrist import (
-    GameProcessingResult,
-    PlyData,
     compute_hashes,
     hashes_for_game,
     process_game_pgn,
