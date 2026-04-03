@@ -13,7 +13,7 @@ export function usePositionAnalysisQuery(params: {
   return useQuery<AnalysisResponse>({
     queryKey: ['positionAnalysis', params.targetHash, params.filters, params.offset, params.limit],
     queryFn: async () => {
-      const response = await apiClient.post<AnalysisResponse>('/analysis/positions', {
+      const response = await apiClient.post<AnalysisResponse>('/openings/positions', {
         target_hash: params.targetHash,
         match_side: resolveMatchSide(params.filters.matchSide, params.filters.color),
         time_control: params.filters.timeControls,

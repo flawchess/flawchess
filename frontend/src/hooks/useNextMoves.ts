@@ -19,7 +19,7 @@ export function useNextMoves(fullHash: bigint, filters: FilterState) {
       },
     ],
     queryFn: async () => {
-      const response = await apiClient.post<NextMovesResponse>('/analysis/next-moves', {
+      const response = await apiClient.post<NextMovesResponse>('/openings/next-moves', {
         target_hash: hashToString(fullHash),
         time_control: filters.timeControls,
         platform: filters.platforms,

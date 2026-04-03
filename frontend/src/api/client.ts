@@ -103,7 +103,7 @@ export const positionBookmarksApi = {
 
 export const timeSeriesApi = {
   fetch: (req: TimeSeriesRequest) =>
-    apiClient.post<TimeSeriesResponse>('/analysis/time-series', req).then(r => r.data),
+    apiClient.post<TimeSeriesResponse>('/openings/time-series', req).then(r => r.data),
 };
 
 // ─── Stats API ────────────────────────────────────────────────────────────────
