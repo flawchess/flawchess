@@ -1,3 +1,9 @@
+import os
+
+# Disable Sentry before any app imports — must precede app.core.config which
+# reads SENTRY_DSN from env/.env.  Without this, test-triggered exceptions
+# (e.g. mocked ValueError in import tests) leak to the real Sentry project.
+os.environ["SENTRY_DSN"] = ""
 
 import chess
 import pytest
