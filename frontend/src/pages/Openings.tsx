@@ -178,7 +178,7 @@ export function OpeningsPage() {
   });
   const gameCount = gameCountData?.count ?? null;
 
-  // ── Statistics tab data ────────────────────────────────────────────────────────
+  // ── Stats tab data ─────────────────────────────────────────────────────────────
 
   // Most played openings — filter params applied to show top openings per color
   const { data: mostPlayedData } = useMostPlayedOpenings({
@@ -519,7 +519,7 @@ export function OpeningsPage() {
                 <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info" side="top">
                   <div className="space-y-2">
                     <p>
-                      Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                      Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Stats tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
                     </p>
                     <p>
                       Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
@@ -806,7 +806,7 @@ export function OpeningsPage() {
                 </TabsTrigger>
                 <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
                   <BarChart2 className="mr-1.5 h-4 w-4" />
-                  Statistics
+                  Stats
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="explorer" className="mt-4">
@@ -969,7 +969,7 @@ export function OpeningsPage() {
                     <InfoPopover ariaLabel="Position bookmarks info" testId="position-bookmarks-info-sidebar" side="top">
                       <div className="space-y-2">
                         <p>
-                          Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Statistics tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
+                          Save positions as bookmarks to track your openings. Bookmarks appear as entries in the Stats tab charts, showing your win/draw/loss breakdown and win rate over time for each saved position.
                         </p>
                         <p>
                           Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
@@ -1045,7 +1045,7 @@ export function OpeningsPage() {
               </TabsTrigger>
               <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
                 <BarChart2 className="mr-1.5 h-4 w-4" />
-                Statistics
+                Stats
               </TabsTrigger>
             </TabsList>
             <TabsContent value="explorer" className="mt-4">

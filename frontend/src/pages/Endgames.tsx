@@ -90,7 +90,7 @@ export function EndgamesPage() {
     window.scrollTo(0, 0);
   }, []);
 
-  // ── Statistics tab content ───────────────────────────────────────────────────
+  // ── Stats tab content ──────────────────────────────────────────────────────
 
   // Summary line + collapsible explaining endgame concepts and metric limitations
   const endgameSummary = statsData ? (
@@ -303,7 +303,7 @@ export function EndgamesPage() {
               <TabsList variant="brand" className="w-full" data-testid="endgames-tabs">
                 <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
                   <BarChart2Icon className="mr-1.5 h-4 w-4" />
-                  Statistics
+                  Stats
                   <span
                     data-testid="badge-beta"
                     className="text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full ml-1.5"
@@ -351,12 +351,12 @@ export function EndgamesPage() {
               </Collapsible>
             </div>
 
-            {/* Tabs: Statistics / Games */}
+            {/* Tabs: Stats / Games */}
             <hr className="border-t border-white/10 mb-3" />
             <TabsList variant="brand" className="w-full h-11!" data-testid="endgames-tabs-mobile">
               <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
                 <BarChart2Icon className="mr-1.5 h-4 w-4" />
-                Statistics
+                Stats
                 <span
                   data-testid="badge-beta"
                   className="text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full ml-1.5"
