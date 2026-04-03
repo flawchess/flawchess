@@ -9,7 +9,6 @@ Manages import jobs from chess.com and lichess, including:
 """
 
 import asyncio
-import io
 import logging
 import uuid
 from dataclasses import dataclass
@@ -17,26 +16,25 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-import chess.pgn
 import httpx
 import sentry_sdk
+from sqlalchemy import case, select, update
 
 from app.core.database import async_session_maker
+from app.models.game import Game
 from app.repositories import game_repository, import_job_repository
-from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD
 from app.schemas.normalization import NormalizedGame
 from app.services import chesscom_client, lichess_client
-from app.services.endgame_service import _CLASS_TO_INT, classify_endgame_class
-from app.services.position_classifier import classify_position
-from app.services.zobrist import hashes_for_game
+from app.services.zobrist import process_game_pgn
 
 logger = logging.getLogger(__name__)
 
 # Number of games per DB insert batch. Each game produces ~80 position rows,
-# so batch_size=10 means ~800 position rows per INSERT. Kept low to avoid
-# OOM kills on the 3.7GB production server — batch_size=50 caused PostgreSQL
-# to be killed by the Linux OOM killer during large game_positions INSERTs.
-_BATCH_SIZE = 10
+# so batch_size=28 means ~2,240 position rows per INSERT (split into 2 chunks
+# of 1,700 and 540 by bulk_insert_positions). Increased from 10 to 28 for
+# fewer DB commits per import (D-05). Memory: ~1.8MB per batch — safe for
+# production 7.6GB + 2GB swap server.
+_BATCH_SIZE = 28
 IMPORT_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours per D-24
 
 
@@ -370,6 +368,10 @@ async def _flush_batch(
 ) -> int:
     """Insert a batch of NormalizedGame objects, compute hashes, insert positions.
 
+    Uses process_game_pgn for a single PGN parse per game (D-01),
+    platform_game_id lookup to avoid redundant SELECT Game.pgn (D-03),
+    and bulk CASE UPDATE for move_count/result_fen (D-04).
+
     Args:
         session: AsyncSession to use.
         batch: List of NormalizedGame objects from platform client.
@@ -378,163 +380,94 @@ async def _flush_batch(
     Returns:
         Number of newly inserted games (duplicates excluded).
     """
-    # Convert NormalizedGame objects to dicts for bulk insert.
-    # Also handles plain dicts from test mocks that yield raw dicts instead of NormalizedGame.
-    game_dicts = [g.model_dump() if isinstance(g, NormalizedGame) else g for g in batch]  # type: ignore[union-attr]
+    # 1. Build platform_game_id -> PGN lookup from batch (D-03: avoid SELECT Game.pgn)
+    pgn_by_platform_id: dict[str, str] = {}
+    for g in batch:
+        if isinstance(g, NormalizedGame):
+            pgn_by_platform_id[g.platform_game_id] = g.pgn
+        else:
+            pgn_by_platform_id[g.get("platform_game_id", "")] = g.get("pgn", "")  # type: ignore[union-attr] — dict fallback for test mocks
+
+    # 2. Convert to dicts and bulk insert games
+    game_dicts = [g.model_dump() if isinstance(g, NormalizedGame) else g for g in batch]  # type: ignore[union-attr] — dict fallback for test mocks
     new_game_ids = await game_repository.bulk_insert_games(session, game_dicts)
 
     if not new_game_ids:
         await session.commit()
         return 0
 
-    # Map platform_game_id -> pgn so we can look up PGN for new games
-    pgn_by_idx: dict[int, str] = {}
-    for i, game_dict in enumerate(batch):
-        if isinstance(game_dict, NormalizedGame):
-            pgn_by_idx[i] = game_dict.pgn
-        else:
-            pgn_by_idx[i] = game_dict.get("pgn", "")  # type: ignore[union-attr]
-
-    # Build a map from game row index to new game ID by matching order of returned IDs.
-    # bulk_insert_games returns IDs in insertion order for newly inserted rows.
-    # We need to match new_game_ids to their PGNs. Since the batch may have duplicates
-    # (which are skipped), we track which games were new by building position rows.
-    position_rows: list[dict[str, Any]] = []
-
-    # We need to know which games in the batch were new. We correlate by relying on
-    # the fact that bulk_insert_games returns IDs in the same order as the inserted
-    # rows. We identify new games by attempting a secondary lookup approach:
-    # Since we can't know which specific batch indices were inserted vs skipped,
-    # we fetch the just-inserted game rows and match by game_id.
-    # However, for efficiency, we use pgn from batch items. The batch items contain
-    # all game dicts, and new_game_ids are the IDs of newly created rows.
-    # We need to get PGNs for those IDs.
-    #
-    # Simpler approach: query the session for games with these IDs.
-    from sqlalchemy import select
-    from app.models.game import Game
-
+    # 3. Lightweight SELECT for (id, platform_game_id) only — no PGN transfer (D-03)
     result = await session.execute(
-        select(Game.id, Game.pgn).where(Game.id.in_(new_game_ids))
+        select(Game.id, Game.platform_game_id).where(Game.id.in_(new_game_ids))
     )
-    id_pgn_pairs = result.fetchall()
+    id_platform_pairs = result.fetchall()
 
-    for game_id, pgn in id_pgn_pairs:
+    # 4. Process each game's PGN with unified function (D-01: single parse)
+    position_rows: list[dict[str, Any]] = []
+    move_counts: dict[int, int] = {}
+    result_fens: dict[int, str | None] = {}
+
+    for game_id, platform_game_id in id_platform_pairs:
+        pgn = pgn_by_platform_id.get(platform_game_id, "")
         if not pgn:
             continue
         try:
-            hash_tuples, result_fen = hashes_for_game(pgn)
+            processing_result = process_game_pgn(pgn)
         except Exception:
-            logger.warning("Failed to compute hashes for game_id=%s", game_id)
+            logger.warning("Failed to process PGN for game_id=%s", game_id)
             sentry_sdk.set_context("import", {"game_id": game_id})
             sentry_sdk.capture_exception()
             continue
 
-        # Second PGN parse for board state — classify_position needs the board BEFORE each move.
-        # hashes_for_game does not expose intermediate board states, so we re-parse here.
-        # Performance impact is negligible: PGN parsing is microseconds per game.
-        try:
-            game_obj_for_classify = chess.pgn.read_game(io.StringIO(pgn))
-            classify_nodes = list(game_obj_for_classify.mainline()) if game_obj_for_classify else []
-            classify_board = game_obj_for_classify.board() if game_obj_for_classify else None
-        except Exception:
-            logger.warning("Failed to parse PGN for classification for game_id=%s", game_id)
-            sentry_sdk.set_context("import", {"game_id": game_id})
-            sentry_sdk.capture_exception()
-            classify_board = None
-            classify_nodes = []
+        if processing_result is None:
+            continue
 
-        # Extract per-move evals from PGN %eval annotations (lichess games with prior analysis).
-        # Each node in classify_nodes corresponds to a move (ply 1..N). The final hash_tuple
-        # entry (the position after the last move) has no corresponding node, so it gets
-        # (None, None). This mirrors how clock_seconds is already stored: the annotation on
-        # a move node is stored on the same position row as that move's move_san.
-        evals: list[tuple[int | None, int | None]] = []
-        if classify_nodes:
-            for node in classify_nodes:
-                pov = node.eval()
-                if pov is not None:
-                    w = pov.white()
-                    evals.append((w.score(mate_score=None), w.mate()))
-                else:
-                    evals.append((None, None))
+        # Accumulate move_count and result_fen for bulk UPDATE (D-04)
+        move_counts[game_id] = processing_result["move_count"]
+        result_fens[game_id] = processing_result["result_fen"]
 
-        for i, (ply, white_hash, black_hash, full_hash, move_san, clock_seconds) in enumerate(hash_tuples):
+        # Build position rows from plies
+        for ply_data in processing_result["plies"]:
             row: dict[str, Any] = {
                 "game_id": game_id,
                 "user_id": user_id,
-                "ply": ply,
-                "white_hash": white_hash,
-                "black_hash": black_hash,
-                "full_hash": full_hash,
-                "move_san": move_san,
-                "clock_seconds": clock_seconds,
+                "ply": ply_data["ply"],
+                "white_hash": ply_data["white_hash"],
+                "black_hash": ply_data["black_hash"],
+                "full_hash": ply_data["full_hash"],
+                "move_san": ply_data["move_san"],
+                "clock_seconds": ply_data["clock_seconds"],
+                "eval_cp": ply_data["eval_cp"],
+                "eval_mate": ply_data["eval_mate"],
+                "material_count": ply_data["material_count"],
+                "material_signature": ply_data["material_signature"],
+                "material_imbalance": ply_data["material_imbalance"],
+                "has_opposite_color_bishops": ply_data["has_opposite_color_bishops"],
+                "piece_count": ply_data["piece_count"],
+                "backrank_sparse": ply_data["backrank_sparse"],
+                "mixedness": ply_data["mixedness"],
+                "endgame_class": ply_data["endgame_class"],
             }
-            # Classify position BEFORE pushing the move (pre-move board state matches ply semantics).
-            if classify_board is not None:
-                try:
-                    classification = classify_position(classify_board)
-                    row.update({
-                        "material_count": classification.material_count,
-                        "material_signature": classification.material_signature,
-                        "material_imbalance": classification.material_imbalance,
-                        "has_opposite_color_bishops": classification.has_opposite_color_bishops,
-                        "piece_count": classification.piece_count,
-                        "backrank_sparse": classification.backrank_sparse,
-                        "mixedness": classification.mixedness,
-                    })
-                    # Compute endgame_class for endgame positions (piece_count <= threshold).
-                    # Uses classify_endgame_class from endgame_service, converted to integer
-                    # via _CLASS_TO_INT for SmallInteger storage. Per D-07.
-                    if (
-                        classification.piece_count is not None
-                        and classification.piece_count <= ENDGAME_PIECE_COUNT_THRESHOLD
-                        and classification.material_signature is not None
-                    ):
-                        ec_str = classify_endgame_class(classification.material_signature)
-                        row["endgame_class"] = _CLASS_TO_INT[ec_str]
-                    else:
-                        row["endgame_class"] = None
-                except Exception:
-                    logger.warning(
-                        "Failed to classify position at ply=%s for game_id=%s", ply, game_id
-                    )
-                # Advance classify_board to next ply regardless of classification success
-                if i < len(classify_nodes):
-                    classify_board.push(classify_nodes[i].move)
-
-            # Eval extraction: evals[i] = eval from classify_nodes[i] (the move played FROM
-            # position at ply i). For the final position (no move), eval is (None, None)
-            # since len(evals) < len(hash_tuples). Chess.com games always produce an empty
-            # evals list — all positions get (None, None).
-            eval_cp: int | None = None
-            eval_mate: int | None = None
-            if i < len(evals):
-                eval_cp, eval_mate = evals[i]
-            row["eval_cp"] = eval_cp
-            row["eval_mate"] = eval_mate
             position_rows.append(row)
 
-        # Compute and persist move_count and result_fen for this new game
-        try:
-            from sqlalchemy import update as sa_update
-            game_obj = chess.pgn.read_game(io.StringIO(pgn))
-            if game_obj is not None:
-                ply_count = len(list(game_obj.mainline_moves()))
-                move_count = (ply_count + 1) // 2
-                await session.execute(
-                    sa_update(Game).where(Game.id == game_id).values(
-                        move_count=move_count,
-                        result_fen=result_fen,
-                    )
-                )
-        except Exception:
-            logger.warning("Failed to compute move_count for game_id=%s", game_id)
-            sentry_sdk.set_context("import", {"game_id": game_id})
-            sentry_sdk.capture_exception()
-
+    # 5. Bulk insert positions (chunked at 1,700 rows)
     if position_rows:
         await game_repository.bulk_insert_positions(session, position_rows)
+
+    # 6. Bulk UPDATE move_count and result_fen via CASE expressions (D-04)
+    if move_counts:
+        # Filter None result_fens — let NULL remain as default for those games
+        fen_case_map = {gid: fen for gid, fen in result_fens.items() if fen is not None}
+        values_dict: dict[str, Any] = {
+            "move_count": case(move_counts, value=Game.id),
+        }
+        if fen_case_map:
+            values_dict["result_fen"] = case(fen_case_map, value=Game.id, else_=None)
+        await session.execute(
+            update(Game)
+            .where(Game.id.in_(list(move_counts.keys())))
+            .values(**values_dict)
+        )
 
     await session.commit()
     return len(new_game_ids)
