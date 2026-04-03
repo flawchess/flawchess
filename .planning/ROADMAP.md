@@ -100,7 +100,7 @@
 
 - [x] **Phase 40: Static Type Checking** — Integrate `ty` into CI and fix type safety gaps in backend code (completed 2026-04-01)
 - [x] **Phase 41: Code Quality & Dead Code** — Naming improvements, deduplication, dead code removal, frontend dead export detection (completed 2026-04-02)
-- [ ] **Phase 42: Backend Optimization** — DB query aggregation, column type optimization, API schema consistency
+- [x] **Phase 42: Backend Optimization** — DB query aggregation, column type optimization, API schema consistency (completed 2026-04-03)
 - [ ] **Phase 43: Frontend Cleanup** — Refactor button brand colors to CSS variables; optional test coverage analysis
 
 ## Phase Details
@@ -225,7 +225,7 @@ Plans:
 | 40. Static Type Checking | v1.7 | 2/2 | Complete    | 2026-04-01 |
 | 41. Code Quality & Dead Code | v1.7 | 4/4 | Complete    | 2026-04-02 |
 | 41.1. Import Speed Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
-| 42. Backend Optimization | v1.7 | 1/2 | In progress | - |
+| 42. Backend Optimization | v1.7 | 1/2 | Complete    | 2026-04-03 |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
 
 ## Backlog
