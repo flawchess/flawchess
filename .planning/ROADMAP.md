@@ -165,8 +165,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 42-01-PLAN.md — SQL aggregation for openings W/D/L queries, column type verification (BOPT-01, BOPT-02)
-- [ ] 42-02-PLAN.md — Pydantic response models for 4 bare-dict endpoints (BOPT-03)
+- [x] 42-01-PLAN.md — SQL aggregation for openings W/D/L queries, column type verification (BOPT-01, BOPT-02)
+- [x] 42-02-PLAN.md — Pydantic response models for 4 bare-dict endpoints (BOPT-03)
 
 ### Phase 43: Frontend Cleanup
 **Goal**: Button brand colors are driven by CSS variables and the frontend has no hard-coded semantic color values
@@ -225,7 +225,7 @@ Plans:
 | 40. Static Type Checking | v1.7 | 2/2 | Complete    | 2026-04-01 |
 | 41. Code Quality & Dead Code | v1.7 | 4/4 | Complete    | 2026-04-02 |
 | 41.1. Import Speed Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
-| 42. Backend Optimization | v1.7 | 0/2 | Not started | - |
+| 42. Backend Optimization | v1.7 | 1/2 | In progress | - |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
 
 ## Backlog
