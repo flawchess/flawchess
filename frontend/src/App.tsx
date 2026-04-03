@@ -45,21 +45,21 @@ const NAV_ITEMS = [
   { to: '/import', label: 'Import', Icon: DownloadIcon },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
-  { to: '/global-stats', label: 'Statistics', Icon: BarChart3Icon },
+  { to: '/global-stats', label: 'Stats', Icon: BarChart3Icon },
 ] as const;
 
 const BOTTOM_NAV_ITEMS = [
   { to: '/import', label: 'Import', Icon: DownloadIcon },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
-  { to: '/global-stats', label: 'Statistics', Icon: BarChart3Icon },
+  { to: '/global-stats', label: 'Stats', Icon: BarChart3Icon },
 ] as const;
 
 const ROUTE_TITLES: Record<string, string> = {
   '/import': 'Import',
   '/openings': 'Openings',
   '/endgames': 'Endgames',
-  '/global-stats': 'Statistics',
+  '/global-stats': 'Stats',
 };
 
 // ─── Active route helper ───────────────────────────────────────────────────────
