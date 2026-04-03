@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { PRIMARY_BUTTON_CLASS } from '@/lib/theme';
 
 export function PublicHeader() {
   return (
@@ -25,7 +24,7 @@ export function PublicHeader() {
             <Button variant="ghost" size="sm" asChild data-testid="nav-login">
               <Link to="/login">Log in</Link>
             </Button>
-            <Button size="sm" asChild className={PRIMARY_BUTTON_CLASS} data-testid="nav-signup">
+            <Button size="sm" asChild className="btn-brand" data-testid="nav-signup">
               <Link to="/login?tab=register">Sign up free</Link>
             </Button>
           </div>
