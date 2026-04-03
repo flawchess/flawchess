@@ -144,7 +144,9 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover }:
     <tr
       data-testid={`move-explorer-row-${entry.move_san}`}
       className={cn(
-        'cursor-pointer hover:bg-blue-500/15 min-h-[44px]',
+        'cursor-pointer min-h-[44px]',
+        // hover:bg-blue-500/15 sticks on mobile after tap, causing two highlighted rows
+        !IS_TOUCH && 'hover:bg-blue-500/15',
         selectedMove === entry.move_san && 'bg-blue-500/15',
       )}
       style={isBelowThreshold ? { opacity: UNRELIABLE_OPACITY } : undefined}
