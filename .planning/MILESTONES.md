@@ -1,5 +1,21 @@
 # Milestones: FlawChess
 
+## v1.7 Consolidation, Tooling & Refactoring (Shipped: 2026-04-03)
+
+**Phases completed:** 6 phases, 11 plans, 17 tasks
+
+**Key accomplishments:**
+
+- Astral `ty` static type checker integrated into CI — zero backend type errors, all functions annotated
+- Knip dead export detection + `noUncheckedIndexedAccess` — zero dead code, strict TypeScript index safety
+- Import pipeline ~2x faster — unified single-pass PGN processing, bulk CASE UPDATE, batch size 10→28
+- SQL aggregation (COUNT().filter()) replacing Python-side W/D/L counting loops
+- Consistent naming and deduplication — router prefixes, shared apply_game_filters, frontend buildFilterParams
+- Dead code removal — 7 dead files deleted, unused shadcn/ui re-exports cleaned, -1522 lines
+- CSS variable brand buttons (.btn-brand) replacing JS constant, typed Pydantic response models on all endpoints
+
+---
+
 ## v1.6 UI Polish & Improvements (Shipped: 2026-03-30)
 
 **Phases completed:** 6 phases, 11 plans

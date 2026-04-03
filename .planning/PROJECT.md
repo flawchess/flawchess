@@ -66,15 +66,16 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Code deduplication (shared apply_game_filters, frontend buildFilterParams) — v1.7
 - ✓ Dead code removal (7 dead files, unused hooks/types/exports, -1522 lines) — v1.7
 - ✓ noUncheckedIndexedAccess TypeScript strictness (56 type errors fixed) — v1.7
+- ✓ Static type checking with astral `ty` + CI/CD integration — v1.7
+- ✓ DB query optimization (SQL aggregations replacing Python-side counting) — v1.7
+- ✓ DB column types verified optimal (no migration needed) — v1.7
+- ✓ Refactor button brand colors to CSS variables (.btn-brand) — v1.7
+- ✓ Consistent Pydantic response models across all API endpoints — v1.7
+- ✓ Import speed optimization (~2x throughput, single PGN parse, bulk UPDATE) — v1.7
 
 ### Active
 
-- [ ] Static type checking with astral `ty` + CI/CD integration
-- [ ] DB query optimization (inefficient queries → aggregations)
-- [ ] DB column type optimization (game_positions BIGINT/DOUBLE → SmallInteger/REAL)
-- [ ] Refactor button brand colors to CSS variables
-- [ ] API response schema consistency (consistent Pydantic models across all endpoints)
-- [ ] Test coverage analysis (maybe)
+(None — define for next milestone)
 
 ### Out of Scope
 
@@ -85,30 +86,13 @@ Users can determine their success rate for any opening position they specify, fi
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: v1.7 Consolidation, Tooling & Refactoring
-
-**Goal:** Clean up and tighten the codebase for long-term maintainability and extendability.
-
-**Target features:**
-- Static type checking with astral `ty` + CI/CD integration
-- Type safety review & improvement (replace untyped dicts, add missing type hints)
-- Evaluate knip.dev (or similar) for frontend dead export detection
-- Naming improvements across codebase (API endpoints, routes, variables)
-- Code deduplication (DRY principle)
-- Dead code identification and removal
-- DB query optimization (inefficient queries → aggregations)
-- DB column type optimization (game_positions BIGINT/DOUBLE → SmallInteger/REAL)
-- Refactor button brand colors to CSS variables
-- API response schema consistency (consistent Pydantic models across all endpoints)
-- Test coverage analysis (maybe)
-
 ## Current State
 
-v1.6 shipped 2026-03-30. Seven milestones complete (v1.0–v1.6), 39 phases, live at flawchess.com. The platform has a polished, consistent UI with centralized theming, shared WDL chart components, an openings reference table with SQL-side aggregation, smart bookmark defaults, and mobile drawer sidebars. v1.7 consolidation in progress — Phase 40 (static type checking), Phase 41 (code quality & dead code), Phase 41.1 (import speed optimization), Phase 42 (backend optimization — SQL aggregation, typed response models), and Phase 43 (frontend cleanup — brand button CSS variable migration) complete.
+v1.7 shipped 2026-04-03. Eight milestones complete (v1.0–v1.7), 43 phases (+2 inserted), live at flawchess.com. The codebase now has full static type checking (ty + knip in CI), strict TypeScript (noUncheckedIndexedAccess), zero dead code, consistent naming, shared filter utilities, SQL-side aggregations, typed Pydantic response models on all endpoints, and ~2x faster game imports via unified PGN processing and bulk DB operations.
 
 ## Context
 
-- **Current state:** v1.6 shipped. 39 phases complete across 7 milestones. Live at flawchess.com with CI/CD and Sentry.
+- **Current state:** v1.7 shipped. 43 phases complete across 8 milestones. Live at flawchess.com with CI/CD and Sentry.
 - **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui
 - **Auth:** FastAPI-Users (JWT + Google SSO)
 - **Core algorithm:** Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import for indexed integer equality lookups
@@ -155,6 +139,12 @@ v1.6 shipped 2026-03-30. Seven milestones complete (v1.0–v1.6), 39 phases, liv
 | Sentry for both backend + frontend | Single project, DSN baked at Docker build time | ✓ Good |
 | asyncio.Semaphore rate limiter | Per-platform concurrency control without Redis/Celery | ✓ Good |
 | Backend expose-only (no ports) | Caddy is sole internet-facing entry point | ✓ Good |
+| astral ty for static type checking | Catches type errors at CI time, complements ruff | ✓ Good |
+| Knip for dead export detection | Automated CI gate prevents dead code accumulation | ✓ Good |
+| noUncheckedIndexedAccess in TS | Forces safe array/Record index access patterns | ✓ Good |
+| Unified process_game_pgn | Single PGN walk per game instead of 3 separate passes | ✓ Good |
+| Bulk CASE UPDATE for move_count/result_fen | One SQL statement per batch vs N per-game UPDATEs | ✓ Good |
+| .btn-brand CSS class over JS constant | Styling concern in CSS, not JS import chain | ✓ Good |
 
 ## Evolution
 
@@ -174,4 +164,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after Phase 43 completion*
+*Last updated: 2026-04-03 after v1.7 milestone*

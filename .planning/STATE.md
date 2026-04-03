@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Consolidation, Tooling & Refactoring
-status: verifying
-last_updated: "2026-04-03T12:38:42.177Z"
+status: completed
+last_updated: "2026-04-03T13:45:00.000Z"
 last_activity: 2026-04-03
 progress:
-  total_phases: 9
+  total_phases: 5
   completed_phases: 5
   total_plans: 11
   completed_plans: 11
@@ -17,18 +17,18 @@ progress:
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Phase 43 complete — ready for verification
+Phase: All complete
+Plan: N/A
+Status: v1.7 milestone shipped
 Last activity: 2026-04-03
 
 Progress: [██████████] 100%
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-31)
+See: .planning/PROJECT.md (updated 2026-04-03)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: v1.7 Consolidation, Tooling & Refactoring
+Current focus: Planning next milestone
 
 ## Key Context
 
@@ -45,88 +45,10 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
 
-### Roadmap Evolution
-
-- Phase 41.1 inserted after Phase 41: Import Speed Optimization (URGENT)
-
 ### Blockers/Concerns
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
 - bulk_insert_positions chunk_size tuning required when adding columns — asyncpg 32767 arg limit
 
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260402-psb | Fix frontend cache-busting so deployed updates reach users without manual refresh | 2026-04-02 | 85e7657 | [260402-psb-fix-frontend-cache-busting-so-deployed-u](./quick/260402-psb-fix-frontend-cache-busting-so-deployed-u/) |
-| 260402-qms | Document Sentry access in CLAUDE.md and add error fingerprinting hooks for DB and HTTP errors | 2026-04-02 | d3bbe5f | [260402-qms-document-sentry-access-in-claude-md-and-](./quick/260402-qms-document-sentry-access-in-claude-md-and-/) |
-| 260403-c83 | Rename /api/analysis to /api/openings for consistency with /api/endgames | 2026-04-03 | 52851c0 | [260403-c83-rename-api-analysis-to-api-openings-for-](./quick/260403-c83-rename-api-analysis-to-api-openings-for-/) |
-| 260403-ci9 | Full rename of analysis modules to openings — files, imports, comments, variables, parameters | 2026-04-03 | c81612d | [260403-ci9-full-rename-of-analysis-modules-to-openi](./quick/260403-ci9-full-rename-of-analysis-modules-to-openi/) |
-| 260403-dh2 | Rename /openings/compare to /openings/stats and /endgames/statistics to /endgames/stats | 2026-04-03 | 027c2f9 | [260403-dh2-rename-openings-compare-to-openings-stat](./quick/260403-dh2-rename-openings-compare-to-openings-stat/) |
-| 260403-kwm | Write meaningful tests for biggest coverage gaps: bookmarks router, stats service, openings time series | 2026-04-03 | fb184f1 | [260403-kwm-write-meaningful-tests-for-the-biggest-c](./quick/260403-kwm-write-meaningful-tests-for-the-biggest-c/) |
-| 260403-ld8 | Frontend unit tests: resolveMatchSide, pgnToSanArray, date tick formatters, Zobrist hash vectors | 2026-04-03 | e757227 | [260403-ld8-frontend-component-test-coverage-add-tes](./quick/260403-ld8-frontend-component-test-coverage-add-tes/) |
-
-### Decisions Made (Phase 40)
-
-- **Row[Any] return types in repositories** — Service layer will adopt TypedDicts/named tuples in Plan 02
-- **isinstance(PositionBookmark) over hasattr()** — Type-safe ORM detection in model_validator
-- **ty: ignore suppressions for FastAPI-Users** — Generic typing not resolved by ty beta; D-07 decision
-- **cast() for API dict values to Literal types** — Narrow values from external API dicts without runtime overhead
-- **NormalizedGame model_dump() in _flush_batch** — isinstance check maintains dict compat for test mocks
-
-### Decisions Made (Phase 41, Plan 01)
-
-- **Minimal knip.json config** — Vite/Vitest plugins auto-activate from devDependencies; no explicit plugin config needed
-- **CI step ordering: eslint -> build -> test -> knip** — type errors caught before test failures, dead code last
-- **Knip exit 1 acceptable during Plan 01** — existing dead code will be cleaned up in Plan 03; CI gate enforces no new dead code after cleanup
-
-### Decisions Made (Phase 41, Plan 02)
-
-- **Router prefix= in APIRouter() constructor** — Not duplicated in each route path decorator; consistent with imports.py and users.py pattern
-- **/games/count moved to users router** — It is a user account stat, not an analysis result; accessible at /api/users/games/count
-- **apply_game_filters uses Any for stmt parameter** — Matches existing repository pattern; avoids ty errors with SQLAlchemy Select generics
-
-### Decisions Made (Phase 41, Plan 03)
-
-- **Delete entire dead files vs. just removing exports** — Dashboard.tsx and its exclusive dependencies (ImportModal, ImportProgress, GameTable, WDLBar) deleted; table.tsx and tooltip.tsx also deleted
-- **ignoreDependencies for CSS-imported packages** — clsx, tailwind-merge, shadcn, tw-animate-css, tailwindcss-safe-area added to knip.json ignoreDependencies; knip doesn't scan CSS files
-- **Add @dnd-kit/core and @dnd-kit/utilities as direct deps** — Were being imported directly but only listed as transitive deps of @dnd-kit/sortable
-
-### Decisions Made (Phase 41, Plan 04)
-
-- **flatMap over filter+map for Record access narrowing in Openings.tsx** — TypeScript cannot narrow computed property access through separate filter/map chain; flatMap combines both into a single pass
-- **Non-null assertion ! preferred over as T cast** — Narrower and more explicit about safety invariant; used only when index is provably in bounds
-- **Remove unused local functions after Plan 03 export removals** — With noUnusedLocals: true, functions that lost their exports (CardAction, ChartTooltipContent, etc.) become TS6133 errors; removing them is correct
-
-### Decisions Made (Phase 41.1, Plan 01)
-
-- **process_game_pgn as unified single-pass function** — walks PGN mainline once instead of 3 times, returns PlyData TypedDicts for all per-ply data and GameProcessingResult for game-level data
-- **hashes_for_game as thin wrapper** — keeps unchanged return type and behavior for backward compat; all existing callers (import_service.py, test_seed_openings.py, test_reclassify.py) continue to work without modification
-- **endgame_class computed inline** — PositionClassification fields are never None, so no null checks needed before calling classify_endgame_class
-
-### Decisions Made (Phase 41.1, Plan 02)
-
-- **case(move_counts, value=Game.id) for bulk CASE UPDATE** — replaces N per-game UPDATEs with 1 SQL statement per batch (D-04)
-- **pgn_by_platform_id dict lookup** — avoids SELECT Game.pgn from DB; PGN already in memory from batch (D-03)
-- **_BATCH_SIZE increased 10→28** — safe for production 7.6GB + 2GB swap server at ~1.8MB per batch (D-05); 2.8x fewer commits per import
-- **type: ignore[union-attr] instead of ty: ignore** — union-attr is not a known ty rule name; mypy-style suppression used for dict fallback compat
-
-### Decisions Made (Phase 42, Plan 01)
-
-- **Subquery wrapping for dedup before aggregate** — `_build_base_query()` uses `DISTINCT ON game_id`; wrapping as subquery before outer `SELECT COUNT()` preserves deduplication in the aggregate
-- **endgame_service._build_wdl_summary() stays in Python** — rows already in memory for rolling-window timeline computation; separate SQL aggregate would add a DB round-trip without benefit (D-02)
-- **BOPT-02 verified and closed without migration** — all game_positions and game column types already optimal (SmallInteger/BigInteger/Float(24)/Boolean); no Alembic migration needed
-
-### Decisions Made (Phase 42, Plan 02)
-
-- **New app/schemas/auth.py for auth router** — auth router had no schema file unlike users and imports routers; created alongside existing schemas files
-- **Direct return of GoogleOAuthAuthorizeResponse** — the `response = {...}; return response` pattern replaced with direct `return GoogleOAuthAuthorizeResponse(...)` for consistency
-
-### Decisions Made (Phase 43, Plan 01)
-
-- **CSS utility class .btn-brand over JS constant** — Styling concern belongs in CSS; eliminates JS import dependency in 3 component files (Home, Openings, PublicHeader)
-- **GLASS_OVERLAY JS constant retained** — WDL bar components need JS-level access for inline `backgroundImage` styles; .glass-overlay CSS class is additive for Tailwind className context
-- **tabs.tsx glass overlay unchanged** — Tailwind variant prefixes only compose with Tailwind utilities, not arbitrary CSS classes; inline `bg-[image:...]` is the correct approach
-
 ---
-Last activity: 2026-04-03 - Completed quick task 260403-ld8 (frontend unit tests: resolveMatchSide, pgnToSanArray, date formatters, Zobrist hash vectors)
+Last activity: 2026-04-03 - v1.7 milestone completed and archived
