@@ -7,8 +7,9 @@ Semaphores before the event loop starts (Python 3.10+ requirement).
 
 import asyncio
 
-# chess.com: community-reported 3-4 concurrent triggers 429s. Conservative limit.
-CHESSCOM_SEMAPHORE_LIMIT = 2
+# chess.com: 3 concurrent archive fetches with 150ms delay = ~20 req/s sustained.
+# 60s backoff on 429 provides safety net if rate is too aggressive.
+CHESSCOM_SEMAPHORE_LIMIT = 3
 # lichess: more permissive, but each connection is a long-lived stream
 LICHESS_SEMAPHORE_LIMIT = 3
 

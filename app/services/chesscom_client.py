@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timezone
 
 import httpx
+import sentry_sdk
 
 from app.core.rate_limiters import get_chesscom_semaphore
 from app.schemas.normalization import NormalizedGame
@@ -143,6 +144,12 @@ async def fetch_chesscom_games(
                     logger.warning(
                         "chess.com 429 rate-limited on %s, backing off 60s",
                         archive_url,
+                    )
+                    # Report to Sentry so we can monitor if semaphore=3 is too aggressive
+                    sentry_sdk.capture_message(
+                        "chess.com 429 rate limit hit",
+                        level="warning",
+                        tags={"source": "import", "platform": "chess.com"},
                     )
                     await asyncio.sleep(60)
                     continue
