@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Consolidation, Tooling & Refactoring
-status: verifying
-last_updated: "2026-04-03T10:10:43.189Z"
+status: executing
+last_updated: "2026-04-03T11:38:39.856Z"
 last_activity: 2026-04-03
 progress:
   total_phases: 9
-  completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
+  completed_phases: 4
+  total_plans: 10
+  completed_plans: 10
   percent: 100
 ---
 
@@ -19,7 +19,7 @@ progress:
 
 Phase: 999.1
 Plan: Not started
-Status: Phase complete — ready for verification
+Status: Executing Phase 42
 Last activity: 2026-04-03
 
 Progress: [██████████] 100%
@@ -109,5 +109,16 @@ Current focus: v1.7 Consolidation, Tooling & Refactoring
 - **_BATCH_SIZE increased 10→28** — safe for production 7.6GB + 2GB swap server at ~1.8MB per batch (D-05); 2.8x fewer commits per import
 - **type: ignore[union-attr] instead of ty: ignore** — union-attr is not a known ty rule name; mypy-style suppression used for dict fallback compat
 
+### Decisions Made (Phase 42, Plan 01)
+
+- **Subquery wrapping for dedup before aggregate** — `_build_base_query()` uses `DISTINCT ON game_id`; wrapping as subquery before outer `SELECT COUNT()` preserves deduplication in the aggregate
+- **endgame_service._build_wdl_summary() stays in Python** — rows already in memory for rolling-window timeline computation; separate SQL aggregate would add a DB round-trip without benefit (D-02)
+- **BOPT-02 verified and closed without migration** — all game_positions and game column types already optimal (SmallInteger/BigInteger/Float(24)/Boolean); no Alembic migration needed
+
+### Decisions Made (Phase 42, Plan 02)
+
+- **New app/schemas/auth.py for auth router** — auth router had no schema file unlike users and imports routers; created alongside existing schemas files
+- **Direct return of GoogleOAuthAuthorizeResponse** — the `response = {...}; return response` pattern replaced with direct `return GoogleOAuthAuthorizeResponse(...)` for consistency
+
 ---
-Last activity: 2026-04-03 - Completed Phase 41.1 Plan 02: _flush_batch optimization
+Last activity: 2026-04-03 - Completed Phase 42 Plan 01 and Plan 02

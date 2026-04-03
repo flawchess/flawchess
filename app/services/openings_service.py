@@ -15,11 +15,11 @@ from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.repositories.openings_repository import (
     HASH_COLUMN_MAP,
-    query_all_results,
     query_matching_games,
     query_next_moves,
     query_time_series,
     query_transposition_counts,
+    query_wdl_counts,
 )
 from app.schemas.openings import (
     OpeningsRequest,
@@ -99,8 +99,8 @@ async def analyze(
     hash_column = HASH_COLUMN_MAP[request.match_side] if request.target_hash is not None else None
     cutoff = recency_cutoff(request.recency)
 
-    # --- Stats (full result set, no pagination) ---
-    all_rows = await query_all_results(
+    # --- Stats via SQL aggregation (single round-trip, no Python loop) ---
+    wdl_row = await query_wdl_counts(
         session=session,
         user_id=user_id,
         hash_column=hash_column,
@@ -112,18 +112,8 @@ async def analyze(
         recency_cutoff=cutoff,
         color=request.color,
     )
+    wins, draws, losses, total = wdl_row.wins, wdl_row.draws, wdl_row.losses, wdl_row.total
 
-    wins = draws = losses = 0
-    for result, user_color in all_rows:
-        outcome = derive_user_result(result, user_color)
-        if outcome == "win":
-            wins += 1
-        elif outcome == "draw":
-            draws += 1
-        else:
-            losses += 1
-
-    total = wins + draws + losses
     if total > 0:
         win_pct = round(wins / total * 100, 1)
         draw_pct = round(draws / total * 100, 1)
@@ -357,7 +347,7 @@ async def get_next_moves(
 
     Steps:
     1. Compute optional recency cutoff datetime.
-    2. Compute position_stats via query_all_results with full_hash.
+    2. Compute position_stats via query_wdl_counts with full_hash.
     3. Query aggregated next moves (move_san, result_hash, W/D/L counts).
     4. Batch-query transposition counts for all result hashes.
     5. Compute result_fen for each result_hash via PGN replay.
@@ -366,8 +356,8 @@ async def get_next_moves(
     """
     cutoff = recency_cutoff(request.recency)
 
-    # --- Position stats using full_hash ---
-    all_rows = await query_all_results(
+    # --- Position stats via SQL aggregation (single round-trip, no Python loop) ---
+    wdl_row = await query_wdl_counts(
         session=session,
         user_id=user_id,
         hash_column=GamePosition.full_hash,
@@ -379,18 +369,7 @@ async def get_next_moves(
         recency_cutoff=cutoff,
         color=request.color,
     )
-
-    wins = draws = losses = 0
-    for result, user_color in all_rows:
-        outcome = derive_user_result(result, user_color)
-        if outcome == "win":
-            wins += 1
-        elif outcome == "draw":
-            draws += 1
-        else:
-            losses += 1
-
-    total = wins + draws + losses
+    wins, draws, losses, total = wdl_row.wins, wdl_row.draws, wdl_row.losses, wdl_row.total
     win_pct = round(wins / total * 100, 1) if total > 0 else 0.0
     draw_pct = round(draws / total * 100, 1) if total > 0 else 0.0
     loss_pct = round(losses / total * 100, 1) if total > 0 else 0.0

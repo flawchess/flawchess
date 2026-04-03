@@ -36,3 +36,9 @@ class ImportStatusResponse(BaseModel):
             games_imported=data.get("games_imported", 0),
             error=data.get("error") or data.get("error_message"),
         )
+
+
+class DeleteGamesResponse(BaseModel):
+    """Response for DELETE /imports/games."""
+
+    deleted_count: int

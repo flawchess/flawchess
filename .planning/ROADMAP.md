@@ -100,7 +100,7 @@
 
 - [x] **Phase 40: Static Type Checking** — Integrate `ty` into CI and fix type safety gaps in backend code (completed 2026-04-01)
 - [x] **Phase 41: Code Quality & Dead Code** — Naming improvements, deduplication, dead code removal, frontend dead export detection (completed 2026-04-02)
-- [ ] **Phase 42: Backend Optimization** — DB query aggregation, column type optimization, API schema consistency
+- [x] **Phase 42: Backend Optimization** — DB query aggregation, column type optimization, API schema consistency (completed 2026-04-03)
 - [ ] **Phase 43: Frontend Cleanup** — Refactor button brand colors to CSS variables; optional test coverage analysis
 
 ## Phase Details
@@ -159,10 +159,14 @@ Plans:
 **Depends on**: Phase 40
 **Requirements**: BOPT-01, BOPT-02, BOPT-03
 **Success Criteria** (what must be TRUE):
-  1. Identified row-level W/D/L counting loops replaced with SQL aggregations (GROUP BY / COUNT().filter())
-  2. `game_positions` BIGINT/DOUBLE columns migrated to SmallInteger/REAL where applicable, with Alembic migration
+  1. Identified row-level W/D/L counting loops replaced with SQL aggregations (COUNT().filter())
+  2. `game_positions` column types verified as already optimal — no migration needed (BOPT-02 closed)
   3. All API endpoints return typed Pydantic response models — no bare `dict` or untyped returns
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [x] 42-01-PLAN.md — SQL aggregation for openings W/D/L queries, column type verification (BOPT-01, BOPT-02)
+- [x] 42-02-PLAN.md — Pydantic response models for 4 bare-dict endpoints (BOPT-03)
 
 ### Phase 43: Frontend Cleanup
 **Goal**: Button brand colors are driven by CSS variables and the frontend has no hard-coded semantic color values
@@ -221,7 +225,7 @@ Plans:
 | 40. Static Type Checking | v1.7 | 2/2 | Complete    | 2026-04-01 |
 | 41. Code Quality & Dead Code | v1.7 | 4/4 | Complete    | 2026-04-02 |
 | 41.1. Import Speed Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
-| 42. Backend Optimization | v1.7 | 0/TBD | Not started | - |
+| 42. Backend Optimization | v1.7 | 1/2 | Complete    | 2026-04-03 |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
 
 ## Backlog
