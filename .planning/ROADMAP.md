@@ -159,10 +159,14 @@ Plans:
 **Depends on**: Phase 40
 **Requirements**: BOPT-01, BOPT-02, BOPT-03
 **Success Criteria** (what must be TRUE):
-  1. Identified row-level W/D/L counting loops replaced with SQL aggregations (GROUP BY / COUNT().filter())
-  2. `game_positions` BIGINT/DOUBLE columns migrated to SmallInteger/REAL where applicable, with Alembic migration
+  1. Identified row-level W/D/L counting loops replaced with SQL aggregations (COUNT().filter())
+  2. `game_positions` column types verified as already optimal — no migration needed (BOPT-02 closed)
   3. All API endpoints return typed Pydantic response models — no bare `dict` or untyped returns
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 42-01-PLAN.md — SQL aggregation for openings W/D/L queries, column type verification (BOPT-01, BOPT-02)
+- [ ] 42-02-PLAN.md — Pydantic response models for 4 bare-dict endpoints (BOPT-03)
 
 ### Phase 43: Frontend Cleanup
 **Goal**: Button brand colors are driven by CSS variables and the frontend has no hard-coded semantic color values
@@ -221,7 +225,7 @@ Plans:
 | 40. Static Type Checking | v1.7 | 2/2 | Complete    | 2026-04-01 |
 | 41. Code Quality & Dead Code | v1.7 | 4/4 | Complete    | 2026-04-02 |
 | 41.1. Import Speed Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
-| 42. Backend Optimization | v1.7 | 0/TBD | Not started | - |
+| 42. Backend Optimization | v1.7 | 0/2 | Not started | - |
 | 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
 
 ## Backlog
