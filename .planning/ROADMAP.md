@@ -241,24 +241,6 @@ Plans:
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
 
-### Phase 999.2: Python Static Type Checker in CI (BACKLOG)
-
-**Goal:** Add a Python static type checker to the CI pipeline to catch type-level bugs (typos, bare `str` where `Literal` is needed, wrong function names) that ruff cannot detect. Evaluate [ty](https://docs.astral.sh/ty/) (from Astral, same team as ruff/uv) vs pyright vs mypy.
-**Requirements:** TBD
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.3: SQL-Side Aggregation for Remaining Python-Side DB Queries (BACKLOG)
-
-**Goal:** Replace remaining Python-side row-by-row W/D/L counting with SQL GROUP BY + COUNT().filter() aggregation. High-impact targets: `analysis_service.analyze()` and `get_next_moves()` (N rows → 1), `endgame_service._aggregate_endgame_stats()` (K rows → 6). Lower priority: rolling-window functions that need chronological row data.
-**Requirements:** TBD
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
 ### Phase 999.4: Position-Based Most Played Openings via game_positions (BACKLOG)
 
 **Goal:** Redesign "Most Played Openings" to count how many games *passed through* each opening position (via `game_positions` Zobrist hash matching) instead of counting final opening name classifications from chess.com/lichess. Currently "1. e4" shows ~75 games (only games *classified* as "King's Pawn Game") while obscure specific lines rank higher. Position-based counting would show all ~2000+ games that played 1. e4, consistent with FlawChess's core Zobrist hash architecture. Requires JOIN from `openings` reference table to `game_positions` on FEN or precomputed hash, then `COUNT(DISTINCT game_id)`.
