@@ -175,9 +175,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Button brand color values are defined as CSS variables and imported consistently — no hard-coded hex/rgb values for brand buttons remain in components
   2. Brand color changes require editing only CSS variable definitions, not individual components
-  3. (Optional) Test coverage report generated and baseline documented for future reference
-**Plans**: TBD
-**UI hint**: yes
+  3. ~~(Optional) Test coverage report generated and baseline documented for future reference~~ (TOOL-04 dropped per user decision)
+**Plans**: 1 plan
+
+Plans:
+- [ ] 43-01-PLAN.md — Replace PRIMARY_BUTTON_CLASS JS constant with .btn-brand CSS utility class, audit for stray hard-coded brand colors
 
 ## Progress
 
@@ -225,8 +227,8 @@ Plans:
 | 40. Static Type Checking | v1.7 | 2/2 | Complete    | 2026-04-01 |
 | 41. Code Quality & Dead Code | v1.7 | 4/4 | Complete    | 2026-04-02 |
 | 41.1. Import Speed Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
-| 42. Backend Optimization | v1.7 | 1/2 | Complete    | 2026-04-03 |
-| 43. Frontend Cleanup | v1.7 | 0/TBD | Not started | - |
+| 42. Backend Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
+| 43. Frontend Cleanup | v1.7 | 0/1 | Not started | - |
 
 ## Backlog
 
