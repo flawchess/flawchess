@@ -75,7 +75,10 @@ Users can determine their success rate for any opening position they specify, fi
 
 ### Active
 
-(None — define for next milestone)
+- [ ] ELO-Adjusted Endgame Skill — opponent-strength-adjusted composite score with gauge + timeline
+- [ ] Refine existing endgame statistics (conversion/recovery rates, performance gauges)
+- [ ] New endgame statistics (TBD, added incrementally)
+- [ ] Opening Risk and other new opening statistics (TBD, added incrementally)
 
 ### Out of Scope
 
@@ -85,6 +88,16 @@ Users can determine their success rate for any opening position they specify, fi
 - Offline API data caching — chess data is user-specific + authenticated; caching risks stale analysis
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
+
+## Current Milestone: v1.8 Advanced Analytics
+
+**Goal:** Expand analysis capabilities with new and refined statistics across endgames and openings.
+
+**Target features:**
+- ELO-Adjusted Endgame Skill (backlog 999.5) — opponent-strength-adjusted composite score with gauge + timeline
+- Refine existing endgame statistics (conversion/recovery rates, performance gauges)
+- New endgame statistics (TBD, added incrementally)
+- Opening Risk and other new opening statistics (TBD, added incrementally)
 
 ## Current State
 
@@ -164,4 +177,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after v1.7 milestone*
+*Last updated: 2026-04-04 after v1.8 milestone start*

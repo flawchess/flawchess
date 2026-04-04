@@ -1,34 +1,32 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.7
-milestone_name: Consolidation, Tooling & Refactoring
-status: completed
-last_updated: "2026-04-03T13:45:00.000Z"
-last_activity: 2026-04-03
+milestone: v1.8
+milestone_name: Advanced Analytics
+status: active
+last_updated: "2026-04-04T00:00:00.000Z"
+last_activity: 2026-04-04
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 11
-  completed_plans: 11
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: All complete
-Plan: N/A
-Status: v1.7 milestone shipped
-Last activity: 2026-04-03
-
-Progress: [██████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-04 — Milestone v1.8 started
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-03)
+See: .planning/PROJECT.md (updated 2026-04-04)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Planning next milestone
+Current focus: v1.8 Advanced Analytics
 
 ## Key Context
 
@@ -51,4 +49,4 @@ Current focus: Planning next milestone
 - bulk_insert_positions chunk_size tuning required when adding columns — asyncpg 32767 arg limit
 
 ---
-Last activity: 2026-04-03 - v1.7 milestone completed and archived
+Last activity: 2026-04-04 - Milestone v1.8 started
