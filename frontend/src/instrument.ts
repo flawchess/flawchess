@@ -39,4 +39,10 @@ Sentry.init({
   integrations: [Sentry.browserTracingIntegration()],
   tracesSampleRate: Number(import.meta.env.VITE_SENTRY_TRACES_SAMPLE_RATE) || 0,
   beforeSend: sentryBeforeSend,
+  // Suppress DOM errors caused by browser extensions (e.g. Google Translate)
+  // mutating nodes that React expects to control.
+  ignoreErrors: [
+    /Failed to execute 'removeChild' on 'Node'/,
+    /Failed to execute 'insertBefore' on 'Node'/,
+  ],
 });
