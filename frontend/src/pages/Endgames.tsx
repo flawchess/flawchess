@@ -116,13 +116,16 @@ export function EndgamesPage() {
                 becomes a pawn endgame, so the game counts toward both.
               </p>
               <p>
-                <strong>Conversion & recovery:</strong> these rates reflect your performance against opponents
-                at your current rating level. As your rating changes, you face stronger or weaker opponents,
-                so trends or flat lines may not directly indicate improvement or stagnation in absolute terms.
+                <strong>Conversion:</strong> your win rate when you entered an endgame sequence
+                with a material advantage of at least 3 points. <strong>Recovery:</strong> your
+                draw+win rate when you entered an endgame sequence with a material deficit of at
+                least 3 points. Since a game can pass through multiple endgame types, it can
+                contribute a conversion or recovery entry to each type independently.
               </p>
               <p>
-                <strong>Material balance:</strong> winning and losing positions are classified by piece count.
-                Positional factors like passed pawns or piece activity are not considered.
+                These rates reflect your performance against opponents at your current rating level.
+                As your rating changes, you face stronger or weaker opponents, so trends may not
+                directly indicate improvement or stagnation in absolute terms.
               </p>
             </AccordionContent>
           </AccordionItem>

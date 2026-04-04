@@ -49,10 +49,10 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
           <InfoPopover ariaLabel="Conversion and Recovery info" testId="conv-recov-chart-info" side="top">
             <div className="space-y-2">
             <p>
-                <strong>Conversion</strong>: your win rate when you entered the endgame with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} points.
+                <strong>Conversion</strong>: your win rate when you entered an endgame sequence of this type with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} points.
             </p>
             <p>
-                <strong>Recovery</strong>: your draw+win rate when you entered the endgame with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} points.
+                <strong>Recovery</strong>: your draw+win rate when you entered an endgame sequence of this type with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} points.
             </p>
             </div>
           </InfoPopover>

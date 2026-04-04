@@ -70,7 +70,7 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
           <div className="relative z-10 flex items-center gap-1 text-sm text-foreground text-center">
             <span>Conversion</span>
             <InfoPopover ariaLabel="Conversion info" testId="gauge-conversion-info" side="top">
-              Your win rate when entering an endgame with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} points.
+              Your win rate when entering an endgame sequence with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} points.
             </InfoPopover>
           </div>
           <EndgameGauge
@@ -86,7 +86,7 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
           <div className="relative z-10 flex items-center gap-1 text-sm text-foreground text-center">
             <span>Recovery</span>
             <InfoPopover ariaLabel="Recovery info" testId="gauge-recovery-info" side="top">
-              Your draw or win rate when entering an endgame with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} points.
+              Your draw or win rate when entering an endgame sequence with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} points.
             </InfoPopover>
           </div>
           <EndgameGauge

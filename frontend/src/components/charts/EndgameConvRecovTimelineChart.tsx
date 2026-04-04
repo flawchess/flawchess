@@ -78,11 +78,11 @@ export function EndgameConvRecovTimelineChart({ data }: EndgameConvRecovTimeline
             <div className="space-y-2">
               <p>
                 <strong>Conversion rate</strong>: your win rate in the last {data.window} games where you
-              entered the endgame with a significant material advantage ({'>'}=3 pawns).{' '}
+              entered an endgame sequence with a material advantage of at least 3 points.
               </p>
               <p>
                 <strong>Recovery rate</strong>: your save rate (wins + draws) in the last {data.window} games
-              where you entered the endgame at a significant material disadvantage ({'>'}=3 pawns down).
+              where you entered an endgame sequence with a material deficit of at least 3 points.
               </p>
             </div>
           </InfoPopover>
