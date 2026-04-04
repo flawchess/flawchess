@@ -1,13 +1,13 @@
 # Feature Research
 
-**Domain:** Chess analytics — per-position game statistics, endgame classification, and material tracking
-**Researched:** 2026-03-23
-**Confidence:** HIGH (endgame categories, material notation, game phase algorithms from chessprogramming.org and Wikipedia); MEDIUM (competitor feature comparison — lichess/chess.com UIs are live but change without notice); LOW (exact API field availability for accuracy scores — chess.com has confirmed engine accuracy is NOT in the public API; lichess is different and DOES expose it)
+**Domain:** Chess analytics — advanced analytics for v1.8: ELO-adjusted endgame skill, opening risk metrics, refined statistics
+**Researched:** 2026-04-04
+**Confidence:** HIGH (formula mechanics, competitor feature gaps from direct research); MEDIUM (sharpness/volatility formulas — community blog posts, not academic standard); LOW (lichess/chess.com rating offset exact numbers — empirical, varies by time control and skill level)
 
 ---
 
-> This file covers features for v1.5: Game Statistics & Endgame Analysis.
-> v1.0–v1.4 features are already shipped. Focus: game phase detection, endgame classification, material signatures, engine accuracy import, and a new Endgames analytics tab.
+> This file covers features for v1.8: Advanced Analytics.
+> v1.0–v1.7 features are already shipped. Focus: ELO-adjusted endgame skill score, opening risk/volatility metrics, and refinements to existing endgame statistics.
 
 ---
 
@@ -15,131 +15,110 @@
 
 ### Table Stakes (Users Expect These)
 
-Features that a chess analytics platform with endgame analysis must provide. Missing these = the Endgames tab feels incomplete or misleading.
+Features that any chess analytics platform must provide when displaying skill or performance scores. Missing or doing these wrong = users distrust the numbers.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Endgame type breakdown by W/D/L | Every chess analytics competitor (lichess Insights, chess.com Insights, Aimchess) shows performance broken down by game phase. Users expect to know "do I win my rook endgames?" | MEDIUM | Classification at import time into ~6 buckets (pawn, rook, minor piece, queen, no-pawns, complex). Aggregate W/D/L per bucket in a new Endgames tab. Depends on endgame class computed during import. |
-| Game phase annotation per position | Lichess Insights filters every metric by opening/middlegame/endgame. Without this, per-position stats can't be phase-contextualized. | MEDIUM | Compute phase (opening/middlegame/endgame) at import for every position. Store as enum column on `game_positions`. Phase boundary algorithm based on non-pawn material count (see Architecture notes). |
-| Material signature per position | ChessBase search, Syzygy tablebases, Stockfish endgame probing all use material signature notation (KRKP, KRPKR, etc.). Users expecting endgame filtering need this. | MEDIUM | Compute canonical material signature string (e.g. "KRPKRP") at import. Store on `game_positions`. Use white-dominant canonical form (White material first, heavier pieces first within each side). |
-| Filter endgame stats by endgame type | Lichess Insights filters by game phase; users naturally want to filter by "show me only rook endgames". Lack of this makes the Endgames tab shallow. | LOW | Filter UI — same sidebar pattern as existing Openings tab filters. Filter values map directly to endgame class enum. |
-| W/D/L in endgame when up/down material | Aimchess explicitly tracks "conversion rate" (winning when up) and "resourcefulness" (saving when down). Users expect to see whether they squander material advantages. | HIGH | Requires material imbalance column on `game_positions`. Query: group by (material_advantage_bucket, game_phase) → W/D/L. Buckets: down ≥2 pawns, down 1 pawn, equal, up 1 pawn, up ≥2 pawns. Define in pawn units. |
-| Opening / middlegame / endgame accuracy (when available) | Chess.com Insights shows accuracy per phase. Lichess exports eval/accuracy per game when analysis is available. Users who have analyzed games expect these numbers. | HIGH | Import-time: parse accuracy from chess.com API `accuracies` field (game level only, not phase-level). For lichess, eval annotations per move are available via `?evals=true` in NDJSON. Phase-level accuracy requires per-move eval data — compute centipawn loss per phase. This is the most complex import feature. |
+| Opponent-strength context for skill metrics | Any sports analytics context adjusts for opponent quality. A 70% conversion rate against 800-rated opponents means nothing vs. 1500-rated ones. Users who understand rating systems expect this adjustment. | MEDIUM | The adjustment formula in the milestone spec is straightforward: `raw_score × avg_opponent_rating / reference_rating`. The complexity is cross-platform normalization (lichess vs chess.com offset). |
+| Sufficient sample size enforcement | Any aggregate metric (conversion %, recovery %) must have a minimum game count before displaying. Showing "100% conversion rate (1 game)" misleads users. | LOW | Already partially handled by existing conversion/recovery stats. Needs explicit minimum threshold constants and a "not enough data" state in the UI gauge. |
+| Trend/timeline for new composite scores | Aimchess, chess.com Insights, and lichess Insights all show metrics over time. A single current score without trend context is less actionable. | MEDIUM | Rolling-window timeline pattern already exists in `endgame_service.py` (`_compute_rolling_series`). New ELO-adjusted skill score needs the same treatment. |
+| Hover/tooltip explaining metric calculations | Users encountering "ELO-adjusted skill" or "sharpness score" for the first time need an explanation. Opaque numbers drive churn. | LOW | Info icon + popover pattern already used on the Endgames tab. Reuse it. |
 
 ### Differentiators (Competitive Advantage)
 
-Features that go beyond what lichess/chess.com/Aimchess provide, exploiting FlawChess's unique Zobrist hash position matching.
+Features that go beyond what lichess Insights, chess.com Insights, and Aimchess provide today.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Material configuration drill-down (KRP vs KR) | No public tool lets you filter by exact material signature. ChessBase does it in database search but not as analytics. FlawChess can expose this natively since material signature is stored per position. | MEDIUM | UI: after selecting an endgame type (e.g. "rook endgames"), show a secondary breakdown by specific material signature. Toggle between type-level and signature-level granularity. The data is already in the DB if material signature is computed at import. |
-| Phase transition point analysis | FlawChess can show which specific board positions are where users' win rates drop — combining Zobrist hash position matching with phase annotation. No competitor does this. | HIGH | Cross-tab feature: from the Endgames tab, click a position in the move explorer to see that position's stats filtered to endgame phase only. Requires phase column on `game_positions` and a phase filter in the existing Openings analysis query. |
-| Conversion rate broken out by time control | Did I fail to convert a won rook endgame in bullet but convert it in rapid? Unique because FlawChess already has time control as a filter. | LOW | Minimal extra complexity — already have time control filter; just expose it on the Endgames tab alongside the existing filter sidebar. |
-| Per-position endgame stats in the Move Explorer | The existing move explorer shows next-move W/D/L from any position. Annotating each position with its game phase and material class makes the explorer more informative without building a new UI. | LOW | Surface phase label and material signature as tooltip/badge on the board or stats panel. The data is already stored if computed at import. |
+| ELO-adjusted endgame skill score | No public tool adjusts endgame conversion/recovery by the strength of who you faced. A user beating 1800-rated opponents in endgames is more skilled than one beating 1200s. Lichess Insights and Aimchess show raw conversion rates only. | MEDIUM | Formula: `raw_skill × avg_normalized_opponent_rating / 1500`. Normalization requires per-game opponent rating stored at import time (already stored in `game_positions` via `white_rating`/`black_rating` on games). Cross-platform offset: lichess ratings ~200-300 points higher than chess.com at sub-2000 level; a tapering offset is needed when mixing platforms. |
+| Opening volatility / sharpness score derived from user's own game data | ChessMonitor has an engine-powered opening explorer; no personal analytics tool surfaces how "wild" your specific opening choices are based on your game history. A high volatility score means your openings lead to high-swing games. | HIGH | Requires per-move eval data (already stored for analyzed games). Volatility = RMS of consecutive expected-score changes: `sqrt(mean((WP[k+1] - WP[k])^2))`. Win probability derived from stored eval/accuracy. Only computable for games with eval annotations — subset of user's games. |
+| Opening drawishness from personal game statistics | How often do your specific opening choices lead to draws? No competitor computes this from the user's own position-matched data (they use aggregate database stats instead). FlawChess can compute draw rate at specific board positions via Zobrist hashes. | LOW | Draw rate at a bookmarked/explored position is already computable from existing W/D/L data. The "differentiator" framing is surfacing it as an explicit "drawishness" metric alongside win rate, not just as the D column in a WDL bar. |
+| Cross-platform ELO-normalized opponent rating | When a user has games on both chess.com and lichess, comparing opponent ratings is apples-to-oranges. FlawChess is uniquely positioned to normalize these since it ingests both platforms and already associates platform metadata. | MEDIUM | Implement a tapering offset: lichess rating → estimated chess.com equivalent, applied only when mixing platform data. Store a `normalized_opponent_rating` computed at query time or store platform-tagged ratings and normalize in the aggregation layer. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Running engine analysis on the server | Users want computer evaluations for games not previously analyzed | Stockfish analysis is CPU-intensive. A single 15-move position analysis can take 0.5–5s at depth 20. Multi-user platform on 2-vCPU Hetzner VPS would be overwhelmed immediately. Chess.com limits analysis to Diamond subscribers for this reason. | Import accuracy/eval from chess.com and lichess APIs when already computed. Flag games with no eval data; defer server-side analysis to a future dedicated compute tier. |
-| Storing per-move eval for all positions | Allows full accuracy computation at any depth | PGN eval annotations exist only if analysis was requested by the user on lichess/chess.com before import. For games without evals, there is nothing to import. Attempting to compute evals at import time hits the compute problem above. | Store evals where available from the API (lichess `?evals=true`, chess.com `accuracies` field). Mark games with `has_eval: bool`. Analytics only applies to eval-annotated subset. |
-| Syzygy tablebase lookups at analysis time | True endgame Win/Draw/Loss by force (not user's historical stats) | Requires 150 GB+ of tablebase files for 7-piece endings. Even 5-piece Syzygy is ~880 MB. Impractical on VPS with 75 GB NVMe. | Use material signature + historical W/D/L from user's own games. This is FlawChess's core value anyway — personal statistics, not theoretical results. |
-| Named endgame position bookmarks (Lucena, Philidor) | Advanced users want to track theoretical positions | Requires a curated endgame position database, manual FEN entry, or expert-tagged library. High editorial burden, low traffic for most users. | The existing bookmark system already allows any position to be bookmarked. Power users can bookmark the Lucena position themselves. No special support needed in v1.5. |
-| Side-by-side endgame comparison vs. opponents | "How does my KRP endgame compare to player X's?" | Requires other users' data to be queryable. Privacy implications, multi-user aggregation complexity. | Defer to opponent scouting feature (already on roadmap). Stick to single-user analytics for endgames in v1.5. |
+| Per-game sharpness score display | Users want to know "how sharp was this game?" | Sharpness requires per-move eval (WDL from engine). Only available for games users previously had analyzed on chess.com/lichess. Showing sharpness for analyzed games only creates a confusing two-tier experience where most games show nothing. | Aggregate sharpness/volatility over a filtered set of games (e.g. per opening position), not per-game display. Show the count of games with eval data used in the calculation. |
+| "Risk score" as a single opening recommendation metric | Users want a single number to decide whether an opening is "risky". | Risk is inherently multi-dimensional: volatility (swing size), drawishness (draw rate), and tactical density are distinct properties that can't be collapsed without losing information. A single "risk score" could mislead (e.g. sharp = high risk, but drawish openings like the Petroff are low-volatility AND low-win-rate). | Surface volatility, draw rate, and win rate as separate, labeled metrics. Let users interpret the combination. |
+| Running real-time engine analysis to compute sharpness for unanalyzed games | Users would love sharpness for all their games, not just analyzed ones. | Stockfish at depth sufficient for WDL takes 0.5–5 seconds per position. At 40 moves per game, computing sharpness for 500 games = ~10,000 position evaluations. A VPS with shared CPU cannot handle this multi-user. | Use stored eval data from chess.com/lichess APIs where available. Mark analyzed-game-only metrics clearly in the UI. Defer server-side eval to a future compute tier. |
+| ELO-adjusted metric for opening statistics (opening "quality by opponent strength") | Logical extension of ELO adjustment from endgames to openings. | Opening performance is inherently more confounded by opponent strength than endgame skill — a stronger opponent is less likely to fall for your preparation. The causal direction is murky. Opening win rates are also well-documented to overstate differences due to rating skew (see D2D4C2C4 lichess blog). | Apply ELO adjustment to endgame metrics first. Evaluate user response before expanding to openings. |
+| Automatic lichess ↔ chess.com rating scale conversion using a published formula | Neat feature, precise numbers appeal to analytically minded users. | There is no authoritative universal formula. The offset varies by time control and skill level (~200-300 points sub-2000; ~100 points at 2000-2300; nearly zero at 2400+). Any hardcoded formula will be wrong for edge cases. | Use a conservative single-offset approximation (e.g. subtract 200 from lichess ratings when mixing platforms for the normalization denominator), disclosed transparently to users, and revisable as better empirical data emerges. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-Endgame analytics tab (Endgames page)
-    └──requires──> Endgame class per game_position (computed at import)
-    └──requires──> Game phase per game_position (computed at import)
-    └──requires──> Material imbalance per game_position (computed at import)
-    └──requires──> Material signature per game_position (computed at import)
+ELO-Adjusted Endgame Skill Score (gauge + timeline)
+    └──requires──> Raw endgame skill score (already computed: 0.7×conversion + 0.3×recovery)
+    └──requires──> Per-game opponent rating (already stored: white_rating/black_rating on games table)
+    └──requires──> Platform tag per game (already stored: games.platform)
+    └──requires──> Cross-platform rating normalization function (NEW: lichess→chess.com offset)
+    └──produces──> adjusted_skill = raw_skill × avg_normalized_opp_rating / 1500
 
-Endgame class computation
-    └──requires──> Material signature computation (endgame class is derived from signature)
-    └──requires──> Game phase computation (endgame class only meaningful in endgame phase)
+ELO-Adjusted Skill Timeline
+    └──requires──> ELO-Adjusted Endgame Skill Score (per above)
+    └──requires──> Rolling window implementation (already exists: _compute_rolling_series)
+    └──note──> Requires per-game opponent rating to be included in timeline query rows
 
-Game phase computation
-    └──requires──> python-chess board state at each ply (already available during import)
-    └──uses──> Non-pawn material count threshold (no external dependency)
+Opening Volatility Score
+    └──requires──> Per-move eval data stored at import (subset of games — analyzed games only)
+    └──requires──> Win probability derivation from centipawn eval (NEW: eval→WP conversion function)
+    └──produces──> RMS of consecutive WP changes per game, averaged over matching games at a position
+    └──depends_on──> Existing Zobrist hash position matching (to scope volatility to specific openings)
 
-Material signature computation
-    └──requires──> python-chess board state at each ply (already available during import)
-    └──produces──> canonical string "KRPKR" (white-dominant, sorted by piece value)
+Opening Drawishness Metric
+    └──requires──> Existing W/D/L data at position level (already computed)
+    └──note──> This is NOT a new data computation — it's a UI/surfacing change only
+    └──enhances──> Opening Statistics tab (adds draw-rate-focused display alongside win-rate display)
 
-Material imbalance computation
-    └──requires──> python-chess board state at each ply (already available during import)
-    └──produces──> signed integer in centipawn units (positive = white ahead)
+Refined Endgame Stats (conversion/recovery UI improvements)
+    └──requires──> Existing conversion/recovery columns (already computed)
+    └──may_include──> Threshold recalibration (300cp threshold — already a named constant)
+    └──may_include──> Per-endgame-type conversion rates in the performance view (currently aggregate only)
 
-Engine accuracy import (chess.com)
-    └──requires──> chess.com game archive API (already integrated)
-    └──note──> Only game-level accuracy available (white/black scalar), NOT phase-level
-    └──note──> Field present as `accuracies.white` / `accuracies.black` in game JSON
-
-Engine accuracy import (lichess)
-    └──requires──> lichess NDJSON game export with `?evals=true` parameter
-    └──note──> Per-move eval and judgment available for analyzed games
-    └──note──> lichess does NOT compute accuracy for unanalyzed games at export time
-
-Per-phase accuracy computation
-    └──requires──> Per-move eval annotations (lichess with evals=true)
-    └──requires──> Game phase label per ply (game phase computation)
-    └──derives──> Average centipawn loss per phase = endgame accuracy proxy
-
-Material conversion/recovery stats
-    └──requires──> Material imbalance per position
-    └──requires──> Game phase per position
-    └──requires──> Game result (already stored)
-
-Filter by endgame type
-    └──requires──> Endgame class column on game_positions
-    └──enhances──> Endgames tab (drives the primary filter)
-
-Filter by material configuration
-    └──requires──> Material signature column on game_positions
-    └──enhances──> Endgames tab (secondary drill-down filter)
+Cross-Platform Rating Normalization
+    └──required_by──> ELO-Adjusted Endgame Skill Score
+    └──inputs──> games.platform, white_rating/black_rating, user_color
+    └──outputs──> normalized_opponent_rating (float, chess.com scale equivalent)
+    └──note──> Applied at query/aggregation time, not stored — avoids data denormalization
 ```
 
 ### Dependency Notes
 
-- **Import pipeline is the critical path:** All analytics features depend on per-position metadata being computed at import time. There is no retroactive computation shortcut — the DB schema must be migrated and all existing positions re-enriched (or a full re-import triggered).
-- **Engine accuracy is a split story:** chess.com provides only a single accuracy scalar per player per game (not per phase) via the public API. Lichess provides full per-move eval when the user has requested analysis. Phase-level accuracy is only possible for lichess analyzed games, not chess.com games.
-- **Endgame class requires phase first:** The endgame class (rook endgame, pawn endgame, etc.) is only meaningful to classify positions that are already in the endgame phase. For positions in the opening or middlegame, endgame class is irrelevant.
-- **Material imbalance and material signature are independent computations** that both run on the same board state at each ply. They should be computed in a single pass to avoid iterating positions twice.
+- **ELO adjustment requires opponent rating, not user rating:** The formula uses average opponent rating normalized to a 1500 reference point. The user's own rating is irrelevant to the adjustment — only who they played against matters.
+- **Cross-platform normalization is required only when combining platforms:** If the user has games from only one platform, no normalization is needed. The normalization only fires in mixed-platform aggregations.
+- **Opening volatility is a strict subset feature:** It can only be computed for games with stored eval data. This is a smaller, filtered computation alongside the main WDL stats — not a replacement. The UI must communicate which subset of games it covers.
+- **Drawing rate as a metric is already computable:** The existing WDL data has everything needed. "Drawishness" as a named metric for an opening is a surfacing/framing decision, not a new data pipeline.
+- **Refined endgame stats are incremental:** The existing conversion/recovery system (300cp threshold, 6 endgame classes, rolling window timeline) is solid. Refinements are additive — changing presentation, adding breakdowns, adjusting constants — not rewrites.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v1.5)
+### Launch With (v1.8 core)
 
-Minimum viable endgame analytics — enough to make the Endgames tab genuinely useful.
+Minimum viable advanced analytics — enough to make the new features genuinely informative.
 
-- [ ] Game phase computed per position at import (opening/middlegame/endgame enum stored in `game_positions`)
-- [ ] Material signature computed per position at import (canonical "KRPKR" string)
-- [ ] Endgame class derived from material signature (6-category enum: pawn, rook, minor_piece, queen, mixed, pawnless)
-- [ ] Material imbalance computed per position (signed integer, centipawn units)
-- [ ] Endgames tab: W/D/L breakdown by endgame type (using same W/D/L display components as Openings tab)
-- [ ] Endgames tab: filter by endgame type, time control, color, recency (reuse existing filter sidebar)
-- [ ] Conversion stats: W/D/L when up/down material, broken down by game phase
+- [ ] ELO-adjusted endgame skill score — composite (0.7×conversion + 0.3×recovery) × normalized opponent rating / 1500, displayed in existing performance gauge
+- [ ] Cross-platform rating normalization utility — tapering offset (lichess → chess.com equivalent), ~200 points sub-2000, disclosed to users
+- [ ] ELO-adjusted skill timeline — rolling window chart alongside or replacing raw endgame_skill timeline
+- [ ] Opening drawishness surfacing — draw rate displayed as an explicit labeled metric in Opening Statistics (no new data pipeline needed)
 
-### Add After Validation (v1.5.x)
+### Add After Validation (v1.8.x)
 
-Features to add once the core Endgames tab is live and users engage with it.
+Features to add once the core advanced analytics are live and users engage with them.
 
-- [ ] Engine accuracy import from chess.com API (`accuracies` field) — add if users request accuracy tracking
-- [ ] Per-move eval import from lichess (`?evals=true`) — add if accuracy-by-phase analytics is validated as high-value
-- [ ] Material configuration drill-down (KRP vs KR level) — add if users navigate past top-level endgame types
-- [ ] Phase label in Move Explorer tooltip — low-effort enhancement once phase data is available
+- [ ] Opening volatility score — RMS of WP changes from eval data, scoped to positions with sufficient analyzed games
+- [ ] Per-endgame-type ELO adjustment breakdown — show adjusted skill score per rook/minor/pawn endgame class, not only aggregate
+- [ ] Refined conversion/recovery presentation — per-type conversion rates in performance view (currently aggregate only)
 
 ### Future Consideration (v2+)
 
-- [ ] Per-phase accuracy for chess.com games — not feasible with the public API; would require a chess.com partnership or local engine analysis
-- [ ] Endgame training module (retry endgame positions) — crosses into training product territory, outside FlawChess's analytics-first scope
-- [ ] Endgame comparison vs. opponent (scouting) — natural extension of opponent scouting, separate milestone
+- [ ] ELO adjustment for opening statistics — higher complexity, causality concerns, defer until endgame version is validated
+- [ ] Server-side eval computation for unanalyzed games — requires a dedicated compute tier, not feasible on current VPS
+- [ ] Opponent scouting endgame stats — "how does my opponent handle rook endgames?" — separate scouting feature scope
 
 ---
 
@@ -147,21 +126,16 @@ Features to add once the core Endgames tab is live and users engage with it.
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Game phase computation at import | HIGH | MEDIUM | P1 |
-| Material signature computation at import | HIGH | LOW | P1 |
-| Endgame class derivation | HIGH | LOW | P1 |
-| Material imbalance computation | HIGH | LOW | P1 |
-| Endgames tab: W/D/L by endgame type | HIGH | MEDIUM | P1 |
-| Filter by endgame type | HIGH | LOW | P1 |
-| Conversion stats (up/down material) | HIGH | MEDIUM | P1 |
-| Engine accuracy import (chess.com game-level) | MEDIUM | LOW | P2 |
-| Eval import from lichess per-move | MEDIUM | HIGH | P2 |
-| Phase-level accuracy (lichess) | MEDIUM | HIGH | P2 |
-| Material signature drill-down UI | MEDIUM | MEDIUM | P2 |
-| Phase label in Move Explorer | LOW | LOW | P2 |
+| ELO-adjusted endgame skill gauge | HIGH | MEDIUM | P1 |
+| Cross-platform rating normalization | HIGH (required for above) | LOW | P1 |
+| ELO-adjusted skill timeline | HIGH | LOW (reuses rolling window infra) | P1 |
+| Opening drawishness metric | MEDIUM | LOW (no new data pipeline) | P1 |
+| Opening volatility score | MEDIUM | HIGH (requires eval→WP pipeline) | P2 |
+| Per-type ELO adjustment breakdown | MEDIUM | MEDIUM | P2 |
+| Refined conversion/recovery presentation | MEDIUM | LOW | P2 |
 
 **Priority key:**
-- P1: Must have for v1.5 launch
+- P1: Must have for v1.8 launch
 - P2: Should have, add when time permits
 - P3: Nice to have, future consideration
 
@@ -169,88 +143,123 @@ Features to add once the core Endgames tab is live and users engage with it.
 
 ## Competitor Feature Analysis
 
-### Endgame Classification Categories
-
-All major tools use the same 5-6 top-level endgame types derived from chess theory (Chess Informant, Dvoretsky's Manual). The "most valuable piece remaining" principle determines the category:
-
-| Category | Classification Rule | Frequency (estimated) | Notes |
-|----------|--------------------|-----------------------|-------|
-| Pawn endgame | Only kings and pawns remain | ~5% of games | Pure pawn endings; king activity decisive |
-| Rook endgame | Rooks present, no queens, pawns present | ~8-10% of games | Most common endgame type; Lucena/Philidor positions |
-| Minor piece endgame | Bishops and/or knights, no rooks or queens, pawns present | ~5-7% of games | Knight vs bishop is a classic sub-type |
-| Queen endgame | Queens present (no rooks), pawns present | ~3-5% of games | Perpetual check risk, complex technique |
-| Complex/mixed endgame | Multiple different piece types remain | ~10-15% of games | Rook + minor piece, or queen + rook, etc. |
-| Pawnless endgame | No pawns remain | Rare (~1-2%) | Often drawn; tablebase-decidable |
-
-Note: Frequency statistics are approximate from community sources. Rook endgames are widely cited as the most common specific endgame type. Exact frequency data across amateur games is not authoritatively published.
-
-### Game Phase Detection Algorithms
-
-| Tool | Algorithm | Thresholds |
-|------|-----------|------------|
-| Lichess (Scalachess) | Non-public (source not documented in forums) | Likely material-based; forum speculation about centrality scores |
-| Stockfish (tapered eval) | Non-pawn material count as phase weight | Start: 6400 units (4N + 4B + 4R + 2Q using N=300, B=300, R=500, Q=1000). Endgame = 0. Interpolates between. |
-| Chessprogramming standard | Piece count threshold | Endgame when combined non-pawn material ≤ ~1300 centipawns per side (roughly: no queens, or ≤ 1 rook + 1 minor per side) |
-| Chess theory (Speelman) | Material threshold | Each side ≤ 13 points (not counting king). Pawns = 1, N/B = 3, R = 5, Q = 9. |
-| Chess theory (Minev) | Piece count | ≤ 4 non-king non-pawn pieces total on board |
-| Chess theory (Fine) | Queen presence | Endgame = no queens on board |
-
-**Recommended approach for FlawChess:** Use a two-threshold piece-weight system. Opening ends when both sides have castled or move 15 is reached (ply 30). Endgame begins when total non-pawn material (excluding kings) drops below a threshold (approximately: equivalent to ≤ 1 rook + 1 minor piece per side, or ~1300cp per side). Middlegame is the gap between. This is deterministic, fast to compute with python-chess, and aligns with how chess players think about phases.
-
-### Platform Comparison
-
-| Feature | lichess Insights | chess.com Insights | Aimchess | FlawChess v1.5 plan |
+| Feature | lichess Insights | chess.com Insights | Aimchess | FlawChess v1.8 plan |
 |---------|------------------|--------------------|----------|---------------------|
-| Game phase stats | Opening/middlegame/endgame accuracy (requires prior computer analysis) | Opening/middlegame/endgame accuracy (Diamond only) | Phase accuracy as one of 6 performance scores | W/D/L by phase; accuracy if eval available |
-| Endgame type breakdown | None — no endgame-type filtering | None — game phases only, no endgame categories | Tracks endgame as single bucket ("conversion", "resourcefulness") | W/D/L by 6 endgame type categories |
-| Material signature filtering | None | None | None | W/D/L by specific material configuration (KRP vs KR) |
-| Material imbalance stats | Available as a dimension (filter/group-by) | Not directly exposed | "Advantage capitalization" score | W/D/L when up/down material by phase |
-| Accuracy per game | Yes (analyzed games only) | Yes (game-level, analyzed games only) | Yes (aggregated) | Yes (chess.com: game-level; lichess: per-move eval when available) |
-| Accuracy per phase | Yes (lichess analyzed games) | Yes (Diamond only) | Yes | Possible for lichess analyzed games only |
-| Requires prior engine analysis | Yes | Yes (Diamond plan) | Yes | Only for accuracy features; W/D/L stats require no engine analysis |
-| Free tier | Yes (lichess is free) | No (Diamond = $14/mo) | Partial (free tier limited) | Yes — core endgame stats are free (no engine required) |
+| Opponent-adjusted skill metrics | No — raw percentages only | No — raw percentages only | Compares to players of same rating (benchmark comparison, not per-game adjustment) | ELO-adjusted endgame skill: raw score scaled by avg normalized opponent rating |
+| Opening volatility / sharpness | No personal analytics; engine-powered opening explorer on ChessMonitor | No | No | Volatility from stored eval data; subset of analyzed games |
+| Opening drawishness | Draw rate visible in opening explorer (aggregate DB, not personal) | Draw rate visible in opening stats | No | Draw rate surfaced as named metric for user's personal positions |
+| Cross-platform normalization | N/A — single platform | N/A — single platform | Ingests both platforms; no disclosed normalization | Tapering offset for mixed lichess/chess.com games |
+| Timeline for skill metrics | Yes (accuracy over time) | Yes (accuracy trends) | No | Rolling window timeline for ELO-adjusted score (extends existing infra) |
 
-### Key Insight: FlawChess's Advantage
+### Key Insight: ELO Adjustment Fills a Real Gap
 
-Lichess and chess.com phase/endgame accuracy require prior per-game engine analysis. FlawChess's W/D/L endgame stats (the P1 features) require NO engine analysis — they derive from game results and position metadata. This means FlawChess can provide meaningful endgame analytics for 100% of imported games, not just the subset users happened to analyze.
+No chess analytics platform currently adjusts endgame performance metrics by opponent strength. Aimchess benchmarks you against others at your rating level (a cross-user comparison), which is fundamentally different from adjusting your own historical metrics by the strength of opponents you faced. FlawChess's approach — `score × avg_opponent_rating / reference` — is a direct per-user adjustment that doesn't require any cross-user data, preserving data isolation while still accounting for opponent strength.
 
 ---
 
-## Engine Accuracy API Notes
+## ELO Normalization Implementation Notes
 
-### chess.com Public API
-- Field: `accuracies.white` and `accuracies.black` on each game object in archive JSON
-- Availability: Only present if game was previously analyzed via Game Review; absent otherwise
-- Granularity: Single scalar per player per game (not per phase, not per move)
-- Confirmed limitation: Game phase accuracy values are NOT stored in the database and NOT available via API (chess.com forum, confirmed by chess.com staff)
-- Source: chess.com forum "Insight data in public APIs" — LOW confidence (community post, but consistent with API inspection)
+### Recommended Approach (MEDIUM confidence)
 
-### lichess API
-- Field: Per-move eval comments in PGN when `?evals=true` parameter used on game export
-- Availability: Only for games where user requested computer analysis on lichess; absent otherwise
-- Granularity: Per-move eval (centipawn) and judgment (inaccuracy/mistake/blunder) annotations in PGN
-- Accuracy field: `players.white.analysis.accuracy` / `players.black.analysis.accuracy` in JSON format (integer 0-100)
-- Phase-level accuracy: Computable from per-move eval + phase annotation, but must be derived — not returned directly
-- Source: lichess API docs (`?evals=true` param documented) — HIGH confidence
+Empirical data from multiple community sources shows a consistent pattern:
+- Below 2000: lichess rating ≈ chess.com rating + 200–300 points
+- 2000–2300: gap narrows to 100–150 points  
+- 2400+: gap largely disappears
+
+**Recommended simple formula for cross-platform normalization:**
+```python
+def normalize_to_chesscom(rating: int, platform: str) -> int:
+    """Normalize a rating to chess.com scale for cross-platform comparisons."""
+    if platform == "chess.com":
+        return rating
+    # lichess: apply tapering offset based on rating level
+    if rating <= 1500:
+        return rating - 250
+    elif rating <= 2000:
+        # Linear taper from -250 at 1500 to -150 at 2000
+        fraction = (rating - 1500) / 500
+        offset = 250 - (fraction * 100)
+        return round(rating - offset)
+    elif rating <= 2300:
+        # Linear taper from -150 at 2000 to -50 at 2300
+        fraction = (rating - 2000) / 300
+        offset = 150 - (fraction * 100)
+        return round(rating - offset)
+    else:
+        return round(rating - 50)
+```
+
+This is a conservative, transparent approximation. The exact numbers are not authoritative — empirical estimates vary. The formula should be disclosed in the UI ("lichess ratings adjusted to approximate chess.com scale") and the constant values should be named constants in the codebase, not magic numbers.
+
+### ELO-Adjusted Skill Formula
+
+```python
+# From milestone spec (backlog item 999.5)
+# raw_skill = 0.7 * conversion_pct + 0.3 * recovery_pct  (already computed)
+# adjusted_skill = raw_skill * avg_normalized_opponent_rating / REFERENCE_RATING
+REFERENCE_RATING = 1500  # normalization anchor
+adjusted_skill = raw_skill * (avg_normalized_opponent_rating / REFERENCE_RATING)
+```
+
+The reference rating of 1500 anchors the adjustment: a player who faces exactly 1500-rated (normalized) opponents gets the same score as raw. Facing stronger opponents inflates the score; weaker opponents deflate it. This is consistent with the performance rating concept (how well did you do given who you faced?).
+
+---
+
+## Opening Risk Metrics: Implementation Notes
+
+### Volatility Formula (MEDIUM confidence — community sources)
+
+Source: Julian's Chess Engine Lab Substack (via jk_182 lichess blog series). The formula computes the RMS of move-by-move expected score changes:
+
+```python
+# volatility = sqrt(mean of squared consecutive WP differences)
+# WP[k] = win probability after move k (derived from centipawn eval)
+def compute_volatility(win_probabilities: list[float]) -> float:
+    if len(win_probabilities) < 2:
+        return 0.0
+    diffs = [win_probabilities[i+1] - win_probabilities[i]
+             for i in range(len(win_probabilities) - 1)]
+    return (sum(d**2 for d in diffs) / len(diffs)) ** 0.5
+```
+
+Win probability from centipawn eval: `WP = 1 / (1 + 10^(-cp / 400))` (standard sigmoid).
+
+**Prerequisite:** Stored eval data per move — only available for games users analyzed on chess.com or lichess. FlawChess already stores `accuracy_white`/`accuracy_black` at game level; per-move eval data is stored in PGN annotations for lichess games with `?evals=true`. Check what's currently stored before designing the pipeline.
+
+### Sharpness (alternative to volatility)
+
+The sharpness formula from the jk_182 lichess blog uses `W^2 + L^2` (squared win and loss probabilities from LC0's WDL output). This requires engine WDL output specifically, not just centipawn eval. Since FlawChess doesn't run an engine, this approach is not directly applicable. Volatility via the RMS formula above is more appropriate given the data available.
+
+### Drawishness
+
+This is simpler than volatility — it's just the draw rate at a position:
+
+```
+drawishness = draw_count / total_games_at_position
+```
+
+FlawChess already computes this (it's the D in the W/D/L bar). Surfacing it as a named metric in the Opening Statistics tab is a framing/UI decision, requiring no new backend work.
+
+---
+
+## Statistical Methodology Warning
+
+Opening win-rate statistics significantly overstate differences between opening moves when aggregated naively. As documented in the D2D4C2C4 lichess blog post, grouping by average opponent rating (which chess.com and lichess opening explorers do) introduces systematic distortion. FlawChess avoids this problem because it filters by the user's own games and the user's own rating is fixed — the user IS the "single player rating" in the analysis. This is a methodologically superior approach and should be explained to users as part of the opening risk feature documentation.
 
 ---
 
 ## Sources
 
-- [Chess endgame — Wikipedia](https://en.wikipedia.org/wiki/Chess_endgame) — HIGH confidence (endgame categories, frequency stats)
-- [Game Phases — Chessprogramming wiki](https://www.chessprogramming.org/Game_Phases) — HIGH confidence (engine algorithms)
-- [Stockfish endgame.h material notation](https://github.com/evijit/material-chess-android/blob/master/app/src/main/jni/stockfish/endgame.h) — HIGH confidence (KRPKR notation standard)
-- [Lichess Insights live interface](https://lichess.org/insights/Chess-Network) — MEDIUM confidence (UI observed directly, may change)
-- [chess.com Insights Help Center](https://support.chess.com/en/articles/8708925-what-is-insights-on-chess-com) — HIGH confidence (official docs)
-- [chess.com game review API fields](https://www.chess.com/announcements/view/published-data-api) — HIGH confidence
-- [chess.com forum: phase accuracy not in API](https://www.chess.com/forum/view/site-feedback/insight-data-in-public-apis) — LOW confidence (community post)
-- [Aimchess feature description](https://eliteai.tools/tool/aimchess) — MEDIUM confidence (third-party summary)
-- [ChessBase material search](https://en.chessbase.com/post/material-searches-in-chebase-9-part-one) — MEDIUM confidence
-- [Rook endings frequency (~10% of games)](https://centaur.reading.ac.uk/65694/4/URE.pdf) — MEDIUM confidence (academic paper)
-- [Chess Informant endgame classification system](https://chessforallages.blogspot.com/2012/03/chess-informant-endgames.html) — MEDIUM confidence
-- [lichess API: evals export parameter](https://lichess.org/api) — HIGH confidence (official API docs)
+- [Performance rating (chess) — Wikipedia](https://en.wikipedia.org/wiki/Performance_rating_(chess)) — HIGH confidence (formula mechanics)
+- [Evaluating Sharpness using LC0's WDL — jk_182 / lichess](https://lichess.org/@/jk_182/blog/evaluating-sharpness-using-lc0s-wdl/EXZ3pRoy) — MEDIUM confidence (community blog, not academic standard)
+- [Quantifying Volatility of Chess Games — Julian / Chess Engine Lab Substack](https://chessenginelab.substack.com/p/volatility) — MEDIUM confidence (community blog; formula is mathematically sound)
+- [Why Opening Statistics Are Wrong — D2D4C2C4 / lichess](https://lichess.org/@/D2D4C2C4/blog/why-opening-statistics-are-wrong/VKNZ1oKw) — MEDIUM confidence (community post, statistically rigorous argument)
+- [The Ultimate Chess.com vs Lichess Rating Comparison — attackingchess.com](https://www.attackingchess.com/the-ultimate-chess-com-vs-lichess-rating-comparison/) — LOW confidence (empirical community data; offset varies and is not authoritative)
+- [Chess Rating Comparison — ChessGoals.com](https://chessgoals.com/rating-comparison/) — LOW confidence (empirical, good for rough calibration)
+- [Aimchess analytics features](https://aimchess.com/) — MEDIUM confidence (feature list from landing page; features may change)
+- [ChessMonitor analytics platform](https://www.chessmonitor.com/) — MEDIUM confidence (observed features; no detailed endgame analytics found)
 
 ---
 
-*Feature research for: FlawChess v1.5 — game statistics & endgame analysis*
-*Researched: 2026-03-23*
+*Feature research for: FlawChess v1.8 — advanced analytics (ELO-adjusted endgame skill, opening risk metrics, refined statistics)*
+*Researched: 2026-04-04*

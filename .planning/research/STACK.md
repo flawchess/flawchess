@@ -1,274 +1,198 @@
 # Stack Research
 
-**Domain:** Chess analytics platform — per-position metadata enrichment and engine analysis import (v1.5)
-**Researched:** 2026-03-23
-**Confidence:** HIGH (API findings verified via official lichess YAML spec, chess.com API documentation, official python-chess 1.11.2 docs)
+**Domain:** Chess analytics platform — advanced analytics (ELO-adjusted endgame skill, cross-platform rating normalization, opening risk metrics)
+**Researched:** 2026-04-04
+**Confidence:** HIGH for computation approach; MEDIUM for lichess-to-chess.com normalization constants (empirical data varies)
 
 ---
 
 ## Scope Note
 
-This document covers ONLY new capabilities needed for v1.5 (game phase, material, endgame class, engine analysis import).
-The base stack (FastAPI, React 19, PostgreSQL, SQLAlchemy async, python-chess, TanStack Query, Vite, Tailwind, shadcn/ui) is validated and in production.
-Those choices are not re-evaluated here.
+This document covers ONLY new capabilities needed for v1.8 (ELO-adjusted endgame skill, opening risk/volatility, statistical refinements).
 
-**Bottom line: no new libraries.** Every required capability is already available in the installed stack.
+The base stack (FastAPI, React 19, PostgreSQL, SQLAlchemy async, python-chess, TanStack Query, Recharts, Tailwind, shadcn/ui) is validated and in production.
+
+**Bottom line: no new libraries needed.** All required computation can be done with Python's built-in `statistics` module and SQL aggregations.
 
 ---
 
 ## Recommended Stack
 
-### Core Technologies (No Changes for v1.5)
+### Core Technologies (No Changes for v1.8)
 
-All v1.5 features are implemented using existing dependencies:
+All v1.8 features are implemented using existing dependencies:
 
-| Technology | Version in Use | Relevant Capability for v1.5 |
+| Technology | Version in Use | Relevant Capability for v1.8 |
 |------------|---------------|------------------------------|
-| python-chess | >=1.10.0 (1.11.2 latest) | `board.pieces()` for material counting, `node.eval()` for PGN eval parsing, `node.nags` for move quality annotations |
-| FastAPI | >=0.115.x | New `/endgames` router endpoints |
-| SQLAlchemy 2.x async | >=2.0.0 | New columns on `game_positions` and `games`; new aggregation queries |
-| PostgreSQL 18 | (Docker, pinned) | Composite B-tree indexes on new integer columns |
-| httpx async | >=0.27.0 | Existing platform clients gain new query params only — no client changes |
+| Python 3.13 stdlib `statistics` | Built-in | `statistics.mean()`, `statistics.stdev()` for cross-game averages — no new dep |
+| SQLAlchemy 2.x async | >=2.0.0 | `func.avg()`, `func.count()`, `func.sum()` in existing query patterns |
+| PostgreSQL 18 | (Docker, pinned) | `AVG`, `CASE WHEN`, `FILTER` aggregate clauses for normalized rating computation |
+| FastAPI | >=0.115.x | New or extended endpoint on `/api/endgames/performance` |
+| Recharts | ^2.15.4 (frontend) | Existing `EndgameGauge` SVG component already handles any float value 0–100 |
 
-### python-chess API Surface for New Computations
+### Supporting Libraries (No Additions)
 
-All methods confirmed available in python-chess 1.10.x+ (stable since 1.x):
-
-**Material counting:**
-```python
-import chess
-
-# Count pieces by type and color — returns SquareSet, use len()
-len(board.pieces(chess.QUEEN, chess.WHITE))    # 0 or 1
-len(board.pieces(chess.ROOK, chess.BLACK))     # 0–2
-len(board.pieces(chess.BISHOP, chess.WHITE))   # 0–2
-len(board.pieces(chess.KNIGHT, chess.BLACK))   # 0–2
-len(board.pieces(chess.PAWN, chess.WHITE))     # 0–8
-
-# Piece type constants: PAWN=1, KNIGHT=2, BISHOP=3, ROOK=4, QUEEN=5, KING=6
-
-# Insufficient material check (useful for endgame branch)
-board.has_insufficient_material(chess.WHITE)
-board.has_insufficient_material(chess.BLACK)
-board.is_insufficient_material()
-```
-
-**PGN eval parsing (already in python-chess, zero new imports):**
-```python
-import chess.pgn
-
-node = ...  # chess.pgn.ChildNode from game.mainline()
-score = node.eval()                     # chess.engine.PovScore | None
-if score is not None:
-    cp   = score.white().score()        # int centipawns from white's view; None if mate
-    mate = score.white().mate()         # int mate-in-N from white's view; None if not mate
-    depth = node.eval_depth()           # int depth annotation; None if not present
-```
-
-**NAG move quality annotations:**
-```python
-# Standard NAG integer constants:
-# chess.pgn.NAG_GOOD_MOVE        = 1   (!)
-# chess.pgn.NAG_MISTAKE          = 2   (?)
-# chess.pgn.NAG_BRILLIANT_MOVE   = 3   (!!)
-# chess.pgn.NAG_BLUNDER          = 4   (??)
-# chess.pgn.NAG_SPECULATIVE_MOVE = 5   (!?)
-# chess.pgn.NAG_DUBIOUS_MOVE     = 6   (?!)
-
-node.nags   # set[int] — e.g. {4} = blunder
-```
-
-**Clock annotation (already used in `zobrist.py`):**
-```python
-node.clock()    # float | None — seconds remaining from [%clk ...]
-```
+| Library | Purpose | Notes |
+|---------|---------|-------|
+| Python `statistics` (stdlib) | Average opponent rating, standard deviation for confidence metrics | Already available; do NOT add numpy/scipy — overkill for simple mean computations over hundreds of rows |
+| SQLAlchemy `func.avg()` | Average normalized opponent rating in SQL | Push aggregation to DB, return a single scalar — avoids loading all rows to Python |
+| Recharts (existing) | ELO-adjusted skill timeline chart (single line) | Same `LineChart` pattern used in conv/recov timeline; reuse `EndgameConvRecovChart.tsx` or clone it |
+| `EndgameGauge.tsx` (existing) | Display adjusted_endgame_skill score | Already accepts any `value: number`, `maxValue`, and `zones`; no component changes needed |
 
 ---
 
-## Platform API Integration Points
+## ELO Adjustment — Implementation Approach
 
-### chess.com — Accuracy Only, No Per-Move Evals
+### Formula (from PROJECT.md backlog item 999.5)
 
-**What is available via the existing monthly archive endpoint:**
-
-The game JSON object already fetched by `chesscom_client.py` includes an optional `accuracies` field:
-
-```json
-{
-  "accuracies": {
-    "white": 87.3,
-    "black": 72.1
-  }
-}
+```
+adjusted_endgame_skill = raw_endgame_skill × (avg_normalized_opponent_rating / REFERENCE_RATING)
 ```
 
-This field is absent when the game has not been analyzed on chess.com. No additional API call is needed.
+Where:
+- `raw_endgame_skill` = existing `0.7 × conversion_pct + 0.3 × recovery_pct`
+- `avg_normalized_opponent_rating` = average chess.com-equivalent opponent rating across filtered endgame conversion/recovery games
+- `REFERENCE_RATING = 1500` (chess.com blitz baseline, fixed)
 
-**What is NOT available (confirmed by chess.com moderators):**
+### Cross-Platform Rating Normalization
 
-Per-move evaluation scores, centipawn values, and move quality annotations are not exposed by the chess.com public API. No workaround exists within the documented public API. The CAPS accuracy algorithm output is only available as the game-level `accuracies` field.
-
-**Integration:** One line in `normalize_chesscom_game()`. The raw game dict already flows through normalization — extract `game.get("accuracies", {})` and map `white`/`black` keys to new `games` table columns.
-
-### lichess — Per-Move Evals and Per-Game Accuracy
-
-lichess exposes two distinct data points that require two different approaches:
-
-**1. Per-move evals — already stored in the database, no new API call:**
-
-When lichess games have been analyzed, `[%eval ...]` annotations are embedded in the PGN. The PGN is already stored in the `games.pgn` TEXT column. python-chess parses these via `node.eval()`.
-
-Example PGN from lichess with evals:
-```
-1. e4 { [%eval 0.17] [%clk 0:01:00] } 1... e5 { [%eval 0.19] [%clk 0:01:00] }
-```
-
-This means all historical games already in the database can have evals extracted (at migration time or lazily) by re-parsing stored PGNs — no API round-trips.
-
-**2. Requesting evals at import time — add one param to existing client:**
-
-Add `evals=True` to the params dict in `lichess_client.py`. This ensures PGN evals are included for future imports of analyzed games:
+The backlog item specifies a tapered offset formula to convert lichess ratings to chess.com-equivalent:
 
 ```python
-# lichess_client.py — add to existing params dict:
-params["evals"] = True
+# Lichess → chess.com blitz equivalent
+# offset tapers from ~350 at lichess 1400, reaching 0 at lichess ~2570
+offset = max(0, 350 - (lichess_rating - 1400) * 0.3)
+chesscom_equivalent = lichess_rating - offset
 ```
 
-Note: `evals=true` returns data only for games that lichess has already analyzed. Not all games have analysis; the param is safe to add always.
+**Empirical verification:** ChessGoals.com cross-platform data (2,489 active players with RD < 150) supports the tapering-offset pattern:
+- At lichess 1030 → chess.com ~500 (offset ≈ 530, but users this low are outside useful range)
+- At lichess 1420 → chess.com ~1000 (offset ≈ 420)
+- At lichess 1780 → chess.com ~1500 (offset ≈ 280)
+- At lichess 2100 → chess.com ~2000 (offset ≈ 100)
 
-**3. Per-game accuracy via JSON — add one param:**
+The formula specified in the backlog item (`offset = max(0, 350 - (lichess_rating - 1400) × 0.3)`) is a reasonable approximation that tapers as expected. It is intentionally simple — the purpose is directional normalization, not a precise FIDE-style calculation.
 
-The NDJSON streaming endpoint supports `accuracy=true`. This enriches the existing JSON game objects with accuracy data nested under `players`:
+**Why not a linear formula:** The regression formula `C = 1.138 × L - 665` (for blitz) requires a float multiplier and has higher error at the tails. The tapered-offset approach is more interpretable and already agreed upon in the backlog design.
 
-```json
-{
-  "players": {
-    "white": {
-      "accuracy": 88,
-      "analysis": {
-        "inaccuracy": 3,
-        "mistake": 1,
-        "blunder": 0,
-        "acpl": 28
-      }
-    },
-    "black": {
-      "accuracy": 79,
-      "analysis": { ... }
-    }
-  }
-}
-```
+**Confidence: MEDIUM** — empirical cross-platform data supports the direction and approximate magnitude, but the exact tapering constants should be validated against real FlawChess user data once the feature is live.
 
-The `accuracy` integer and `analysis` object appear only when the game has been analyzed. Safe to request always.
+### Where to Compute Normalization
+
+**In Python service layer, not SQL.** Reason: the normalization formula involves conditional logic (`max(0, ...)`) and the `platform` column is already available per-game. Compute `normalized_opponent_rating` per game row in Python before averaging. This keeps SQL simple and the formula easy to iterate on.
 
 ```python
-# lichess_client.py — add to existing params dict:
-params["accuracy"] = True
+def normalize_opponent_rating(rating: int, platform: str) -> float:
+    """Convert opponent rating to chess.com-equivalent (blitz baseline)."""
+    if platform == "lichess":
+        offset = max(0, 350 - (rating - 1400) * 0.3)
+        return rating - offset
+    return float(rating)  # chess.com already on target scale
 ```
 
-**Integration:** Update `normalize_lichess_game()` to extract `players.white.accuracy` and `players.black.accuracy`.
+### What Data Is Already Available
 
-Confirmed via: [lichess-org/api OpenAPI spec](https://raw.githubusercontent.com/lichess-org/api/master/doc/specs/tags/games/api-games-user-username.yaml) — `evals` and `accuracy` are documented query parameters.
+The `games` table already stores:
+- `white_rating`, `black_rating` — raw opponent rating in platform's native scale
+- `platform` — "chess.com" or "lichess"
+- `user_color` — needed to derive which rating is the opponent's
+
+No new columns needed. The endgame entry rows already fetched by `query_endgame_entry_rows()` need to be joined with rating data, or a new variant query returns ratings alongside the existing columns.
 
 ---
 
-## New Database Columns
+## Opening Risk/Volatility — Implementation Approach
 
-### On `game_positions` — per half-move metadata
+### Metric Definition (to be finalized in planning)
 
-Add these columns. All computed during the existing import loop with no additional I/O:
+The most practical opening risk metric given available data is:
 
-| Column | SQLAlchemy Type | Notes |
-|--------|----------------|-------|
-| `game_phase` | `SmallInteger`, NOT NULL | 0=opening, 1=middlegame, 2=endgame. Integer beats enum for composite index efficiency and range queries. |
-| `material_white` | `SmallInteger`, NOT NULL | Total non-king material value for white using standard piece values (Q=9, R=5, B=3, N=3). Range 0–39. |
-| `material_black` | `SmallInteger`, NOT NULL | Total non-king material value for black. Same scale. |
-| `endgame_class` | `String(20)`, nullable | Normalized material signature string, e.g. `"KQvKR"`, `"KRvK"`, `"KPvK"`. NULL when `game_phase != 2`. |
-| `eval_cp` | `SmallInteger`, nullable | Centipawn eval from `[%eval ...]` annotation; NULL if not available or if mate score. From white's perspective. |
-| `eval_mate` | `SmallInteger`, nullable | Mate-in-N from eval annotation; NULL if not available or if not a mate score. From white's perspective. |
-
-### On `games` — per-game accuracy from platform
-
-| Column | SQLAlchemy Type | Notes |
-|--------|----------------|-------|
-| `white_accuracy` | `Float`, nullable | Game-level CAPS/accuracy % from chess.com `accuracies.white` or lichess `players.white.accuracy`. NULL if game not analyzed. |
-| `black_accuracy` | `Float`, nullable | Same for black. |
-
-### Indexing Strategy
-
-The primary Endgames tab query pattern is:
-```sql
-WHERE user_id = $1 AND game_phase = 2 AND endgame_class = $2
+```
+decisiveness = (wins + losses) / total_games  # fraction of decisive games, not draws
 ```
 
-Add one composite index to `game_positions`:
-```python
-Index("ix_gp_user_phase_class", "user_id", "game_phase", "endgame_class")
-```
+This is the user-data equivalent of opening sharpness: a 1. e4 Sicilian line with 80% decisive results is "sharp/risky" vs. a London System at 50% decisive that is "drawish/solid."
 
-This index also accelerates `WHERE user_id = $1 AND game_phase = 2` (endgame stats without class filter) and `WHERE user_id = $1 AND game_phase = ?` (phase-level statistics). No partial indexes needed — the composite B-tree handles all three query shapes.
+**Rationale for this approach over engine-based sharpness:**
+- No local engine installed; per-position eval available for lichess analyzed games only (not all games)
+- User-specific data: measures this player's actual decisive-game rate, not the theoretical sharpness
+- Computable entirely from existing WDL data already computed for openings
+- Matches how humans intuitively think about "is this opening risky for me?"
 
-The four existing hash indexes (`ix_gp_user_full_hash`, `ix_gp_user_white_hash`, `ix_gp_user_black_hash`, `ix_gp_user_full_hash_move_san`) are unchanged.
+**Derived metrics** (all computable from existing WDL counts without new columns):
+- `win_rate` = wins / total (already computed)
+- `decisiveness` = (wins + losses) / total (new, but trivial addition to existing aggregation)
+- `volatility` = how much win_rate varies game-to-game (needs rolling std dev — more complex)
 
----
+**Recommendation:** Start with `decisiveness` (one new computed column in the response, no schema change). Defer volatility/std-dev metrics until decisiveness is validated as useful.
 
-## Game Phase Detection — Implementation Recommendation
+### No New Libraries for Statistical Aggregation
 
-There is no standard built-in method in python-chess or any library. Use a material-threshold approach, which is what chess engines use (Stockfish, Crafty, others). No ply-count method is needed.
-
-**Recommended thresholds (compute `total_material = material_white + material_black`):**
-
-| Phase | Condition | Rationale |
-|-------|-----------|-----------|
-| Opening | `total_material >= 56` | Both queens + most pieces present. Full starting material = 78 (Q×2=18, R×4=20, B×4=12, N×4=12, pawns excluded from phase calc). Opening ends when 1–2 minor pieces have been traded. |
-| Middlegame | `20 <= total_material < 56` | Active piece play with reduced force. |
-| Endgame | `total_material < 20` | Queens traded or most heavy pieces gone. |
-
-These thresholds are deliberately simple — they are for user-facing statistics categories, not engine evaluation. Exact boundary values can be tuned after seeing real data; the column is `SmallInteger` so a re-migration to adjust thresholds means a data backfill, not a schema change.
-
-**Pawns excluded from phase threshold:** Pawns do not strongly signal game phase (a position with 16 pawns and no pieces is clearly an endgame). Use only Q/R/B/N material values.
+Python's `statistics.stdev()` handles per-opening win-rate standard deviation if needed. SQL `STDDEV_POP` / `STDDEV_SAMP` handles it at the database level. Both are available with zero new dependencies.
 
 ---
 
-## Endgame Classification — Material Signature
+## New Schema Changes
 
-No library method exists. Build a compact string from `board.pieces()`:
+### No New Columns Required for ELO-Adjusted Skill
 
-- List piece letters (Q, R, B, N, P) for each side, most valuable first
-- Format: `"K{white_pieces}vK{black_pieces}"` — always include K on both sides
-- Examples: `"KQRvKR"`, `"KRvK"`, `"KBNvK"`, `"KPvK"`, `"KvK"` (bare kings)
-- Only compute when `game_phase == 2` — store NULL otherwise to avoid polluting opening/middlegame rows
+All data needed is already present:
+- `games.white_rating`, `games.black_rating` — opponent rating
+- `games.platform` — needed for normalization formula
+- `games.user_color` — needed to identify which rating is the opponent's
+- Endgame entry rows (from `query_endgame_entry_rows`) already include `game_id` for joining back to `games`
 
-A `String(20)` column fits all realistic endgame signatures. The `v` separator keeps it unambiguous.
+**Optional: add `avg_normalized_opponent_rating` and `game_count` to `EndgamePerformanceResponse`** — surface this to the frontend for display alongside the adjusted score.
 
----
-
-## Integration Points in the Existing Import Pipeline
-
-The existing flow in `import_service.py::_flush_batch` → `zobrist.py::hashes_for_game`:
-
-1. Parses PGN via `chess.pgn.read_game()`
-2. Iterates `game.mainline()` node-by-node
-3. Computes hashes via `compute_hashes(board)` at each ply
-4. Pushes move to board
-5. Appends a dict to `position_rows`
-
-**New computations slot into step 3**, after `compute_hashes(board)` and before `board.push(node.move)`:
+### New Schema Fields on Existing Pydantic Response
 
 ```python
-game_phase    = compute_game_phase(board)           # uses board.pieces()
-mat_w         = compute_material(board, chess.WHITE)
-mat_b         = compute_material(board, chess.BLACK)
-endgame_cls   = classify_endgame(board) if game_phase == 2 else None
-eval_cp, eval_mate = parse_node_eval(node)          # node.eval()
+# EndgamePerformanceResponse additions:
+avg_normalized_opponent_rating: float | None  # None if no games with ratings
+adjusted_endgame_skill: float                 # ELO-adjusted composite, 0-100 scale
 ```
 
-All new values append to the existing `position_rows` dict. Zero additional DB round-trips. No async changes. The natural extension point is either `zobrist.py` (renamed to `position_metadata.py`) or a parallel `metadata.py` module that `_flush_batch` calls alongside `hashes_for_game`.
+The `endgame_skill` field stays as-is (raw, unadjusted) for continuity; `adjusted_endgame_skill` is the new value displayed in the gauge.
 
-**Accuracy extraction** is a two-line change in each normalizer:
-- `normalize_chesscom_game()` — extract `game.get("accuracies", {}).get("white")` and `black`
-- `normalize_lichess_game()` — extract `players["white"].get("accuracy")` and `black`
+---
+
+## Query Strategy
+
+### Fetching Rating Data Alongside Endgame Entry Rows
+
+**Option A (recommended): extend `query_endgame_entry_rows` to also return ratings**
+
+Add `Game.white_rating`, `Game.black_rating`, `Game.platform`, and `Game.user_color` to the SELECT in the existing query. These are already on the joined `Game` row — no additional join needed. The service layer then:
+
+1. Computes `normalized_opponent_rating` per row in Python
+2. Averages over the conversion/recovery game subset
+3. Applies the adjustment formula
+
+**Option B: separate query for average normalized rating**
+
+Push the average to SQL using `func.avg()` with a `CASE WHEN platform = 'lichess'` expression. Keeps the service layer simpler but embeds the normalization formula in SQL, making it harder to iterate on.
+
+**Recommendation: Option A.** The normalization logic is already in the service layer and the `query_endgame_entry_rows` result set is already fetched (hundreds of rows maximum per user). No performance concern.
+
+---
+
+## Frontend: New Components Needed
+
+### ELO-Adjusted Skill Gauge
+
+**No new component.** The existing `EndgameGauge.tsx` already accepts:
+- `value: number` — display `adjusted_endgame_skill`
+- `maxValue?: number` — default 100 works
+- `label: string` — "Endgame Skill (Adj.)" or similar
+- `zones?: GaugeZone[]` — reuse `DEFAULT_GAUGE_ZONES` from `theme.ts`
+
+The gauge already renders correctly for any float in [0, 100]. Swap the displayed value from `endgame_skill` to `adjusted_endgame_skill` when the API returns it.
+
+### Endgame Skill Timeline Chart
+
+**Reuse existing pattern.** The `EndgameConvRecovChart.tsx` renders a rolling-window LineChart from `ConvRecovTimelineResponse`. A new `EndgameSkillTimelineChart.tsx` component follows the same pattern but takes a simpler `{ date, value, game_count, window_size }[]` series.
+
+No new charting library. Recharts `LineChart` + `Line` + `XAxis` + `YAxis` + `Tooltip` — all already imported elsewhere in the frontend.
 
 ---
 
@@ -276,12 +200,13 @@ All new values append to the existing `position_rows` dict. Zero additional DB r
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| Local Stockfish (python-chess UCI) | OOM risk on 3.7GB server; async pipeline complexity; per-position eval during import would be catastrophically slow at scale; explicitly out of scope per PROJECT.md | Import platform-provided evals from existing PGN `[%eval ...]` annotations |
-| `berserk` library | Blocking (not async); project constraint violation | Existing `httpx.AsyncClient` in `lichess_client.py` — add two params |
-| JSONB columns for material data | 100–1000x slower than integer columns for the equality/range queries the Endgames tab requires | Separate `SmallInteger` columns for `material_white`, `material_black`, `game_phase` |
-| Per-ply accuracy column | chess.com does not expose per-move accuracy; computing it requires local Stockfish | Per-game accuracy on `games` table is sufficient for phase-based statistics |
-| Syzygy/Gaviota tablebase probing | Requires large binary files (10s of GB) incompatible with the 75GB Hetzner disk budget; overkill for statistics classification | Custom material-signature string built from `board.pieces()` |
-| Re-fetching all lichess games with `evals=true` | Unnecessary — evals are already embedded in stored PGNs for analyzed games; re-fetching costs rate-limited API calls | Re-parse stored `games.pgn` column to extract `[%eval ...]` annotations at migration |
+| `numpy` / `scipy` | Heavy ML-oriented dependencies for computing a simple mean across <1000 rows per user — massive overkill | Python `statistics.mean()` (stdlib) or `sum(vals) / len(vals)` |
+| `statsmodels` | Even heavier; designed for regression/hypothesis testing, not plain average computation | Same — stdlib `statistics` |
+| External rating API (chess-elo-converter, etc.) | External dep for what is a 2-line formula; network call adds latency and failure mode | Inline normalization function per formula in PROJECT.md backlog item |
+| Server-side Elo performance rating | Defined differently than what's needed (requires game-by-game opponent rating AND result pairing, and has well-known baseline failure for material-up situations) | Tapering-offset normalization as specified |
+| New Recharts chart type | All needed chart types (LineChart, RadialBarChart) already in use | Reuse existing EndgameConvRecovChart pattern |
+| Adding `game_phase` or `endgame_class` derived columns to `games` table | Already encoded at position level in `game_positions`; duplicating to `games` creates redundancy | Query via existing endgame_repository patterns |
+| SQL `STDDEV_POP` for rolling std dev | Rolling std dev over game history is complex in pure SQL; easier as Python post-processing | Python list comprehension over chronological rows, same pattern as `_compute_rolling_series` |
 
 ---
 
@@ -289,10 +214,11 @@ All new values append to the existing `position_rows` dict. Zero additional DB r
 
 | Recommended | Alternative | Why Not |
 |-------------|-------------|---------|
-| Material-count thresholds for phase detection | Ply-based opening boundary (e.g. ply <= 10 = opening) | Ply count is too rigid; a theoretical Sicilian Najdorf line can still be "opening" at ply 30. Material thresholds reflect the actual piece complexity of the position. |
-| `SmallInteger` columns for phase/material | PostgreSQL enum type for `game_phase` | Enum requires a migration to add values; `SmallInteger` with application-layer constants (0/1/2) is simpler and equally fast for indexed queries. |
-| Extract evals from stored PGN at migration | Request evals fresh from lichess API | Stored PGN already contains `[%eval ...]` for games that were analyzed. Re-parsing is free; re-fetching costs API rate limit budget. |
-| Game-level accuracy on `games` table | Per-move accuracy on `game_positions` | chess.com only provides game-level accuracy; per-move values require local engine. Game-level is the right granularity for the conversion/recovery statistics use case. |
+| Tapered-offset normalization formula | Linear regression `C = 1.138 × L - 665` | Extrapolates poorly at low/high ratings; less interpretable; harder to explain to users |
+| Python-layer normalization per row | SQL `CASE WHEN platform = 'lichess' THEN ...` computed column | Business logic belongs in Python, not SQL; formula is likely to be iterated on |
+| Extend `EndgamePerformanceResponse` with `adjusted_endgame_skill` | New `/api/endgames/adjusted-skill` endpoint | One additional field on existing endpoint is simpler; same data lifecycle |
+| `decisiveness = (wins + losses) / total` for opening risk | Engine-based WDL sharpness metric | Requires per-position engine eval (not available for chess.com; sparse for lichess); user's actual decisive-game rate is more actionable |
+| Reuse `EndgameGauge.tsx` for adjusted score | New gauge component | Existing component is parameterized; value/label/zones all configurable without code duplication |
 
 ---
 
@@ -300,26 +226,24 @@ All new values append to the existing `position_rows` dict. Zero additional DB r
 
 | Package | Constraint | Notes |
 |---------|------------|-------|
-| `chess` (python-chess) | >=1.10.0 — 1.11.2 latest (Feb 2025) | `node.eval()`, `node.nags`, `board.pieces()`, `NAG_*` constants all stable since 1.x. The `eval()` off-by-one centipawn bug was fixed in 1.11.1 — already resolved in 1.11.2. |
-| PostgreSQL | 18 (production Docker) | `SMALLINT` maps cleanly; composite B-tree syntax unchanged. |
-| SQLAlchemy | >=2.0.0 | `mapped_column(SmallInteger, nullable=False)` for new columns; `select()` API unchanged. |
-| lichess API | Current (no versioning) | `evals` and `accuracy` parameters confirmed in official OpenAPI YAML as of research date. |
-| chess.com API | Published Data API (no versioning) | `accuracies` field confirmed in official documentation; field is optional/absent when not analyzed. |
+| Python `statistics` | 3.4+ (built-in) | `mean()`, `stdev()`, `pstdev()` all stable; no version concerns |
+| SQLAlchemy | >=2.0.0 | `func.avg()` unchanged since 1.x; no compatibility issues |
+| Recharts | ^2.15.4 | `LineChart`, `Line` components stable; no new API surface needed |
+| PostgreSQL | 18 | `AVG()`, `CASE WHEN`, `FILTER` are standard SQL; all available since PG 9.4+ |
 
 ---
 
 ## Sources
 
-- [python-chess 1.11.2 Core docs](https://python-chess.readthedocs.io/en/latest/core.html) — `pieces()`, `piece_map()`, `has_insufficient_material()`, piece type constants — HIGH confidence
-- [python-chess 1.11.2 PGN docs](https://python-chess.readthedocs.io/en/latest/pgn.html) — `node.eval()`, `node.eval_depth()`, `node.nags`, `node.clock()` — HIGH confidence
-- [python-chess changelog](https://python-chess.readthedocs.io/en/latest/changelog.html) — 1.11.2 released Feb 2025, `eval()` off-by-one fix in 1.11.1 — HIGH confidence
-- [lichess-org/api OpenAPI YAML](https://raw.githubusercontent.com/lichess-org/api/master/doc/specs/tags/games/api-games-user-username.yaml) — `evals`, `accuracy`, `analysed` parameters confirmed, PGN comment format `[%eval cp]` / `[%eval #N]` — HIGH confidence
-- [lichess accuracy API forum](https://lichess.org/forum/lichess-feedback/trying-to-find-accuracy-from-the-api) — `players.*.accuracy` and `players.*.analysis` fields in NDJSON with JSON Accept header — MEDIUM confidence (forum, consistent with spec)
-- [chess.com Published-Data API documentation](https://gist.github.com/andreij/0e3309200c0a6bb26308817a168203f3) — `accuracies.white/black` field confirmed, absent when not analyzed — HIGH confidence
-- [chess.com forum: no per-move evals in API](https://www.chess.com/forum/view/general/can-i-download-pgn-with-score-and-clock-using-api) — chess.com moderator confirmed evals/game-review data not available via public API — HIGH confidence
-- [Chessprogramming wiki: Game Phases](https://www.chessprogramming.org/Game_Phases) — material-based phase detection rationale, tapered eval pattern — MEDIUM confidence (community reference)
+- [ChessGoals.com Rating Comparison](https://chessgoals.com/rating-comparison/) — empirical cross-platform rating data (2,489 players, RD < 150), tapering offset pattern confirmed — MEDIUM confidence (community data, recent July 2025 update)
+- [NoseKnowsAll Universal Rating Converter 2024](https://lichess.org/@/NoseKnowsAll/blog/introducing-a-universal-rating-converter-for-2024/X2QAH27t) — classical/rapid only; blitz excluded from universal converter — HIGH confidence (lichess official blog)
+- [lichess forum: rating conversion formulae](https://lichess.org/forum/general-chess-discussion/rating-conversion-formulae-lichessorg--chesscom) — empirical linear regression formulas per time control — MEDIUM confidence (community, methodology unclear)
+- [Python `statistics` module docs](https://docs.python.org/3/library/statistics.html) — stdlib `mean()`, `stdev()` available in Python 3.4+ — HIGH confidence (official)
+- [shadcn/ui Radial Charts](https://ui.shadcn.com/charts/radial) — Recharts `RadialBarChart` gauge pattern via shadcn — HIGH confidence (official)
+- [jk_182: Quantifying Volatility of Chess Games](https://lichess.org/@/jk_182/blog/quantifying-volatility-of-chess-games/H6MWvX98) — volatility metrics based on WDL and eval swings — MEDIUM confidence (community research)
+- PROJECT.md backlog item 999.5 — normalization formula and adjustment design already decided — HIGH confidence (authoritative project decision)
 
 ---
 
-*Stack research for: FlawChess v1.5 — game statistics & endgame analysis*
-*Researched: 2026-03-23*
+*Stack research for: FlawChess v1.8 — advanced analytics (ELO-adjusted endgame skill, opening risk)*
+*Researched: 2026-04-04*

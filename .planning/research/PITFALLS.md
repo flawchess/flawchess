@@ -1,340 +1,361 @@
 # Pitfalls Research
 
-**Domain:** Per-position metadata enrichment, engine analysis import, and endgame classification for an existing chess analytics platform (FlawChess v1.5)
-**Researched:** 2026-03-23
-**Confidence:** HIGH (chess.com API limitations confirmed via official forum moderator statement; PostgreSQL behavior confirmed via official docs; python-chess material APIs confirmed from maintainer discussion); MEDIUM (lichess eval coverage rate, game phase edge cases from community sources)
+**Domain:** Advanced chess analytics — ELO-adjusted metrics, cross-platform rating normalization, opening risk scores, refined endgame statistics
+**Researched:** 2026-04-04
+**Confidence:** HIGH (codebase verified, domain patterns confirmed via external sources)
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: chess.com Accuracy Data Is Absent for Most Games
+### Pitfall 1: Lichess-to-Chess.com Rating Offset Is Not a Fixed Constant
 
 **What goes wrong:**
-The chess.com archive API (`/pub/player/{username}/games/{YYYY}/{MM}`) does include an `accuracies` field (`{"white": 87.6, "black": 23.6}`) — but only for games that have already been reviewed by the user via the "Game Review" feature. The vast majority of a user's games have never been reviewed. For those games, the `accuracies` field is either absent from the JSON or `null`. A chess.com moderator has confirmed: "game phase accuracy values only show for games with reviews and are not stored in the DB." The public API is also in **maintenance mode only** — no new analysis fields will be added.
+The backlog spec (Phase 999.5) uses a fixed tapering formula: `offset = max(0, 350 - (lichess_rating - 1400) * 0.3)`. This is a reasonable approximation but the actual offset is neither linear nor symmetric across time controls. External analysis (NoseKnowsAll 2024 converter) shows the relationship varies significantly by skill level — the gap can invert near 2100+ rated players. If the formula is treated as authoritative rather than an approximation, ELO-adjusted skill scores will be systematically biased at the extremes of the rating range.
 
-There is no API endpoint to trigger a game review programmatically. Free users get 1 review per day; Diamond members get unlimited. Move-level evaluations (centipawn scores, accuracy per move) are not exposed at all through the public API — only the single overall accuracy float per player is available.
+The formula is also per-platform but not per-time-control. Players who only play bullet on lichess get the blitz-calibrated offset applied, which is wrong by roughly 30–50 points.
 
 **Why it happens:**
-Developers assume "chess.com shows accuracy so the API must return it" and design their import pipeline expecting a field that will be absent for 95%+ of games. The field name `accuracies` in the official docs sounds definitive but is actually conditional.
+Developers find a plausible-looking formula and treat it as ground truth without documenting its limits. The formula is derived from community analysis that drifts over time as platforms update their rating systems.
 
 **How to avoid:**
-- Store accuracy as `FLOAT NULL` on the `games` table — never `NOT NULL`
-- On import, check `game.get("accuracies")` before accessing `.get("white")` / `.get("black")`
-- Design the endgame analytics UI to degrade gracefully when accuracy is null — show "n/a" rather than 0% or crashing
-- Do NOT advertise "import your accuracy data" as a core feature — it will be absent for most users
-- Limit scope to the overall accuracy float that IS available; per-phase accuracy and per-move quality are not accessible
+- Implement the formula as a named function `normalize_lichess_rating(rating: int) -> int` with a docstring explicitly calling it an approximation.
+- Do not display the adjusted score with more than one decimal of precision — false precision amplifies the formula's error.
+- Add a tooltip/info label on the gauge: "Normalized to chess.com blitz equivalent (approximate)" so users understand this is a heuristic.
+- Accept the per-time-control limitation explicitly; document it in code rather than silently applying blitz calibration to bullet games.
 
 **Warning signs:**
-- Import pipeline accesses `game["accuracies"]["white"]` with no null guard — fails immediately on first unreviewed game
-- UI shows 0% accuracy for all endgame positions rather than "no data"
+- Adjusted score shows no difference from raw score for a mixed chess.com/lichess user — the normalization branch is not executing.
+- Users who only play bullet on lichess complain the score looks wrong.
 
-**Phase to address:** Engine analysis import phase (schema design + normalization)
+**Phase to address:**
+ELO-Adjusted Endgame Skill — backend service function. Name and document the normalization function before wiring it into the skill calculation.
 
 ---
 
-### Pitfall 2: lichess Evals Are Absent for Non-Analyzed Games
+### Pitfall 2: Deriving Opponent Rating from white_rating/black_rating Gets the Color Logic Inverted
 
 **What goes wrong:**
-lichess game exports support an `evals=true` parameter that embeds Stockfish centipawn annotations as `{ [%eval 0.17] }` comments inside PGN move nodes. However, this only returns data for games that have had computer analysis requested and computed. A game played without ever requesting "Request a computer analysis" on lichess will export with no eval annotations, even with `evals=true` passed to the API.
-
-Many casual games, especially older ones, have never been analyzed. The `evals` annotations will be present for some games and completely absent for others in the same API response. Additionally, the format uses centipawns from White's perspective (e.g., `[%eval -3.15]`), and mate scores use the format `[%eval #5]` (White mates in 5) or `[%eval #-3]` (Black mates in 3) — the sign on the mate count is not obvious and easy to misparse.
+The `games` table stores `white_rating` and `black_rating` — absolute by piece color, not user-relative. Deriving opponent rating requires inverting the user's color: if `user_color == "white"` then opponent is `black_rating`, and vice versa. This is the exact opposite of the user-rating pattern already in `stats_repository.py`. Getting this backwards produces an `opponent_rating` that equals the user's own rating, making the ELO adjustment multiply by the user's own strength instead of their opponent's. The resulting adjusted score will be perfectly correlated with the user's rating history but measure nothing about opponent quality.
 
 **Why it happens:**
-Developers add `evals=true` to the lichess API request and assume the response will contain eval data for all games. The conditional nature of lichess analysis is not clearly documented at the API level.
+The correct pattern for `user_rating_expr` already exists in `stats_repository.py` as `case((Game.user_color == "white", Game.white_rating), else_=Game.black_rating)`. The opponent derivation is the mirror image, and it is easy to copy the user-rating pattern and forget to flip it.
 
 **How to avoid:**
-- Parse `[%eval ...]` annotations defensively — always check that the annotation exists before using it
-- Use python-chess's `node.eval()` API (returns `chess.engine.PovScore | None`) rather than regex-parsing PGN comment strings manually
-- Store eval as `SMALLINT NULL` (centipawns) on `game_positions` — `None` for positions without analysis
-- Never assume evals will exist — design queries and UI to work on the subset that has data
-- For the current lichess request in `lichess_client.py`: add `"evals": True` to the params dict, but gate all downstream processing on the presence of the annotation
+```python
+# CORRECT opponent rating derivation (user_color is white -> opponent is black)
+opponent_rating_expr = case(
+    (Game.user_color == "white", Game.black_rating),
+    else_=Game.white_rating,
+).label("opponent_rating")
+```
+Write a unit test that creates a game where `user_color="white"`, `white_rating=1200`, `black_rating=1500`, and asserts `opponent_rating == 1500`.
 
 **Warning signs:**
-- Regex-based eval extraction crashes or returns garbage on mate scores like `#-3`
-- Import logs show parsing failures only for certain games (the unanalyzed ones have no `[%eval]` nodes — skipping silently is correct, crashing is not)
+- Adjusted endgame skill produces a smooth upward trend that exactly mirrors the user's own rating history — this is the tell that the user's own rating is being used.
+- `avg_normalized_opponent_rating` matches the user's own ELO perfectly for a user who has only played one platform.
 
-**Phase to address:** Engine analysis import phase (lichess client + PGN parsing)
+**Phase to address:**
+ELO-Adjusted Endgame Skill — the endgame repository query that includes opponent_rating in the SELECT. Add the unit test before wiring the value into the performance calculation.
 
 ---
 
-### Pitfall 3: Backfilling game_positions for Existing Games Is an OOM Risk
+### Pitfall 3: Opponent Rating Average Must Come From the Same Row Population as the Skill Score
 
 **What goes wrong:**
-Adding new columns to `game_positions` (e.g., `game_phase`, `material_signature`, `endgame_class`) and then running a backfill script that recomputes values for all existing rows will attempt to load and update a very large number of rows. The production server already hit an OOM kill at batch_size=50 during initial import — the same risk applies to backfill. A naive `UPDATE game_positions SET game_phase = compute(fen) WHERE game_phase IS NULL` across millions of rows will lock the table for minutes and likely trigger the OOM killer on the 3.7GB/2GB-swap Hetzner instance.
-
-The `game_positions` table has no stored FEN — only Zobrist hashes. Computing `game_phase` requires replaying PGN moves from `games.pgn`, which means the backfill must join `game_positions` to `games`, re-parse each PGN, and update rows in chunks. This is a multi-step operation, not a simple column update.
+The ELO-adjusted skill score requires `avg_normalized_opponent_rating` computed over the same games that contributed to `raw_endgame_skill`. Conversion games are only those where the user entered the endgame with >= 300cp material advantage. Recovery games are only those where the user was down >= 300cp. These subsets may cluster at different opponent rating ranges (e.g., lower-rated opponents blunder material more often, so conversion games may skew toward weaker opponents). Computing `avg_opponent_rating` over all endgame games, or worse over all games, will introduce a systematic bias in the adjusted score.
 
 **Why it happens:**
-Backfill migrations are typically modeled as simple column-population scripts. For `game_positions`, the data needed (FEN/board state per ply) is not stored — it must be recomputed from PGN, making the backfill significantly more expensive and memory-intensive than it appears.
+A single `AVG(opponent_rating)` over all endgame entry rows is tempting and cheap. The mismatch with the skill score's actual population is non-obvious.
 
 **How to avoid:**
-- Add new columns as `NULL` (no `NOT NULL` constraint) via Alembic — PostgreSQL 18 adds nullable columns near-instantly with no table rewrite
-- Write the backfill as a standalone Python script (not an Alembic migration) that processes one game at a time, calling `hashes_for_game` (or a new `metadata_for_game` function that also returns phase/material per ply), and batches position `UPDATE`s using primary key range pagination
-- Use the same batch_size=10 games pattern from `import_service.py` — 10 games × ~40 positions = ~400 rows per UPDATE batch
-- Add a `game_id` range parameter so the backfill can be resumed after interruption
-- Run the backfill as a one-off script via `uv run python scripts/backfill_position_metadata.py` rather than inside an Alembic migration (migrations must be fast and transactional — backfills are neither)
-- Monitor PostgreSQL memory during the first test run with `ssh flawchess "docker stats --no-stream"`
+Accept a documented approximation: compute `avg_opponent_rating` over all endgame entry rows (not split by conversion/recovery subset), and document this in code. This is a second-order error and acceptable for a heuristic metric. What is not acceptable is computing the average over all user games — the calculation must be scoped to the same endgame entry row set used for skill computation.
+
+The cleanest implementation: fetch opponent_rating as an extra column in `query_endgame_entry_rows`, then compute the average Python-side from the same rows that produce `raw_endgame_skill`. No separate query needed.
 
 **Warning signs:**
-- Backfill script does a single large `UPDATE ... WHERE game_phase IS NULL` without batching
-- Alembic migration includes a Python loop that processes all games — will time out or OOM on production
-- No resume capability — if the server OOMs midway, the half-backfilled state is hard to recover from
+- `avg_normalized_opponent_rating` is approximately 1500 (the reference rating) for a user who only plays against 1200-rated opponents — signals the unfiltered or wrong population is being used.
+- The adjusted score is identical to the raw score for all users despite playing varied opponents.
 
-**Phase to address:** Database schema phase (add columns) + a dedicated backfill phase
+**Phase to address:**
+ELO-Adjusted Endgame Skill — add `opponent_rating` column to the existing `query_endgame_entry_rows` result set rather than writing a new query.
 
 ---
 
-### Pitfall 4: Material Signature Normalization Is Not Canonical Without a Convention
+### Pitfall 4: NULL Opponent Ratings Break the Adjustment Without Failing Visibly
 
 **What goes wrong:**
-When computing endgame class, a material signature like "KRP vs KR" must be consistent regardless of which player is White. If the user played Black in a rook + pawn vs rook endgame, the raw position is "KR vs KRP" — but this should map to the same endgame class as "KRP vs KR". Without a normalization step, the same endgame class gets stored under two different strings, splitting statistics in half and making queries return wrong aggregates.
-
-The convention used must also handle equal material (e.g., "KR vs KR" is symmetric and only has one form), unequal material where it's unclear which side has more (e.g., "KQRP vs KRR"), and the perspective issue (White may have more material but the user played Black).
+`white_rating` and `black_rating` are nullable in the `games` table. Computer games, casual unrated games, and some early imports may have NULL. SQL `AVG()` ignores NULLs silently. If a user has 500 endgame games but only 50 have opponent ratings, `avg_opponent_rating` is computed from 50 games while `raw_endgame_skill` is computed from 500. The adjusted score appears valid but reflects opponent quality from a non-representative sample with no error or warning.
 
 **Why it happens:**
-It is natural to compute pieces for White and Black separately and join with "vs" — but the result depends on which side is White. Without an explicit "stronger side always goes first" or "alphabetical sort" convention enforced at compute time, the normalization is inconsistent.
+SQL AVG() ignores NULLs silently. Python averaging over a list that skips None produces no error. Neither path warns that the denominator shrank.
 
 **How to avoid:**
-- Define a canonical form: always sort the two sides so the side with higher material value goes first; if equal, use lexicographic ordering of the piece string
-- Use abbreviations based on piece count: `K` + one letter per extra piece in piece-value-descending order (Q, R, B, N, P) — e.g., `KQRP` for a King + Queen + Rook + Pawn
-- Store a separate `user_material_side` flag (stronger/weaker/equal) so queries can filter by whether the user was the stronger or weaker side, independent of the canonical form
-- Test normalization with symmetric cases (KR_KR), asymmetric cases (KRP_KR and KR_KRP must map to the same canonical form), and edge cases like bare kings (KK) or promotion-related material mismatches
-- Write a unit test: for any position, rotating the board (swapping colors) should produce the same `material_signature`
+- Track `rated_games_count` (non-NULL opponent ratings) alongside `total_endgame_games` in the Python aggregation.
+- Define a constant `MIN_RATED_GAMES_FOR_ELO_ADJUSTMENT = 10`.
+- If `rated_games_count < MIN_RATED_GAMES_FOR_ELO_ADJUSTMENT`, return `elo_adjusted: false` and show the raw score with a label indicating insufficient rating data.
+- Include `elo_adjusted: bool` in the API response schema from day one so the frontend can conditionally show "ELO-adjusted" vs "Raw" in the gauge label.
 
 **Warning signs:**
-- Analytics query for "rook endgames" returns half the expected games
-- `material_signature` values like `KR_KRP` and `KRP_KR` both appear in the database
-- Statistics vary depending on whether the user played White or Black in the same type of endgame
+- User has only casual/unrated games; adjusted score shows a value but no warning appears.
+- `avg_normalized_opponent_rating` equals exactly 1500 (the reference) — this should only happen when there is no rating data, meaning the fallback is triggered but not being surfaced in the UI.
 
-**Phase to address:** Material computation phase (signature normalization logic)
+**Phase to address:**
+ELO-Adjusted Endgame Skill — include `elo_adjusted: bool` and `rated_games_count: int` in the response schema. Decide the fallback behavior before writing the computation.
 
 ---
 
-### Pitfall 5: Game Phase Boundaries Have No Universal Standard — Inconsistency Across Games
+### Pitfall 5: Opening Risk Score Conflates Draw Rate With Risk
 
 **What goes wrong:**
-The terms "opening", "middlegame", and "endgame" have no universally agreed numerical definition. Chess.com classifies phase per game (their insight data is not in the API). Stockfish uses a tapered, continuous phase value — not a discrete threshold. Common heuristics disagree: some treat any queenless position as an endgame; others require both queens and at least two minor pieces to be off the board; others use total piece weight thresholds.
+A common mistake when building opening risk metrics is treating "high draw rate = safe opening" and "high decisive rate = risky opening." This penalizes openings where the user wins sharply (the Sicilian, the King's Indian Attack) and rewards passive drawish openings (the Berlin Defense). From the user's perspective, the relevant risk is the probability of a bad outcome: `P(loss)`, not `P(decisive game)`.
 
-If the phase boundary heuristic is poorly chosen, a game where queens are traded on move 10 will be flagged as "endgame" for moves 10-60, including a long tactical middlegame played without queens. Conversely, a long pawn endgame might not be detected until well into the endgame phase.
+If risk is defined as `(wins + losses) / total` (decisiveness) or `1 - draw_rate`, the metric produces a counterintuitive result that repels users from their best openings.
 
 **Why it happens:**
-Phase detection seems simple ("count pieces") but real games have high variance: early queen trades, quick piece exchanges, games without queens but rich in minor pieces. A single threshold cannot fit all game types cleanly.
+"Volatility" and "risk" sound similar. Game-level eval-swing volatility (centipawn standard deviation) is easy to compute but measures game drama, not player risk. Developers conflate the two or pick the metric that is easiest to implement rather than the one that is most useful.
 
 **How to avoid:**
-- Use a tapered phase score derived from non-pawn, non-king material: `phase = sum(piece_phase_weights_for_remaining_pieces)` where weights are Queen=4, Rook=2, Knight=1, Bishop=1. Max is 24 (starting position). Normalize to 0-24.
-- Classify as: phase >= 18 → opening; 8 <= phase < 18 → middlegame; phase < 8 → endgame. These thresholds match typical Stockfish-adjacent conventions (total minor+rook phase weight ≤ 8 indicates endgame-like material)
-- Supplement with a ply floor: never classify ply < 10 as middlegame or endgame regardless of material (accounts for sacrificial openings)
-- Accept that the boundary is a heuristic — document the exact formula so users can understand what they're looking at
-- Do NOT attempt to match chess.com's undisclosed phase boundaries (not in API, not documented)
+Define opening risk explicitly as user-facing loss rate: `risk_score = loss_pct / 100`. This is simple, interpretable, and directly actionable. If a variance-based metric is desired as a secondary signal, use outcome variance (treating win=1, draw=0.5, loss=0) rather than eval-swing volatility. Do not use eval-swing volatility for opening risk: (a) most users lack engine analysis for all games, and (b) chess.com and lichess eval data are not on the same centipawn scale.
 
 **Warning signs:**
-- All queen trades on move 8 result in "endgame" label for the next 60 moves of a tactical game
-- Stats show 60% of positions classified as "endgame" for blitz games (too aggressive threshold)
-- Different games of the same type produce wildly different phase breakdowns
+- Opening risk metric shows the Berlin Defense (notoriously drawish) as the safest opening.
+- The King's Indian Attack (often decisive wins for white) shows as "high risk" even though the user wins most of those decisive games.
+- Users report "this seems backwards."
 
-**Phase to address:** Phase computation phase (design + unit tests covering edge cases)
+**Phase to address:**
+Opening Risk — define the formula explicitly in the phase spec before writing any code.
 
 ---
 
-### Pitfall 6: Adding Many Nullable Columns to game_positions Risks Postgres Page Bloat
+### Pitfall 6: Changing endgame_skill Field Semantics Breaks Gauge Zone Thresholds Silently
 
 **What goes wrong:**
-`game_positions` has ~40 rows per game. A user with 5,000 games has ~200,000 rows. A multi-user platform will have millions of rows total. Adding 4+ nullable columns (game_phase, material_signature, endgame_class, eval_cp) to this table does not require a table rewrite in PostgreSQL 18 (nullable columns with no default are near-instant). However, once the backfill runs and rows are updated, PostgreSQL creates new row versions (dead tuples) via MVCC. Without autovacuum catching up, dead tuple accumulation inflates table and index size, increasing query I/O and slowing the existing Zobrist hash queries.
+The `EndgamePerformanceResponse` schema's `endgame_skill` field is currently the raw composite (0.7 × conversion_pct + 0.3 × recovery_pct). The gauge in `EndgameGauge.tsx` has hardcoded zone thresholds calibrated to this scale. If `endgame_skill` is changed in-place to return the ELO-adjusted value without a corresponding threshold update, the gauge will show incorrect zone boundaries. TypeScript will not catch this because the type is `number` — the change is semantic, not structural.
 
-The existing indexes `ix_gp_user_full_hash`, `ix_gp_user_white_hash`, `ix_gp_user_black_hash` are critical for query performance. Excessive dead tuples after backfill can bloat these indexes.
+The adjusted score can also exceed 100 when a user consistently plays against above-reference opponents, which will peg the gauge needle at maximum.
 
 **Why it happens:**
-MVCC writes new row versions for every UPDATE. A backfill that touches every row in `game_positions` is essentially a full-table update — it creates as many dead tuples as there are rows. Autovacuum may not keep up with the rate of dead tuple generation during a fast backfill.
+Backend and frontend are in the same repo, making it tempting to change both "atomically" in one PR. Semantic field reuse looks clean but creates hidden coupling between the formula and the gauge's domain bounds.
 
 **How to avoid:**
-- Run `ANALYZE game_positions;` after the backfill completes to update statistics
-- Run `VACUUM game_positions;` (not FULL — that locks) after backfill to reclaim dead tuple space
-- Set `autovacuum_vacuum_cost_delay` to a lower value temporarily if the table is idle during backfill
-- Monitor with `SELECT n_dead_tup, n_live_tup FROM pg_stat_user_tables WHERE relname = 'game_positions';` before and after backfill
-- For the small Hetzner instance, run the backfill during off-peak hours and pause between game batches to give autovacuum time to reclaim space
+- Add `adjusted_endgame_skill: float` as a NEW field in `EndgamePerformanceResponse` alongside the existing `endgame_skill`.
+- Keep `endgame_skill` as the raw score until the frontend gauge explicitly opts in to the adjusted version.
+- Update the TypeScript `EndgamePerformanceResponse` interface in `endgames.ts` in the same commit as the Pydantic schema change.
+- Decide and document the domain bounds for the adjusted score gauge before writing the frontend gauge component.
 
 **Warning signs:**
-- Zobrist hash queries become 3-10x slower after backfill completes
-- `pg_stat_user_tables` shows `n_dead_tup` growing beyond `n_live_tup`
-- `\d+ game_positions` in psql shows table size doubling after backfill with no corresponding data growth
+- Gauge needle pegs at maximum or zero after the change.
+- `endgame_skill` docstring says one thing but frontend renders it as something different.
 
-**Phase to address:** Backfill phase (post-completion cleanup step)
+**Phase to address:**
+ELO-Adjusted Endgame Skill — schema design step. Explicitly decide new field vs replace in the design notes before any code is written.
 
 ---
 
-### Pitfall 7: Lichess evals=true Parameter Changes the NDJSON Response Structure
+### Pitfall 7: Rolling ELO-Adjusted Skill Timeline Missing the Pre-Fill Pattern
 
 **What goes wrong:**
-The current `lichess_client.py` fetches games as NDJSON with `pgnInJson: True` and parses the `pgn` field from each JSON object. When `evals=True` is added, the PGN string will contain embedded `[%eval ...]` annotations inside move text nodes. If the existing `normalize_lichess_game` function stores the full PGN including eval annotations into `games.pgn`, then `hashes_for_game` (which re-parses the PGN) will encounter annotated PGN. python-chess handles annotated PGN correctly via `chess.pgn.read_game`, but any downstream code that does string-level PGN parsing or expects clean algebraic notation without comments will break silently.
+The existing `get_endgame_timeline` correctly fetches all historical games (ignoring the recency cutoff) to pre-fill the rolling window, then filters output points to the recency window. If the new "Endgame Skill Over Time" timeline is added without this pattern, users with a recency filter of "last 3 months" will see a chart that starts from a cold window and shows misleadingly volatile scores at the start of the display range.
 
-There is also a risk that `evals=True` significantly increases the size of each NDJSON line for analyzed games, increasing streaming time and memory usage per line.
+This is already solved in the codebase — but only for the existing timeline. It is easy to write the new timeline endpoint from scratch and omit the pre-fill.
 
 **Why it happens:**
-Annotated PGN is a superset of plain PGN and looks identical when the game has no analysis. The difference only appears at runtime for games with analysis. Testing with non-analyzed games will pass; only analyzed games reveal the issue.
+The pre-fill pattern is non-obvious (why would you fetch more data than you display?). A developer writing a new timeline endpoint without closely studying `get_endgame_timeline` will miss it.
 
 **How to avoid:**
-- Always use `chess.pgn.read_game` for PGN parsing — it handles annotations correctly
-- Never regex-parse move text from PGN strings for move extraction
-- Test the import pipeline specifically on a lichess game that has computer analysis enabled
-- Consider whether to store the annotated PGN (with evals inline) or strip annotations before storage: storing annotated PGN is fine since `hashes_for_game` uses `chess.pgn.read_game`, but it will increase `games.pgn` column size for analyzed games
+Copy the two-step pattern from `get_endgame_timeline` exactly:
+```python
+# Step 1: Fetch full history (no recency filter) to pre-fill rolling window
+rows = await query_elo_skill_rows(session, ..., recency_cutoff=None)
+# Step 2: Compute rolling series over full history
+series = _compute_rolling_series(rows, window)
+# Step 3: Filter output to recency window
+if cutoff_str:
+    series = [pt for pt in series if pt["date"] >= cutoff_str]
+```
 
 **Warning signs:**
-- `hashes_for_game` fails on a game whose PGN contains `[%eval 0.35]` annotations
-- Eval extraction via `node.eval()` returns `None` even after adding `evals=True` to the request (means the game was never analyzed on lichess)
+- Timeline chart shows a flat or near-zero line at the start when a recency filter is applied.
+- Removing the recency filter shows much smoother historical data — cold-start artifact.
 
-**Phase to address:** Engine analysis import phase (lichess client modification)
+**Phase to address:**
+ELO-Adjusted Endgame Skill timeline — apply the pre-fill pattern from day one.
 
 ---
 
-### Pitfall 8: Backfill Strategy Must Handle the games.pgn → game_positions Join Correctly
+### Pitfall 8: asyncpg Arg Limit Violated When Adding Columns to game_positions Bulk Insert
 
 **What goes wrong:**
-`game_positions` does not store a FEN per ply — only Zobrist hashes and `move_san`. To compute `game_phase`, `material_signature`, and `endgame_class` for each position row, the backfill must replay the PGN from `games.pgn` and, at each ply, capture the board state. The `game_positions` rows must then be updated with the computed values, matched by `(game_id, ply)`.
-
-A common mistake is to write a per-position backfill that somehow derives game phase from only the data available in `game_positions` (hashes and move_san). There is not enough information — you need the full board state, which requires PGN replay.
+`bulk_insert_positions` chunks position row inserts to stay under asyncpg's 32767-parameter limit. The current chunk size is tuned for the existing column count on `game_positions`. Adding even one new column (e.g., denormalizing `opponent_rating` for query performance) decreases the safe chunk size below the existing constant. The failure mode is a cryptic asyncpg error during import (`too many parameters`), not caught by unit tests unless a large-batch import is tested.
 
 **Why it happens:**
-Developers look at the `game_positions` table columns and try to write a pure-SQL migration. The missing FEN makes that impossible for phase/material computation — the PGN must be re-parsed.
+The chunk-size calculation divides 32767 by the number of columns. If a developer adds a column without recalculating the constant, the first large import silently fails after partial insertion.
 
 **How to avoid:**
-- Write the backfill as: `SELECT g.id, g.pgn FROM games g WHERE EXISTS (SELECT 1 FROM game_positions gp WHERE gp.game_id = g.id AND gp.game_phase IS NULL LIMIT 1)` — iterate games, not positions
-- For each game, call a new `metadata_for_game(pgn)` function that returns `List[(ply, game_phase, material_imbalance, material_signature, endgame_class)]`
-- Use bulk `UPDATE game_positions SET game_phase = data.phase, ... FROM (VALUES ...) AS data(ply, ...) WHERE game_positions.game_id = $1 AND game_positions.ply = data.ply`
-- Reuse the existing batch pattern from `import_service.py` — iterate games in batches of 10, build the UPDATE values in memory, execute as a single statement
+- For ELO-adjusted skill: do NOT denormalize `opponent_rating` into `game_positions`. Fetch it at query time via JOIN to `games`. This avoids any bulk insert impact.
+- If any new column is added to `game_positions` for other reasons, recalculate the chunk size immediately and update the comment: `# chunk_size = floor(32767 / num_columns_per_position_row)`.
+- Add a CI test that imports a synthetic batch of 500 games and verifies all positions were inserted successfully.
 
 **Warning signs:**
-- Backfill script iterates `game_positions` rows individually and makes per-row DB calls
-- Backfill query lacks a `LIMIT` / pagination mechanism — processes all rows in one transaction
+- Import fails silently for large game batches after a schema migration.
+- Position count in the DB is lower than expected after a large import.
+- Sentry shows `asyncpg.exceptions.TooManyArgumentsError` during import.
 
-**Phase to address:** Backfill phase (script design)
+**Phase to address:**
+Any phase that modifies the `game_positions` schema — recalculate and update chunk size immediately as part of the migration PR.
+
+---
+
+### Pitfall 9: Missing NULL Guard on opponent_rating Produces Silent NaN or TypeError
+
+**What goes wrong:**
+New endgame repository queries that JOIN `games` for opponent_rating must handle the case where `opponent_rating` is NULL. SQL `AVG()` excludes NULLs silently, but the Python aggregation loop receives a `None` value per row. If the multiplication `raw_endgame_skill * avg_normalized_opponent_rating / reference_rating` is not guarded, the result is either `None * float = TypeError` (crashes) or `0.0 * float = 0.0` (wrong), or the None propagates into the Pydantic model as a validation error.
+
+**Why it happens:**
+The existing endgame code does not need to handle per-game ratings, so there is no existing pattern for NULL-guarded rating arithmetic. New code written from scratch often skips the guard.
+
+**How to avoid:**
+- When extracting opponent_rating per row, use `row.opponent_rating or None` (not `0`) and skip None values in the average computation.
+- Define the fallback explicitly: if no rows have opponent_rating, return `avg_normalized_opponent_rating = reference_rating` (adjustment factor = 1.0, so adjusted == raw) and set `elo_adjusted = false`.
+- Use a constant `REFERENCE_RATING = 1500` in the service module — never inline the literal.
+
+**Warning signs:**
+- Sentry shows `TypeError: unsupported operand type(s) for *: 'NoneType' and 'float'` from the endgame performance endpoint.
+- `adjusted_endgame_skill` is 0.0 for all users — signals that `avg_normalized_opponent_rating` is being computed as 0 instead of the reference fallback.
+
+**Phase to address:**
+ELO-Adjusted Endgame Skill — service-layer aggregation function. Add the NULL guard and the `elo_adjusted: bool` flag before wiring into the response.
 
 ---
 
 ## Technical Debt Patterns
 
+Shortcuts that seem reasonable but create long-term problems.
+
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Store `game_phase` as `VARCHAR` instead of a typed enum or SMALLINT | Easier to read in psql | Typo-prone; no DB-level constraint; string comparison slower than integer | Never — use SMALLINT (0=opening,1=middlegame,2=endgame) or a PG enum |
-| Assume chess.com accuracy is always present; no null handling | One less null check | Crashes on first unreviewed game (likely the first game of every user) | Never |
-| Run backfill inside an Alembic migration | Single deploy step | Migrations are transactional — a 10-minute Python loop blocks the migration lock and OOMs | Never for compute-heavy backfills |
-| Compute material signature on-the-fly in queries | No schema change needed | Repeated PGN re-parsing per query; unindexable; query latency at scale | Never — compute at import time |
-| Use a simple `ply < 20` threshold for opening phase | Zero computation | Wrong for gambits, short games, rapid piece trades | Never — use piece count heuristic |
-| Skip VACUUM after backfill | Saves a step | Query performance degrades due to dead tuple bloat | Never — always VACUUM after large table updates |
-| Store per-move eval in `game_positions` for moves without analysis as 0 | Simpler query | 0 is a valid eval (equal position) — impossible to distinguish "no data" from "equal" | Never — use NULL for absent evals |
+| Hardcode lichess offset formula without documenting it as approximate | Simpler implementation | Formula drift as platforms update; incorrect adjustment for non-blitz lichess players; users trust it as exact | Acceptable only if labeled as approximate in both code and UI |
+| Denormalize opponent_rating into game_positions | Faster endgame queries without JOIN | Increases bulk insert parameter count, risks asyncpg arg limit, increases row storage, requires migration + backfill | Never for v1.8 — JOIN at query time instead |
+| Reuse endgame entry rows to compute avg opponent rating without deduplication | One query, no changes | Entry rows are per-(game, endgame_class) — a game with multiple endgame classes appears multiple times, over-weighting its opponent_rating in the average | Never — deduplicate by game_id before computing the average, or use SQL AVG with DISTINCT |
+| Define opening risk as 1 - draw_rate | Simple, no schema changes needed | Semantically wrong — high decisive win rate gets penalized equally with high loss rate | Never |
+| Replace endgame_skill field in schema with adjusted value | Fewer API fields | Breaks gauge zone thresholds silently; TypeScript type system cannot detect semantic change | Never in v1.8 — add as a separate field |
+| Skip `elo_adjusted: bool` flag in API response | Simpler schema | Frontend cannot differentiate between adjusted and raw display; users see "ELO-adjusted" label even when rating data is insufficient | Never — include the flag from day one |
 
 ---
 
 ## Integration Gotchas
 
+Common mistakes when connecting to existing system components.
+
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| chess.com API + accuracy | Access `game["accuracies"]["white"]` directly | Always check `game.get("accuracies")` first; both white and black may be absent |
-| chess.com API + move evals | Expect per-move centipawn from archive API | Move-level evals are not in the public API; only overall accuracy floats when reviewed |
-| lichess API + evals | Expect evals for all games after adding `evals=True` | Evals only present for games with computer analysis; always check `node.eval()` for None |
-| lichess PGN eval format | Parse `[%eval 0.17]` with regex | Use `chess.pgn.read_game` then `node.eval()` — returns `chess.engine.PovScore | None` |
-| lichess mate eval format | Treat `[%eval #-3]` as centipawn value | `#N` = mate, `#-N` = mated; always branch on `PovScore.is_mate()` before `.score()` |
-| python-chess + material count | Use `board.piece_map()` with dict comprehension | Use bitboard operations: `chess.popcount(board.occupied_co[WHITE] & board.queens)` for efficiency |
-| PostgreSQL + new nullable columns | Add column with `NOT NULL DEFAULT 0` | Add as `NULL` first; backfill later; then add `NOT NULL` constraint after backfill completes |
-| Alembic + compute-heavy backfill | Put Python backfill loop inside `op.execute()` or upgrade function | Use a separate script run after migration; migrations must be fast and transactional |
+| `apply_game_filters` | Adding a new filter (e.g., min_opponent_rating) directly inside the function body | Add as an optional parameter with default `None` and a clear docstring entry; the function signature feeds 5+ repositories — an undocumented change is a silent footgun |
+| `EndgamePerformanceResponse` Pydantic schema | Adding `adjusted_endgame_skill` and updating TypeScript `EndgamePerformanceResponse` in separate commits | Schema change and TypeScript type update must be in the same commit — `ty check` and knip run in CI but neither catches missing interface fields |
+| `EndgameGauge.tsx` zone thresholds | Copying existing zone bounds (0/40/60/75/100) for the adjusted score gauge | Adjusted score can exceed 100 when playing against above-reference opponents; decide the display domain before wiring the gauge |
+| `query_endgame_entry_rows` result row shape | Adding opponent_rating as column 6 without updating the destructuring tuple in `_aggregate_endgame_stats` | Python will not error on an extra column; it silently ignores it. Use a NamedTuple or TypedDict for the row shape so structural changes are caught |
+| Rolling timeline pre-fill | Passing `recency_cutoff` directly to the DB query for the ELO timeline | Pass `recency_cutoff=None` to the DB query; filter output points in Python after computing the rolling series |
+| `_compute_rolling_series` | Writing a third nearly-identical rolling series function for the ELO-adjusted timeline | Refactor `_compute_rolling_series` to accept an outcome value extractor callable so all rolling timelines share one implementation |
 
 ---
 
 ## Performance Traps
 
+Patterns that work at small scale but fail as usage grows.
+
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Per-position PGN re-parse in backfill | Backfill takes hours, OOMs on production | Parse PGN once per game, emit metadata for all plies at once | At ~5,000+ games (200k+ position rows) |
-| Non-batched UPDATE during backfill | Single multi-hour transaction, table lock | Batch by game_id ranges; commit after each batch of 10 games | Any table size above ~1,000 rows |
-| Dead tuple bloat after backfill | Existing Zobrist hash queries 3-10x slower | Run VACUUM game_positions after backfill | Immediately post-backfill |
-| Endgame query with LIKE on material_signature | Slow full-table scan for "rook endgames" | Add index on material_signature; or use a `endgame_class` integer column with exact equality | At ~50k position rows or more |
-| Joining game_positions to games for phase-based stats | N+1 query or expensive join without index | Denormalize game_phase onto game_positions at import time (which is the plan); never compute at query time | Any non-trivial dataset |
-| Storing full eval annotations in games.pgn for analyzed lichess games | games.pgn column grows 3-5x for analyzed games | Acceptable at current scale; if PGN storage becomes significant, extract evals into separate table | At ~100k analyzed games |
+| Computing avg opponent_rating in a separate query instead of inline with entry rows | Two DB round-trips; latency doubles for the performance endpoint | Add opponent_rating as an extra SELECT column to `query_endgame_entry_rows`; compute the average Python-side from the same fetched data | Noticeable at 10K+ games per user |
+| Re-running `_aggregate_endgame_stats` multiple times in the same request | Redundant Python aggregation CPU; the function iterates all rows twice | `get_endgame_performance` already calls it once — do not add a second call for ELO-adjusted computation; derive adjusted values from the same aggregation pass | Negligible at current scale but sets a bad precedent |
+| Fetching opening risk by querying each opening position individually | N queries for N openings; latency scales linearly | Use the existing `query_position_wdl_batch` pattern — pass a list of hashes, get back a dict in one query | Noticeable at N > 20 openings |
+| Running 8+ sequential endgame timeline queries (already exists) | Slow timeline response | Do not add more per-class queries without profiling; the current 8-query approach is already at the edge of acceptable latency | Already 8 queries; each addition multiplies response time |
 
 ---
 
 ## Security Mistakes
 
+Domain-specific security issues relevant to these features.
+
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Expose `material_signature` containing opponent piece counts in API response without auth check | Inadvertently exposing private game data via analytics endpoints | All endgame analytics endpoints must verify `user_id == current_user.id` before querying |
-| Log PGN strings in full during backfill errors | PGN may contain username/rating data; logs accumulate and are not rotated | Log `game_id` only in backfill error messages, not the full PGN string |
+| New ELO-adjusted query missing `Game.user_id == user_id` WHERE clause | One user could query another user's opponent rating distribution | `apply_game_filters` scopes by user_id already; verify any new raw query that bypasses `apply_game_filters` includes an explicit user_id filter |
+| Exposing reference_rating as a user-configurable parameter | Users can inflate or deflate their adjusted score arbitrarily | REFERENCE_RATING must be a server-side constant — never accept it from query parameters |
+| Returning individual opponent ratings in the API response | Privacy concern — surfacing per-game opponent data beyond what is already in game cards | Only return aggregates (avg_normalized_opponent_rating, rated_games_count) in the ELO-adjusted response, not per-game opponent ratings |
 
 ---
 
 ## UX Pitfalls
 
+Common user experience mistakes for these features.
+
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| Show accuracy statistics for "all games" when only reviewed games have accuracy data | User sees misleadingly low counts ("only 47 of 2,341 games have accuracy data") | Surface clearly: "Accuracy data available for X reviewed games" with a tooltip explaining reviews |
-| Display "0.0" for centipawn eval when data is absent | User thinks every unanalyzed position is exactly equal | Show "—" or "n/a" when eval is NULL, not 0 |
-| Endgame filter shows "no games" for users with few analyzed games | User thinks the feature is broken | Show a "No analyzed endgame data yet" empty state with an explanation |
-| Phase boundaries produce counter-intuitive phase labels on short games | 10-move game shows "endgame" from move 8 due to early simplification | Enforce a ply floor: never label ply < 8 as endgame regardless of material |
+| Displaying adjusted_endgame_skill with two decimal places | Implies false precision for a heuristic metric built on a calibration approximation | Round to one decimal; add info popover explaining the formula and its known limits |
+| Showing ELO-adjusted score without indicating it differs from raw | Users cannot tell why their score changed after the update | Always show "ELO-adjusted" label with an info icon when `elo_adjusted == true`; show "Raw score (insufficient rating data)" when `elo_adjusted == false` |
+| Displaying "Endgame Skill Over Time" chart before the user has enough games | Empty or noisy chart for new users | Apply `MIN_GAMES_FOR_ELO_TIMELINE = 10` threshold; show empty state with explanation instead of a near-flat line |
+| Not updating mobile layout alongside desktop layout | Mobile users see old gauge without the new ELO-adjusted label or updated value | The Endgames page has both desktop sidebar and mobile drawer layouts; apply UI changes to both (per CLAUDE.md rule) |
+| Opening risk score shown without sample size | Users over-interpret low-sample risk scores | Show game count alongside every risk score; grey out or asterisk scores below `MIN_GAMES_FOR_OPENING_RISK = 5` |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **chess.com accuracy:** Import pipeline tested against a game that has NOT been reviewed — `accuracies` field absent without crashing
-- [ ] **chess.com accuracy:** Import pipeline tested against a game that HAS been reviewed — both `white` and `black` accuracy fields stored correctly
-- [ ] **lichess evals:** Import pipeline tested against a lichess game with computer analysis — `[%eval ...]` annotations parsed correctly
-- [ ] **lichess evals:** Import pipeline tested against a lichess game WITHOUT computer analysis — no crash, positions stored with `eval_cp = NULL`
-- [ ] **lichess mate evals:** Import pipeline handles `[%eval #5]` and `[%eval #-3]` without crashing or treating mate as a centipawn value
-- [ ] **Material signature:** Same endgame type produces identical `material_signature` regardless of which color the user played — verified by unit test
-- [ ] **Material signature:** Symmetric positions (KR vs KR) produce a single canonical form, not two
-- [ ] **Game phase:** Early queen trade (e.g., ply 12) does not immediately classify remaining 50 moves as "endgame"
-- [ ] **Backfill:** Backfill script can be re-run safely after a partial run — idempotent (skips rows where `game_phase IS NOT NULL`)
-- [ ] **Backfill:** Backfill completes on production without triggering OOM killer — tested with `docker stats` monitoring
-- [ ] **Backfill:** VACUUM run after backfill completes — `pg_stat_user_tables.n_dead_tup` returns to near-zero
-- [ ] **Endgame analytics:** Empty state shown for users with no endgame data (new users, users with no analyzed games)
-- [ ] **Null evals UI:** Positions with `eval_cp = NULL` display "—" not "0" or crash
+Things that appear complete but are missing critical pieces.
+
+- [ ] **ELO-adjusted gauge:** `elo_adjusted: bool` field is in the API response — verify the frontend shows "ELO-adjusted" vs "Raw" label conditionally, not unconditionally.
+- [ ] **Cross-platform normalization:** Edge case of user with only lichess games (100% offset applied) and user with only chess.com games (0% offset) both produce sensible, distinct scores.
+- [ ] **Opponent color logic:** Unit test passes for a known-color game asserting `opponent_rating == black_rating` when `user_color == "white"`.
+- [ ] **NULL opponent ratings:** Endpoint tested with a user who has all unrated games — returns valid response with `elo_adjusted: false`, no 500 or NaN.
+- [ ] **Rolling ELO-adjusted timeline:** Pre-fill pattern applied — switching recency filter produces no cold-start artifacts in the chart.
+- [ ] **TypeScript types:** `EndgamePerformanceResponse` interface in `endgames.ts` updated in the same PR as the Pydantic schema — new field is present and typed correctly.
+- [ ] **asyncpg chunk size:** If any new column was added to `game_positions`, chunk size constant was recalculated and a large-batch import test passes.
+- [ ] **Opening risk formula:** Definition is `loss_pct` or a clearly labeled WDL decomposition — not `1 - draw_rate`. Verified with a Berlin Defense position (drawish, low-loss) showing low risk.
+- [ ] **Mobile layout:** New gauge label and adjusted score appear correctly on mobile — Endgames page mobile section was updated alongside the desktop section.
 
 ---
 
 ## Recovery Strategies
 
+When pitfalls occur despite prevention, how to recover.
+
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Backfill OOM kills PostgreSQL | MEDIUM | Server restarts automatically; backfill script detects `game_phase IS NOT NULL` rows and resumes; reduce batch size to 5 games and retry |
-| Inconsistent material_signature stored (non-canonical form) | HIGH | Write a fix script to re-normalize all stored signatures; add unit test to prevent regression; requires re-running backfill for affected rows |
-| chess.com accuracy imported as 0 for unreviewed games | MEDIUM | Add NULL guard to import; run a targeted UPDATE to set `accuracy_white = NULL WHERE accuracy_white = 0 AND games were not reviewed` (requires cross-referencing import timestamp) |
-| Dead tuple bloat post-backfill slows queries | LOW | `VACUUM game_positions;` immediately resolves; no data loss |
-| Game phase boundary heuristic produces wrong results | MEDIUM | The phase value is recomputable from PGN — update the heuristic, drop the `game_phase` column, re-add it, re-run backfill |
+| Wrong color for opponent_rating deployed to production | MEDIUM | Deploy fix immediately; adjusted scores auto-correct on next API call — no stored adjusted values in DB |
+| asyncpg arg limit triggered in production import | HIGH | Emergency hotfix: reduce `_BATCH_SIZE` in import_service.py and recalculate chunk size; no data loss but imports fail for affected users until fix ships |
+| Schema field renamed, frontend showing wrong data | MEDIUM | Rollback frontend deploy; add deprecated alias in Pydantic model; fix TypeScript type in next PR |
+| Lichess offset formula produces obviously wrong results | LOW | The formula is pure Python in a named function — hotfix is a one-line change with no migration needed |
+| Opening risk score inverted (risk = 1 - loss_pct) | LOW | Fix Python computation; no DB changes needed; users see corrected scores immediately after deploy |
 
 ---
 
 ## Pitfall-to-Phase Mapping
 
+How roadmap phases should address these pitfalls.
+
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| chess.com accuracy absent for unreviewed games | Engine analysis import phase | Import 100 games from a free user account; confirm most have `accuracy_white = NULL` without errors |
-| lichess evals absent for non-analyzed games | Engine analysis import phase | Import a lichess game without analysis; confirm no crash and `eval_cp = NULL` on all positions |
-| Lichess mate eval format misparse | Engine analysis import phase | Unit test for `[%eval #5]` and `[%eval #-3]` parsing |
-| Non-canonical material signature | Material computation phase | Unit test: KR_KRP and KRP_KR map to same canonical form |
-| Inconsistent phase boundaries | Phase computation phase | Unit test: early queen trade game does not become "endgame" by move 15 |
-| Backfill OOM on production | Backfill phase | Run with `batch_size=10`, monitor with `docker stats` on staging first |
-| Dead tuple bloat post-backfill | Backfill phase (cleanup step) | `n_dead_tup` near zero in `pg_stat_user_tables` after VACUUM |
-| Backfill non-idempotent | Backfill phase | Re-run backfill on already-processed database; row counts unchanged, no duplicate updates |
-| Annotated PGN breaks downstream parsing | Engine analysis import phase | `hashes_for_game` unit test on PGN with embedded `[%eval]` annotations |
-| Null eval displayed as 0 in UI | Endgame analytics UI phase | QA: position without analysis shows "—" not "0.00" |
+| Lichess offset formula not documented as approximate | ELO-Adjusted Skill — backend service | Code review: `normalize_lichess_rating()` has a docstring with "approximate" and known limits |
+| Opponent color logic inverted | ELO-Adjusted Skill — endgame repository | Unit test: white-user game returns `opponent_rating == black_rating` |
+| Wrong population for opponent rating avg | ELO-Adjusted Skill — backend service | Code review: opponent_rating extracted from same entry rows as skill, not a separate unscoped query |
+| NULL opponent ratings silently biasing adjustment | ELO-Adjusted Skill — backend service | Test: user with all unrated games returns `elo_adjusted: false`, no error |
+| endgame_skill semantics changed without new field | ELO-Adjusted Skill — schema design | `adjusted_endgame_skill` is a new field; `endgame_skill` unchanged in response |
+| asyncpg arg limit on new columns | Any game_positions schema phase | CI import test of 500-game batch completes without error after migration |
+| Rolling timeline missing pre-fill | ELO-Adjusted Skill — timeline | Switching from 3-month filter to all-time shows no cold-start jump |
+| Opening risk conflates draw rate with risk | Opening Risk — formula definition | Berlin Defense (high draw rate) shows low risk; Sicilian (decisive wins) shows appropriate risk |
+| Mobile layout not updated | All UI phases | Search for mobile counterpart markup before marking phase complete |
 
 ---
 
 ## Sources
 
-- [chess.com forum: Insight data in public APIs (moderator confirms analysis data not in public API)](https://www.chess.com/forum/view/site-feedback/insight-data-in-public-apis)
-- [chess.com API: Published-Data API official help article](https://support.chess.com/en/articles/9650547-published-data-api)
-- [chess.com forum: accuracy field absent for unreviewed games](https://www.chess.com/forum/view/game-analysis/how-come-some-of-my-games-dont-show-anything-in-the-accuracy-column)
-- [lichess forum: exporting PGN with computer analysis](https://lichess.org/forum/lichess-feedback/is-there-a-way-to-export-the-pgn-games-with-computer-analysis)
-- [lichess API docs: evals parameter](https://lichess.org/api)
-- [python-chess: efficient material balance (maintainer recommendation)](https://github.com/niklasf/python-chess/discussions/864)
-- [Chessprogramming wiki: Tapered Eval — piece phase weights](https://www.chessprogramming.org/Tapered_Eval)
-- [Chessprogramming wiki: Game Phases](https://www.chessprogramming.org/Game_Phases)
-- [PostgreSQL docs: ALTER TABLE — adding nullable columns is near-instant](https://www.postgresql.org/docs/current/ddl-alter.html)
-- [PostgreSQL: batch UPDATE strategy for large tables](https://blog.codacy.com/how-to-update-large-tables-in-postgresql)
-- [ChessBase: endgame classification format (RB-RN notation)](http://help.chessbase.com/CBase/14/Eng/endgame_classification.htm)
-- [FlawChess CLAUDE.md — batch_size=10 OOM history](../CLAUDE.md)
+- Codebase: `app/services/endgame_service.py`, `app/repositories/endgame_repository.py`, `app/models/game.py`, `app/repositories/stats_repository.py`, `app/schemas/endgames.py` — HIGH confidence (direct inspection)
+- `.planning/ROADMAP.md` Phase 999.5 backlog spec — HIGH confidence (primary requirements source)
+- [NoseKnowsAll: Introducing a universal rating converter for 2024 (lichess.org)](https://lichess.org/@/NoseKnowsAll/blog/introducing-a-universal-rating-converter-for-2024/X2QAH27t) — lichess-to-chess.com offset varies by skill level; not a fixed constant — MEDIUM confidence
+- [ChessGoals rating comparison](https://chessgoals.com/rating-comparison/) — Community-observed offset patterns — MEDIUM confidence
+- [jk_182: Quantifying Volatility of Chess Games (lichess.org)](https://lichess.org/@/jk_182/blog/quantifying-volatility-of-chess-games/H6MWvX98) — eval-swing volatility does not equate to user-facing risk — MEDIUM confidence
+- [asyncpg issue #127: Fails with queries with more than 32768 arguments](https://github.com/MagicStack/asyncpg/issues/127) — 32767 parameter limit confirmed — HIGH confidence
+- [Andrew Klotz: Passing the Postgres 65535 parameter limit](https://klotzandrew.com/blog/postgres-passing-65535-parameter-limit/) — chunking and staging table workarounds — HIGH confidence
 
 ---
-*Pitfalls research for: FlawChess v1.5 — per-position metadata, engine analysis import, and endgame analytics*
-*Researched: 2026-03-23*
+*Pitfalls research for: FlawChess v1.8 — ELO-adjusted metrics, opening risk scores, refined endgame statistics*
+*Researched: 2026-04-04*

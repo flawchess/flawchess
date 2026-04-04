@@ -1,542 +1,466 @@
 # Architecture Research
 
-**Domain:** Per-position metadata and endgame analytics for an existing chess analytics platform
-**Researched:** 2026-03-23
-**Confidence:** HIGH — based on direct codebase inspection of all affected modules
+**Domain:** Advanced chess analytics integration — ELO-adjusted metrics, opening risk, refined endgame stats
+**Researched:** 2026-04-04
+**Confidence:** HIGH — based on direct codebase inspection of all affected modules (v1.7, shipped 2026-04-03)
 
----
+## Standard Architecture
 
-## Current Architecture (as-built)
+The existing architecture is strict 3-layer: routers (HTTP only) → services (business logic) → repositories (SQL only). No SQL in services, no business logic in routers. All new features follow this layering.
 
 ### System Overview
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                        Frontend (React 19 + TS)                   │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────────────┐ │
-│  │ OpeningsPage│  │ GlobalStats  │  │ [NEW] EndgamesPage       │ │
-│  │  /openings  │  │  /stats      │  │  /endgames               │ │
-│  └──────┬──────┘  └──────┬───────┘  └────────────┬─────────────┘ │
-│         │                │                        │               │
-│  TanStack Query hooks -- useAnalysis, useEndgames (new)           │
-│  api/client.ts + types/api.ts + types/endgames.ts (new)           │
-└─────────────────────────┬────────────────────────┴───────────────┘
-                          │ HTTP (JSON + JWT Bearer)
-┌─────────────────────────▼────────────────────────────────────────┐
-│                  FastAPI Routers (HTTP layer only)                 │
-│  routers/analysis.py   routers/stats.py  routers/endgames.py(new)│
-└─────────────────────────┬────────────────────────────────────────┘
-                          │
-┌─────────────────────────▼────────────────────────────────────────┐
-│                    Services (business logic)                       │
-│  analysis_service.py   stats_service.py  endgames_service.py(new)│
-│                   import_service.py (MODIFIED)                    │
-│                   position_classifier.py (NEW)                    │
-└────────────┬────────────────────────────────────────────────────┘
-             │
-┌────────────▼───────────────────────────────────────────────────┐
-│                   Repositories (DB access)                      │
-│  analysis_repository.py  stats_repository.py                   │
-│  game_repository.py (MODIFIED -- new position_rows columns)    │
-│  endgames_repository.py (NEW)                                  │
-└────────────┬───────────────────────────────────────────────────┘
-             │
-┌────────────▼───────────────────────────────────────────────────┐
-│               PostgreSQL 18 (asyncpg via SQLAlchemy 2.x)        │
-│  games          game_positions (MODIFIED -- new columns)        │
-│  users          import_jobs                                     │
-│  [optional: game_engine_analysis NEW table]                     │
-└────────────────────────────────────────────────────────────────┘
+│                     HTTP Layer (FastAPI Routers)                   │
+│  routers/endgames.py                 routers/openings.py          │
+│  GET /performance  (MODIFY)          POST /next-moves  (MODIFY)   │
+│  GET /elo-timeline (NEW)                                           │
+├──────────────────────────────────────────────────────────────────┤
+│                     Business Logic (Services)                      │
+│  endgame_service.py                  openings_service.py          │
+│  · get_endgame_performance (MODIFY)  · get_next_moves (MODIFY)   │
+│  · get_elo_skill_timeline  (NEW)     · _wdl_entropy    (NEW)      │
+│  · _normalize_rating       (NEW)                                   │
+│  · _compute_elo_adjusted_skill (NEW)                               │
+├──────────────────────────────────────────────────────────────────┤
+│                     Data Access (Repositories)                     │
+│  endgame_repository.py               openings_repository.py       │
+│  · query_endgame_entry_rows (KEEP)   · query_next_moves (KEEP)   │
+│  · query_elo_skill_rows    (NEW)                                   │
+├──────────────────────────────────────────────────────────────────┤
+│                     Database (PostgreSQL)                          │
+│  games table                         game_positions table          │
+│  · white_rating / black_rating  ←── KEY for ELO (already stored) │
+│  · platform                          · endgame_class (SmallInt)   │
+│  · result / user_color               · material_imbalance         │
+│  NO MIGRATIONS NEEDED for core ELO feature                        │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
----
+### Component Responsibilities (v1.8)
 
-## Database Schema Changes
+| Component | Responsibility | v1.8 Status |
+|-----------|----------------|-------------|
+| `routers/endgames.py` | HTTP endpoints for endgame analytics | MODIFY — add GET /elo-timeline |
+| `routers/openings.py` | HTTP endpoints for opening analytics | MODIFY — augment next-moves response |
+| `endgame_service.py` | ELO normalization, adjusted score, rolling series | MODIFY + NEW functions |
+| `openings_service.py` | WDL entropy computation, risk scoring | MODIFY — add per-move risk inline |
+| `endgame_repository.py` | SQL queries for endgame data with rating columns | NEW query function |
+| `schemas/endgames.py` | Pydantic response models | MODIFY — extend existing + new timeline response |
+| `schemas/openings.py` | Pydantic response models | MODIFY — add risk field to NextMoveEntry |
+| `frontend/src/types/endgames.ts` | TypeScript mirrors of backend schemas | MODIFY |
+| `frontend/src/api/client.ts` | Axios API calls | MODIFY — add getEloSkillTimeline |
+| `frontend/src/hooks/useEndgames.ts` | TanStack Query hooks | MODIFY — add useEloSkillTimeline |
+| `EndgamePerformanceSection.tsx` | Gauge display (conversion/recovery/endgame skill) | MODIFY — show adjusted value in gauge |
+| `EloSkillTimelineChart.tsx` | Single-line rolling ELO-adjusted score timeline | NEW component |
+| `EndgameGauge.tsx` | SVG gauge — already generic | NO CHANGE |
+| `WDLChartRow.tsx` | Shared WDL bar chart — already generic | NO CHANGE |
+| `lib/theme.ts` | Gauge zone color constants | NO CHANGE |
+| `repositories/query_utils.py` | `apply_game_filters()` shared filter utility | NO CHANGE |
 
-### Decision: Extend `game_positions` vs. New Table
+## Recommended Project Structure
 
-**Recommendation: Add new columns directly to `game_positions`.**
-
-Rationale:
-- All new data (game_phase, material_signature, endgame_class) is computed once per position at import time and never changes. It is not a separate concern — it is part of the position descriptor.
-- A JOIN from a separate table on every endgame query would be expensive: `game_positions` is already the largest table (avg 80 rows per game). A separate `position_metadata` table would double the join cost for all endgame queries.
-- `ALTER TABLE ADD COLUMN DEFAULT NULL` is a metadata-only operation in PostgreSQL 11+ and does not rewrite rows. Adding 4-5 nullable columns to an existing large table is instantaneous.
-- The new columns are nullable, so backfill can proceed independently of new imports; both old and new rows are in the same table.
-
-**Reject: Separate `position_metadata` table.** Only warranted if metadata had a different write pattern (e.g., updated post-import). Here it is computed once and never updated.
-
-### New Columns on `game_positions`
-
-```sql
--- Phase: 'opening' | 'middlegame' | 'endgame'
-game_phase        VARCHAR(12)   NULL
-
--- Canonical material string sorted by piece type, e.g. 'KQRBNPkqrbnp' or 'KRPkr'
--- Uppercase = white pieces, lowercase = black. NULL until backfilled.
-material_signature VARCHAR(32)  NULL
-
--- Signed centipawn material imbalance from user's perspective:
--- positive = user is up material, negative = down
--- NULL until backfilled. Based on standard piece values (Q=9,R=5,B=3,N=3,P=1).
-material_imbalance SMALLINT     NULL
-
--- Endgame classification; NULL when game_phase != 'endgame'
--- Examples: 'rook', 'queen', 'minor_piece', 'pawn', 'queen_vs_rook', etc.
-endgame_class     VARCHAR(30)   NULL
-```
-
-**Note on `material_signature` design:** Store as a compact canonical string (sorted piece characters), not a hash. Strings like `'KRPkr'` are human-readable, debuggable, and support LIKE/substring queries if needed later. Length 32 covers all practical positions (max ~16 pieces). Index only when needed for endgame queries (see Index section below).
-
-### Engine Analysis Data
-
-**Recommendation: New separate table `game_engine_analysis`.**
-
-Unlike position metadata (per-ply, computed from board state), engine analysis is per-game, externally sourced, and only available for a subset of games. Putting it in `games` would add many nullable columns that are always NULL for non-analyzed games. A separate table avoids that column pollution and matches the natural 0..1 relationship.
-
-```sql
-CREATE TABLE game_engine_analysis (
-    id              BIGINT PRIMARY KEY,
-    game_id         BIGINT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    user_id         BIGINT NOT NULL,          -- denormalized for query perf
-    source          VARCHAR(20) NOT NULL,     -- 'chess.com' | 'lichess'
-    white_accuracy  FLOAT NULL,               -- overall accuracy % (0-100)
-    black_accuracy  FLOAT NULL,
-    user_accuracy   FLOAT NULL,               -- derived: white or black accuracy per user_color
-    -- Future: per-move eval array could be stored as JSONB if needed
-    imported_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(game_id)
-);
-CREATE INDEX ix_gea_user_id ON game_engine_analysis (user_id);
-```
-
-**API availability reality:**
-- **chess.com**: `accuracies.white` and `accuracies.black` (float) are returned in the game JSON only when previously computed. No per-move eval in the public API.
-- **lichess**: `accuracy` and `acpl` (average centipawn loss) are available per-player in the JSON export when `accuracy=true` parameter is used AND the game has been analyzed. Bulk exports (`/api/games/user`) do NOT include analysis data -- only individual game exports do.
-
-**Consequence for import design:** Engine analysis data must be fetched as a separate optional pass, not inline with the main import. Do not attempt to fetch per-game analysis during the main import loop -- the extra per-game HTTP calls would multiply import time by 10-100x and risk rate bans. Treat as a separate "enrich analyzed games" job, or skip entirely for v1.5 and implement as a follow-on feature.
-
----
-
-## Backfill Strategy
-
-### The Problem
-
-All existing `game_positions` rows have NULL for the new columns. Users may have thousands of games imported. The production server has 3.7 GB RAM and was OOM-killed on large batch inserts.
-
-### Recommendation: Alembic Migration + Background Task Backfill
-
-**Step 1: Alembic migration** -- Add the nullable columns. This is instant (PostgreSQL metadata-only operation). No data is touched. Deploy runs this automatically.
-
-**Step 2: Background backfill task** -- A new `backfill_service.py` runs position classification for all existing games. Works from the stored PGN in `games` -- no re-download needed.
+No new directories. All new code extends existing modules following established conventions.
 
 ```
-Backfill approach:
-1. SELECT g.id, g.pgn FROM games g
-   JOIN game_positions gp ON gp.game_id = g.id
-   WHERE gp.game_phase IS NULL
-   GROUP BY g.id
-   LIMIT 100  -- process 100 games per batch
-2. For each game: re-parse PGN, classify each position, batch UPDATE game_positions
-3. Commit, sleep briefly (asyncio.sleep(0) to yield), repeat
-4. Partial index on game_positions WHERE game_phase IS NULL
-   allows efficient "find unbackfilled games" scans
+app/
+├── routers/
+│   └── endgames.py          # MODIFY: add GET /elo-timeline endpoint
+├── services/
+│   └── endgame_service.py   # MODIFY: add _normalize_rating(), _compute_elo_adjusted_skill(),
+│                            #         get_elo_skill_timeline(); modify get_endgame_performance()
+├── repositories/
+│   └── endgame_repository.py  # MODIFY: add query_elo_skill_rows()
+└── schemas/
+    └── endgames.py           # MODIFY: add elo_adjusted_skill to EndgamePerformanceResponse;
+                              #         add EloSkillTimelinePoint, EloSkillTimelineResponse
+
+frontend/src/
+├── components/charts/
+│   └── EloSkillTimelineChart.tsx   # NEW: single-line rolling chart for ELO-adjusted score
+├── hooks/
+│   └── useEndgames.ts              # MODIFY: add useEloSkillTimeline()
+├── types/
+│   └── endgames.ts                 # MODIFY: EndgamePerformanceResponse + new timeline types
+└── api/
+    └── client.ts                   # MODIFY: add endgameApi.getEloSkillTimeline()
 ```
 
-**Key constraints:**
-- Never rewrite position rows from scratch -- UPDATE only the new columns to preserve existing hashes.
-- Process in game-level batches (100 games = ~8,000 position rows per UPDATE batch). This stays well under OOM limits.
-- The backfill runs as a low-priority asyncio task with `asyncio.sleep(0)` yields between batches so it does not block the API.
-- Partial index `CREATE INDEX CONCURRENTLY ix_gp_game_phase_null ON game_positions (game_id) WHERE game_phase IS NULL` lets the backfill query find unprocessed rows efficiently. Drop it after backfill completes.
-- Do NOT re-download games from chess.com/lichess. PGN is stored in `games.pgn` -- compute everything from that.
+For opening risk (independent track):
 
-**Alternative rejected: Full reimport (wipe + re-import all games).** Rejected because: users lose their import history, import takes hours for large libraries, and the server RAM constraint makes large batch imports risky. The backfill approach is safe and incremental.
+```
+app/
+├── services/
+│   └── openings_service.py   # MODIFY: add _wdl_entropy(), call it in get_next_moves()
+└── schemas/
+    └── openings.py           # MODIFY: add risk: float to NextMoveEntry
 
----
+frontend/src/
+├── components/move-explorer/  # MODIFY: show risk badge per move row
+└── types/
+    └── (openings type file)   # MODIFY: add risk to NextMoveEntry interface
+```
 
-## New Component: `position_classifier.py`
+### Structure Rationale
 
-This is the core new service module. It computes game_phase, material_signature, material_imbalance, and endgame_class from a `chess.Board` object.
+- **No new top-level files for ELO:** The ELO adjustment is a new metric within the existing endgame analytics domain. Fragmenting it into new files would scatter closely related logic.
+- **New file for EloSkillTimelineChart:** The ELO timeline is a distinct chart type (single-line vs. existing multi-series charts). Conditionalizing `EndgameConvRecovTimelineChart` would add excessive branching.
+- **No migration for core ELO feature:** `games.white_rating`, `games.black_rating`, and `games.platform` are already stored. The rating normalization is pure Python.
 
-### Design
+## Architectural Patterns
 
+### Pattern 1: ELO Normalization as Pure Python Service Functions
+
+**What:** Rating normalization and adjustment live entirely in `endgame_service.py` as named pure functions with module-level constants. No SQL arithmetic.
+
+**When to use:** When the formula has conditional logic and will likely be tuned. The tapering offset for lichess ratings uses `max(0, ...)` and conditional branching that reads naturally in Python but awkwardly in SQL CASE expressions.
+
+**Trade-offs:** Slightly more data fetched from DB (two extra integer columns per row) vs. computing in SQL. Negligible at the row counts involved. Python testing of the formula is straightforward; SQL-side GREATEST() expressions are not.
+
+**Example:**
 ```python
-# services/position_classifier.py
+# Module-level named constants (no magic numbers per project conventions)
+_LICHESS_BASE_OFFSET = 350
+_LICHESS_TAPER_PER_POINT = 0.3
+_LICHESS_TAPER_START = 1400
+_REFERENCE_RATING = 1500  # chess.com blitz equivalent; fixed for cross-player comparison
 
-from dataclasses import dataclass
-import chess
+def _normalize_rating(rating: int, platform: str) -> float:
+    """Convert platform rating to chess.com-equivalent for cross-platform comparison."""
+    if platform == "lichess":
+        offset = max(0.0, _LICHESS_BASE_OFFSET - (rating - _LICHESS_TAPER_START) * _LICHESS_TAPER_PER_POINT)
+        return float(rating) - offset
+    return float(rating)
 
-PIECE_VALUES = {
-    chess.QUEEN: 9,
-    chess.ROOK: 5,
-    chess.BISHOP: 3,
-    chess.KNIGHT: 3,
-    chess.PAWN: 1,
-    chess.KING: 0,
-}
-
-@dataclass
-class PositionMetadata:
-    game_phase: str            # 'opening' | 'middlegame' | 'endgame'
-    material_signature: str    # e.g. 'KQRBBNPPPkqrbbnnppp'
-    material_imbalance: int    # centipawn material delta from user perspective
-    endgame_class: str | None  # None unless game_phase == 'endgame'
+def _compute_elo_adjusted_skill(raw_skill: float, avg_normalized_opponent_rating: float) -> float:
+    """Adjust raw endgame skill by opponent strength relative to reference rating."""
+    if avg_normalized_opponent_rating <= 0:
+        return 0.0
+    return raw_skill * avg_normalized_opponent_rating / _REFERENCE_RATING
 ```
 
-**Game phase algorithm (material-based):**
+### Pattern 2: New query_elo_skill_rows() Alongside Existing query_endgame_entry_rows()
 
-python-chess provides `board.pieces(piece_type, color)` which returns a SquareSet. Material count is a loop over piece types. A practical threshold based on non-pawn, non-king material:
+**What:** Add `query_elo_skill_rows()` to `endgame_repository.py` with the same span subquery structure as `query_endgame_entry_rows()` but selecting additional columns: `Game.white_rating`, `Game.black_rating`, `Game.platform`.
 
-```
-endgame threshold:  total non-pawn pieces (both sides, excluding kings) <= 6
-opening heuristic:  ply < OPENING_PLY_THRESHOLD (e.g., 20) AND non-pawn material above endgame threshold
-middlegame:         everything in between
-```
+**When to use:** When you need the same join/filter structure but a different SELECT list and return type. Do not modify the existing function — callers unpack columns positionally and adding columns would break them.
 
-The exact thresholds are a tunable constant in `position_classifier.py`, not magic numbers scattered through the code.
+**Trade-offs:** Some duplication in the subquery builder. If duplication grows, extract `_build_endgame_span_subq(user_id)` as a private helper shared by both. For now, two independent functions are clearer than a combined one with an `include_ratings` flag.
 
-**Material signature encoding:**
+**Example sketch:**
+```python
+async def query_elo_skill_rows(
+    session: AsyncSession,
+    user_id: int,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+) -> list[Row[Any]]:
+    """Return endgame entry rows with rating data for ELO-adjusted skill computation.
 
-Canonical string: uppercase = white pieces, lowercase = black, sorted by piece type (K first, then Q, R, B, N, P). Example: `KQRBNPPkqrbnpp`. This is compact, human-readable, and directly queryable with equality.
-
-**Endgame classification:**
-
-Classify by dominant piece types once `game_phase == 'endgame'`:
-- Both queens present: `'queen'`
-- No queens, rooks present: `'rook'` (or `'rook_minor'` if minor pieces also present)
-- No queens, no rooks, bishops only: `'bishop'`
-- No queens, no rooks, knights only: `'knight'`
-- No queens, no rooks, mixed minor: `'minor_piece'`
-- Pawns only (K+P vs K+P or K vs K+P): `'pawn'`
-- Queen vs Rook: `'queen_vs_rook'`
-
----
-
-## Import Pipeline Modifications
-
-### Where Classification Plugs In
-
-The classification step fits cleanly into the existing `hashes_for_game` function in `zobrist.py`. The board is already constructed at each ply for Zobrist hash computation. Classification calls `classify_position(board, user_color)` at the same loop iteration -- zero extra PGN parses.
-
-**Current `hashes_for_game` output tuple:**
-```
-(ply, white_hash, black_hash, full_hash, move_san, clock_seconds)
-```
-
-**Extended tuple (v1.5):**
-```
-(ply, white_hash, black_hash, full_hash, move_san, clock_seconds,
- game_phase, material_signature, material_imbalance, endgame_class)
-```
-
-The `position_rows` dict in `_flush_batch` gains the four new fields. The `bulk_insert_positions` in `game_repository.py` automatically includes them since it does a bulk INSERT of the dict.
-
-**Impact on batch size:** The `bulk_insert_positions` chunk_size calculation `32767 / 8 = 4095` must be updated to `32767 / 12 = 2730` (or 2700 for safety) when the column count increases from 8 to 12.
-
----
-
-## New Feature: Endgames Tab
-
-### Backend
-
-**New files:**
-- `app/routers/endgames.py` -- HTTP layer, auth, request parsing
-- `app/services/endgames_service.py` -- business logic (W/D/L aggregation, phase stats)
-- `app/repositories/endgames_repository.py` -- SQL queries against game_positions + games
-- `app/schemas/endgames.py` -- Pydantic request/response models
-
-**Primary API endpoint:**
-
-```
-POST /endgames/stats
-Body: EndgamesRequest (filters: time_control, platform, rated, color, recency,
-                        endgame_class, material_signature)
-Response: EndgamesStatsResponse
+    Returns rows of: (game_id, endgame_class, result, user_color,
+                      user_material_imbalance, white_rating, black_rating, platform)
+    Same span_subq as query_endgame_entry_rows; adds rating/platform columns.
+    """
+    # ... same span_subq construction ...
+    stmt = (
+        select(
+            Game.id.label("game_id"),
+            span_subq.c.endgame_class,
+            Game.result,
+            Game.user_color,
+            (span_subq.c.entry_imbalance * color_sign).label("user_material_imbalance"),
+            Game.white_rating,
+            Game.black_rating,
+            Game.platform,
+        )
+        .join(span_subq, Game.id == span_subq.c.game_id)
+        .where(Game.user_id == user_id)
+    )
+    stmt = apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+    result = await session.execute(stmt)
+    return list(result.fetchall())
 ```
 
-The endgames repository core query:
-```sql
-SELECT
-    gp.endgame_class,
-    g.result,
-    g.user_color,
-    COUNT(DISTINCT g.id)
-FROM game_positions gp
-JOIN games g ON g.id = gp.game_id
-WHERE gp.user_id = :user_id
-  AND gp.game_phase = 'endgame'
-  AND gp.endgame_class IS NOT NULL
-  -- optional: AND gp.endgame_class = :endgame_class
-  -- + standard game filters (time_control, color, recency, etc.)
-GROUP BY gp.endgame_class, g.result, g.user_color
+### Pattern 3: Opening Risk as WDL Entropy on Existing NextMoveEntry Rows
+
+**What:** Risk per candidate move is the normalized Shannon entropy of the WDL distribution. It is computed inline in `get_next_moves()` from the existing WDL counts — no extra SQL query.
+
+**When to use:** When the metric derives entirely from data already fetched. Entropy adds O(1) Python arithmetic per move row.
+
+**Trade-offs:** Adds one new `risk: float` field to `NextMoveEntry`. Backend callers must not have hardcoded column counts. Frontend renders a risk badge per move row.
+
+**Example computation:**
+```python
+import math
+
+def _wdl_entropy(wins: int, draws: int, losses: int) -> float:
+    """Normalized Shannon entropy of WDL distribution over 3 outcomes.
+
+    0.0 = one outcome dominates (predictable position).
+    1.0 = all three outcomes equally likely (maximally uncertain).
+    """
+    total = wins + draws + losses
+    if total == 0:
+        return 0.0
+    entropy = 0.0
+    for count in (wins, draws, losses):
+        p = count / total
+        if p > 0:
+            entropy -= p * math.log2(p)
+    return round(entropy / math.log2(3), 4)  # normalize to [0, 1]
 ```
 
-Note: `COUNT(DISTINCT g.id)` prevents transposition double-counting (same pattern as existing analysis queries -- a game entering a rook endgame contributes ~50 position rows all with `endgame_class='rook'`).
+Entropy is preferred over raw variance: it handles the 3-outcome WDL space correctly, is bounded [0, 1], and correctly scores a position with 33%/33%/33% as maximally uncertain (1.0) vs. a position with 100% wins as maximally certain (0.0).
 
-**Conversion/recovery stats query:**
+### Pattern 4: Extend EndgamePerformanceResponse, Not New Endpoint
 
-```sql
-SELECT
-    gp.game_phase,
-    SIGN(gp.material_imbalance) AS material_side,
-    g.result,
-    g.user_color,
-    COUNT(DISTINCT g.id)
-FROM game_positions gp
-JOIN games g ON g.id = gp.game_id
-WHERE gp.user_id = :user_id
-  AND gp.material_imbalance != 0
-  -- + standard filters
-GROUP BY gp.game_phase, material_side, g.result, g.user_color
-```
+**What:** `elo_adjusted_skill: float` is added to the existing `EndgamePerformanceResponse` rather than a new `/endgames/elo-skill` endpoint. The ELO-adjusted skill gauge replaces or augments the existing `endgame_skill` gauge in `EndgamePerformanceSection`.
 
-### Frontend
+**When to use:** When the new metric semantically belongs with existing response data. The performance endpoint already computes `endgame_skill`; the adjusted version is just a refinement of it.
 
-**New files:**
-- `src/pages/Endgames.tsx` -- page wrapper, filter state
-- `src/components/endgames/EndgamesStats.tsx` -- main stats display
-- `src/components/endgames/EndgameTypeFilter.tsx` -- filter for rook/queen/minor/pawn endgames
-- `src/components/endgames/MaterialPhaseStat.tsx` -- conversion/recovery breakdown
-- `src/hooks/useEndgames.ts` -- TanStack Query hook
-- `src/types/endgames.ts` -- TypeScript mirrors of Pydantic schemas
+**Trade-offs:** `get_endgame_performance()` now runs two repository queries sequentially (existing `query_endgame_entry_rows` + new `query_elo_skill_rows`). Both query the same covering index and rows are not large. The alternative — a dedicated endpoint — doubles frontend loading state management for one screen section.
 
-**Integration with existing FilterPanel:** The existing `FilterPanel` handles time_control, platform, rated, color, recency. `EndgamesPage` reuses `FilterPanel` for those standard filters and adds `EndgameTypeFilter` for endgame class selection.
+**Decision:** Add `elo_adjusted_skill: float` to `EndgamePerformanceResponse`. The timeline (`GET /endgames/elo-timeline`) is necessarily separate because it needs its own `window` parameter.
 
-**Navigation:** Add `/endgames` route in `App.tsx` and add nav item to the bottom bar and "More" drawer on mobile, following the existing mobile nav pattern.
+## Data Flow
 
----
-
-## Index Design for Material-Based Queries
-
-### New Indexes Required
-
-**1. Composite partial index for endgame queries (most important):**
-```sql
-CREATE INDEX ix_gp_user_endgame_class
-ON game_positions (user_id, endgame_class)
-WHERE endgame_class IS NOT NULL;
-```
-Partial index excludes the majority of rows (opening/middlegame positions). After backfill, roughly 20-30% of positions will have a non-NULL endgame_class.
-
-**2. Index for game phase queries:**
-```sql
-CREATE INDEX ix_gp_user_game_phase
-ON game_positions (user_id, game_phase)
-WHERE game_phase IS NOT NULL;
-```
-Needed for phase-breakdown stats (conversion/recovery by phase).
-
-**3. Temporary backfill index (drop after backfill completes):**
-```sql
-CREATE INDEX CONCURRENTLY ix_gp_game_phase_null
-ON game_positions (game_id)
-WHERE game_phase IS NULL;
-```
-
-**Indexes NOT needed yet:**
-- `material_signature` alone: high cardinality, no confirmed query pattern requiring it as a leading column. Add `(user_id, material_signature)` only when a filter-by-material-configuration feature is added.
-- `material_imbalance` alone: queries use `SIGN(material_imbalance)` grouping, not equality lookup. The phase index covers the scan.
-
-### Existing Index Compatibility
-
-The new columns do NOT change any existing query patterns. All existing indexes (`ix_gp_user_full_hash`, `ix_gp_user_white_hash`, `ix_gp_user_black_hash`, `ix_gp_user_full_hash_move_san`) are unaffected.
-
----
-
-## Data Flow Diagrams
-
-### Modified Import Pipeline
+### ELO-Adjusted Endgame Skill
 
 ```
-Platform API (chess.com / lichess)
-    |
-    v (normalized game dict)
-import_service._flush_batch()
-    |
-    v
-game_repository.bulk_insert_games()      --> games table
-    |
-    v (new game IDs + PGNs)
-hashes_for_game(pgn)                     <-- zobrist.py (MODIFIED)
-  + classify_position(board, user_color) <-- position_classifier.py (NEW)
-    |
-    v (ply, hashes, move_san, clock, game_phase, material_sig, imbalance, endgame_class)
-game_repository.bulk_insert_positions()  --> game_positions (new columns populated)
+User adjusts filters on Endgames page
+    ↓
+useEndgamePerformance(filters) [EXISTING hook — unchanged]
+    ↓
+endgameApi.getPerformance(params) — GET /api/endgames/performance
+    ↓
+endgame_service.get_endgame_performance() [MODIFY]
+    ├── query_endgame_entry_rows()     [EXISTING — unchanged]
+    └── query_elo_skill_rows()         [NEW — same filters, adds rating columns]
+        ↓
+    _normalize_rating(rating, platform) per opponent rating  [NEW]
+    avg_normalized_opponent_rating = mean of normalized ratings
+    _compute_elo_adjusted_skill(raw_skill, avg_rating)       [NEW]
+        ↓
+EndgamePerformanceResponse [MODIFY: adds elo_adjusted_skill: float]
+    ↓
+EndgamePerformanceSection.tsx [MODIFY: Endgame Skill gauge shows adjusted value]
 ```
 
-### Endgames Tab Request Flow
+### ELO Skill Timeline
 
 ```
-User selects filters on /endgames
-    |
-    v
-useEndgames() TanStack Query hook
-    |
-    v  POST /endgames/stats
-EndgamesRouter.post_stats()
-    |
-    v
-endgames_service.get_endgame_stats()
-    |
-    v
-endgames_repository.query_endgame_wdl_by_class()
-    |  (SQL: game_positions JOIN games, COUNT(DISTINCT game_id) GROUP BY endgame_class)
-    ^
-EndgamesStatsResponse --> EndgamesPage --> EndgamesStats component
+Endgames stats tab mounts
+    ↓
+useEloSkillTimeline(filters) [NEW hook]
+    ↓
+endgameApi.getEloSkillTimeline(params) — GET /api/endgames/elo-timeline [NEW endpoint]
+    ↓
+endgame_service.get_elo_skill_timeline() [NEW function]
+    └── query_elo_skill_rows(recency_cutoff=None) [pre-fill pattern — same as conv/recov timeline]
+        ↓
+    _compute_elo_skill_rolling_series(rows, window) [NEW — mirrors _compute_conv_recov_rolling_series]
+    Filter output points to recency cutoff (same pattern as existing timeline functions)
+        ↓
+EloSkillTimelineResponse { series: [EloSkillTimelinePoint], window: int }
+    ↓
+EloSkillTimelineChart.tsx [NEW component — single line, same Recharts pattern]
+    ↓
+Endgames.tsx statisticsContent [MODIFY: render EloSkillTimelineChart below existing charts]
 ```
 
-### Backfill Pipeline
+### Opening Risk (Independent Track)
 
 ```
-startup / admin trigger
-    |
-    v
-backfill_service.run_backfill()  [asyncio.create_task, low priority]
-    |
-    v
-SELECT g.id, g.pgn FROM games JOIN game_positions WHERE game_phase IS NULL
-    (uses partial index ix_gp_game_phase_null)
-    |
-    v (batch of 100 games)
-hashes_for_game(pgn)
-  + classify_position(board)    <-- same function as import pipeline
-    |
-    v
-UPDATE game_positions SET game_phase=..., material_signature=..., ...
-WHERE game_id = :game_id
-    |
-    v (asyncio.sleep(0) yield, repeat until complete)
+User navigates move explorer to a position
+    ↓
+useNextMoves(position, filters) [EXISTING hook — unchanged]
+    ↓
+openingsApi.getNextMoves(params) — POST /api/openings/next-moves
+    ↓
+openings_service.get_next_moves() [MODIFY]
+    └── query_next_moves() [EXISTING — already returns wins/draws/losses per move]
+        ↓
+    _wdl_entropy(wins, draws, losses) called per move [NEW — O(1) per row]
+        ↓
+NextMoveEntry [MODIFY: add risk: float field]
+    ↓
+MoveExplorer component [MODIFY: render risk badge or colored indicator per move row]
 ```
 
----
+### Key Data Facts
 
-## Build Order (Phase Dependencies)
-
-Hard sequential dependency chain:
-
-```
-1. position_classifier.py (new service, no deps)
-        |
-        v
-2. Alembic migration: ADD COLUMN to game_positions (instantaneous, nullable)
-        |
-        v
-3. zobrist.py + import_service.py modifications
-   (wire classifier into hashes_for_game / _flush_batch)
-        |
-        v
-4. backfill_service.py (reads PGN from games, updates game_positions)
-        |
-        v
-5. New indexes (ix_gp_user_endgame_class, ix_gp_user_game_phase)
-        |
-        v
-6. endgames_repository.py + endgames_service.py + schemas/endgames.py
-        |
-        v
-7. routers/endgames.py (register in main.py)
-        |
-        v
-8. Frontend: types/endgames.ts + hooks/useEndgames.ts
-        |
-        v
-9. Frontend: EndgamesPage + components
-        |
-        v
-10. Navigation: add /endgames route + nav items
-```
-
-Engine analysis (`game_engine_analysis` table) is independent and can be deferred or run in parallel with steps 6-10.
-
----
-
-## Modified vs. New Components Summary
-
-### Modified (existing files changed)
-
-| File | Change |
-|------|--------|
-| `app/services/zobrist.py` | `hashes_for_game` returns 4 additional fields per ply |
-| `app/services/import_service.py` | `_flush_batch` populates new position columns; pass `user_color` to classifier |
-| `app/repositories/game_repository.py` | Update chunk_size: 8 cols -> 12 cols (32767/12=2730); new fields in position_rows |
-| `app/models/game_position.py` | Add 4 new `Mapped` columns |
-| `frontend/src/App.tsx` | Add `/endgames` route |
-| `frontend/src/components/layout/` | Add Endgames nav item to bottom bar and More drawer |
-
-### New (new files created)
-
-| File | Purpose |
-|------|---------|
-| `app/services/position_classifier.py` | Game phase + material classification logic |
-| `app/services/backfill_service.py` | Background backfill of existing positions |
-| `app/repositories/endgames_repository.py` | SQL for endgame W/D/L aggregation |
-| `app/services/endgames_service.py` | Endgame business logic |
-| `app/routers/endgames.py` | HTTP endpoints for endgame tab |
-| `app/schemas/endgames.py` | Pydantic request/response models |
-| `frontend/src/pages/Endgames.tsx` | Endgames page |
-| `frontend/src/components/endgames/` | Endgame-specific UI components |
-| `frontend/src/hooks/useEndgames.ts` | TanStack Query hook |
-| `frontend/src/types/endgames.ts` | TypeScript type mirrors |
-| `alembic/versions/*_add_position_metadata_columns.py` | Alembic migration: 4 new columns |
-| `alembic/versions/*_add_game_engine_analysis_table.py` | Optional: engine analysis table |
-
----
-
-## Anti-Patterns to Avoid
-
-### Anti-Pattern 1: Re-downloading Games for Backfill
-
-**What it looks like:** Triggering a new import job to populate the new columns.
-**Why it's wrong:** Forces users to wait hours for a re-import, risks rate-limit bans, wastes API quota. PGN is already in `games.pgn`.
-**Do this instead:** Backfill by reading `games.pgn` directly from the DB. All classification is pure computation.
-
-### Anti-Pattern 2: Fetching Engine Analysis Inline with Import
-
-**What it looks like:** Adding an extra HTTP call per game inside `_flush_batch` to fetch accuracy scores.
-**Why it's wrong:** Multiplies import time by 10-100x. chess.com only returns accuracy for analyzed games anyway. Lichess bulk export omits analysis data entirely -- only individual game export (`accuracy=true`) includes it.
-**Do this instead:** Implement engine analysis as a separate background enrichment task, or defer to a future milestone.
-
-### Anti-Pattern 3: Counting Position Rows Instead of Distinct Games
-
-**What it looks like:** `COUNT(*) FROM game_positions WHERE game_phase='endgame' GROUP BY endgame_class`.
-**Why it's wrong:** A game that transitions to a rook endgame at ply 30 has ~50 rows all with `endgame_class='rook'`. Counting rows inflates stats by 50x.
-**Do this instead:** Always `COUNT(DISTINCT game_id)`. One W/D/L outcome per unique game_id per endgame_class.
-
-### Anti-Pattern 4: Serving Endgame Stats Before Backfill Completes
-
-**What it looks like:** Showing endgame stats immediately after deployment while backfill is running.
-**Why it's wrong:** Returns silently incomplete results -- lower game counts than actual for users whose games haven't been backfilled yet.
-**Do this instead:** Track backfill completion per-user (flag in `users` table or count comparison). Show a progress indicator or "analyzing your games..." state during backfill.
-
-### Anti-Pattern 5: Broad Index on `material_signature`
-
-**What it looks like:** `CREATE INDEX ON game_positions (user_id, material_signature)` at the start.
-**Why it's wrong:** `material_signature` has very high cardinality. An index on it uses significant space and slows INSERT/UPDATE during backfill and ongoing imports.
-**Do this instead:** Only add a `material_signature` index when a specific filter-by-material-config query is confirmed. Start with the `endgame_class` partial index which covers the primary access pattern.
-
----
+1. **Opponent rating source:** `games.white_rating` when `user_color == "black"`, else `games.black_rating`. Both are already stored. No migration needed.
+2. **Games without ratings:** Some unrated games have NULL ratings. Filter these out when computing `avg_normalized_opponent_rating`. If no rated games exist, return `elo_adjusted_skill = 0.0`.
+3. **Opening risk is zero-migration, zero-new-query:** Entropy computed from WDL counts already fetched by `query_next_moves()`. No DB changes.
+4. **Filter propagation:** All new endpoints accept the same standard filter parameters as existing endgame endpoints. `apply_game_filters()` from `query_utils.py` handles all of them without modification.
+5. **Rolling window pre-fill:** `get_elo_skill_timeline()` must follow the same pattern as `get_conv_recov_timeline()` — fetch all games (no recency filter), compute the full rolling series, then filter output points to the recency window. This prevents cold-start artifacts when filtering to recent games.
+6. **Cache keys:** New TanStack Query hooks use keys like `['eloSkillTimeline', params, window]` following the exact pattern of `['endgameConvRecovTimeline', params, window]`.
 
 ## Scaling Considerations
 
 | Scale | Architecture Adjustments |
 |-------|--------------------------|
-| Current (small user base) | Backfill runs as inline asyncio task at startup; acceptable |
-| ~100 users, ~50k games each | Backfill should be per-user, throttled, with asyncio.sleep yields between batches |
-| ~1k+ users | Backfill moves to a dedicated background worker process separate from the API; current asyncio approach blocks event loop under heavy concurrent load |
+| Current (hundreds to low thousands of games/user) | Python-side aggregation after SQL fetch is fast; sequential queries per endpoint is the established pattern |
+| 10k+ games/user | `query_elo_skill_rows()` uses the same covering index (`ix_gp_user_endgame_game`) as `query_endgame_entry_rows()` — performance will be similar. Adding two integer columns to SELECT does not change the index scan plan. |
+| Opening risk at any scale | Zero scaling concern. Entropy is O(1) per move entry computed from pre-aggregated WDL counts. |
 
-**First bottleneck:** Endgame aggregation queries join `game_positions` (large) to `games`. With the partial index on `(user_id, endgame_class)`, performance should be acceptable for libraries up to ~100k games. Verify with `EXPLAIN ANALYZE` for any user with large imports before deploying.
+### Scaling Priorities
 
----
+1. **First bottleneck (ELO feature):** Running `query_endgame_entry_rows()` AND `query_elo_skill_rows()` in `get_endgame_performance()` doubles the heavy endgame queries. Acceptable initially. If profiling reveals it as a bottleneck, merge into a single query by adding rating columns to `query_endgame_entry_rows()` — but only after confirming no callers break (all unpack positionally). Use a refactor phase rather than doing it speculatively.
+2. **ELO timeline pre-fill:** Fetching all games (no recency filter) for the rolling window pre-fill is the same trade-off already made by `get_conv_recov_timeline()` and `get_endgame_timeline()`. Acceptable. If a user has 50k+ games this may be slow — but that's a future problem for all timeline endpoints equally.
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Rating Normalization in SQL
+
+**What people do:** Compute `GREATEST(0, 350 - (rating - 1400) * 0.3)` as a SQL expression.
+
+**Why it's wrong:** The tapering formula is likely to be tuned after observing real data. SQL CASE/GREATEST expressions are harder to unit-test than Python functions and harder to read. Named Python constants (`_LICHESS_BASE_OFFSET = 350`) make the formula self-documenting in a way SQL cannot.
+
+**Do this instead:** Fetch raw ratings from SQL. Normalize in Python with named constants at the top of `endgame_service.py`. Write a unit test for `_normalize_rating()`.
+
+### Anti-Pattern 2: Separate /endgames/elo-skill Endpoint for the Current Score Value
+
+**What people do:** Create a dedicated `GET /endgames/elo-skill` endpoint returning just the adjusted score, keeping `GET /endgames/performance` for everything else.
+
+**Why it's wrong:** Frontend now needs two concurrent queries and two loading states for a single screen section. The `/performance` endpoint already fetches the same row set. Two nearly identical heavy DB queries fire for one page section.
+
+**Do this instead:** Add `elo_adjusted_skill: float` to `EndgamePerformanceResponse`. The frontend `useEndgamePerformance()` hook already exists — the adjusted value arrives in the same response with no extra HTTP round-trip.
+
+### Anti-Pattern 3: Standard Deviation for Opening Risk
+
+**What people do:** Compute variance or standard deviation of per-game win rates to quantify "inconsistency."
+
+**Why it's wrong:** Per-game outcomes are categorical (win/draw/loss), not a continuous distribution. Variance of Bernoulli outcomes recovers `p*(1-p)` which peaks at 50% win rate — this conflates "you win half your games" with "this opening is risky." It also ignores draws entirely, treating them as losses. The 3-outcome WDL space needs a measure designed for categorical distributions.
+
+**Do this instead:** Use normalized Shannon entropy over (wins, draws, losses). Peaks at 0.333/0.333/0.333, is 0 when one outcome dominates completely, and is bounded [0, 1] regardless of game count.
+
+### Anti-Pattern 4: Modifying query_endgame_entry_rows Signature
+
+**What people do:** Add `include_ratings: bool = False` to the existing function and conditionally expand the SELECT inside it to return rating columns when True.
+
+**Why it's wrong:** `query_endgame_entry_rows` has callers in `get_endgame_stats`, `get_endgame_performance`, and `get_endgame_timeline`. All unpack result rows positionally: `for game_id, endgame_class_int, result, user_color, user_material_imbalance in rows`. Conditionally changing the column count silently corrupts these unpackings in a way that ty/mypy may not catch (rows are `list[Row[Any]]`).
+
+**Do this instead:** Add a separate `query_elo_skill_rows()` function with a documented return signature. If the span subquery becomes duplicated enough to warrant refactoring, extract `_build_endgame_span_subq()` as a private helper — but only after both functions are written and tested.
+
+### Anti-Pattern 5: Opening Risk as a Separate Aggregation Endpoint
+
+**What people do:** Create `GET /openings/position-risk?full_hash=X` that re-runs the WDL aggregation query just to return an entropy value.
+
+**Why it's wrong:** The next-moves endpoint already computes per-move WDL counts via `query_next_moves()`. A separate endpoint re-runs the same SQL for no benefit. Users need risk visible per move in the move explorer — not as a separate screen.
+
+**Do this instead:** Compute `_wdl_entropy(wins, draws, losses)` inline in `get_next_moves()` and attach as `risk: float` to each `NextMoveEntry`. Zero extra SQL. Position-level risk can be computed from `position_stats: WDLStats` already in `NextMovesResponse` using the same function.
+
+### Anti-Pattern 6: asyncio.gather for Sequential Repository Calls
+
+**What people do:** `await asyncio.gather(query_endgame_entry_rows(...), query_elo_skill_rows(...))` to run both queries "concurrently."
+
+**Why it's wrong:** The project codebase explicitly documents this constraint in multiple places: "AsyncSession is not safe for concurrent use from multiple coroutines, and a single session uses one DB connection so there's no concurrency benefit from asyncio.gather here." The comment appears in `endgame_service.py`, `endgame_repository.py`, and CLAUDE.md.
+
+**Do this instead:** Execute `query_endgame_entry_rows()` then `query_elo_skill_rows()` sequentially, exactly as the existing `get_endgame_performance()` already does for its multiple repository calls.
+
+## Integration Points
+
+### New vs. Modified (Explicit)
+
+#### New (pure additions)
+
+| File | What is New |
+|------|-------------|
+| `app/repositories/endgame_repository.py` | `query_elo_skill_rows()` function |
+| `app/services/endgame_service.py` | `_normalize_rating()`, `_compute_avg_opponent_rating()`, `_compute_elo_adjusted_skill()`, `get_elo_skill_timeline()`, `_compute_elo_skill_rolling_series()` |
+| `app/schemas/endgames.py` | `EloSkillTimelinePoint`, `EloSkillTimelineResponse` classes |
+| `frontend/src/components/charts/EloSkillTimelineChart.tsx` | Single-line rolling chart for ELO-adjusted score |
+| `frontend/src/hooks/useEndgames.ts` | `useEloSkillTimeline()` export |
+| `app/routers/endgames.py` | `GET /elo-timeline` endpoint |
+
+#### Modified (existing files changed)
+
+| File | What Changes |
+|------|-------------|
+| `app/services/endgame_service.py` | `get_endgame_performance()` calls `query_elo_skill_rows()` and computes `elo_adjusted_skill` |
+| `app/schemas/endgames.py` | `EndgamePerformanceResponse` gains `elo_adjusted_skill: float` field |
+| `frontend/src/types/endgames.ts` | `EndgamePerformanceResponse` interface gains `elo_adjusted_skill: number` |
+| `frontend/src/api/client.ts` | `endgameApi` gains `getEloSkillTimeline()` method |
+| `frontend/src/pages/Endgames.tsx` | `statisticsContent` renders `EloSkillTimelineChart`; add `useEloSkillTimeline` data |
+| `frontend/src/components/charts/EndgamePerformanceSection.tsx` | Endgame Skill gauge shows `elo_adjusted_skill` value (adjusted) with tooltip or label explaining adjustment |
+
+For opening risk (if pursued this milestone):
+
+| File | What Changes |
+|------|-------------|
+| `app/services/openings_service.py` | Add `_wdl_entropy()` pure function; call it in `get_next_moves()` per move |
+| `app/schemas/openings.py` | `NextMoveEntry` gains `risk: float` field |
+| Frontend types (openings) | `NextMoveEntry` interface gains `risk: number` |
+| Move explorer component | Risk indicator badge rendered per move row |
+
+### Internal Boundaries
+
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| `endgame_repository.py` → `endgame_service.py` | `list[Row[Any]]` tuples, positional columns | Document column order clearly in docstring — no named columns in Row |
+| `endgame_service.py` → `routers/endgames.py` | Pydantic response models | `elo_adjusted_skill` is `float`, always present (0.0 when no rated games) |
+| `openings_service.py` → `routers/openings.py` | `NextMovesResponse` with `NextMoveEntry` | `risk: float` added to existing model — non-breaking addition |
+| Frontend hooks → API client | TypeScript interfaces mirror backend Pydantic schemas | Keep `endgames.ts` in sync with `schemas/endgames.py` after any schema change |
+| `EndgamePerformanceSection.tsx` → `EndgameGauge.tsx` | `value: number`, `zones: GaugeZone[]` props | Gauge is already fully generic — existing `ENDGAME_SKILL_ZONES` constant applies unchanged |
+
+## Suggested Build Order
+
+Dependencies flow top to bottom within each track. Tracks can be interleaved but not parallelized within a session.
+
+### Track A: ELO-Adjusted Endgame Skill
+
+**Step A1: Backend (service + repository + schema)**
+- Add `_normalize_rating`, `_compute_avg_opponent_rating`, `_compute_elo_adjusted_skill` to `endgame_service.py`
+- Add `query_elo_skill_rows()` to `endgame_repository.py`
+- Modify `get_endgame_performance()` to call it and compute `elo_adjusted_skill`
+- Add `elo_adjusted_skill: float` to `EndgamePerformanceResponse` in `schemas/endgames.py`
+- Write unit tests for `_normalize_rating` and `_compute_elo_adjusted_skill`
+- Smoke test: `GET /api/endgames/performance` returns the new field
+
+**Step A2: Frontend gauge**
+- Add `elo_adjusted_skill: number` to `EndgamePerformanceResponse` TS interface
+- Modify `EndgamePerformanceSection.tsx` — show adjusted value in Endgame Skill gauge
+- Optionally add `InfoPopover` explaining raw vs. adjusted
+
+**Step A3: ELO timeline endpoint**
+- Add `_compute_elo_skill_rolling_series()` and `get_elo_skill_timeline()` to `endgame_service.py`
+- Add `EloSkillTimelinePoint`, `EloSkillTimelineResponse` to `schemas/endgames.py`
+- Add `GET /endgames/elo-timeline` to `routers/endgames.py`
+
+**Step A4: Frontend timeline chart**
+- Add `useEloSkillTimeline()` hook to `useEndgames.ts`
+- Add `endgameApi.getEloSkillTimeline()` to `api/client.ts`
+- Create `EloSkillTimelineChart.tsx` component
+- Wire into `Endgames.tsx` stats tab
+
+### Track B: Opening Risk (independent, can be done after or alongside Track A)
+
+**Step B1: Backend**
+- Add `_wdl_entropy()` pure function to `openings_service.py`
+- Modify `get_next_moves()` to compute and attach `risk` per move
+- Add `risk: float` to `NextMoveEntry` in `schemas/openings.py`
+
+**Step B2: Frontend**
+- Add `risk: number` to `NextMoveEntry` TS interface
+- Modify move explorer component to display risk badge per move row
 
 ## Sources
 
-- Direct codebase inspection: `app/models/game_position.py`, `app/models/game.py`, `app/services/import_service.py`, `app/services/zobrist.py`, `app/repositories/analysis_repository.py`, `app/repositories/game_repository.py`, `frontend/src/types/api.ts`, `frontend/src/pages/Openings.tsx`
-- [postgresql.org: Modifying Tables (ALTER TABLE ADD COLUMN performance)](https://www.postgresql.org/docs/current/ddl-alter.html) -- ADD COLUMN DEFAULT NULL is metadata-only in PG 11+
-- [postgresql.org: Partial Indexes](https://www.postgresql.org/docs/current/indexes-partial.html)
-- [python-chess Core docs](https://python-chess.readthedocs.io/en/latest/core.html) -- `board.pieces()`, `board.piece_map()` for material counting
-- [chess.com Published-Data API](https://gist.github.com/andreij/0e3309200c0a6bb26308817a168203f3) -- `accuracies.white/black` optional field; no per-move eval
-- [lichess forum: accuracy in API](https://lichess.org/forum/lichess-feedback/trying-to-find-accuracy-from-the-api) -- accuracy only in individual game export, not bulk export
-- [Chessprogramming wiki: Game Phases](https://www.chessprogramming.org/Game_Phases) -- material-threshold phase detection standard
+- Direct inspection of `app/routers/endgames.py` — confirmed endpoint signatures, all use Query params pattern
+- Direct inspection of `app/services/endgame_service.py` — confirmed `_compute_rolling_series`, `_compute_conv_recov_rolling_series`, `_ENDGAME_SKILL_CONVERSION_WEIGHT/_RECOVERY_WEIGHT`, sequential query pattern documented inline
+- Direct inspection of `app/repositories/endgame_repository.py` — confirmed `query_endgame_entry_rows` return shape, covering index `ix_gp_user_endgame_game`, AsyncSession sequential constraint
+- Direct inspection of `app/models/game.py` — confirmed `white_rating: Mapped[int | None]`, `black_rating: Mapped[int | None]`, `platform: Mapped[str]` all present; no migration needed
+- Direct inspection of `app/schemas/endgames.py` and `app/schemas/openings.py` — confirmed extension points
+- Direct inspection of `app/repositories/query_utils.py` — confirmed `apply_game_filters()` handles all standard filters; no changes needed
+- Direct inspection of `frontend/src/components/charts/EndgamePerformanceSection.tsx`, `EndgameGauge.tsx` — confirmed gauge is fully generic (accepts `value`, `zones` props); `ENDGAME_SKILL_ZONES` already defined
+- Direct inspection of `frontend/src/hooks/useEndgames.ts` — confirmed `ENDGAME_STALE_TIME = 5 * 60 * 1000` pattern for new hooks
+- Backlog item 999.5 in `.planning/ROADMAP.md` — ELO normalization formula, reference rating 1500, adjustment formula: `adjusted = raw × avg_normalized_opponent_rating / 1500`
 
 ---
-*Architecture research for: FlawChess v1.5 -- per-position metadata and endgame analytics*
-*Researched: 2026-03-23*
+*Architecture research for: FlawChess v1.8 Advanced Analytics*
+*Researched: 2026-04-04*
