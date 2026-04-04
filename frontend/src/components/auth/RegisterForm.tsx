@@ -73,17 +73,19 @@ export function RegisterForm() {
       await register(email, password);
       navigate('/', { replace: true });
     } catch (err: unknown) {
-      Sentry.captureException(err, {
-        tags: { source: 'auth' },
-      });
       let message = 'Registration failed. Please try again.';
       if (axios.isAxiosError(err) && err.response?.status === 400) {
+        // Expected — validation errors and duplicate accounts are not bugs
         const detail = err.response.data?.detail;
         if (typeof detail === 'string') {
           message = detail;
         } else if (detail === 'REGISTER_USER_ALREADY_EXISTS') {
           message = 'An account with this email already exists.';
         }
+      } else {
+        Sentry.captureException(err, {
+          tags: { source: 'auth' },
+        });
       }
       toast.error(message);
     } finally {

@@ -35,12 +35,14 @@ export function LoginForm() {
       await login(email, password);
       navigate('/', { replace: true });
     } catch (err: unknown) {
-      Sentry.captureException(err, {
-        tags: { source: 'auth' },
-      });
       let message = 'Login failed. Please check your credentials.';
       if (axios.isAxiosError(err) && err.response?.status === 400) {
+        // Expected — invalid credentials are not a bug
         message = 'Invalid email or password.';
+      } else {
+        Sentry.captureException(err, {
+          tags: { source: 'auth' },
+        });
       }
       toast.error(message);
     } finally {
