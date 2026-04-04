@@ -173,3 +173,24 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
+
+### Phase 999.5: ELO-Adjusted Endgame Skill (BACKLOG)
+
+**Goal:** Add an absolute Endgame Skill metric that adjusts for opponent strength, giving players a number that trends upward as they improve — unlike current relative metrics (conversion/recovery rates) which stay relatively flat because opponents scale with rating.
+
+**Context & Decisions:**
+- Current conversion (win rate with ≥3pt material advantage) and recovery (save rate with ≥3pt disadvantage) stay as-is — they are relative metrics with clear definitions
+- Endgame Skill (composite: 0.7×conversion + 0.3×recovery) gets an adjusted version since it's already an opaque derived score
+- **Adjustment formula:** `adjusted_endgame_skill = raw_endgame_skill × avg_normalized_opponent_rating / reference_rating`
+- **Reference rating:** 1500 (chess.com blitz equivalent) — fixed, not per-user, enabling absolute cross-player comparison
+- **Single reference across time controls** — no per-time-control references initially; can refine later if data looks off
+- **Cross-platform normalization:** Lichess ratings converted to chess.com-equivalent using tapering offset: `offset = max(0, 350 - (lichess_rating - 1400) × 0.3)` — offset ~350 at lichess 1400, tapering to 0 at ~2570
+- **UI:** Show adjusted value in Endgame Skill gauge; add separate "Endgame Skill Over Time" timeline chart (single line)
+- **Why not Performance Rating?** Doesn't apply — conversion situations start with material advantage, so baseline ≫50%
+- **Why not gap-based (Elo expected score)?** Rating gaps stay constant as players climb, so gap-based adjustments can't produce an uptrend
+
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
