@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     # Environment: "development" bypasses JWT auth on all endpoints
     ENVIRONMENT: str = "production"
     SENTRY_DSN: str = ""  # Empty string = Sentry disabled (dev default)
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0  # 0.0 = no traces (dev default)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

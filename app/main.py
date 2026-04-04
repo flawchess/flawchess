@@ -47,7 +47,8 @@ if settings.SENTRY_DSN:
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,
         environment=settings.ENVIRONMENT,
-        traces_sample_rate=0.1,  # 10% of requests traced for performance visibility
+        # Only trace in production — dev traces are noise and waste quota
+        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
         send_default_pii=False,  # Do not send user PII (emails, IPs)
         before_send=_sentry_before_send,
     )

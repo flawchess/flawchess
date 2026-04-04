@@ -58,6 +58,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         - VITE_SENTRY_DSN=${VITE_SENTRY_DSN}
+        - VITE_SENTRY_TRACES_SAMPLE_RATE=${VITE_SENTRY_TRACES_SAMPLE_RATE}
     ports:
       - "80:80"
       - "443:443"
