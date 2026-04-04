@@ -1,9 +1,25 @@
+import { createHash } from 'crypto'
+import fs from 'fs'
 import path from 'path'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { vitePrerenderPlugin } from 'vite-prerender-plugin'
+
+// Social media crawlers aggressively cache OG images by URL. Appending a
+// content hash as a query string forces re-fetch when the image changes.
+function ogImageHashPlugin(): Plugin {
+  return {
+    name: 'og-image-hash',
+    apply: 'build',
+    transformIndexHtml(html) {
+      const content = fs.readFileSync(path.resolve(__dirname, 'public/og-image.jpg'))
+      const hash = createHash('md5').update(content).digest('base64url').slice(0, 8)
+      return html.replaceAll('og-image.jpg', `og-image.jpg?v=${hash}`)
+    },
+  }
+}
 
 // vite-prerender-plugin dynamically imports the prerender entry at build time.
 // The loaded module graph (React, source-map WASM) keeps Node alive after the
@@ -23,6 +39,7 @@ function forceExitAfterBuild(): Plugin {
 export default defineConfig({
   envDir: path.resolve(__dirname, '..'), // Load .env from project root
   plugins: [
+    ogImageHashPlugin(),
     react(),
     tailwindcss(),
     vitePrerenderPlugin({
