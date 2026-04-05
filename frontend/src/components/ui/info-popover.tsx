@@ -36,7 +36,7 @@ function InfoPopover({ children, ariaLabel, testId, side = "top" }: InfoPopoverP
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
-          <HelpCircle className="h-3.5 w-3.5" />
+          <HelpCircle className="h-4 w-4" />
         </span>
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
