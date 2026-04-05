@@ -1,6 +1,6 @@
 import * as React from "react"
 import { Popover as PopoverPrimitive } from "radix-ui"
-import { Info } from "lucide-react"
+import { HelpCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface InfoPopoverProps {
@@ -30,13 +30,13 @@ function InfoPopover({ children, ariaLabel, testId, side = "top" }: InfoPopoverP
         <span
           role="button"
           tabIndex={0}
-          className="text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+          className="text-brand-brown/70 hover:text-brand-brown focus:outline-none cursor-pointer"
           aria-label={ariaLabel}
           data-testid={testId}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
-          <Info className="h-3.5 w-3.5" />
+          <HelpCircle className="h-3.5 w-3.5" />
         </span>
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>

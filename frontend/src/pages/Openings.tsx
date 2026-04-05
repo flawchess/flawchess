@@ -515,7 +515,7 @@ export function OpeningsPage() {
             <div className="flex items-center gap-2 mb-2">
               <Button
                 size="lg"
-                variant="outline"
+                variant="brand-outline"
                 className="flex-1"
                 onClick={openBookmarkDialog}
                 data-testid="btn-bookmark"
@@ -541,7 +541,7 @@ export function OpeningsPage() {
               </div>
               <Button
                 size="lg"
-                variant="outline"
+                variant="brand-outline"
                 className="flex-1"
                 onClick={() => setSuggestionsOpen(true)}
                 data-testid="btn-suggest-bookmarks"
@@ -666,7 +666,7 @@ export function OpeningsPage() {
           </p>
           <Button
             size="lg"
-            variant="outline"
+            variant="brand-outline"
             className="w-full"
             onClick={() => setSuggestionsOpen(true)}
             data-testid="btn-suggest-bookmarks-empty"
@@ -1007,7 +1007,7 @@ export function OpeningsPage() {
                   <div className="flex items-center gap-2">
                     <Button
                       size="lg"
-                      variant="outline"
+                      variant="brand-outline"
                       className="flex-1"
                       onClick={openBookmarkDialog}
                       data-testid="btn-bookmark-sidebar"
@@ -1017,7 +1017,7 @@ export function OpeningsPage() {
                     </Button>
                     <Button
                       size="lg"
-                      variant="outline"
+                      variant="brand-outline"
                       className="flex-1"
                       onClick={() => setSuggestionsOpen(true)}
                       data-testid="btn-suggest-bookmarks-sidebar"
