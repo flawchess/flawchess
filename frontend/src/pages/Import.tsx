@@ -12,6 +12,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Tooltip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useImportTrigger, useImportPolling } from '@/hooks/useImport';
@@ -64,14 +65,16 @@ function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jo
           <span>{progressText}</span>
         </div>
         {canDismiss && (
-          <button
-            onClick={() => onDismiss(jobId)}
-            className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
-            aria-label="Dismiss"
-            data-testid={`btn-dismiss-progress-${jobId}`}
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <Tooltip content="Dismiss">
+            <button
+              onClick={() => onDismiss(jobId)}
+              className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
+              aria-label="Dismiss"
+              data-testid={`btn-dismiss-progress-${jobId}`}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </Tooltip>
         )}
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-muted">

@@ -3,6 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { FolderOpen, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip } from '@/components/ui/tooltip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useUpdatePositionBookmarkLabel, useDeletePositionBookmark, useUpdateMatchSide } from '@/hooks/usePositionBookmarks';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
@@ -207,34 +208,40 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
         {/* Button row: chart toggle, load, delete */}
         <div className="flex items-center justify-between mt-1">
           {/* Chart toggle on left */}
-          <button
-            role="switch"
-            aria-checked={chartEnabled}
-            aria-label="Include in charts"
-            onClick={() => onChartEnabledChange(bookmark.id, !chartEnabled)}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${chartEnabled ? 'bg-toggle-active' : 'bg-muted'}`}
-            data-testid={`bookmark-chart-toggle-${bookmark.id}`}
-          >
-            <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${chartEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
-          </button>
+          <Tooltip content={chartEnabled ? 'Exclude from opening results' : 'Include in opening results'}>
+            <button
+              role="switch"
+              aria-checked={chartEnabled}
+              aria-label={chartEnabled ? 'Exclude from opening results' : 'Include in opening results'}
+              onClick={() => onChartEnabledChange(bookmark.id, !chartEnabled)}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${chartEnabled ? 'bg-toggle-active' : 'bg-muted'}`}
+              data-testid={`bookmark-chart-toggle-${bookmark.id}`}
+            >
+              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${chartEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </button>
+          </Tooltip>
           {/* Load button in middle */}
-          <Button variant="ghost" size="icon" className="h-7 w-7"
-            onMouseDown={() => { isDirtyRef.current = true; }}
-            onClick={handleLoad}
-            data-testid={`bookmark-btn-load-${bookmark.id}`}
-            aria-label="Load bookmark">
-            <FolderOpen size={15} />
-          </Button>
+          <Tooltip content="Load bookmark">
+            <Button variant="ghost" size="icon" className="h-7 w-7"
+              onMouseDown={() => { isDirtyRef.current = true; }}
+              onClick={handleLoad}
+              data-testid={`bookmark-btn-load-${bookmark.id}`}
+              aria-label="Load bookmark">
+              <FolderOpen size={15} />
+            </Button>
+          </Tooltip>
           {/* Delete button on right */}
-          <Button variant="ghost" size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-destructive"
-            onMouseDown={() => { isDirtyRef.current = true; }}
-            onClick={handleDelete}
-            disabled={deleteBookmark.isPending}
-            data-testid={`bookmark-btn-delete-${bookmark.id}`}
-            aria-label={`Delete bookmark: ${bookmark.label}`}>
-            <Trash2 size={15} />
-          </Button>
+          <Tooltip content={`Delete bookmark: ${bookmark.label}`}>
+            <Button variant="ghost" size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              onMouseDown={() => { isDirtyRef.current = true; }}
+              onClick={handleDelete}
+              disabled={deleteBookmark.isPending}
+              data-testid={`bookmark-btn-delete-${bookmark.id}`}
+              aria-label={`Delete bookmark: ${bookmark.label}`}>
+              <Trash2 size={15} />
+            </Button>
+          </Tooltip>
         </div>
       </div>
     </div>

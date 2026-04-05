@@ -14,6 +14,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, SlidersHorizontal, BookMarked, X } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
+import { Tooltip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -873,26 +874,30 @@ export function OpeningsPage() {
                 />
                 {/* Sidebar trigger buttons — icon-only, separated from nav buttons */}
                 <div className="mt-1 flex flex-col gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
-                    onClick={openFilterSidebar}
-                    data-testid="btn-open-filter-sidebar"
-                    aria-label="Open filters"
-                  >
-                    <SlidersHorizontal className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
-                    onClick={openBookmarkSidebar}
-                    data-testid="btn-open-bookmark-sidebar"
-                    aria-label="Open bookmarks"
-                  >
-                    <BookMarked className="h-4 w-4" />
-                  </Button>
+                  <Tooltip content="Open filters" side="left">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                      onClick={openFilterSidebar}
+                      data-testid="btn-open-filter-sidebar"
+                      aria-label="Open filters"
+                    >
+                      <SlidersHorizontal className="h-4 w-4" />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content="Open bookmarks" side="left">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                      onClick={openBookmarkSidebar}
+                      data-testid="btn-open-bookmark-sidebar"
+                      aria-label="Open bookmarks"
+                    >
+                      <BookMarked className="h-4 w-4" />
+                    </Button>
+                  </Tooltip>
                 </div>
               </div>
             </div>
@@ -903,11 +908,13 @@ export function OpeningsPage() {
             <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-filter-sidebar">
               <DrawerHeader className="flex flex-row items-center justify-between">
                 <DrawerTitle>Filters</DrawerTitle>
-                <DrawerClose asChild>
-                  <Button variant="ghost" size="icon" aria-label="Close filters" data-testid="btn-close-filter-sidebar">
-                    <X className="h-4 w-4" />
-                  </Button>
-                </DrawerClose>
+                <Tooltip content="Close filters">
+                  <DrawerClose asChild>
+                    <Button variant="ghost" size="icon" aria-label="Close filters" data-testid="btn-close-filter-sidebar">
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </DrawerClose>
+                </Tooltip>
               </DrawerHeader>
               <div className="overflow-y-auto flex-1 p-4 space-y-4">
                 {/* Played as + Piece filter — same row like desktop */}
@@ -987,11 +994,13 @@ export function OpeningsPage() {
                     </div>
                   </InfoPopover>
                 </DrawerTitle>
-                <DrawerClose asChild>
-                  <Button variant="ghost" size="icon" aria-label="Close bookmarks" data-testid="btn-close-bookmark-sidebar">
-                    <X className="h-4 w-4" />
-                  </Button>
-                </DrawerClose>
+                <Tooltip content="Close bookmarks">
+                  <DrawerClose asChild>
+                    <Button variant="ghost" size="icon" aria-label="Close bookmarks" data-testid="btn-close-bookmark-sidebar">
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </DrawerClose>
+                </Tooltip>
               </DrawerHeader>
               <div className="overflow-y-auto flex-1 p-4">
                 <div className="space-y-3">

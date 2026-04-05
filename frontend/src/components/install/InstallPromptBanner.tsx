@@ -1,5 +1,6 @@
 import { Share, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip } from '@/components/ui/tooltip';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
@@ -52,16 +53,18 @@ export function InstallPromptBanner() {
           <p className="text-sm text-foreground flex-1">
             Install: tap <strong>Share</strong> then <strong>Add to Home Screen</strong>
           </p>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 flex-shrink-0"
-            onClick={dismissIOS}
-            aria-label="Dismiss install banner"
-            data-testid="btn-ios-install-dismiss"
-          >
-            <X className="h-4 w-4" />
-          </Button>
+          <Tooltip content="Dismiss install banner">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 flex-shrink-0"
+              onClick={dismissIOS}
+              aria-label="Dismiss install banner"
+              data-testid="btn-ios-install-dismiss"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </Tooltip>
         </div>
       )}
     </>

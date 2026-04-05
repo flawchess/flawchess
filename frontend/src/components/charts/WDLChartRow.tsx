@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Tooltip } from '@/components/ui/tooltip';
 import {
   WDL_WIN,
   WDL_DRAW,
@@ -93,26 +94,30 @@ export function WDLChartRow({
             {infoPopover}
           </span>
           {gamesLink !== undefined ? (
-            <Link
-              to={gamesLink}
-              onClick={onGamesLinkClick}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              aria-label={gamesLinkAriaLabel}
-              data-testid={gamesLinkTestId}
-            >
-              <span>{data.total} games</span>
-              <FolderOpen className="h-3.5 w-3.5" />
-            </Link>
+            <Tooltip content={gamesLinkAriaLabel ?? 'View games'}>
+              <Link
+                to={gamesLink}
+                onClick={onGamesLinkClick}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                aria-label={gamesLinkAriaLabel}
+                data-testid={gamesLinkTestId}
+              >
+                <span>{data.total} games</span>
+                <FolderOpen className="h-3.5 w-3.5" />
+              </Link>
+            </Tooltip>
           ) : onOpenGames !== undefined ? (
-            <button
-              onClick={onOpenGames}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              aria-label="View games for this opening"
-              data-testid={openGamesTestId}
-            >
-              <span>{data.total} games</span>
-              <FolderOpen className="h-3.5 w-3.5" />
-            </button>
+            <Tooltip content="View games for this opening">
+              <button
+                onClick={onOpenGames}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="View games for this opening"
+                data-testid={openGamesTestId}
+              >
+                <span>{data.total} games</span>
+                <FolderOpen className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
           ) : (
             <span className="inline-flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground">
@@ -121,12 +126,11 @@ export function WDLChartRow({
             </span>
           )}
           {showLowWarning && isUnreliable && (
-            <span
-              className="text-xs text-amber-500 ml-1"
-              title="Small sample size — percentages may be unreliable"
-            >
-              (low)
-            </span>
+            <Tooltip content="Small sample size — percentages may be unreliable">
+              <span className="text-xs text-amber-500 ml-1 cursor-help">
+                (low)
+              </span>
+            </Tooltip>
           )}
         </div>
       )}

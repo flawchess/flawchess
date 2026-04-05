@@ -3,6 +3,7 @@ import { FolderOpen, ChevronDown, ChevronUp } from "lucide-react"
 import type { OpeningWDL } from "@/types/stats"
 import { MinimapPopover } from "./MinimapPopover"
 import { MiniWDLBar } from "./MiniWDLBar"
+import { Tooltip } from "@/components/ui/tooltip"
 
 // Number of openings to show before the "More" fold
 const INITIAL_VISIBLE_COUNT = 3;
@@ -62,15 +63,17 @@ function OpeningRow({ o, color, index, testIdPrefix, onOpenGames }: {
       </MinimapPopover>
 
       {/* Column 2: Game count with link to games tab */}
-      <button
-        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        aria-label={`View ${o.total} games for ${o.opening_name}`}
-        data-testid={`${testIdPrefix}-games-${o.opening_eco}`}
-        onClick={() => onOpenGames(o.pgn, color)}
-      >
-        <span className="tabular-nums">{o.total}</span>
-        <FolderOpen className="h-3.5 w-3.5" />
-      </button>
+      <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
+        <button
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          aria-label={`View ${o.total} games for ${o.opening_name}`}
+          data-testid={`${testIdPrefix}-games-${o.opening_eco}`}
+          onClick={() => onOpenGames(o.pgn, color)}
+        >
+          <span className="tabular-nums">{o.total}</span>
+          <FolderOpen className="h-3.5 w-3.5" />
+        </button>
+      </Tooltip>
 
       {/* Column 3: Mini WDL bar */}
       <MiniWDLBar win_pct={o.win_pct} draw_pct={o.draw_pct} loss_pct={o.loss_pct} />

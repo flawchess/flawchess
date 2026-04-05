@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { BookOpen, Calendar, Clock, ExternalLink, Hash, Swords } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { MiniBoard } from '@/components/board/MiniBoard';
 import type { GameRecord, UserResult } from '@/types/api';
@@ -140,16 +141,18 @@ export function GameCard({ game }: GameCardProps) {
           <span className="ml-auto shrink-0 flex items-center gap-1.5 text-muted-foreground">
             <PlatformIcon platform={game.platform} className="h-4 w-4" />
             {game.platform_url ? (
-              <a
-                href={game.platform_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:text-foreground transition-colors"
-                aria-label="Open game on platform"
-                data-testid={`game-card-link-${game.game_id}`}
-              >
-                <ExternalLink className="h-4 w-4" />
-              </a>
+              <Tooltip content="Open game on platform">
+                <a
+                  href={game.platform_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-foreground transition-colors"
+                  aria-label="Open game on platform"
+                  data-testid={`game-card-link-${game.game_id}`}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </Tooltip>
             ) : null}
           </span>
         </div>

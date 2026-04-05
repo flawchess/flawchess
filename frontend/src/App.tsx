@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { Toaster } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon, TrophyIcon } from 'lucide-react';
@@ -353,6 +354,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <Router>
         <AuthProvider>
+          <TooltipProvider>
           <Sentry.ErrorBoundary
             fallback={
               <div className="flex flex-col items-center justify-center min-h-screen gap-4">
@@ -370,6 +372,7 @@ function App() {
             <AppRoutes />
             <Toaster richColors />
           </Sentry.ErrorBoundary>
+          </TooltipProvider>
         </AuthProvider>
       </Router>
     </QueryClientProvider>
