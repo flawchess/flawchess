@@ -10,6 +10,7 @@
 - ✅ **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33 (shipped 2026-03-28)
 - ✅ **v1.6 UI Polish & Improvements** — Phases 34-39 (shipped 2026-03-30)
 - ✅ **v1.7 Consolidation, Tooling & Refactoring** — Phases 40-43 (shipped 2026-04-03)
+- 🚧 **v1.8 Advanced Analytics** — Phases 44-46 (in progress)
 
 ## Phases
 
@@ -105,6 +106,49 @@
 
 </details>
 
+### v1.8 Advanced Analytics (Phases 44-46)
+
+- [ ] **Phase 44: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
+- [ ] **Phase 45: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
+- [ ] **Phase 46: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
+
+## Phase Details
+
+### Phase 44: Endgame ELO — Backend + Breakdown Table
+**Goal**: Users can see their Endgame ELO per platform/time-control combination and understand how their endgame skill compares to their actual rating
+**Depends on**: Phase 43
+**Requirements**: ELO-01, ELO-02, ELO-03, ELO-04, ELO-06
+**Success Criteria** (what must be TRUE):
+  1. User sees a breakdown table showing Endgame ELO, Actual ELO, and the gap for each qualifying (platform, time-control) combination
+  2. Combinations with fewer than the minimum game threshold are omitted; "Insufficient data" appears when nothing qualifies
+  3. User can read an info popover explaining how Endgame ELO is computed, what the baselines are, and its caveats
+  4. Existing sidebar filters (platform, time-control, rated, recency, color, opponent type) update the breakdown table
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 45: Endgame ELO — Timeline Chart
+**Goal**: Users can track their Endgame ELO over time per combination and visually see where it diverges from their actual rating
+**Depends on**: Phase 44
+**Requirements**: ELO-05
+**Success Criteria** (what must be TRUE):
+  1. User sees a timeline chart with paired lines per (platform, time-control) combination — one bright line for Endgame ELO and one dark line for Actual ELO
+  2. The chart updates when sidebar filters change, showing only the relevant combination(s)
+  3. The chart handles cold-start correctly — no artifacts when recency filters are active on a new account
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 46: Opening Risk & Drawishness
+**Goal**: Users can see risk and drawishness signals per candidate move in the move explorer to inform opening selection
+**Depends on**: Phase 43
+**Requirements**: OPN-01, OPN-02
+**Success Criteria** (what must be TRUE):
+  1. User sees an opening risk indicator per move row in the move explorer, reflecting material imbalance variance at the opening-to-middlegame transition
+  2. User sees an opening drawishness value per position, showing the draw rate of games that ended in the opening phase
+  3. Drawishness display is muted (visually de-emphasized) when the sample size is too small to be reliable
+  4. User can read an info popover noting that drawishness is more relevant for higher-rated players
+**Plans**: TBD
+**UI hint**: yes
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -153,6 +197,9 @@
 | 41.1. Import Speed Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
 | 42. Backend Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
 | 43. Frontend Cleanup | v1.7 | 1/1 | Complete    | 2026-04-03 |
+| 44. Endgame ELO — Backend + Breakdown Table | v1.8 | 0/? | Not started | - |
+| 45. Endgame ELO — Timeline Chart | v1.8 | 0/? | Not started | - |
+| 46. Opening Risk & Drawishness | v1.8 | 0/? | Not started | - |
 
 ## Backlog
 
@@ -168,27 +215,6 @@ Plans:
 ### Phase 999.4: Position-Based Most Played Openings via game_positions (BACKLOG)
 
 **Goal:** Redesign "Most Played Openings" to count how many games *passed through* each opening position (via `game_positions` Zobrist hash matching) instead of counting final opening name classifications from chess.com/lichess. Currently "1. e4" shows ~75 games (only games *classified* as "King's Pawn Game") while obscure specific lines rank higher. Position-based counting would show all ~2000+ games that played 1. e4, consistent with FlawChess's core Zobrist hash architecture. Requires JOIN from `openings` reference table to `game_positions` on FEN or precomputed hash, then `COUNT(DISTINCT game_id)`.
-**Requirements:** TBD
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.5: ELO-Adjusted Endgame Skill (BACKLOG)
-
-**Goal:** Add an absolute Endgame Skill metric that adjusts for opponent strength, giving players a number that trends upward as they improve — unlike current relative metrics (conversion/recovery rates) which stay relatively flat because opponents scale with rating.
-
-**Context & Decisions:**
-- Current conversion (win rate with ≥3pt material advantage) and recovery (save rate with ≥3pt disadvantage) stay as-is — they are relative metrics with clear definitions
-- Endgame Skill (composite: 0.7×conversion + 0.3×recovery) gets an adjusted version since it's already an opaque derived score
-- **Adjustment formula:** `adjusted_endgame_skill = raw_endgame_skill × avg_normalized_opponent_rating / reference_rating`
-- **Reference rating:** 1500 (chess.com blitz equivalent) — fixed, not per-user, enabling absolute cross-player comparison
-- **Single reference across time controls** — no per-time-control references initially; can refine later if data looks off
-- **Cross-platform normalization:** Lichess ratings converted to chess.com-equivalent using tapering offset: `offset = max(0, 350 - (lichess_rating - 1400) × 0.3)` — offset ~350 at lichess 1400, tapering to 0 at ~2570
-- **UI:** Show adjusted value in Endgame Skill gauge; add separate "Endgame Skill Over Time" timeline chart (single line)
-- **Why not Performance Rating?** Doesn't apply — conversion situations start with material advantage, so baseline ≫50%
-- **Why not gap-based (Elo expected score)?** Rating gaps stay constant as players climb, so gap-based adjustments can't produce an uptrend
-
 **Requirements:** TBD
 **Plans:** 0 plans
 

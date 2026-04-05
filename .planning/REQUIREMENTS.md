@@ -54,20 +54,20 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ELO-01 | TBD | Pending |
-| ELO-02 | TBD | Pending |
-| ELO-03 | TBD | Pending |
-| ELO-04 | TBD | Pending |
-| ELO-05 | TBD | Pending |
-| ELO-06 | TBD | Pending |
-| OPN-01 | TBD | Pending |
-| OPN-02 | TBD | Pending |
+| ELO-01 | Phase 44 | Pending |
+| ELO-02 | Phase 44 | Pending |
+| ELO-03 | Phase 44 | Pending |
+| ELO-04 | Phase 44 | Pending |
+| ELO-05 | Phase 45 | Pending |
+| ELO-06 | Phase 44 | Pending |
+| OPN-01 | Phase 46 | Pending |
+| OPN-02 | Phase 46 | Pending |
 
 **Coverage:**
 - v1.8 requirements: 8 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 8 ⚠️
+- Mapped to phases: 8
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-05*
-*Last updated: 2026-04-05 after initial definition*
+*Last updated: 2026-04-04 after roadmap creation*
