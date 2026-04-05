@@ -107,7 +107,7 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
                   </InfoPopover>
                 </span>
               </th>
-              <th className="w-[4rem] text-right text-xs text-muted-foreground font-normal pb-1">Games</th>
+              <th className="w-[5.5rem] text-right text-xs text-muted-foreground font-normal pb-1">Games</th>
               <th className="text-left text-xs text-muted-foreground font-normal pb-1 pl-2">Results</th>
             </tr>
           </thead>
@@ -169,7 +169,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover }:
               gameCount={entry.game_count}
             />
           )}
-          {entry.game_count}
+          {entry.game_count}{isBelowThreshold && ' (low)'}
         </span>
       </td>
       <td className="py-1 pl-2">
