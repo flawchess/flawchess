@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
-import { ChevronUp, ChevronDown, BarChart2Icon, Gamepad2Icon } from 'lucide-react';
+import { ChevronUp, ChevronDown, BarChart2Icon, Gamepad2Icon, HelpCircle } from 'lucide-react';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
@@ -99,7 +99,8 @@ export function EndgamesPage() {
         </p>
         <Accordion type="single" collapsible>
           <AccordionItem value="concepts" className="charcoal-texture rounded-md px-4" data-testid="endgame-concepts-trigger">
-            <AccordionTrigger className="text-muted-foreground hover:no-underline">
+            <AccordionTrigger className="text-foreground justify-start flex-none gap-2 **:data-[slot=accordion-trigger-icon]:ml-0 **:data-[slot=accordion-trigger-icon]:order-first">
+              <HelpCircle className="h-4 w-4 text-brand-brown/70 shrink-0 order-last" />
               Endgame statistics concepts
             </AccordionTrigger>
             <AccordionContent className="text-muted-foreground space-y-2">
