@@ -49,9 +49,6 @@ interface WDLChartRowProps {
   /** Bar height class. Defaults to 'h-5' (reference implementation). */
   barHeight?: 'h-5' | 'h-6';
 
-  /** Show "(low)" warning next to game count when below minGamesForReliable. Default false. */
-  showLowWarning?: boolean;
-
   /** data-testid for the row container */
   testId?: string;
 }
@@ -69,7 +66,6 @@ export function WDLChartRow({
   maxTotal,
   minGamesForReliable = MIN_GAMES_FOR_RELIABLE_STATS,
   barHeight = 'h-5',
-  showLowWarning = false,
   testId,
 }: WDLChartRowProps) {
   if (data.total === 0) {
@@ -124,13 +120,6 @@ export function WDLChartRow({
                 {data.total} games
               </span>
             </span>
-          )}
-          {showLowWarning && isUnreliable && (
-            <Tooltip content="Small sample size — percentages may be unreliable">
-              <span className="text-xs text-amber-500 ml-1 cursor-help">
-                (low)
-              </span>
-            </Tooltip>
           )}
         </div>
       )}

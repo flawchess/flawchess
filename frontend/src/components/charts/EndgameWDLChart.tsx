@@ -50,7 +50,6 @@ function EndgameCategoryRow({ cat, maxTotal, onCategorySelect }: {
         gamesLinkTestId={`endgame-games-link-${cat.slug}`}
         gamesLinkAriaLabel={`View ${cat.label} endgame games`}
         maxTotal={maxTotal}
-        showLowWarning={true}
         testId={`endgame-category-${cat.slug}-row`}
       />
     </div>
