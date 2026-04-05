@@ -682,7 +682,7 @@ export function OpeningsPage() {
                 <BookMarked className="h-5 w-5" />
                 Bookmarked Openings: Results
                 <InfoPopover ariaLabel="Results by opening info" testId="wdl-bar-chart-info" side="top">
-                  Shows your win, draw, and loss percentages for each saved or most played position, based on the games that match the current filter settings. The length of the grey bar indicates game count relative to other openings.
+                  Shows your win, draw, and loss percentages for each saved or most played position, based on the games that match the current filter settings. The length of the transparent bar indicates game count relative to other openings.
                 </InfoPopover>
               </span>
             </h2>
