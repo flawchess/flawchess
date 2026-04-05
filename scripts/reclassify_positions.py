@@ -7,9 +7,15 @@ PGN already stored in the games table.
 Resumable: detects unprocessed games by checking for NULL values in any
 classification column. Re-run after interruption to pick up where left off.
 
-Usage:
+Usage (local dev):
     uv run python scripts/reclassify_positions.py --all --yes
     uv run python scripts/reclassify_positions.py --user-id 42
+
+Usage (production):
+    The runtime image has no `uv` on the host — run inside the backend
+    container using the venv's Python directly:
+
+        ssh flawchess "cd /opt/flawchess && docker compose exec backend /app/.venv/bin/python scripts/reclassify_positions.py --all --yes"
 """
 
 import argparse

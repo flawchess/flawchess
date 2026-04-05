@@ -9,9 +9,15 @@ If the script fails or is interrupted mid-run, earlier users are fully
 re-imported, the current user may be partially done, and later users are
 left untouched.
 
-Usage:
+Usage (local dev):
     uv run python scripts/reimport_games.py --user-id 42
     uv run python scripts/reimport_games.py --all --yes
+
+Usage (production):
+    The runtime image has no `uv` on the host — run inside the backend
+    container using the venv's Python directly:
+
+        ssh flawchess "cd /opt/flawchess && docker compose exec backend /app/.venv/bin/python scripts/reimport_games.py --user-id 42"
 """
 
 import argparse

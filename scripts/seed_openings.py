@@ -5,7 +5,15 @@ consumers (bookmark creation, stats API) get position metadata needed for
 correct Zobrist hash recomputation.
 Precomputes Zobrist hashes (full, white, black) from the replayed PGN board state.
 Uses INSERT ... ON CONFLICT DO UPDATE to backfill hashes on existing rows.
-Run with: uv run python -m scripts.seed_openings
+
+Usage (local dev):
+    uv run python -m scripts.seed_openings
+
+Usage (production):
+    The runtime image has no `uv` on the host — run inside the backend
+    container using the venv's Python directly:
+
+        ssh flawchess "cd /opt/flawchess && docker compose exec backend /app/.venv/bin/python -m scripts.seed_openings"
 """
 import asyncio
 import csv
