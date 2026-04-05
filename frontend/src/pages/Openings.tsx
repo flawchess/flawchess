@@ -570,13 +570,27 @@ export function OpeningsPage() {
   const gamesData = gamesQuery.data;
   const filtersMatchNothing = gamesData !== undefined && gamesData.matched_count === 0 && !hasNoGames;
 
+  // Color icon + name reused in Position Results labels and the matched-games summary
+  const colorIconSquare = (
+    <span className={`inline-block h-3 w-3 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
+  );
+  const colorName = filters.color === 'white' ? 'White' : 'Black';
+  const pieceFilterSuffix = filters.matchSide === 'both' ? '' : ` (Piece filter: ${filters.matchSide === 'mine' ? 'Mine' : 'Opponent'})`;
+  const positionResultsLabel = (
+    <span className="inline-flex items-center gap-1.5">
+      <span>Position Results played as</span>
+      {colorIconSquare}
+      <span>{colorName}{pieceFilterSuffix}</span>
+    </span>
+  );
+
   const moveExplorerContent = (
     <div className="flex flex-col gap-4">
       {gamesData && gamesData.stats.total > 0 && (
         <div className="charcoal-texture rounded-md p-4">
           <WDLChartRow
             data={gamesData.stats}
-            label={filters.matchSide === 'both' ? 'Position Results' : `Position Results (Piece filter: ${filters.matchSide === 'mine' ? 'Mine' : 'Opponent'})`}
+            label={positionResultsLabel}
             barHeight="h-6"
             gamesLink="/openings/games"
             onGamesLinkClick={() => window.scrollTo({ top: 0 })}
@@ -632,7 +646,7 @@ export function OpeningsPage() {
           <div className="charcoal-texture rounded-md p-4">
             <WDLChartRow
               data={gamesData.stats}
-              label={filters.matchSide === 'both' ? 'Position Results' : `Position Results (Piece filter: ${filters.matchSide === 'mine' ? 'Mine' : 'Opponent'})`}
+              label={positionResultsLabel}
               barHeight="h-6"
               testId="wdl-games-position"
             />
@@ -644,6 +658,20 @@ export function OpeningsPage() {
             offset={gamesOffset}
             limit={PAGE_SIZE}
             onPageChange={setGamesOffset}
+            matchLabel={(() => {
+              const total = gameCount ?? gamesData.stats.total;
+              const pct = total > 0 ? (gamesData.matched_count / total * 100).toFixed(1) : '0.0';
+              return (
+                <>
+                  {gamesData.matched_count} of {total} ({pct}%) games played as{' '}
+                  <span className="inline-flex items-center gap-1 align-middle">
+                    {colorIconSquare}
+                    {filters.color}
+                  </span>
+                  {' '}matched
+                </>
+              );
+            })()}
           />
         </>
       ) : null}
