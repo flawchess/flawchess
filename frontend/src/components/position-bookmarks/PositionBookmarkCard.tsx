@@ -222,7 +222,8 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
           </Tooltip>
           {/* Load button in middle */}
           <Tooltip content="Load bookmark">
-            <Button variant="ghost" size="icon" className="h-7 w-7"
+            <Button variant="ghost" size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
               onMouseDown={() => { isDirtyRef.current = true; }}
               onClick={handleLoad}
               data-testid={`bookmark-btn-load-${bookmark.id}`}
