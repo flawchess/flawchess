@@ -1,8 +1,13 @@
 """Re-import games for user(s) to populate engine analysis data.
 
-Deletes all existing games and positions for specified user(s), then
-re-imports from scratch using the updated pipeline (which now extracts
-lichess per-move evals and chess.com accuracy scores).
+Processes users sequentially: for each user, deletes their existing games
+and positions, then re-imports from scratch before moving on to the next
+user. Uses the updated pipeline (which now extracts lichess per-move evals
+and chess.com accuracy scores).
+
+If the script fails or is interrupted mid-run, earlier users are fully
+re-imported, the current user may be partially done, and later users are
+left untouched.
 
 Usage:
     uv run python scripts/reimport_games.py --user-id 42
