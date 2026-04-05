@@ -469,11 +469,11 @@ export function OpeningsPage() {
                   data-testid="filter-played-as"
                 >
                   <ToggleGroupItem value="white" data-testid="filter-played-as-white">
-                    <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
+                    <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-white mr-1" />
                     White
                   </ToggleGroupItem>
                   <ToggleGroupItem value="black" data-testid="filter-played-as-black">
-                    <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
+                    <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-zinc-900 mr-1" />
                     Black
                   </ToggleGroupItem>
                 </ToggleGroup>
@@ -695,9 +695,9 @@ export function OpeningsPage() {
                   // skip bookmarks with no stats or zero games
                   if (!s || s.total <= 0) return [];
                   const colorIcon = b.color === 'white' ? (
-                    <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white" />
+                    <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-white" />
                   ) : b.color === 'black' ? (
-                    <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900" />
+                    <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-zinc-900" />
                   ) : null;
                   const label = colorIcon ? (
                     <span className="inline-flex items-center gap-1.5">{colorIcon}{b.label}</span>
@@ -753,7 +753,7 @@ export function OpeningsPage() {
       {mostPlayedData && mostPlayedData.white.length > 0 && (
         <div className="charcoal-texture rounded-md p-4" data-testid="mpo-white-section">
           <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
-            <span className="inline-block h-3.5 w-3.5 rounded-full border border-muted-foreground bg-white" />
+            <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-white" />
             <span className="inline-flex items-center gap-1">
               Most Played Openings as White
               <InfoPopover ariaLabel="White openings info" testId="mpo-white-info" side="top">
@@ -773,7 +773,7 @@ export function OpeningsPage() {
       {mostPlayedData && mostPlayedData.black.length > 0 && (
         <div className="charcoal-texture rounded-md p-4" data-testid="mpo-black-section">
           <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
-            <span className="inline-block h-3.5 w-3.5 rounded-full border border-muted-foreground bg-zinc-900" />
+            <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-zinc-900" />
             <span className="inline-flex items-center gap-1">
               Most Played Openings as Black
               <InfoPopover ariaLabel="Black openings info" testId="mpo-black-info" side="top">
@@ -926,11 +926,11 @@ export function OpeningsPage() {
                       data-testid="filter-played-as-sidebar"
                     >
                       <ToggleGroupItem value="white" data-testid="filter-played-as-white-sidebar" className="min-h-11">
-                        <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-white mr-1" />
+                        <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-white mr-1" />
                         White
                       </ToggleGroupItem>
                       <ToggleGroupItem value="black" data-testid="filter-played-as-black-sidebar" className="min-h-11">
-                        <span className="inline-block h-3 w-3 rounded-full border border-muted-foreground bg-zinc-900 mr-1" />
+                        <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-zinc-900 mr-1" />
                         Black
                       </ToggleGroupItem>
                     </ToggleGroup>

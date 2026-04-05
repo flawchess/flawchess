@@ -140,7 +140,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
         <div className="flex items-center gap-1.5">
           {bookmark.color && (
             <span
-              className={`inline-block h-3 w-3 rounded-full border border-muted-foreground shrink-0 ${bookmark.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`}
+              className={`inline-block h-3 w-3 rounded-xs border border-muted-foreground shrink-0 ${bookmark.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`}
               data-testid={`bookmark-color-${bookmark.id}`}
             />
           )}

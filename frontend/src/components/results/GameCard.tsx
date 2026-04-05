@@ -91,7 +91,7 @@ export function GameCard({ game }: GameCardProps) {
   const opponentName = game.user_color === 'white' ? blackName : whiteName;
   const opponentRating = game.user_color === 'white' ? blackRating : whiteRating;
   // Opponent color is the opposite of the user color.
-  const opponentColorSymbol = game.user_color === 'white' ? '○' : '●';
+  const opponentColorSymbol = game.user_color === 'white' ? '□' : '■';
 
   return (
     <div
@@ -130,11 +130,11 @@ export function GameCard({ game }: GameCardProps) {
           {/* Desktop: show both players with "vs" separator */}
           <span className="text-sm truncate hidden sm:inline">
             <span className="text-foreground">
-              ● {whiteName} {whiteRating}
+              ■ {whiteName} {whiteRating}
             </span>
             <span className="mx-1.5 text-muted-foreground">vs</span>
             <span className="text-foreground">
-              ○ {blackName} {blackRating}
+              □ {blackName} {blackRating}
             </span>
           </span>
           <span className="ml-auto shrink-0 flex items-center gap-1.5 text-muted-foreground">
