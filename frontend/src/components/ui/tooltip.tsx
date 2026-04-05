@@ -23,9 +23,33 @@ interface TooltipProps {
 /** Hover tooltip with white-bg style matching InfoPopover.
  *  Replaces native `title=` attributes for consistent branding. */
 function Tooltip({ content, children, side = "top", align = "center" }: TooltipProps) {
+  // Suppress tooltip on touch interactions. Radix opens tooltips on hover
+  // with a delay (setTimeout), so suppressing at the event level alone isn't
+  // enough — the timer fires later and opens the tooltip. Instead we track
+  // the last pointer type and block `open` transitions at the state level
+  // whenever the interaction was touch/pen. Mouse behaves normally.
+  const [open, setOpen] = React.useState(false)
+  const lastPointerType = React.useRef<string>("")
+  const trackPointer = (e: React.PointerEvent) => {
+    lastPointerType.current = e.pointerType
+  }
+  const handleOpenChange = (next: boolean) => {
+    if (next && lastPointerType.current && lastPointerType.current !== "mouse") {
+      return
+    }
+    setOpen(next)
+  }
+
   return (
-    <TooltipPrimitive.Root>
-      <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
+    <TooltipPrimitive.Root open={open} onOpenChange={handleOpenChange}>
+      <TooltipPrimitive.Trigger
+        asChild
+        onPointerDown={trackPointer}
+        onPointerEnter={trackPointer}
+        onPointerMove={trackPointer}
+      >
+        {children}
+      </TooltipPrimitive.Trigger>
       <TooltipPrimitive.Portal>
         <TooltipPrimitive.Content
           side={side}
