@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Upload, Trash2 } from 'lucide-react';
+import { FolderOpen, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useUpdatePositionBookmarkLabel, useDeletePositionBookmark, useUpdateMatchSide } from '@/hooks/usePositionBookmarks';
@@ -223,7 +223,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
             onClick={handleLoad}
             data-testid={`bookmark-btn-load-${bookmark.id}`}
             aria-label="Load bookmark">
-            <Upload size={15} />
+            <FolderOpen size={15} />
           </Button>
           {/* Delete button on right */}
           <Button variant="ghost" size="icon"
