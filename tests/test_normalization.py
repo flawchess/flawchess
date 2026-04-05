@@ -24,6 +24,13 @@ class TestParseTimeControl:
         assert bucket == "bullet"
         assert seconds == 60
 
+    def test_fractional_increment(self):
+        """chess.com emits fractional increments like '10+0.1' — must not raise or return None."""
+        from app.services.normalization import parse_time_control
+        bucket, seconds = parse_time_control("10+0.1")
+        assert bucket == "bullet"
+        assert seconds == 14  # 10 + 0.1 * 40 = 14
+
     def test_rapid_with_increment(self):
         """900+10 -> 900 + 10*40 = 1300, which is rapid."""
         from app.services.normalization import parse_time_control
@@ -739,6 +746,42 @@ class TestNormalizeLichessGame:
                                         black_title="bot")
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
+        assert result.is_computer_game is True
+
+    def test_correspondence_bucketed_as_classical(self):
+        """Correspondence games have no clock — bucket as classical, mirror chess.com daily format."""
+        from app.services.normalization import normalize_lichess_game
+        game = self._make_lichess_game()
+        del game["clock"]
+        game["speed"] = "correspondence"
+        game["perf"] = "correspondence"
+        game["daysPerTurn"] = 3
+        result = normalize_lichess_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result.time_control_bucket == "classical"
+        assert result.time_control_str == "1/259200"  # 3 days * 86400 sec/day
+        assert result.time_control_seconds is None
+
+    def test_correspondence_without_days_per_turn(self):
+        """Unlimited correspondence (no daysPerTurn) still buckets as classical with null tc_str."""
+        from app.services.normalization import normalize_lichess_game
+        game = self._make_lichess_game()
+        del game["clock"]
+        game["speed"] = "correspondence"
+        result = normalize_lichess_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result.time_control_bucket == "classical"
+        assert result.time_control_str is None
+        assert result.time_control_seconds is None
+
+    def test_ai_opponent_gets_name_and_computer_flag(self):
+        """AI opponents have no `user` object — only `aiLevel`. Surface as 'lichess AI level N' and flag as computer."""
+        from app.services.normalization import normalize_lichess_game
+        game = self._make_lichess_game()
+        game["players"]["black"] = {"aiLevel": 6}
+        result = normalize_lichess_game(game, "Magnus", user_id=1)
+        assert result is not None
+        assert result.black_username == "lichess AI level 6"
         assert result.is_computer_game is True
 
 

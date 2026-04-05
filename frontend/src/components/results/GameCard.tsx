@@ -60,7 +60,17 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
+const SECONDS_PER_DAY = 86400;
+
 function formatTimeControl(tcStr: string): string {
+  // PGN daily/correspondence format: "1/{seconds_per_move}" (e.g. "1/259200" = 3 days/move).
+  // Used by chess.com daily and lichess correspondence. Render as "Nd".
+  // Previously fell through to Number("1/259200") = NaN, producing "Classical · NaN".
+  if (tcStr.startsWith('1/')) {
+    const secondsPerMove = Number(tcStr.slice(2));
+    const days = Math.round(secondsPerMove / SECONDS_PER_DAY);
+    return `${days}d`;
+  }
   if (tcStr.includes('+')) {
     const [baseSec, inc] = tcStr.split('+');
     const baseMin = Math.floor(Number(baseSec) / 60);

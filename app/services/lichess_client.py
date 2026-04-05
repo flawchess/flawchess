@@ -19,9 +19,6 @@ logger = logging.getLogger(__name__)
 
 LICHESS_API_URL = "https://lichess.org/api/games/user"
 
-# Request standard time-control variants only (excludes correspondence/unlimited)
-_PERF_TYPES = "ultraBullet,bullet,blitz,rapid,classical"
-
 # Retry config for transient stream errors (e.g. "peer closed connection").
 # Lichess NDJSON streams for large exports (10k+ games) can drop mid-transfer.
 _MAX_RETRIES = 3
@@ -53,9 +50,13 @@ async def fetch_lichess_games(
     Raises:
         ValueError: If ``username`` is not found on lichess (HTTP 404).
     """
+    # Do not pass perfType to the lichess API. The perfType filter is applied
+    # server-side and excludes correspondence, chess960, and imported (fromPosition)
+    # games before any data reaches us — causing silent truncation (e.g. 191 of 1201
+    # games returned). Non-standard variants are correctly filtered at the
+    # normalization layer by normalize_lichess_game() (variant_key != "standard").
     params: dict[str, str | bool] = {
         "pgnInJson": True,
-        "perfType": _PERF_TYPES,
         "moves": True,
         "tags": True,
         "opening": True,

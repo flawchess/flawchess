@@ -50,18 +50,20 @@ def parse_time_control(tc_str: str) -> tuple[TimeControlBucket | None, int | Non
     try:
         if "+" in tc_str:
             base_str, increment_str = tc_str.split("+", 1)
-            base = int(base_str)
-            increment = int(increment_str)
+            # Use float: chess.com emits fractional increments like "10+0.1" (0.1s bonus).
+            # Previously `int("0.1")` raised ValueError, leaving the bucket NULL.
+            base = float(base_str)
+            increment = float(increment_str)
         elif "/" in tc_str:
             # Daily format like "1/259200" — classify as classical
             return "classical", None
         else:
-            base = int(tc_str)
-            increment = 0
+            base = float(tc_str)
+            increment = 0.0
     except (ValueError, AttributeError):
         return None, None
 
-    estimated = base + increment * 40
+    estimated = int(base + increment * 40)
 
     if estimated < 180:
         return "bullet", estimated
@@ -266,11 +268,22 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
     players = game.get("players", {})
     white_player = players.get("white", {})
     black_player = players.get("black", {})
-    white_user = white_player.get("user", {})
-    black_user = black_player.get("user", {})
 
-    white_username = white_user.get("name", "")
-    black_username = black_user.get("name", "")
+    # Lichess AI opponents have no `user` object — only `aiLevel`. Surface them
+    # with the same display name lichess uses in PGN headers ("lichess AI level N")
+    # instead of an empty string.
+    def _player_name(player: dict) -> str:
+        user = player.get("user") or {}
+        name = user.get("name", "")
+        if name:
+            return name
+        ai_level = player.get("aiLevel")
+        if ai_level is not None:
+            return f"lichess AI level {ai_level}"
+        return ""
+
+    white_username = _player_name(white_player)
+    black_username = _player_name(black_player)
 
     # Determine user's color (case-insensitive)
     username_lower = username.lower()
@@ -281,9 +294,11 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
         user_color = "black"
         opponent_player = white_player
 
-    # Computer detection: check if opponent is a BOT account
-    opponent_title = opponent_player.get("user", {}).get("title", "")
-    is_computer_game = opponent_title.upper() == "BOT"
+    # Computer detection: opponent is either a BOT-titled account or an `aiLevel` bot.
+    # Previously we only checked the BOT title, so stockfish aiLevel games leaked through
+    # as human games.
+    opponent_title = (opponent_player.get("user") or {}).get("title", "")
+    is_computer_game = opponent_title.upper() == "BOT" or opponent_player.get("aiLevel") is not None
 
     # Result from winner field
     winner = game.get("winner")
@@ -308,6 +323,14 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
         tc_str_raw = f"{clock_initial}+{clock_increment}"
         tc_bucket, tc_seconds = parse_time_control(tc_str_raw)
         tc_str = _normalize_tc_str(tc_str_raw)
+    elif game.get("speed") == "correspondence":
+        # Correspondence games have no clock field — lichess uses daysPerTurn instead.
+        # Normalize to chess.com's PGN daily format (1/{seconds_per_move}) so both platforms
+        # share a single representation, and bucket as classical (same as chess.com daily).
+        days_per_turn = game.get("daysPerTurn")
+        tc_str = f"1/{days_per_turn * 86400}" if days_per_turn else None
+        tc_bucket = "classical"
+        tc_seconds = None
     else:
         tc_str = None
         tc_bucket = None
