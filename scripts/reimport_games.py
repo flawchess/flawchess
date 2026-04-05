@@ -31,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import sentry_sdk
-from sqlalchemy import select, update
+from sqlalchemy import delete, select
 
 from app.core.config import settings
 from app.core.database import async_session_maker
@@ -141,14 +141,16 @@ async def reimport_user(session, user_id: int) -> tuple[bool, int]:
     _log(f"  Deleting {game_count} games for user {user_id}...")
     deleted_count = await game_repository.delete_all_games_for_user(session, user_id)
 
-    # Reset last_synced_at on all completed import jobs so run_import does a full
-    # fetch instead of an incremental sync from the old timestamp. Bug fix: without
-    # this, lichess re-imports returned 0 games because the old last_synced_at told
-    # the client there was nothing new since the previous import.
+    # Delete all completed import jobs for this user. The (platform, username)
+    # pairs have already been read into platform_jobs above, and create_job()
+    # below will create fresh rows for each re-import. Without this, each run
+    # leaves stale completed jobs behind (verified in prod: a single user had
+    # 3 jobs per platform after one reimport + one regular sync). This also
+    # fixes an older bug where lichess re-imports returned 0 games because the
+    # old last_synced_at told the client nothing was new since last import.
     await session.execute(
-        update(ImportJob)
+        delete(ImportJob)
         .where(ImportJob.user_id == user_id, ImportJob.status == "completed")
-        .values(last_synced_at=None)
     )
 
     await session.commit()
