@@ -1,4 +1,4 @@
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '@/hooks/useAuth';
 import { LoginForm } from '@/components/auth/LoginForm';
@@ -26,11 +26,11 @@ export function AuthPage() {
 
   return (
     <div data-testid="auth-page" className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
-      <div className="mb-8 text-center">
+      <Link to="/" className="mb-8 text-center" data-testid="auth-logo-home">
         <img src="/icons/logo-256.png" alt="FlawChess logo" className="mx-auto mb-4 h-32 w-32" />
         <h1 className="text-4xl tracking-tight text-foreground font-brand">FlawChess</h1>
         <p className="mt-2 text-muted-foreground">Analyze your opening positions</p>
-      </div>
+      </Link>
 
       <Tabs value={tab} onValueChange={handleTabChange} className="w-full max-w-sm">
         <TabsList className="grid w-full grid-cols-2">

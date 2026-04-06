@@ -85,7 +85,7 @@ function NavHeader() {
     <header className="hidden sm:block bg-background border-b border-border px-6 overflow-hidden">
       <div className="mx-auto flex max-w-7xl items-stretch justify-between">
         <div className="flex items-center">
-          <Link to="/" className="flex items-center gap-1 mr-3" data-testid="nav-home">
+          <Link to="/openings" className="flex items-center gap-1 mr-3" data-testid="nav-home">
             <img src="/icons/logo-128.png" alt="" className="h-11 w-11 self-end -mb-1" aria-hidden="true" />
             <span className="text-lg tracking-tight text-foreground font-brand">FlawChess</span>
           </Link>
@@ -142,7 +142,7 @@ function MobileHeader() {
       className="block sm:hidden pt-safe flex items-center justify-between px-4 py-1 bg-background border-b border-border overflow-hidden"
     >
       <Link
-        to="/"
+        to="/openings"
         data-testid="nav-home-mobile"
         className="flex items-center gap-1.5 text-xl tracking-tight text-foreground font-brand"
       >

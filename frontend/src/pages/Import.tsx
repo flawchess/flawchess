@@ -326,6 +326,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
           variant="destructive"
           size="sm"
           onClick={() => setDeleteDialogOpen(true)}
+          disabled={activeJobIds.length > 0}
           data-testid="btn-delete-games"
         >
           Delete All Games
