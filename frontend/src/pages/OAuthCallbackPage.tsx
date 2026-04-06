@@ -21,10 +21,21 @@ export function OAuthCallbackPage() {
     const hash = window.location.hash;
     const params = new URLSearchParams(hash.slice(1)); // strip leading #
     const token = params.get('token');
+    const error = params.get('error');
+    const promoted = params.get('promoted');
 
-    if (token) {
+    if (error === 'EMAIL_ALREADY_REGISTERED') {
+      toast.error(
+        'This Google account is already linked to another account. Please log in instead.',
+      );
+      navigate('/login', { replace: true });
+    } else if (token) {
       loginWithToken(token);
-      toast.success('Signed in with Google');
+      if (promoted === '1') {
+        toast.success('Account created with Google. Your data is saved.');
+      } else {
+        toast.success('Signed in with Google');
+      }
       navigate('/', { replace: true });
     } else {
       toast.error('Google sign-in failed. Please try again.');
