@@ -285,3 +285,90 @@ class TestGuestRateLimit:
         # First 5 should succeed, 6th should be rate limited
         assert results[:5] == [201, 201, 201, 201, 201]
         assert results[5] == 429
+
+
+# ---------------------------------------------------------------------------
+# promote_guest_with_password service unit tests (TDD RED)
+# ---------------------------------------------------------------------------
+
+
+class TestPromoteGuestWithPassword:
+    @pytest.mark.asyncio
+    async def test_promotion_updates_user_fields(self, db_session):
+        """promote_guest_with_password updates is_guest, email, is_verified in DB."""
+        from app.services.guest_service import create_guest_user, promote_guest_with_password
+
+        user, _token = await create_guest_user(db_session)
+        new_email = unique_email("promoted")
+        updated_user, _new_token = await promote_guest_with_password(db_session, user, new_email, "SecurePass1!")
+
+        assert updated_user.is_guest is False
+        assert updated_user.email == new_email
+        assert updated_user.is_verified is True
+
+    @pytest.mark.asyncio
+    async def test_promotion_hashes_password(self, db_session):
+        """promote_guest_with_password stores a non-empty hashed_password (not plaintext)."""
+        from app.services.guest_service import create_guest_user, promote_guest_with_password
+
+        user, _token = await create_guest_user(db_session)
+        new_email = unique_email("hashtest")
+        updated_user, _new_token = await promote_guest_with_password(db_session, user, new_email, "SecurePass1!")
+
+        assert updated_user.hashed_password != ""
+        assert updated_user.hashed_password != "SecurePass1!"
+
+    @pytest.mark.asyncio
+    async def test_promotion_returns_7day_jwt(self, db_session):
+        """promote_guest_with_password returns a non-empty JWT string."""
+        from app.services.guest_service import create_guest_user, promote_guest_with_password
+
+        user, _token = await create_guest_user(db_session)
+        new_email = unique_email("jwttest")
+        _updated_user, new_token = await promote_guest_with_password(db_session, user, new_email, "SecurePass1!")
+
+        assert isinstance(new_token, str)
+        assert len(new_token) > 0
+
+    @pytest.mark.asyncio
+    async def test_promotion_raises_user_already_exists_on_email_conflict(self, db_session):
+        """promote_guest_with_password raises UserAlreadyExists when email is taken."""
+        from fastapi_users.exceptions import UserAlreadyExists
+
+        from app.models.user import User
+        from app.services.guest_service import create_guest_user, promote_guest_with_password
+
+        existing_email = unique_email("existing")
+        existing_user = User(
+            email=existing_email,
+            hashed_password="fakehash",
+            is_active=True,
+            is_verified=True,
+            is_guest=False,
+        )
+        db_session.add(existing_user)
+        await db_session.flush()
+
+        guest_user, _token = await create_guest_user(db_session)
+
+        with pytest.raises(UserAlreadyExists):
+            await promote_guest_with_password(db_session, guest_user, existing_email, "SecurePass1!")
+
+    @pytest.mark.asyncio
+    async def test_promotion_raises_value_error_for_non_guest(self, db_session):
+        """promote_guest_with_password raises ValueError for non-guest users."""
+        from app.models.user import User
+        from app.services.guest_service import promote_guest_with_password
+
+        regular_user = User(
+            email=unique_email("nonguestpromote"),
+            hashed_password="fakehash",
+            is_active=True,
+            is_verified=True,
+            is_guest=False,
+        )
+        db_session.add(regular_user)
+        await db_session.flush()
+
+        with pytest.raises(ValueError, match="Not a guest user"):
+            await promote_guest_with_password(db_session, regular_user, unique_email("target"), "SecurePass1!")
