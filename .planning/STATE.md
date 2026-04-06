@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 47 of 50 in v1.8 (Guest Session Foundation)
+Phase: 44 of 47 in v1.8 (Guest Session Foundation)
 Plan: 0 of ? in current phase
 Status: Ready to plan
-Last activity: 2026-04-06 — v1.8 roadmap created (phases 47-50)
+Last activity: 2026-04-06 — v1.8 roadmap created (phases 44-47)
 
 Progress: [░░░░░░░░░░] 0% (v1.8 phases)
 
@@ -28,7 +28,7 @@ Progress: [░░░░░░░░░░] 0% (v1.8 phases)
 
 See: .planning/PROJECT.md (updated 2026-04-06)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: v1.8 Guest Access — Phase 47 Guest Session Foundation
+Current focus: v1.8 Guest Access — Phase 44 Guest Session Foundation
 
 ## Key Context
 
@@ -56,10 +56,10 @@ Current focus: v1.8 Guest Access — Phase 47 Guest Session Foundation
 
 ### Blockers/Concerns
 
-- Phase 47: Check whether `slowapi` is installed before using for rate limiting — lightweight manual alternative avoids new dep if not
-- Phase 47: Align on guest email sentinel domain (`@guest.local` vs `@guest.flawchess.internal`) before implementation
-- Phase 50: New callback URI `/api/auth/guest/promote/google/callback` must be registered in Google Cloud Console — manual action before Phase 50 can be tested end-to-end
+- Phase 44: Check whether `slowapi` is installed before using for rate limiting — lightweight manual alternative avoids new dep if not
+- Phase 44: Align on guest email sentinel domain (`@guest.local` vs `@guest.flawchess.internal`) before implementation
+- Phase 47: New callback URI `/api/auth/guest/promote/google/callback` must be registered in Google Cloud Console — manual action before Phase 47 can be tested end-to-end
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
 
 ---
-Last activity: 2026-04-06 — v1.8 roadmap created, Phase 47 ready to plan
+Last activity: 2026-04-06 — v1.8 roadmap created, Phase 44 ready to plan
