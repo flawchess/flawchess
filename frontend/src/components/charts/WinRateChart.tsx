@@ -3,7 +3,7 @@ import { BookMarked } from 'lucide-react';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
-import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
+import { createDateTickFormatter, formatDateWithYear, niceWinRateAxis } from '@/lib/utils';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 import type { BookmarkTimeSeries } from '@/types/position_bookmarks';
 
@@ -65,6 +65,10 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
     ]),
   );
 
+  const yAxis = useMemo(() => niceWinRateAxis(
+    series.flatMap((s) => s.data.map((p) => p.win_rate))
+  ), [series]);
+
   // Build data array with win_rate, game_count and window_size per bookmark
   const data = allDates.map((date) => {
     const point: Record<string, string | number | undefined> = { date };
@@ -95,7 +99,7 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
       <LineChart data={data}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="date" tickFormatter={formatDateTick} />
-        <YAxis domain={[(min: number) => Math.max(0, Math.floor(min * 20) / 20), (max: number) => Math.min(1, Math.ceil(max * 20) / 20)]} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
+        <YAxis domain={yAxis.domain} ticks={yAxis.ticks} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
         <ChartTooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;

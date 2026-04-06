@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
+import { createDateTickFormatter, formatDateWithYear, niceWinRateAxis } from '@/lib/utils';
 import type { EndgameTimelineResponse } from '@/types/endgames';
 
 interface EndgameTimelineChartProps {
@@ -67,6 +67,11 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
     );
   }
 
+  const yAxis = useMemo(() => niceWinRateAxis(
+    // safe: typeKeys comes from Object.keys(data.per_type), so each key exists
+    typeKeys.flatMap((key) => (data.per_type[key] ?? []).map((p) => p.win_rate))
+  ), [data.per_type, typeKeys]);
+
   // Build merged data array: one row per date with a win_rate value per type (or undefined if no data)
   const perTypeData = allTypeDates.map((date) => {
     const point: Record<string, string | number | undefined> = { date };
@@ -117,7 +122,7 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
         <LineChart data={perTypeData}>
           <CartesianGrid vertical={false} />
           <XAxis dataKey="date" tickFormatter={formatDateTick} />
-          <YAxis domain={[(min: number) => Math.max(0, Math.floor(min * 20) / 20), (max: number) => Math.min(1, Math.ceil(max * 20) / 20)]} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
+          <YAxis domain={yAxis.domain} ticks={yAxis.ticks} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
           <ChartTooltip
             content={({ active, payload, label }) => {
               if (!active || !payload?.length) return null;

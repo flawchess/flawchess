@@ -52,3 +52,24 @@ export function formatDateWithYear(d: string): string {
     year: 'numeric',
   });
 }
+
+/**
+ * Compute a nice y-axis domain and evenly-spaced ticks for win-rate data (0–1).
+ * Uses 10% steps when range ≤ 40%, otherwise 20% steps.
+ */
+export function niceWinRateAxis(values: number[]): { domain: [number, number]; ticks: number[] } {
+  if (values.length === 0) return { domain: [0, 1], ticks: [0, 0.2, 0.4, 0.6, 0.8, 1] };
+
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  const step = (dataMax - dataMin) <= 0.4 ? 0.1 : 0.2;
+
+  const lo = Math.max(0, Math.floor(dataMin / step) * step);
+  const hi = Math.min(1, Math.ceil(dataMax / step) * step);
+
+  const ticks: number[] = [];
+  for (let v = lo; v <= hi + step / 2; v += step) {
+    ticks.push(Math.round(v * 100) / 100);
+  }
+  return { domain: [lo, hi], ticks };
+}
