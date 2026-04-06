@@ -250,9 +250,10 @@ interface ProtectedLayoutProps {
   onOpenPromotion: () => void;
   promotionOpen: boolean;
   onPromotionOpenChange: (open: boolean) => void;
+  hasActiveImport: boolean;
 }
 
-function ProtectedLayout({ onOpenPromotion, promotionOpen, onPromotionOpenChange }: ProtectedLayoutProps) {
+function ProtectedLayout({ onOpenPromotion, promotionOpen, onPromotionOpenChange, hasActiveImport }: ProtectedLayoutProps) {
   const { token } = useAuth();
   const { data: profile } = useUserProfile();
   const location = useLocation();
@@ -281,7 +282,7 @@ function ProtectedLayout({ onOpenPromotion, promotionOpen, onPromotionOpenChange
       <MobileBottomBar onMoreClick={() => setMoreOpen(true)} />
       <MobileMoreDrawer open={moreOpen} onOpenChange={setMoreOpen} />
       <InstallPromptBanner />
-      <PromotionModal open={promotionOpen} onOpenChange={onPromotionOpenChange} />
+      <PromotionModal open={promotionOpen} onOpenChange={onPromotionOpenChange} hasActiveImport={hasActiveImport} />
     </>
   );
 }
@@ -361,7 +362,7 @@ function AppRoutes() {
         {/* Google OAuth callback — reads token from URL fragment */}
         <Route path="/auth/callback" element={<OAuthCallbackPage />} />
         {/* Protected layout wraps all authenticated pages */}
-        <Route element={<ProtectedLayout onOpenPromotion={openPromotion} promotionOpen={promotionOpen} onPromotionOpenChange={setPromotionOpen} />}>
+        <Route element={<ProtectedLayout onOpenPromotion={openPromotion} promotionOpen={promotionOpen} onPromotionOpenChange={setPromotionOpen} hasActiveImport={activeJobIds.length > 0} />}>
           <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} onOpenPromotion={openPromotion} />} />
           <Route path="/openings/*" element={<OpeningsPage />} />
           <Route path="/endgames/*" element={<EndgamesPage />} />
