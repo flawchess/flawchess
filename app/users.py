@@ -77,7 +77,7 @@ def get_jwt_strategy() -> JWTStrategy:
     return JWTStrategy(secret=settings.SECRET_KEY, lifetime_seconds=604800)  # 7 days
 
 
-_GUEST_JWT_LIFETIME_SECONDS = 2592000  # 30 days
+_GUEST_JWT_LIFETIME_SECONDS = 31536000  # 365 days
 
 
 def get_guest_jwt_strategy() -> JWTStrategy:

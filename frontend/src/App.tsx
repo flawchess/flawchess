@@ -5,19 +5,18 @@ import { Link } from 'react-router-dom';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { Toaster } from '@/components/ui/sonner';
+import { toast } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon, TrophyIcon } from 'lucide-react';
+import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon, TrophyIcon, EyeOff } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
 
 import { apiClient } from '@/api/client';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
-import { GuestBanner } from '@/components/layout/GuestBanner';
-import { PromotionModal } from '@/components/promotion/PromotionModal';
 import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { AuthPage } from '@/pages/Auth';
@@ -114,7 +113,9 @@ function NavHeader() {
             <Badge
               className="bg-amber-500/15 text-amber-500 border-amber-500/30 text-xs"
               data-testid="nav-guest-badge"
+              aria-label="Guest session"
             >
+              <EyeOff className="h-3 w-3 mr-1" />
               Guest
             </Badge>
           )}
@@ -247,14 +248,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
 
 // ─── Layout (protected pages) ─────────────────────────────────────────────────
 
-interface ProtectedLayoutProps {
-  onOpenPromotion: () => void;
-  promotionOpen: boolean;
-  onPromotionOpenChange: (open: boolean) => void;
-  hasActiveImport: boolean;
-}
-
-function ProtectedLayout({ onOpenPromotion, promotionOpen, onPromotionOpenChange, hasActiveImport }: ProtectedLayoutProps) {
+function ProtectedLayout() {
   const { token, loginWithToken } = useAuth();
   const { data: profile } = useUserProfile();
   const location = useLocation();
@@ -262,6 +256,16 @@ function ProtectedLayout({ onOpenPromotion, promotionOpen, onPromotionOpenChange
   const isOpeningsRoute = location.pathname.startsWith('/openings');
   const isEndgamesRoute = location.pathname.startsWith('/endgames');
   const refreshedRef = useRef(false);
+
+  // Show deferred toast from OAuth callback — checked here because ProtectedLayout
+  // is the stable destination after the redirect chain (callback → / → /openings).
+  useEffect(() => {
+    const msg = sessionStorage.getItem('pending_toast');
+    if (msg) {
+      sessionStorage.removeItem('pending_toast');
+      toast.success(msg);
+    }
+  }, []);
 
   // GUEST-05: Refresh guest JWT on each visit, resetting the 30-day expiry
   useEffect(() => {
@@ -279,13 +283,9 @@ function ProtectedLayout({ onOpenPromotion, promotionOpen, onPromotionOpenChange
   return (
     <>
       <NavHeader />
-      {/* Desktop guest banner — below desktop nav, hidden on mobile */}
-      {profile?.is_guest && <div className="hidden sm:block"><GuestBanner onPromote={onOpenPromotion} /></div>}
       {!isOpeningsRoute && !isEndgamesRoute && (
         <>
           <MobileHeader />
-          {/* Mobile guest banner — below mobile header on standard pages */}
-          {profile?.is_guest && <div className="block sm:hidden"><GuestBanner onPromote={onOpenPromotion} /></div>}
         </>
       )}
       <main className="pb-16 sm:pb-0">
@@ -294,7 +294,6 @@ function ProtectedLayout({ onOpenPromotion, promotionOpen, onPromotionOpenChange
       <MobileBottomBar onMoreClick={() => setMoreOpen(true)} />
       <MobileMoreDrawer open={moreOpen} onOpenChange={setMoreOpen} />
       <InstallPromptBanner />
-      <PromotionModal open={promotionOpen} onOpenChange={onPromotionOpenChange} hasActiveImport={hasActiveImport} />
     </>
   );
 }
@@ -304,11 +303,8 @@ function ProtectedLayout({ onOpenPromotion, promotionOpen, onPromotionOpenChange
 function AppRoutes() {
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
   const [completedJobIds, setCompletedJobIds] = useState<Set<string>>(new Set());
-  const [promotionOpen, setPromotionOpen] = useState(false);
   const queryClient = useQueryClient();
   const { token } = useAuth();
-
-  const openPromotion = useCallback(() => setPromotionOpen(true), []);
 
   // Restore active jobs from server on mount (and after re-login when token changes)
   const hasRestoredRef = useRef(false);
@@ -374,8 +370,8 @@ function AppRoutes() {
         {/* Google OAuth callback — reads token from URL fragment */}
         <Route path="/auth/callback" element={<OAuthCallbackPage />} />
         {/* Protected layout wraps all authenticated pages */}
-        <Route element={<ProtectedLayout onOpenPromotion={openPromotion} promotionOpen={promotionOpen} onPromotionOpenChange={setPromotionOpen} hasActiveImport={activeJobIds.length > 0} />}>
-          <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} onOpenPromotion={openPromotion} />} />
+        <Route element={<ProtectedLayout />}>
+          <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />
           <Route path="/openings/*" element={<OpeningsPage />} />
           <Route path="/endgames/*" element={<EndgamesPage />} />
           <Route path="/rating" element={<Navigate to="/global-stats" replace />} />

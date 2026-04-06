@@ -4,6 +4,8 @@ import { queryClient } from '@/lib/queryClient';
 import { apiClient } from '@/api/client';
 import type { GuestCreateResponse, LoginResponse, UserResponse } from '@/types/api';
 
+const GUEST_TOKEN_KEY = 'guest_token';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AuthState {
@@ -15,6 +17,8 @@ interface AuthState {
   loginAsGuest: () => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Clear auth state without redirect — used when a guest navigates to the register page. */
+  logoutForPromotion: () => void;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -80,8 +84,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginAsGuest = async (): Promise<void> => {
     setIsLoading(true);
     try {
+      // Try to resume a previous guest session before creating a new one.
+      // When a guest logs out, the guest token is kept in localStorage so the
+      // same account (and its imported data) can be reused on next guest login.
+      const savedGuestToken = typeof localStorage !== 'undefined' ? localStorage.getItem(GUEST_TOKEN_KEY) : null;
+      if (savedGuestToken) {
+        try {
+          const refreshRes = await apiClient.post<{ access_token: string }>(
+            '/auth/guest/refresh',
+            null,
+            { headers: { Authorization: `Bearer ${savedGuestToken}` } },
+          );
+          const freshToken = refreshRes.data.access_token;
+          localStorage.setItem(GUEST_TOKEN_KEY, freshToken);
+          loginWithToken(freshToken);
+          return;
+        } catch {
+          // Saved token expired or invalid — fall through to create new guest
+          localStorage.removeItem(GUEST_TOKEN_KEY);
+        }
+      }
       const response = await apiClient.post<GuestCreateResponse>('/auth/guest/create');
       const { access_token } = response.data;
+      localStorage.setItem(GUEST_TOKEN_KEY, access_token);
       loginWithToken(access_token);
     } catch (error) {
       Sentry.captureException(error, { tags: { source: 'guest-login' } });
@@ -93,13 +118,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = (): void => {
     queryClient.clear();
+    // Keep guest_token so the same guest account is reused on next "Use as Guest"
     localStorage.removeItem('auth_token');
     setToken(null);
     setUser(null);
     window.location.href = '/';
   };
 
-  const value: AuthState = { user, token, isLoading, login, loginWithToken, loginAsGuest, register, logout };
+  const logoutForPromotion = useCallback((): void => {
+    queryClient.clear();
+    localStorage.removeItem('auth_token');
+    setToken(null);
+    setUser(null);
+    // No redirect — caller navigates to register page.
+    // guest_token is preserved so RegisterForm can promote the guest account.
+  }, []);
+
+  const value: AuthState = { user, token, isLoading, login, loginWithToken, loginAsGuest, register, logout, logoutForPromotion };
 
   return React.createElement(AuthContext.Provider, { value }, children);
 }
