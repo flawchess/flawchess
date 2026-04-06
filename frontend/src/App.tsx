@@ -7,6 +7,7 @@ import { queryClient } from '@/lib/queryClient';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon, TrophyIcon } from 'lucide-react';
 import {
@@ -14,6 +15,7 @@ import {
 } from '@/components/ui/drawer';
 
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { GuestBanner } from '@/components/layout/GuestBanner';
 import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { AuthPage } from '@/pages/Auth';
@@ -76,6 +78,7 @@ function isActive(to: string, pathname: string): boolean {
 function NavHeader() {
   const location = useLocation();
   const { logout } = useAuth();
+  const { data: profile } = useUserProfile();
 
   return (
     <header className="hidden sm:block bg-background border-b border-border px-6 overflow-hidden">
@@ -104,7 +107,15 @@ function NavHeader() {
             ))}
           </nav>
         </div>
-        <div className="flex items-center">
+        <div className="flex items-center gap-2">
+          {profile?.is_guest && (
+            <Badge
+              className="bg-amber-500/15 text-amber-500 border-amber-500/30 text-xs"
+              data-testid="nav-guest-badge"
+            >
+              Guest
+            </Badge>
+          )}
           <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
             Logout
           </Button>
@@ -195,7 +206,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
       <DrawerContent data-testid="mobile-more-drawer">
         <DrawerHeader>
           <DrawerTitle className="text-sm font-medium text-foreground">
-            {profile?.email ?? 'Account'}
+            {profile?.is_guest ? 'Guest session' : (profile?.email ?? 'Account')}
           </DrawerTitle>
         </DrawerHeader>
         <div className="px-4 pb-4">
@@ -236,6 +247,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
 
 function ProtectedLayout() {
   const { token } = useAuth();
+  const { data: profile } = useUserProfile();
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const isOpeningsRoute = location.pathname.startsWith('/openings');
@@ -247,7 +259,15 @@ function ProtectedLayout() {
   return (
     <>
       <NavHeader />
-      {!isOpeningsRoute && !isEndgamesRoute && <MobileHeader />}
+      {/* Desktop guest banner — below desktop nav, hidden on mobile */}
+      {profile?.is_guest && <div className="hidden sm:block"><GuestBanner /></div>}
+      {!isOpeningsRoute && !isEndgamesRoute && (
+        <>
+          <MobileHeader />
+          {/* Mobile guest banner — below mobile header on standard pages */}
+          {profile?.is_guest && <div className="block sm:hidden"><GuestBanner /></div>}
+        </>
+      )}
       <main className="pb-16 sm:pb-0">
         <Outlet />
       </main>
