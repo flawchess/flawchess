@@ -1,198 +1,254 @@
 # Stack Research
 
-**Domain:** Chess analytics platform — advanced analytics (ELO-adjusted endgame skill, cross-platform rating normalization, opening risk metrics)
-**Researched:** 2026-04-04
-**Confidence:** HIGH for computation approach; MEDIUM for lichess-to-chess.com normalization constants (empirical data varies)
+**Domain:** Guest access / anonymous user with account promotion — adding to existing FastAPI + React SPA
+**Researched:** 2026-04-06
+**Confidence:** HIGH
+
+## Summary
+
+This is subsequent-milestone research. The existing stack (FastAPI 0.115.x, FastAPI-Users 15.0.5, React 19,
+Axios, PostgreSQL/asyncpg) is already in place. The goal is identifying the **minimal additions** needed for:
+
+1. Anonymous guest user creation (cookie-based JWT, no signup form)
+2. Full platform access as guest
+3. Account promotion (email/password or Google SSO) that preserves all imported data
+
+**Bottom line: no new Python or npm packages are required.** Everything needed is already present in
+the existing dependencies. This is a configuration and schema extension problem.
 
 ---
 
 ## Scope Note
 
-This document covers ONLY new capabilities needed for v1.8 (ELO-adjusted endgame skill, opening risk/volatility, statistical refinements).
-
-The base stack (FastAPI, React 19, PostgreSQL, SQLAlchemy async, python-chess, TanStack Query, Recharts, Tailwind, shadcn/ui) is validated and in production.
-
-**Bottom line: no new libraries needed.** All required computation can be done with Python's built-in `statistics` module and SQL aggregations.
+The base stack (FastAPI, React 19, PostgreSQL, SQLAlchemy async, TanStack Query, Tailwind, shadcn/ui) is
+validated in production at v1.7. Only new capabilities for v1.8 Guest Access are documented here.
 
 ---
 
-## Recommended Stack
+## Existing Auth State (Critical Context)
 
-### Core Technologies (No Changes for v1.8)
-
-All v1.8 features are implemented using existing dependencies:
-
-| Technology | Version in Use | Relevant Capability for v1.8 |
-|------------|---------------|------------------------------|
-| Python 3.13 stdlib `statistics` | Built-in | `statistics.mean()`, `statistics.stdev()` for cross-game averages — no new dep |
-| SQLAlchemy 2.x async | >=2.0.0 | `func.avg()`, `func.count()`, `func.sum()` in existing query patterns |
-| PostgreSQL 18 | (Docker, pinned) | `AVG`, `CASE WHEN`, `FILTER` aggregate clauses for normalized rating computation |
-| FastAPI | >=0.115.x | New or extended endpoint on `/api/endgames/performance` |
-| Recharts | ^2.15.4 (frontend) | Existing `EndgameGauge` SVG component already handles any float value 0–100 |
-
-### Supporting Libraries (No Additions)
-
-| Library | Purpose | Notes |
-|---------|---------|-------|
-| Python `statistics` (stdlib) | Average opponent rating, standard deviation for confidence metrics | Already available; do NOT add numpy/scipy — overkill for simple mean computations over hundreds of rows |
-| SQLAlchemy `func.avg()` | Average normalized opponent rating in SQL | Push aggregation to DB, return a single scalar — avoids loading all rows to Python |
-| Recharts (existing) | ELO-adjusted skill timeline chart (single line) | Same `LineChart` pattern used in conv/recov timeline; reuse `EndgameConvRecovChart.tsx` or clone it |
-| `EndgameGauge.tsx` (existing) | Display adjusted_endgame_skill score | Already accepts any `value: number`, `maxValue`, and `zones`; no component changes needed |
+| Component | Current State |
+|-----------|--------------|
+| FastAPI-Users | 15.0.5, `[oauth,sqlalchemy]` extras, maintenance mode (security patches only) |
+| Auth transport | `BearerTransport` only; JWT token stored in `localStorage` |
+| Auth backend | Single `auth_backend` named `"jwt"` with 7-day JWT lifetime |
+| `FastAPIUsers` instance | `FastAPIUsers[User, int](get_user_manager, [auth_backend])` |
+| Frontend auth | `useAuth` context with `localStorage`-backed token, Bearer interceptor on `apiClient` |
+| Google OAuth | Custom callback (`/auth/google/callback`) that issues Bearer JWT and redirects to frontend |
+| CORS (dev) | `allow_credentials=False`, `allow_origins=["http://localhost:5173"]` |
+| Production routing | Caddy: same origin — `flawchess.com` serves both frontend static and `/api/` reverse-proxy |
 
 ---
 
-## ELO Adjustment — Implementation Approach
+## What Changes Are Needed
 
-### Formula (from PROJECT.md backlog item 999.5)
+### Backend
 
-```
-adjusted_endgame_skill = raw_endgame_skill × (avg_normalized_opponent_rating / REFERENCE_RATING)
-```
+#### 1. Second Auth Backend: CookieTransport
 
-Where:
-- `raw_endgame_skill` = existing `0.7 × conversion_pct + 0.3 × recovery_pct`
-- `avg_normalized_opponent_rating` = average chess.com-equivalent opponent rating across filtered endgame conversion/recovery games
-- `REFERENCE_RATING = 1500` (chess.com blitz baseline, fixed)
-
-### Cross-Platform Rating Normalization
-
-The backlog item specifies a tapered offset formula to convert lichess ratings to chess.com-equivalent:
+Add a `cookie_auth_backend` alongside the existing bearer backend. FastAPI-Users evaluates backends
+in registration order — the first to yield a valid user wins. No new library needed; `CookieTransport`
+is already included in `fastapi-users[oauth,sqlalchemy]`.
 
 ```python
-# Lichess → chess.com blitz equivalent
-# offset tapers from ~350 at lichess 1400, reaching 0 at lichess ~2570
-offset = max(0, 350 - (lichess_rating - 1400) * 0.3)
-chesscom_equivalent = lichess_rating - offset
+from fastapi_users.authentication import CookieTransport, AuthenticationBackend, JWTStrategy
+
+cookie_transport = CookieTransport(
+    cookie_name="flawchess_guest",
+    cookie_max_age=2592000,    # 30 days; None would be session-only
+    cookie_httponly=True,      # default — no JS access (XSS protection)
+    cookie_secure=True,        # default — HTTPS only; set False in dev via settings
+    cookie_samesite="lax",     # default — safe for same-origin SPA
+)
+
+# Shared JWT strategy — cookie and bearer can reuse the same signing key and lifetime
+def get_jwt_strategy() -> JWTStrategy:
+    return JWTStrategy(secret=settings.SECRET_KEY, lifetime_seconds=2592000)
+
+cookie_auth_backend = AuthenticationBackend(
+    name="cookie",
+    transport=cookie_transport,
+    get_strategy=get_jwt_strategy,
+)
+
+# Register both — bearer checked first, then cookie
+fastapi_users = FastAPIUsers[User, int](
+    get_user_manager,
+    [bearer_auth_backend, cookie_auth_backend],
+)
 ```
 
-**Empirical verification:** ChessGoals.com cross-platform data (2,489 active players with RD < 150) supports the tapering-offset pattern:
-- At lichess 1030 → chess.com ~500 (offset ≈ 530, but users this low are outside useful range)
-- At lichess 1420 → chess.com ~1000 (offset ≈ 420)
-- At lichess 1780 → chess.com ~1500 (offset ≈ 280)
-- At lichess 2100 → chess.com ~2000 (offset ≈ 100)
+**Why bearer first?** Existing full users always send `Authorization: Bearer ...`. Trying bearer first
+keeps zero overhead for the common case. Guests only have a cookie, so they fall through to cookie check.
 
-The formula specified in the backlog item (`offset = max(0, 350 - (lichess_rating - 1400) × 0.3)`) is a reasonable approximation that tapers as expected. It is intentionally simple — the purpose is directional normalization, not a precise FIDE-style calculation.
+**Why not replace bearer with cookie?** The existing Google OAuth callback issues a Bearer JWT and
+redirects to the frontend via a URL fragment (`#token=...`). Changing the primary transport would break
+this flow and all existing login sessions.
 
-**Why not a linear formula:** The regression formula `C = 1.138 × L - 665` (for blitz) requires a float multiplier and has higher error at the tails. The tapered-offset approach is more interpretable and already agreed upon in the backlog design.
+**SameSite=Lax is sufficient security.** Production is same-origin (Caddy serves both frontend and
+`/api` from `flawchess.com`). Development uses Vite proxy (`/api` → `localhost:8000`) which is also
+same-origin from the browser's view. Cross-site forgery is not a meaningful attack surface here.
+`SameSite=None` is only needed for cross-origin embeds, which this app does not do.
 
-**Confidence: MEDIUM** — empirical cross-platform data supports the direction and approximate magnitude, but the exact tapering constants should be validated against real FlawChess user data once the feature is live.
-
-### Where to Compute Normalization
-
-**In Python service layer, not SQL.** Reason: the normalization formula involves conditional logic (`max(0, ...)`) and the `platform` column is already available per-game. Compute `normalized_opponent_rating` per game row in Python before averaging. This keeps SQL simple and the formula easy to iterate on.
+#### 2. `is_guest` Column on User Model (Alembic migration required)
 
 ```python
-def normalize_opponent_rating(rating: int, platform: str) -> float:
-    """Convert opponent rating to chess.com-equivalent (blitz baseline)."""
-    if platform == "lichess":
-        offset = max(0, 350 - (rating - 1400) * 0.3)
-        return rating - offset
-    return float(rating)  # chess.com already on target scale
+# app/models/user.py
+from sqlalchemy import Boolean
+
+is_guest: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 ```
 
-### What Data Is Already Available
+Keeping guest users in the same `users` table (not a separate table) means **no FK migration on
+promotion** — the guest's `user_id` is preserved through the promotion transaction. All related rows
+(`games`, `game_positions`, `import_jobs`, `position_bookmarks`) automatically belong to the promoted
+user via existing cascade FKs.
 
-The `games` table already stores:
-- `white_rating`, `black_rating` — raw opponent rating in platform's native scale
-- `platform` — "chess.com" or "lichess"
-- `user_color` — needed to derive which rating is the opponent's
+Guest creation happens via a custom endpoint (not the standard `/auth/register`), so no changes to
+`BaseUserCreate` or the FastAPI-Users schema pipeline are needed. The `is_guest` field is set
+programmatically via `user_manager.create()`.
 
-No new columns needed. The endgame entry rows already fetched by `query_endgame_entry_rows()` need to be joined with rating data, or a new variant query returns ratings alongside the existing columns.
+#### 3. Custom Endpoint: `POST /auth/guest`
 
----
-
-## Opening Risk/Volatility — Implementation Approach
-
-### Metric Definition (to be finalized in planning)
-
-The most practical opening risk metric given available data is:
-
-```
-decisiveness = (wins + losses) / total_games  # fraction of decisive games, not draws
-```
-
-This is the user-data equivalent of opening sharpness: a 1. e4 Sicilian line with 80% decisive results is "sharp/risky" vs. a London System at 50% decisive that is "drawish/solid."
-
-**Rationale for this approach over engine-based sharpness:**
-- No local engine installed; per-position eval available for lichess analyzed games only (not all games)
-- User-specific data: measures this player's actual decisive-game rate, not the theoretical sharpness
-- Computable entirely from existing WDL data already computed for openings
-- Matches how humans intuitively think about "is this opening risky for me?"
-
-**Derived metrics** (all computable from existing WDL counts without new columns):
-- `win_rate` = wins / total (already computed)
-- `decisiveness` = (wins + losses) / total (new, but trivial addition to existing aggregation)
-- `volatility` = how much win_rate varies game-to-game (needs rolling std dev — more complex)
-
-**Recommendation:** Start with `decisiveness` (one new computed column in the response, no schema change). Defer volatility/std-dev metrics until decisiveness is validated as useful.
-
-### No New Libraries for Statistical Aggregation
-
-Python's `statistics.stdev()` handles per-opening win-rate standard deviation if needed. SQL `STDDEV_POP` / `STDDEV_SAMP` handles it at the database level. Both are available with zero new dependencies.
-
----
-
-## New Schema Changes
-
-### No New Columns Required for ELO-Adjusted Skill
-
-All data needed is already present:
-- `games.white_rating`, `games.black_rating` — opponent rating
-- `games.platform` — needed for normalization formula
-- `games.user_color` — needed to identify which rating is the opponent's
-- Endgame entry rows (from `query_endgame_entry_rows`) already include `game_id` for joining back to `games`
-
-**Optional: add `avg_normalized_opponent_rating` and `game_count` to `EndgamePerformanceResponse`** — surface this to the frontend for display alongside the adjusted score.
-
-### New Schema Fields on Existing Pydantic Response
+Creates an anonymous user, issues a cookie-transport JWT. Implementation uses
+`user_manager.create()` (already documented in FastAPI-Users cookbook). No new library needed.
 
 ```python
-# EndgamePerformanceResponse additions:
-avg_normalized_opponent_rating: float | None  # None if no games with ratings
-adjusted_endgame_skill: float                 # ELO-adjusted composite, 0-100 scale
+# Pseudocode — full implementation in planning
+import uuid, secrets
+from fastapi import Response
+
+@router.post("/auth/guest")
+async def create_guest(response: Response, user_manager = Depends(get_user_manager)):
+    guest_email = f"guest_{uuid.uuid4().hex}@guest.flawchess.internal"
+    guest_password = secrets.token_urlsafe(32)
+    user = await user_manager.create(UserCreate(
+        email=guest_email,
+        password=guest_password,
+        is_active=True,
+        is_verified=True,    # skip verification; guest has no real email
+        is_guest=True,
+    ))
+    # Write JWT into HttpOnly cookie via cookie_auth_backend
+    token = await cookie_auth_backend.get_strategy().write_token(user)
+    await cookie_transport.get_login_response(token, response)
+    return {"status": "ok"}
 ```
 
-The `endgame_skill` field stays as-is (raw, unadjusted) for continuity; `adjusted_endgame_skill` is the new value displayed in the gauge.
+The generated email is an internal sentinel, never displayed to users.
+
+#### 4. `current_active_user` Dependency — No Change
+
+The existing dependency `fastapi_users.current_user(active=True)` already works with multiple backends.
+When a request arrives without a Bearer token but with the guest cookie, FastAPI-Users falls through
+to the cookie backend and authenticates the guest user. All existing protected endpoints work for
+guests without modification.
+
+For endpoints that need to distinguish guest from full user (e.g., the import page info box):
+
+```python
+current_user_optional = fastapi_users.current_user(active=True, optional=True)
+# Returns User or None — use for public endpoints that adjust behavior based on auth state
+```
+
+#### 5. Custom Endpoint: `POST /auth/promote`
+
+Promotes a guest to a full account. Two sub-flows:
+
+**Email/password promotion:**
+- Validate the guest's cookie JWT to get the current `user_id`
+- Check no account with the target email already exists
+- `UPDATE users SET email=..., hashed_password=..., is_guest=false, is_verified=true WHERE id=...`
+- Issue a new Bearer JWT (so the frontend can transition to bearer-based auth, cleaning up the cookie)
+
+**Google SSO promotion:**
+The existing custom OAuth callback in `app/routers/auth.py` is already fully custom. The promotion
+flow passes the guest identity through the OAuth round-trip by embedding the guest cookie value (or
+a signed reference to the guest `user_id`) in the OAuth `state` JWT. After Google returns:
+1. Decode the `state` JWT to extract the guest `user_id`
+2. Validate the guest cookie matches
+3. Update the guest user with Google email + link the `OAuthAccount` row
+4. Set `is_guest=False`, clear the guest cookie
+
+No new library needed — the existing `generate_jwt` / `decode_jwt` from `fastapi_users.jwt` already
+handles custom state claims (already used in the CSRF token pattern in the current callback).
+
+### Frontend
+
+#### 1. `withCredentials: true` on Axios
+
+To send the HttpOnly guest cookie with API requests:
+
+```typescript
+// frontend/src/api/client.ts
+export const apiClient = axios.create({
+  baseURL: '/api',
+  withCredentials: true,    // ADD THIS — sends cookies on all requests
+  headers: { 'Content-Type': 'application/json' },
+  paramsSerializer: { indexes: null },
+});
+```
+
+This must be at the instance level so all requests (including those that currently use Bearer) also
+send the cookie. When Bearer is present, it takes precedence (bearer backend is checked first).
+When Bearer is absent (guest flow), the cookie is the auth credential.
+
+**CORS consequence:** `withCredentials: true` requires `Access-Control-Allow-Credentials: true`
+from the server. In dev (`ENVIRONMENT=development`), update `CORSMiddleware`:
+
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,    # ADD THIS — required when frontend sends withCredentials: true
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+Production requires no CORS change — same-origin means the browser never issues a CORS preflight.
+
+#### 2. Auth State Extension
+
+The `useAuth` context needs the following additions (no new packages):
+
+| Addition | Purpose |
+|----------|---------|
+| `isGuest: boolean` | Derived from `user.is_guest`; drives UI info box, promotion CTA |
+| `loginAsGuest()` | `POST /api/auth/guest` — no token to store; browser stores HttpOnly cookie automatically |
+| `promote(email, password)` | `POST /api/auth/promote` — transitions guest to full user |
+
+The 401 response interceptor in `apiClient` currently redirects non-auth 401s to `/login`. When
+a guest's cookie expires (after 30 days), the 401 should redirect to home (`/`) not login, since
+the guest may not have credentials. A simple check: if the 401 happens and there is no `auth_token`
+in localStorage, redirect to `/` with a "session expired" query param instead.
+
+#### 3. No New Frontend Packages
+
+| Considered | Verdict | Reason |
+|------------|---------|--------|
+| `js-cookie` | Not needed | Guest cookie is HttpOnly — JS cannot and should not read it |
+| Cookie management library | Not needed | Browser handles HttpOnly cookies transparently |
+| New auth library | Not needed | Existing `useAuth` context extended with two new methods |
 
 ---
 
-## Query Strategy
+## Recommended Stack (New Additions Only)
 
-### Fetching Rating Data Alongside Endgame Entry Rows
+### No New Python Packages
 
-**Option A (recommended): extend `query_endgame_entry_rows` to also return ratings**
+| What | How | Version |
+|------|-----|---------|
+| `CookieTransport` | Already in `fastapi-users[oauth,sqlalchemy]` | 15.0.5 (current) |
+| `is_guest` DB column | `Boolean` mapped column + Alembic migration | SQLAlchemy 2.x (current) |
 
-Add `Game.white_rating`, `Game.black_rating`, `Game.platform`, and `Game.user_color` to the SELECT in the existing query. These are already on the joined `Game` row — no additional join needed. The service layer then:
+### No New npm Packages
 
-1. Computes `normalized_opponent_rating` per row in Python
-2. Averages over the conversion/recovery game subset
-3. Applies the adjustment formula
-
-**Option B: separate query for average normalized rating**
-
-Push the average to SQL using `func.avg()` with a `CASE WHEN platform = 'lichess'` expression. Keeps the service layer simpler but embeds the normalization formula in SQL, making it harder to iterate on.
-
-**Recommendation: Option A.** The normalization logic is already in the service layer and the `query_endgame_entry_rows` result set is already fetched (hundreds of rows maximum per user). No performance concern.
-
----
-
-## Frontend: New Components Needed
-
-### ELO-Adjusted Skill Gauge
-
-**No new component.** The existing `EndgameGauge.tsx` already accepts:
-- `value: number` — display `adjusted_endgame_skill`
-- `maxValue?: number` — default 100 works
-- `label: string` — "Endgame Skill (Adj.)" or similar
-- `zones?: GaugeZone[]` — reuse `DEFAULT_GAUGE_ZONES` from `theme.ts`
-
-The gauge already renders correctly for any float in [0, 100]. Swap the displayed value from `endgame_skill` to `adjusted_endgame_skill` when the API returns it.
-
-### Endgame Skill Timeline Chart
-
-**Reuse existing pattern.** The `EndgameConvRecovChart.tsx` renders a rolling-window LineChart from `ConvRecovTimelineResponse`. A new `EndgameSkillTimelineChart.tsx` component follows the same pattern but takes a simpler `{ date, value, game_count, window_size }[]` series.
-
-No new charting library. Recharts `LineChart` + `Line` + `XAxis` + `YAxis` + `Tooltip` — all already imported elsewhere in the frontend.
+| What | How |
+|------|-----|
+| `withCredentials: true` | Axios config flag on existing instance |
+| Guest login flow | New method in existing `useAuth` context |
+| Promotion flow | New method in existing `useAuth` context |
 
 ---
 
@@ -200,50 +256,55 @@ No new charting library. Recharts `LineChart` + `Line` + `XAxis` + `YAxis` + `To
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| `numpy` / `scipy` | Heavy ML-oriented dependencies for computing a simple mean across <1000 rows per user — massive overkill | Python `statistics.mean()` (stdlib) or `sum(vals) / len(vals)` |
-| `statsmodels` | Even heavier; designed for regression/hypothesis testing, not plain average computation | Same — stdlib `statistics` |
-| External rating API (chess-elo-converter, etc.) | External dep for what is a 2-line formula; network call adds latency and failure mode | Inline normalization function per formula in PROJECT.md backlog item |
-| Server-side Elo performance rating | Defined differently than what's needed (requires game-by-game opponent rating AND result pairing, and has well-known baseline failure for material-up situations) | Tapering-offset normalization as specified |
-| New Recharts chart type | All needed chart types (LineChart, RadialBarChart) already in use | Reuse existing EndgameConvRecovChart pattern |
-| Adding `game_phase` or `endgame_class` derived columns to `games` table | Already encoded at position level in `game_positions`; duplicating to `games` creates redundancy | Query via existing endgame_repository patterns |
-| SQL `STDDEV_POP` for rolling std dev | Rolling std dev over game history is complex in pure SQL; easier as Python post-processing | Python list comprehension over chronological rows, same pattern as `_compute_rolling_series` |
+| Separate `GuestSession` table | Requires FK re-pointing on promotion; doubles schema; no advantage | `is_guest` bool on existing `User` table |
+| `js-cookie` or any cookie library | Guest cookie is HttpOnly — JS cannot access it; cookie management is unnecessary | Let browser handle cookie transparently |
+| Redis / session store | JWT is stateless; no server-side session needed | JWTStrategy (already in stack) |
+| `starlette-csrf` or CSRF tokens | Unnecessary: SameSite=Lax on same-origin app is sufficient protection | SameSite=Lax (CookieTransport default) |
+| `SameSite=None; Secure` cookies | Only needed for cross-origin embeds; adds complexity | `SameSite=Lax` — correct for this app's same-origin architecture |
+| Separate Bearer JWT for guest (stored in localStorage) | Defeats XSS-protection purpose of HttpOnly | HttpOnly cookie via CookieTransport |
+| Celery or background jobs | Promotion is a synchronous DB update; no async work needed | Inline SQLAlchemy update in promote endpoint |
+| New user verification flow for guests | Guests have no real email; `is_verified=True` set at creation | Skip verification; set `is_verified=True` at guest creation |
+| `itsdangerous` or custom signed cookies | Signing is already handled by JWTStrategy | JWTStrategy with existing `SECRET_KEY` |
 
 ---
 
 ## Alternatives Considered
 
-| Recommended | Alternative | Why Not |
-|-------------|-------------|---------|
-| Tapered-offset normalization formula | Linear regression `C = 1.138 × L - 665` | Extrapolates poorly at low/high ratings; less interpretable; harder to explain to users |
-| Python-layer normalization per row | SQL `CASE WHEN platform = 'lichess' THEN ...` computed column | Business logic belongs in Python, not SQL; formula is likely to be iterated on |
-| Extend `EndgamePerformanceResponse` with `adjusted_endgame_skill` | New `/api/endgames/adjusted-skill` endpoint | One additional field on existing endpoint is simpler; same data lifecycle |
-| `decisiveness = (wins + losses) / total` for opening risk | Engine-based WDL sharpness metric | Requires per-position engine eval (not available for chess.com; sparse for lichess); user's actual decisive-game rate is more actionable |
-| Reuse `EndgameGauge.tsx` for adjusted score | New gauge component | Existing component is parameterized; value/label/zones all configurable without code duplication |
+| Decision | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| Cookie transport | `CookieTransport` (fastapi-users built-in) | Custom middleware, session-based | CookieTransport integrates with existing UserManager pipeline; no new primitives |
+| Guest identity storage | `is_guest` bool on `User` table | Separate `GuestSession` table | Same table = no FK migration on promotion; simpler queries everywhere |
+| Data migration on promotion | None (same `user_id` preserved) | Copy rows to new user, delete old | Re-pointing all FKs across `games`, `game_positions`, `position_bookmarks`, `import_jobs` is error-prone and expensive |
+| Google SSO promotion | `guest_user_id` embedded in OAuth `state` JWT | Separate post-SSO merge endpoint | State JWT approach avoids second round-trip; consistent with existing CSRF state pattern in `google_callback` |
+| Guest sentinel email | `guest_{uuid}@guest.flawchess.internal` | NULL email | FastAPI-Users enforces non-null unique email; internal domain sentinel is invisible to users |
+| 401 redirect for expired guest | Redirect to `/` | Redirect to `/login` | Guests have no credentials; `/login` is misleading; home page re-offers "Use as Guest" |
 
 ---
 
 ## Version Compatibility
 
-| Package | Constraint | Notes |
-|---------|------------|-------|
-| Python `statistics` | 3.4+ (built-in) | `mean()`, `stdev()`, `pstdev()` all stable; no version concerns |
-| SQLAlchemy | >=2.0.0 | `func.avg()` unchanged since 1.x; no compatibility issues |
-| Recharts | ^2.15.4 | `LineChart`, `Line` components stable; no new API surface needed |
-| PostgreSQL | 18 | `AVG()`, `CASE WHEN`, `FILTER` are standard SQL; all available since PG 9.4+ |
+| Package | Version | Notes |
+|---------|---------|-------|
+| `fastapi-users` | 15.0.5 (latest, 2026-04-06) | Maintenance mode — security patches only, no new features. `CookieTransport` stable since v10. Multiple backends supported since v10. |
+| `CookieTransport` defaults | Any version >= 10 | `cookie_httponly=True`, `cookie_secure=True`, `cookie_samesite="lax"` — production-safe defaults |
+| Multiple auth backends | Any version >= 10 | `FastAPIUsers(get_user_manager, [backend1, backend2])` — documented, stable API |
+| `fastapi_users.current_user(optional=True)` | Any version >= 10 | Returns `None` instead of 401 for unauthenticated requests |
+| `axios` | 1.13.6 (already installed) | `withCredentials` supported since v0.x — stable flag |
+| `fastapi` CORSMiddleware | 0.115.x (current) | `allow_credentials=True` required when `withCredentials: true` — stable since Starlette 0.12 |
 
 ---
 
 ## Sources
 
-- [ChessGoals.com Rating Comparison](https://chessgoals.com/rating-comparison/) — empirical cross-platform rating data (2,489 players, RD < 150), tapering offset pattern confirmed — MEDIUM confidence (community data, recent July 2025 update)
-- [NoseKnowsAll Universal Rating Converter 2024](https://lichess.org/@/NoseKnowsAll/blog/introducing-a-universal-rating-converter-for-2024/X2QAH27t) — classical/rapid only; blitz excluded from universal converter — HIGH confidence (lichess official blog)
-- [lichess forum: rating conversion formulae](https://lichess.org/forum/general-chess-discussion/rating-conversion-formulae-lichessorg--chesscom) — empirical linear regression formulas per time control — MEDIUM confidence (community, methodology unclear)
-- [Python `statistics` module docs](https://docs.python.org/3/library/statistics.html) — stdlib `mean()`, `stdev()` available in Python 3.4+ — HIGH confidence (official)
-- [shadcn/ui Radial Charts](https://ui.shadcn.com/charts/radial) — Recharts `RadialBarChart` gauge pattern via shadcn — HIGH confidence (official)
-- [jk_182: Quantifying Volatility of Chess Games](https://lichess.org/@/jk_182/blog/quantifying-volatility-of-chess-games/H6MWvX98) — volatility metrics based on WDL and eval swings — MEDIUM confidence (community research)
-- PROJECT.md backlog item 999.5 — normalization formula and adjustment design already decided — HIGH confidence (authoritative project decision)
+- [FastAPI-Users CookieTransport docs](https://fastapi-users.github.io/fastapi-users/latest/configuration/authentication/transports/cookie/) — verified parameters and defaults (`httponly=True`, `secure=True`, `samesite="lax"`) — HIGH confidence
+- [FastAPI-Users current user docs](https://fastapi-users.github.io/fastapi-users/latest/usage/current-user/) — verified `optional=True` parameter, multiple backend evaluation order — HIGH confidence
+- [FastAPI-Users multiple backends discussion](https://github.com/fastapi-users/fastapi-users/discussions/989) — confirmed two backends on same `FastAPIUsers` instance, sequential evaluation — MEDIUM confidence (community discussion, matches documented API)
+- [FastAPI-Users create user programmatically](https://fastapi-users.github.io/fastapi-users/latest/cookbook/create-user-programmatically/) — verified `user_manager.create()` pattern — HIGH confidence
+- [fastapi-users PyPI](https://pypi.org/project/fastapi-users/) — verified 15.0.5 as current version, Python 3.10–3.14 support — HIGH confidence
+- [MDN Set-Cookie / SameSite](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie) — verified SameSite=Lax behavior for same-origin requests — HIGH confidence
+- Existing codebase (`app/users.py`, `app/routers/auth.py`, `app/main.py`, `frontend/src/api/client.ts`, `frontend/src/hooks/useAuth.ts`) — current auth state verified by direct inspection — HIGH confidence
 
 ---
 
-*Stack research for: FlawChess v1.8 — advanced analytics (ELO-adjusted endgame skill, opening risk)*
-*Researched: 2026-04-04*
+*Stack research for: FlawChess v1.8 Guest Access*
+*Researched: 2026-04-06*
