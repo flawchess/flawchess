@@ -118,7 +118,7 @@ class TestPromoteGuestWithGoogle:
 
         result = await db_session.execute(
             select(OAuthAccount).where(
-                OAuthAccount.user_id == updated_user.id  # ty: ignore[invalid-argument-type]  # SQLAlchemy column comparison
+                OAuthAccount.user_id == updated_user.id  # SQLAlchemy column comparison
             )
         )
         oauth_row = result.scalar_one_or_none()
@@ -320,6 +320,16 @@ class TestCallbackPromote:
         }
         return generate_jwt(state_data, settings.SECRET_KEY, lifetime_seconds=600)
 
+    def _decode_user_id_from_token(self, token: str) -> int:
+        """Decode the user ID (sub claim) from a FastAPI-Users JWT."""
+        import base64
+        import json
+
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (-len(payload_b64) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload_b64))
+        return int(claims["sub"])
+
     @pytest.mark.asyncio
     async def test_callback_promote_with_mocked_google(self):
         """Callback with valid state+code promotes the guest and redirects with token&promoted=1."""
@@ -337,13 +347,8 @@ class TestCallbackPromote:
             assert guest_resp.status_code == 201
             guest_token = guest_resp.json()["access_token"]
 
-            # Get guest user_id from profile
-            profile_resp = await client.get(
-                "/api/users/me/profile",
-                headers={"Authorization": f"Bearer {guest_token}"},
-            )
-            assert profile_resp.status_code == 200
-            guest_user_id = profile_resp.json()["id"]
+            # Extract guest user_id from JWT sub claim
+            guest_user_id = self._decode_user_id_from_token(guest_token)
 
             # Build state JWT with guest_user_id embedded
             state = self._make_valid_state_jwt(guest_user_id, csrf_token)
@@ -402,12 +407,7 @@ class TestCallbackPromote:
             assert guest_resp.status_code == 201
             guest_token = guest_resp.json()["access_token"]
 
-            profile_resp = await client.get(
-                "/api/users/me/profile",
-                headers={"Authorization": f"Bearer {guest_token}"},
-            )
-            guest_user_id = profile_resp.json()["id"]
-
+            guest_user_id = self._decode_user_id_from_token(guest_token)
             state = self._make_valid_state_jwt(guest_user_id, csrf_token)
 
             fake_token_resp = make_fake_token_response(
@@ -443,11 +443,7 @@ class TestCallbackPromote:
             # Create a guest user for a valid guest_user_id
             guest_resp = await client.post("/api/auth/guest/create")
             guest_token = guest_resp.json()["access_token"]
-            profile_resp = await client.get(
-                "/api/users/me/profile",
-                headers={"Authorization": f"Bearer {guest_token}"},
-            )
-            guest_user_id = profile_resp.json()["id"]
+            guest_user_id = self._decode_user_id_from_token(guest_token)
 
             # State JWT has csrf_in_state but cookie has csrf_in_cookie
             state = self._make_valid_state_jwt(guest_user_id, csrf_in_state)
@@ -476,11 +472,7 @@ class TestCallbackPromote:
         ) as client:
             guest_resp = await client.post("/api/auth/guest/create")
             guest_token = guest_resp.json()["access_token"]
-            profile_resp = await client.get(
-                "/api/users/me/profile",
-                headers={"Authorization": f"Bearer {guest_token}"},
-            )
-            guest_user_id = profile_resp.json()["id"]
+            guest_user_id = self._decode_user_id_from_token(guest_token)
 
             # Build a state JWT with the WRONG audience (regular oauth-state, not promote)
             wrong_state_data = {

@@ -58,6 +58,9 @@ _CALLBACK_ROUTE_NAME = "google-oauth-callback"
 _OAUTH_STATE_AUDIENCE = "fastapi-users:oauth-state"
 _CSRF_COOKIE = "flawchess_oauth_csrf"
 
+_PROMOTE_CALLBACK_ROUTE_NAME = "google-oauth-promote-callback"
+_OAUTH_PROMOTE_STATE_AUDIENCE = "fastapi-users:oauth-promote-state"
+
 
 @router.get("/auth/google/available", tags=["auth"], response_model=GoogleOAuthAvailableResponse)
 async def google_oauth_available() -> GoogleOAuthAvailableResponse:
@@ -240,6 +243,168 @@ async def refresh_guest_token(
         )
     token = await guest_service.refresh_guest_token(user)
     return GuestRefreshResponse(access_token=token, token_type="bearer")
+
+
+@router.get("/auth/google/authorize-promote", tags=["auth"], response_model=GoogleOAuthAuthorizeResponse)
+async def google_authorize_promote(
+    response: Response,
+    user: Annotated[User, Depends(current_active_user)],
+) -> GoogleOAuthAuthorizeResponse:
+    """Return the Google OAuth authorization URL for a guest user to promote their account.
+
+    Only accessible by authenticated guest users. Embeds the guest's user ID and a CSRF
+    token in a signed state JWT so the callback can recover the guest identity after the
+    browser redirect round-trip (during which the Authorization header is not sent).
+    """
+    if not user.is_guest:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a guest user")
+
+    csrf_token = secrets.token_urlsafe(32)
+    state_data = {
+        "csrftoken": csrf_token,
+        "guest_user_id": user.id,
+        "aud": _OAUTH_PROMOTE_STATE_AUDIENCE,
+    }
+    state = generate_jwt(state_data, settings.SECRET_KEY, lifetime_seconds=600)
+
+    # Set CSRF cookie — double-submit cookie pattern (same as regular authorize endpoint)
+    response.set_cookie(
+        _CSRF_COOKIE,
+        csrf_token,
+        max_age=600,
+        httponly=True,
+        secure=settings.ENVIRONMENT != "development",
+        samesite="lax",
+    )
+
+    redirect_url = f"{settings.BACKEND_URL}/api/auth/google/callback-promote"
+    authorization_url = await google_oauth_client.get_authorization_url(
+        redirect_url,
+        state,
+        scope=["openid", "email", "profile"],
+    )
+    return GoogleOAuthAuthorizeResponse(authorization_url=authorization_url)
+
+
+@router.get("/auth/google/callback-promote", name=_PROMOTE_CALLBACK_ROUTE_NAME, tags=["auth"])
+async def google_callback_promote(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    """Handle Google OAuth callback for guest promotion.
+
+    NOT protected by current_active_user — the browser redirect has no Authorization header.
+    Guest identity is recovered from the state JWT's guest_user_id field.
+
+    Promotes the guest user in-place (same user ID), inserts an OAuthAccount row,
+    issues a standard 7-day JWT, and redirects to FRONTEND_URL/auth/callback with
+    token and promoted=1 in the fragment. On email collision, redirects with
+    error=EMAIL_ALREADY_REGISTERED.
+    """
+    if error is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"OAuth error: {error}")
+
+    if code is None or state is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code or state")
+
+    # Validate state JWT with the promote-specific audience — prevents replay of regular
+    # login state JWTs against this callback (and vice versa).
+    try:
+        state_data = decode_jwt(state, settings.SECRET_KEY, [_OAUTH_PROMOTE_STATE_AUDIENCE])
+    except Exception:
+        sentry_sdk.set_tag("source", "auth")
+        sentry_sdk.capture_exception()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state")
+
+    # Validate CSRF double-submit cookie
+    cookie_csrf = request.cookies.get(_CSRF_COOKIE)
+    state_csrf = state_data.get("csrftoken")
+    if not cookie_csrf or not state_csrf or not secrets.compare_digest(cookie_csrf, state_csrf):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid CSRF token",
+        )
+
+    # Extract and validate guest_user_id from state JWT
+    guest_user_id = state_data.get("guest_user_id")
+    if guest_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing guest_user_id in state",
+        )
+
+    guest_user = await session.get(User, guest_user_id)
+    if guest_user is None or not guest_user.is_guest:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid guest user",
+        )
+
+    # Exchange authorization code for tokens using the promote-specific redirect URI
+    redirect_url = f"{settings.BACKEND_URL}/api/auth/google/callback-promote"
+    token = await google_oauth_client.get_access_token(code, redirect_url)
+
+    # Decode id_token to extract Google account_id (sub) and email
+    # (same pattern as existing /auth/google/callback — no signature verify needed,
+    # token was received over TLS from Google)
+    id_token = token.get("id_token")
+    if not id_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No id_token in Google response",
+        )
+
+    import base64
+
+    payload_b64 = id_token.split(".")[1]
+    payload_b64 += "=" * (-len(payload_b64) % 4)
+    id_claims = json.loads(base64.urlsafe_b64decode(payload_b64))
+    account_id = id_claims["sub"]
+    account_email = id_claims.get("email")
+
+    if account_email is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No email returned from Google",
+        )
+
+    try:
+        _updated_user, jwt_token = await guest_service.promote_guest_with_google(
+            session,
+            guest_user,
+            account_id=account_id,
+            account_email=account_email,
+            access_token=token["access_token"],
+            expires_at=token.get("expires_at"),
+            refresh_token=token.get("refresh_token"),
+        )
+    except UserAlreadyExists:
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL}/auth/callback#error=EMAIL_ALREADY_REGISTERED",
+            status_code=status.HTTP_302_FOUND,
+        )
+    except Exception:
+        sentry_sdk.set_tag("source", "auth")
+        sentry_sdk.capture_exception()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Promotion failed",
+        )
+
+    # Update last_login on the same session (promotion already committed it)
+    await session.execute(
+        sa_update(User).where(User.id == _updated_user.id).values(last_login=func.now())
+    )
+    await session.commit()
+
+    # Redirect to frontend with token and promoted flag in fragment
+    return RedirectResponse(
+        url=f"{settings.FRONTEND_URL}/auth/callback#token={jwt_token}&promoted=1",
+        status_code=status.HTTP_302_FOUND,
+    )
 
 
 @router.post("/auth/guest/promote/email", tags=["auth"], response_model=GuestPromoteResponse)
