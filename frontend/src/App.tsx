@@ -80,6 +80,7 @@ function NavHeader() {
   const location = useLocation();
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
+  const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
 
   return (
     <header className="hidden sm:block bg-background border-b border-border px-6 overflow-hidden">
@@ -96,7 +97,7 @@ function NavHeader() {
                 to={to}
                 data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
                 className={cn(
-                  'flex items-center gap-1.5 px-3 text-sm transition-colors',
+                  'relative flex items-center gap-1.5 px-3 text-sm transition-colors',
                   isActive(to, location.pathname)
                     ? 'font-medium bg-white/10 text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
@@ -104,6 +105,15 @@ function NavHeader() {
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
                 {label}
+                {to === '/import' && noGames && (
+                  <span
+                    className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                    data-testid="import-notification-dot"
+                  >
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                  </span>
+                )}
               </Link>
             ))}
           </nav>
@@ -163,6 +173,8 @@ function MobileHeader() {
 
 function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
   const location = useLocation();
+  const { data: profile } = useUserProfile();
+  const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
 
   return (
     <nav
@@ -176,12 +188,21 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
           to={to}
           data-testid={`mobile-nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
           className={cn(
-            'flex flex-1 flex-col items-center gap-1 py-2',
+            'relative flex flex-1 flex-col items-center gap-1 py-2',
             isActive(to, location.pathname) ? 'text-primary' : 'text-muted-foreground',
           )}
         >
           <Icon className="h-5 w-5" aria-hidden="true" />
           <span className="text-xs">{label}</span>
+          {to === '/import' && noGames && (
+            <span
+              className="absolute top-1.5 right-[30%] flex h-2 w-2"
+              data-testid="import-notification-dot-mobile"
+            >
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+            </span>
+          )}
         </Link>
       ))}
       <button

@@ -9,6 +9,7 @@ function setChartEnabledStorage(bookmarkId: number, enabled: boolean): void {
   localStorage.setItem(`bookmark-chart-enabled-${bookmarkId}`, String(enabled));
 }
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
 import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, SlidersHorizontal, BookMarked, X } from 'lucide-react';
@@ -66,6 +67,8 @@ const PAGE_SIZE = 20;
 export function OpeningsPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { data: profile } = useUserProfile();
+  const hasGames = (profile?.chess_com_game_count ?? 0) + (profile?.lichess_game_count ?? 0) > 0;
 
   const needsRedirect = location.pathname === '/openings' || location.pathname === '/openings/';
   // Redirect old /openings/compare and /openings/statistics URLs to /openings/stats after tab rename
@@ -264,7 +267,6 @@ export function OpeningsPage() {
     try {
       await createBookmark.mutateAsync(data);
       setBookmarkDialogOpen(false);
-      toast.success('Opening bookmarked');
     } catch {
       toast.error('Failed to save bookmark');
     }
@@ -448,9 +450,9 @@ export function OpeningsPage() {
           <TabsTrigger value="bookmarks" data-testid="sidebar-tab-bookmarks" className="flex-1 relative">
             <BookMarked className="mr-1.5 h-4 w-4" />
             Bookmarks
-            {bookmarks.length === 0 && (
+            {bookmarks.length === 0 && hasGames && (
               <span
-                className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5"
+                className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                 data-testid="bookmarks-notification-dot"
               >
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
@@ -934,9 +936,9 @@ export function OpeningsPage() {
                       aria-label="Open bookmarks"
                     >
                       <BookMarked className="h-4 w-4" />
-                      {bookmarks.length === 0 && (
+                      {bookmarks.length === 0 && hasGames && (
                         <span
-                          className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5"
+                          className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                           data-testid="bookmarks-notification-dot-mobile"
                         >
                           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />

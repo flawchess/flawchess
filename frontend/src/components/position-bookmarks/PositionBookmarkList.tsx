@@ -67,7 +67,7 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad, chartEnable
           <div className="flex items-start gap-2">
             <Save className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
             <p>
-              Or navigate to a position on the board and click <strong className="text-foreground">Save</strong> to bookmark it manually.
+              Or move some pieces on the chess board and click <strong className="text-foreground">Save</strong> to bookmark it manually.
             </p>
           </div>
         </div>
