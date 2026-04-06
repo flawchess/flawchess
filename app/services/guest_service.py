@@ -11,8 +11,10 @@ from fastapi_users.exceptions import UserAlreadyExists
 from fastapi_users.password import PasswordHelper
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.oauth_account import OAuthAccount
 from app.models.user import User
 from app.users import auth_backend, get_guest_jwt_strategy
 
@@ -106,6 +108,79 @@ async def promote_guest_with_password(
     # session.get returns User | None, but we just committed the update so the user exists
     updated = await session.get(User, user.id)
     assert updated is not None, f"User {user.id} not found after promotion commit"
+
+    # Issue a standard 7-day JWT (not the guest 30-day strategy)
+    strategy = auth_backend.get_strategy()
+    token: str = await strategy.write_token(updated)  # ty: ignore[unresolved-attribute]  # FastAPI-Users generic typing not resolved by ty beta
+
+    return updated, token
+
+
+async def promote_guest_with_google(
+    session: AsyncSession,
+    user: User,
+    account_id: str,
+    account_email: str,
+    access_token: str,
+    expires_at: int | None,
+    refresh_token: str | None,
+) -> tuple[User, str]:
+    """Promote a guest account to a Google-linked full account in-place.
+
+    Updates the user row: sets is_guest=False, is_verified=True, stores the Google
+    email, and clears hashed_password (Google users authenticate via OAuth only).
+    Inserts an OAuthAccount row linking the Google account to this user's ID.
+    Issues a standard 7-day JWT via auth_backend.
+
+    Raises:
+        ValueError: if the user is not a guest
+        UserAlreadyExists: if account_email is already registered by another user
+    """
+    if not user.is_guest:
+        raise ValueError("Not a guest user")
+
+    # Check email uniqueness before updating — prevent silent account merge
+    result = await session.execute(
+        select(User).where(User.email == account_email)  # ty: ignore[invalid-argument-type]  # SQLAlchemy column comparisons return ColumnElement, not bool
+    )
+    existing = result.unique().scalar_one_or_none()
+    if existing is not None and existing.id != user.id:
+        raise UserAlreadyExists()
+
+    await session.execute(
+        sa_update(User)
+        .where(User.id == user.id)
+        .values(
+            email=account_email,
+            hashed_password="",  # Google users have no password
+            is_guest=False,
+            is_verified=True,
+        )
+    )
+
+    # Link Google OAuthAccount to this user's row
+    # Wrap in try/except IntegrityError to handle double-submit race condition:
+    # if two promotion requests race, the second INSERT may violate an index;
+    # treat it as idempotent since the user row is already promoted.
+    oauth_account = OAuthAccount(
+        oauth_name="google",
+        access_token=access_token,
+        expires_at=expires_at,
+        refresh_token=refresh_token,
+        account_id=account_id,
+        account_email=account_email,
+        user_id=user.id,
+    )
+    session.add(oauth_account)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        # Row already exists from a concurrent request — promotion is idempotent
+
+    # Re-fetch the updated user so callers see current field values
+    updated = await session.get(User, user.id)
+    assert updated is not None, f"User {user.id} not found after Google promotion commit"
 
     # Issue a standard 7-day JWT (not the guest 30-day strategy)
     strategy = auth_backend.get_strategy()
