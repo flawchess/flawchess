@@ -55,5 +55,11 @@ Current focus: Planning next milestone (v1.9 Advanced Analytics)
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260406-rzt | Guide new users post-import: success CTA, pulsing bookmark dot, improved empty state | 2026-04-06 | 4dbdea0 | [260406-rzt-guide-new-users-post-import-success-cta-](./quick/260406-rzt-guide-new-users-post-import-success-cta-/) |
+
 ---
-Last activity: 2026-04-06 — v1.8 milestone archived and tagged
+Last activity: 2026-04-06 - Completed quick task 260406-rzt: Guide new users post-import: success CTA linking to Openings, pulsing dot on Bookmarks tab, improved bookmarks empty state hint
