@@ -95,7 +95,7 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
       <LineChart data={data}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="date" tickFormatter={formatDateTick} />
-        <YAxis domain={[0, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
+        <YAxis domain={[(min: number) => Math.max(0, Math.floor(min * 20) / 20), (max: number) => Math.min(1, Math.ceil(max * 20) / 20)]} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
         <ChartTooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
