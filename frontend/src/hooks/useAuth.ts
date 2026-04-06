@@ -25,7 +25,8 @@ const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(
-    () => localStorage.getItem('auth_token'),
+    // Guard against SSR/prerender environments where localStorage is unavailable
+    () => (typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null),
   );
   const [user, setUser] = useState<UserResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
