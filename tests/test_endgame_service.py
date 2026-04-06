@@ -285,63 +285,67 @@ class TestComputeRollingSeries:
         """Empty rows produce empty series."""
         assert _compute_rolling_series([], window=10) == []
 
-    def test_single_game_win(self):
-        """Single win game: win_rate=1.0, game_count=1, window_size matches."""
+    def test_few_games_filtered_by_min_threshold(self):
+        """Games below MIN_GAMES_FOR_TIMELINE produce no data points."""
         rows = [_row("1-0", "white", 0)]
         result = _compute_rolling_series(rows, window=10)
-        assert len(result) == 1
-        assert result[0]["win_rate"] == 1.0
-        assert result[0]["game_count"] == 1
-        assert result[0]["window_size"] == 10
+        assert len(result) == 0
 
-    def test_window_5_with_3_games(self):
-        """Fewer games than window: partial window with all games counted."""
-        rows = [
-            _row("1-0", "white", 0),   # W
-            _row("0-1", "white", 1),   # L
-            _row("1-0", "white", 2),   # W
-        ]
-        result = _compute_rolling_series(rows, window=5)
-        assert result[-1]["game_count"] == 3  # partial window
-        assert abs(result[-1]["win_rate"] - 2 / 3) < 1e-4
+    def test_threshold_game_emits_first_point(self):
+        """Exactly MIN_GAMES_FOR_TIMELINE games produce one data point."""
+        from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+        n = MIN_GAMES_FOR_TIMELINE
+        rows = [_row("1-0", "white", i) for i in range(n)]
+        result = _compute_rolling_series(rows, window=50)
+        assert len(result) == 1
+        assert result[0]["game_count"] == n
+        assert result[0]["win_rate"] == 1.0
 
     def test_rolling_drops_old_games(self):
-        """With window=3 and 5 games [W,L,W,W,L], last point win_rate = 2/3."""
-        rows = [
-            _row("1-0", "white", 0),   # W
-            _row("0-1", "white", 1),   # L
-            _row("1-0", "white", 2),   # W
-            _row("1-0", "white", 3),   # W
-            _row("0-1", "white", 4),   # L
-        ]
-        result = _compute_rolling_series(rows, window=3)
-        # Last window: [W, W, L] → 2/3
-        assert len(result) == 5
-        assert abs(result[-1]["win_rate"] - 2 / 3) < 1e-4
-        assert result[-1]["game_count"] == 3
+        """Window fills up and oldest games drop off, changing win rate."""
+        from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+        n = MIN_GAMES_FOR_TIMELINE
+        # n wins followed by n losses = 2n games with window=n
+        # At game n: window is all wins → 100%
+        # At game 2n: window is all losses → 0%
+        rows = [_row("1-0", "white", i) for i in range(n)]
+        rows += [_row("0-1", "white", n + i) for i in range(n)]
+        result = _compute_rolling_series(rows, window=n)
+        # First emitted point (game n): all wins
+        assert result[0]["win_rate"] == 1.0
+        assert result[0]["game_count"] == n
+        # Last point (game 2n): all losses, old wins dropped
+        assert result[-1]["win_rate"] == 0.0
+        assert result[-1]["game_count"] == n
 
     def test_date_formatting(self):
         """Date field is formatted as YYYY-MM-DD string."""
-        rows = [_row("1-0", "white", 0)]
-        result = _compute_rolling_series(rows, window=10)
-        assert result[0]["date"] == "2024-01-01"
+        from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+        n = MIN_GAMES_FOR_TIMELINE
+        rows = [_row("1-0", "white", i) for i in range(n)]
+        result = _compute_rolling_series(rows, window=50)
+        # Last date: 2024-01-01 + (n-1) days
+        expected = (datetime.datetime(2024, 1, 1) + datetime.timedelta(days=n - 1)).strftime("%Y-%m-%d")
+        assert result[-1]["date"] == expected
 
     def test_draw_does_not_count_as_win(self):
         """Draw games do not count toward win_rate."""
-        rows = [
-            _row("1/2-1/2", "white", 0),  # draw
-            _row("1/2-1/2", "white", 1),  # draw
-        ]
-        result = _compute_rolling_series(rows, window=10)
+        from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+        n = MIN_GAMES_FOR_TIMELINE
+        rows = [_row("1/2-1/2", "white", i) for i in range(n)]
+        result = _compute_rolling_series(rows, window=50)
         assert result[-1]["win_rate"] == 0.0
 
     def test_black_win_counted_correctly(self):
         """Black player winning (0-1) should be a win for black."""
-        rows = [
-            _row("0-1", "black", 0),   # black wins
-            _row("1-0", "black", 1),   # black loses
-        ]
-        result = _compute_rolling_series(rows, window=10)
+        from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+        n = MIN_GAMES_FOR_TIMELINE
+        # Alternating black wins and losses
+        rows = []
+        for i in range(n):
+            result_str = "0-1" if i % 2 == 0 else "1-0"
+            rows.append(_row(result_str, "black", i))
+        result = _compute_rolling_series(rows, window=50)
         assert abs(result[-1]["win_rate"] - 0.5) < 1e-4
 
 
@@ -592,34 +596,33 @@ class TestGetEndgameTimeline:
 
     @pytest.mark.asyncio
     async def test_rolling_window_with_known_sequence(self):
-        """With window=3 and 5 endgame games [W,L,W,W,L], last point win_rate = 2/3."""
-        endgame_rows = [
-            _row("1-0", "white", 0),   # W
-            _row("0-1", "white", 1),   # L
-            _row("1-0", "white", 2),   # W
-            _row("1-0", "white", 3),   # W
-            _row("0-1", "white", 4),   # L
-        ]
-        non_endgame_rows = [_row("1-0", "white", 5)]
+        """With window=n and 2n games (n wins then n losses), rolling window drops old games."""
+        from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+        n = MIN_GAMES_FOR_TIMELINE
+        # n wins followed by n losses
+        endgame_rows = [_row("1-0", "white", i) for i in range(n)]
+        endgame_rows += [_row("0-1", "white", n + i) for i in range(n)]
+        non_endgame_rows = [_row("1-0", "white", i) for i in range(n)]
 
         with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
             mock_timeline.return_value = (endgame_rows, non_endgame_rows, {1: [], 2: [], 3: [], 4: [], 5: [], 6: []})
 
             result = await get_endgame_timeline(
                 AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human", window=3,
+                recency=None, rated=None, opponent_type="human", window=n,
             )
 
         # Find the last endgame point in overall that has endgame data
         endgame_points = [p for p in result.overall if p.endgame_win_rate is not None]
         last = endgame_points[-1]
         assert last.endgame_win_rate is not None
-        assert abs(last.endgame_win_rate - 2/3) < 1e-4
-        assert last.endgame_game_count == 3
+        # Last window is all losses → 0%
+        assert last.endgame_win_rate == 0.0
+        assert last.endgame_game_count == n
 
     @pytest.mark.asyncio
-    async def test_partial_window_fewer_games_than_window(self):
-        """Partial windows (fewer than window games) are included correctly."""
+    async def test_partial_window_below_threshold_filtered(self):
+        """Partial windows below MIN_GAMES_FOR_TIMELINE produce no data points."""
         endgame_rows = [_row("1-0", "white", 0), _row("1-0", "white", 1)]
 
         with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
@@ -630,16 +633,17 @@ class TestGetEndgameTimeline:
                 recency=None, rated=None, opponent_type="human", window=50,
             )
 
-        endgame_points = [p for p in result.overall if p.endgame_win_rate is not None]
-        # Last point should have game_count=2 (not 50), showing partial window
-        assert endgame_points[-1].endgame_game_count == 2
-        assert endgame_points[-1].endgame_win_rate == 1.0
+        # 2 games < MIN_GAMES_FOR_TIMELINE → no data points emitted
+        assert result.overall == []
 
     @pytest.mark.asyncio
     async def test_date_merge_both_series_present(self):
         """Overall series merges dates from both endgame and non-endgame rows."""
-        endgame_rows = [_row("1-0", "white", 0)]   # date: 2024-01-01
-        non_endgame_rows = [_row("0-1", "white", 2)]  # date: 2024-01-03
+        from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+        n = MIN_GAMES_FOR_TIMELINE
+        # Seed n endgame games and n non-endgame games on distinct date ranges
+        endgame_rows = [_row("1-0", "white", i) for i in range(n)]
+        non_endgame_rows = [_row("0-1", "white", n + i) for i in range(n)]
 
         with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
             mock_timeline.return_value = (endgame_rows, non_endgame_rows, {1: [], 2: [], 3: [], 4: [], 5: [], 6: []})
@@ -649,23 +653,23 @@ class TestGetEndgameTimeline:
                 recency=None, rated=None, opponent_type="human", window=50,
             )
 
-        # Should have two distinct date points
-        assert len(result.overall) == 2
-        # First point: only endgame has data
+        # Both series emit points starting at game n
+        assert len(result.overall) >= 2
+        # First overall point should have endgame data
         first = result.overall[0]
         assert first.endgame_win_rate is not None
-        # non_endgame carries forward as None at the first date (no non-endgame games yet)
-        assert first.non_endgame_win_rate is None
 
-        # Second point: non-endgame data appears, endgame carries forward from last known
-        second = result.overall[1]
-        assert second.non_endgame_win_rate is not None
-        assert second.endgame_win_rate is not None  # carries forward from first point
+        # Last overall point should have non-endgame data
+        last = result.overall[-1]
+        assert last.non_endgame_win_rate is not None
+        assert last.endgame_win_rate is not None  # carries forward
 
     @pytest.mark.asyncio
     async def test_per_type_keys_are_endgame_class_strings(self):
         """per_type keys should be EndgameClass strings (rook, minor_piece, etc.), not integers."""
-        rook_rows = [_row("1-0", "white", 0)]
+        from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+        n = MIN_GAMES_FOR_TIMELINE
+        rook_rows = [_row("1-0", "white", i) for i in range(n)]
 
         with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
             mock_timeline.return_value = ([], [], {1: rook_rows, 2: [], 3: [], 4: [], 5: [], 6: []})
@@ -681,7 +685,7 @@ class TestGetEndgameTimeline:
         assert "queen" in result.per_type
         assert "mixed" in result.per_type
         assert "pawnless" in result.per_type
-        # Rook series should have one point
+        # Rook series should have one point (game n passes threshold)
         assert len(result.per_type["rook"]) == 1
         assert result.per_type["rook"][0].win_rate == 1.0
 

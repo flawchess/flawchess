@@ -43,7 +43,7 @@ from app.schemas.endgames import (
     EndgameTimelineResponse,
     EndgameWDLSummary,
 )
-from app.services.openings_service import derive_user_result, recency_cutoff
+from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
 
 class EndgameClassInt(IntEnum):
     """Integer encoding for endgame_class column (SmallInteger, 2 bytes per row).
@@ -466,7 +466,8 @@ def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:
             "window_size": window,
         }
 
-    return list(data_by_date.values())
+    # Drop early points with too few games in the rolling window
+    return [pt for pt in data_by_date.values() if pt["game_count"] >= MIN_GAMES_FOR_TIMELINE]
 
 
 async def get_endgame_performance(
@@ -703,7 +704,8 @@ def _compute_conv_recov_rolling_series(
             window_size=window,
         )
 
-    return list(points_by_date.values())
+    # Drop early points with too few games in the rolling window
+    return [pt for pt in points_by_date.values() if pt.game_count >= MIN_GAMES_FOR_TIMELINE]
 
 
 async def get_conv_recov_timeline(

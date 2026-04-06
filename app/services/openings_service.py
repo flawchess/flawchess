@@ -38,6 +38,10 @@ from app.schemas.openings import (
 # Rolling window size for win-rate time series computation.
 ROLLING_WINDOW_SIZE = 50
 
+# Minimum games in a rolling window before emitting a timeline data point.
+# Prevents noisy 0%/100% points at the start of a series.
+MIN_GAMES_FOR_TIMELINE = 10
+
 # Maps recency filter strings to timedelta offsets.
 RECENCY_DELTAS: dict[str, datetime.timedelta] = {
     "week": datetime.timedelta(days=7),
@@ -244,8 +248,9 @@ async def get_time_series(
                 window_size=ROLLING_WINDOW_SIZE,
             )
 
+        # Drop early points with too few games in the rolling window
         # Filter output to recency window (rolling window was computed over full history)
-        data = list(data_by_date.values())
+        data = [pt for pt in data_by_date.values() if pt.game_count >= MIN_GAMES_FOR_TIMELINE]
         if cutoff_str:
             data = [pt for pt in data if pt.date >= cutoff_str]
             # Recompute totals from filtered period only

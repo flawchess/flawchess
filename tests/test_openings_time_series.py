@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.schemas.openings import TimeSeriesBookmarkParam, TimeSeriesRequest
-from app.services.openings_service import ROLLING_WINDOW_SIZE, get_time_series
+from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, ROLLING_WINDOW_SIZE, get_time_series
 
 # ---------------------------------------------------------------------------
 # User IDs (900-series to avoid collision with other test modules)
@@ -140,8 +140,8 @@ class TestRollingWindow:
     """Verify rolling-window win-rate computation."""
 
     @pytest.mark.asyncio
-    async def test_single_game_win_rate_is_1(self, db_session: AsyncSession) -> None:
-        """1 win -> 1 data point, win_rate=1.0, game_count=1, window_size=ROLLING_WINDOW_SIZE."""
+    async def test_few_games_filtered_by_min_threshold(self, db_session: AsyncSession) -> None:
+        """Games below MIN_GAMES_FOR_TIMELINE produce no data points, but totals are correct."""
         uid = _USER_ROLLING
         fh = 9_100_001
 
@@ -161,21 +161,18 @@ class TestRollingWindow:
         assert len(response.series) == 1
         bts = response.series[0]
         assert bts.bookmark_id == 1
-        assert len(bts.data) == 1
-        pt = bts.data[0]
-        assert pt.win_rate == 1.0
-        assert pt.game_count == 1
-        assert pt.window_size == ROLLING_WINDOW_SIZE
+        # Data points filtered out (game_count=1 < MIN_GAMES_FOR_TIMELINE)
+        assert len(bts.data) == 0
 
-        # Totals
+        # Totals still reflect all games
         assert bts.total_wins == 1
         assert bts.total_draws == 0
         assert bts.total_losses == 0
         assert bts.total_games == 1
 
     @pytest.mark.asyncio
-    async def test_single_game_loss_rate_is_0(self, db_session: AsyncSession) -> None:
-        """1 loss -> win_rate=0.0."""
+    async def test_single_loss_filtered_by_min_threshold(self, db_session: AsyncSession) -> None:
+        """1 loss -> no data points (below threshold), but totals correct."""
         uid = _USER_ROLLING
         fh = 9_100_002
 
@@ -193,38 +190,39 @@ class TestRollingWindow:
         )
 
         assert len(response.series) == 1
-        assert response.series[0].data[0].win_rate == 0.0
+        assert len(response.series[0].data) == 0
         assert response.series[0].total_losses == 1
         assert response.series[0].total_wins == 0
 
     @pytest.mark.asyncio
-    async def test_two_games_same_day_keeps_last(self, db_session: AsyncSession) -> None:
-        """2 games on the same calendar day -> 1 data point reflecting both in window.
+    async def test_multiple_games_same_day_keeps_last(self, db_session: AsyncSession) -> None:
+        """Multiple games on the same calendar day -> 1 data point reflecting all in window.
 
         The rolling window processes games chronologically, but data_by_date
-        keeps only the LAST game's snapshot per day. 1 win + 1 loss on the same
-        day: the second game's window contains both -> win_rate = 0.5.
+        keeps only the LAST game's snapshot per day. Seeding MIN_GAMES_FOR_TIMELINE
+        games (alternating W/L) on the same day verifies same-day collapse and
+        that the data point passes the min-games threshold.
         """
         uid = _USER_ROLLING
         fh = 9_100_003
+        n = MIN_GAMES_FOR_TIMELINE  # seed exactly the threshold number of games
 
-        # Win first, then loss — same day
-        await _seed_game_with_position(
-            db_session,
-            user_id=uid,
-            result="1-0",
-            user_color="white",
-            played_at=datetime.datetime(2026, 3, 5, 10, 0, tzinfo=datetime.timezone.utc),
-            full_hash=fh,
-        )
-        await _seed_game_with_position(
-            db_session,
-            user_id=uid,
-            result="0-1",
-            user_color="white",
-            played_at=datetime.datetime(2026, 3, 5, 15, 0, tzinfo=datetime.timezone.utc),
-            full_hash=fh,
-        )
+        wins = 0
+        losses = 0
+        for i in range(n):
+            result = "1-0" if i % 2 == 0 else "0-1"
+            if result == "1-0":
+                wins += 1
+            else:
+                losses += 1
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result=result,
+                user_color="white",
+                played_at=datetime.datetime(2026, 3, 5, 10 + i, 0, tzinfo=datetime.timezone.utc),
+                full_hash=fh,
+            )
 
         response = await get_time_series(
             db_session, uid, _make_request(bookmark_id=3, target_hash=fh, color="white")
@@ -235,21 +233,23 @@ class TestRollingWindow:
         assert len(bts.data) == 1
         pt = bts.data[0]
         assert pt.date == "2026-03-05"
-        assert pt.win_rate == pytest.approx(0.5, abs=0.01)
-        assert pt.game_count == 2  # both games in window
+        assert pt.win_rate == pytest.approx(wins / n, abs=0.01)
+        assert pt.game_count == n
 
         # Totals
-        assert bts.total_games == 2
-        assert bts.total_wins == 1
-        assert bts.total_losses == 1
+        assert bts.total_games == n
+        assert bts.total_wins == wins
+        assert bts.total_losses == losses
 
     @pytest.mark.asyncio
     async def test_win_rate_across_multiple_days(self, db_session: AsyncSession) -> None:
-        """5 games across 5 days (3 wins then 2 losses) — check first and final data points."""
+        """12 games across 12 days — first data point appears at MIN_GAMES_FOR_TIMELINE."""
         uid = _USER_ROLLING
         fh = 9_100_004
+        n = MIN_GAMES_FOR_TIMELINE
 
-        results = ["1-0", "1-0", "1-0", "0-1", "0-1"]
+        # 8 wins then 4 losses = 12 games total
+        results = ["1-0"] * 8 + ["0-1"] * 4
         for i, result in enumerate(results):
             await _seed_game_with_position(
                 db_session,
@@ -265,23 +265,24 @@ class TestRollingWindow:
         )
 
         bts = response.series[0]
-        # 5 different dates -> 5 data points
-        assert len(bts.data) == 5
+        # Points with game_count < MIN_GAMES_FOR_TIMELINE are filtered out
+        total = len(results)
+        expected_points = total - n + 1  # first point at game n, then one per day
+        assert len(bts.data) == expected_points
 
-        # First game (only 1 in window): win_rate = 1.0
+        # First visible point has exactly MIN_GAMES_FOR_TIMELINE games in window
         first_pt = bts.data[0]
-        assert first_pt.win_rate == pytest.approx(1.0, abs=0.01)
-        assert first_pt.game_count == 1
+        assert first_pt.game_count == n
 
-        # Final game (all 5 in window): 3W + 2L = 60% win rate
+        # Final game (all 12 in window): 8W + 4L ≈ 66.7% win rate
         last_pt = bts.data[-1]
-        assert last_pt.win_rate == pytest.approx(0.6, abs=0.01)
-        assert last_pt.game_count == 5
+        assert last_pt.win_rate == pytest.approx(8 / 12, abs=0.01)
+        assert last_pt.game_count == 12
 
         # Totals reflect full history
-        assert bts.total_games == 5
-        assert bts.total_wins == 3
-        assert bts.total_losses == 2
+        assert bts.total_games == 12
+        assert bts.total_wins == 8
+        assert bts.total_losses == 4
 
     @pytest.mark.asyncio
     async def test_empty_position_returns_empty_series(self, db_session: AsyncSession) -> None:
@@ -314,34 +315,36 @@ class TestRecencyFilter:
     async def test_recency_filter_trims_old_data(self, db_session: AsyncSession) -> None:
         """Games from >30 days ago are excluded from output when recency='month'.
 
-        Seed: 1 game 60 days ago + 2 games today.
-        recency='month' (30 days) -> only today's games appear in data.
-        total_games reflects only the recent period (2 games).
+        Seed: MIN_GAMES_FOR_TIMELINE old games + MIN_GAMES_FOR_TIMELINE recent games.
+        recency='month' (30 days) -> only recent games appear in data.
+        total_games reflects only the recent period.
         """
         uid = _USER_RECENCY
         fh = 9_200_001
+        n = MIN_GAMES_FOR_TIMELINE
 
         now = datetime.datetime.now(tz=datetime.timezone.utc)
-        old_date = now - datetime.timedelta(days=60)
+        old_base = now - datetime.timedelta(days=60)
         today = now.replace(hour=12, minute=0, second=0, microsecond=0)
 
-        # 1 old game (loss)
-        await _seed_game_with_position(
-            db_session,
-            user_id=uid,
-            result="0-1",
-            user_color="white",
-            played_at=old_date,
-            full_hash=fh,
-        )
-        # 2 recent games (both wins)
-        for offset_minutes in [0, 30]:
+        # n old games (losses) on separate days
+        for i in range(n):
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result="0-1",
+                user_color="white",
+                played_at=old_base + datetime.timedelta(days=i),
+                full_hash=fh,
+            )
+        # n recent games (wins) on same day
+        for i in range(n):
             await _seed_game_with_position(
                 db_session,
                 user_id=uid,
                 result="1-0",
                 user_color="white",
-                played_at=today + datetime.timedelta(minutes=offset_minutes),
+                played_at=today + datetime.timedelta(minutes=i),
                 full_hash=fh,
             )
 
@@ -359,35 +362,36 @@ class TestRecencyFilter:
         response = await get_time_series(db_session, uid, request)
 
         bts = response.series[0]
-        # Data points should only include recent dates (not the 60-day-old game)
+        # Data points should only include recent dates (not old games)
         today_str = today.strftime("%Y-%m-%d")
         for pt in bts.data:
             assert pt.date >= today_str, f"Expected recent date, got {pt.date}"
 
-        # Totals reflect only the filtered period (2 recent wins)
-        assert bts.total_games == 2
-        assert bts.total_wins == 2
+        # Totals reflect only the filtered period (n recent wins)
+        assert bts.total_games == n
+        assert bts.total_wins == n
         assert bts.total_losses == 0
 
     @pytest.mark.asyncio
     async def test_rolling_window_uses_full_history_with_recency(
         self, db_session: AsyncSession
     ) -> None:
-        """Rolling window for recent games may include old games in its trailing window.
+        """Rolling window for recent games includes old games in its trailing window.
 
-        Seed: 3 wins from >30 days ago + 1 loss today.
+        Seed: MIN_GAMES_FOR_TIMELINE wins from >30 days ago + 1 loss today.
         With recency='month', only today's datapoint appears in output.
-        But the rolling window for today's game includes all 4 games in its
-        trailing ROLLING_WINDOW_SIZE, so game_count=4 and win_rate = 3/4.
+        But the rolling window for today's game includes all games in its
+        trailing ROLLING_WINDOW_SIZE, so game_count = n+1.
         """
         uid = _USER_RECENCY
         fh = 9_200_002
+        n = MIN_GAMES_FOR_TIMELINE
 
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         old_base = now - datetime.timedelta(days=45)
 
-        # 3 old wins
-        for i in range(3):
+        # n old wins
+        for i in range(n):
             await _seed_game_with_position(
                 db_session,
                 user_id=uid,
@@ -428,10 +432,9 @@ class TestRecencyFilter:
         assert len(today_points) >= 1, "Expected at least today's data point"
 
         pt = today_points[0]
-        # Rolling window for the 4th game contains all 4 (3+1 <= ROLLING_WINDOW_SIZE)
-        # -> win_rate = 3/4 = 0.75
-        assert pt.game_count == 4
-        assert pt.win_rate == pytest.approx(0.75, abs=0.01)
+        # Rolling window includes all n+1 games -> win_rate = n/(n+1)
+        assert pt.game_count == n + 1
+        assert pt.win_rate == pytest.approx(n / (n + 1), abs=0.01)
 
         # Totals are recomputed from the filtered period only (1 recent loss)
         assert bts.total_losses == 1
@@ -454,9 +457,10 @@ class TestMultipleBookmarks:
         uid = _USER_MULTI
         fh_a = 9_300_001
         fh_b = 9_300_002
+        n = MIN_GAMES_FOR_TIMELINE
 
-        # Seed 2 wins for hash A and 1 loss for hash B
-        for i in range(2):
+        # Seed n wins for hash A on separate days
+        for i in range(n):
             await _seed_game_with_position(
                 db_session,
                 user_id=uid,
@@ -465,14 +469,16 @@ class TestMultipleBookmarks:
                 played_at=datetime.datetime(2026, 2, 1 + i, tzinfo=datetime.timezone.utc),
                 full_hash=fh_a,
             )
-        await _seed_game_with_position(
-            db_session,
-            user_id=uid,
-            result="0-1",
-            user_color="white",
-            played_at=datetime.datetime(2026, 2, 5, tzinfo=datetime.timezone.utc),
-            full_hash=fh_b,
-        )
+        # Seed n losses for hash B on separate days
+        for i in range(n):
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result="0-1",
+                user_color="white",
+                played_at=datetime.datetime(2026, 2, 1 + i, tzinfo=datetime.timezone.utc),
+                full_hash=fh_b,
+            )
 
         request = TimeSeriesRequest(
             bookmarks=[
@@ -500,14 +506,14 @@ class TestMultipleBookmarks:
         series_a = next(s for s in response.series if s.bookmark_id == 20)
         series_b = next(s for s in response.series if s.bookmark_id == 21)
 
-        # Hash A: 2 wins
-        assert series_a.total_wins == 2
-        assert series_a.total_games == 2
-        assert len(series_a.data) == 2  # 2 different dates
+        # Hash A: n wins, first data point at game n (threshold)
+        assert series_a.total_wins == n
+        assert series_a.total_games == n
+        assert len(series_a.data) == 1  # only the nth game passes threshold
 
-        # Hash B: 1 loss
-        assert series_b.total_losses == 1
-        assert series_b.total_games == 1
+        # Hash B: n losses
+        assert series_b.total_losses == n
+        assert series_b.total_games == n
         assert len(series_b.data) == 1
         assert series_b.data[0].win_rate == 0.0
 
@@ -519,15 +525,18 @@ class TestMultipleBookmarks:
         uid = _USER_MULTI
         fh_populated = 9_300_003
         fh_empty = 9_300_999  # no games seeded
+        n = MIN_GAMES_FOR_TIMELINE
 
-        await _seed_game_with_position(
-            db_session,
-            user_id=uid,
-            result="1/2-1/2",
-            user_color="white",
-            played_at=datetime.datetime(2026, 2, 10, tzinfo=datetime.timezone.utc),
-            full_hash=fh_populated,
-        )
+        # Seed n draws on separate days
+        for i in range(n):
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result="1/2-1/2",
+                user_color="white",
+                played_at=datetime.datetime(2026, 2, 10 + i, tzinfo=datetime.timezone.utc),
+                full_hash=fh_populated,
+            )
 
         request = TimeSeriesRequest(
             bookmarks=[
@@ -552,9 +561,9 @@ class TestMultipleBookmarks:
         series_pop = next(s for s in response.series if s.bookmark_id == 30)
         series_emp = next(s for s in response.series if s.bookmark_id == 31)
 
-        assert len(series_pop.data) == 1  # 1 draw
-        assert series_pop.total_draws == 1
-        assert series_pop.data[0].win_rate == 0.0  # draw -> 0 wins
+        assert len(series_pop.data) == 1  # first point at game n
+        assert series_pop.total_draws == n
+        assert series_pop.data[0].win_rate == 0.0  # draws -> 0 wins
 
         assert len(series_emp.data) == 0
         assert series_emp.total_games == 0
