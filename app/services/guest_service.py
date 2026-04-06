@@ -7,12 +7,18 @@ their 30-day JWT tokens. Guest accounts have sentinel emails in the form
 
 from uuid import uuid4
 
+from fastapi_users.exceptions import UserAlreadyExists
+from fastapi_users.password import PasswordHelper
+from sqlalchemy import select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
-from app.users import get_guest_jwt_strategy
+from app.users import auth_backend, get_guest_jwt_strategy
 
 _GUEST_EMAIL_DOMAIN = "@guest.local"
+
+_password_helper = PasswordHelper()
 
 
 async def create_guest_user(session: AsyncSession) -> tuple[User, str]:
@@ -54,3 +60,55 @@ async def refresh_guest_token(user: User) -> str:
 
     token: str = await get_guest_jwt_strategy().write_token(user)
     return token
+
+
+async def promote_guest_with_password(
+    session: AsyncSession,
+    user: User,
+    email: str,
+    password: str,
+) -> tuple[User, str]:
+    """Promote a guest account to a full email/password account in-place.
+
+    Updates the user row: sets is_guest=False, is_verified=True, stores the new
+    email and an argon2id-hashed password. Issues a standard 7-day JWT via
+    auth_backend (not the guest 30-day strategy).
+
+    Raises:
+        ValueError: if the user is not a guest
+        UserAlreadyExists: if the given email is already registered by another user
+    """
+    if not user.is_guest:
+        raise ValueError("Not a guest user")
+
+    # Check email uniqueness before updating
+    result = await session.execute(
+        select(User).where(User.email == email)  # ty: ignore[invalid-argument-type]  # SQLAlchemy column comparisons return ColumnElement, not bool
+    )
+    if result.unique().scalar_one_or_none() is not None:
+        raise UserAlreadyExists()
+
+    hashed_password = _password_helper.hash(password)
+
+    await session.execute(
+        sa_update(User)
+        .where(User.id == user.id)
+        .values(
+            email=email,
+            hashed_password=hashed_password,
+            is_guest=False,
+            is_verified=True,
+        )
+    )
+    await session.commit()
+
+    # Re-fetch the updated user so callers see current field values
+    # session.get returns User | None, but we just committed the update so the user exists
+    updated = await session.get(User, user.id)
+    assert updated is not None, f"User {user.id} not found after promotion commit"
+
+    # Issue a standard 7-day JWT (not the guest 30-day strategy)
+    strategy = auth_backend.get_strategy()
+    token: str = await strategy.write_token(updated)  # ty: ignore[unresolved-attribute]  # FastAPI-Users generic typing not resolved by ty beta
+
+    return updated, token
