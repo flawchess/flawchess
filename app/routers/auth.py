@@ -5,7 +5,7 @@ import secrets
 from typing import Annotated
 
 import sentry_sdk
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from fastapi_users import schemas as fapi_schemas
 from fastapi_users.exceptions import UserAlreadyExists
@@ -67,7 +67,7 @@ async def google_oauth_available() -> GoogleOAuthAvailableResponse:
 
 
 @router.get("/auth/google/authorize", tags=["auth"], response_model=GoogleOAuthAuthorizeResponse)
-async def google_authorize(request: Request) -> GoogleOAuthAuthorizeResponse:
+async def google_authorize(request: Request, response: Response) -> GoogleOAuthAuthorizeResponse:
     """Return the Google OAuth authorization URL for the frontend to redirect to."""
     csrf_token = secrets.token_urlsafe(32)
     state_data = {"csrftoken": csrf_token, "aud": _OAUTH_STATE_AUDIENCE}
@@ -75,6 +75,19 @@ async def google_authorize(request: Request) -> GoogleOAuthAuthorizeResponse:
         state_data,
         settings.SECRET_KEY,
         lifetime_seconds=600,
+    )
+
+    # Set CSRF cookie — double-submit cookie pattern (CVE-2025-68481 fix)
+    # The same csrf_token is embedded in the state JWT and set as a httpOnly cookie.
+    # The callback endpoint reads the cookie and compares it against the state JWT claim
+    # using timing-safe comparison, preventing CSRF-based account takeover.
+    response.set_cookie(
+        _CSRF_COOKIE,
+        csrf_token,
+        max_age=600,  # matches state JWT lifetime
+        httponly=True,  # not readable by JS (defense in depth)
+        secure=settings.ENVIRONMENT != "development",
+        samesite="lax",
     )
 
     # Build callback URL explicitly — request.url_for() picks up the Vite proxy host (port 5173)
@@ -109,20 +122,28 @@ async def google_callback(
     if code is None or state is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code or state")
 
-    # Exchange code for token using the same redirect_uri as the authorize step
-    redirect_url = f"{settings.BACKEND_URL}/api/auth/google/callback"
-    token = await google_oauth_client.get_access_token(code, redirect_url)
-
-    if state is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing state")
-
-    # Validate state JWT
+    # Validate state JWT and extract CSRF token before calling Google's token endpoint.
+    # Fail fast on bad state/CSRF without wasting an external API call.
     try:
-        decode_jwt(state, settings.SECRET_KEY, [_OAUTH_STATE_AUDIENCE])
+        state_data = decode_jwt(state, settings.SECRET_KEY, [_OAUTH_STATE_AUDIENCE])
     except Exception:
         sentry_sdk.set_tag("source", "auth")
         sentry_sdk.capture_exception()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state")
+
+    # Validate CSRF double-submit cookie (CVE-2025-68481 fix)
+    # The authorize endpoint set this cookie; the callback must confirm they match.
+    cookie_csrf = request.cookies.get(_CSRF_COOKIE)
+    state_csrf = state_data.get("csrftoken")
+    if not cookie_csrf or not state_csrf or not secrets.compare_digest(cookie_csrf, state_csrf):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid CSRF token",
+        )
+
+    # Exchange code for token using the same redirect_uri as the authorize step
+    redirect_url = f"{settings.BACKEND_URL}/api/auth/google/callback"
+    token = await google_oauth_client.get_access_token(code, redirect_url)
 
     # Decode id_token from Google (avoids People API dependency).
     # The id_token is a JWT — we only need the payload, Google already validated it.
