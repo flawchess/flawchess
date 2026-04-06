@@ -93,7 +93,9 @@ export function OpeningsPage() {
 
   // ── Sidebar tab state (desktop only) ────────────────────────────────────────
   const [sidebarTab, setSidebarTab] = useState<string>('filters');
-  const [filtersHintDismissed, setFiltersHintDismissed] = useState(false);
+  const [filtersHintDismissed, setFiltersHintDismissed] = useState(
+    () => localStorage.getItem('filters-hint-dismissed') === 'true'
+  );
 
   // ── Mobile sidebar state ────────────────────────────────────────────────────
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(false);
@@ -241,6 +243,7 @@ export function OpeningsPage() {
     setFilters(newFilters);
     setGamesOffset(0);
     setFiltersHintDismissed(true);
+    localStorage.setItem('filters-hint-dismissed', 'true');
   }, [setFilters]);
 
   const openBookmarkDialog = useCallback(() => {
@@ -269,10 +272,12 @@ export function OpeningsPage() {
     try {
       await createBookmark.mutateAsync(data);
       setBookmarkDialogOpen(false);
+      if (activeTab !== 'stats') navigate('/openings/stats');
+      setSidebarTab('bookmarks');
     } catch {
       toast.error('Failed to save bookmark');
     }
-  }, [chess, filters, boardFlipped, bookmarkLabel, createBookmark]);
+  }, [chess, filters, boardFlipped, bookmarkLabel, createBookmark, activeTab, navigate]);
 
   /** Open games for a chart bookmark — loads position on board and navigates to games tab */
   const handleOpenChartBookmarkGames = useCallback((bookmark: PositionBookmarkResponse) => {
