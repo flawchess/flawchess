@@ -1,6 +1,8 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
+import * as Sentry from '@sentry/react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { apiClient } from '@/api/client';
 import type { UserProfile } from '@/types/users';
@@ -13,7 +15,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
-import { ArrowRightLeft, Scale, Filter, TrophyIcon, DownloadIcon, Loader2 } from 'lucide-react';
+import { ArrowRightLeft, Scale, Filter, TrophyIcon, DownloadIcon, Loader2, UserPlus, EyeOff } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Feature sections — imagePosition alternates right/left so text and image swap sides on desktop.
@@ -93,6 +95,19 @@ const FEATURES: {
 // ─── Homepage content (unauthenticated) ───────────────────────────────────────
 
 export function HomePageContent() {
+  const { loginAsGuest, isLoading } = useAuth();
+  const navigate = useNavigate();
+
+  const handleGuestLogin = async () => {
+    try {
+      await loginAsGuest();
+      navigate('/');
+    } catch (error) {
+      Sentry.captureException(error, { tags: { source: 'guest-login-home' } });
+      toast.error('Failed to start guest session. Please try again.');
+    }
+  };
+
   return (
     <>
       <PublicHeader />
@@ -132,14 +147,39 @@ export function HomePageContent() {
             support@flawchess.com
           </a>.
         </p>
-        <Button
-          size="lg"
-          asChild
-          className={cn('btn-brand', 'min-h-11 min-w-48 mt-8')}
-          data-testid="hero-cta-signup"
-        >
-          <Link to="/login?tab=register">Sign up free</Link>
-        </Button>
+        <div className="mt-8 flex flex-row items-center justify-center gap-3">
+          <Button
+            size="lg"
+            asChild
+            className={cn('btn-brand', 'min-h-11')}
+            data-testid="hero-cta-signup"
+          >
+            <Link to="/login?tab=register">
+              <UserPlus className="mr-1.5 h-4 w-4" />
+              Sign up free
+            </Link>
+          </Button>
+          <Button
+            size="lg"
+            variant="brand-outline"
+            className="min-h-11"
+            data-testid="btn-guest"
+            onClick={handleGuestLogin}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                Starting...
+              </>
+            ) : (
+              <>
+                <EyeOff className="mr-1.5 h-4 w-4" />
+                Use as Guest
+              </>
+            )}
+          </Button>
+        </div>
         {/* Callout pills */}
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
@@ -404,14 +444,39 @@ export function HomePageContent() {
       {/* Footer CTA */}
       <section className="text-center py-16" data-testid="footer-cta">
         <p className="text-muted-foreground mb-4">Free to use. No credit card required.</p>
-        <Button
-          size="lg"
-          asChild
-          className={cn('btn-brand', 'min-h-11 min-w-48')}
-          data-testid="footer-cta-signup"
-        >
-          <Link to="/login?tab=register">Sign up free</Link>
-        </Button>
+        <div className="flex flex-row items-center justify-center gap-3">
+          <Button
+            size="lg"
+            asChild
+            className={cn('btn-brand', 'min-h-11')}
+            data-testid="footer-cta-signup"
+          >
+            <Link to="/login?tab=register">
+              <UserPlus className="mr-1.5 h-4 w-4" />
+              Sign up free
+            </Link>
+          </Button>
+          <Button
+            size="lg"
+            variant="brand-outline"
+            className="min-h-11"
+            data-testid="footer-btn-guest"
+            onClick={handleGuestLogin}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                Starting...
+              </>
+            ) : (
+              <>
+                <EyeOff className="mr-1.5 h-4 w-4" />
+                Use as Guest
+              </>
+            )}
+          </Button>
+        </div>
       </section>
 
       {/* Page footer */}

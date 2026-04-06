@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiClient } from '@/api/client';
+import type { GuestPromoteResponse } from '@/types/api';
 
 function GoogleIcon() {
   return (
@@ -34,8 +35,10 @@ function GoogleIcon() {
   );
 }
 
+const GUEST_TOKEN_KEY = 'guest_token';
+
 export function RegisterForm() {
-  const { register } = useAuth();
+  const { register, loginWithToken } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
@@ -70,6 +73,33 @@ export function RegisterForm() {
 
     setSubmitting(true);
     try {
+      // If a guest token exists, try to promote the guest account in-place
+      // so imported games and bookmarks are preserved. Works whether the user
+      // is currently logged in as guest or logged out with a saved guest_token.
+      const guestToken = localStorage.getItem(GUEST_TOKEN_KEY);
+      if (guestToken) {
+        try {
+          const res = await apiClient.post<GuestPromoteResponse>(
+            '/auth/guest/promote/email',
+            { email, password },
+            { headers: { Authorization: `Bearer ${guestToken}` } },
+          );
+          // Promotion succeeded — log in with the new full-account token
+          loginWithToken(res.data.access_token);
+          localStorage.removeItem(GUEST_TOKEN_KEY);
+          toast.success('Account created! Your guest data has been preserved.');
+          navigate('/', { replace: true });
+          return;
+        } catch (err) {
+          if (axios.isAxiosError(err) && err.response?.status === 409) {
+            toast.error('An account with this email already exists.');
+            return;
+          }
+          // Guest token expired or invalid — fall through to regular registration
+          localStorage.removeItem(GUEST_TOKEN_KEY);
+        }
+      }
+
       await register(email, password);
       navigate('/', { replace: true });
     } catch (err: unknown) {
@@ -96,6 +126,23 @@ export function RegisterForm() {
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     try {
+      // If a guest token exists, use the promotion OAuth flow so the guest
+      // account is upgraded in-place and imported data is preserved.
+      const guestToken = localStorage.getItem(GUEST_TOKEN_KEY);
+      if (guestToken) {
+        try {
+          const res = await apiClient.get<{ authorization_url: string }>(
+            '/auth/google/authorize-promote',
+            { headers: { Authorization: `Bearer ${guestToken}` } },
+          );
+          window.location.href = res.data.authorization_url;
+          return;
+        } catch {
+          // Guest token expired or invalid — fall through to regular Google sign-up
+          localStorage.removeItem(GUEST_TOKEN_KEY);
+        }
+      }
+
       const response = await apiClient.get<{ authorization_url: string }>(
         '/auth/google/authorize',
       );

@@ -1,231 +1,275 @@
 # Pitfalls Research
 
-**Domain:** Advanced chess analytics — ELO-adjusted metrics, cross-platform rating normalization, opening risk scores, refined endgame statistics
-**Researched:** 2026-04-04
-**Confidence:** HIGH (codebase verified, domain patterns confirmed via external sources)
+**Domain:** Adding guest/anonymous user access with account promotion to an existing FastAPI-Users app
+**Researched:** 2026-04-06
+**Confidence:** HIGH (codebase verified, CVEs confirmed via official advisories, patterns confirmed via multiple sources)
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Lichess-to-Chess.com Rating Offset Is Not a Fixed Constant
+### Pitfall 1: CVE-2025-68481 — FastAPI-Users OAuth State Has No Session Binding
 
 **What goes wrong:**
-The backlog spec (Phase 999.5) uses a fixed tapering formula: `offset = max(0, 350 - (lichess_rating - 1400) * 0.3)`. This is a reasonable approximation but the actual offset is neither linear nor symmetric across time controls. External analysis (NoseKnowsAll 2024 converter) shows the relationship varies significantly by skill level — the gap can invert near 2100+ rated players. If the formula is treated as authoritative rather than an approximation, ELO-adjusted skill scores will be systematically biased at the extremes of the rating range.
+FastAPI-Users below version 15.0.2 generates OAuth state JWTs that are completely stateless — no per-request entropy, no session correlation. During guest-to-registered promotion via Google SSO, the `google_callback` route validates the state JWT's signature but cannot verify that the state belongs to the session that initiated the flow. An attacker can initiate an OAuth flow, capture the state token, and then trick a logged-in victim (including a guest user mid-promotion) into visiting the callback URL with the attacker's credentials. The victim's account becomes linked to the attacker's Google identity — account takeover.
 
-The formula is also per-platform but not per-time-control. Players who only play bullet on lichess get the blitz-calibrated offset applied, which is wrong by roughly 30–50 points.
+This project already implements a custom `google_callback` handler in `app/routers/auth.py` that calls `decode_jwt(state, ...)` but does not set or validate a CSRF cookie. The existing implementation has the same vulnerability pattern that CVE-2025-68481 describes.
 
 **Why it happens:**
-Developers find a plausible-looking formula and treat it as ground truth without documenting its limits. The formula is derived from community analysis that drifts over time as platforms update their rating systems.
+The OAuth state JWT validates cryptographically (signature check passes) but provides no proof that the state was generated for the specific browser session that received the callback. Developers see the signature check and assume the state is secure.
 
 **How to avoid:**
-- Implement the formula as a named function `normalize_lichess_rating(rating: int) -> int` with a docstring explicitly calling it an approximation.
-- Do not display the adjusted score with more than one decimal of precision — false precision amplifies the formula's error.
-- Add a tooltip/info label on the gauge: "Normalized to chess.com blitz equivalent (approximate)" so users understand this is a heuristic.
-- Accept the per-time-control limitation explicitly; document it in code rather than silently applying blitz calibration to bullet games.
+- Implement the double-submit cookie pattern: generate a random CSRF token alongside the state JWT, set it as a short-lived `HttpOnly; SameSite=Lax` cookie in the `/auth/google/authorize` response, and verify on callback that the cookie value matches the CSRF claim embedded in the state JWT.
+- This must be done for the guest promotion Google SSO path too — if a guest user clicks "Sign in with Google" to promote, the authorize step must emit the CSRF cookie and the callback must validate it.
+- Use `secrets.token_urlsafe(32)` for the CSRF token (already used in `auth.py` — but the cookie-writing and callback-validation steps are missing).
+- The promotion flow must preserve the guest `user_id` in the state JWT so the callback can complete the promotion atomically.
 
 **Warning signs:**
-- Adjusted score shows no difference from raw score for a mixed chess.com/lichess user — the normalization branch is not executing.
-- Users who only play bullet on lichess complain the score looks wrong.
+- `google_authorize` endpoint returns an `authorization_url` but sets no cookie in the response.
+- `google_callback` validates `state` JWT but reads no cookie from the request.
+- Sentry shows `InvalidOAuthStateError` or `CSRF validation failure` from a user who didn't initiate the flow.
 
 **Phase to address:**
-ELO-Adjusted Endgame Skill — backend service function. Name and document the normalization function before wiring it into the skill calculation.
+Guest creation backend — before the Google SSO promotion route exists. Fix the existing `google_authorize` / `google_callback` endpoints to use the double-submit cookie pattern, then reuse the same pattern for the guest promotion route.
 
 ---
 
-### Pitfall 2: Deriving Opponent Rating from white_rating/black_rating Gets the Color Logic Inverted
+### Pitfall 2: Guest JWT Still Valid After Promotion — Old Sessions Can Access the New Account
 
 **What goes wrong:**
-The `games` table stores `white_rating` and `black_rating` — absolute by piece color, not user-relative. Deriving opponent rating requires inverting the user's color: if `user_color == "white"` then opponent is `black_rating`, and vice versa. This is the exact opposite of the user-rating pattern already in `stats_repository.py`. Getting this backwards produces an `opponent_rating` that equals the user's own rating, making the ELO adjustment multiply by the user's own strength instead of their opponent's. The resulting adjusted score will be perfectly correlated with the user's rating history but measure nothing about opponent quality.
+The plan promotes a guest by updating the existing `User` row in-place (email, hashed_password, is_verified, etc.). The guest JWT issued at guest creation time is valid for 7 days (`JWTStrategy(lifetime_seconds=604800)` in `app/users.py`). After promotion, the old JWT — which embeds the same `user_id` — continues to be accepted because the token validation only checks signature and expiry, not the user's `is_verified` or `hashed_password` fields. A guest user who promotes on device A can still use the old guest JWT from device B for up to 7 days without re-authenticating, operating under the promoted account's identity without having completed email verification.
+
+This is not a data integrity problem (same user_id), but it means: (a) the guest JWT bypasses email verification intended for promoted accounts, and (b) if a guest account is compromised before promotion, the attacker retains access after promotion.
 
 **Why it happens:**
-The correct pattern for `user_rating_expr` already exists in `stats_repository.py` as `case((Game.user_color == "white", Game.white_rating), else_=Game.black_rating)`. The opponent derivation is the mirror image, and it is easy to copy the user-rating pattern and forget to flip it.
+JWT is stateless — there is no revocation mechanism in the current stack. Updating the user row doesn't invalidate previously issued tokens. Developers assume "promotion changes the user row" implies "old tokens are now invalid."
 
 **How to avoid:**
-```python
-# CORRECT opponent rating derivation (user_color is white -> opponent is black)
-opponent_rating_expr = case(
-    (Game.user_color == "white", Game.black_rating),
-    else_=Game.white_rating,
-).label("opponent_rating")
+- Issue a fresh JWT immediately after promotion completes and return it to the frontend in the same response. The frontend must store the new token and discard the old guest token.
+- Add a `token_version: int` field to the `User` model. Increment it on promotion. Include `token_version` as a claim in JWTs. Validate `token_version` claim against the DB on each request. This is the only way to truly invalidate old guest JWTs without a blacklist.
+- Simpler alternative (acceptable for v1.8): keep 7-day JWT lifetime, but issue a fresh JWT on promotion so the frontend immediately uses the promoted token. Document that old guest tokens expire within 7 days — the security window is bounded and the data is unchanged (same user_id).
+- Do NOT implement a token blacklist — this adds Redis/DB overhead inconsistent with the current stateless JWT approach.
+
+**Warning signs:**
+- After promotion, the frontend still sends the original guest JWT (`Authorization: Bearer <guest_token>`).
+- `GET /users/me/profile` returns `is_verified: false` for a promoted user who completed email verification.
+
+**Phase to address:**
+Account promotion endpoint — issue a fresh JWT in the promotion response and instruct the frontend to replace the stored token immediately.
+
+---
+
+### Pitfall 3: Google SSO Promotion Loses Guest Identity During the OAuth Redirect Round-Trip
+
+**What goes wrong:**
+When a guest user clicks "Sign in with Google" to promote, the flow leaves the app and goes to Google, then returns via `GET /auth/google/callback`. The guest's identity (their `user_id`) lives in the frontend auth store and the HttpOnly cookie — but neither is available inside the `google_callback` handler, which only sees the OAuth code and state. If the callback doesn't know this is a promotion (vs. a normal login), it will call `user_manager.oauth_callback(associate_by_email=True)` which either logs in an existing registered user (skipping promotion) or creates a brand-new user (losing all guest data).
+
+The guest user_id must survive the redirect. The only mechanism available in the callback is the `state` JWT.
+
+**Why it happens:**
+The OAuth redirect breaks the request context. There is no session (the app is stateless), and HTTP redirects cannot carry custom request headers or body payloads. Developers assume the frontend can re-send the guest token on callback — but the callback is a GET from Google's redirect, not a frontend-controlled request.
+
+**How to avoid:**
+- Embed `guest_user_id` as a claim in the state JWT generated by `google_authorize`. The authorize endpoint must accept an optional `guest_user_id` parameter from the frontend (extracted from the current auth token).
+- On callback, decode the state JWT and extract `guest_user_id`. If present, skip `user_manager.oauth_callback` and instead run the promotion logic: update the guest `User` row with the Google email and link the OAuth account.
+- The CSRF cookie (see Pitfall 1) must be set regardless of whether this is a promotion or a normal OAuth login — same cookie, same callback validation.
+- Validate that the `guest_user_id` in the state JWT corresponds to an actual guest user (not a registered user) before executing the promotion path.
+
+**Warning signs:**
+- Google SSO promotion creates a new account instead of updating the existing guest account.
+- Guest data (imported games, bookmarks) is missing after "Sign in with Google."
+- `google_callback` creates a duplicate user row with the same chess.com/lichess usernames as the guest row.
+
+**Phase to address:**
+Account promotion backend — modify `google_authorize` to accept and embed `guest_user_id`, modify `google_callback` to detect the promotion path and route accordingly.
+
+---
+
+### Pitfall 4: Concurrent Promotion Race — Two Requests Promote the Same Guest Simultaneously
+
+**What goes wrong:**
+If a guest user double-submits the promotion form or two tabs both trigger promotion at the same time, two concurrent requests both attempt to update the same guest `User` row. The first succeeds, setting `email`, `hashed_password`, and `is_verified`. The second reads the same guest row (before the first commit is visible), applies its own update, and either silently overwrites the first promotion's data or — if email uniqueness is enforced — raises a `UniqueViolationError` that produces a 500 response.
+
+For Google SSO promotion, the race involves two calls to `user_manager.oauth_callback` with `associate_by_email=True`. If the Google email doesn't exist yet (first request mid-commit), the second might attempt to create a new user, violating the unique constraint on email and producing a 500.
+
+**Why it happens:**
+The promotion endpoint updates a row — this is not naturally idempotent. Without an explicit lock or idempotency check, concurrent requests both proceed past the "is this user a guest?" check and both attempt the mutation.
+
+**How to avoid:**
+- Use `SELECT ... FOR UPDATE` (PostgreSQL row-level lock) at the start of the promotion transaction to lock the guest user row. The second concurrent request blocks until the first commits, then retries and finds the user is already promoted (email is set), and returns a clear error: "Account already promoted."
+- Alternatively, use `UPDATE users SET ... WHERE id = :user_id AND email IS NULL RETURNING id` — if 0 rows returned, the user was already promoted.
+- Add a DB-level unique constraint on `email` (already present via FastAPI-Users' `SQLAlchemyBaseUserTable` base). This is the last-resort safety net, but catching a `UniqueViolationError` and returning 409 is better than a 500.
+
+**Warning signs:**
+- Sentry shows `UniqueViolationError` on the `users.email` column during promotion.
+- Two JWT tokens are issued for the same `user_id` with different email claims.
+- A user reports "Sign up failed" but finds themselves already signed up on retry.
+
+**Phase to address:**
+Account promotion endpoint — the UPDATE statement must include a WHERE condition that verifies guest state, making the operation atomic and idempotent.
+
+---
+
+### Pitfall 5: Email Already Registered Conflict During Promotion
+
+**What goes wrong:**
+A guest user enters an email address to promote their account. That email already exists in the `users` table because the same person previously registered with email/password (or because another user registered with that email). The promotion logic must NOT overwrite the existing registered account — that would be an account takeover. If the promotion endpoint calls `UPDATE users SET email = :email WHERE id = :guest_id` without first checking for email existence, PostgreSQL raises a `UniqueViolationError`, which is caught and shown as a generic 500 or a cryptic error.
+
+The correct behavior: detect the conflict, inform the user "An account with this email already exists — please sign in instead," and offer a login flow that merges their guest data.
+
+**Why it happens:**
+Promotion is framed as "update the guest row" but email uniqueness enforcement is pushed to the DB layer. Without an application-level pre-check, the UX is a raw constraint error.
+
+**How to avoid:**
+- Before updating the guest user, query for an existing user with the same email.
+- If found and it's a different `user_id`: return HTTP 409 with a specific error body `{"code": "email_exists"}`. The frontend displays "Email already registered — log in to link your data."
+- If found and it's the same `user_id` (guest already promoted): return HTTP 200 — idempotent.
+- Do NOT silently merge data from two different registered accounts — this is out of scope and a security boundary.
+- For Google SSO promotion: `user_manager.oauth_callback(associate_by_email=True)` will automatically link the Google identity to the existing account. This is correct behavior for login, but NOT for promotion — when promoting a guest, the intent is to transform the guest row, not log into the pre-existing account and lose guest data.
+
+**Warning signs:**
+- Sentry shows `UniqueViolationError` on `users.email` with no corresponding 409 response.
+- A user reports their imported games disappeared after promotion (because the callback logged them into their old account, abandoning the guest row).
+- `GET /imports/active` shows 0 active imports for the promoted user despite the guest having completed imports.
+
+**Phase to address:**
+Account promotion endpoint — add pre-check for email existence before the UPDATE, with explicit 409 + error code for the frontend to handle.
+
+---
+
+### Pitfall 6: Active Background Import Orphaned When Guest Promotes
+
+**What goes wrong:**
+The import pipeline runs as a background `asyncio.create_task` that holds the `user_id` in its `JobState` dataclass (`_jobs` dict, `app/services/import_service.py`). When a guest promotes, the `user_id` does not change (in-place update). However, if the guest username is stored in `user_repository.update_platform_username` before promotion and the import task is running, the import task's `job.user_id` will still be the same integer — so the import data lands under the correct user. This is correct.
+
+The problem is the import job status UI. The frontend polls `GET /imports/active` using the guest JWT. After promotion, the frontend switches to the new JWT (same user_id). The import job's `job_id` is a UUID string stored in `_jobs` keyed by `job_id`. This survives the JWT transition fine.
+
+The real failure: if the guest starts an import, then promotes via Google SSO (which involves a full page redirect to Google and back), the in-memory `_jobs` dict still holds the job. The frontend callback page restores the new JWT and immediately redirects to the dashboard. The import continues correctly in the background. But if the backend restarts between the import start and the Google redirect return, the job is orphaned — the `cleanup_orphaned_jobs` startup function marks it failed. The user's games are not imported. They see "import failed" with no easy recovery path.
+
+**Why it happens:**
+The OAuth redirect is a multi-second flow that crosses a potential server restart boundary. The import service uses in-memory job state that does not survive restarts.
+
+**How to avoid:**
+- Show a warning on the import page: "Your import is in progress. Signing up now will not interrupt it, but if you use Google Sign-In, please wait until the import completes to avoid rare data loss on server restart."
+- Better: disable the Google SSO promotion button while an import is active for the current guest.
+- The import page already shows active import status — the promotion UI should check `GET /imports/active` and block or warn if any job is PENDING or IN_PROGRESS.
+
+**Warning signs:**
+- Sentry shows `cleanup_orphaned_jobs marked 1 jobs as failed` immediately followed by a guest promotion event.
+- A user reports "started import, signed up with Google, now games are gone."
+
+**Phase to address:**
+Promotion UI — check for active imports before allowing Google SSO promotion and surface a clear warning or block.
+
+---
+
+### Pitfall 7: Guest Users Accumulate Without Cleanup — Table Bloat and Storage Costs
+
+**What goes wrong:**
+Every "Use as Guest" click creates a real `User` row (and potentially `import_job`, `games`, `game_positions`, and `position_bookmarks` rows). Guest users who import games and never promote will remain in the DB indefinitely. At even modest traffic (100 guest sessions/day), this is 36,500 guest users per year with their full game data — potentially millions of `game_positions` rows from non-converting users. PostgreSQL will slow on `VACUUM` over bloated tables. The 75 GB NVMe disk (currently adequate for registered users) can fill from abandoned guest data.
+
+The milestone notes "30-day guest cleanup deferred" — but deferring with no mechanism in place means the cleanup is never implemented until a disk-full emergency forces it.
+
+**Why it happens:**
+Guest user creation is fast and low-friction by design. No natural cleanup mechanism exists because registered users are permanent. Adding cleanup later requires identifying which users are guests (no email, or `is_guest` flag) and ensuring CASCADE deletes propagate correctly without touching promoted users.
+
+**How to avoid:**
+- Add `is_guest: bool` (or `created_as_guest: bool`) and `created_at` (already present in the `User` model) to distinguish guest rows from registered rows.
+- Add a DB index on `(is_guest, created_at)` for efficient batch cleanup queries.
+- Even if the cron job is deferred, write the cleanup SQL in a script (like `scripts/`) and document the retention policy (e.g., delete guest users inactive > 30 days).
+- Set a hard limit on guest accounts created per IP per hour using the existing rate-limiting pattern (slowapi or similar) — prevents cleanup debt from accumulating faster than the deferred job can handle.
+- Ensure `ondelete="CASCADE"` is correct on all guest-owned tables (already correct for `games` → `game_positions` → etc.) so deleting a guest `User` row cascades completely.
+
+**Warning signs:**
+- `SELECT count(*) FROM users WHERE is_guest = true` grows unboundedly week-over-week.
+- Disk usage on `/` (NVMe) trending upward faster than registered user game count explains.
+- `autovacuum` running more frequently than usual (pg_stat_user_tables `n_dead_tup` high on `game_positions`).
+
+**Phase to address:**
+Guest creation backend — add `is_guest` flag and DB index in the same migration that adds the column. Write the cleanup script even if the cron job is deferred. Add per-IP rate limiting on the guest creation endpoint.
+
+---
+
+### Pitfall 8: HttpOnly Cookie Conflicts With Existing Bearer Token Auth
+
+**What goes wrong:**
+The current auth stack uses `BearerTransport` — the JWT lives in `localStorage` and is sent as `Authorization: Bearer <token>` on every API request. For guest users, the plan uses a separate HttpOnly cookie for the guest JWT. This creates two authentication mechanisms on the same API: Bearer token for registered users, cookie for guests.
+
+If the auth middleware is not carefully ordered, a request with both a valid Bearer token and a valid guest cookie will produce undefined behavior — one middleware authenticates the registered user, another authenticates the guest. FastAPI-Users' `current_active_user` dependency resolves via the configured `auth_backend` (Bearer). If the guest cookie auth is added as a second backend, the dependency may use whichever backend resolves first, potentially mixing identities.
+
+Additionally: after promotion, the frontend stores the new JWT as a Bearer token. If the guest cookie is not cleared server-side, subsequent requests may carry both. The guest cookie auth would resolve to the (now-promoted, same user_id) user, but the stale cookie could confuse logging and Sentry traces.
+
+**Why it happens:**
+Mixing CookieTransport with BearerTransport for different user types on the same endpoint is non-standard for FastAPI-Users. The framework is designed for one transport per auth backend.
+
+**How to avoid:**
+- Do NOT use FastAPI-Users' `CookieTransport` for guest tokens. Instead, issue the guest JWT as a normal Bearer token and store it in `localStorage` exactly like the registered user flow. The guest JWT contains a `user_id` that points to a real row in the `users` table — no special transport needed.
+- The "HttpOnly cookie" approach is only necessary if the guest token must survive cross-origin requests without JavaScript access. For a same-origin SPA, Bearer token in `localStorage` is equivalent security-wise and eliminates the dual-transport problem.
+- If HttpOnly cookie is required for security reasons (e.g., XSS resistance for guest data): implement a separate `/auth/guest/token` endpoint that sets the cookie and a dedicated `get_current_guest` dependency that reads the cookie. Never mix this with `current_active_user` on the same endpoint — use separate dependency chains.
+- On promotion, explicitly clear the guest cookie (set `max_age=0`) in the promotion response, even if Bearer is the primary transport.
+
+**Warning signs:**
+- API request carries both `Authorization: Bearer <token>` and `Cookie: guest_token=<token>` simultaneously.
+- `current_active_user` dependency resolves to different users on different requests from the same browser session.
+- Sentry `user.id` alternates between guest_id and registered_id for the same session.
+
+**Phase to address:**
+Guest creation backend — decide the transport mechanism (Bearer preferred) before writing any code. If cookie transport is chosen, implement strict separation of dependency chains.
+
+---
+
+### Pitfall 9: SameSite=Lax Guest Cookie Lost on OAuth Redirect Return
+
+**What goes wrong:**
+If HttpOnly cookie transport IS chosen (despite Pitfall 8 above), `SameSite=Lax` is the correct setting for OAuth compatibility. However, some browsers (notably Safari) and Firefox's bounce-tracking protection strip cookies set during cross-site redirect chains. The Google OAuth flow is:
+
 ```
-Write a unit test that creates a game where `user_color="white"`, `white_rating=1200`, `black_rating=1500`, and asserts `opponent_rating == 1500`.
-
-**Warning signs:**
-- Adjusted endgame skill produces a smooth upward trend that exactly mirrors the user's own rating history — this is the tell that the user's own rating is being used.
-- `avg_normalized_opponent_rating` matches the user's own ELO perfectly for a user who has only played one platform.
-
-**Phase to address:**
-ELO-Adjusted Endgame Skill — the endgame repository query that includes opponent_rating in the SELECT. Add the unit test before wiring the value into the performance calculation.
-
----
-
-### Pitfall 3: Opponent Rating Average Must Come From the Same Row Population as the Skill Score
-
-**What goes wrong:**
-The ELO-adjusted skill score requires `avg_normalized_opponent_rating` computed over the same games that contributed to `raw_endgame_skill`. Conversion games are only those where the user entered the endgame with >= 300cp material advantage. Recovery games are only those where the user was down >= 300cp. These subsets may cluster at different opponent rating ranges (e.g., lower-rated opponents blunder material more often, so conversion games may skew toward weaker opponents). Computing `avg_opponent_rating` over all endgame games, or worse over all games, will introduce a systematic bias in the adjusted score.
-
-**Why it happens:**
-A single `AVG(opponent_rating)` over all endgame entry rows is tempting and cheap. The mismatch with the skill score's actual population is non-obvious.
-
-**How to avoid:**
-Accept a documented approximation: compute `avg_opponent_rating` over all endgame entry rows (not split by conversion/recovery subset), and document this in code. This is a second-order error and acceptable for a heuristic metric. What is not acceptable is computing the average over all user games — the calculation must be scoped to the same endgame entry row set used for skill computation.
-
-The cleanest implementation: fetch opponent_rating as an extra column in `query_endgame_entry_rows`, then compute the average Python-side from the same rows that produce `raw_endgame_skill`. No separate query needed.
-
-**Warning signs:**
-- `avg_normalized_opponent_rating` is approximately 1500 (the reference rating) for a user who only plays against 1200-rated opponents — signals the unfiltered or wrong population is being used.
-- The adjusted score is identical to the raw score for all users despite playing varied opponents.
-
-**Phase to address:**
-ELO-Adjusted Endgame Skill — add `opponent_rating` column to the existing `query_endgame_entry_rows` result set rather than writing a new query.
-
----
-
-### Pitfall 4: NULL Opponent Ratings Break the Adjustment Without Failing Visibly
-
-**What goes wrong:**
-`white_rating` and `black_rating` are nullable in the `games` table. Computer games, casual unrated games, and some early imports may have NULL. SQL `AVG()` ignores NULLs silently. If a user has 500 endgame games but only 50 have opponent ratings, `avg_opponent_rating` is computed from 50 games while `raw_endgame_skill` is computed from 500. The adjusted score appears valid but reflects opponent quality from a non-representative sample with no error or warning.
-
-**Why it happens:**
-SQL AVG() ignores NULLs silently. Python averaging over a list that skips None produces no error. Neither path warns that the denominator shrank.
-
-**How to avoid:**
-- Track `rated_games_count` (non-NULL opponent ratings) alongside `total_endgame_games` in the Python aggregation.
-- Define a constant `MIN_RATED_GAMES_FOR_ELO_ADJUSTMENT = 10`.
-- If `rated_games_count < MIN_RATED_GAMES_FOR_ELO_ADJUSTMENT`, return `elo_adjusted: false` and show the raw score with a label indicating insufficient rating data.
-- Include `elo_adjusted: bool` in the API response schema from day one so the frontend can conditionally show "ELO-adjusted" vs "Raw" in the gauge label.
-
-**Warning signs:**
-- User has only casual/unrated games; adjusted score shows a value but no warning appears.
-- `avg_normalized_opponent_rating` equals exactly 1500 (the reference) — this should only happen when there is no rating data, meaning the fallback is triggered but not being surfaced in the UI.
-
-**Phase to address:**
-ELO-Adjusted Endgame Skill — include `elo_adjusted: bool` and `rated_games_count: int` in the response schema. Decide the fallback behavior before writing the computation.
-
----
-
-### Pitfall 5: Opening Risk Score Conflates Draw Rate With Risk
-
-**What goes wrong:**
-A common mistake when building opening risk metrics is treating "high draw rate = safe opening" and "high decisive rate = risky opening." This penalizes openings where the user wins sharply (the Sicilian, the King's Indian Attack) and rewards passive drawish openings (the Berlin Defense). From the user's perspective, the relevant risk is the probability of a bad outcome: `P(loss)`, not `P(decisive game)`.
-
-If risk is defined as `(wins + losses) / total` (decisiveness) or `1 - draw_rate`, the metric produces a counterintuitive result that repels users from their best openings.
-
-**Why it happens:**
-"Volatility" and "risk" sound similar. Game-level eval-swing volatility (centipawn standard deviation) is easy to compute but measures game drama, not player risk. Developers conflate the two or pick the metric that is easiest to implement rather than the one that is most useful.
-
-**How to avoid:**
-Define opening risk explicitly as user-facing loss rate: `risk_score = loss_pct / 100`. This is simple, interpretable, and directly actionable. If a variance-based metric is desired as a secondary signal, use outcome variance (treating win=1, draw=0.5, loss=0) rather than eval-swing volatility. Do not use eval-swing volatility for opening risk: (a) most users lack engine analysis for all games, and (b) chess.com and lichess eval data are not on the same centipawn scale.
-
-**Warning signs:**
-- Opening risk metric shows the Berlin Defense (notoriously drawish) as the safest opening.
-- The King's Indian Attack (often decisive wins for white) shows as "high risk" even though the user wins most of those decisive games.
-- Users report "this seems backwards."
-
-**Phase to address:**
-Opening Risk — define the formula explicitly in the phase spec before writing any code.
-
----
-
-### Pitfall 6: Changing endgame_skill Field Semantics Breaks Gauge Zone Thresholds Silently
-
-**What goes wrong:**
-The `EndgamePerformanceResponse` schema's `endgame_skill` field is currently the raw composite (0.7 × conversion_pct + 0.3 × recovery_pct). The gauge in `EndgameGauge.tsx` has hardcoded zone thresholds calibrated to this scale. If `endgame_skill` is changed in-place to return the ELO-adjusted value without a corresponding threshold update, the gauge will show incorrect zone boundaries. TypeScript will not catch this because the type is `number` — the change is semantic, not structural.
-
-The adjusted score can also exceed 100 when a user consistently plays against above-reference opponents, which will peg the gauge needle at maximum.
-
-**Why it happens:**
-Backend and frontend are in the same repo, making it tempting to change both "atomically" in one PR. Semantic field reuse looks clean but creates hidden coupling between the formula and the gauge's domain bounds.
-
-**How to avoid:**
-- Add `adjusted_endgame_skill: float` as a NEW field in `EndgamePerformanceResponse` alongside the existing `endgame_skill`.
-- Keep `endgame_skill` as the raw score until the frontend gauge explicitly opts in to the adjusted version.
-- Update the TypeScript `EndgamePerformanceResponse` interface in `endgames.ts` in the same commit as the Pydantic schema change.
-- Decide and document the domain bounds for the adjusted score gauge before writing the frontend gauge component.
-
-**Warning signs:**
-- Gauge needle pegs at maximum or zero after the change.
-- `endgame_skill` docstring says one thing but frontend renders it as something different.
-
-**Phase to address:**
-ELO-Adjusted Endgame Skill — schema design step. Explicitly decide new field vs replace in the design notes before any code is written.
-
----
-
-### Pitfall 7: Rolling ELO-Adjusted Skill Timeline Missing the Pre-Fill Pattern
-
-**What goes wrong:**
-The existing `get_endgame_timeline` correctly fetches all historical games (ignoring the recency cutoff) to pre-fill the rolling window, then filters output points to the recency window. If the new "Endgame Skill Over Time" timeline is added without this pattern, users with a recency filter of "last 3 months" will see a chart that starts from a cold window and shows misleadingly volatile scores at the start of the display range.
-
-This is already solved in the codebase — but only for the existing timeline. It is easy to write the new timeline endpoint from scratch and omit the pre-fill.
-
-**Why it happens:**
-The pre-fill pattern is non-obvious (why would you fetch more data than you display?). A developer writing a new timeline endpoint without closely studying `get_endgame_timeline` will miss it.
-
-**How to avoid:**
-Copy the two-step pattern from `get_endgame_timeline` exactly:
-```python
-# Step 1: Fetch full history (no recency filter) to pre-fill rolling window
-rows = await query_elo_skill_rows(session, ..., recency_cutoff=None)
-# Step 2: Compute rolling series over full history
-series = _compute_rolling_series(rows, window)
-# Step 3: Filter output to recency window
-if cutoff_str:
-    series = [pt for pt in series if pt["date"] >= cutoff_str]
+flawchess.com → accounts.google.com → flawchess.com/auth/google/callback
 ```
 
+On the callback leg, the browser issues a cross-site GET to the backend. `SameSite=Lax` cookies ARE sent on top-level navigation GET requests — so the guest cookie should arrive at the callback. But Firefox's enhanced tracking protection may classify `accounts.google.com` as a bounce tracker and strip the guest cookie on the return.
+
+If the guest cookie is lost, the callback cannot identify the guest user and cannot complete promotion — it falls back to creating a new registered user with no guest data.
+
+**Why it happens:**
+`SameSite=Lax` was chosen as a safe default for cross-site redirects, but browser-level tracking protection adds a layer of unpredictability that SameSite alone cannot address.
+
+**How to avoid:**
+- Do not rely on the guest cookie being present in the OAuth callback. Use the `state` JWT to carry the `guest_user_id` claim (see Pitfall 3). The state is a URL parameter, not a cookie — it survives any browser tracking protection.
+- The guest cookie (if used) serves only for regular API calls from the frontend, not for the OAuth redirect round-trip.
+- Test the promotion flow in Safari (iOS and macOS) and Firefox with Enhanced Tracking Protection enabled before shipping.
+
 **Warning signs:**
-- Timeline chart shows a flat or near-zero line at the start when a recency filter is applied.
-- Removing the recency filter shows much smoother historical data — cold-start artifact.
+- Google SSO promotion works in Chrome but fails in Safari or Firefox with ETP.
+- Backend logs show `guest_user_id=None` in the callback despite the user being a guest.
+- Users report "I signed in with Google but my imported games are gone" only in certain browsers.
 
 **Phase to address:**
-ELO-Adjusted Endgame Skill timeline — apply the pre-fill pattern from day one.
+Account promotion backend — validate in Safari and Firefox before marking the phase complete. Explicitly test the promotion redirect flow in all three major browser engines.
 
 ---
 
-### Pitfall 8: asyncpg Arg Limit Violated When Adding Columns to game_positions Bulk Insert
+### Pitfall 10: `associate_by_email=True` Silently Merges Guest Into Existing Google Account
 
 **What goes wrong:**
-`bulk_insert_positions` chunks position row inserts to stay under asyncpg's 32767-parameter limit. The current chunk size is tuned for the existing column count on `game_positions`. Adding even one new column (e.g., denormalizing `opponent_rating` for query performance) decreases the safe chunk size below the existing constant. The failure mode is a cryptic asyncpg error during import (`too many parameters`), not caught by unit tests unless a large-batch import is tested.
+The existing `google_callback` calls `user_manager.oauth_callback(associate_by_email=True, ...)`. This is correct for registered users — it links a Google identity to an existing account by matching email. For guest promotion, if a guest user clicks Google SSO and the backend does not intercept the promotion path (see Pitfall 3), `associate_by_email=True` will find the guest row has no email and create a new registered user row — abandoning the guest's data. If by some path the guest row has a matching email (impossible normally, but possible in edge cases), `associate_by_email=True` will link the Google OAuth account to the guest row and set `is_verified=True`. This is the correct outcome — but only if guest promotion logic explicitly controls the flow.
+
+The silent failure mode: the callback creates a new `User` row for the Google account, logs the user into the new account, and the guest row remains in the DB indefinitely with all its data and no owner — a permanent data orphan.
 
 **Why it happens:**
-The chunk-size calculation divides 32767 by the number of columns. If a developer adds a column without recalculating the constant, the first large import silently fails after partial insertion.
+`user_manager.oauth_callback` is designed for login, not for promotion. Reusing it for promotion without modifying the guest row first causes it to create a new user.
 
 **How to avoid:**
-- For ELO-adjusted skill: do NOT denormalize `opponent_rating` into `game_positions`. Fetch it at query time via JOIN to `games`. This avoids any bulk insert impact.
-- If any new column is added to `game_positions` for other reasons, recalculate the chunk size immediately and update the comment: `# chunk_size = floor(32767 / num_columns_per_position_row)`.
-- Add a CI test that imports a synthetic batch of 500 games and verifies all positions were inserted successfully.
+- For Google SSO promotion: do NOT call `user_manager.oauth_callback` on the guest promotion path. Instead, write a custom promotion function that: (1) verifies the Google identity via the OAuth access token, (2) updates the guest `User` row with the Google email and sets `is_verified=True`, (3) inserts a row into `oauth_accounts` linking the Google identity to the guest's `user_id`.
+- Add an integration test that exercises the full Google SSO promotion path in isolation and asserts: one `User` row (the guest, now promoted), zero abandoned guest rows, correct `oauth_accounts` entry.
 
 **Warning signs:**
-- Import fails silently for large game batches after a schema migration.
-- Position count in the DB is lower than expected after a large import.
-- Sentry shows `asyncpg.exceptions.TooManyArgumentsError` during import.
+- After Google SSO promotion, `SELECT count(*) FROM users WHERE is_guest = true AND email IS NULL` still contains the original guest row.
+- The user is logged in with a new `user_id` that has no game data.
+- `oauth_accounts` table has a row pointing to a new `user_id`, not the original guest `user_id`.
 
 **Phase to address:**
-Any phase that modifies the `game_positions` schema — recalculate and update chunk size immediately as part of the migration PR.
-
----
-
-### Pitfall 9: Missing NULL Guard on opponent_rating Produces Silent NaN or TypeError
-
-**What goes wrong:**
-New endgame repository queries that JOIN `games` for opponent_rating must handle the case where `opponent_rating` is NULL. SQL `AVG()` excludes NULLs silently, but the Python aggregation loop receives a `None` value per row. If the multiplication `raw_endgame_skill * avg_normalized_opponent_rating / reference_rating` is not guarded, the result is either `None * float = TypeError` (crashes) or `0.0 * float = 0.0` (wrong), or the None propagates into the Pydantic model as a validation error.
-
-**Why it happens:**
-The existing endgame code does not need to handle per-game ratings, so there is no existing pattern for NULL-guarded rating arithmetic. New code written from scratch often skips the guard.
-
-**How to avoid:**
-- When extracting opponent_rating per row, use `row.opponent_rating or None` (not `0`) and skip None values in the average computation.
-- Define the fallback explicitly: if no rows have opponent_rating, return `avg_normalized_opponent_rating = reference_rating` (adjustment factor = 1.0, so adjusted == raw) and set `elo_adjusted = false`.
-- Use a constant `REFERENCE_RATING = 1500` in the service module — never inline the literal.
-
-**Warning signs:**
-- Sentry shows `TypeError: unsupported operand type(s) for *: 'NoneType' and 'float'` from the endgame performance endpoint.
-- `adjusted_endgame_skill` is 0.0 for all users — signals that `avg_normalized_opponent_rating` is being computed as 0 instead of the reference fallback.
-
-**Phase to address:**
-ELO-Adjusted Endgame Skill — service-layer aggregation function. Add the NULL guard and the `elo_adjusted: bool` flag before wiring into the response.
+Account promotion backend — write a dedicated `promote_guest_via_google` function rather than reusing `oauth_callback`. Cover with an integration test.
 
 ---
 
@@ -235,27 +279,29 @@ Shortcuts that seem reasonable but create long-term problems.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Hardcode lichess offset formula without documenting it as approximate | Simpler implementation | Formula drift as platforms update; incorrect adjustment for non-blitz lichess players; users trust it as exact | Acceptable only if labeled as approximate in both code and UI |
-| Denormalize opponent_rating into game_positions | Faster endgame queries without JOIN | Increases bulk insert parameter count, risks asyncpg arg limit, increases row storage, requires migration + backfill | Never for v1.8 — JOIN at query time instead |
-| Reuse endgame entry rows to compute avg opponent rating without deduplication | One query, no changes | Entry rows are per-(game, endgame_class) — a game with multiple endgame classes appears multiple times, over-weighting its opponent_rating in the average | Never — deduplicate by game_id before computing the average, or use SQL AVG with DISTINCT |
-| Define opening risk as 1 - draw_rate | Simple, no schema changes needed | Semantically wrong — high decisive win rate gets penalized equally with high loss rate | Never |
-| Replace endgame_skill field in schema with adjusted value | Fewer API fields | Breaks gauge zone thresholds silently; TypeScript type system cannot detect semantic change | Never in v1.8 — add as a separate field |
-| Skip `elo_adjusted: bool` flag in API response | Simpler schema | Frontend cannot differentiate between adjusted and raw display; users see "ELO-adjusted" label even when rating data is insufficient | Never — include the flag from day one |
+| Defer guest cleanup cron job indefinitely | Simpler v1.8 scope | Table bloat, disk pressure, VACUUM overhead; retroactive cleanup is more complex than proactive | Acceptable only if a cleanup script exists, `is_guest` flag is set, and a backlog item is explicitly scheduled |
+| Store guest JWT in localStorage (same as registered JWT) | No transport complexity | No practical downside for a same-origin SPA; this is actually the better choice | Always acceptable for same-origin SPA |
+| Use `associate_by_email=True` for promotion without a custom path | Reuse existing OAuth logic | Silently creates new user on email mismatch; orphans guest data | Never for promotion — only valid for login |
+| Skip `token_version` claim for JWT invalidation post-promotion | Simpler implementation | Old guest tokens valid for up to 7 days after promotion; acceptable if frontend replaces token immediately | Acceptable if fresh JWT is issued on promotion response |
+| Validate OAuth CSRF only in state JWT without a cookie | Simpler than double-submit | Vulnerable to login CSRF (CVE-2025-68481 pattern); full account takeover risk | Never |
+| Rate-limit guest creation by IP only | Simple to implement | Shared NAT IPs (offices, mobile carriers) get blocked while attackers use rotating proxies | Acceptable at MVP scale; revisit if abuse is observed |
+| Promote by patching `is_guest` without clearing the flag atomically | Simpler update | Promoted user still appears as guest if the flag update fails mid-transaction | Never — use a DB transaction that updates all fields atomically or none |
 
 ---
 
 ## Integration Gotchas
 
-Common mistakes when connecting to existing system components.
+Common mistakes when connecting to the existing FlawChess auth system.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| `apply_game_filters` | Adding a new filter (e.g., min_opponent_rating) directly inside the function body | Add as an optional parameter with default `None` and a clear docstring entry; the function signature feeds 5+ repositories — an undocumented change is a silent footgun |
-| `EndgamePerformanceResponse` Pydantic schema | Adding `adjusted_endgame_skill` and updating TypeScript `EndgamePerformanceResponse` in separate commits | Schema change and TypeScript type update must be in the same commit — `ty check` and knip run in CI but neither catches missing interface fields |
-| `EndgameGauge.tsx` zone thresholds | Copying existing zone bounds (0/40/60/75/100) for the adjusted score gauge | Adjusted score can exceed 100 when playing against above-reference opponents; decide the display domain before wiring the gauge |
-| `query_endgame_entry_rows` result row shape | Adding opponent_rating as column 6 without updating the destructuring tuple in `_aggregate_endgame_stats` | Python will not error on an extra column; it silently ignores it. Use a NamedTuple or TypedDict for the row shape so structural changes are caught |
-| Rolling timeline pre-fill | Passing `recency_cutoff` directly to the DB query for the ELO timeline | Pass `recency_cutoff=None` to the DB query; filter output points in Python after computing the rolling series |
-| `_compute_rolling_series` | Writing a third nearly-identical rolling series function for the ELO-adjusted timeline | Refactor `_compute_rolling_series` to accept an outcome value extractor callable so all rolling timelines share one implementation |
+| `current_active_user` dependency | Adding a second auth backend (CookieTransport) for guests alongside Bearer | Use a single Bearer transport for both guest and registered JWTs; differentiate by a `is_guest` claim in the JWT payload |
+| `google_authorize` / `google_callback` | Not threading `guest_user_id` through the state JWT for promotion | Embed `guest_user_id` as an optional state claim; backend reads it on callback to choose promotion vs. normal login path |
+| `user_manager.oauth_callback` | Calling it unchanged for promotion path | Do NOT call for promotion — write a custom `promote_guest_via_google` that updates the existing row and inserts into `oauth_accounts` |
+| `import_service.run_import` | Assuming `user_id` changes during promotion (it does not with in-place update) | user_id is stable after in-place promotion — no import job re-association needed; but warn user to not use Google SSO while an import is running |
+| `apply_game_filters` | Adding a `is_guest` filter to restrict certain endpoints for guest users | Add as an optional parameter with a default; do not hardcode guest checks inside the shared utility |
+| `UserManager.on_after_login` | Not calling `on_after_login` after promotion (just as it is not called for OAuth flow today) | Manually update `last_login` in the promotion endpoint, the same way `google_callback` does it with `sa_update` |
+| FastAPI-Users `SQLAlchemyBaseUserTable` | Assuming adding `is_guest` column is sufficient for query filtering | Also add a partial index `CREATE INDEX ... WHERE is_guest = true AND created_at < NOW() - INTERVAL '30 days'` for efficient cleanup queries |
 
 ---
 
@@ -265,36 +311,41 @@ Patterns that work at small scale but fail as usage grows.
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Computing avg opponent_rating in a separate query instead of inline with entry rows | Two DB round-trips; latency doubles for the performance endpoint | Add opponent_rating as an extra SELECT column to `query_endgame_entry_rows`; compute the average Python-side from the same fetched data | Noticeable at 10K+ games per user |
-| Re-running `_aggregate_endgame_stats` multiple times in the same request | Redundant Python aggregation CPU; the function iterates all rows twice | `get_endgame_performance` already calls it once — do not add a second call for ELO-adjusted computation; derive adjusted values from the same aggregation pass | Negligible at current scale but sets a bad precedent |
-| Fetching opening risk by querying each opening position individually | N queries for N openings; latency scales linearly | Use the existing `query_position_wdl_batch` pattern — pass a list of hashes, get back a dict in one query | Noticeable at N > 20 openings |
-| Running 8+ sequential endgame timeline queries (already exists) | Slow timeline response | Do not add more per-class queries without profiling; the current 8-query approach is already at the edge of acceptable latency | Already 8 queries; each addition multiplies response time |
+| No rate limiting on `POST /auth/guest/create` | Bots create thousands of guest accounts; disk fills; DB slows | Per-IP rate limit via slowapi (already used in project's async semaphore pattern); max 5 guest accounts per IP per hour | Noticeable at >100 bot requests/hour |
+| Guest game data not cascade-deleted | Manual cleanup queries must enumerate child tables | Verify `ondelete="CASCADE"` on `games.user_id`, `game_positions.game_id`, `position_bookmarks.user_id`, `import_jobs.user_id` before shipping | 1,000+ accumulated guest users |
+| Counting all guest users without an index | `SELECT count(*) FROM users WHERE is_guest = true` is a full table scan | Add `CREATE INDEX idx_users_is_guest_created_at ON users (is_guest, created_at)` in the migration | >50K user rows |
+| Promotion endpoint without row-level lock | Concurrent promotions corrupt user row | Use `SELECT ... FOR UPDATE` or conditional `UPDATE WHERE email IS NULL` | Rare but catastrophic when it happens |
+| Fetching full guest user list for cleanup script | Memory-intensive for large tables | Use keyset pagination: `WHERE is_guest = true AND created_at < cutoff AND id > :last_id LIMIT 100` | >10K guest rows to clean up |
 
 ---
 
 ## Security Mistakes
 
-Domain-specific security issues relevant to these features.
+Domain-specific security issues for guest access and promotion.
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| New ELO-adjusted query missing `Game.user_id == user_id` WHERE clause | One user could query another user's opponent rating distribution | `apply_game_filters` scopes by user_id already; verify any new raw query that bypasses `apply_game_filters` includes an explicit user_id filter |
-| Exposing reference_rating as a user-configurable parameter | Users can inflate or deflate their adjusted score arbitrarily | REFERENCE_RATING must be a server-side constant — never accept it from query parameters |
-| Returning individual opponent ratings in the API response | Privacy concern — surfacing per-game opponent data beyond what is already in game cards | Only return aggregates (avg_normalized_opponent_rating, rated_games_count) in the ELO-adjusted response, not per-game opponent ratings |
+| No CSRF protection on OAuth state (CVE-2025-68481 pattern) | 1-click account takeover via login CSRF | Double-submit cookie: set `flawchess_oauth_csrf` cookie on authorize, validate on callback |
+| Guest `user_id` accepted from request body in promotion endpoint | Attacker promotes someone else's guest account | Always derive `user_id` from the authenticated JWT, never from the request body |
+| Email uniqueness checked only at DB level | 500 error on conflict instead of 409 with actionable message | Application-level pre-check: query for existing email before UPDATE; return 409 `{"code": "email_exists"}` |
+| No validation that `guest_user_id` in OAuth state is actually a guest | Attacker embeds a registered user's `user_id` in the state, triggering a "promotion" that overwrites their account | Before executing promotion path, verify `User.is_guest == True` AND `User.email IS NULL` for the `guest_user_id` in the state claim |
+| Guest accounts never expire | Unlimited data accumulation; privacy risk (GDPR: data must not be retained longer than necessary) | Set `is_guest = true` flag; delete after 30 days of inactivity (no login, no new games) |
+| Promotion endpoint accessible without any auth | Anyone can call `POST /auth/promote` without a guest JWT | Require a valid JWT (guest or otherwise) — use `current_active_user` or equivalent dependency; promotion requires an authenticated session |
 
 ---
 
 ## UX Pitfalls
 
-Common user experience mistakes for these features.
+Common user experience mistakes for guest-to-registered flows.
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| Displaying adjusted_endgame_skill with two decimal places | Implies false precision for a heuristic metric built on a calibration approximation | Round to one decimal; add info popover explaining the formula and its known limits |
-| Showing ELO-adjusted score without indicating it differs from raw | Users cannot tell why their score changed after the update | Always show "ELO-adjusted" label with an info icon when `elo_adjusted == true`; show "Raw score (insufficient rating data)" when `elo_adjusted == false` |
-| Displaying "Endgame Skill Over Time" chart before the user has enough games | Empty or noisy chart for new users | Apply `MIN_GAMES_FOR_ELO_TIMELINE = 10` threshold; show empty state with explanation instead of a near-flat line |
-| Not updating mobile layout alongside desktop layout | Mobile users see old gauge without the new ELO-adjusted label or updated value | The Endgames page has both desktop sidebar and mobile drawer layouts; apply UI changes to both (per CLAUDE.md rule) |
-| Opening risk score shown without sample size | Users over-interpret low-sample risk scores | Show game count alongside every risk score; grey out or asterisk scores below `MIN_GAMES_FOR_OPENING_RISK = 5` |
+| No indication of guest status in the UI | User forgets they are a guest; imports games; closes tab; loses data | Show a persistent but non-intrusive banner: "You're using a guest account — sign up to save your data permanently" |
+| Promotion form shows generic error on email conflict | User doesn't know whether to log in or try a different email | Return `{"code": "email_exists"}` from backend; frontend shows: "This email is already registered. Log in instead?" with a direct login link |
+| Google SSO promotion button active while import is running | User promotes via Google, page redirect interrupts in-memory job, import fails | Disable or warn on the Google SSO button when `GET /imports/active` returns active jobs |
+| After promotion, page shows guest info box again | User just promoted — showing "Sign up to save your data" is confusing | Immediately update auth state in the frontend after promotion response; hide guest-only UI elements reactively |
+| No confirmation step before promotion | User accidentally promotes with wrong Google account | Show a confirmation step: "You're about to sign in as user@gmail.com — this will convert your guest account" |
+| Promotion via email/password requires verification email before access is granted | User promotes, verification email goes to spam, they cannot use the app | Allow access with a "verification pending" state; show a persistent nudge to verify; do not block the full app behind verification |
 
 ---
 
@@ -302,15 +353,16 @@ Common user experience mistakes for these features.
 
 Things that appear complete but are missing critical pieces.
 
-- [ ] **ELO-adjusted gauge:** `elo_adjusted: bool` field is in the API response — verify the frontend shows "ELO-adjusted" vs "Raw" label conditionally, not unconditionally.
-- [ ] **Cross-platform normalization:** Edge case of user with only lichess games (100% offset applied) and user with only chess.com games (0% offset) both produce sensible, distinct scores.
-- [ ] **Opponent color logic:** Unit test passes for a known-color game asserting `opponent_rating == black_rating` when `user_color == "white"`.
-- [ ] **NULL opponent ratings:** Endpoint tested with a user who has all unrated games — returns valid response with `elo_adjusted: false`, no 500 or NaN.
-- [ ] **Rolling ELO-adjusted timeline:** Pre-fill pattern applied — switching recency filter produces no cold-start artifacts in the chart.
-- [ ] **TypeScript types:** `EndgamePerformanceResponse` interface in `endgames.ts` updated in the same PR as the Pydantic schema — new field is present and typed correctly.
-- [ ] **asyncpg chunk size:** If any new column was added to `game_positions`, chunk size constant was recalculated and a large-batch import test passes.
-- [ ] **Opening risk formula:** Definition is `loss_pct` or a clearly labeled WDL decomposition — not `1 - draw_rate`. Verified with a Berlin Defense position (drawish, low-loss) showing low risk.
-- [ ] **Mobile layout:** New gauge label and adjusted score appear correctly on mobile — Endgames page mobile section was updated alongside the desktop section.
+- [ ] **Guest creation endpoint:** Rate limiting applied — verify `GET /auth/guest/create` (or equivalent) returns 429 after threshold from same IP.
+- [ ] **OAuth CSRF protection:** `google_authorize` response sets `flawchess_oauth_csrf` cookie AND `google_callback` validates it — verify both sides, not just the state JWT signature check.
+- [ ] **Google SSO promotion:** After flow completes, `SELECT * FROM users WHERE id = :guest_id` shows `email IS NOT NULL`, `is_guest = false` (or equivalent), and the guest row count has NOT increased.
+- [ ] **Email conflict:** Promotion with an email that belongs to another user returns HTTP 409 with `{"code": "email_exists"}` — not 500 and not 200.
+- [ ] **Old guest JWT after promotion:** Frontend stores the new JWT issued by the promotion response — verify via browser DevTools that `localStorage` no longer contains the pre-promotion token.
+- [ ] **Active import during Google SSO promotion:** Start an import as a guest, then attempt Google SSO promotion — verify warning or block appears; verify import completes correctly.
+- [ ] **Cascade delete:** Delete a promoted guest `User` row — verify all `games`, `game_positions`, `position_bookmarks`, and `import_jobs` rows are gone.
+- [ ] **is_guest flag:** After promotion, `User.is_guest` (or equivalent field) is `false` — guest cleanup job would not target this user.
+- [ ] **Mobile layout:** Guest info box and promotion CTA appear correctly at 375px — verify both the homepage "Use as Guest" button and the import page info box.
+- [ ] **Safari / Firefox ETP:** Google SSO promotion tested in Safari (iOS + macOS) and Firefox with Enhanced Tracking Protection — promotion completes with guest data intact.
 
 ---
 
@@ -320,11 +372,12 @@ When pitfalls occur despite prevention, how to recover.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Wrong color for opponent_rating deployed to production | MEDIUM | Deploy fix immediately; adjusted scores auto-correct on next API call — no stored adjusted values in DB |
-| asyncpg arg limit triggered in production import | HIGH | Emergency hotfix: reduce `_BATCH_SIZE` in import_service.py and recalculate chunk size; no data loss but imports fail for affected users until fix ships |
-| Schema field renamed, frontend showing wrong data | MEDIUM | Rollback frontend deploy; add deprecated alias in Pydantic model; fix TypeScript type in next PR |
-| Lichess offset formula produces obviously wrong results | LOW | The formula is pure Python in a named function — hotfix is a one-line change with no migration needed |
-| Opening risk score inverted (risk = 1 - loss_pct) | LOW | Fix Python computation; no DB changes needed; users see corrected scores immediately after deploy |
+| OAuth CSRF vulnerability discovered post-ship | HIGH | Emergency deploy of double-submit cookie fix; rotate `SECRET_KEY` to invalidate all existing state JWTs; notify affected users if account linkage was observed |
+| Guest data orphaned by failed Google SSO promotion | MEDIUM | Write a one-off script to reassociate `games.user_id` from the orphaned guest_id to the new registered user_id; verify uniqueness constraints don't block the update |
+| Disk full from guest data accumulation | HIGH | Emergency cleanup: `DELETE FROM users WHERE is_guest = true AND created_at < NOW() - INTERVAL '7 days'` (aggressive; requires CASCADE on child tables to be confirmed first); expand disk on Hetzner |
+| Concurrent promotion creates duplicate email | LOW | Catch `UniqueViolationError` at the endpoint; return 409; the second promotion attempt was redundant — user is already promoted |
+| Old guest JWT used post-promotion for unauthorized access | LOW | No immediate recovery needed — same user_id, same data; wait for 7-day expiry; if urgent, implement token_version increment (requires migration + middleware change) |
+| Google SSO creates new user instead of promoting guest | MEDIUM | Identify the orphaned guest row by `created_at` + `chess_com_username`/`lichess_username`; run SQL to update `games.user_id` to new user's id; delete orphaned guest row |
 
 ---
 
@@ -334,28 +387,32 @@ How roadmap phases should address these pitfalls.
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Lichess offset formula not documented as approximate | ELO-Adjusted Skill — backend service | Code review: `normalize_lichess_rating()` has a docstring with "approximate" and known limits |
-| Opponent color logic inverted | ELO-Adjusted Skill — endgame repository | Unit test: white-user game returns `opponent_rating == black_rating` |
-| Wrong population for opponent rating avg | ELO-Adjusted Skill — backend service | Code review: opponent_rating extracted from same entry rows as skill, not a separate unscoped query |
-| NULL opponent ratings silently biasing adjustment | ELO-Adjusted Skill — backend service | Test: user with all unrated games returns `elo_adjusted: false`, no error |
-| endgame_skill semantics changed without new field | ELO-Adjusted Skill — schema design | `adjusted_endgame_skill` is a new field; `endgame_skill` unchanged in response |
-| asyncpg arg limit on new columns | Any game_positions schema phase | CI import test of 500-game batch completes without error after migration |
-| Rolling timeline missing pre-fill | ELO-Adjusted Skill — timeline | Switching from 3-month filter to all-time shows no cold-start jump |
-| Opening risk conflates draw rate with risk | Opening Risk — formula definition | Berlin Defense (high draw rate) shows low risk; Sicilian (decisive wins) shows appropriate risk |
-| Mobile layout not updated | All UI phases | Search for mobile counterpart markup before marking phase complete |
+| CVE-2025-68481 OAuth CSRF (Pitfall 1) | Guest creation backend — fix existing OAuth endpoints | `google_authorize` sets CSRF cookie; `google_callback` validates it; integration test passes |
+| Guest JWT valid post-promotion (Pitfall 2) | Account promotion endpoint | Promotion response includes fresh JWT; frontend test confirms old token is replaced |
+| Guest identity lost in OAuth redirect (Pitfall 3) | Account promotion backend — Google SSO path | `state` JWT contains `guest_user_id`; callback correctly routes to promotion path |
+| Concurrent promotion race (Pitfall 4) | Account promotion endpoint | `UPDATE ... WHERE email IS NULL` or `SELECT FOR UPDATE` used; concurrent request returns 409 not 500 |
+| Email conflict during promotion (Pitfall 5) | Account promotion endpoint | 409 with `email_exists` code returned; no 500 on duplicate email |
+| Active import orphaned during Google SSO (Pitfall 6) | Promotion UI | Active import check before Google SSO button is enabled; warning displayed |
+| Guest accumulation / table bloat (Pitfall 7) | Guest creation backend | `is_guest` flag set; DB index created; cleanup script written |
+| HttpOnly cookie conflicts with Bearer (Pitfall 8) | Guest creation backend — transport decision | Single Bearer transport for all JWTs; no cookie transport mixed in |
+| SameSite cookie lost on redirect (Pitfall 9) | Account promotion backend — Google SSO path | `guest_user_id` in state JWT, not in cookie; Safari + Firefox tested |
+| `associate_by_email=True` orphans guest data (Pitfall 10) | Account promotion backend — Google SSO path | Custom `promote_guest_via_google` function; integration test confirms zero orphaned guest rows |
 
 ---
 
 ## Sources
 
-- Codebase: `app/services/endgame_service.py`, `app/repositories/endgame_repository.py`, `app/models/game.py`, `app/repositories/stats_repository.py`, `app/schemas/endgames.py` — HIGH confidence (direct inspection)
-- `.planning/ROADMAP.md` Phase 999.5 backlog spec — HIGH confidence (primary requirements source)
-- [NoseKnowsAll: Introducing a universal rating converter for 2024 (lichess.org)](https://lichess.org/@/NoseKnowsAll/blog/introducing-a-universal-rating-converter-for-2024/X2QAH27t) — lichess-to-chess.com offset varies by skill level; not a fixed constant — MEDIUM confidence
-- [ChessGoals rating comparison](https://chessgoals.com/rating-comparison/) — Community-observed offset patterns — MEDIUM confidence
-- [jk_182: Quantifying Volatility of Chess Games (lichess.org)](https://lichess.org/@/jk_182/blog/quantifying-volatility-of-chess-games/H6MWvX98) — eval-swing volatility does not equate to user-facing risk — MEDIUM confidence
-- [asyncpg issue #127: Fails with queries with more than 32768 arguments](https://github.com/MagicStack/asyncpg/issues/127) — 32767 parameter limit confirmed — HIGH confidence
-- [Andrew Klotz: Passing the Postgres 65535 parameter limit](https://klotzandrew.com/blog/postgres-passing-65535-parameter-limit/) — chunking and staging table workarounds — HIGH confidence
+- Codebase: `app/routers/auth.py`, `app/users.py`, `app/services/import_service.py`, `app/models/user.py`, `app/models/game.py` — HIGH confidence (direct inspection)
+- [CVE-2025-68481: 1-click Account Takeover in Apps Using FastAPI SSO — GitHub Advisory](https://github.com/fastapi-users/fastapi-users/security/advisories/GHSA-5j53-63w8-8625) — HIGH confidence (official advisory)
+- [CVE-2025-68481 — GitLab Advisory Database](https://advisories.gitlab.com/pkg/pypi/fastapi-users/CVE-2025-68481/) — HIGH confidence
+- [Add a double-submit cookie in the OAuth flow — fastapi-users commit 7cf413c](https://github.com/fastapi-users/fastapi-users/commit/7cf413cd766b9cb0ab323ce424ddab2c0d235932) — HIGH confidence (official fix)
+- [Auth0: SameSite Cookie Attribute Changes](https://auth0.com/docs/manage-users/cookies/samesite-cookie-attribute-changes) — MEDIUM confidence (authoritative vendor docs)
+- [Gotchas With Same Site Strict Cookie and OAuth — hrishikeshpathak.com](https://hrishikeshpathak.com/blog/gotchas-with-same-site-strict-cookie-and-oauth/) — MEDIUM confidence
+- [Audiobookshelf issue #5127 — Firefox bounce-tracking strips OIDC session cookie](https://github.com/advplyr/audiobookshelf/issues/5127) — MEDIUM confidence (real-world Firefox ETP issue)
+- [Curity: OAuth and Same Site Cookies best practices](https://curity.io/resources/learn/oauth-cookie-best-practices/) — MEDIUM confidence
+- [Stop Duplicate Records: Fix Race Conditions Using Unique Database Indexes](https://medium.com/@itsvinayc/race-conditions-in-web-apps-and-how-a-unique-index-can-save-you-736d682dabfb) — MEDIUM confidence
+- [Descope: How to Invalidate a JWT Token After Logout](https://www.descope.com/blog/post/jwt-logout-risks-mitigations) — MEDIUM confidence
 
 ---
-*Pitfalls research for: FlawChess v1.8 — ELO-adjusted metrics, opening risk scores, refined endgame statistics*
-*Researched: 2026-04-04*
+*Pitfalls research for: FlawChess v1.8 — Guest access with account promotion to existing FastAPI-Users system*
+*Researched: 2026-04-06*

@@ -10,7 +10,8 @@
 - ✅ **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33 (shipped 2026-03-28)
 - ✅ **v1.6 UI Polish & Improvements** — Phases 34-39 (shipped 2026-03-30)
 - ✅ **v1.7 Consolidation, Tooling & Refactoring** — Phases 40-43 (shipped 2026-04-03)
-- 🚧 **v1.8 Advanced Analytics** — Phases 44-46 (in progress)
+- 🚧 **v1.8 Guest Access** — Phases 44-47 (in progress)
+- ○ **v1.9 Advanced Analytics** — Phases 48-50 (planned)
 
 ## Phases
 
@@ -106,17 +107,73 @@
 
 </details>
 
-### v1.8 Advanced Analytics (Phases 44-46)
+### v1.8 Guest Access (Phases 44-47)
 
-- [ ] **Phase 44: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
-- [ ] **Phase 45: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
-- [ ] **Phase 46: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
+- [ ] **Phase 44: Guest Session Foundation** - DB schema, OAuth CSRF fix, guest creation backend with rate limiting
+- [ ] **Phase 45: Guest Frontend** - "Use as Guest" button, auth context, persistent guest indicator
+- [ ] **Phase 46: Email/Password Promotion** - Promote modal (email/password path), import page info box, conflict handling
+- [ ] **Phase 47: Google SSO Promotion** - Custom OAuth promotion route with guest identity preservation
+
+### v1.9 Advanced Analytics (Phases 48-50)
+
+- [ ] **Phase 48: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
+- [ ] **Phase 49: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
+- [ ] **Phase 50: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
 
 ## Phase Details
 
-### Phase 44: Endgame ELO — Backend + Breakdown Table
-**Goal**: Users can see their Endgame ELO per platform/time-control combination and understand how their endgame skill compares to their actual rating
+### Phase 44: Guest Session Foundation
+**Goal**: The backend can create and persist guest sessions securely, with the OAuth CSRF vulnerability patched before any new OAuth routes are added
 **Depends on**: Phase 43
+**Requirements**: GUEST-02, GUEST-03, GUEST-05, SEC-01, SEC-02
+**Success Criteria** (what must be TRUE):
+  1. A visitor can obtain a Bearer JWT for a guest account via a single POST request with no credentials
+  2. The guest JWT remains valid across page refreshes and is extended on each visit, resetting the 30-day expiry
+  3. A guest user has full platform access — import, move explorer, endgame analysis, and bookmarks all accept the guest JWT without special-casing
+  4. The existing Google OAuth callback validates a CSRF cookie, closing CVE-2025-68481
+  5. The guest creation endpoint rejects excessive requests from the same IP, preventing mass account creation
+**Plans**: TBD
+
+### Phase 45: Guest Frontend
+**Goal**: Visitors can start using FlawChess as a guest from the homepage and always see their guest status clearly
+**Depends on**: Phase 44
+**Requirements**: GUEST-01, GUEST-04
+**Success Criteria** (what must be TRUE):
+  1. The homepage shows a "Use as Guest" button alongside "Sign up free" — one click starts a guest session with no form or friction
+  2. After clicking "Use as Guest", the user lands on the app with full functionality immediately available
+  3. A persistent, non-dismissible guest indicator is visible in the header/navbar at all times during a guest session
+  4. The guest's synthetic internal email is never displayed anywhere in the UI (header, profile, mobile drawer)
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 46: Email/Password Promotion
+**Goal**: A guest user can upgrade to a full account using email and password, with all their imported data preserved and clear guidance on why upgrading is beneficial
+**Depends on**: Phase 45
+**Requirements**: PROMO-01, PROMO-03, PROMO-04, GUX-01, GUX-02
+**Success Criteria** (what must be TRUE):
+  1. The import page shows an info box explaining that signing up preserves games across devices and prevents data loss when the guest session expires
+  2. A guest user can open a promotion modal and see a confirmation step listing what data will be preserved before committing
+  3. After entering email and password, the guest account is upgraded in-place and the user's games and bookmarks are immediately accessible under the new account
+  4. If the chosen email is already registered, the user sees a clear error message directing them to log in instead
+  5. After successful promotion, the user is redirected back to the page they were on before opening the modal
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 47: Google SSO Promotion
+**Goal**: A guest user can upgrade to a full account using Google SSO, with their identity surviving the OAuth redirect round-trip and active imports handled safely
+**Depends on**: Phase 46
+**Requirements**: PROMO-02
+**Success Criteria** (what must be TRUE):
+  1. A guest user can click "Continue with Google" in the promotion modal and complete the OAuth flow to upgrade their account, preserving all imported data
+  2. The guest identity is preserved across the Google OAuth redirect — data is not lost or orphaned in a new empty account
+  3. If a game import is currently running, the Google SSO promotion button is disabled or shows a warning, preventing mid-import promotion
+  4. The promotion flow works correctly in Safari and Firefox with Enhanced Tracking Protection enabled
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 48: Endgame ELO — Backend + Breakdown Table
+**Goal**: Users can see their Endgame ELO per platform/time-control combination and understand how their endgame skill compares to their actual rating
+**Depends on**: Phase 47
 **Requirements**: ELO-01, ELO-02, ELO-03, ELO-04, ELO-06
 **Success Criteria** (what must be TRUE):
   1. User sees a breakdown table showing Endgame ELO, Actual ELO, and the gap for each qualifying (platform, time-control) combination
@@ -126,9 +183,9 @@
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 45: Endgame ELO — Timeline Chart
+### Phase 49: Endgame ELO — Timeline Chart
 **Goal**: Users can track their Endgame ELO over time per combination and visually see where it diverges from their actual rating
-**Depends on**: Phase 44
+**Depends on**: Phase 48
 **Requirements**: ELO-05
 **Success Criteria** (what must be TRUE):
   1. User sees a timeline chart with paired lines per (platform, time-control) combination — one bright line for Endgame ELO and one dark line for Actual ELO
@@ -137,9 +194,9 @@
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 46: Opening Risk & Drawishness
+### Phase 50: Opening Risk & Drawishness
 **Goal**: Users can see risk and drawishness signals per candidate move in the move explorer to inform opening selection
-**Depends on**: Phase 43
+**Depends on**: Phase 47
 **Requirements**: OPN-01, OPN-02
 **Success Criteria** (what must be TRUE):
   1. User sees an opening risk indicator per move row in the move explorer, reflecting material imbalance variance at the opening-to-middlegame transition
@@ -197,9 +254,13 @@
 | 41.1. Import Speed Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
 | 42. Backend Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
 | 43. Frontend Cleanup | v1.7 | 1/1 | Complete    | 2026-04-03 |
-| 44. Endgame ELO — Backend + Breakdown Table | v1.8 | 0/? | Not started | - |
-| 45. Endgame ELO — Timeline Chart | v1.8 | 0/? | Not started | - |
-| 46. Opening Risk & Drawishness | v1.8 | 0/? | Not started | - |
+| 44. Guest Session Foundation | v1.8 | 0/? | Not started | - |
+| 45. Guest Frontend | v1.8 | 0/? | Not started | - |
+| 46. Email/Password Promotion | v1.8 | 0/? | Not started | - |
+| 47. Google SSO Promotion | v1.8 | 0/? | Not started | - |
+| 48. Endgame ELO — Backend + Breakdown Table | v1.9 | 0/? | Not started | - |
+| 49. Endgame ELO — Timeline Chart | v1.9 | 0/? | Not started | - |
+| 50. Opening Risk & Drawishness | v1.9 | 0/? | Not started | - |
 
 ## Backlog
 

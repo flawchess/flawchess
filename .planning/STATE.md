@@ -1,12 +1,12 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.8
-milestone_name: Advanced Analytics
+milestone_name: Guest Access
 status: active
-last_updated: "2026-04-04T00:00:00.000Z"
-last_activity: 2026-04-04
+last_updated: "2026-04-06T00:00:00.000Z"
+last_activity: 2026-04-06
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,40 +17,37 @@ progress:
 
 ## Current Position
 
-Phase: 44 of 46 (Endgame ELO — Backend + Breakdown Table)
-Plan: —
+Phase: 44 of 47 in v1.8 (Guest Session Foundation)
+Plan: 0 of ? in current phase
 Status: Ready to plan
-Last activity: 2026-04-04 — v1.8 roadmap created, 3 phases defined (44-46)
+Last activity: 2026-04-06 — v1.8 roadmap created (phases 44-47)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [░░░░░░░░░░] 0% (v1.8 phases)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-04)
+See: .planning/PROJECT.md (updated 2026-04-06)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: v1.8 Advanced Analytics — Phase 44
+Current focus: v1.8 Guest Access — Phase 44 Guest Session Foundation
 
 ## Key Context
 
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
 - ORM: SQLAlchemy 2.x async + Alembic
-- Auth: FastAPI-Users 15.0.4 (JWT, integer user IDs)
+- Auth: FastAPI-Users 15.0.5 (Bearer JWT, integer user IDs)
 - Core algorithm: Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import
-- Deployment: Docker Compose on Hetzner CX32 (2 vCPUs, 3.7 GB RAM + 2 GB swap)
+- Deployment: Docker Compose on Hetzner CX32 (4 vCPUs, 7.6 GB RAM + 2 GB swap)
 
 ## Accumulated Context
 
 ### Decisions
 
-- Phase 44: Endgame ELO uses per-(platform, time-control) breakdown — NO cross-platform normalization (dropped in favor of honest native-scale display)
-- Phase 44: Endgame ELO formula inverts the original 999.5 approach: start with user's actual rating per combo, adjust by how user's conv/recov compares to FIXED baselines (e.g. ~85% conv, ~15% recov) to produce Endgame ELO
-- Phase 44: Uses user's own rating (from games table, per-combo), NOT opponent rating — so opponent color inversion pitfall does not apply
-- Phase 44: Baseline constants are flagged as calibration values — refine post-launch based on empirical data
-- Phase 44: UI is a breakdown TABLE (Actual ELO | Endgame ELO | Gap per combo), not a gauge — no gauge-domain decision needed
-- Phase 44: Minimum rated-game threshold per combo; "Insufficient data" fallback when nothing qualifies
-- Phase 45: Timeline shows paired color-matched lines per combo (bright = Endgame ELO, dark = Actual ELO)
-- Phase 46: Opening risk = variance of `material_imbalance` at opening→middlegame transition positions (NOT WDL entropy — rejected as unhelpful to users)
-- Phase 46: Opening drawishness = draw rate of games that ended during opening phase (never reached middlegame), using existing `game_phase` classification from v1.5; muted display for low samples
+- v1.8: Bearer transport for guest JWTs (not CookieTransport) — avoids dual-transport complexity and OAuth redirect issues in Safari/Firefox ETP
+- v1.8: Guest as first-class User row with is_guest=True — promotion is single-row UPDATE, no FK migration needed
+- v1.8: Conversion optimization (CONV-01/02/03) deferred to post-launch Future Requirements
+- Phase 44: Endgame ELO per-(platform, time-control) breakdown — no cross-platform normalization
+- Phase 44: Formula adjusts user's actual rating using conv/recov vs fixed baselines; NOT opponent rating
+- Phase 46: Opening risk = variance of material_imbalance at opening→middlegame transition
 
 ### Pending Todos
 
@@ -59,10 +56,10 @@ Current focus: v1.8 Advanced Analytics — Phase 44
 
 ### Blockers/Concerns
 
+- Phase 44: Check whether `slowapi` is installed before using for rate limiting — lightweight manual alternative avoids new dep if not
+- Phase 44: Align on guest email sentinel domain (`@guest.local` vs `@guest.flawchess.internal`) before implementation
+- Phase 47: New callback URI `/api/auth/guest/promote/google/callback` must be registered in Google Cloud Console — manual action before Phase 47 can be tested end-to-end
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
-- bulk_insert_positions chunk_size tuning required when adding columns — asyncpg 32767 arg limit
-- Phase 44: Fixed baseline constants for conv/recov need to be reasonable starting values — refine after launch based on observed Endgame ELO numbers vs user intuition
-- Phase 46: Material imbalance variance may still conflate with blunders at low ELO — treat as relative within-player metric, not absolute cross-player comparison
 
 ---
-Last activity: 2026-04-04 - v1.8 roadmap created (phases 44-46)
+Last activity: 2026-04-06 — v1.8 roadmap created, Phase 44 ready to plan

@@ -28,6 +28,7 @@ async def get_profile(
     return UserProfileResponse(
         email=user.email,
         is_superuser=user.is_superuser,
+        is_guest=user.is_guest,
         chess_com_username=profile.chess_com_username,
         lichess_username=profile.lichess_username,
         created_at=profile.created_at,
@@ -49,6 +50,7 @@ async def update_profile(
     return UserProfileResponse(
         email=user.email,
         is_superuser=user.is_superuser,
+        is_guest=user.is_guest,
         chess_com_username=updated.chess_com_username,
         lichess_username=updated.lichess_username,
         created_at=updated.created_at,

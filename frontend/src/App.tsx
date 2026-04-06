@@ -5,14 +5,17 @@ import { Link } from 'react-router-dom';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { Toaster } from '@/components/ui/sonner';
+import { toast } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon, TrophyIcon } from 'lucide-react';
+import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon, TrophyIcon, EyeOff } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
 
+import { apiClient } from '@/api/client';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -76,6 +79,7 @@ function isActive(to: string, pathname: string): boolean {
 function NavHeader() {
   const location = useLocation();
   const { logout } = useAuth();
+  const { data: profile } = useUserProfile();
 
   return (
     <header className="hidden sm:block bg-background border-b border-border px-6 overflow-hidden">
@@ -104,7 +108,17 @@ function NavHeader() {
             ))}
           </nav>
         </div>
-        <div className="flex items-center">
+        <div className="flex items-center gap-2">
+          {profile?.is_guest && (
+            <Badge
+              className="bg-amber-500/15 text-amber-500 border-amber-500/30 text-xs"
+              data-testid="nav-guest-badge"
+              aria-label="Guest session"
+            >
+              <EyeOff className="h-3 w-3 mr-1" />
+              Guest
+            </Badge>
+          )}
           <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
             Logout
           </Button>
@@ -195,7 +209,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
       <DrawerContent data-testid="mobile-more-drawer">
         <DrawerHeader>
           <DrawerTitle className="text-sm font-medium text-foreground">
-            {profile?.email ?? 'Account'}
+            {profile?.is_guest ? 'Guest session' : (profile?.email ?? 'Account')}
           </DrawerTitle>
         </DrawerHeader>
         <div className="px-4 pb-4">
@@ -235,11 +249,33 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
 // ─── Layout (protected pages) ─────────────────────────────────────────────────
 
 function ProtectedLayout() {
-  const { token } = useAuth();
+  const { token, loginWithToken } = useAuth();
+  const { data: profile } = useUserProfile();
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const isOpeningsRoute = location.pathname.startsWith('/openings');
   const isEndgamesRoute = location.pathname.startsWith('/endgames');
+  const refreshedRef = useRef(false);
+
+  // Show deferred toast from OAuth callback — checked here because ProtectedLayout
+  // is the stable destination after the redirect chain (callback → / → /openings).
+  useEffect(() => {
+    const msg = sessionStorage.getItem('pending_toast');
+    if (msg) {
+      sessionStorage.removeItem('pending_toast');
+      toast.success(msg);
+    }
+  }, []);
+
+  // GUEST-05: Refresh guest JWT on each visit, resetting the 30-day expiry
+  useEffect(() => {
+    if (profile?.is_guest && !refreshedRef.current) {
+      refreshedRef.current = true;
+      apiClient.post<{ access_token: string }>('/auth/guest/refresh')
+        .then((res) => loginWithToken(res.data.access_token))
+        .catch(() => { /* token still valid, refresh is best-effort */ });
+    }
+  }, [profile?.is_guest, loginWithToken]);
 
   if (!token) {
     return <Navigate to="/login" replace />;
@@ -247,7 +283,11 @@ function ProtectedLayout() {
   return (
     <>
       <NavHeader />
-      {!isOpeningsRoute && !isEndgamesRoute && <MobileHeader />}
+      {!isOpeningsRoute && !isEndgamesRoute && (
+        <>
+          <MobileHeader />
+        </>
+      )}
       <main className="pb-16 sm:pb-0">
         <Outlet />
       </main>

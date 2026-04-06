@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
-import { X } from 'lucide-react';
+import { X, EyeOff } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import {
@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useImportTrigger, useImportPolling } from '@/hooks/useImport';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useAuth } from '@/hooks/useAuth';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 
@@ -96,6 +97,7 @@ function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jo
 }
 
 export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: ImportPageProps) {
+  const { logoutForPromotion } = useAuth();
   const { data: profile, isLoading: profileLoading } = useUserProfile();
   const trigger = useImportTrigger();
   const queryClient = useQueryClient();
@@ -185,6 +187,27 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       <h1 data-testid="import-page-heading" className="text-2xl font-bold tracking-tight">
         Import Games
       </h1>
+
+      {profile?.is_guest && (
+        <Alert variant="info" icon={EyeOff} data-testid="import-guest-promo-info" className="mb-4">
+          <div>
+              <p className="font-medium">Welcome, guest! If you like it here, consider{' '}
+                <button
+                  onClick={() => { logoutForPromotion(); window.location.href = '/login?tab=register'; }}
+                  className="font-medium underline underline-offset-2"
+                  data-testid="import-guest-promo-link"
+                >
+                  signing up free
+                </button>{' '}
+                for these advantages:
+              </p>
+              <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                <li>Access your games from any device</li>
+                <li>Prevent losing your imported games and bookmarks after 30 days of inactivity</li>
+              </ul>
+          </div>
+        </Alert>
+      )}
 
       {profileLoading ? (
         <p className="text-sm text-muted-foreground">Loading profile...</p>

@@ -1,466 +1,467 @@
 # Architecture Research
 
-**Domain:** Advanced chess analytics integration — ELO-adjusted metrics, opening risk, refined endgame stats
-**Researched:** 2026-04-04
-**Confidence:** HIGH — based on direct codebase inspection of all affected modules (v1.7, shipped 2026-04-03)
+**Domain:** Guest access (anonymous users with account promotion) on existing FastAPI-Users app
+**Researched:** 2026-04-06
+**Confidence:** HIGH
 
 ## Standard Architecture
-
-The existing architecture is strict 3-layer: routers (HTTP only) → services (business logic) → repositories (SQL only). No SQL in services, no business logic in routers. All new features follow this layering.
 
 ### System Overview
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                     HTTP Layer (FastAPI Routers)                   │
-│  routers/endgames.py                 routers/openings.py          │
-│  GET /performance  (MODIFY)          POST /next-moves  (MODIFY)   │
-│  GET /elo-timeline (NEW)                                           │
-├──────────────────────────────────────────────────────────────────┤
-│                     Business Logic (Services)                      │
-│  endgame_service.py                  openings_service.py          │
-│  · get_endgame_performance (MODIFY)  · get_next_moves (MODIFY)   │
-│  · get_elo_skill_timeline  (NEW)     · _wdl_entropy    (NEW)      │
-│  · _normalize_rating       (NEW)                                   │
-│  · _compute_elo_adjusted_skill (NEW)                               │
-├──────────────────────────────────────────────────────────────────┤
-│                     Data Access (Repositories)                     │
-│  endgame_repository.py               openings_repository.py       │
-│  · query_endgame_entry_rows (KEEP)   · query_next_moves (KEEP)   │
-│  · query_elo_skill_rows    (NEW)                                   │
-├──────────────────────────────────────────────────────────────────┤
-│                     Database (PostgreSQL)                          │
-│  games table                         game_positions table          │
-│  · white_rating / black_rating  ←── KEY for ELO (already stored) │
-│  · platform                          · endgame_class (SmallInt)   │
-│  · result / user_color               · material_imbalance         │
-│  NO MIGRATIONS NEEDED for core ELO feature                        │
-└──────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Frontend (React)                              │
+├─────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────┐  ┌─────────────────────────────────────────┐  │
+│  │  AuthContext      │  │  ProtectedLayout (token check)          │  │
+│  │  - token (state)  │  │  - guests pass through (token exists)  │  │
+│  │  + isGuest flag   │  │  - still redirects /login if no token  │  │
+│  │  + promoteGuest() │  └─────────────────────────────────────────┘  │
+│  └──────────────────┘                                                │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │  apiClient (axios)                                            │   │
+│  │  Request: attach Bearer token from localStorage              │   │
+│  │  Response 401: clear cache, redirect /login (unchanged)      │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+                              │ Bearer JWT in Authorization header
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Backend (FastAPI)                             │
+├─────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  POST /auth/guest/create  (NEW — no auth required)          │    │
+│  │  Creates User(is_guest=True, email=<uuid>@guest.local)      │    │
+│  │  Returns JWT token in response body (Bearer transport)      │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  POST /auth/guest/promote  (NEW — requires current_user)    │    │
+│  │  Validates email uniqueness                                 │    │
+│  │  Updates user: email, hashed_password, is_guest=False       │    │
+│  │  Returns new JWT for same user_id                           │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  GET  /auth/guest/promote/google/authorize (NEW)            │    │
+│  │  GET  /auth/guest/promote/google/callback  (NEW)            │    │
+│  │  Carries guest_user_id in OAuth state JWT                   │    │
+│  │  On callback: UPDATE user, INSERT oauth_account             │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │  current_active_user dependency (FastAPI-Users, UNCHANGED)   │   │
+│  │  Returns guest User or registered User identically           │   │
+│  │  All data queries filter by user_id — no changes needed      │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────────────┤
+│                        Database (PostgreSQL)                         │
+│  ┌──────────────┐  ┌─────────────────────────────────────────────┐  │
+│  │  users table  │  │  All user-owned tables (games, positions,  │  │
+│  │  + is_guest   │  │  bookmarks, import_jobs) — UNCHANGED       │  │
+│  │    column     │  │  All already FK CASCADE on user deletion   │  │
+│  └──────────────┘  └─────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Component Responsibilities (v1.8)
+### Component Responsibilities
 
-| Component | Responsibility | v1.8 Status |
-|-----------|----------------|-------------|
-| `routers/endgames.py` | HTTP endpoints for endgame analytics | MODIFY — add GET /elo-timeline |
-| `routers/openings.py` | HTTP endpoints for opening analytics | MODIFY — augment next-moves response |
-| `endgame_service.py` | ELO normalization, adjusted score, rolling series | MODIFY + NEW functions |
-| `openings_service.py` | WDL entropy computation, risk scoring | MODIFY — add per-move risk inline |
-| `endgame_repository.py` | SQL queries for endgame data with rating columns | NEW query function |
-| `schemas/endgames.py` | Pydantic response models | MODIFY — extend existing + new timeline response |
-| `schemas/openings.py` | Pydantic response models | MODIFY — add risk field to NextMoveEntry |
-| `frontend/src/types/endgames.ts` | TypeScript mirrors of backend schemas | MODIFY |
-| `frontend/src/api/client.ts` | Axios API calls | MODIFY — add getEloSkillTimeline |
-| `frontend/src/hooks/useEndgames.ts` | TanStack Query hooks | MODIFY — add useEloSkillTimeline |
-| `EndgamePerformanceSection.tsx` | Gauge display (conversion/recovery/endgame skill) | MODIFY — show adjusted value in gauge |
-| `EloSkillTimelineChart.tsx` | Single-line rolling ELO-adjusted score timeline | NEW component |
-| `EndgameGauge.tsx` | SVG gauge — already generic | NO CHANGE |
-| `WDLChartRow.tsx` | Shared WDL bar chart — already generic | NO CHANGE |
-| `lib/theme.ts` | Gauge zone color constants | NO CHANGE |
-| `repositories/query_utils.py` | `apply_game_filters()` shared filter utility | NO CHANGE |
+| Component | Responsibility | Status |
+|-----------|----------------|--------|
+| `POST /auth/guest/create` | Create anonymous user, return JWT | NEW |
+| `POST /auth/guest/promote` | Promote guest to email/password account | NEW |
+| `GET /auth/guest/promote/google/authorize` | Start Google SSO promotion flow | NEW |
+| `GET /auth/guest/promote/google/callback` | Complete Google SSO promotion, issue JWT | NEW |
+| `User.is_guest` column | Flag distinguishing guest from registered users | NEW (migration) |
+| `guest_service.py` | Guest creation and promotion business logic | NEW |
+| `AuthContext.isGuest` | Frontend flag derived from user profile response | NEW |
+| `GuestInfoBox` | Import page callout explaining signup benefits | NEW |
+| `PromoteAccountModal` | UI for email/password and Google promotion | NEW |
+| `current_active_user` | FastAPI-Users dependency — works for guests too | UNCHANGED |
+| All routers (openings, imports, etc.) | Data queries by user_id — transparent to guest status | UNCHANGED |
+| `apiClient` axios interceptor | Bearer token attach + 401 redirect | UNCHANGED |
+| `ProtectedLayout` | Token presence check — guests have a token | UNCHANGED |
+| `on_after_login` in `UserManager` | Updates last_login — still fires for regular logins | UNCHANGED |
 
 ## Recommended Project Structure
 
-No new directories. All new code extends existing modules following established conventions.
+No new directories needed. New files follow existing conventions.
 
 ```
 app/
 ├── routers/
-│   └── endgames.py          # MODIFY: add GET /elo-timeline endpoint
+│   └── auth.py               # MODIFY: add guest create + promote endpoints
 ├── services/
-│   └── endgame_service.py   # MODIFY: add _normalize_rating(), _compute_elo_adjusted_skill(),
-│                            #         get_elo_skill_timeline(); modify get_endgame_performance()
-├── repositories/
-│   └── endgame_repository.py  # MODIFY: add query_elo_skill_rows()
-└── schemas/
-    └── endgames.py           # MODIFY: add elo_adjusted_skill to EndgamePerformanceResponse;
-                              #         add EloSkillTimelinePoint, EloSkillTimelineResponse
+│   └── guest_service.py      # NEW: create_guest_user(), promote_guest(),
+│                             #      promote_guest_google_callback()
+├── models/
+│   └── user.py               # MODIFY: add is_guest: Mapped[bool] column
+├── schemas/
+│   └── auth.py               # MODIFY: add GuestCreateResponse, GuestPromoteRequest,
+│                             #         GuestPromoteResponse schemas
+alembic/
+└── versions/
+    └── <date>_add_is_guest_to_users.py  # NEW migration
 
 frontend/src/
-├── components/charts/
-│   └── EloSkillTimelineChart.tsx   # NEW: single-line rolling chart for ELO-adjusted score
 ├── hooks/
-│   └── useEndgames.ts              # MODIFY: add useEloSkillTimeline()
+│   └── useAuth.ts            # MODIFY: add isGuest state + promoteGuest() action
 ├── types/
-│   └── endgames.ts                 # MODIFY: EndgamePerformanceResponse + new timeline types
-└── api/
-    └── client.ts                   # MODIFY: add endgameApi.getEloSkillTimeline()
-```
-
-For opening risk (independent track):
-
-```
-app/
-├── services/
-│   └── openings_service.py   # MODIFY: add _wdl_entropy(), call it in get_next_moves()
-└── schemas/
-    └── openings.py           # MODIFY: add risk: float to NextMoveEntry
-
-frontend/src/
-├── components/move-explorer/  # MODIFY: show risk badge per move row
-└── types/
-    └── (openings type file)   # MODIFY: add risk to NextMoveEntry interface
+│   └── users.ts              # MODIFY: add is_guest: boolean to UserProfile
+├── components/auth/
+│   └── PromoteAccountModal.tsx  # NEW: email/password + Google promotion UI
+└── pages/
+    ├── Home.tsx              # MODIFY: add "Use as Guest" button in hero section
+    └── Import.tsx            # MODIFY: add GuestInfoBox when isGuest=true
 ```
 
 ### Structure Rationale
 
-- **No new top-level files for ELO:** The ELO adjustment is a new metric within the existing endgame analytics domain. Fragmenting it into new files would scatter closely related logic.
-- **New file for EloSkillTimelineChart:** The ELO timeline is a distinct chart type (single-line vs. existing multi-series charts). Conditionalizing `EndgameConvRecovTimelineChart` would add excessive branching.
-- **No migration for core ELO feature:** `games.white_rating`, `games.black_rating`, and `games.platform` are already stored. The rating normalization is pure Python.
+- **`guest_service.py` as new file:** Guest creation and promotion logic involves creating DB records, hashing passwords via `UserManager.password_helper`, and issuing JWTs via `JWTStrategy`. This is non-trivial enough to warrant its own module rather than bloating `auth.py` with business logic.
+- **`PromoteAccountModal.tsx` as new file:** Handles two distinct promotion paths (email/password + Google SSO), loading/error state per path, and conflict error handling. Separating it keeps `Import.tsx` focused.
+- **No new router file:** Guest auth endpoints belong in `auth.py` alongside the existing JWT login, registration, and Google OAuth endpoints — they are auth operations.
 
 ## Architectural Patterns
 
-### Pattern 1: ELO Normalization as Pure Python Service Functions
+### Pattern 1: Guest User as a First-Class User Record
 
-**What:** Rating normalization and adjustment live entirely in `endgame_service.py` as named pure functions with module-level constants. No SQL arithmetic.
+**What:** Guest users are full `users` table rows with `is_guest=True`, a synthetic email of the form `guest_<uuid>@guest.local`, no password hash (empty string), `is_active=True`, `is_verified=False`. The JWT issued is structurally identical to a regular user JWT (same secret, same `sub` claim format).
 
-**When to use:** When the formula has conditional logic and will likely be tuned. The tapering offset for lichess ratings uses `max(0, ...)` and conditional branching that reads naturally in Python but awkwardly in SQL CASE expressions.
+**When to use:** Always, for this feature. The alternative — storing guest identity purely in a cookie without a DB row — cannot enforce FK constraints when games and positions are imported.
 
-**Trade-offs:** Slightly more data fetched from DB (two extra integer columns per row) vs. computing in SQL. Negligible at the row counts involved. Python testing of the formula is straightforward; SQL-side GREATEST() expressions are not.
+**Trade-offs:**
+- Pro: Zero changes to any router, repository, or service downstream. `current_active_user` returns a guest `User` indistinguishably from a registered `User`. All data queries use `user_id`.
+- Pro: Account promotion is an in-place UPDATE on the existing row. No data migration, no FK changes.
+- Con: DB accumulates rows for abandoned guests. Mitigate with periodic cleanup (guests older than 30 days with no games) — defer to a future maintenance milestone.
+- Con: Synthetic emails must never be displayed in the UI or passed to email delivery systems. Safeguard: `UserProfileResponse` should not expose the raw `email` field to the frontend when `is_guest=True`, or the frontend must check `isGuest` before displaying the email.
 
 **Example:**
 ```python
-# Module-level named constants (no magic numbers per project conventions)
-_LICHESS_BASE_OFFSET = 350
-_LICHESS_TAPER_PER_POINT = 0.3
-_LICHESS_TAPER_START = 1400
-_REFERENCE_RATING = 1500  # chess.com blitz equivalent; fixed for cross-player comparison
-
-def _normalize_rating(rating: int, platform: str) -> float:
-    """Convert platform rating to chess.com-equivalent for cross-platform comparison."""
-    if platform == "lichess":
-        offset = max(0.0, _LICHESS_BASE_OFFSET - (rating - _LICHESS_TAPER_START) * _LICHESS_TAPER_PER_POINT)
-        return float(rating) - offset
-    return float(rating)
-
-def _compute_elo_adjusted_skill(raw_skill: float, avg_normalized_opponent_rating: float) -> float:
-    """Adjust raw endgame skill by opponent strength relative to reference rating."""
-    if avg_normalized_opponent_rating <= 0:
-        return 0.0
-    return raw_skill * avg_normalized_opponent_rating / _REFERENCE_RATING
-```
-
-### Pattern 2: New query_elo_skill_rows() Alongside Existing query_endgame_entry_rows()
-
-**What:** Add `query_elo_skill_rows()` to `endgame_repository.py` with the same span subquery structure as `query_endgame_entry_rows()` but selecting additional columns: `Game.white_rating`, `Game.black_rating`, `Game.platform`.
-
-**When to use:** When you need the same join/filter structure but a different SELECT list and return type. Do not modify the existing function — callers unpack columns positionally and adding columns would break them.
-
-**Trade-offs:** Some duplication in the subquery builder. If duplication grows, extract `_build_endgame_span_subq(user_id)` as a private helper shared by both. For now, two independent functions are clearer than a combined one with an `include_ratings` flag.
-
-**Example sketch:**
-```python
-async def query_elo_skill_rows(
-    session: AsyncSession,
-    user_id: int,
-    time_control: Sequence[str] | None,
-    platform: Sequence[str] | None,
-    rated: bool | None,
-    opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
-) -> list[Row[Any]]:
-    """Return endgame entry rows with rating data for ELO-adjusted skill computation.
-
-    Returns rows of: (game_id, endgame_class, result, user_color,
-                      user_material_imbalance, white_rating, black_rating, platform)
-    Same span_subq as query_endgame_entry_rows; adds rating/platform columns.
-    """
-    # ... same span_subq construction ...
-    stmt = (
-        select(
-            Game.id.label("game_id"),
-            span_subq.c.endgame_class,
-            Game.result,
-            Game.user_color,
-            (span_subq.c.entry_imbalance * color_sign).label("user_material_imbalance"),
-            Game.white_rating,
-            Game.black_rating,
-            Game.platform,
-        )
-        .join(span_subq, Game.id == span_subq.c.game_id)
-        .where(Game.user_id == user_id)
+async def create_guest_user(session: AsyncSession) -> tuple[User, str]:
+    guest_email = f"guest_{uuid4().hex}@guest.local"
+    user = User(
+        email=guest_email,
+        hashed_password="",
+        is_active=True,
+        is_verified=False,
+        is_superuser=False,
+        is_guest=True,
     )
-    stmt = apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
-    result = await session.execute(stmt)
-    return list(result.fetchall())
+    session.add(user)
+    await session.flush()  # get user.id before commit
+    await session.commit()
+    strategy = get_jwt_strategy()
+    token = await strategy.write_token(user)
+    return user, token
 ```
 
-### Pattern 3: Opening Risk as WDL Entropy on Existing NextMoveEntry Rows
+### Pattern 2: Bearer Transport for Guests (same as registered users)
 
-**What:** Risk per candidate move is the normalized Shannon entropy of the WDL distribution. It is computed inline in `get_next_moves()` from the existing WDL counts — no extra SQL query.
+**What:** The milestone spec mentions "HttpOnly cookie JWT". The recommended approach is instead to return the guest JWT in the response body and store it in `localStorage`, exactly like regular login tokens.
 
-**When to use:** When the metric derives entirely from data already fetched. Entropy adds O(1) Python arithmetic per move row.
+**Why not HttpOnly cookie for this feature:**
+- The existing `apiClient` uses `Authorization: Bearer` header exclusively. Switching guests to `CookieTransport` while keeping registered users on `BearerTransport` creates a dual-transport system.
+- FastAPI-Users supports dual backends (confirmed via docs), but it requires: registering two backends, setting `credentials: true` on CORS for cookie paths, and adding CSRF double-submit protection for all state-changing cookie-authenticated endpoints.
+- The security benefit of HttpOnly (XSS protection) already exists as a known accepted risk for the current Bearer-in-localStorage design for all users. Applying it only to guests creates an inconsistent security posture.
+- **Recommendation:** Return guest JWT in response body, store in `localStorage`. The `apiClient` Bearer interceptor works without change. If HttpOnly cookies are adopted, do it uniformly for all users in a security hardening milestone.
 
-**Trade-offs:** Adds one new `risk: float` field to `NextMoveEntry`. Backend callers must not have hardcoded column counts. Frontend renders a risk badge per move row.
+**Trade-offs:**
+- Pro: Zero changes to auth transport, axios interceptor, or CORS configuration.
+- Pro: Guest 401 handling (redirect to /login) already works correctly.
+- Con: localStorage-stored tokens are XSS-vulnerable — an accepted risk already present for all users.
 
-**Example computation:**
+### Pattern 3: Account Promotion via In-Place Row UPDATE
+
+**What:** When a guest promotes to a full account, the backend updates the existing `users` row: sets `email` to the real email, sets `hashed_password` to the bcrypt hash, sets `is_guest=False`. A new JWT is issued for the same `user_id`. All existing games, positions, and bookmarks remain intact with their FK references unchanged.
+
+**When to use:** Only for guest-to-registered promotion. Not for merging two independent registered accounts.
+
+**Trade-offs:**
+- Pro: Data continuity is automatic — no data copy, no FK updates, no migration step.
+- Pro: Atomic single-row UPDATE.
+- Con: Email uniqueness must be checked before the UPDATE. If a registered account already exists with the target email, return `409 Conflict` and present the user with "An account with this email already exists. Sign in instead."
+
+**Example:**
 ```python
-import math
+async def promote_guest(
+    session: AsyncSession,
+    guest_user: User,
+    email: str,
+    password: str,
+    password_helper: PasswordHelperProtocol,
+) -> str:
+    # Check email uniqueness against existing non-guest users
+    stmt = select(User).where(User.email == email, User.id != guest_user.id)
+    existing = (await session.execute(stmt)).scalar_one_or_none()
+    if existing is not None:
+        raise EmailAlreadyTakenError()
 
-def _wdl_entropy(wins: int, draws: int, losses: int) -> float:
-    """Normalized Shannon entropy of WDL distribution over 3 outcomes.
-
-    0.0 = one outcome dominates (predictable position).
-    1.0 = all three outcomes equally likely (maximally uncertain).
-    """
-    total = wins + draws + losses
-    if total == 0:
-        return 0.0
-    entropy = 0.0
-    for count in (wins, draws, losses):
-        p = count / total
-        if p > 0:
-            entropy -= p * math.log2(p)
-    return round(entropy / math.log2(3), 4)  # normalize to [0, 1]
+    hashed = password_helper.hash(password)
+    await session.execute(
+        update(User)
+        .where(User.id == guest_user.id)
+        .values(email=email, hashed_password=hashed, is_guest=False)
+    )
+    await session.commit()
+    strategy = get_jwt_strategy()
+    return await strategy.write_token(guest_user)
 ```
 
-Entropy is preferred over raw variance: it handles the 3-outcome WDL space correctly, is bounded [0, 1], and correctly scores a position with 33%/33%/33% as maximally uncertain (1.0) vs. a position with 100% wins as maximally certain (0.0).
+### Pattern 4: Google SSO Promotion via State-Carried Guest ID
 
-### Pattern 4: Extend EndgamePerformanceResponse, Not New Endpoint
+**What:** Guest clicks "Continue with Google" in the promotion modal. The authorize endpoint encodes the guest `user_id` into the OAuth state JWT (alongside the existing CSRF token). The callback route reads the guest ID from state and performs an UPDATE (attach `OAuthAccount`, set `is_guest=False`) rather than a CREATE.
 
-**What:** `elo_adjusted_skill: float` is added to the existing `EndgamePerformanceResponse` rather than a new `/endgames/elo-skill` endpoint. The ELO-adjusted skill gauge replaces or augments the existing `endgame_skill` gauge in `EndgamePerformanceSection`.
+**Why this approach:** The existing Google callback route (`/auth/google/callback`) calls `user_manager.oauth_callback()` which creates a new user if none exists. For guest promotion, a separate callback route is needed that knows to UPDATE the existing guest row rather than create a new one.
 
-**When to use:** When the new metric semantically belongs with existing response data. The performance endpoint already computes `endgame_skill`; the adjusted version is just a refinement of it.
-
-**Trade-offs:** `get_endgame_performance()` now runs two repository queries sequentially (existing `query_endgame_entry_rows` + new `query_elo_skill_rows`). Both query the same covering index and rows are not large. The alternative — a dedicated endpoint — doubles frontend loading state management for one screen section.
-
-**Decision:** Add `elo_adjusted_skill: float` to `EndgamePerformanceResponse`. The timeline (`GET /endgames/elo-timeline`) is necessarily separate because it needs its own `window` parameter.
+**Trade-offs:**
+- Pro: Reuses existing Google OAuth client, no new OAuth credentials needed.
+- Pro: Same JWT signing infrastructure for state validation.
+- Con: Two Google callback routes must both be registered in Google Cloud Console as authorized redirect URIs. Use a different path: `/api/auth/guest/promote/google/callback` distinct from the existing `/api/auth/google/callback`.
+- Con: Must validate state JWT's `guest_user_id` matches the currently authenticated guest session to prevent CSRF guest-hijacking.
 
 ## Data Flow
 
-### ELO-Adjusted Endgame Skill
+### Guest Creation Flow
 
 ```
-User adjusts filters on Endgames page
+Homepage: "Use as Guest" button clicked
     ↓
-useEndgamePerformance(filters) [EXISTING hook — unchanged]
+POST /api/auth/guest/create  (no Authorization header)
     ↓
-endgameApi.getPerformance(params) — GET /api/endgames/performance
+guest_service.create_guest_user(session)
+    INSERT users (email=guest_<uuid>@guest.local, is_guest=True, is_active=True)
+    generate JWT for new user.id via get_jwt_strategy()
     ↓
-endgame_service.get_endgame_performance() [MODIFY]
-    ├── query_endgame_entry_rows()     [EXISTING — unchanged]
-    └── query_elo_skill_rows()         [NEW — same filters, adds rating columns]
-        ↓
-    _normalize_rating(rating, platform) per opponent rating  [NEW]
-    avg_normalized_opponent_rating = mean of normalized ratings
-    _compute_elo_adjusted_skill(raw_skill, avg_rating)       [NEW]
-        ↓
-EndgamePerformanceResponse [MODIFY: adds elo_adjusted_skill: float]
+Response: { access_token: "...", token_type: "bearer", is_guest: true }
     ↓
-EndgamePerformanceSection.tsx [MODIFY: Endgame Skill gauge shows adjusted value]
+Frontend:
+    localStorage.setItem('auth_token', access_token)
+    AuthContext: setToken(token), setIsGuest(true)
+    Navigate to /import
 ```
 
-### ELO Skill Timeline
+### Authenticated Guest Request Flow
 
 ```
-Endgames stats tab mounts
+GET /api/openings/positions?...
     ↓
-useEloSkillTimeline(filters) [NEW hook]
+axios interceptor: Authorization: Bearer <guest_jwt>
     ↓
-endgameApi.getEloSkillTimeline(params) — GET /api/endgames/elo-timeline [NEW endpoint]
+current_active_user (FastAPI-Users JWT decode, UNCHANGED)
+    user_id = 42 (guest user)
+    returns User(id=42, is_guest=True, is_active=True)
     ↓
-endgame_service.get_elo_skill_timeline() [NEW function]
-    └── query_elo_skill_rows(recency_cutoff=None) [pre-fill pattern — same as conv/recov timeline]
-        ↓
-    _compute_elo_skill_rolling_series(rows, window) [NEW — mirrors _compute_conv_recov_rolling_series]
-    Filter output points to recency cutoff (same pattern as existing timeline functions)
-        ↓
-EloSkillTimelineResponse { series: [EloSkillTimelinePoint], window: int }
+openings_service.get_positions(session, user_id=42, filters)
+    queries game_positions WHERE user_id = 42  (UNCHANGED)
     ↓
-EloSkillTimelineChart.tsx [NEW component — single line, same Recharts pattern]
-    ↓
-Endgames.tsx statisticsContent [MODIFY: render EloSkillTimelineChart below existing charts]
+Response: WDL stats (same schema as for registered user)
 ```
 
-### Opening Risk (Independent Track)
+### Email/Password Promotion Flow
 
 ```
-User navigates move explorer to a position
+Guest on Import page: clicks "Sign up" in GuestInfoBox
     ↓
-useNextMoves(position, filters) [EXISTING hook — unchanged]
+PromoteAccountModal opens (email + password fields)
     ↓
-openingsApi.getNextMoves(params) — POST /api/openings/next-moves
+POST /api/auth/guest/promote
+    Body: { email, password }
+    Header: Authorization: Bearer <guest_jwt>
     ↓
-openings_service.get_next_moves() [MODIFY]
-    └── query_next_moves() [EXISTING — already returns wins/draws/losses per move]
-        ↓
-    _wdl_entropy(wins, draws, losses) called per move [NEW — O(1) per row]
-        ↓
-NextMoveEntry [MODIFY: add risk: float field]
+current_active_user → User(is_guest=True)
+guest_service.promote_guest(session, user, email, password, password_helper)
+    check uniqueness: SELECT users WHERE email=? AND id != guest_id
+    UPDATE users SET email=?, hashed_password=?, is_guest=False WHERE id=?
+    generate new JWT (same user_id, same token structure)
     ↓
-MoveExplorer component [MODIFY: render risk badge or colored indicator per move row]
+Response: { access_token: "...", is_guest: false }
+    ↓
+Frontend:
+    loginWithToken(new_token)  [existing AuthContext method — UNCHANGED]
+    setIsGuest(false)
+    toast("Account created successfully! All your data has been kept.")
 ```
 
-### Key Data Facts
+### Google SSO Promotion Flow
 
-1. **Opponent rating source:** `games.white_rating` when `user_color == "black"`, else `games.black_rating`. Both are already stored. No migration needed.
-2. **Games without ratings:** Some unrated games have NULL ratings. Filter these out when computing `avg_normalized_opponent_rating`. If no rated games exist, return `elo_adjusted_skill = 0.0`.
-3. **Opening risk is zero-migration, zero-new-query:** Entropy computed from WDL counts already fetched by `query_next_moves()`. No DB changes.
-4. **Filter propagation:** All new endpoints accept the same standard filter parameters as existing endgame endpoints. `apply_game_filters()` from `query_utils.py` handles all of them without modification.
-5. **Rolling window pre-fill:** `get_elo_skill_timeline()` must follow the same pattern as `get_conv_recov_timeline()` — fetch all games (no recency filter), compute the full rolling series, then filter output points to the recency window. This prevents cold-start artifacts when filtering to recent games.
-6. **Cache keys:** New TanStack Query hooks use keys like `['eloSkillTimeline', params, window]` following the exact pattern of `['endgameConvRecovTimeline', params, window]`.
+```
+Guest: clicks "Continue with Google" in PromoteAccountModal
+    ↓
+GET /api/auth/guest/promote/google/authorize
+    Header: Authorization: Bearer <guest_jwt>
+    current_active_user → User(is_guest=True)
+    state_jwt = { guest_user_id: user.id, csrftoken: random }
+    return { authorization_url }
+    ↓
+Frontend: window.location.href = authorization_url
+    ↓
+Google redirects to:
+GET /api/auth/guest/promote/google/callback?code=...&state=...
+    decode state JWT → guest_user_id
+    exchange code for Google id_token
+    extract account_id, account_email from id_token
+    CHECK: is account_email already owned by a different registered user?
+        YES → 409, redirect with error
+        NO → proceed
+    UPDATE users SET email=account_email, is_guest=False WHERE id=guest_user_id
+    INSERT oauth_accounts (user_id=guest_user_id, oauth_name="google", ...)
+    generate JWT for guest_user_id
+    ↓
+Redirect: FRONTEND_URL/auth/callback#token=JWT
+    ↓
+OAuthCallbackPage: loginWithToken(token)  [existing, UNCHANGED]
+    setIsGuest(false) via profile refetch
+```
 
-## Scaling Considerations
+### State Management
 
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| Current (hundreds to low thousands of games/user) | Python-side aggregation after SQL fetch is fast; sequential queries per endpoint is the established pattern |
-| 10k+ games/user | `query_elo_skill_rows()` uses the same covering index (`ix_gp_user_endgame_game`) as `query_endgame_entry_rows()` — performance will be similar. Adding two integer columns to SELECT does not change the index scan plan. |
-| Opening risk at any scale | Zero scaling concern. Entropy is O(1) per move entry computed from pre-aggregated WDL counts. |
+```
+AuthContext (React)
+    token: string | null        stored in localStorage
+    isGuest: boolean            derived from /users/me/profile.is_guest
+    isLoading: boolean
+    login()                     UNCHANGED
+    loginWithToken()            UNCHANGED — used after promotion
+    register()                  UNCHANGED
+    logout()                    UNCHANGED
+    promoteGuest(email, pw)     NEW — calls POST /auth/guest/promote
 
-### Scaling Priorities
-
-1. **First bottleneck (ELO feature):** Running `query_endgame_entry_rows()` AND `query_elo_skill_rows()` in `get_endgame_performance()` doubles the heavy endgame queries. Acceptable initially. If profiling reveals it as a bottleneck, merge into a single query by adding rating columns to `query_endgame_entry_rows()` — but only after confirming no callers break (all unpack positionally). Use a refactor phase rather than doing it speculatively.
-2. **ELO timeline pre-fill:** Fetching all games (no recency filter) for the rolling window pre-fill is the same trade-off already made by `get_conv_recov_timeline()` and `get_endgame_timeline()`. Acceptable. If a user has 50k+ games this may be slow — but that's a future problem for all timeline endpoints equally.
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Rating Normalization in SQL
-
-**What people do:** Compute `GREATEST(0, 350 - (rating - 1400) * 0.3)` as a SQL expression.
-
-**Why it's wrong:** The tapering formula is likely to be tuned after observing real data. SQL CASE/GREATEST expressions are harder to unit-test than Python functions and harder to read. Named Python constants (`_LICHESS_BASE_OFFSET = 350`) make the formula self-documenting in a way SQL cannot.
-
-**Do this instead:** Fetch raw ratings from SQL. Normalize in Python with named constants at the top of `endgame_service.py`. Write a unit test for `_normalize_rating()`.
-
-### Anti-Pattern 2: Separate /endgames/elo-skill Endpoint for the Current Score Value
-
-**What people do:** Create a dedicated `GET /endgames/elo-skill` endpoint returning just the adjusted score, keeping `GET /endgames/performance` for everything else.
-
-**Why it's wrong:** Frontend now needs two concurrent queries and two loading states for a single screen section. The `/performance` endpoint already fetches the same row set. Two nearly identical heavy DB queries fire for one page section.
-
-**Do this instead:** Add `elo_adjusted_skill: float` to `EndgamePerformanceResponse`. The frontend `useEndgamePerformance()` hook already exists — the adjusted value arrives in the same response with no extra HTTP round-trip.
-
-### Anti-Pattern 3: Standard Deviation for Opening Risk
-
-**What people do:** Compute variance or standard deviation of per-game win rates to quantify "inconsistency."
-
-**Why it's wrong:** Per-game outcomes are categorical (win/draw/loss), not a continuous distribution. Variance of Bernoulli outcomes recovers `p*(1-p)` which peaks at 50% win rate — this conflates "you win half your games" with "this opening is risky." It also ignores draws entirely, treating them as losses. The 3-outcome WDL space needs a measure designed for categorical distributions.
-
-**Do this instead:** Use normalized Shannon entropy over (wins, draws, losses). Peaks at 0.333/0.333/0.333, is 0 when one outcome dominates completely, and is bounded [0, 1] regardless of game count.
-
-### Anti-Pattern 4: Modifying query_endgame_entry_rows Signature
-
-**What people do:** Add `include_ratings: bool = False` to the existing function and conditionally expand the SELECT inside it to return rating columns when True.
-
-**Why it's wrong:** `query_endgame_entry_rows` has callers in `get_endgame_stats`, `get_endgame_performance`, and `get_endgame_timeline`. All unpack result rows positionally: `for game_id, endgame_class_int, result, user_color, user_material_imbalance in rows`. Conditionally changing the column count silently corrupts these unpackings in a way that ty/mypy may not catch (rows are `list[Row[Any]]`).
-
-**Do this instead:** Add a separate `query_elo_skill_rows()` function with a documented return signature. If the span subquery becomes duplicated enough to warrant refactoring, extract `_build_endgame_span_subq()` as a private helper — but only after both functions are written and tested.
-
-### Anti-Pattern 5: Opening Risk as a Separate Aggregation Endpoint
-
-**What people do:** Create `GET /openings/position-risk?full_hash=X` that re-runs the WDL aggregation query just to return an entropy value.
-
-**Why it's wrong:** The next-moves endpoint already computes per-move WDL counts via `query_next_moves()`. A separate endpoint re-runs the same SQL for no benefit. Users need risk visible per move in the move explorer — not as a separate screen.
-
-**Do this instead:** Compute `_wdl_entropy(wins, draws, losses)` inline in `get_next_moves()` and attach as `risk: float` to each `NextMoveEntry`. Zero extra SQL. Position-level risk can be computed from `position_stats: WDLStats` already in `NextMovesResponse` using the same function.
-
-### Anti-Pattern 6: asyncio.gather for Sequential Repository Calls
-
-**What people do:** `await asyncio.gather(query_endgame_entry_rows(...), query_elo_skill_rows(...))` to run both queries "concurrently."
-
-**Why it's wrong:** The project codebase explicitly documents this constraint in multiple places: "AsyncSession is not safe for concurrent use from multiple coroutines, and a single session uses one DB connection so there's no concurrency benefit from asyncio.gather here." The comment appears in `endgame_service.py`, `endgame_repository.py`, and CLAUDE.md.
-
-**Do this instead:** Execute `query_endgame_entry_rows()` then `query_elo_skill_rows()` sequentially, exactly as the existing `get_endgame_performance()` already does for its multiple repository calls.
+isGuest is populated by reading the is_guest field from the UserProfile
+response already fetched in useUserProfile() on app mount.
+The UserProfile API call happens when token is set, so isGuest is available
+before any protected page renders.
+```
 
 ## Integration Points
 
-### New vs. Modified (Explicit)
+### Modified Components
 
-#### New (pure additions)
+| Component | What Changes | Risk |
+|-----------|-------------|------|
+| `app/models/user.py` | Add `is_guest: Mapped[bool]` column with server default `false` | LOW — additive, non-breaking migration |
+| `app/schemas/users.py` | Add `is_guest: bool` field to `UserProfileResponse` | LOW — additive field |
+| `app/schemas/auth.py` | Add `GuestCreateResponse`, `GuestPromoteRequest`, `GuestPromoteResponse` | LOW — new schemas only |
+| `app/routers/auth.py` | Add 4 new endpoints; all existing endpoints untouched | LOW |
+| `frontend/src/hooks/useAuth.ts` | Add `isGuest: boolean` state + `promoteGuest()` action | MEDIUM — central auth hook |
+| `frontend/src/types/users.ts` | Add `is_guest: boolean` to `UserProfile` interface | LOW |
+| `frontend/src/pages/Home.tsx` | Add "Use as Guest" button in hero section | LOW |
+| `frontend/src/pages/Import.tsx` | Add `GuestInfoBox` conditional on `isGuest` | LOW |
+| `frontend/src/App.tsx` | No change expected; `ProtectedLayout` already works for guests | NONE |
 
-| File | What is New |
-|------|-------------|
-| `app/repositories/endgame_repository.py` | `query_elo_skill_rows()` function |
-| `app/services/endgame_service.py` | `_normalize_rating()`, `_compute_avg_opponent_rating()`, `_compute_elo_adjusted_skill()`, `get_elo_skill_timeline()`, `_compute_elo_skill_rolling_series()` |
-| `app/schemas/endgames.py` | `EloSkillTimelinePoint`, `EloSkillTimelineResponse` classes |
-| `frontend/src/components/charts/EloSkillTimelineChart.tsx` | Single-line rolling chart for ELO-adjusted score |
-| `frontend/src/hooks/useEndgames.ts` | `useEloSkillTimeline()` export |
-| `app/routers/endgames.py` | `GET /elo-timeline` endpoint |
+### New Components
 
-#### Modified (existing files changed)
-
-| File | What Changes |
-|------|-------------|
-| `app/services/endgame_service.py` | `get_endgame_performance()` calls `query_elo_skill_rows()` and computes `elo_adjusted_skill` |
-| `app/schemas/endgames.py` | `EndgamePerformanceResponse` gains `elo_adjusted_skill: float` field |
-| `frontend/src/types/endgames.ts` | `EndgamePerformanceResponse` interface gains `elo_adjusted_skill: number` |
-| `frontend/src/api/client.ts` | `endgameApi` gains `getEloSkillTimeline()` method |
-| `frontend/src/pages/Endgames.tsx` | `statisticsContent` renders `EloSkillTimelineChart`; add `useEloSkillTimeline` data |
-| `frontend/src/components/charts/EndgamePerformanceSection.tsx` | Endgame Skill gauge shows `elo_adjusted_skill` value (adjusted) with tooltip or label explaining adjustment |
-
-For opening risk (if pursued this milestone):
-
-| File | What Changes |
-|------|-------------|
-| `app/services/openings_service.py` | Add `_wdl_entropy()` pure function; call it in `get_next_moves()` per move |
-| `app/schemas/openings.py` | `NextMoveEntry` gains `risk: float` field |
-| Frontend types (openings) | `NextMoveEntry` interface gains `risk: number` |
-| Move explorer component | Risk indicator badge rendered per move row |
+| Component | Type | Depends On |
+|-----------|------|------------|
+| `app/services/guest_service.py` | Backend service | `User` model, `JWTStrategy`, `password_helper` |
+| `alembic/versions/<date>_add_is_guest_to_users.py` | DB migration | `users` table |
+| `frontend/src/components/auth/PromoteAccountModal.tsx` | React component | `useAuth.promoteGuest`, Google authorize endpoint |
 
 ### Internal Boundaries
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| `endgame_repository.py` → `endgame_service.py` | `list[Row[Any]]` tuples, positional columns | Document column order clearly in docstring — no named columns in Row |
-| `endgame_service.py` → `routers/endgames.py` | Pydantic response models | `elo_adjusted_skill` is `float`, always present (0.0 when no rated games) |
-| `openings_service.py` → `routers/openings.py` | `NextMovesResponse` with `NextMoveEntry` | `risk: float` added to existing model — non-breaking addition |
-| Frontend hooks → API client | TypeScript interfaces mirror backend Pydantic schemas | Keep `endgames.ts` in sync with `schemas/endgames.py` after any schema change |
-| `EndgamePerformanceSection.tsx` → `EndgameGauge.tsx` | `value: number`, `zones: GaugeZone[]` props | Gauge is already fully generic — existing `ENDGAME_SKILL_ZONES` constant applies unchanged |
+| `auth.py` router ↔ `guest_service.py` | Direct function call | Router stays HTTP-only; all logic in service |
+| `guest_service.py` ↔ `UserManager.password_helper` | Inject via `Depends(get_user_manager)` | Reuses existing password hashing infrastructure |
+| `guest_service.py` ↔ `get_jwt_strategy()` | Direct call (no Depends needed) | `get_jwt_strategy()` is a plain factory function in `users.py` |
+| `guest JWT` ↔ `current_active_user` | FastAPI-Users JWT decode | No change; guest users are active users with valid JWTs |
+| `UserProfile.is_guest` ↔ `AuthContext.isGuest` | API field in `/users/me/profile` response | Frontend derives `isGuest` from this field; already fetched on app mount |
+| Google promote callback ↔ existing OAuth infrastructure | Reuses `google_oauth_client.get_access_token()` | Different route path; must register new callback URL in Google Cloud Console |
 
-## Suggested Build Order
+## Build Order
 
-Dependencies flow top to bottom within each track. Tracks can be interleaved but not parallelized within a session.
+Dependencies flow strictly top to bottom within each step.
 
-### Track A: ELO-Adjusted Endgame Skill
+**Step 1: DB migration**
+Add `is_guest: bool` column to `users` with `server_default=false`. This is required by all subsequent steps. Run `alembic revision --autogenerate` then review the generated migration.
 
-**Step A1: Backend (service + repository + schema)**
-- Add `_normalize_rating`, `_compute_avg_opponent_rating`, `_compute_elo_adjusted_skill` to `endgame_service.py`
-- Add `query_elo_skill_rows()` to `endgame_repository.py`
-- Modify `get_endgame_performance()` to call it and compute `elo_adjusted_skill`
-- Add `elo_adjusted_skill: float` to `EndgamePerformanceResponse` in `schemas/endgames.py`
-- Write unit tests for `_normalize_rating` and `_compute_elo_adjusted_skill`
-- Smoke test: `GET /api/endgames/performance` returns the new field
+**Step 2: Backend model + schema additions**
+- Add `is_guest: Mapped[bool]` to `User` model
+- Add `is_guest: bool` to `UserProfileResponse` in `schemas/users.py`
+- Add new schemas to `schemas/auth.py`: `GuestCreateResponse`, `GuestPromoteRequest`, `GuestPromoteResponse`
+No router changes yet — just the data model and schemas.
 
-**Step A2: Frontend gauge**
-- Add `elo_adjusted_skill: number` to `EndgamePerformanceResponse` TS interface
-- Modify `EndgamePerformanceSection.tsx` — show adjusted value in Endgame Skill gauge
-- Optionally add `InfoPopover` explaining raw vs. adjusted
+**Step 3: `guest_service.py`**
+Implement `create_guest_user()` and `promote_guest()`. These are pure service functions with no frontend dependency. Write unit tests for both (especially the email-uniqueness check).
 
-**Step A3: ELO timeline endpoint**
-- Add `_compute_elo_skill_rolling_series()` and `get_elo_skill_timeline()` to `endgame_service.py`
-- Add `EloSkillTimelinePoint`, `EloSkillTimelineResponse` to `schemas/endgames.py`
-- Add `GET /endgames/elo-timeline` to `routers/endgames.py`
+**Step 4: Auth router — create and promote email endpoints**
+Add `POST /auth/guest/create` and `POST /auth/guest/promote` to `auth.py`. Smoke test both with `curl` or the FastAPI `/docs` UI.
 
-**Step A4: Frontend timeline chart**
-- Add `useEloSkillTimeline()` hook to `useEndgames.ts`
-- Add `endgameApi.getEloSkillTimeline()` to `api/client.ts`
-- Create `EloSkillTimelineChart.tsx` component
-- Wire into `Endgames.tsx` stats tab
+**Step 5: Frontend `useAuth.ts` + `types/users.ts`**
+Add `isGuest` to `AuthState`, derive it from the `UserProfile.is_guest` field. Add `promoteGuest()` action. This is the frontend hub; import page and homepage depend on it.
 
-### Track B: Opening Risk (independent, can be done after or alongside Track A)
+**Step 6: Homepage "Use as Guest" button**
+Add a secondary CTA button in `Home.tsx` hero section. Calls `POST /auth/guest/create`, stores token via `loginWithToken()`, navigates to `/import`.
 
-**Step B1: Backend**
-- Add `_wdl_entropy()` pure function to `openings_service.py`
-- Modify `get_next_moves()` to compute and attach `risk` per move
-- Add `risk: float` to `NextMoveEntry` in `schemas/openings.py`
+**Step 7: `GuestInfoBox` on Import page**
+Render a callout in `Import.tsx` when `isGuest=true`. Include a "Sign up to keep your data" message and a button that opens `PromoteAccountModal`.
 
-**Step B2: Frontend**
-- Add `risk: number` to `NextMoveEntry` TS interface
-- Modify move explorer component to display risk badge per move row
+**Step 8: `PromoteAccountModal` — email/password path**
+Build the modal component with email/password fields. Call `promoteGuest()` from `useAuth`. Handle `409 Conflict` case ("Account exists — sign in instead").
+
+**Step 9: Google SSO promotion endpoints**
+Implement `guest_service.promote_guest_google_callback()`. Add the authorize and callback routes to `auth.py`. Register the new callback URL in Google Cloud Console.
+
+**Step 10: `PromoteAccountModal` — Google path**
+Add "Continue with Google" button to the modal. Wire to the new authorize endpoint. The existing `OAuthCallbackPage` handles the token from the redirect fragment — no change needed there.
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Switching Guests to CookieTransport
+
+**What people do:** Implement a second FastAPI-Users auth backend using `CookieTransport` for guests while keeping `BearerTransport` for registered users.
+
+**Why it's wrong:** Dual-transport doubles backend auth complexity. The existing `apiClient` Bearer interceptor already handles all tokens uniformly. CORS must allow credentials for cookie requests. All state-changing endpoints need CSRF protection when cookie auth is possible. The XSS risk difference (HttpOnly vs localStorage) already exists for registered users and is not a guest-specific concern.
+
+**Do this instead:** Return guest JWT in the response body. Store in `localStorage`. If HttpOnly cookies become a requirement, apply to all users uniformly in a dedicated security milestone.
+
+### Anti-Pattern 2: Separate Guest Data Tables
+
+**What people do:** Create a `guest_sessions` or `anonymous_data` table to avoid storing anonymous rows in `users`.
+
+**Why it's wrong:** All 6+ existing repositories query by `user_id` with FK constraints. A separate table means duplicating all query logic or migrating FKs on promotion (updating `user_id` across `games`, `game_positions`, `position_bookmarks`, `import_jobs`).
+
+**Do this instead:** Store guests in `users` with `is_guest=True`. Promotion is a single-row UPDATE; child table FK references never change.
+
+### Anti-Pattern 3: Client-Side Guest Identity Generation
+
+**What people do:** Generate a random guest ID in JavaScript and use it as a fake user identifier without a DB row.
+
+**Why it's wrong:** No real DB row exists to enforce FK constraints. Games imported against a non-existent `user_id` violate referential integrity and the explicit project rule that all FK columns must have `ForeignKey()` constraints.
+
+**Do this instead:** Always create a real `users` row server-side before returning any token. The DB row is the source of truth for the user's identity.
+
+### Anti-Pattern 4: Allowing Promotion Without Email Uniqueness Check
+
+**What people do:** Execute the `UPDATE users SET email=... WHERE id=guest_id` without first checking if the email is already registered to another account.
+
+**Why it's wrong:** Violates the email uniqueness invariant. PostgreSQL will throw an integrity error, surfacing as a 500 rather than a clean 409. Worse, if the uniqueness constraint is not enforced at DB level (it is, via FastAPI-Users' `users` table DDL), this could silently create duplicate emails.
+
+**Do this instead:** Always SELECT for an existing non-guest user with the same email before UPDATE. Return `409 Conflict` with a message guiding the user to sign in instead.
+
+### Anti-Pattern 5: Exposing Synthetic Guest Email in the UI
+
+**What people do:** Render `profile.email` in the mobile "More" drawer header or account settings for guest users, showing `guest_abc123@guest.local`.
+
+**Why it's wrong:** Confuses users who see a nonsensical email address. May also cause support requests.
+
+**Do this instead:** In `App.tsx` `MobileMoreDrawer` and anywhere `profile.email` is displayed, check `isGuest` and show "Guest" (or nothing) instead of the synthetic email. This is a frontend-only guard.
+
+## Scaling Considerations
+
+| Scale | Architecture Adjustments |
+|-------|--------------------------|
+| Current (< 1k registered users) | No changes — single-process, guest rows are negligible |
+| 1k-10k users | Add periodic cleanup: DELETE users WHERE is_guest=true AND created_at < now() - interval '30 days' AND id NOT IN (SELECT DISTINCT user_id FROM games). Run as a startup task or APScheduler job. |
+| 10k+ users | Guest account accumulation becomes non-trivial. Add `created_at` index to `users` for cleanup query performance. Consider shorter TTL (7 days) for guests with no games. |
+
+Guest cleanup is not needed at current FlawChess scale. Defer to a future maintenance task.
 
 ## Sources
 
-- Direct inspection of `app/routers/endgames.py` — confirmed endpoint signatures, all use Query params pattern
-- Direct inspection of `app/services/endgame_service.py` — confirmed `_compute_rolling_series`, `_compute_conv_recov_rolling_series`, `_ENDGAME_SKILL_CONVERSION_WEIGHT/_RECOVERY_WEIGHT`, sequential query pattern documented inline
-- Direct inspection of `app/repositories/endgame_repository.py` — confirmed `query_endgame_entry_rows` return shape, covering index `ix_gp_user_endgame_game`, AsyncSession sequential constraint
-- Direct inspection of `app/models/game.py` — confirmed `white_rating: Mapped[int | None]`, `black_rating: Mapped[int | None]`, `platform: Mapped[str]` all present; no migration needed
-- Direct inspection of `app/schemas/endgames.py` and `app/schemas/openings.py` — confirmed extension points
-- Direct inspection of `app/repositories/query_utils.py` — confirmed `apply_game_filters()` handles all standard filters; no changes needed
-- Direct inspection of `frontend/src/components/charts/EndgamePerformanceSection.tsx`, `EndgameGauge.tsx` — confirmed gauge is fully generic (accepts `value`, `zones` props); `ENDGAME_SKILL_ZONES` already defined
-- Direct inspection of `frontend/src/hooks/useEndgames.ts` — confirmed `ENDGAME_STALE_TIME = 5 * 60 * 1000` pattern for new hooks
-- Backlog item 999.5 in `.planning/ROADMAP.md` — ELO normalization formula, reference rating 1500, adjustment formula: `adjusted = raw × avg_normalized_opponent_rating / 1500`
+- [FastAPI-Users CookieTransport docs](https://fastapi-users.github.io/fastapi-users/10.3/configuration/authentication/transports/cookie/) — HIGH confidence (official docs, HttpOnly default confirmed)
+- [FastAPI-Users multiple auth backends discussion](https://github.com/fastapi-users/fastapi-users/discussions/960) — HIGH confidence (maintainer confirms dual-backend works out of the box)
+- [FastAPI-Users optional current_user](https://fastapi-users.github.io/fastapi-users/latest/usage/current-user/) — HIGH confidence (current official docs)
+- [FusionAuth anonymous user pattern](https://fusionauth.io/blog/anonymous-user) — MEDIUM confidence (industry best-practices blog)
+- Direct inspection of `app/users.py`, `app/models/user.py`, `app/routers/auth.py`, `frontend/src/hooks/useAuth.ts`, `frontend/src/api/client.ts` — HIGH confidence (live codebase)
 
 ---
-*Architecture research for: FlawChess v1.8 Advanced Analytics*
-*Researched: 2026-04-04*
+*Architecture research for: FlawChess v1.8 Guest Access*
+*Researched: 2026-04-06*

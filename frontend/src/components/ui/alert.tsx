@@ -31,10 +31,13 @@ const VARIANT_ICONS = {
 function Alert({
   className,
   variant = 'info',
+  icon,
   children,
   ...props
-}: React.ComponentProps<'div'> & VariantProps<typeof alertVariants>) {
-  const Icon = VARIANT_ICONS[variant!];
+}: React.ComponentProps<'div'> & VariantProps<typeof alertVariants> & {
+  icon?: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+}) {
+  const Icon = icon ?? VARIANT_ICONS[variant!];
 
   return (
     <div
