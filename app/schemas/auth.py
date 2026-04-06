@@ -13,3 +13,18 @@ class GoogleOAuthAuthorizeResponse(BaseModel):
     """Response for GET /auth/google/authorize."""
 
     authorization_url: str
+
+
+class GuestCreateResponse(BaseModel):
+    """Response for POST /auth/guest/create."""
+
+    access_token: str
+    token_type: str
+    is_guest: bool
+
+
+class GuestRefreshResponse(BaseModel):
+    """Response for POST /auth/guest/refresh."""
+
+    access_token: str
+    token_type: str

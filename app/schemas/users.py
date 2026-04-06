@@ -10,6 +10,7 @@ class UserProfileResponse(BaseModel):
 
     email: str
     is_superuser: bool
+    is_guest: bool
     chess_com_username: str | None
     lichess_username: str | None
     created_at: datetime
