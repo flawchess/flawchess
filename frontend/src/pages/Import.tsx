@@ -27,6 +27,7 @@ interface ImportPageProps {
   onImportStarted: (jobId: string) => void;
   activeJobIds: string[];
   onJobDismissed: (jobId: string) => void;
+  onOpenPromotion?: () => void;
 }
 
 function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jobId: string) => void }) {
@@ -95,7 +96,7 @@ function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jo
   );
 }
 
-export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: ImportPageProps) {
+export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed, onOpenPromotion }: ImportPageProps) {
   const { data: profile, isLoading: profileLoading } = useUserProfile();
   const trigger = useImportTrigger();
   const queryClient = useQueryClient();
@@ -185,6 +186,22 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       <h1 data-testid="import-page-heading" className="text-2xl font-bold tracking-tight">
         Import Games
       </h1>
+
+      {profile?.is_guest && (
+        <Alert variant="info" data-testid="import-guest-promo-info" className="mb-4">
+          <p>
+            <strong>Keep your games permanently.</strong> Guest sessions expire after 30 days.{' '}
+            <button
+              onClick={onOpenPromotion}
+              className="font-medium underline underline-offset-2"
+              data-testid="import-guest-promo-link"
+            >
+              Sign up free
+            </button>{' '}
+            to access your games from any device and prevent data loss.
+          </p>
+        </Alert>
+      )}
 
       {profileLoading ? (
         <p className="text-sm text-muted-foreground">Loading profile...</p>

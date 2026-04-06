@@ -1,7 +1,10 @@
-import { Link } from 'react-router-dom';
 import { Alert } from '@/components/ui/alert';
 
-export function GuestBanner() {
+interface GuestBannerProps {
+  onPromote: () => void;
+}
+
+export function GuestBanner({ onPromote }: GuestBannerProps) {
   return (
     <Alert
       variant="warning"
@@ -10,13 +13,13 @@ export function GuestBanner() {
     >
       <p>
         Guest session — your data is saved for 30 days.{' '}
-        <Link
-          to="/login?tab=register"
+        <button
+          onClick={onPromote}
           className="font-medium underline underline-offset-2"
           data-testid="guest-banner-signup"
         >
           Sign up free
-        </Link>{' '}
+        </button>{' '}
         to keep it permanently.
       </p>
     </Alert>

@@ -16,6 +16,7 @@ import {
 
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { GuestBanner } from '@/components/layout/GuestBanner';
+import { PromotionModal } from '@/components/promotion/PromotionModal';
 import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { AuthPage } from '@/pages/Auth';
@@ -245,7 +246,13 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
 
 // ─── Layout (protected pages) ─────────────────────────────────────────────────
 
-function ProtectedLayout() {
+interface ProtectedLayoutProps {
+  onOpenPromotion: () => void;
+  promotionOpen: boolean;
+  onPromotionOpenChange: (open: boolean) => void;
+}
+
+function ProtectedLayout({ onOpenPromotion, promotionOpen, onPromotionOpenChange }: ProtectedLayoutProps) {
   const { token } = useAuth();
   const { data: profile } = useUserProfile();
   const location = useLocation();
@@ -260,12 +267,12 @@ function ProtectedLayout() {
     <>
       <NavHeader />
       {/* Desktop guest banner — below desktop nav, hidden on mobile */}
-      {profile?.is_guest && <div className="hidden sm:block"><GuestBanner /></div>}
+      {profile?.is_guest && <div className="hidden sm:block"><GuestBanner onPromote={onOpenPromotion} /></div>}
       {!isOpeningsRoute && !isEndgamesRoute && (
         <>
           <MobileHeader />
           {/* Mobile guest banner — below mobile header on standard pages */}
-          {profile?.is_guest && <div className="block sm:hidden"><GuestBanner /></div>}
+          {profile?.is_guest && <div className="block sm:hidden"><GuestBanner onPromote={onOpenPromotion} /></div>}
         </>
       )}
       <main className="pb-16 sm:pb-0">
@@ -274,6 +281,7 @@ function ProtectedLayout() {
       <MobileBottomBar onMoreClick={() => setMoreOpen(true)} />
       <MobileMoreDrawer open={moreOpen} onOpenChange={setMoreOpen} />
       <InstallPromptBanner />
+      <PromotionModal open={promotionOpen} onOpenChange={onPromotionOpenChange} />
     </>
   );
 }
@@ -283,8 +291,11 @@ function ProtectedLayout() {
 function AppRoutes() {
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
   const [completedJobIds, setCompletedJobIds] = useState<Set<string>>(new Set());
+  const [promotionOpen, setPromotionOpen] = useState(false);
   const queryClient = useQueryClient();
   const { token } = useAuth();
+
+  const openPromotion = useCallback(() => setPromotionOpen(true), []);
 
   // Restore active jobs from server on mount (and after re-login when token changes)
   const hasRestoredRef = useRef(false);
@@ -350,8 +361,8 @@ function AppRoutes() {
         {/* Google OAuth callback — reads token from URL fragment */}
         <Route path="/auth/callback" element={<OAuthCallbackPage />} />
         {/* Protected layout wraps all authenticated pages */}
-        <Route element={<ProtectedLayout />}>
-          <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />
+        <Route element={<ProtectedLayout onOpenPromotion={openPromotion} promotionOpen={promotionOpen} onPromotionOpenChange={setPromotionOpen} />}>
+          <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} onOpenPromotion={openPromotion} />} />
           <Route path="/openings/*" element={<OpeningsPage />} />
           <Route path="/endgames/*" element={<EndgamesPage />} />
           <Route path="/rating" element={<Navigate to="/global-stats" replace />} />

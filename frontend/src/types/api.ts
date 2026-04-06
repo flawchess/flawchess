@@ -23,6 +23,11 @@ export interface GuestCreateResponse {
   is_guest: boolean;
 }
 
+export interface GuestPromoteResponse {
+  access_token: string;
+  token_type: string;
+}
+
 // ─── Openings ────────────────────────────────────────────────────────────────
 
 export type TimeControl = 'bullet' | 'blitz' | 'rapid' | 'classical';
