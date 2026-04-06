@@ -575,12 +575,13 @@ export function OpeningsPage() {
     <span className={`inline-block h-3 w-3 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
   );
   const colorName = filters.color === 'white' ? 'White' : 'Black';
-  const pieceFilterSuffix = filters.matchSide === 'both' ? '' : ` (Piece filter: ${filters.matchSide === 'mine' ? 'Mine' : 'Opponent'})`;
+  const pieceFilterLabel = filters.matchSide === 'both' ? null : `(Piece filter: ${filters.matchSide === 'mine' ? 'Mine' : 'Opponent'})`;
   const positionResultsLabel = (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="inline-flex flex-wrap items-center gap-1.5">
       <span>Position Results played as</span>
       {colorIconSquare}
-      <span>{colorName}{pieceFilterSuffix}</span>
+      <span>{colorName}</span>
+      {pieceFilterLabel && <span className="basis-full md:basis-auto text-muted-foreground">{pieceFilterLabel}</span>}
     </span>
   );
 
