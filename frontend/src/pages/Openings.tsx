@@ -93,6 +93,7 @@ export function OpeningsPage() {
 
   // ── Sidebar tab state (desktop only) ────────────────────────────────────────
   const [sidebarTab, setSidebarTab] = useState<string>('filters');
+  const [filtersHintDismissed, setFiltersHintDismissed] = useState(false);
 
   // ── Mobile sidebar state ────────────────────────────────────────────────────
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(false);
@@ -239,6 +240,7 @@ export function OpeningsPage() {
   const handleFiltersChange = useCallback((newFilters: FilterState) => {
     setFilters(newFilters);
     setGamesOffset(0);
+    setFiltersHintDismissed(true);
   }, [setFilters]);
 
   const openBookmarkDialog = useCallback(() => {
@@ -443,9 +445,18 @@ export function OpeningsPage() {
       <div className="border border-border rounded-md">
       <Tabs value={sidebarTab} onValueChange={setSidebarTab} className="gap-0">
         <TabsList variant="brand" className="w-full rounded-b-none" data-testid="sidebar-tabs">
-          <TabsTrigger value="filters" data-testid="sidebar-tab-filters" className="flex-1">
+          <TabsTrigger value="filters" data-testid="sidebar-tab-filters" className="flex-1 relative">
             <SlidersHorizontal className="mr-1.5 h-4 w-4" />
             Filters
+            {bookmarks.length > 0 && !filtersHintDismissed && (
+              <span
+                className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                data-testid="filters-notification-dot"
+              >
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+              </span>
+            )}
           </TabsTrigger>
           <TabsTrigger value="bookmarks" data-testid="sidebar-tab-bookmarks" className="flex-1 relative">
             <BookMarked className="mr-1.5 h-4 w-4" />
@@ -918,12 +929,21 @@ export function OpeningsPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                      className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
                       onClick={openFilterSidebar}
                       data-testid="btn-open-filter-sidebar"
                       aria-label="Open filters"
                     >
                       <SlidersHorizontal className="h-4 w-4" />
+                      {bookmarks.length > 0 && !filtersHintDismissed && (
+                        <span
+                          className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                          data-testid="filters-notification-dot-mobile"
+                        >
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                        </span>
+                      )}
                     </Button>
                   </Tooltip>
                   <Tooltip content="Open bookmarks" side="left">
