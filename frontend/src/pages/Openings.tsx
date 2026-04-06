@@ -458,8 +458,8 @@ export function OpeningsPage() {
                 className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                 data-testid="filters-notification-dot"
               >
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
               </span>
             )}
           </TabsTrigger>
@@ -471,8 +471,8 @@ export function OpeningsPage() {
                 className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                 data-testid="bookmarks-notification-dot"
               >
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
               </span>
             )}
           </TabsTrigger>
@@ -945,8 +945,8 @@ export function OpeningsPage() {
                           className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                           data-testid="filters-notification-dot-mobile"
                         >
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
                         </span>
                       )}
                     </Button>
@@ -966,8 +966,8 @@ export function OpeningsPage() {
                           className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                           data-testid="bookmarks-notification-dot-mobile"
                         >
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
                         </span>
                       )}
                     </Button>
@@ -1198,6 +1198,10 @@ export function OpeningsPage() {
         onOpenChange={setSuggestionsOpen}
         mostPlayedData={mostPlayedData}
         bookmarks={bookmarks}
+        onSaved={() => {
+          if (activeTab !== 'stats') navigate('/openings/stats');
+          setSidebarTab('bookmarks');
+        }}
       />
     </div>
   );

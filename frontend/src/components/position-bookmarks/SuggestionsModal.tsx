@@ -26,9 +26,10 @@ interface SuggestionsModalProps {
   onOpenChange: (open: boolean) => void;
   mostPlayedData: MostPlayedOpeningsResponse | undefined;
   bookmarks: PositionBookmarkResponse[];
+  onSaved?: () => void;
 }
 
-export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks }: SuggestionsModalProps) {
+export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks, onSaved }: SuggestionsModalProps) {
   const qc = useQueryClient();
 
   // Per-suggestion state: selected for saving (keyed by color+index string)
@@ -113,6 +114,7 @@ export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks
     setSaving(false);
     setSelected(new Set());
     onOpenChange(false);
+    onSaved?.();
   };
 
   const selectedCount = selected.size;

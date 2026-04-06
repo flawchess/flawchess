@@ -110,8 +110,8 @@ function NavHeader() {
                     className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                     data-testid="import-notification-dot"
                   >
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
                   </span>
                 )}
               </Link>
@@ -199,8 +199,8 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
               className="absolute top-1.5 right-[30%] flex h-2 w-2"
               data-testid="import-notification-dot-mobile"
             >
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
             </span>
           )}
         </Link>
