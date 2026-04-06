@@ -1,7 +1,8 @@
-"""Auth router: register, JWT login/logout, and Google OAuth endpoints via FastAPI-Users."""
+"""Auth router: register, JWT login/logout, Google OAuth, and guest session endpoints via FastAPI-Users."""
 
 import json
 import secrets
+from typing import Annotated
 
 import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -10,12 +11,20 @@ from fastapi_users import schemas as fapi_schemas
 from fastapi_users.exceptions import UserAlreadyExists
 from fastapi_users.jwt import decode_jwt, generate_jwt
 from sqlalchemy import func, update as sa_update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.database import async_session_maker
+from app.core.database import async_session_maker, get_async_session
+from app.core.ip_rate_limiter import guest_create_limiter
 from app.models.user import User
-from app.schemas.auth import GoogleOAuthAvailableResponse, GoogleOAuthAuthorizeResponse
-from app.users import UserManager, auth_backend, fastapi_users, get_user_manager, google_oauth_client
+from app.schemas.auth import (
+    GoogleOAuthAvailableResponse,
+    GoogleOAuthAuthorizeResponse,
+    GuestCreateResponse,
+    GuestRefreshResponse,
+)
+from app.services import guest_service
+from app.users import UserManager, auth_backend, current_active_user, fastapi_users, get_user_manager, google_oauth_client
 
 router = APIRouter()
 
@@ -175,3 +184,36 @@ async def google_callback(
     # Redirect to frontend callback page with token in fragment
     frontend_redirect = f"{settings.FRONTEND_URL}/auth/callback#token={access_token}"
     return RedirectResponse(url=frontend_redirect, status_code=status.HTTP_302_FOUND)
+
+
+# -- Guest session endpoints ------------------------------------------------
+
+
+@router.post("/auth/guest/create", tags=["auth"], response_model=GuestCreateResponse, status_code=201)
+async def create_guest(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> GuestCreateResponse:
+    """Create an anonymous guest user and return a 30-day Bearer JWT."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not guest_create_limiter.is_allowed(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many guest accounts created from this IP",
+        )
+    user, token = await guest_service.create_guest_user(session)
+    return GuestCreateResponse(access_token=token, token_type="bearer", is_guest=True)
+
+
+@router.post("/auth/guest/refresh", tags=["auth"], response_model=GuestRefreshResponse)
+async def refresh_guest_token(
+    user: Annotated[User, Depends(current_active_user)],
+) -> GuestRefreshResponse:
+    """Issue a fresh 30-day JWT for the authenticated guest, extending their session expiry."""
+    if not user.is_guest:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not a guest user",
+        )
+    token = await guest_service.refresh_guest_token(user)
+    return GuestRefreshResponse(access_token=token, token_type="bearer")

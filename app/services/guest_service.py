@@ -39,7 +39,7 @@ async def create_guest_user(session: AsyncSession) -> tuple[User, str]:
     await session.flush()
     await session.commit()
 
-    token: str = await get_guest_jwt_strategy().write_token(user)  # ty: ignore[unresolved-attribute]
+    token: str = await get_guest_jwt_strategy().write_token(user)
     return user, token
 
 
@@ -52,5 +52,5 @@ async def refresh_guest_token(user: User) -> str:
     if not user.is_guest:
         raise ValueError("Not a guest user")
 
-    token: str = await get_guest_jwt_strategy().write_token(user)  # ty: ignore[unresolved-attribute]
+    token: str = await get_guest_jwt_strategy().write_token(user)
     return token
