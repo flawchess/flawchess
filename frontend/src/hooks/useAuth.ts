@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useState } from 'react';
+import * as Sentry from '@sentry/react';
 import { queryClient } from '@/lib/queryClient';
 import { apiClient } from '@/api/client';
-import type { LoginResponse, UserResponse } from '@/types/api';
+import type { GuestCreateResponse, LoginResponse, UserResponse } from '@/types/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -11,6 +12,7 @@ interface AuthState {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   loginWithToken: (token: string) => void;
+  loginAsGuest: () => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
 }
@@ -74,6 +76,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loginAsGuest = async (): Promise<void> => {
+    setIsLoading(true);
+    try {
+      const response = await apiClient.post<GuestCreateResponse>('/auth/guest/create');
+      const { access_token } = response.data;
+      loginWithToken(access_token);
+    } catch (error) {
+      Sentry.captureException(error, { tags: { source: 'guest-login' } });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const logout = (): void => {
     queryClient.clear();
     localStorage.removeItem('auth_token');
@@ -82,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.href = '/';
   };
 
-  const value: AuthState = { user, token, isLoading, login, loginWithToken, register, logout };
+  const value: AuthState = { user, token, isLoading, login, loginWithToken, loginAsGuest, register, logout };
 
   return React.createElement(AuthContext.Provider, { value }, children);
 }

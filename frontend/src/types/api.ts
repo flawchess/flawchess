@@ -17,6 +17,12 @@ export interface LoginResponse {
   token_type: string;
 }
 
+export interface GuestCreateResponse {
+  access_token: string;
+  token_type: string;
+  is_guest: boolean;
+}
+
 // ─── Openings ────────────────────────────────────────────────────────────────
 
 export type TimeControl = 'bullet' | 'blitz' | 'rapid' | 'classical';
