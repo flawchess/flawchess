@@ -48,6 +48,10 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
 
   const formatDateTick = useMemo(() => createDateTickFormatter(allDates), [allDates]);
 
+  const yAxis = useMemo(() => niceWinRateAxis(
+    series.flatMap((s) => s.data.map((p) => p.win_rate))
+  ), [series]);
+
   // Empty state: no series data
   if (allDates.length === 0) {
     return (
@@ -64,10 +68,6 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
       { label: b.label, color: CHART_COLORS[i % CHART_COLORS.length] },
     ]),
   );
-
-  const yAxis = useMemo(() => niceWinRateAxis(
-    series.flatMap((s) => s.data.map((p) => p.win_rate))
-  ), [series]);
 
   // Build data array with win_rate and game_count per bookmark
   const data = allDates.map((date) => {

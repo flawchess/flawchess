@@ -58,6 +58,11 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
 
   const formatDateTick = useMemo(() => createDateTickFormatter(allTypeDates), [allTypeDates]);
 
+  const yAxis = useMemo(() => niceWinRateAxis(
+    // safe: typeKeys comes from Object.keys(data.per_type), so each key exists
+    typeKeys.flatMap((key) => (data.per_type[key] ?? []).map((p) => p.win_rate))
+  ), [data.per_type, typeKeys]);
+
   // Empty state: no overall data
   if (data.overall.length === 0) {
     return (
@@ -66,11 +71,6 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
       </div>
     );
   }
-
-  const yAxis = useMemo(() => niceWinRateAxis(
-    // safe: typeKeys comes from Object.keys(data.per_type), so each key exists
-    typeKeys.flatMap((key) => (data.per_type[key] ?? []).map((p) => p.win_rate))
-  ), [data.per_type, typeKeys]);
 
   // Build merged data array: one row per date with a win_rate value per type (or undefined if no data)
   const perTypeData = allTypeDates.map((date) => {
