@@ -21,6 +21,8 @@ from app.schemas.auth import (
     GoogleOAuthAvailableResponse,
     GoogleOAuthAuthorizeResponse,
     GuestCreateResponse,
+    GuestPromoteEmailRequest,
+    GuestPromoteResponse,
     GuestRefreshResponse,
 )
 from app.services import guest_service
@@ -238,3 +240,24 @@ async def refresh_guest_token(
         )
     token = await guest_service.refresh_guest_token(user)
     return GuestRefreshResponse(access_token=token, token_type="bearer")
+
+
+@router.post("/auth/guest/promote/email", tags=["auth"], response_model=GuestPromoteResponse)
+async def promote_guest_email(
+    body: GuestPromoteEmailRequest,
+    user: Annotated[User, Depends(current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> GuestPromoteResponse:
+    """Promote a guest account to a full email/password account in-place."""
+    if not user.is_guest:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a guest user")
+    try:
+        _updated_user, token = await guest_service.promote_guest_with_password(
+            session, user, body.email, body.password
+        )
+    except UserAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="EMAIL_ALREADY_REGISTERED",
+        )
+    return GuestPromoteResponse(access_token=token, token_type="bearer")

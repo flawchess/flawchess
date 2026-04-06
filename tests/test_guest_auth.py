@@ -12,7 +12,6 @@ NOTE: Guest creation tests write real users to PostgreSQL (no rollback fixture).
       pollution from other tests.
 """
 
-import time
 import uuid
 from unittest.mock import patch
 
@@ -372,3 +371,145 @@ class TestPromoteGuestWithPassword:
 
         with pytest.raises(ValueError, match="Not a guest user"):
             await promote_guest_with_password(db_session, regular_user, unique_email("target"), "SecurePass1!")
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/guest/promote/email endpoint integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestGuestPromotion:
+    def setup_method(self) -> None:
+        """Reset rate limiter before each test to prevent cross-test 429 errors."""
+        from app.core.ip_rate_limiter import guest_create_limiter
+
+        guest_create_limiter._timestamps.clear()
+
+    @pytest.mark.asyncio
+    async def test_promotion_succeeds(self):
+        """POST /auth/guest/promote/email returns 200 with access_token; profile shows is_guest=False."""
+        new_email = unique_email("promosuccess")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            guest_resp = await client.post("/api/auth/guest/create")
+            assert guest_resp.status_code == 201
+            guest_token = guest_resp.json()["access_token"]
+
+            promo_resp = await client.post(
+                "/api/auth/guest/promote/email",
+                json={"email": new_email, "password": "TestPass123!"},
+                headers={"Authorization": f"Bearer {guest_token}"},
+            )
+            assert promo_resp.status_code == 200
+            promo_data = promo_resp.json()
+            assert "access_token" in promo_data
+            assert promo_data["token_type"] == "bearer"
+
+            new_token = promo_data["access_token"]
+            profile_resp = await client.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {new_token}"},
+            )
+            assert profile_resp.status_code == 200
+            profile = profile_resp.json()
+            assert profile["is_guest"] is False
+            assert profile["email"] == new_email
+
+    @pytest.mark.asyncio
+    async def test_promotion_email_conflict(self):
+        """POST /auth/guest/promote/email returns 409 with EMAIL_ALREADY_REGISTERED."""
+        existing_email = unique_email("existingpromo")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            # Register a normal user with that email
+            await register_user(client, existing_email, "password123")
+
+            # Create a guest and try to promote with the taken email
+            guest_resp = await client.post("/api/auth/guest/create")
+            guest_token = guest_resp.json()["access_token"]
+
+            promo_resp = await client.post(
+                "/api/auth/guest/promote/email",
+                json={"email": existing_email, "password": "TestPass123!"},
+                headers={"Authorization": f"Bearer {guest_token}"},
+            )
+            assert promo_resp.status_code == 409
+            assert promo_resp.json()["detail"] == "EMAIL_ALREADY_REGISTERED"
+
+    @pytest.mark.asyncio
+    async def test_promotion_requires_guest(self):
+        """POST /auth/guest/promote/email returns 403 for non-guest authenticated user."""
+        email = unique_email("nonguestendpoint")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            await register_user(client, email, "password123")
+            login_resp = await login_user(client, email, "password123")
+            token = login_resp.json()["access_token"]
+
+            promo_resp = await client.post(
+                "/api/auth/guest/promote/email",
+                json={"email": unique_email("target"), "password": "TestPass123!"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert promo_resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_data_preserved_after_promotion(self):
+        """Promotion keeps the same user row (in-place update), verified via created_at timestamp."""
+        new_email = unique_email("datapreserved")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            guest_resp = await client.post("/api/auth/guest/create")
+            guest_token = guest_resp.json()["access_token"]
+
+            # Capture created_at before promotion as identity proxy
+            before_resp = await client.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {guest_token}"},
+            )
+            assert before_resp.status_code == 200
+            created_at_before = before_resp.json()["created_at"]
+
+            promo_resp = await client.post(
+                "/api/auth/guest/promote/email",
+                json={"email": new_email, "password": "TestPass123!"},
+                headers={"Authorization": f"Bearer {guest_token}"},
+            )
+            assert promo_resp.status_code == 200
+            new_token = promo_resp.json()["access_token"]
+
+            after_resp = await client.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {new_token}"},
+            )
+            assert after_resp.status_code == 200
+            created_at_after = after_resp.json()["created_at"]
+
+            # Same created_at proves it's the same row (updated in-place, not a new user)
+            assert created_at_before == created_at_after
+
+    @pytest.mark.asyncio
+    async def test_promoted_user_can_login_with_password(self):
+        """After promotion, user can log in via /auth/jwt/login with new email and password."""
+        new_email = unique_email("loginafterpromo")
+        password = "TestPass123!"
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            guest_resp = await client.post("/api/auth/guest/create")
+            guest_token = guest_resp.json()["access_token"]
+
+            promo_resp = await client.post(
+                "/api/auth/guest/promote/email",
+                json={"email": new_email, "password": password},
+                headers={"Authorization": f"Bearer {guest_token}"},
+            )
+            assert promo_resp.status_code == 200
+
+            login_resp = await login_user(client, new_email, password)
+            assert login_resp.status_code == 200
+            assert "access_token" in login_resp.json()
