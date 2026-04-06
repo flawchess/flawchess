@@ -40,6 +40,7 @@
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
     --brand-brown: #8B5E3C;
+    --brand-brown-light: #B8906E;
     --brand-brown-hover: #6B4226;
     --brand-brown-active: #6B4226;
     --charcoal: #161412;
@@ -128,6 +129,7 @@
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
     --color-brand-brown: var(--brand-brown);
+    --color-brand-brown-light: var(--brand-brown-light);
     --color-brand-brown-hover: var(--brand-brown-hover);
     --color-brand-brown-active: var(--brand-brown-active);
     --color-charcoal: var(--charcoal);

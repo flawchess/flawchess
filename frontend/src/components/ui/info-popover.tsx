@@ -30,7 +30,7 @@ function InfoPopover({ children, ariaLabel, testId, side = "top" }: InfoPopoverP
         <span
           role="button"
           tabIndex={0}
-          className="text-brand-brown/70 hover:text-brand-brown focus:outline-none cursor-pointer"
+          className="text-brand-brown-light/70 hover:text-brand-brown focus:outline-none cursor-pointer"
           aria-label={ariaLabel}
           data-testid={testId}
           onMouseEnter={handleMouseEnter}
