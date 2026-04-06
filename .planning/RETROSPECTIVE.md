@@ -2,6 +2,42 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v1.8 — Guest Access
+
+**Shipped:** 2026-04-06
+**Phases:** 4 | **Delivered via:** PR #37
+
+### What Was Built
+- Guest session foundation: is_guest User model flag, JWT-based guest sessions with 30-day auto-refresh, IP rate limiting
+- Guest frontend: "Use as Guest" buttons on homepage and auth page, persistent guest banner
+- Email/password promotion: backend promotion service, register-page promotion flow preserving all imported data
+- Google SSO promotion: OAuth promotion route with guest identity preservation across redirect, email collision handling
+- Security: CVE-2025-68481 Google OAuth CSRF vulnerability patched with double-submit cookie validation
+- UX polish: import page guest guard, auth page logo linking, delete button disabled during active imports
+
+### What Worked
+- Guest as first-class User row (is_guest=True) — promotion is a single UPDATE, no FK migration needed
+- Bearer transport for guest JWTs — avoided dual-transport complexity entirely
+- Register-page promotion instead of separate modal — reused existing form, cleaner UX, less code
+- PR-based workflow (feature branch → squash merge) kept main clean during multi-phase development
+
+### What Was Inefficient
+- Entire milestone developed outside GSD discuss→plan→execute workflow — no SUMMARY.md, VERIFICATION.md, or PLAN.md files exist for phases 44-47
+- GSD state tracking stayed at 0% despite all work being complete — planning artifacts diverged from actual progress
+- Quick tasks (UI polish commits between roadmap creation and PR merge) weren't tracked in any GSD artifact
+
+### Patterns Established
+- Guest user pattern: is_guest flag on User model, synthetic email (`@guest.local`), promotion via in-place UPDATE
+- OAuth CSRF protection: double-submit cookie pattern for all OAuth callbacks
+- Import guard: disable destructive actions (delete) while import is running
+
+### Key Lessons
+1. When developing outside GSD's formal workflow (e.g., rapid feature branch work), the planning artifacts become stale immediately — either commit to the workflow or accept the tracking gap
+2. Guest-as-User-row is much simpler than a separate guest model — promotion is trivial, no FK migration, no special-casing in queries
+3. Register-page promotion beats a dedicated modal — reuses existing validation, error handling, and styling
+
+---
+
 ## Milestone: v1.3 — Project Launch
 
 **Shipped:** 2026-03-22
@@ -183,6 +219,8 @@
 | v1.4 | 1 | 2 | Self-hosted Umami analytics, minimal-scope milestone |
 | v1.5 | 9 | 18 | Backend-heavy: position classifier, endgame analytics, engine analysis import |
 | v1.6 | 6 | 11 | UI polish: theme system, shared components, openings table, mobile drawers, 26 quick tasks |
+| v1.7 | 6 | 11 | Consolidation: ty type checking, knip dead exports, import speed 2x, SQL aggregations |
+| v1.8 | 4 | N/A | Guest access via feature branch + PR, outside GSD workflow — no formal plans |
 
 ### Top Lessons (Verified Across Milestones)
 

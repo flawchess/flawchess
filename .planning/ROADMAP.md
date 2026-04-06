@@ -10,7 +10,7 @@
 - ✅ **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33 (shipped 2026-03-28)
 - ✅ **v1.6 UI Polish & Improvements** — Phases 34-39 (shipped 2026-03-30)
 - ✅ **v1.7 Consolidation, Tooling & Refactoring** — Phases 40-43 (shipped 2026-04-03)
-- 🚧 **v1.8 Guest Access** — Phases 44-47 (in progress)
+- ✅ **v1.8 Guest Access** — Phases 44-47 (shipped 2026-04-06)
 - ○ **v1.9 Advanced Analytics** — Phases 48-50 (planned)
 
 ## Phases
@@ -107,12 +107,15 @@
 
 </details>
 
-### v1.8 Guest Access (Phases 44-47)
+<details>
+<summary>✅ v1.8 Guest Access (Phases 44-47) — SHIPPED 2026-04-06</summary>
 
-- [ ] **Phase 44: Guest Session Foundation** - DB schema, OAuth CSRF fix, guest creation backend with rate limiting
-- [ ] **Phase 45: Guest Frontend** - "Use as Guest" button, auth context, persistent guest indicator
-- [ ] **Phase 46: Email/Password Promotion** - Promote modal (email/password path), import page info box, conflict handling
-- [ ] **Phase 47: Google SSO Promotion** - Custom OAuth promotion route with guest identity preservation
+- [x] Phase 44: Guest Session Foundation — completed 2026-04-06
+- [x] Phase 45: Guest Frontend — completed 2026-04-06
+- [x] Phase 46: Email/Password Promotion — completed 2026-04-06
+- [x] Phase 47: Google SSO Promotion — completed 2026-04-06
+
+</details>
 
 ### v1.9 Advanced Analytics (Phases 48-50)
 
@@ -121,55 +124,6 @@
 - [ ] **Phase 50: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
 
 ## Phase Details
-
-### Phase 44: Guest Session Foundation
-**Goal**: The backend can create and persist guest sessions securely, with the OAuth CSRF vulnerability patched before any new OAuth routes are added
-**Depends on**: Phase 43
-**Requirements**: GUEST-02, GUEST-03, GUEST-05, SEC-01, SEC-02
-**Success Criteria** (what must be TRUE):
-  1. A visitor can obtain a Bearer JWT for a guest account via a single POST request with no credentials
-  2. The guest JWT remains valid across page refreshes and is extended on each visit, resetting the 30-day expiry
-  3. A guest user has full platform access — import, move explorer, endgame analysis, and bookmarks all accept the guest JWT without special-casing
-  4. The existing Google OAuth callback validates a CSRF cookie, closing CVE-2025-68481
-  5. The guest creation endpoint rejects excessive requests from the same IP, preventing mass account creation
-**Plans**: TBD
-
-### Phase 45: Guest Frontend
-**Goal**: Visitors can start using FlawChess as a guest from the homepage and always see their guest status clearly
-**Depends on**: Phase 44
-**Requirements**: GUEST-01, GUEST-04
-**Success Criteria** (what must be TRUE):
-  1. The homepage shows a "Use as Guest" button alongside "Sign up free" — one click starts a guest session with no form or friction
-  2. After clicking "Use as Guest", the user lands on the app with full functionality immediately available
-  3. A persistent, non-dismissible guest indicator is visible in the header/navbar at all times during a guest session
-  4. The guest's synthetic internal email is never displayed anywhere in the UI (header, profile, mobile drawer)
-**Plans**: TBD
-**UI hint**: yes
-
-### Phase 46: Email/Password Promotion
-**Goal**: A guest user can upgrade to a full account using email and password, with all their imported data preserved and clear guidance on why upgrading is beneficial
-**Depends on**: Phase 45
-**Requirements**: PROMO-01, PROMO-03, PROMO-04, GUX-01, GUX-02
-**Success Criteria** (what must be TRUE):
-  1. The import page shows an info box explaining that signing up preserves games across devices and prevents data loss when the guest session expires
-  2. A guest user can open a promotion modal and see a confirmation step listing what data will be preserved before committing
-  3. After entering email and password, the guest account is upgraded in-place and the user's games and bookmarks are immediately accessible under the new account
-  4. If the chosen email is already registered, the user sees a clear error message directing them to log in instead
-  5. After successful promotion, the user is redirected back to the page they were on before opening the modal
-**Plans**: TBD
-**UI hint**: yes
-
-### Phase 47: Google SSO Promotion
-**Goal**: A guest user can upgrade to a full account using Google SSO, with their identity surviving the OAuth redirect round-trip and active imports handled safely
-**Depends on**: Phase 46
-**Requirements**: PROMO-02
-**Success Criteria** (what must be TRUE):
-  1. A guest user can click "Continue with Google" in the promotion modal and complete the OAuth flow to upgrade their account, preserving all imported data
-  2. The guest identity is preserved across the Google OAuth redirect — data is not lost or orphaned in a new empty account
-  3. If a game import is currently running, the Google SSO promotion button is disabled or shows a warning, preventing mid-import promotion
-  4. The promotion flow works correctly in Safari and Firefox with Enhanced Tracking Protection enabled
-**Plans**: TBD
-**UI hint**: yes
 
 ### Phase 48: Endgame ELO — Backend + Breakdown Table
 **Goal**: Users can see their Endgame ELO per platform/time-control combination and understand how their endgame skill compares to their actual rating
@@ -234,8 +188,8 @@
 | 22. CI/CD & Monitoring | v1.3 | 2/2 | Complete | 2026-03-21 |
 | 23. Launch Readiness | v1.3 | 4/4 | Complete | 2026-03-22 |
 | 24. Web Analytics | v1.4 | 2/2 | Complete | 2026-03-22 |
-| 26. Position Classifier & Schema | v1.5 | 2/2 | Complete    | 2026-03-23 |
-| 27. Import Wiring & Backfill | v1.5 | 2/2 | Complete    | 2026-03-24 |
+| 26. Position Classifier & Schema | v1.5 | 2/2 | Complete | 2026-03-23 |
+| 27. Import Wiring & Backfill | v1.5 | 2/2 | Complete | 2026-03-24 |
 | 28. Engine Analysis Import | v1.5 | 2/3 | Complete (03 deferred) | 2026-03-25 |
 | 28.1. Import lichess analysis metrics | v1.5 | 1/1 | Complete | 2026-03-26 |
 | 29. Endgame Analytics | v1.5 | 3/3 | Complete | 2026-03-26 |
@@ -243,21 +197,21 @@
 | 31. Endgame classification redesign | v1.5 | 2/2 | Complete | 2026-03-26 |
 | 32. Endgame Performance Charts | v1.5 | 3/3 | Complete | 2026-03-27 |
 | 33. Homepage, README & SEO Update | v1.5 | 3/3 | Complete | 2026-03-28 |
-| 34. Theme Improvements | v1.6 | 2/2 | Complete    | 2026-03-28 |
-| 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete   | 2026-03-28 |
-| 36. Most Played Openings | v1.6 | 1/1 | Complete    | 2026-03-28 |
-| 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete   | 2026-03-28 |
-| 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete    | 2026-03-29 |
-| 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete   | 2026-03-30 |
-| 40. Static Type Checking | v1.7 | 2/2 | Complete    | 2026-04-01 |
-| 41. Code Quality & Dead Code | v1.7 | 4/4 | Complete    | 2026-04-02 |
-| 41.1. Import Speed Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
-| 42. Backend Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
-| 43. Frontend Cleanup | v1.7 | 1/1 | Complete    | 2026-04-03 |
-| 44. Guest Session Foundation | v1.8 | 0/? | Not started | - |
-| 45. Guest Frontend | v1.8 | 0/? | Not started | - |
-| 46. Email/Password Promotion | v1.8 | 0/? | Not started | - |
-| 47. Google SSO Promotion | v1.8 | 0/? | Not started | - |
+| 34. Theme Improvements | v1.6 | 2/2 | Complete | 2026-03-28 |
+| 35. WDL Chart Refactoring | v1.6 | 2/2 | Complete | 2026-03-28 |
+| 36. Most Played Openings | v1.6 | 1/1 | Complete | 2026-03-28 |
+| 37. Openings Reference Table & Redesign | v1.6 | 3/3 | Complete | 2026-03-28 |
+| 38. Opening Statistics & Bookmark Rework | v1.6 | 2/2 | Complete | 2026-03-29 |
+| 39. Mobile Opening Explorer Sidebars | v1.6 | 1/1 | Complete | 2026-03-30 |
+| 40. Static Type Checking | v1.7 | 2/2 | Complete | 2026-04-01 |
+| 41. Code Quality & Dead Code | v1.7 | 4/4 | Complete | 2026-04-02 |
+| 41.1. Import Speed Optimization | v1.7 | 2/2 | Complete | 2026-04-03 |
+| 42. Backend Optimization | v1.7 | 2/2 | Complete | 2026-04-03 |
+| 43. Frontend Cleanup | v1.7 | 1/1 | Complete | 2026-04-03 |
+| 44. Guest Session Foundation | v1.8 | N/A | Complete | 2026-04-06 |
+| 45. Guest Frontend | v1.8 | N/A | Complete | 2026-04-06 |
+| 46. Email/Password Promotion | v1.8 | N/A | Complete | 2026-04-06 |
+| 47. Google SSO Promotion | v1.8 | N/A | Complete | 2026-04-06 |
 | 48. Endgame ELO — Backend + Breakdown Table | v1.9 | 0/? | Not started | - |
 | 49. Endgame ELO — Timeline Chart | v1.9 | 0/? | Not started | - |
 | 50. Opening Risk & Drawishness | v1.9 | 0/? | Not started | - |

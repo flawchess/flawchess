@@ -72,13 +72,16 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Refactor button brand colors to CSS variables (.btn-brand) — v1.7
 - ✓ Consistent Pydantic response models across all API endpoints — v1.7
 - ✓ Import speed optimization (~2x throughput, single PGN parse, bulk UPDATE) — v1.7
+- ✓ Guest access — "Use as Guest" button on homepage, JWT-based guest sessions with 30-day auto-refresh — v1.8
+- ✓ Guest as first-class User row with is_guest=True, full platform access without special-casing — v1.8
+- ✓ Account promotion via email/password or Google SSO, preserving all imported data — v1.8
+- ✓ Guest UX — persistent guest banner, import page info box, auth page logo linking — v1.8
+- ✓ OAuth CSRF fix (CVE-2025-68481) and guest creation IP rate limiting — v1.8
 
 ### Active
 
-- [ ] Guest access — visitors can use FlawChess without creating an account via "Use as Guest" button
-- [ ] Anonymous user creation stored in HttpOnly cookie with full platform access
-- [ ] Account promotion — guest users can upgrade to full account via email/password or Google SSO, preserving all imported data
-- [ ] Guest info box on import page explaining benefits of signing up
+- [ ] ELO-Adjusted Endgame Skill — opponent-strength-adjusted composite score with gauge + timeline
+- [ ] Opening Risk and Drawishness metrics per position in the move explorer
 
 ### Future (v1.9)
 
@@ -96,26 +99,24 @@ Users can determine their success rate for any opening position they specify, fi
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: v1.8 Guest Access
+## Current Milestone: v1.9 Advanced Analytics (planned)
 
-**Goal:** Let visitors use FlawChess without creating an account, then seamlessly promote to a full account when ready.
+**Goal:** Add ELO-adjusted endgame skill metrics and opening risk/drawishness signals.
 
 **Target features:**
-- "Use as Guest" button on homepage alongside "Sign up free"
-- Anonymous user creation via HttpOnly cookie (JWT in CookieTransport)
-- Full platform access for guest users (import, explore, analyze)
-- Info box on import page explaining benefits of signing up
-- Account promotion via email/password or Google SSO, preserving all imported data
+- Endgame ELO per (platform, time-control) combination with breakdown table
+- Endgame ELO timeline chart with paired actual vs endgame lines
+- Opening risk and drawishness metrics per position in the move explorer
 
 ## Current State
 
-v1.7 shipped 2026-04-03. Eight milestones complete (v1.0–v1.7), 43 phases (+2 inserted), live at flawchess.com. The codebase now has full static type checking (ty + knip in CI), strict TypeScript (noUncheckedIndexedAccess), zero dead code, consistent naming, shared filter utilities, SQL-side aggregations, typed Pydantic response models on all endpoints, and ~2x faster game imports via unified PGN processing and bulk DB operations.
+v1.8 shipped 2026-04-06. Nine milestones complete (v1.0–v1.8), 47 phases (+2 inserted), live at flawchess.com. Guest access now lets visitors try the platform without signing up, with seamless promotion to full accounts via email/password or Google SSO. ~20K lines of code (8K Python, 12K TypeScript).
 
 ## Context
 
-- **Current state:** v1.7 shipped. 43 phases complete across 8 milestones. Live at flawchess.com with CI/CD and Sentry.
+- **Current state:** v1.8 shipped. 47 phases complete across 9 milestones. Live at flawchess.com with CI/CD and Sentry.
 - **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui
-- **Auth:** FastAPI-Users (JWT + Google SSO)
+- **Auth:** FastAPI-Users (JWT + Google SSO + guest sessions with is_guest flag)
 - **Core algorithm:** Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import for indexed integer equality lookups
 - **PWA:** vite-plugin-pwa + Workbox (NetworkOnly for API routes), vaul drawer, tailwindcss-safe-area
 - **Known issues:** react-chessboard v5 arrow clearing workaround (clearArrowsOnPositionChange: false), BoardArrow local type definition, touch drag disabled (click-to-move only on mobile)
@@ -166,6 +167,9 @@ v1.7 shipped 2026-04-03. Eight milestones complete (v1.0–v1.7), 43 phases (+2 
 | Unified process_game_pgn | Single PGN walk per game instead of 3 separate passes | ✓ Good |
 | Bulk CASE UPDATE for move_count/result_fen | One SQL statement per batch vs N per-game UPDATEs | ✓ Good |
 | .btn-brand CSS class over JS constant | Styling concern in CSS, not JS import chain | ✓ Good |
+| Bearer transport for guest JWTs | Avoids dual-transport complexity, Safari/Firefox ETP issues | ✓ Good |
+| Guest as User row with is_guest=True | Promotion is single-row UPDATE, no FK migration needed | ✓ Good |
+| Register-page promotion over modal | Cleaner UX, reuses existing register form, less code | ✓ Good |
 
 ## Evolution
 
@@ -185,4 +189,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-06 after v1.8 Guest Access milestone start*
+*Last updated: 2026-04-06 after v1.8 Guest Access milestone shipped*

@@ -2,39 +2,38 @@
 gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Guest Access
-status: active
+status: complete
 last_updated: "2026-04-06T00:00:00.000Z"
 last_activity: 2026-04-06
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 4
   total_plans: 0
   completed_plans: 0
-  percent: 0
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 44 of 47 in v1.8 (Guest Session Foundation)
-Plan: 0 of ? in current phase
-Status: Ready to plan
-Last activity: 2026-04-06 — v1.8 roadmap created (phases 44-47)
+Milestone: v1.8 Guest Access — SHIPPED 2026-04-06
+Status: Complete — ready for v1.9 planning
+Last activity: 2026-04-06 — milestone archived, git tagged
 
-Progress: [░░░░░░░░░░] 0% (v1.8 phases)
+Progress: [██████████] 100% (v1.8 phases)
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-04-06)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: v1.8 Guest Access — Phase 44 Guest Session Foundation
+Current focus: Planning next milestone (v1.9 Advanced Analytics)
 
 ## Key Context
 
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
 - ORM: SQLAlchemy 2.x async + Alembic
-- Auth: FastAPI-Users 15.0.5 (Bearer JWT, integer user IDs)
+- Auth: FastAPI-Users 15.0.5 (Bearer JWT, Google SSO, guest sessions)
 - Core algorithm: Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import
 - Deployment: Docker Compose on Hetzner CX32 (4 vCPUs, 7.6 GB RAM + 2 GB swap)
 
@@ -44,10 +43,8 @@ Current focus: v1.8 Guest Access — Phase 44 Guest Session Foundation
 
 - v1.8: Bearer transport for guest JWTs (not CookieTransport) — avoids dual-transport complexity and OAuth redirect issues in Safari/Firefox ETP
 - v1.8: Guest as first-class User row with is_guest=True — promotion is single-row UPDATE, no FK migration needed
+- v1.8: Register-page promotion flow instead of separate PromotionModal — cleaner UX
 - v1.8: Conversion optimization (CONV-01/02/03) deferred to post-launch Future Requirements
-- Phase 44: Endgame ELO per-(platform, time-control) breakdown — no cross-platform normalization
-- Phase 44: Formula adjusts user's actual rating using conv/recov vs fixed baselines; NOT opponent rating
-- Phase 46: Opening risk = variance of material_imbalance at opening→middlegame transition
 
 ### Pending Todos
 
@@ -56,10 +53,7 @@ Current focus: v1.8 Guest Access — Phase 44 Guest Session Foundation
 
 ### Blockers/Concerns
 
-- Phase 44: Check whether `slowapi` is installed before using for rate limiting — lightweight manual alternative avoids new dep if not
-- Phase 44: Align on guest email sentinel domain (`@guest.local` vs `@guest.flawchess.internal`) before implementation
-- Phase 47: New callback URI `/api/auth/guest/promote/google/callback` must be registered in Google Cloud Console — manual action before Phase 47 can be tested end-to-end
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
 
 ---
-Last activity: 2026-04-06 — v1.8 roadmap created, Phase 44 ready to plan
+Last activity: 2026-04-06 — v1.8 milestone archived and tagged

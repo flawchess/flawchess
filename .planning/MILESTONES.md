@@ -1,5 +1,21 @@
 # Milestones: FlawChess
 
+## v1.8 Guest Access (Shipped: 2026-04-06)
+
+**Phases completed:** 4 phases (44-47), delivered via PR #37
+**Stats:** 56 files changed, +3915 / -1294 lines, 3 new test files (1193 lines of tests)
+
+**Key accomplishments:**
+
+- Guest session foundation — `is_guest` User model, JWT-based guest sessions with 30-day auto-refresh, IP rate limiting
+- Guest frontend — "Use as Guest" buttons on homepage and auth page, persistent guest banner indicating limited access
+- Email/password promotion — backend promotion service, register-page promotion flow preserving all imported data
+- Google SSO promotion — OAuth promotion route with guest identity preservation across redirect, email collision handling
+- Security fix — patched Google OAuth for CVE-2025-68481 CSRF vulnerability (double-submit cookie validation)
+- UX polish — import page guest guard, auth page logo linking, delete button disabled during active imports
+
+---
+
 ## v1.7 Consolidation, Tooling & Refactoring (Shipped: 2026-04-03)
 
 **Phases completed:** 6 phases, 11 plans, 17 tasks
