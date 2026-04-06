@@ -445,9 +445,18 @@ export function OpeningsPage() {
             <SlidersHorizontal className="mr-1.5 h-4 w-4" />
             Filters
           </TabsTrigger>
-          <TabsTrigger value="bookmarks" data-testid="sidebar-tab-bookmarks" className="flex-1">
+          <TabsTrigger value="bookmarks" data-testid="sidebar-tab-bookmarks" className="flex-1 relative">
             <BookMarked className="mr-1.5 h-4 w-4" />
             Bookmarks
+            {bookmarks.length === 0 && (
+              <span
+                className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5"
+                data-testid="bookmarks-notification-dot"
+              >
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+              </span>
+            )}
           </TabsTrigger>
         </TabsList>
         <TabsContent value="filters">
@@ -919,12 +928,21 @@ export function OpeningsPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                      className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
                       onClick={openBookmarkSidebar}
                       data-testid="btn-open-bookmark-sidebar"
                       aria-label="Open bookmarks"
                     >
                       <BookMarked className="h-4 w-4" />
+                      {bookmarks.length === 0 && (
+                        <span
+                          className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5"
+                          data-testid="bookmarks-notification-dot-mobile"
+                        >
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                        </span>
+                      )}
                     </Button>
                   </Tooltip>
                 </div>
