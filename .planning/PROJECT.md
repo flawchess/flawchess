@@ -75,6 +75,13 @@ Users can determine their success rate for any opening position they specify, fi
 
 ### Active
 
+- [ ] Guest access — visitors can use FlawChess without creating an account via "Use as Guest" button
+- [ ] Anonymous user creation stored in HttpOnly cookie with full platform access
+- [ ] Account promotion — guest users can upgrade to full account via email/password or Google SSO, preserving all imported data
+- [ ] Guest info box on import page explaining benefits of signing up
+
+### Future (v1.9)
+
 - [ ] ELO-Adjusted Endgame Skill — opponent-strength-adjusted composite score with gauge + timeline
 - [ ] Refine existing endgame statistics (conversion/recovery rates, performance gauges)
 - [ ] New endgame statistics (TBD, added incrementally)
@@ -89,15 +96,16 @@ Users can determine their success rate for any opening position they specify, fi
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: v1.8 Advanced Analytics
+## Current Milestone: v1.8 Guest Access
 
-**Goal:** Expand analysis capabilities with new and refined statistics across endgames and openings.
+**Goal:** Let visitors use FlawChess without creating an account, then seamlessly promote to a full account when ready.
 
 **Target features:**
-- ELO-Adjusted Endgame Skill (backlog 999.5) — opponent-strength-adjusted composite score with gauge + timeline
-- Refine existing endgame statistics (conversion/recovery rates, performance gauges)
-- New endgame statistics (TBD, added incrementally)
-- Opening Risk and other new opening statistics (TBD, added incrementally)
+- "Use as Guest" button on homepage alongside "Sign up free"
+- Anonymous user creation via HttpOnly cookie (JWT in CookieTransport)
+- Full platform access for guest users (import, explore, analyze)
+- Info box on import page explaining benefits of signing up
+- Account promotion via email/password or Google SSO, preserving all imported data
 
 ## Current State
 
@@ -177,4 +185,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-04 after v1.8 milestone start*
+*Last updated: 2026-04-06 after v1.8 Guest Access milestone start*

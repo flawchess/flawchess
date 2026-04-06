@@ -1,12 +1,12 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.8
-milestone_name: Advanced Analytics
+milestone_name: Guest Access
 status: active
-last_updated: "2026-04-04T00:00:00.000Z"
-last_activity: 2026-04-04
+last_updated: "2026-04-06T00:00:00.000Z"
+last_activity: 2026-04-06
 progress:
-  total_phases: 3
+  total_phases: 0
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,18 +17,18 @@ progress:
 
 ## Current Position
 
-Phase: 44 of 46 (Endgame ELO — Backend + Breakdown Table)
+Phase: Not started (defining requirements)
 Plan: —
-Status: Ready to plan
-Last activity: 2026-04-04 — v1.8 roadmap created, 3 phases defined (44-46)
+Status: Defining requirements
+Last activity: 2026-04-06 — Milestone v1.8 Guest Access started
 
 Progress: [░░░░░░░░░░] 0%
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-04)
+See: .planning/PROJECT.md (updated 2026-04-06)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: v1.8 Advanced Analytics — Phase 44
+Current focus: v1.8 Guest Access
 
 ## Key Context
 
@@ -61,8 +61,6 @@ Current focus: v1.8 Advanced Analytics — Phase 44
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
 - bulk_insert_positions chunk_size tuning required when adding columns — asyncpg 32767 arg limit
-- Phase 44: Fixed baseline constants for conv/recov need to be reasonable starting values — refine after launch based on observed Endgame ELO numbers vs user intuition
-- Phase 46: Material imbalance variance may still conflate with blunders at low ELO — treat as relative within-player metric, not absolute cross-player comparison
 
 ---
-Last activity: 2026-04-04 - v1.8 roadmap created (phases 44-46)
+Last activity: 2026-04-06 - Milestone v1.8 Guest Access started

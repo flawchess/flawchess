@@ -10,7 +10,8 @@
 - ✅ **v1.5 Game Statistics & Endgame Analysis** — Phases 26-33 (shipped 2026-03-28)
 - ✅ **v1.6 UI Polish & Improvements** — Phases 34-39 (shipped 2026-03-30)
 - ✅ **v1.7 Consolidation, Tooling & Refactoring** — Phases 40-43 (shipped 2026-04-03)
-- 🚧 **v1.8 Advanced Analytics** — Phases 44-46 (in progress)
+- 🚧 **v1.8 Guest Access** — Phases TBD (in progress)
+- ○ **v1.9 Advanced Analytics** — Phases TBD (planned)
 
 ## Phases
 
@@ -106,7 +107,7 @@
 
 </details>
 
-### v1.8 Advanced Analytics (Phases 44-46)
+### v1.9 Advanced Analytics (Phases 44-46)
 
 - [ ] **Phase 44: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
 - [ ] **Phase 45: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
@@ -197,9 +198,9 @@
 | 41.1. Import Speed Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
 | 42. Backend Optimization | v1.7 | 2/2 | Complete    | 2026-04-03 |
 | 43. Frontend Cleanup | v1.7 | 1/1 | Complete    | 2026-04-03 |
-| 44. Endgame ELO — Backend + Breakdown Table | v1.8 | 0/? | Not started | - |
-| 45. Endgame ELO — Timeline Chart | v1.8 | 0/? | Not started | - |
-| 46. Opening Risk & Drawishness | v1.8 | 0/? | Not started | - |
+| 44. Endgame ELO — Backend + Breakdown Table | v1.9 | 0/? | Not started | - |
+| 45. Endgame ELO — Timeline Chart | v1.9 | 0/? | Not started | - |
+| 46. Opening Risk & Drawishness | v1.9 | 0/? | Not started | - |
 
 ## Backlog
 
