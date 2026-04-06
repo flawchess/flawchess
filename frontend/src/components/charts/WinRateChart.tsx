@@ -69,7 +69,7 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
     series.flatMap((s) => s.data.map((p) => p.win_rate))
   ), [series]);
 
-  // Build data array with win_rate, game_count and window_size per bookmark
+  // Build data array with win_rate and game_count per bookmark
   const data = allDates.map((date) => {
     const point: Record<string, string | number | undefined> = { date };
     for (const s of series) {
@@ -77,7 +77,6 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
       if (found) {
         point[`bkm_${s.bookmark_id}`] = found.win_rate;
         point[`bkm_${s.bookmark_id}_game_count`] = found.game_count;
-        point[`bkm_${s.bookmark_id}_window_size`] = found.window_size;
       }
       // undefined produces a gap in the line
     }
@@ -110,8 +109,7 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
                   .filter((item) => item.value !== undefined)
                   .map((item) => {
                     const cfg = chartConfig[item.dataKey as string];
-                    const gameCount = item.payload[`${item.dataKey}_game_count`] as number;
-                    const windowSize = item.payload[`${item.dataKey}_window_size`] as number;
+                    const gameCount = item.payload[`${item.dataKey}_game_count`] as number | undefined;
                     return (
                       <div key={item.dataKey} className="flex items-center gap-1.5">
                         <div
@@ -120,7 +118,9 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
                         />
                         <span>
                           {cfg?.label ?? item.dataKey}: {Math.round((item.value as number) * 100)}%
-                          <span className="text-muted-foreground ml-1">({gameCount}/{windowSize} games)</span>
+                          {gameCount !== undefined && (
+                            <span className="text-muted-foreground ml-1">(past {gameCount} games)</span>
+                          )}
                         </span>
                       </div>
                     );
