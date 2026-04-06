@@ -72,25 +72,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GUEST-01 | TBD | Pending |
-| GUEST-02 | TBD | Pending |
-| GUEST-03 | TBD | Pending |
-| GUEST-04 | TBD | Pending |
-| GUEST-05 | TBD | Pending |
-| PROMO-01 | TBD | Pending |
-| PROMO-02 | TBD | Pending |
-| PROMO-03 | TBD | Pending |
-| PROMO-04 | TBD | Pending |
-| GUX-01 | TBD | Pending |
-| GUX-02 | TBD | Pending |
-| SEC-01 | TBD | Pending |
-| SEC-02 | TBD | Pending |
+| GUEST-01 | Phase 48 | Pending |
+| GUEST-02 | Phase 47 | Pending |
+| GUEST-03 | Phase 47 | Pending |
+| GUEST-04 | Phase 48 | Pending |
+| GUEST-05 | Phase 47 | Pending |
+| PROMO-01 | Phase 49 | Pending |
+| PROMO-02 | Phase 50 | Pending |
+| PROMO-03 | Phase 49 | Pending |
+| PROMO-04 | Phase 49 | Pending |
+| GUX-01 | Phase 49 | Pending |
+| GUX-02 | Phase 49 | Pending |
+| SEC-01 | Phase 47 | Pending |
+| SEC-02 | Phase 47 | Pending |
 
 **Coverage:**
 - v1.8 requirements: 13 total
-- Mapped to phases: 0
-- Unmapped: 13 ⚠️
+- Mapped to phases: 13
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-06*
-*Last updated: 2026-04-06 after initial definition*
+*Last updated: 2026-04-06 after roadmap creation*
