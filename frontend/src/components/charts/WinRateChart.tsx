@@ -90,7 +90,7 @@ export function WinRateChart({ bookmarks, series }: WinRateChartProps) {
           <BookMarked className="h-5 w-5" />
           Bookmarked Openings: Win Rate Over Time
           <InfoPopover ariaLabel="Win rate chart info" testId="win-rate-chart-info" side="top">
-            Shows your win rate for each saved or most played position over time. Each point is the win rate over your last 50 games through that position. This helps you track and compare your success rate for each opening.
+            Shows your win rate for each saved or most played position over time. Each point is the win rate over your last 50 games through that position. Only data points with at least 10 games are shown to avoid noisy early values.
           </InfoPopover>
         </span>
       </h2>
