@@ -1,39 +1,57 @@
-# Requirements: FlawChess v1.8 Advanced Analytics
+# Requirements: FlawChess v1.8 Guest Access
 
-**Defined:** 2026-04-05
+**Defined:** 2026-04-06
 **Core Value:** Users can determine their success rate for any opening position they specify, filtering by their own pieces only, regardless of how platforms categorize the opening
 
 ## v1.8 Requirements
 
-Requirements for the v1.8 milestone. Each maps to a roadmap phase.
+Requirements for the Guest Access milestone. Each maps to a roadmap phase.
 
-### Endgame ELO
+### Guest Session
 
-- [ ] **ELO-01**: User sees Endgame ELO per (platform, time-control) combination, derived from actual rating adjusted by conversion/recovery performance against fixed baselines
-- [ ] **ELO-02**: User sees actual ELO, Endgame ELO, and gap displayed side-by-side per combination in a breakdown table (strength/weakness visible at a glance)
-- [ ] **ELO-03**: Combinations below minimum rated-game threshold are omitted; "Insufficient data" fallback shown when nothing qualifies
-- [ ] **ELO-04**: User can read an info popover explaining Endgame ELO methodology, baseline assumptions, and caveats
-- [ ] **ELO-05**: User sees Endgame ELO tracked over time per combination in a timeline chart with color-matched paired lines (bright = Endgame ELO, dark = Actual ELO) showing over/underperformance visually
-- [ ] **ELO-06**: Existing sidebar filters (platform, time-control, rated, recency, color, opponent type) apply to both the breakdown table and timeline chart
+- [ ] **GUEST-01**: User can click "Use as Guest" on the homepage to start using FlawChess without creating an account
+- [ ] **GUEST-02**: Guest session persists across page refreshes via a 30-day Bearer JWT
+- [ ] **GUEST-03**: Guest user has full platform access (import, explore, analyze, bookmark)
+- [ ] **GUEST-04**: Guest user sees a persistent, non-dismissible indicator showing they are a guest
+- [ ] **GUEST-05**: Guest session JWT is refreshed on each visit, resetting the 30-day expiry from last activity
 
-### Opening Analytics
+### Account Promotion
 
-- [ ] **OPN-01**: User sees opening risk per position, measured as material imbalance variance at the opening→middlegame transition
-- [ ] **OPN-02**: User sees opening drawishness per position (draw rate of games ending in opening phase), muted for low sample sizes, with info popover noting it's more relevant for higher-rated players
+- [ ] **PROMO-01**: Guest user can promote to a full account via email/password, preserving all imported data
+- [ ] **PROMO-02**: Guest user can promote to a full account via Google SSO, preserving all imported data
+- [ ] **PROMO-03**: Guest user sees a confirmation step before promotion showing what data will be preserved
+- [ ] **PROMO-04**: After promotion, guest user is redirected back to the page they were on
+
+### Guest UX
+
+- [ ] **GUX-01**: Guest user sees an info box on the import page explaining benefits of signing up (cross-device access, no expiry risk)
+- [ ] **GUX-02**: If a guest promotes with an email already registered, they see a clear error directing them to log in instead
+
+### Security
+
+- [ ] **SEC-01**: Existing OAuth callback patched for CVE-2025-68481 CSRF vulnerability (double-submit cookie)
+- [ ] **SEC-02**: Guest creation endpoint has per-IP rate limiting to prevent abuse
 
 ## Future Requirements
 
-Deferred to future milestones. Tracked but not in current roadmap.
+Deferred to post-launch or future milestones. Tracked but not in current roadmap.
 
-### Endgame Refinements
+### Conversion Optimization
 
-- **END-01**: Per-endgame-type Endgame ELO breakdown (rook, minor piece, pawn, queen, mixed)
-- **END-02**: Refined conversion/recovery presentation (per-type rates in performance view)
-- **END-03**: Rating-bucketed baselines calibrated from empirical data
+- **CONV-01**: Guest user sees an expiry countdown in the guest banner during the last 7 days
+- **CONV-02**: Guest user sees a context-sensitive promotion prompt after first import completes
+- **CONV-03**: Periodic cleanup job deletes guest accounts inactive for 40+ days
 
-### Opening Volatility
+### v1.9 Advanced Analytics
 
-- **OVL-01**: Opening volatility from engine eval data (RMS of win-probability changes)
+- **ELO-01**: User sees Endgame ELO per (platform, time-control) combination
+- **ELO-02**: User sees actual ELO, Endgame ELO, and gap in a breakdown table
+- **ELO-03**: Combinations below minimum game threshold omitted; "Insufficient data" fallback
+- **ELO-04**: Info popover explaining Endgame ELO methodology and caveats
+- **ELO-05**: Endgame ELO timeline chart with color-matched paired lines
+- **ELO-06**: Sidebar filters apply to breakdown table and timeline chart
+- **OPN-01**: Opening risk per position (material imbalance variance at opening→middlegame transition)
+- **OPN-02**: Opening drawishness per position (draw rate of games ending in opening phase)
 
 ## Out of Scope
 
@@ -41,12 +59,12 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
-| Cross-platform rating normalization (lichess→chess.com offset) | Empirical approximation only; per-platform display is cleaner and more honest |
-| WDL entropy risk per move in explorer | Confusing to users — doesn't translate into actionable chess insight |
-| ELO adjustment for opening statistics | Causal direction is murky; defer until endgame version validated |
-| Server-side eval computation for unanalyzed games | Requires dedicated compute tier not feasible on current VPS |
-| Per-game sharpness display | Only available for analyzed games — creates confusing two-tier experience |
-| Raw `adjusted_endgame_skill` score (original 999.5 formula) | Replaced by Endgame ELO, which is more interpretable and actionable |
+| Read-only guest mode | Defeats the purpose — no imported games means no WDL stats, zero value experienced |
+| Mandatory email capture before guest access | Disguised login wall; removes the "no commitment" promise |
+| Dismissible guest banner | Users forget guest state, surprised when data disappears — trust violation |
+| Silent data merge without confirmation | Shared-device account takeover risk |
+| Guest session analytics / conversion metrics | Requires Umami event tracking; defer to post-launch |
+| CookieTransport for guest sessions | Dual-transport complexity, OAuth redirect issues in Safari/Firefox ETP |
 
 ## Traceability
 
@@ -54,20 +72,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ELO-01 | Phase 44 | Pending |
-| ELO-02 | Phase 44 | Pending |
-| ELO-03 | Phase 44 | Pending |
-| ELO-04 | Phase 44 | Pending |
-| ELO-05 | Phase 45 | Pending |
-| ELO-06 | Phase 44 | Pending |
-| OPN-01 | Phase 46 | Pending |
-| OPN-02 | Phase 46 | Pending |
+| GUEST-01 | TBD | Pending |
+| GUEST-02 | TBD | Pending |
+| GUEST-03 | TBD | Pending |
+| GUEST-04 | TBD | Pending |
+| GUEST-05 | TBD | Pending |
+| PROMO-01 | TBD | Pending |
+| PROMO-02 | TBD | Pending |
+| PROMO-03 | TBD | Pending |
+| PROMO-04 | TBD | Pending |
+| GUX-01 | TBD | Pending |
+| GUX-02 | TBD | Pending |
+| SEC-01 | TBD | Pending |
+| SEC-02 | TBD | Pending |
 
 **Coverage:**
-- v1.8 requirements: 8 total
-- Mapped to phases: 8
-- Unmapped: 0 ✓
+- v1.8 requirements: 13 total
+- Mapped to phases: 0
+- Unmapped: 13 ⚠️
 
 ---
-*Requirements defined: 2026-04-05*
-*Last updated: 2026-04-04 after roadmap creation*
+*Requirements defined: 2026-04-06*
+*Last updated: 2026-04-06 after initial definition*
