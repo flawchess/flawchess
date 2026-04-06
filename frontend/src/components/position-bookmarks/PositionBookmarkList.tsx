@@ -14,6 +14,7 @@ import {
   verticalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable';
+import { Sparkles, Save } from 'lucide-react';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 import type { MatchSide } from '@/types/api';
 import { PositionBookmarkCard } from './PositionBookmarkCard';
@@ -55,9 +56,21 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad, chartEnable
   return (
     <>
       {items.length === 0 ? (
-        <p className="px-2 text-xs text-muted-foreground break-words">
-          No opening bookmarks yet. Use the &apos;Save&apos; button to bookmark the current position, or use &apos;Suggest&apos; to generate opening bookmarks from your most-played openings.
-        </p>
+        <div className="px-2 space-y-2 text-xs text-muted-foreground" data-testid="bookmarks-empty-state">
+          <p>No opening bookmarks yet.</p>
+          <div className="flex items-start gap-2">
+            <Sparkles className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
+            <p>
+              Click <strong className="text-foreground">Suggest</strong> above to auto-generate bookmarks from your most-played openings — the fastest way to get started.
+            </p>
+          </div>
+          <div className="flex items-start gap-2">
+            <Save className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
+            <p>
+              Or navigate to a position on the board and click <strong className="text-foreground">Save</strong> to bookmark it manually.
+            </p>
+          </div>
+        </div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={items.map((b) => b.id)} strategy={verticalListSortingStrategy}>
