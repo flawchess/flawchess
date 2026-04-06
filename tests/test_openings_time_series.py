@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.schemas.openings import TimeSeriesBookmarkParam, TimeSeriesRequest
-from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, ROLLING_WINDOW_SIZE, get_time_series
+from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, get_time_series
 
 # ---------------------------------------------------------------------------
 # User IDs (900-series to avoid collision with other test modules)
