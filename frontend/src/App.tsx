@@ -14,6 +14,7 @@ import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
 
+import { apiClient } from '@/api/client';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { GuestBanner } from '@/components/layout/GuestBanner';
 import { PromotionModal } from '@/components/promotion/PromotionModal';
@@ -254,12 +255,23 @@ interface ProtectedLayoutProps {
 }
 
 function ProtectedLayout({ onOpenPromotion, promotionOpen, onPromotionOpenChange, hasActiveImport }: ProtectedLayoutProps) {
-  const { token } = useAuth();
+  const { token, loginWithToken } = useAuth();
   const { data: profile } = useUserProfile();
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const isOpeningsRoute = location.pathname.startsWith('/openings');
   const isEndgamesRoute = location.pathname.startsWith('/endgames');
+  const refreshedRef = useRef(false);
+
+  // GUEST-05: Refresh guest JWT on each visit, resetting the 30-day expiry
+  useEffect(() => {
+    if (profile?.is_guest && !refreshedRef.current) {
+      refreshedRef.current = true;
+      apiClient.post<{ access_token: string }>('/auth/guest/refresh')
+        .then((res) => loginWithToken(res.data.access_token))
+        .catch(() => { /* token still valid, refresh is best-effort */ });
+    }
+  }, [profile?.is_guest, loginWithToken]);
 
   if (!token) {
     return <Navigate to="/login" replace />;
