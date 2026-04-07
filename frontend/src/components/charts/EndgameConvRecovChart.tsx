@@ -6,7 +6,7 @@
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { MATERIAL_ADVANTAGE_POINTS } from '@/components/charts/EndgamePerformanceSection';
+import { MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/charts/EndgamePerformanceSection';
 import { GAUGE_SUCCESS } from '@/lib/theme';
 import type { EndgameCategoryStats } from '@/types/endgames';
 import type { ChartConfig } from '@/components/ui/chart';
@@ -48,12 +48,12 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
           Conversion &amp; Recovery by Endgame Type
           <InfoPopover ariaLabel="Conversion and Recovery info" testId="conv-recov-chart-info" side="top">
             <div className="space-y-2">
-            <p>
-                <strong>Conversion</strong>: your win rate when you entered an endgame sequence of this type with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} points.
-            </p>
-            <p>
-                <strong>Recovery</strong>: your draw+win rate when you entered an endgame sequence of this type with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} points.
-            </p>
+              <p>
+                <strong>Conversion</strong>: your win rate when you entered an endgame sequence of this type with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point that persisted for at least {PERSISTENCE_MOVES} moves.
+              </p>
+              <p>
+                <strong>Recovery</strong>: your draw+win rate when you entered an endgame sequence of this type with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point that persisted for at least {PERSISTENCE_MOVES} moves.
+              </p>
             </div>
           </InfoPopover>
         </span>

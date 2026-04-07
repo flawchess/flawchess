@@ -10,8 +10,11 @@ import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { GAUGE_DANGER, GAUGE_WARNING, GAUGE_SUCCESS } from '@/lib/theme';
 import type { EndgamePerformanceResponse } from '@/types/endgames';
 
-// Material advantage/deficit threshold in pawn points (backend uses 300 centipawns)
-export const MATERIAL_ADVANTAGE_POINTS = 3;
+// Material advantage/deficit threshold in pawn points (backend uses 100 centipawns)
+export const MATERIAL_ADVANTAGE_POINTS = 1;
+
+// Persistence requirement in full moves (= 4 plies on the backend)
+export const PERSISTENCE_MOVES = 2;
 
 // Per-gauge zone definitions — thresholds differ per metric, colors from theme constants
 const CONVERSION_ZONES: GaugeZone[] = [
@@ -70,7 +73,7 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
           <div className="relative z-10 flex items-center gap-1 text-sm text-foreground text-center">
             <span>Conversion</span>
             <InfoPopover ariaLabel="Conversion info" testId="gauge-conversion-info" side="top">
-              Your win rate when entering an endgame sequence with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} points.
+              Your win rate when entering an endgame sequence with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point that persisted for at least {PERSISTENCE_MOVES} moves into the endgame.
             </InfoPopover>
           </div>
           <EndgameGauge
@@ -86,7 +89,7 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
           <div className="relative z-10 flex items-center gap-1 text-sm text-foreground text-center">
             <span>Recovery</span>
             <InfoPopover ariaLabel="Recovery info" testId="gauge-recovery-info" side="top">
-              Your draw or win rate when entering an endgame sequence with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} points.
+              Your draw or win rate when entering an endgame sequence with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point that persisted for at least {PERSISTENCE_MOVES} moves into the endgame.
             </InfoPopover>
           </div>
           <EndgameGauge
