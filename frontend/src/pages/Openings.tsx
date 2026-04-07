@@ -934,6 +934,22 @@ export function OpeningsPage() {
                 />
                 {/* Sidebar trigger buttons — icon-only, separated from nav buttons */}
                 <div className="mt-1 flex flex-col gap-1">
+                  <Tooltip content={`Playing as ${filters.color}`} side="left">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 !bg-toggle-active text-toggle-active-foreground hover:!bg-toggle-active"
+                      onClick={() => {
+                        const newColor: Color = filters.color === 'white' ? 'black' : 'white';
+                        handleFiltersChange({ ...filters, color: newColor });
+                        setBoardFlipped(newColor === 'black');
+                      }}
+                      data-testid="btn-toggle-played-as"
+                      aria-label={`Playing as ${filters.color}, tap to switch`}
+                    >
+                      <span className={`inline-block h-4 w-4 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
+                    </Button>
+                  </Tooltip>
                   <Tooltip content="Open filters" side="left">
                     <Button
                       variant="ghost"
