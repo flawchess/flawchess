@@ -313,7 +313,7 @@ export function OpeningsPage() {
     chess.loadMoves(bkm.moves);
     setBoardFlipped(bkm.is_flipped ?? false);
     setFilters(prev => ({ ...prev, color: bkm.color ?? 'white', matchSide: bkm.match_side }));
-    if (activeTab !== 'explorer') navigate('/openings/explorer');
+    if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
     window.scrollTo({ top: 0 });
   }, [chess, setFilters, activeTab, navigate]);
 
@@ -333,9 +333,14 @@ export function OpeningsPage() {
       // Commit deferred filters on close (D-10, D-12)
       handleFiltersChange(localFilters);
       setBoardFlipped(localFilters.color === 'black');
+      // Navigate to explorer if color or piece filter changed
+      if ((localFilters.color !== filters.color || localFilters.matchSide !== filters.matchSide)
+          && activeTab !== 'explorer' && activeTab !== 'games') {
+        navigate('/openings/explorer');
+      }
     }
     setFilterSidebarOpen(open);
-  }, [filterSidebarOpen, localFilters, handleFiltersChange]);
+  }, [filterSidebarOpen, localFilters, handleFiltersChange, filters.color, filters.matchSide, activeTab, navigate]);
 
   const updateMatchSide = useUpdateMatchSide();
 
@@ -495,6 +500,7 @@ export function OpeningsPage() {
                     const color = v as Color;
                     setFilters(prev => ({ ...prev, color }));
                     setBoardFlipped(color === 'black');
+                    if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
                   }}
                   variant="outline"
                   size="sm"
@@ -524,6 +530,7 @@ export function OpeningsPage() {
                   onValueChange={(v) => {
                     if (!v) return;
                     setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
+                    if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
                   }}
                   variant="outline"
                   size="sm"
@@ -943,6 +950,7 @@ export function OpeningsPage() {
                         const newColor: Color = filters.color === 'white' ? 'black' : 'white';
                         handleFiltersChange({ ...filters, color: newColor });
                         setBoardFlipped(newColor === 'black');
+                        if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
                       }}
                       data-testid="btn-toggle-played-as"
                       aria-label={`Playing as ${filters.color}, tap to switch`}
