@@ -103,13 +103,30 @@ async def query_endgame_entry_rows(
     )[1]
 
     # Imbalance 4 plies after entry — used for persistence check.
-    # Index [5] is safe because spans already require >= ENDGAME_PLY_THRESHOLD (6) plies.
-    imbalance_after_persistence_agg = type_coerce(
+    # A game can exit and re-enter the same endgame class (e.g. via promotion),
+    # making the GROUP BY (game_id, endgame_class) combine non-contiguous plies.
+    # We must verify that the 5th ply is exactly 4 after the 1st (contiguous span);
+    # otherwise the persistence value comes from a different game segment and is
+    # meaningless. Returns NULL for non-contiguous spans, which the service layer's
+    # "is not None" check correctly excludes from conversion/recovery.
+    raw_imbalance_after = type_coerce(
         func.array_agg(
             aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())
         ),
         ARRAY(SmallIntegerType),
     )[PERSISTENCE_PLIES + 1]
+
+    ply_at_persistence = type_coerce(
+        func.array_agg(
+            aggregate_order_by(GamePosition.ply, GamePosition.ply.asc())
+        ),
+        ARRAY(SmallIntegerType),
+    )[PERSISTENCE_PLIES + 1]
+
+    imbalance_after_persistence_agg = case(
+        (ply_at_persistence == func.min(GamePosition.ply) + PERSISTENCE_PLIES, raw_imbalance_after),
+        else_=None,
+    )
 
     span_subq = (
         select(
@@ -241,10 +258,6 @@ async def query_conv_recov_timeline_rows(
     Returns rows of: (played_at, result, user_color, user_material_imbalance, user_material_imbalance_after)
     ordered by played_at ascending for chronological rolling-window computation.
     """
-    # Minimum centipawn imbalance for a game to count as "significant advantage/disadvantage".
-    # Lowered from 300cp to 100cp — persistence filter eliminates transient trade noise.
-    SIGNIFICANT_IMBALANCE_CP = 100  # noqa: F841 — kept for documentation, filtering now in service
-
     # Single subquery: group + grab entry material_imbalance via array_agg.
     # Same pattern as query_endgame_entry_rows — eliminates 5M+ row seq scan.
     entry_imbalance_agg = type_coerce(
@@ -254,14 +267,26 @@ async def query_conv_recov_timeline_rows(
         ARRAY(SmallIntegerType),
     )[1]
 
-    # Imbalance 4 plies after entry — used for persistence check in service layer.
-    # Index [5] is safe because spans already require >= ENDGAME_PLY_THRESHOLD (6) plies.
-    imbalance_after_persistence_agg = type_coerce(
+    # Persistence check with contiguity guard — same pattern as query_endgame_entry_rows.
+    # Returns NULL for non-contiguous spans where the 5th ply isn't 4 after entry.
+    raw_imbalance_after = type_coerce(
         func.array_agg(
             aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())
         ),
         ARRAY(SmallIntegerType),
     )[PERSISTENCE_PLIES + 1]
+
+    ply_at_persistence = type_coerce(
+        func.array_agg(
+            aggregate_order_by(GamePosition.ply, GamePosition.ply.asc())
+        ),
+        ARRAY(SmallIntegerType),
+    )[PERSISTENCE_PLIES + 1]
+
+    imbalance_after_persistence_agg = case(
+        (ply_at_persistence == func.min(GamePosition.ply) + PERSISTENCE_PLIES, raw_imbalance_after),
+        else_=None,
+    )
 
     span_subq = (
         select(
