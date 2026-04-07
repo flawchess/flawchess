@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 
 // localStorage helpers for per-bookmark chart-enable toggle (default: enabled)
 function getChartEnabled(bookmarkId: number): boolean {
@@ -12,7 +12,7 @@ import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, SlidersHorizontal, BookMarked, X } from 'lucide-react';
+import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, SlidersHorizontal, BookMarked, X, ChevronDown } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -103,6 +103,30 @@ export function OpeningsPage() {
   const [localChartEnabled, setLocalChartEnabled] = useState<Record<number, boolean>>({});
   const [localMatchSides, setLocalMatchSides] = useState<Record<number, MatchSide>>({});
   const [localFilters, setLocalFilters] = useState<FilterState>(filters);
+
+  // ── Mobile board collapse (swipe handle) ─────────────────────────────────
+  const [boardCollapsed, setBoardCollapsed] = useState(false);
+  const touchStartY = useRef(0);
+
+  // Auto-collapse board when switching away from Moves tab, expand when returning
+  const prevCollapseTab = useRef(activeTab);
+  useEffect(() => {
+    if (activeTab !== prevCollapseTab.current) {
+      prevCollapseTab.current = activeTab;
+      setBoardCollapsed(activeTab !== 'explorer');
+    }
+  }, [activeTab]);
+
+  const handleHandleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0]!.clientY;
+  }, []);
+
+  const handleHandleTouchEnd = useCallback((e: React.TouchEvent) => {
+    const MIN_SWIPE_DISTANCE = 30;
+    const deltaY = e.changedTouches[0]!.clientY - touchStartY.current;
+    if (deltaY < -MIN_SWIPE_DISTANCE) setBoardCollapsed(true);
+    if (deltaY > MIN_SWIPE_DISTANCE) setBoardCollapsed(false);
+  }, []);
 
   // ── Games tab pagination ────────────────────────────────────────────────────
   const [gamesOffset, setGamesOffset] = useState(0);
@@ -906,103 +930,130 @@ export function OpeningsPage() {
         </div>
 
         {/* Mobile: single column with sticky board */}
-        <div className="md:hidden flex flex-col gap-2 min-w-0">
+        <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)} className="md:hidden flex flex-col gap-2 min-w-0">
           {/* Sticky board + controls — sticks to top of viewport while scrolling content below */}
           {/* z-20 to stay above ToggleGroupItem's focus:z-10 */}
-          <div className="sticky top-0 z-20 bg-background pb-2">
-            <div className="flex items-stretch gap-1">
-              <div className="flex-1 min-w-0">
-                <ChessBoard
-                  position={chess.position}
-                  onPieceDrop={chess.makeMove}
-                  flipped={boardFlipped}
-                  lastMove={chess.lastMove}
-                  arrows={boardArrows}
-                />
-              </div>
-              {/* Vertical controls column: board nav + sidebar triggers */}
-              <div className="flex flex-col gap-0.5">
-                <BoardControls
-                  vertical
-                  className="flex-1"
-                  onBack={chess.goBack}
-                  onForward={chess.goForward}
-                  onReset={() => { chess.reset(); setGamesOffset(0); }}
-                  onFlip={() => setBoardFlipped((f) => !f)}
-                  canGoBack={chess.currentPly > 0}
-                  canGoForward={chess.currentPly < chess.moveHistory.length}
-                  infoSlot={
-                    <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="left">
-                      Play moves on the board by tapping squares or dragging pieces.
-                      <br /><br />
-                      The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.
-                    </InfoPopover>
-                  }
-                />
-                {/* Sidebar trigger buttons — icon-only, separated from nav buttons */}
-                <div className="mt-1 flex flex-col gap-1">
-                  <Tooltip content={`Playing as ${filters.color}`} side="left">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 !bg-toggle-active text-toggle-active-foreground hover:!bg-toggle-active"
-                      onClick={() => {
-                        const newColor: Color = filters.color === 'white' ? 'black' : 'white';
-                        handleFiltersChange({ ...filters, color: newColor });
-                        setBoardFlipped(newColor === 'black');
-                        if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
-                      }}
-                      data-testid="btn-toggle-played-as"
-                      aria-label={`Playing as ${filters.color}, tap to switch`}
-                    >
-                      <span className={`inline-block h-4 w-4 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
-                    </Button>
-                  </Tooltip>
-                  <Tooltip content="Open filters" side="left">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
-                      onClick={openFilterSidebar}
-                      data-testid="btn-open-filter-sidebar"
-                      aria-label="Open filters"
-                    >
-                      <SlidersHorizontal className="h-4 w-4" />
-                      {bookmarks.length > 0 && !filtersHintDismissed && (
-                        <span
-                          className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                          data-testid="filters-notification-dot-mobile"
+          <div className="sticky top-0 z-20 bg-background shadow-[0_6px_20px_rgba(0,0,0,0.8)]">
+            {/* Collapsible board section — animates via grid-rows trick */}
+            <div className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${boardCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}>
+              <div className="overflow-hidden">
+                <div className="flex items-stretch gap-1 pb-1">
+                  <div className="flex-1 min-w-0">
+                    <ChessBoard
+                      position={chess.position}
+                      onPieceDrop={chess.makeMove}
+                      flipped={boardFlipped}
+                      lastMove={chess.lastMove}
+                      arrows={boardArrows}
+                    />
+                  </div>
+                  {/* Vertical controls column: board nav + sidebar triggers */}
+                  <div className="flex flex-col gap-0.5">
+                    <BoardControls
+                      vertical
+                      className="flex-1"
+                      onBack={chess.goBack}
+                      onForward={chess.goForward}
+                      onReset={() => { chess.reset(); setGamesOffset(0); }}
+                      onFlip={() => setBoardFlipped((f) => !f)}
+                      canGoBack={chess.currentPly > 0}
+                      canGoForward={chess.currentPly < chess.moveHistory.length}
+                      infoSlot={
+                        <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="left">
+                          Play moves on the board by tapping squares or dragging pieces.
+                          <br /><br />
+                          The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.
+                        </InfoPopover>
+                      }
+                    />
+                    {/* Sidebar trigger buttons — icon-only, separated from nav buttons */}
+                    <div className="mt-1 flex flex-col gap-1">
+                      <Tooltip content={`Playing as ${filters.color}`} side="left">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 !bg-toggle-active text-toggle-active-foreground hover:!bg-toggle-active"
+                          onClick={() => {
+                            const newColor: Color = filters.color === 'white' ? 'black' : 'white';
+                            handleFiltersChange({ ...filters, color: newColor });
+                            setBoardFlipped(newColor === 'black');
+                            if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
+                          }}
+                          data-testid="btn-toggle-played-as"
+                          aria-label={`Playing as ${filters.color}, tap to switch`}
                         >
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                        </span>
-                      )}
-                    </Button>
-                  </Tooltip>
-                  <Tooltip content="Open bookmarks" side="left">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
-                      onClick={openBookmarkSidebar}
-                      data-testid="btn-open-bookmark-sidebar"
-                      aria-label="Open bookmarks"
-                    >
-                      <BookMarked className="h-4 w-4" />
-                      {bookmarks.length === 0 && hasGames && (
-                        <span
-                          className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                          data-testid="bookmarks-notification-dot-mobile"
+                          <span className={`inline-block h-4 w-4 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
+                        </Button>
+                      </Tooltip>
+                      <Tooltip content="Open filters" side="left">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
+                          onClick={openFilterSidebar}
+                          data-testid="btn-open-filter-sidebar"
+                          aria-label="Open filters"
                         >
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                        </span>
-                      )}
-                    </Button>
-                  </Tooltip>
+                          <SlidersHorizontal className="h-4 w-4" />
+                          {bookmarks.length > 0 && !filtersHintDismissed && (
+                            <span
+                              className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                              data-testid="filters-notification-dot-mobile"
+                            >
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                            </span>
+                          )}
+                        </Button>
+                      </Tooltip>
+                      <Tooltip content="Open bookmarks" side="left">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
+                          onClick={openBookmarkSidebar}
+                          data-testid="btn-open-bookmark-sidebar"
+                          aria-label="Open bookmarks"
+                        >
+                          <BookMarked className="h-4 w-4" />
+                          {bookmarks.length === 0 && hasGames && (
+                            <span
+                              className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                              data-testid="bookmarks-notification-dot-mobile"
+                            >
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                            </span>
+                          )}
+                        </Button>
+                      </Tooltip>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
+            <TabsList variant="brand" className="w-full h-8! mt-0.5" data-testid="openings-tabs-mobile">
+              <TabsTrigger value="explorer" className="flex-1 text-xs!" data-testid="tab-move-explorer-mobile">
+                Moves
+              </TabsTrigger>
+              <TabsTrigger value="games" className="flex-1 text-xs!" data-testid="tab-games-mobile">
+                Games
+              </TabsTrigger>
+              <TabsTrigger value="stats" className="flex-1 text-xs!" data-testid="tab-stats-mobile">
+                Stats
+              </TabsTrigger>
+            </TabsList>
+            {/* Swipe handle — drag up to collapse board, down to expand */}
+            <button
+              className="mt-1 flex w-full items-center justify-center py-0.5 touch-none bg-white/15 border-t border-white/15 rounded-b-md"
+              onTouchStart={handleHandleTouchStart}
+              onTouchEnd={handleHandleTouchEnd}
+              onClick={() => setBoardCollapsed((c) => !c)}
+              aria-label={boardCollapsed ? 'Expand board' : 'Collapse board'}
+              data-testid="btn-board-collapse-handle"
+            >
+              <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${boardCollapsed ? 'rotate-0' : 'rotate-180'}`} />
+            </button>
           </div>
 
           {/* Filter sidebar (D-04, D-05, D-06, D-10, D-12) */}
@@ -1141,53 +1192,37 @@ export function OpeningsPage() {
             </DrawerContent>
           </Drawer>
 
-          {/* Opening name */}
-          <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
-            {chess.openingName ? (
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
-                <span className="text-foreground">{chess.openingName.name}</span>
+          {/* Opening name + move list — hidden when board is collapsed */}
+          {!boardCollapsed && (
+            <>
+              <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
+                {chess.openingName ? (
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
+                    <span className="text-foreground">{chess.openingName.name}</span>
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground italic">Play some moves</span>
+                )}
               </div>
-            ) : (
-              <span className="text-muted-foreground italic">Play some moves</span>
-            )}
-          </div>
+              <MoveList
+                moveHistory={chess.moveHistory}
+                currentPly={chess.currentPly}
+                onMoveClick={chess.goToMove}
+              />
+            </>
+          )}
 
-          {/* Move list */}
-          <MoveList
-            moveHistory={chess.moveHistory}
-            currentPly={chess.currentPly}
-            onMoveClick={chess.goToMove}
-          />
-
-          {/* Tabs: Moves / Games / Compare */}
-          <hr className="border-t border-white/10 mb-3" />
-          <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
-            <TabsList variant="brand" className="w-full h-11!" data-testid="openings-tabs-mobile">
-              <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
-                <ArrowRightLeft className="mr-1.5 h-4 w-4" />
-                Moves
-              </TabsTrigger>
-              <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
-                <Gamepad2 className="mr-1.5 h-4 w-4" />
-                Games
-              </TabsTrigger>
-              <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
-                <BarChart2 className="mr-1.5 h-4 w-4" />
-                Stats
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="explorer" className="mt-4">
-              {moveExplorerContent}
-            </TabsContent>
-            <TabsContent value="games" className="mt-4">
-              {gamesContent}
-            </TabsContent>
-            <TabsContent value="stats" className="mt-4">
-              {statisticsContent}
-            </TabsContent>
-          </Tabs>
-        </div>
+          <TabsContent value="explorer" className="mt-2">
+            {moveExplorerContent}
+          </TabsContent>
+          <TabsContent value="games" className="mt-2">
+            {gamesContent}
+          </TabsContent>
+          <TabsContent value="stats" className="mt-2">
+            {statisticsContent}
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* Bookmark label dialog */}
