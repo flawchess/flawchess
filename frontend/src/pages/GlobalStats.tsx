@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
-import { ChevronUp, ChevronDown } from 'lucide-react';
+import { SlidersHorizontal, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/api/client';
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
+import { Tooltip } from '@/components/ui/tooltip';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { FilterPanel } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
@@ -170,30 +171,40 @@ export function GlobalStatsPage() {
 
         {/* Mobile: single column */}
         <div className="md:hidden flex flex-col gap-4 min-w-0">
-          {/* Mobile filters collapsible */}
-          <div className="sticky top-0 z-20 bg-background pb-2">
-            <div className="border border-border rounded-md">
-              <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
-                <CollapsibleTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-between px-3 text-sm font-medium min-h-11 rounded-none hover:bg-charcoal-hover!"
-                    data-testid="section-filters-mobile"
-                  >
-                    Filters
-                    {mobileFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="border-t border-border/20" />
-                  <div className="p-2">
-                    <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['platform', 'recency']} />
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            </div>
+          {/* Sticky filter button (top right) */}
+          <div className="sticky top-0 z-20 flex justify-end pb-2">
+            <Tooltip content="Open filters" side="left">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                onClick={() => setMobileFiltersOpen(true)}
+                data-testid="btn-open-filter-drawer"
+                aria-label="Open filters"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+              </Button>
+            </Tooltip>
           </div>
+
+          {/* Filter drawer */}
+          <Drawer open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen} direction="right">
+            <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-filter-sidebar">
+              <DrawerHeader className="flex flex-row items-center justify-between">
+                <DrawerTitle>Filters</DrawerTitle>
+                <Tooltip content="Close filters">
+                  <DrawerClose asChild>
+                    <Button variant="ghost" size="icon" aria-label="Close filters" data-testid="btn-close-filter-drawer">
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </DrawerClose>
+                </Tooltip>
+              </DrawerHeader>
+              <div className="overflow-y-auto flex-1 p-4 space-y-4">
+                <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['platform', 'recency']} />
+              </div>
+            </DrawerContent>
+          </Drawer>
 
           {content}
         </div>

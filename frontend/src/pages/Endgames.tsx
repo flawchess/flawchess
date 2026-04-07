@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
-import { ChevronUp, ChevronDown, BarChart2Icon, Gamepad2Icon, HelpCircle } from 'lucide-react';
+import { SlidersHorizontal, X, BarChart2Icon, Gamepad2Icon, HelpCircle } from 'lucide-react';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
+import { Tooltip } from '@/components/ui/tooltip';
 import {
   Select,
   SelectContent,
@@ -330,27 +331,40 @@ export function EndgamesPage() {
         {/* Mobile: single column */}
         <div className="md:hidden flex flex-col min-w-0">
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>
-            {/* Sticky filters */}
-            <div className="sticky top-0 z-20 bg-background pb-2">
-              <Collapsible open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
-                <CollapsibleTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-between px-2 text-sm font-medium bg-muted/50 hover:bg-muted! border border-border/40 rounded min-h-11 sm:min-h-0"
-                    data-testid="section-filters-mobile"
-                  >
-                    Filters
-                    {mobileFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="pt-2">
-                    <FilterPanel filters={filters} onChange={handleFilterChange} />
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
+            {/* Sticky filter button (top right) */}
+            <div className="sticky top-0 z-20 flex justify-end pb-2">
+              <Tooltip content="Open filters" side="left">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                  onClick={() => setMobileFiltersOpen(true)}
+                  data-testid="btn-open-filter-drawer"
+                  aria-label="Open filters"
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                </Button>
+              </Tooltip>
             </div>
+
+            {/* Filter drawer */}
+            <Drawer open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen} direction="right">
+              <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-filter-sidebar">
+                <DrawerHeader className="flex flex-row items-center justify-between">
+                  <DrawerTitle>Filters</DrawerTitle>
+                  <Tooltip content="Close filters">
+                    <DrawerClose asChild>
+                      <Button variant="ghost" size="icon" aria-label="Close filters" data-testid="btn-close-filter-drawer">
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </DrawerClose>
+                  </Tooltip>
+                </DrawerHeader>
+                <div className="overflow-y-auto flex-1 p-4 space-y-4">
+                  <FilterPanel filters={filters} onChange={handleFilterChange} />
+                </div>
+              </DrawerContent>
+            </Drawer>
 
             {/* Tabs: Stats / Games */}
             <hr className="border-t border-white/10 mb-3" />
