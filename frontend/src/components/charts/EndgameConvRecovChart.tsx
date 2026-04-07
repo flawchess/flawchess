@@ -49,10 +49,10 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
           <InfoPopover ariaLabel="Conversion and Recovery info" testId="conv-recov-chart-info" side="top">
             <div className="space-y-2">
               <p>
-                <strong>Conversion</strong>: your win rate when you entered an endgame sequence of this type with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point that persisted for at least {PERSISTENCE_MOVES} moves.
+                <strong>Conversion</strong>: percentage of endgame sequences per type with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at least {PERSISTENCE_MOVES} moves) where you went on to win the game.
               </p>
               <p>
-                <strong>Recovery</strong>: your draw+win rate when you entered an endgame sequence of this type with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point that persisted for at least {PERSISTENCE_MOVES} moves.
+                <strong>Recovery</strong>: percentage of endgame sequences per type with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game.
               </p>
             </div>
           </InfoPopover>
@@ -87,10 +87,10 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
                     <div className="font-medium">{d.label}</div>
                     {/* safe: chartConfig keys are defined as literal string constants above */}
                     <div style={{ color: chartConfig['conversion_pct']?.color }}>
-                      Conversion: {d.conversion_pct.toFixed(1)}% ({d.conversion_games} games)
+                      Conversion: {d.conversion_pct.toFixed(1)}% ({d.conversion_games} sequences)
                     </div>
                     <div style={{ color: chartConfig['recovery_pct']?.color }}>
-                      Recovery: {d.recovery_pct.toFixed(1)}% ({d.recovery_games} games)
+                      Recovery: {d.recovery_pct.toFixed(1)}% ({d.recovery_games} sequences)
                     </div>
                   </div>
                 );

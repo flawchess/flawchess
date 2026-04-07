@@ -78,14 +78,14 @@ export function EndgameConvRecovTimelineChart({ data }: EndgameConvRecovTimeline
           <InfoPopover ariaLabel="Conversion recovery chart info" testId="conv-recov-timeline-info" side="top">
             <div className="space-y-2">
               <p>
-                <strong>Conversion rate</strong>: your win rate in the last {data.window} games where you
-                entered an endgame sequence with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point
-                that persisted for at least {PERSISTENCE_MOVES} moves.
+                <strong>Conversion</strong>: rolling percentage of the last {data.window} endgame sequences
+                with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for
+                at least {PERSISTENCE_MOVES} moves) where you went on to win the game.
               </p>
               <p>
-                <strong>Recovery rate</strong>: your save rate (wins + draws) in the last {data.window} games
-                where you entered an endgame sequence with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point
-                that persisted for at least {PERSISTENCE_MOVES} moves.
+                <strong>Recovery</strong>: rolling percentage of the last {data.window} endgame sequences
+                with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for
+                at least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game.
               </p>
             </div>
           </InfoPopover>
@@ -117,7 +117,7 @@ export function EndgameConvRecovTimelineChart({ data }: EndgameConvRecovTimeline
                           <span>
                             {cfg?.label ?? item.dataKey}: {Math.round((item.value as number) * 100)}%
                             <span className="text-muted-foreground ml-1">
-                              (past {gameCount} games)
+                              (past {gameCount} sequences)
                             </span>
                           </span>
                         </div>
