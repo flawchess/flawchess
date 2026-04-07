@@ -11,7 +11,7 @@
 - ✅ **v1.6 UI Polish & Improvements** — Phases 34-39 (shipped 2026-03-30)
 - ✅ **v1.7 Consolidation, Tooling & Refactoring** — Phases 40-43 (shipped 2026-04-03)
 - ✅ **v1.8 Guest Access** — Phases 44-47 (shipped 2026-04-06)
-- ○ **v1.9 Advanced Analytics** — Phases 48-50 (planned)
+- ○ **v1.9 Advanced Analytics** — Phases 48-51 (planned)
 
 ## Phases
 
@@ -117,17 +117,35 @@
 
 </details>
 
-### v1.9 Advanced Analytics (Phases 48-50)
+### v1.9 Advanced Analytics (Phases 48-51)
 
-- [ ] **Phase 48: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
-- [ ] **Phase 49: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
-- [ ] **Phase 50: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
+- [ ] **Phase 48: Conversion & Recovery Persistence Filter** - Reduce noise in endgame conv/recov metrics by requiring material imbalance to persist 4 plies after endgame entry, lower threshold from 300cp to 100cp
+- [ ] **Phase 49: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
+- [ ] **Phase 50: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
+- [ ] **Phase 51: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
 
 ## Phase Details
 
-### Phase 48: Endgame ELO — Backend + Breakdown Table
-**Goal**: Users can see their Endgame ELO per platform/time-control combination and understand how their endgame skill compares to their actual rating
+### Phase 48: Conversion & Recovery Persistence Filter
+**Goal**: Reduce noise in endgame conversion/recovery metrics by requiring material imbalance to persist after endgame entry, and lower the threshold from 300cp (3 points) to 100cp (1 point) for a larger, more meaningful dataset
 **Depends on**: Phase 47
+**Requirements**: N/A (improvement to existing feature)
+**Success Criteria** (what must be TRUE):
+  1. Conversion/recovery classification requires the material imbalance to meet the threshold at BOTH the endgame entry ply AND 4 plies later (persistence check)
+  2. Material advantage threshold is lowered from 300cp to 100cp for both conversion and recovery
+  3. All frontend tooltips, popovers, and explanatory text on the Endgames page reflect the new threshold (1 point) and mention the persistence requirement
+  4. Endgame performance gauges, conv/recov bar chart, conv/recov timeline chart, and the stats accordion all show updated explanations
+  5. Backend constants `_MATERIAL_ADVANTAGE_THRESHOLD` and frontend constant `MATERIAL_ADVANTAGE_POINTS` are updated
+  6. Conv/recov timeline chart uses the constant instead of hardcoded "3 points"
+**Plans**: 2 plans
+
+Plans:
+- [ ] 48-01-PLAN.md — Backend: persistence field in repo queries, threshold to 100cp, persistence check in service
+- [ ] 48-02-PLAN.md — Frontend: update constants, popover/tooltip/accordion text for new threshold and persistence
+
+### Phase 49: Endgame ELO — Backend + Breakdown Table
+**Goal**: Users can see their Endgame ELO per platform/time-control combination and understand how their endgame skill compares to their actual rating
+**Depends on**: Phase 48
 **Requirements**: ELO-01, ELO-02, ELO-03, ELO-04, ELO-06
 **Success Criteria** (what must be TRUE):
   1. User sees a breakdown table showing Endgame ELO, Actual ELO, and the gap for each qualifying (platform, time-control) combination
@@ -137,9 +155,9 @@
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 49: Endgame ELO — Timeline Chart
+### Phase 50: Endgame ELO — Timeline Chart
 **Goal**: Users can track their Endgame ELO over time per combination and visually see where it diverges from their actual rating
-**Depends on**: Phase 48
+**Depends on**: Phase 49
 **Requirements**: ELO-05
 **Success Criteria** (what must be TRUE):
   1. User sees a timeline chart with paired lines per (platform, time-control) combination — one bright line for Endgame ELO and one dark line for Actual ELO
@@ -148,7 +166,7 @@
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 50: Opening Risk & Drawishness
+### Phase 51: Opening Risk & Drawishness
 **Goal**: Users can see risk and drawishness signals per candidate move in the move explorer to inform opening selection
 **Depends on**: Phase 47
 **Requirements**: OPN-01, OPN-02
@@ -212,9 +230,10 @@
 | 45. Guest Frontend | v1.8 | N/A | Complete | 2026-04-06 |
 | 46. Email/Password Promotion | v1.8 | N/A | Complete | 2026-04-06 |
 | 47. Google SSO Promotion | v1.8 | N/A | Complete | 2026-04-06 |
-| 48. Endgame ELO — Backend + Breakdown Table | v1.9 | 0/? | Not started | - |
-| 49. Endgame ELO — Timeline Chart | v1.9 | 0/? | Not started | - |
-| 50. Opening Risk & Drawishness | v1.9 | 0/? | Not started | - |
+| 48. Conversion & Recovery Persistence Filter | v1.9 | 0/2 | Not started | - |
+| 49. Endgame ELO — Backend + Breakdown Table | v1.9 | 0/? | Not started | - |
+| 50. Endgame ELO — Timeline Chart | v1.9 | 0/? | Not started | - |
+| 51. Opening Risk & Drawishness | v1.9 | 0/? | Not started | - |
 
 ## Backlog
 
