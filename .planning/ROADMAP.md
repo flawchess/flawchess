@@ -119,7 +119,7 @@
 
 ### v1.9 Advanced Analytics (Phases 48-51)
 
-- [ ] **Phase 48: Conversion & Recovery Persistence Filter** - Reduce noise in endgame conv/recov metrics by requiring material imbalance to persist 4 plies after endgame entry, lower threshold from 300cp to 100cp
+- [x] **Phase 48: Conversion & Recovery Persistence Filter** - Reduce noise in endgame conv/recov metrics by requiring material imbalance to persist 4 plies after endgame entry, lower threshold from 300cp to 100cp (completed 2026-04-07)
 - [ ] **Phase 49: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
 - [ ] **Phase 50: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
 - [ ] **Phase 51: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
@@ -140,8 +140,8 @@
 **Plans**: 2 plans
 
 Plans:
-- [ ] 48-01-PLAN.md — Backend: persistence field in repo queries, threshold to 100cp, persistence check in service
-- [ ] 48-02-PLAN.md — Frontend: update constants, popover/tooltip/accordion text for new threshold and persistence
+- [x] 48-01-PLAN.md — Backend: persistence field in repo queries, threshold to 100cp, persistence check in service
+- [x] 48-02-PLAN.md — Frontend: update constants, popover/tooltip/accordion text for new threshold and persistence
 
 ### Phase 49: Endgame ELO — Backend + Breakdown Table
 **Goal**: Users can see their Endgame ELO per platform/time-control combination and understand how their endgame skill compares to their actual rating
@@ -230,7 +230,7 @@ Plans:
 | 45. Guest Frontend | v1.8 | N/A | Complete | 2026-04-06 |
 | 46. Email/Password Promotion | v1.8 | N/A | Complete | 2026-04-06 |
 | 47. Google SSO Promotion | v1.8 | N/A | Complete | 2026-04-06 |
-| 48. Conversion & Recovery Persistence Filter | v1.9 | 0/2 | Not started | - |
+| 48. Conversion & Recovery Persistence Filter | v1.9 | 2/2 | Complete    | 2026-04-07 |
 | 49. Endgame ELO — Backend + Breakdown Table | v1.9 | 0/? | Not started | - |
 | 50. Endgame ELO — Timeline Chart | v1.9 | 0/? | Not started | - |
 | 51. Opening Risk & Drawishness | v1.9 | 0/? | Not started | - |
@@ -241,7 +241,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 1/1 plans complete
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
