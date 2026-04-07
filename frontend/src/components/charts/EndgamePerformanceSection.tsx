@@ -24,9 +24,9 @@ const CONVERSION_ZONES: GaugeZone[] = [
 ];
 
 const RECOVERY_ZONES: GaugeZone[] = [
-  { from: 0,    to: 0.1,  color: GAUGE_DANGER },
-  { from: 0.1,  to: 0.3,  color: GAUGE_WARNING },
-  { from: 0.3,  to: 1.0,  color: GAUGE_SUCCESS },
+  { from: 0,    to: 0.15,  color: GAUGE_DANGER },
+  { from: 0.15,  to: 0.35, color: GAUGE_WARNING },
+  { from: 0.35, to: 1.0,  color: GAUGE_SUCCESS },
 ];
 
 const ENDGAME_SKILL_ZONES: GaugeZone[] = [
