@@ -306,12 +306,6 @@ export function EndgamesPage() {
                 <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
                   <BarChart2Icon className="mr-1.5 h-4 w-4" />
                   Stats
-                  <span
-                    data-testid="badge-beta"
-                    className="text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full ml-1.5"
-                  >
-                    Beta
-                  </span>
                 </TabsTrigger>
                 <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
                   <Gamepad2Icon className="mr-1.5 h-4 w-4" />
@@ -330,14 +324,24 @@ export function EndgamesPage() {
 
         {/* Mobile: single column */}
         <div className="md:hidden flex flex-col min-w-0">
-          <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>
-            {/* Sticky filter button (top right) */}
-            <div className="sticky top-0 z-20 flex justify-end pb-2">
+          <Tabs value={activeTab} onValueChange={(val) => { navigate(`/endgames/${val}`); window.scrollTo({ top: 0 }); }}>
+            {/* Sticky sub-navigation + filter button */}
+            <div className="sticky top-0 z-20 flex items-center gap-2 pb-2">
+              <TabsList variant="brand" className="flex-1 h-9!" data-testid="endgames-tabs-mobile">
+                <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
+                  <BarChart2Icon className="mr-1.5 h-4 w-4" />
+                  Stats
+                </TabsTrigger>
+                <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
+                  <Gamepad2Icon className="mr-1.5 h-4 w-4" />
+                  Games
+                </TabsTrigger>
+              </TabsList>
               <Tooltip content="Open filters" side="left">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                  className="h-9 w-9 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
                   onClick={() => setMobileFiltersOpen(true)}
                   data-testid="btn-open-filter-drawer"
                   aria-label="Open filters"
@@ -365,25 +369,6 @@ export function EndgamesPage() {
                 </div>
               </DrawerContent>
             </Drawer>
-
-            {/* Tabs: Stats / Games */}
-            <hr className="border-t border-white/10 mb-3" />
-            <TabsList variant="brand" className="w-full h-11!" data-testid="endgames-tabs-mobile">
-              <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
-                <BarChart2Icon className="mr-1.5 h-4 w-4" />
-                Stats
-                <span
-                  data-testid="badge-beta"
-                  className="text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full ml-1.5"
-                >
-                  Beta
-                </span>
-              </TabsTrigger>
-              <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
-                <Gamepad2Icon className="mr-1.5 h-4 w-4" />
-                Games
-              </TabsTrigger>
-            </TabsList>
 
             <TabsContent value="stats" className="mt-4">
               {statisticsContent}
