@@ -237,7 +237,8 @@ export function OpeningsPage() {
   const handleChartEnabledChange = useCallback((id: number, enabled: boolean) => {
     setChartEnabledStorage(id, enabled);
     setChartToggleVersion(v => v + 1);
-  }, []);
+    if (activeTab !== 'stats') navigate('/openings/stats');
+  }, [activeTab, navigate]);
 
   const handleFiltersChange = useCallback((newFilters: FilterState) => {
     setFilters(newFilters);
@@ -312,8 +313,9 @@ export function OpeningsPage() {
     chess.loadMoves(bkm.moves);
     setBoardFlipped(bkm.is_flipped ?? false);
     setFilters(prev => ({ ...prev, color: bkm.color ?? 'white', matchSide: bkm.match_side }));
+    if (activeTab !== 'explorer') navigate('/openings/explorer');
     window.scrollTo({ top: 0 });
-  }, [chess, setFilters]);
+  }, [chess, setFilters, activeTab, navigate]);
 
   const handleReorder = useCallback((orderedIds: number[]) => {
     reorder.mutate(orderedIds);
@@ -358,12 +360,14 @@ export function OpeningsPage() {
         updateMatchSide.mutate({ id, data: { match_side: matchSide } });
       }
       // Bump chart toggle version to refresh chartEnabledMap
-      if (Object.keys(localChartEnabled).some(idStr => chartEnabledMap[Number(idStr)] !== localChartEnabled[Number(idStr)])) {
+      const chartChanged = Object.keys(localChartEnabled).some(idStr => chartEnabledMap[Number(idStr)] !== localChartEnabled[Number(idStr)]);
+      if (chartChanged) {
         setChartToggleVersion(v => v + 1);
+        if (activeTab !== 'stats') navigate('/openings/stats');
       }
     }
     setBookmarkSidebarOpen(open);
-  }, [bookmarkSidebarOpen, localChartEnabled, localMatchSides, chartEnabledMap, updateMatchSide]);
+  }, [bookmarkSidebarOpen, localChartEnabled, localMatchSides, chartEnabledMap, updateMatchSide, activeTab, navigate]);
 
   const handleLocalChartEnabledChange = useCallback((id: number, enabled: boolean) => {
     setLocalChartEnabled(prev => ({ ...prev, [id]: enabled }));
