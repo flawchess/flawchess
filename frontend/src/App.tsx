@@ -275,7 +275,6 @@ function ProtectedLayout() {
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const isOpeningsRoute = location.pathname.startsWith('/openings');
-  const isEndgamesRoute = location.pathname.startsWith('/endgames');
   const refreshedRef = useRef(false);
 
   // Show deferred toast from OAuth callback — checked here because ProtectedLayout
@@ -304,7 +303,7 @@ function ProtectedLayout() {
   return (
     <>
       <NavHeader />
-      {!isOpeningsRoute && !isEndgamesRoute && (
+      {!isOpeningsRoute && (
         <>
           <MobileHeader />
         </>
