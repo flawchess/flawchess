@@ -194,7 +194,7 @@ class TestQueryEndgameEntryRows:
         )
         # Should return exactly one row for this (game, rook) span
         assert len(rows) == 1
-        game_id, endgame_class, result, user_color, user_material_imbalance = rows[0]
+        game_id, endgame_class, result, user_color, user_material_imbalance, user_material_imbalance_after = rows[0]
         assert game_id == game.id
         assert endgame_class == 1  # rook
 
@@ -277,10 +277,13 @@ class TestQueryEndgameEntryRows:
             recency_cutoff=None,
         )
         assert len(rows) == 1
-        _game_id, _endgame_class, _result, user_color, user_material_imbalance = rows[0]
+        _game_id, _endgame_class, _result, user_color, user_material_imbalance, user_material_imbalance_after = rows[0]
         # For white user, user_material_imbalance = material_imbalance at entry ply (ply=20)
         assert user_color == "white"
         assert user_material_imbalance == 200  # from first ply of span
+        # user_material_imbalance_after = imbalance at ply=24 (entry+4 = ply 20+4)
+        # All plies 21-25 have imbalance=50, so after-value is 50
+        assert user_material_imbalance_after == 50
 
     @pytest.mark.asyncio
     async def test_time_control_filter(self, db_session: AsyncSession) -> None:
