@@ -1,4 +1,4 @@
-import { SkipBack, ChevronLeft, ChevronRight, FlipVertical2 } from 'lucide-react';
+import { SkipBack, ChevronLeft, ChevronRight, Repeat2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 
@@ -78,7 +78,7 @@ export function BoardControls({
           aria-label="Flip board"
           data-testid="board-btn-flip"
         >
-          <FlipVertical2 className="h-4 w-4" />
+          <Repeat2 className="h-4 w-4" />
         </Button>
       </Tooltip>
       {infoSlot}
