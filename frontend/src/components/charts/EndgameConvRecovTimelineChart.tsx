@@ -4,6 +4,7 @@ import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { GAUGE_SUCCESS } from '@/lib/theme';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
+import { MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/charts/EndgamePerformanceSection';
 import type { ConvRecovTimelineResponse } from '@/types/endgames';
 
 interface EndgameConvRecovTimelineChartProps {
@@ -78,11 +79,13 @@ export function EndgameConvRecovTimelineChart({ data }: EndgameConvRecovTimeline
             <div className="space-y-2">
               <p>
                 <strong>Conversion rate</strong>: your win rate in the last {data.window} games where you
-              entered an endgame sequence with a material advantage of at least 3 points.
+                entered an endgame sequence with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point
+                that persisted for at least {PERSISTENCE_MOVES} moves.
               </p>
               <p>
                 <strong>Recovery rate</strong>: your save rate (wins + draws) in the last {data.window} games
-              where you entered an endgame sequence with a material deficit of at least 3 points.
+                where you entered an endgame sequence with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point
+                that persisted for at least {PERSISTENCE_MOVES} moves.
               </p>
             </div>
           </InfoPopover>

@@ -16,7 +16,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { FilterPanel } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
-import { EndgamePerformanceSection } from '@/components/charts/EndgamePerformanceSection';
+import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/charts/EndgamePerformanceSection';
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
 import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
 import { EndgameConvRecovTimelineChart } from '@/components/charts/EndgameConvRecovTimelineChart';
@@ -119,10 +119,13 @@ export function EndgamesPage() {
               </p>
               <p>
                 <strong>Conversion:</strong> your win rate when you entered an endgame sequence
-                with a material advantage of at least 3 points. <strong>Recovery:</strong> your
-                draw+win rate when you entered an endgame sequence with a material deficit of at
-                least 3 points. Since a game can pass through multiple endgame types, it can
-                contribute a conversion or recovery entry to each type independently.
+                with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point that
+                persisted for at least {PERSISTENCE_MOVES} moves into the endgame.
+                {' '}<strong>Recovery:</strong> your draw+win rate when you entered an endgame
+                sequence with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point
+                that persisted for at least {PERSISTENCE_MOVES} moves into the endgame. Since a
+                game can pass through multiple endgame types, it can contribute a conversion or
+                recovery entry to each type independently.
               </p>
               <p>
                 These rates reflect your performance against opponents at your current rating level.

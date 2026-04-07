@@ -110,7 +110,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ## Current State
 
-v1.8 shipped 2026-04-06. Nine milestones complete (v1.0–v1.8), 47 phases (+2 inserted), live at flawchess.com. Guest access now lets visitors try the platform without signing up, with seamless promotion to full accounts via email/password or Google SSO. ~20K lines of code (8K Python, 12K TypeScript).
+v1.8 shipped 2026-04-06. Nine milestones complete (v1.0–v1.8), 48 phases (+2 inserted), live at flawchess.com. Guest access now lets visitors try the platform without signing up, with seamless promotion to full accounts via email/password or Google SSO. ~20K lines of code (8K Python, 12K TypeScript). Phase 48 complete — endgame conversion/recovery now uses persistence filter (imbalance must hold 4 plies) with lowered 100cp threshold.
 
 ## Context
 
@@ -189,4 +189,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-06 after v1.8 Guest Access milestone shipped*
+*Last updated: 2026-04-07 after Phase 48 (conversion/recovery persistence filter) complete*

@@ -137,15 +137,16 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
 
 
 # Minimum material imbalance (in centipawns) to count as conversion or recovery.
-# Filters out minor imbalances like bishop pair (~50cp) that aren't meaningful
-# advantages to convert or deficits to recover from.
-_MATERIAL_ADVANTAGE_THRESHOLD = 300
+# Lowered from 300cp to 100cp alongside the persistence filter — the persistence
+# requirement (imbalance must also hold 4 plies later) eliminates transient noise
+# from piece trades, allowing a lower threshold for a larger meaningful dataset.
+_MATERIAL_ADVANTAGE_THRESHOLD = 100
 
 
 def _aggregate_endgame_stats(rows: Sequence[Row[Any] | tuple[Any, ...]]) -> list[EndgameCategoryStats]:
     """Aggregate raw per-(game, class) endgame rows into EndgameCategoryStats list.
 
-    Each row is: (game_id, endgame_class_int, result, user_color, user_material_imbalance)
+    Each row is: (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after)
     where endgame_class_int is 1-6 (see EndgameClassInt).
     A game_id may appear multiple times (once per endgame class it spent >= 6 plies in).
     Per D-02: multi-class per game.
@@ -173,7 +174,7 @@ def _aggregate_endgame_stats(rows: Sequence[Row[Any] | tuple[Any, ...]]) -> list
         lambda: {"games": 0, "wins": 0, "draws": 0}
     )
 
-    for _game_id, endgame_class_int, result, user_color, user_material_imbalance in rows:
+    for _game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after in rows:
         endgame_class = _INT_TO_CLASS[endgame_class_int]
         outcome = derive_user_result(result, user_color)
 
@@ -185,18 +186,28 @@ def _aggregate_endgame_stats(rows: Sequence[Row[Any] | tuple[Any, ...]]) -> list
         else:
             wdl[endgame_class]["losses"] += 1
 
-        # Conversion: user entered with significant material advantage (>= 3 pawns / 300cp)
-        # Threshold filters out minor imbalances (e.g. bishop pair) that don't represent
-        # a meaningful advantage to "convert" into a win.
-        if user_material_imbalance is not None and user_material_imbalance >= _MATERIAL_ADVANTAGE_THRESHOLD:
+        # Conversion: user entered with significant material advantage (>= 100cp)
+        # that persisted 4 plies into the endgame — filters transient trade imbalances.
+        if (
+            user_material_imbalance is not None
+            and user_material_imbalance >= _MATERIAL_ADVANTAGE_THRESHOLD
+            and user_material_imbalance_after is not None
+            and user_material_imbalance_after >= _MATERIAL_ADVANTAGE_THRESHOLD
+        ):
             conv[endgame_class]["games"] += 1
             if outcome == "win":
                 conv[endgame_class]["wins"] += 1
             elif outcome == "draw":
                 conv[endgame_class]["draws"] += 1
 
-        # Recovery: user entered with significant material deficit (<= -3 pawns / -300cp)
-        if user_material_imbalance is not None and user_material_imbalance <= -_MATERIAL_ADVANTAGE_THRESHOLD:
+        # Recovery: user entered with significant material deficit (<= -100cp)
+        # that persisted 4 plies into the endgame.
+        if (
+            user_material_imbalance is not None
+            and user_material_imbalance <= -_MATERIAL_ADVANTAGE_THRESHOLD
+            and user_material_imbalance_after is not None
+            and user_material_imbalance_after <= -_MATERIAL_ADVANTAGE_THRESHOLD
+        ):
             recov[endgame_class]["games"] += 1
             if outcome == "win":
                 recov[endgame_class]["wins"] += 1
@@ -742,9 +753,18 @@ async def get_conv_recov_timeline(
         recency_cutoff=None,
     )
 
-    # Split by material advantage direction
-    conversion_rows = [r for r in rows if r[3] is not None and r[3] >= _MATERIAL_ADVANTAGE_THRESHOLD]
-    recovery_rows = [r for r in rows if r[3] is not None and r[3] <= -_MATERIAL_ADVANTAGE_THRESHOLD]
+    # Split by material advantage direction — require persistence at entry AND 4 plies later.
+    # r[3] = user_material_imbalance (at entry), r[4] = user_material_imbalance_after (4 plies later)
+    conversion_rows = [
+        r for r in rows
+        if r[3] is not None and r[3] >= _MATERIAL_ADVANTAGE_THRESHOLD
+        and r[4] is not None and r[4] >= _MATERIAL_ADVANTAGE_THRESHOLD
+    ]
+    recovery_rows = [
+        r for r in rows
+        if r[3] is not None and r[3] <= -_MATERIAL_ADVANTAGE_THRESHOLD
+        and r[4] is not None and r[4] <= -_MATERIAL_ADVANTAGE_THRESHOLD
+    ]
 
     # Conversion rate: wins / total in window
     conversion_series = _compute_conv_recov_rolling_series(
