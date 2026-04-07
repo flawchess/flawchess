@@ -104,7 +104,7 @@ export function OpeningsPage() {
   const [localMatchSides, setLocalMatchSides] = useState<Record<number, MatchSide>>({});
   const [localFilters, setLocalFilters] = useState<FilterState>(filters);
 
-  // ── Mobile board collapse (swipe handle) ─────────────────────────────────
+  // ── Mobile board collapse (swipe/tap handle) ─────────────────────────────
   const [boardCollapsed, setBoardCollapsed] = useState(false);
   const touchStartY = useRef(0);
 
@@ -1043,7 +1043,7 @@ export function OpeningsPage() {
                 Stats
               </TabsTrigger>
             </TabsList>
-            {/* Swipe handle — drag up to collapse board, down to expand */}
+            {/* Swipe/tap handle — toggle board collapse */}
             <button
               className="mt-1 flex w-full items-center justify-center py-0.5 touch-none bg-white/15 border-t border-white/15 rounded-b-md"
               onTouchStart={handleHandleTouchStart}
