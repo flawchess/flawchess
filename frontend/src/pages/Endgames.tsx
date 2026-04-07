@@ -112,20 +112,26 @@ export function EndgamesPage() {
               </p>
               <p>
                 <strong>Endgame types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
-                Queen, Mixed (two or more piece types), and Pawnless (no pawns on board). A game is counted
-                for a type only if it spent at least 3 full moves (6 half-moves) in that type. A single game
-                can pass through multiple types — for example, a rook endgame where the rooks get traded
-                becomes a pawn endgame, so the game counts toward both.
+                Queen, Mixed (two or more piece types), and Pawnless (no pawns on board).
               </p>
               <p>
-                <strong>Conversion:</strong> your win rate when you entered an endgame sequence
-                with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point that
-                persisted for at least {PERSISTENCE_MOVES} moves into the endgame.
-                {' '}<strong>Recovery:</strong> your draw+win rate when you entered an endgame
-                sequence with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point
-                that persisted for at least {PERSISTENCE_MOVES} moves into the endgame. Since a
-                game can pass through multiple endgame types, it can contribute a conversion or
-                recovery entry to each type independently.
+                <strong>Endgame sequence:</strong> a continuous stretch of at least 3 full moves (6 half-moves)
+                spent in a single endgame type. A single game can produce multiple sequences — for example,
+                a rook endgame where the rooks get traded becomes a pawn endgame, giving that game one rook
+                sequence and one pawn sequence. Each sequence is counted independently for conversion and
+                recovery statistics.
+              </p>
+              <p>
+                <strong>Conversion:</strong> percentage of endgame sequences with a material
+                advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at
+                least {PERSISTENCE_MOVES} moves) where you went on to win the game. Measures
+                how well you close out winning endgames.
+              </p>
+              <p>
+                <strong>Recovery:</strong> percentage of endgame sequences with a material
+                deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at
+                least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game.
+                Measures how well you defend losing endgames.
               </p>
               <p>
                 These rates reflect your performance against opponents at your current rating level.
