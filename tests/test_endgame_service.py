@@ -88,8 +88,10 @@ class TestClassifyEndgameClass:
 class TestAggregateEndgameStats:
     """Unit tests for endgame stats aggregation logic.
 
-    Rows use the new shape: (game_id, endgame_class_int, result, user_color, user_material_imbalance)
+    Rows use the new shape: (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after)
     where endgame_class_int is 1=rook, 2=minor_piece, 3=pawn, 4=queen, 5=mixed, 6=pawnless.
+    The 6th element (user_material_imbalance_after) is the imbalance 4 plies after entry — used
+    for the persistence check: both entry AND entry+4 must meet the threshold.
     """
 
     def test_empty_input_returns_empty(self):
@@ -102,11 +104,11 @@ class TestAggregateEndgameStats:
         # 1 rook game (endgame_class_int=1), 3 pawn games (endgame_class_int=3)
         rows = [
             # 1 rook game (win)
-            (1, 1, "1-0", "white", 100),
+            (1, 1, "1-0", "white", 100, 100),
             # 3 pawn games (2 wins, 1 loss)
-            (2, 3, "1-0", "white", 50),
-            (3, 3, "1-0", "white", 0),
-            (4, 3, "0-1", "white", -100),
+            (2, 3, "1-0", "white", 50, 50),
+            (3, 3, "1-0", "white", 0, 0),
+            (4, 3, "0-1", "white", -100, -100),
         ]
         result = _aggregate_endgame_stats(rows)
         # Pawn category has 3 games, rook has 1 — pawn should come first
@@ -118,9 +120,9 @@ class TestAggregateEndgameStats:
     def test_win_draw_loss_percentages(self):
         """Percentages computed correctly for 1W/1D/1L split."""
         rows = [
-            (1, 1, "1-0", "white", 0),       # rook win (endgame_class_int=1)
-            (2, 1, "1/2-1/2", "white", 0),   # rook draw
-            (3, 1, "0-1", "white", 0),        # rook loss
+            (1, 1, "1-0", "white", 0, 0),       # rook win (endgame_class_int=1)
+            (2, 1, "1/2-1/2", "white", 0, 0),   # rook draw
+            (3, 1, "0-1", "white", 0, 0),        # rook loss
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -131,17 +133,17 @@ class TestAggregateEndgameStats:
         assert abs(rook.win_pct - 33.3) < 1
 
     def test_conversion_pct_per_category(self):
-        """D-08: Conversion = win rate when user entered endgame with >= 300cp material advantage."""
+        """D-08: Conversion = win rate when user entered endgame with >= 100cp material advantage (persisted)."""
         rows = [
-            (1, 1, "1-0", "white", 500),      # rook, up 500cp, won → converted
-            (2, 1, "0-1", "white", 350),       # rook, up 350cp, lost → failed conversion
-            (3, 1, "1/2-1/2", "white", 300),   # rook, up 300cp (threshold), draw → draw conversion
-            (4, 1, "1-0", "white", 200),        # rook, up 200cp (below threshold) → NOT a conversion game
-            (5, 1, "1-0", "white", -400),       # rook, down, won → not a conversion game
+            (1, 1, "1-0", "white", 500, 500),     # rook, up 500cp, persisted, won → converted
+            (2, 1, "0-1", "white", 350, 350),      # rook, up 350cp, persisted, lost → failed conversion
+            (3, 1, "1/2-1/2", "white", 100, 100),  # rook, up 100cp (threshold), persisted, draw → draw conversion
+            (4, 1, "1-0", "white", 200, 50),        # rook, up 200cp at entry but only 50cp after → NOT conversion (didn't persist)
+            (5, 1, "1-0", "white", -400, -400),     # rook, down, won → not a conversion game
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
-        # 3 games >= 300cp up: 1 win, 1 draw, 1 loss → 33.3% conversion
+        # 3 games with persisted >= 100cp: 1 win, 1 draw, 1 loss → 33.3% conversion
         assert rook.conversion.conversion_games == 3
         assert rook.conversion.conversion_wins == 1
         assert rook.conversion.conversion_draws == 1
@@ -149,16 +151,16 @@ class TestAggregateEndgameStats:
         assert abs(rook.conversion.conversion_pct - 33.3) < 0.1
 
     def test_recovery_pct_per_category(self):
-        """D-09: Recovery = draw+win rate when user entered endgame with <= -300cp material deficit."""
+        """D-09: Recovery = draw+win rate when user entered endgame with <= -100cp material deficit (persisted)."""
         rows = [
-            (1, 1, "1-0", "white", -400),     # rook, down 400cp, won → recovery win
-            (2, 1, "1/2-1/2", "white", -500), # rook, down 500cp, draw → recovery draw
-            (3, 1, "0-1", "white", -300),      # rook, down 300cp (threshold), lost → not recovered
-            (4, 1, "0-1", "white", -200),      # rook, down 200cp (below threshold) → NOT a recovery game
+            (1, 1, "1-0", "white", -400, -400),    # rook, down 400cp, persisted, won → recovery win
+            (2, 1, "1/2-1/2", "white", -500, -500), # rook, down 500cp, persisted, draw → recovery draw
+            (3, 1, "0-1", "white", -100, -100),      # rook, down 100cp (threshold), persisted, lost → not recovered
+            (4, 1, "0-1", "white", -200, -50),       # rook, down 200cp but only -50cp after → NOT recovery (didn't persist)
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
-        # 3 games <= -300cp down, 2 saves (win + draw) → 66.7%
+        # 3 games with persisted <= -100cp, 2 saves (win + draw) → 66.7%
         assert rook.conversion.recovery_games == 3
         assert rook.conversion.recovery_wins == 1
         assert rook.conversion.recovery_draws == 1
@@ -168,7 +170,7 @@ class TestAggregateEndgameStats:
     def test_no_game_phase_breakdown(self):
         """D-11: Single aggregate per endgame type, no opening/middlegame/endgame sub-breakdown."""
         rows = [
-            (1, 1, "1-0", "white", 100),  # rook, endgame_class_int=1
+            (1, 1, "1-0", "white", 100, 100),  # rook, endgame_class_int=1
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -182,9 +184,9 @@ class TestAggregateEndgameStats:
     def test_multiple_categories_aggregated_correctly(self):
         """Multiple categories are computed independently, not mixed together."""
         rows = [
-            (1, 1, "1-0", "white", 0),     # rook win (endgame_class_int=1)
-            (2, 1, "0-1", "white", 0),      # rook loss
-            (3, 4, "1-0", "white", 0),      # queen win (endgame_class_int=4)
+            (1, 1, "1-0", "white", 0, 0),     # rook win (endgame_class_int=1)
+            (2, 1, "0-1", "white", 0, 0),      # rook loss
+            (3, 4, "1-0", "white", 0, 0),      # queen win (endgame_class_int=4)
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -198,8 +200,8 @@ class TestAggregateEndgameStats:
     def test_zero_conversion_games_returns_zero_pct(self):
         """When no games have material advantage, conversion_pct should be 0 (not a divide-by-zero error)."""
         rows = [
-            (1, 1, "1-0", "white", -100),   # rook, down, won → recovery only
-            (2, 1, "0-1", "white", 0),       # rook, equal, lost → neither
+            (1, 1, "1-0", "white", -100, -100),   # rook, down, won → recovery only
+            (2, 1, "0-1", "white", 0, 0),          # rook, equal, lost → neither
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -209,8 +211,8 @@ class TestAggregateEndgameStats:
     def test_zero_recovery_games_returns_zero_pct(self):
         """When no games have material disadvantage, recovery_pct should be 0."""
         rows = [
-            (1, 1, "1-0", "white", 200),    # rook, up, won → conversion only
-            (2, 1, "0-1", "white", 0),       # rook, equal, lost → neither
+            (1, 1, "1-0", "white", 200, 200),    # rook, up, won → conversion only
+            (2, 1, "0-1", "white", 0, 0),         # rook, equal, lost → neither
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -221,10 +223,10 @@ class TestAggregateEndgameStats:
         """A game_id appearing with two different endgame_class_int values contributes to both classes."""
         rows = [
             # Same game (game_id=1) in two classes: rook (1) and pawn (3)
-            (1, 1, "1-0", "white", 100),   # rook class for game 1
-            (1, 3, "1-0", "white", 50),    # pawn class for game 1
+            (1, 1, "1-0", "white", 100, 100),   # rook class for game 1
+            (1, 3, "1-0", "white", 50, 50),      # pawn class for game 1
             # Another game in rook only
-            (2, 1, "0-1", "white", 0),
+            (2, 1, "0-1", "white", 0, 0),
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -237,6 +239,38 @@ class TestAggregateEndgameStats:
         assert rook.losses == 1
         # Pawn: 1 win
         assert pawn.wins == 1
+
+    def test_persistence_filter_excludes_transient_imbalance(self):
+        """Imbalance must persist 4 plies after entry — transient trade imbalances are excluded."""
+        rows = [
+            # Entry imbalance 200cp but after 4 plies only 50cp -> NOT conversion (transient)
+            (1, 1, "1-0", "white", 200, 50),
+            # Entry imbalance -300cp but after 4 plies only -80cp -> NOT recovery (transient)
+            (2, 1, "0-1", "white", -300, -80),
+            # Entry 150cp, persisted at 120cp -> IS conversion (both >= 100)
+            (3, 1, "1-0", "white", 150, 120),
+            # Entry -200cp, persisted at -150cp -> IS recovery (both <= -100)
+            (4, 1, "1/2-1/2", "white", -200, -150),
+        ]
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        # Only game 3 qualifies for conversion
+        assert rook.conversion.conversion_games == 1
+        assert rook.conversion.conversion_wins == 1
+        # Only game 4 qualifies for recovery
+        assert rook.conversion.recovery_games == 1
+        assert rook.conversion.recovery_draws == 1
+
+    def test_persistence_none_after_value_excluded(self):
+        """If imbalance_after is None (shouldn't happen with ply threshold, but safety), exclude from conv/recov."""
+        rows = [
+            (1, 1, "1-0", "white", 200, None),
+            (2, 1, "0-1", "white", -200, None),
+        ]
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.conversion.conversion_games == 0
+        assert rook.conversion.recovery_games == 0
 
 
 class TestGetEndgameStatsSmoke:
@@ -490,8 +524,11 @@ class TestEndgameGaugeCalculations:
     """Unit tests for gauge value formulas: aggregate conversion/recovery and endgame_skill."""
 
     def _entry_row(self, game_id: int, endgame_class_int: int, result: str, user_color: str, imbalance: int):
-        """Build a (game_id, endgame_class_int, result, user_color, user_material_imbalance) entry row."""
-        return (game_id, endgame_class_int, result, user_color, imbalance)
+        """Build a (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after) entry row.
+
+        Sets imbalance_after equal to imbalance so the persistence check always passes in these gauge tests.
+        """
+        return (game_id, endgame_class_int, result, user_color, imbalance, imbalance)
 
     @pytest.mark.asyncio
     async def test_aggregate_conversion_uses_sum_of_raw_not_mean_of_percentages(self):

@@ -36,6 +36,10 @@ ENDGAME_PIECE_COUNT_THRESHOLD = 6
 # 6 plies = 3 full moves of sustained endgame play. Per D-03.
 ENDGAME_PLY_THRESHOLD = 6
 
+# Number of plies after endgame entry to check for persistence of material imbalance.
+# Filters out transient imbalances from piece trades at the endgame transition.
+PERSISTENCE_PLIES = 4
+
 
 async def count_filtered_games(
     session: AsyncSession,
@@ -72,11 +76,15 @@ async def query_endgame_entry_rows(
     plies in each class. Per D-04: material_imbalance at the FIRST position of each class span
     determines conversion/recovery classification.
 
-    Returns rows of: (game_id, endgame_class, result, user_color, user_material_imbalance)
+    Returns rows of: (game_id, endgame_class, result, user_color, user_material_imbalance, user_material_imbalance_after)
     where endgame_class is an integer (1-6, see EndgameClassInt).
 
     user_material_imbalance = material_imbalance if user_color == "white" else -material_imbalance.
     This sign flip normalizes to user perspective: positive = user has more material.
+
+    user_material_imbalance_after = material_imbalance at entry + PERSISTENCE_PLIES (4 plies later).
+    Used by the service layer for persistence check: both entry AND entry+4 must meet the threshold
+    to count as conversion/recovery (filters transient trade imbalances).
 
     NO color filter is applied per D-02 — stats cover both white and black games.
     """
@@ -94,11 +102,21 @@ async def query_endgame_entry_rows(
         ARRAY(SmallIntegerType),
     )[1]
 
+    # Imbalance 4 plies after entry — used for persistence check.
+    # Index [5] is safe because spans already require >= ENDGAME_PLY_THRESHOLD (6) plies.
+    imbalance_after_persistence_agg = type_coerce(
+        func.array_agg(
+            aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())
+        ),
+        ARRAY(SmallIntegerType),
+    )[PERSISTENCE_PLIES + 1]
+
     span_subq = (
         select(
             GamePosition.game_id.label("game_id"),
             GamePosition.endgame_class.label("endgame_class"),
             entry_imbalance_agg.label("entry_imbalance"),
+            imbalance_after_persistence_agg.label("entry_imbalance_after"),
         )
         .where(
             GamePosition.user_id == user_id,
@@ -124,6 +142,7 @@ async def query_endgame_entry_rows(
             Game.result,
             Game.user_color,
             (span_subq.c.entry_imbalance * color_sign).label("user_material_imbalance"),
+            (span_subq.c.entry_imbalance_after * color_sign).label("user_material_imbalance_after"),
         )
         .join(span_subq, Game.id == span_subq.c.game_id)
         .where(Game.user_id == user_id)
@@ -214,16 +233,17 @@ async def query_conv_recov_timeline_rows(
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
 ) -> list[Row[Any]]:
-    """Return rows for conversion/recovery timeline: games with significant material imbalance.
+    """Return rows for conversion/recovery timeline: all endgame games for persistence filtering.
 
-    Only includes games where abs(material_imbalance) >= 300 at endgame entry
-    (significant advantage or disadvantage of roughly 3+ pawns).
+    Returns ALL endgame games regardless of imbalance — the service layer applies the
+    persistence filter (both entry AND entry+4 plies must meet the 100cp threshold).
 
-    Returns rows of: (played_at, result, user_color, user_material_imbalance)
+    Returns rows of: (played_at, result, user_color, user_material_imbalance, user_material_imbalance_after)
     ordered by played_at ascending for chronological rolling-window computation.
     """
-    # Minimum centipawn imbalance for a game to count as "significant advantage/disadvantage"
-    SIGNIFICANT_IMBALANCE_CP = 300
+    # Minimum centipawn imbalance for a game to count as "significant advantage/disadvantage".
+    # Lowered from 300cp to 100cp — persistence filter eliminates transient trade noise.
+    SIGNIFICANT_IMBALANCE_CP = 100  # noqa: F841 — kept for documentation, filtering now in service
 
     # Single subquery: group + grab entry material_imbalance via array_agg.
     # Same pattern as query_endgame_entry_rows — eliminates 5M+ row seq scan.
@@ -234,10 +254,20 @@ async def query_conv_recov_timeline_rows(
         ARRAY(SmallIntegerType),
     )[1]
 
+    # Imbalance 4 plies after entry — used for persistence check in service layer.
+    # Index [5] is safe because spans already require >= ENDGAME_PLY_THRESHOLD (6) plies.
+    imbalance_after_persistence_agg = type_coerce(
+        func.array_agg(
+            aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())
+        ),
+        ARRAY(SmallIntegerType),
+    )[PERSISTENCE_PLIES + 1]
+
     span_subq = (
         select(
             GamePosition.game_id.label("game_id"),
             entry_imbalance_agg.label("entry_imbalance"),
+            imbalance_after_persistence_agg.label("entry_imbalance_after"),
         )
         .where(
             GamePosition.user_id == user_id,
@@ -255,19 +285,19 @@ async def query_conv_recov_timeline_rows(
     )
 
     # Main query: join Game -> span_subq only (no second subquery).
-    # Filter by abs(entry_imbalance) >= 300 — works regardless of sign flip.
+    # No imbalance filter here — service layer applies persistence check with 100cp threshold.
     stmt = (
         select(
             Game.played_at,
             Game.result,
             Game.user_color,
             (span_subq.c.entry_imbalance * color_sign).label("user_material_imbalance"),
+            (span_subq.c.entry_imbalance_after * color_sign).label("user_material_imbalance_after"),
         )
         .join(span_subq, Game.id == span_subq.c.game_id)
         .where(
             Game.user_id == user_id,
             Game.played_at.isnot(None),
-            func.abs(span_subq.c.entry_imbalance) >= SIGNIFICANT_IMBALANCE_CP,
         )
         .order_by(Game.played_at.asc())
     )
