@@ -22,6 +22,11 @@ function sentryBeforeSend(
 ): Sentry.ErrorEvent {
   const error = hint.originalException;
   if (isAxiosLikeError(error)) {
+    // 401 Unauthorized is never a bug — it's a normal auth failure (expired session,
+    // wrong credentials). Drop it to avoid noise in Sentry.
+    if (error.response?.status === 401) {
+      return null as unknown as Sentry.ErrorEvent;
+    }
     if (error.response?.status === 500) {
       event.fingerprint = ["api-server-error"];
     } else if (error.code === "ECONNABORTED") {

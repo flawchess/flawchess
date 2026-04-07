@@ -36,8 +36,8 @@ export function LoginForm() {
       navigate('/', { replace: true });
     } catch (err: unknown) {
       let message = 'Login failed. Please check your credentials.';
-      if (axios.isAxiosError(err) && err.response?.status === 400) {
-        // Expected — invalid credentials are not a bug
+      if (axios.isAxiosError(err) && (err.response?.status === 400 || err.response?.status === 401)) {
+        // Expected — invalid credentials / unauthorized are not bugs
         message = 'Invalid email or password.';
       } else {
         Sentry.captureException(err, {
