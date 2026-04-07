@@ -125,7 +125,7 @@ export function RatingChart({ data, platform }: RatingChartProps) {
           tickFormatter={formatDateTick}
           tick={{ fontSize: 12 }}
         />
-        <YAxis domain={yDomain} ticks={yTicks} />
+        <YAxis domain={yDomain} ticks={yTicks} interval={0} tick={{ fontSize: 12 }} />
         <ChartTooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
