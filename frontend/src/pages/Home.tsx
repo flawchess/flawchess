@@ -113,6 +113,7 @@ export function HomePageContent() {
       <PublicHeader />
 
       {/* Hero */}
+      <div className="bg-[radial-gradient(ellipse_at_center,rgba(139,94,60,0.18),transparent_60%)]">
       <section data-testid="hero-section" className="max-w-3xl mx-auto px-4 py-8 lg:py-24 text-center">
         <img
           src="/icons/logo-384.png"
@@ -120,7 +121,10 @@ export function HomePageContent() {
           className="mx-auto mb-6 h-28 w-28 lg:h-36 lg:w-36"
         />
         <h1 className="text-4xl lg:text-5xl font-bold leading-tight font-brand">
-          Engines are flawless, humans play FlawChess
+          Engines are flawless, humans play{' '}
+          <span className="bg-gradient-to-r from-brand-brown-light to-brand-brown bg-clip-text text-transparent">
+            FlawChess
+          </span>
         </h1>
         <p className="mt-4 text-base leading-relaxed text-muted-foreground">
           Import games from chess.com and lichess. Explore openings move by move, track endgame performance, and find exactly where you win and lose.
@@ -205,6 +209,7 @@ export function HomePageContent() {
           </a>.
         </p>
       </section>
+      </div>
 
       {/* Feature sections — alternating image left/right */}
       <div id="features" data-testid="screenshots-section" className="scroll-mt-16">
@@ -238,7 +243,7 @@ export function HomePageContent() {
               <img
                 src={screenshot.src}
                 alt={screenshot.alt}
-                className="rounded-lg border border-border shadow-md w-full"
+                className="rounded-lg border border-border shadow-md w-full lg:transition-transform lg:duration-300 lg:hover:scale-[1.02] lg:hover:shadow-lg"
               />
             </div>
           );
