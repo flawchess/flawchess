@@ -218,6 +218,7 @@ export function OpeningsPage() {
     platforms: debouncedFilters.platforms,
     rated: debouncedFilters.rated,
     opponentType: debouncedFilters.opponentType,
+    opponentStrength: debouncedFilters.opponentStrength,
   });
 
   // Chart entries: real bookmarks filtered by chart-enable toggle
@@ -236,6 +237,7 @@ export function OpeningsPage() {
       platform: debouncedFilters.platforms,
       rated: debouncedFilters.rated,
       opponent_type: debouncedFilters.opponentType,
+      opponent_strength: debouncedFilters.opponentStrength,
       recency: debouncedFilters.recency === 'all' ? null : debouncedFilters.recency,
     };
   }, [chartBookmarks, debouncedFilters]);

@@ -14,6 +14,7 @@ export function useNextMoves(fullHash: bigint, filters: FilterState) {
         platform: filters.platforms,
         rated: filters.rated,
         opponent_type: filters.opponentType,
+        opponent_strength: filters.opponentStrength,
         recency: filters.recency,
         color: filters.color,
       },
@@ -25,6 +26,7 @@ export function useNextMoves(fullHash: bigint, filters: FilterState) {
         platform: filters.platforms,
         rated: filters.rated,
         opponent_type: filters.opponentType,
+        opponent_strength: filters.opponentStrength,
         recency: filters.recency,
         color: filters.color,
       });

@@ -28,21 +28,24 @@ export function useMostPlayedOpenings(filters?: {
   platforms: Platform[] | null;
   rated: boolean | null;
   opponentType: OpponentType;
+  opponentStrength?: string;
 }) {
   const normalizedRecency = filters?.recency === 'all' ? null : (filters?.recency ?? null);
   const timeControl = filters?.timeControls ?? null;
   const platform = filters?.platforms ?? null;
   const rated = filters?.rated ?? null;
   const opponentType = filters?.opponentType ?? 'human';
+  const opponentStrength = filters?.opponentStrength ?? 'any';
 
   return useQuery({
-    queryKey: ['mostPlayedOpenings', normalizedRecency, timeControl, platform, rated, opponentType],
+    queryKey: ['mostPlayedOpenings', normalizedRecency, timeControl, platform, rated, opponentType, opponentStrength],
     queryFn: () => statsApi.getMostPlayedOpenings({
       recency: normalizedRecency,
       time_control: timeControl,
       platform: platform,
       rated: rated,
       opponent_type: opponentType,
+      opponent_strength: opponentStrength,
     }),
   });
 }

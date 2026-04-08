@@ -38,6 +38,7 @@ type ApiMatchSide = 'white' | 'black' | 'full';
 export type Recency = 'week' | 'month' | '3months' | '6months' | 'year' | 'all';
 export type Color = 'white' | 'black';
 export type OpponentType = 'human' | 'bot' | 'both';
+export type OpponentStrength = 'any' | 'stronger' | 'similar' | 'weaker';
 export type UserResult = 'win' | 'draw' | 'loss';
 
 /** Resolves mine/opponent/both + color to the API's white/black/full value */

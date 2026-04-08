@@ -11,6 +11,7 @@ function buildEndgameParams(filters: FilterState) {
     recency: filters.recency,
     rated: filters.rated,
     opponent_type: filters.opponentType,
+    opponent_strength: filters.opponentStrength,
   };
 }
 

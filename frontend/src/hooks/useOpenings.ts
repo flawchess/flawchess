@@ -20,6 +20,7 @@ export function useOpeningsPositionQuery(params: {
         platform: params.filters.platforms,
         rated: params.filters.rated,
         opponent_type: params.filters.opponentType,
+        opponent_strength: params.filters.opponentStrength,
         recency: params.filters.recency,
         color: params.filters.color,
         offset: params.offset,

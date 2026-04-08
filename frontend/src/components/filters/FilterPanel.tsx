@@ -6,7 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { MatchSide, TimeControl, Recency, Color, Platform, OpponentType } from '@/types/api';
+import type { MatchSide, TimeControl, Recency, Color, Platform, OpponentType, OpponentStrength } from '@/types/api';
 import { cn } from '@/lib/utils';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
@@ -17,6 +17,7 @@ export interface FilterState {
   platforms: Platform[] | null; // null = all
   rated: boolean | null; // null = all
   opponentType: OpponentType; // default human = computer games excluded
+  opponentStrength: OpponentStrength; // default any = no strength filter
   recency: Recency | null; // null = all time
   color: Color;
 }
@@ -28,11 +29,12 @@ export const DEFAULT_FILTERS: FilterState = {
   platforms: null,
   rated: null,
   opponentType: 'human',
+  opponentStrength: 'any',
   recency: null,
   color: 'white',
 };
 
-type FilterField = 'timeControl' | 'platform' | 'rated' | 'opponent' | 'recency';
+type FilterField = 'timeControl' | 'platform' | 'rated' | 'opponent' | 'opponentStrength' | 'recency';
 
 interface FilterPanelProps {
   filters: FilterState;
@@ -41,7 +43,7 @@ interface FilterPanelProps {
   visibleFilters?: FilterField[];
 }
 
-const ALL_FILTERS: FilterField[] = ['timeControl', 'platform', 'rated', 'opponent', 'recency'];
+const ALL_FILTERS: FilterField[] = ['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency'];
 
 const TIME_CONTROLS: TimeControl[] = ['bullet', 'blitz', 'rapid', 'classical'];
 const TIME_CONTROL_LABELS: Record<TimeControl, string> = {
@@ -176,6 +178,30 @@ export function FilterPanel({ filters, onChange, visibleFilters = ALL_FILTERS }:
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Opponent Strength */}
+      {show('opponentStrength') && (
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">Opponent Strength</p>
+          <ToggleGroup
+            type="single"
+            value={filters.opponentStrength}
+            onValueChange={(v) => {
+              if (!v) return;
+              update({ opponentStrength: v as OpponentStrength });
+            }}
+            variant="outline"
+            size="sm"
+            data-testid="filter-opponent-strength"
+            className="w-full"
+          >
+            <ToggleGroupItem value="any" data-testid="filter-opponent-strength-any" className="min-h-11 sm:min-h-0 flex-1">Any</ToggleGroupItem>
+            <ToggleGroupItem value="stronger" data-testid="filter-opponent-strength-stronger" className="min-h-11 sm:min-h-0 flex-1 text-xs">+100</ToggleGroupItem>
+            <ToggleGroupItem value="similar" data-testid="filter-opponent-strength-similar" className="min-h-11 sm:min-h-0 flex-1 text-xs">&plusmn;100</ToggleGroupItem>
+            <ToggleGroupItem value="weaker" data-testid="filter-opponent-strength-weaker" className="min-h-11 sm:min-h-0 flex-1 text-xs">-100</ToggleGroupItem>
+          </ToggleGroup>
         </div>
       )}
 

@@ -70,6 +70,7 @@ function buildFilterParams(params: {
   recency?: string | null;
   rated?: boolean | null;
   opponent_type?: string;
+  opponent_strength?: string;
   window?: number;
 }): Record<string, string | string[] | number | boolean> {
   const result: Record<string, string | string[] | number | boolean> = {};
@@ -78,6 +79,7 @@ function buildFilterParams(params: {
   if (params.recency && params.recency !== 'all') result.recency = params.recency;
   if (params.rated !== null && params.rated !== undefined) result.rated = params.rated;
   if (params.opponent_type && params.opponent_type !== 'all') result.opponent_type = params.opponent_type;
+  if (params.opponent_strength && params.opponent_strength !== 'any') result.opponent_strength = params.opponent_strength;
   if (params.window) result.window = params.window;
   return result;
 }
@@ -123,6 +125,7 @@ export const statsApi = {
     platform?: string[] | null;
     rated?: boolean | null;
     opponent_type?: string;
+    opponent_strength?: string;
   }) =>
     apiClient.get<MostPlayedOpeningsResponse>('/stats/most-played-openings', {
       params: buildFilterParams(params ?? {}),
@@ -139,6 +142,7 @@ export const endgameApi = {
     recency?: string | null;
     rated?: boolean | null;
     opponent_type?: string;
+    opponent_strength?: string;
   }) =>
     apiClient.get<EndgameStatsResponse>('/endgames/stats', {
       params: buildFilterParams(params),
@@ -151,6 +155,7 @@ export const endgameApi = {
     recency?: string | null;
     rated?: boolean | null;
     opponent_type?: string;
+    opponent_strength?: string;
     offset?: number;
     limit?: number;
   }) =>
@@ -169,6 +174,7 @@ export const endgameApi = {
     recency?: string | null;
     rated?: boolean | null;
     opponent_type?: string;
+    opponent_strength?: string;
   }) =>
     apiClient.get<EndgamePerformanceResponse>('/endgames/performance', {
       params: buildFilterParams(params),
@@ -180,6 +186,7 @@ export const endgameApi = {
     recency?: string | null;
     rated?: boolean | null;
     opponent_type?: string;
+    opponent_strength?: string;
     window?: number;
   }) =>
     apiClient.get<EndgameTimelineResponse>('/endgames/timeline', {
@@ -192,6 +199,7 @@ export const endgameApi = {
     recency?: string | null;
     rated?: boolean | null;
     opponent_type?: string;
+    opponent_strength?: string;
     window?: number;
   }) =>
     apiClient.get<ConvRecovTimelineResponse>('/endgames/conv-recov-timeline', {
