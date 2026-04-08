@@ -1,6 +1,6 @@
 """Stats router: GET /stats/rating-history and GET /stats/global endpoints."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,6 +53,8 @@ async def get_most_played_openings(
     platform: list[str] | None = Query(default=None),
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
+    elo_threshold: int = Query(default=100),
 ) -> MostPlayedOpeningsResponse:
     """Return top 10 most played openings per color with SQL-side WDL stats.
 
@@ -66,4 +68,6 @@ async def get_most_played_openings(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )

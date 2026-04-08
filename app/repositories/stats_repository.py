@@ -174,6 +174,8 @@ async def query_top_openings_sql_wdl(
     platform: Sequence[str] | None = None,
     rated: bool | None = None,
     opponent_type: str = "human",
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> list[Row[Any]]:
     """Return top openings with SQL-side WDL aggregation.
 
@@ -231,7 +233,10 @@ async def query_top_openings_sql_wdl(
         .limit(limit)
     )
 
-    stmt = apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+    stmt = apply_game_filters(
+        stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+    )
 
     result = await session.execute(stmt)
     return list(result.fetchall())
@@ -259,6 +264,8 @@ async def query_position_wdl_batch(
     rated: bool | None = None,
     opponent_type: str = "human",
     recency_cutoff: datetime.datetime | None = None,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> dict[int, PositionWDL]:
     """Return {full_hash: PositionWDL} for games passing through each position.
 
@@ -286,7 +293,10 @@ async def query_position_wdl_batch(
     )
     if color is not None:
         dedup = dedup.where(Game.user_color == color)
-    dedup = apply_game_filters(dedup, time_control, platform, rated, opponent_type, recency_cutoff)
+    dedup = apply_game_filters(
+        dedup, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+    )
     dedup = dedup.subquery()
 
     stmt = (

@@ -299,6 +299,8 @@ async def get_endgame_stats(
     rated: bool | None,
     opponent_type: str,
     recency: str | None,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> EndgameStatsResponse:
     """Orchestrate endgame stats query and return EndgameStatsResponse.
 
@@ -317,6 +319,8 @@ async def get_endgame_stats(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
     categories = _aggregate_endgame_stats(rows)
 
@@ -329,6 +333,8 @@ async def get_endgame_stats(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
     # Count unique games that reached an endgame phase (not game×class combinations,
     # since a game can appear in multiple endgame classes).
@@ -352,6 +358,8 @@ async def get_endgame_games(
     recency: str | None,
     offset: int,
     limit: int,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> EndgameGamesResponse:
     """Orchestrate endgame games query and return paginated EndgameGamesResponse.
 
@@ -373,6 +381,8 @@ async def get_endgame_games(
         recency_cutoff=cutoff,
         offset=offset,
         limit=limit,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     game_records = [
@@ -489,6 +499,8 @@ async def get_endgame_performance(
     recency: str | None,
     rated: bool | None,
     opponent_type: str,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> EndgamePerformanceResponse:
     """Orchestrate endgame performance query and return EndgamePerformanceResponse.
 
@@ -513,6 +525,8 @@ async def get_endgame_performance(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
     entry_rows = await query_endgame_entry_rows(
         session,
@@ -522,6 +536,8 @@ async def get_endgame_performance(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     # Build WDL summaries for each group
@@ -590,6 +606,8 @@ async def get_endgame_timeline(
     rated: bool | None,
     opponent_type: str,
     window: int = 50,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> EndgameTimelineResponse:
     """Orchestrate endgame timeline query and return EndgameTimelineResponse.
 
@@ -615,6 +633,8 @@ async def get_endgame_timeline(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=None,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     # Compute rolling series over full history, then filter to recency window
@@ -728,6 +748,8 @@ async def get_conv_recov_timeline(
     opponent_type: str,
     recency: str | None,
     window: int = 50,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> ConvRecovTimelineResponse:
     """Compute conversion and recovery rolling-window timelines.
 
@@ -751,6 +773,8 @@ async def get_conv_recov_timeline(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=None,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     # Split by material advantage direction — require persistence at entry AND 4 plies later.

@@ -7,7 +7,7 @@ Endpoints (all mounted under /api/endgames):
 - GET /timeline: rolling-window win-rate time series
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +38,8 @@ async def get_endgame_stats(
     recency: str | None = Query(default=None),
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
+    elo_threshold: int = Query(default=100),
 ) -> EndgameStatsResponse:
     """Return W/D/L per endgame category with inline conversion/recovery stats.
 
@@ -54,6 +56,8 @@ async def get_endgame_stats(
         rated=rated,
         opponent_type=opponent_type,
         recency=recency,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
 
@@ -69,6 +73,8 @@ async def get_endgame_games(
     opponent_type: str = Query(default="human"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
+    elo_threshold: int = Query(default=100),
 ) -> EndgameGamesResponse:
     """Return paginated games filtered by endgame class (D-12, D-14).
 
@@ -88,6 +94,8 @@ async def get_endgame_games(
         recency=recency,
         offset=offset,
         limit=limit,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
 
@@ -100,6 +108,8 @@ async def get_endgame_performance(
     recency: str | None = Query(default=None),
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
+    elo_threshold: int = Query(default=100),
 ) -> EndgamePerformanceResponse:
     """Return WDL comparison and gauge values for endgame vs non-endgame games.
 
@@ -117,6 +127,8 @@ async def get_endgame_performance(
         recency=recency,
         rated=rated,
         opponent_type=opponent_type,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
 
@@ -130,6 +142,8 @@ async def get_endgame_timeline(
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
     window: int = Query(default=50, ge=5, le=200),
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
+    elo_threshold: int = Query(default=100),
 ) -> EndgameTimelineResponse:
     """Return rolling-window win-rate time series for endgame performance.
 
@@ -148,6 +162,8 @@ async def get_endgame_timeline(
         rated=rated,
         opponent_type=opponent_type,
         window=window,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
 
@@ -161,6 +177,8 @@ async def get_conv_recov_timeline(
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
     window: int = Query(default=50, ge=5, le=200),
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
+    elo_threshold: int = Query(default=100),
 ) -> ConvRecovTimelineResponse:
     """Return conversion and recovery rolling-window timelines.
 
@@ -178,4 +196,6 @@ async def get_conv_recov_timeline(
         opponent_type=opponent_type,
         recency=recency,
         window=window,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )

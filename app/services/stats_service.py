@@ -1,7 +1,7 @@
 """Stats service: aggregation logic for rating history and global stats."""
 
 import datetime
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,6 +51,8 @@ class FilterParams(TypedDict):
     rated: bool | None
     opponent_type: str
     recency_cutoff: datetime.datetime | None
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"]
+    elo_threshold: int
 
 
 async def get_rating_history(
@@ -192,6 +194,8 @@ async def get_most_played_openings(
     platform: list[str] | None = None,
     rated: bool | None = None,
     opponent_type: str = "human",
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> MostPlayedOpeningsResponse:
     """Return top 10 most played openings per color with position-based game counts.
 
@@ -213,6 +217,8 @@ async def get_most_played_openings(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
     black_rows = await query_top_openings_sql_wdl(
         session,
@@ -226,6 +232,8 @@ async def get_most_played_openings(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     # Batch-query position-based WDL — games passing through each position,
@@ -238,6 +246,8 @@ async def get_most_played_openings(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
     white_position_wdl = await query_position_wdl_batch(
         session, user_id,
@@ -248,6 +258,8 @@ async def get_most_played_openings(
         rated=filter_params["rated"],
         opponent_type=filter_params["opponent_type"],
         recency_cutoff=filter_params["recency_cutoff"],
+        opponent_strength=filter_params["opponent_strength"],
+        elo_threshold=filter_params["elo_threshold"],
     )
     black_position_wdl = await query_position_wdl_batch(
         session, user_id,
@@ -258,6 +270,8 @@ async def get_most_played_openings(
         rated=filter_params["rated"],
         opponent_type=filter_params["opponent_type"],
         recency_cutoff=filter_params["recency_cutoff"],
+        opponent_strength=filter_params["opponent_strength"],
+        elo_threshold=filter_params["elo_threshold"],
     )
 
     def rows_to_openings(

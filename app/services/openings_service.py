@@ -115,6 +115,8 @@ async def analyze(
         opponent_type=request.opponent_type,
         recency_cutoff=cutoff,
         color=request.color,
+        opponent_strength=request.opponent_strength,
+        elo_threshold=request.elo_threshold,
     )
     wins, draws, losses, total = wdl_row.wins, wdl_row.draws, wdl_row.losses, wdl_row.total
 
@@ -149,6 +151,8 @@ async def analyze(
         color=request.color,
         offset=request.offset,
         limit=request.limit,
+        opponent_strength=request.opponent_strength,
+        elo_threshold=request.elo_threshold,
     )
 
     game_records = [
@@ -214,6 +218,8 @@ async def get_time_series(
             rated=request.rated,
             opponent_type=request.opponent_type,
             recency_cutoff=None,
+            opponent_strength=request.opponent_strength,
+            elo_threshold=request.elo_threshold,
         )
 
         # Build rolling-window datapoints from chronological per-game rows.
@@ -373,6 +379,8 @@ async def get_next_moves(
         opponent_type=request.opponent_type,
         recency_cutoff=cutoff,
         color=request.color,
+        opponent_strength=request.opponent_strength,
+        elo_threshold=request.elo_threshold,
     )
     wins, draws, losses, total = wdl_row.wins, wdl_row.draws, wdl_row.losses, wdl_row.total
     win_pct = round(wins / total * 100, 1) if total > 0 else 0.0
@@ -399,6 +407,8 @@ async def get_next_moves(
         opponent_type=request.opponent_type,
         recency_cutoff=cutoff,
         color=request.color,
+        opponent_strength=request.opponent_strength,
+        elo_threshold=request.elo_threshold,
     )
 
     if not move_rows:
@@ -416,6 +426,8 @@ async def get_next_moves(
         opponent_type=request.opponent_type,
         recency_cutoff=cutoff,
         color=request.color,
+        opponent_strength=request.opponent_strength,
+        elo_threshold=request.elo_threshold,
     )
 
     # --- Result FENs via PGN replay ---

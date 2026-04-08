@@ -9,7 +9,7 @@ Functions:
 
 import datetime
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import case, func, select, type_coerce
 from sqlalchemy.dialects.postgresql import ARRAY, aggregate_order_by
@@ -49,6 +49,8 @@ async def count_filtered_games(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> int:
     """Count ALL games for the user matching the given filters.
 
@@ -56,7 +58,10 @@ async def count_filtered_games(
     used to provide context like "X of Y games reached an endgame".
     """
     stmt = select(func.count()).select_from(Game).where(Game.user_id == user_id)
-    stmt = apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+    stmt = apply_game_filters(
+        stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+    )
     result = await session.execute(stmt)
     return result.scalar_one()
 
@@ -69,6 +74,8 @@ async def query_endgame_entry_rows(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> list[Row[Any]]:
     """Return one row per (game, endgame_class) span meeting the ply threshold.
 
@@ -166,7 +173,10 @@ async def query_endgame_entry_rows(
     )
 
     # Apply standard game filters
-    stmt = apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+    stmt = apply_game_filters(
+        stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+    )
 
     result = await session.execute(stmt)
     return list(result.fetchall())
@@ -183,6 +193,8 @@ async def query_endgame_games(
     recency_cutoff: datetime.datetime | None,
     offset: int,
     limit: int,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> tuple[list[Game], int]:
     """Return paginated Game objects for games that spent >= ENDGAME_PLY_THRESHOLD plies
     in the given endgame class.
@@ -218,7 +230,10 @@ async def query_endgame_games(
         Game.user_id == user_id,
         Game.id.in_(select(span_subq.c.game_id)),
     )
-    base_stmt = apply_game_filters(base_stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+    base_stmt = apply_game_filters(
+        base_stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+    )
 
     # Count total matching games (before pagination)
     count_stmt = select(func.count()).select_from(base_stmt.subquery())
@@ -249,6 +264,8 @@ async def query_conv_recov_timeline_rows(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> list[Row[Any]]:
     """Return rows for conversion/recovery timeline: all endgame games for persistence filtering.
 
@@ -327,7 +344,10 @@ async def query_conv_recov_timeline_rows(
         .order_by(Game.played_at.asc())
     )
 
-    stmt = apply_game_filters(stmt, time_control, platform, rated, opponent_type, recency_cutoff)
+    stmt = apply_game_filters(
+        stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+    )
 
     result = await session.execute(stmt)
     return list(result.fetchall())
@@ -346,6 +366,8 @@ async def query_endgame_performance_rows(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> tuple[list[Row[Any]], list[Row[Any]]]:
     """Return endgame and non-endgame game rows for performance comparison.
 
@@ -384,7 +406,8 @@ async def query_endgame_performance_rows(
         .order_by(Game.played_at.asc())
     )
     endgame_stmt = apply_game_filters(
-        endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff
+        endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
     )
 
     # Non-endgame games: id NOT in the endgame subquery
@@ -393,7 +416,8 @@ async def query_endgame_performance_rows(
         .order_by(Game.played_at.asc())
     )
     non_endgame_stmt = apply_game_filters(
-        non_endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff
+        non_endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
     )
 
     # Execute sequentially — AsyncSession is not safe for concurrent use from
@@ -413,6 +437,8 @@ async def query_endgame_timeline_rows(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = 100,
 ) -> tuple[list[Row[Any]], list[Row[Any]], dict[int, list[Row[Any]]]]:
     """Return rows for rolling-window time series (overall and per endgame class).
 
@@ -446,7 +472,8 @@ async def query_endgame_timeline_rows(
         .order_by(Game.played_at.asc())
     )
     endgame_stmt = apply_game_filters(
-        endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff
+        endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
     )
 
     non_endgame_stmt = (
@@ -454,7 +481,8 @@ async def query_endgame_timeline_rows(
         .order_by(Game.played_at.asc())
     )
     non_endgame_stmt = apply_game_filters(
-        non_endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff
+        non_endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
     )
 
     # Per-type subqueries: one per endgame class integer
@@ -474,7 +502,8 @@ async def query_endgame_timeline_rows(
             .order_by(Game.played_at.asc())
         )
         return apply_game_filters(
-            stmt, time_control, platform, rated, opponent_type, recency_cutoff
+            stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+            opponent_strength=opponent_strength, elo_threshold=elo_threshold,
         )
 
     class_ints = list(_ENDGAME_CLASS_INTS)
