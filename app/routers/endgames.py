@@ -22,6 +22,7 @@ from app.schemas.endgames import (
     EndgameStatsResponse,
     EndgameTimelineResponse,
 )
+from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
 from app.services import endgame_service
 from app.users import current_active_user
 
@@ -39,7 +40,7 @@ async def get_endgame_stats(
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
-    elo_threshold: int = Query(default=100),
+    elo_threshold: int = Query(default=DEFAULT_ELO_THRESHOLD),
 ) -> EndgameStatsResponse:
     """Return W/D/L per endgame category with inline conversion/recovery stats.
 
@@ -74,7 +75,7 @@ async def get_endgame_games(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
-    elo_threshold: int = Query(default=100),
+    elo_threshold: int = Query(default=DEFAULT_ELO_THRESHOLD),
 ) -> EndgameGamesResponse:
     """Return paginated games filtered by endgame class (D-12, D-14).
 
@@ -109,7 +110,7 @@ async def get_endgame_performance(
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
-    elo_threshold: int = Query(default=100),
+    elo_threshold: int = Query(default=DEFAULT_ELO_THRESHOLD),
 ) -> EndgamePerformanceResponse:
     """Return WDL comparison and gauge values for endgame vs non-endgame games.
 
@@ -143,7 +144,7 @@ async def get_endgame_timeline(
     opponent_type: str = Query(default="human"),
     window: int = Query(default=50, ge=5, le=200),
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
-    elo_threshold: int = Query(default=100),
+    elo_threshold: int = Query(default=DEFAULT_ELO_THRESHOLD),
 ) -> EndgameTimelineResponse:
     """Return rolling-window win-rate time series for endgame performance.
 
@@ -178,7 +179,7 @@ async def get_conv_recov_timeline(
     opponent_type: str = Query(default="human"),
     window: int = Query(default=50, ge=5, le=200),
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
-    elo_threshold: int = Query(default=100),
+    elo_threshold: int = Query(default=DEFAULT_ELO_THRESHOLD),
 ) -> ConvRecovTimelineResponse:
     """Return conversion and recovery rolling-window timelines.
 

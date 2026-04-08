@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.repositories.query_utils import apply_game_filters
+from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD, apply_game_filters
 from app.schemas.endgames import EndgameClass
 
 # Piece-count threshold for endgame classification (Lichess definition).
@@ -50,7 +50,7 @@ async def count_filtered_games(
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> int:
     """Count ALL games for the user matching the given filters.
 
@@ -75,7 +75,7 @@ async def query_endgame_entry_rows(
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> list[Row[Any]]:
     """Return one row per (game, endgame_class) span meeting the ply threshold.
 
@@ -194,7 +194,7 @@ async def query_endgame_games(
     offset: int,
     limit: int,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> tuple[list[Game], int]:
     """Return paginated Game objects for games that spent >= ENDGAME_PLY_THRESHOLD plies
     in the given endgame class.
@@ -265,7 +265,7 @@ async def query_conv_recov_timeline_rows(
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> list[Row[Any]]:
     """Return rows for conversion/recovery timeline: all endgame games for persistence filtering.
 
@@ -367,7 +367,7 @@ async def query_endgame_performance_rows(
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> tuple[list[Row[Any]], list[Row[Any]]]:
     """Return endgame and non-endgame game rows for performance comparison.
 
@@ -438,7 +438,7 @@ async def query_endgame_timeline_rows(
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> tuple[list[Row[Any]], list[Row[Any]], dict[int, list[Row[Any]]]]:
     """Return rows for rolling-window time series (overall and per endgame class).
 

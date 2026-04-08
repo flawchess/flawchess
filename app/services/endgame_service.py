@@ -19,6 +19,7 @@ from typing import Any, Literal
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
 from app.repositories.endgame_repository import (
     count_filtered_games,
     query_conv_recov_timeline_rows,
@@ -300,7 +301,7 @@ async def get_endgame_stats(
     opponent_type: str,
     recency: str | None,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> EndgameStatsResponse:
     """Orchestrate endgame stats query and return EndgameStatsResponse.
 
@@ -359,7 +360,7 @@ async def get_endgame_games(
     offset: int,
     limit: int,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> EndgameGamesResponse:
     """Orchestrate endgame games query and return paginated EndgameGamesResponse.
 
@@ -500,7 +501,7 @@ async def get_endgame_performance(
     rated: bool | None,
     opponent_type: str,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> EndgamePerformanceResponse:
     """Orchestrate endgame performance query and return EndgamePerformanceResponse.
 
@@ -607,7 +608,7 @@ async def get_endgame_timeline(
     opponent_type: str,
     window: int = 50,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> EndgameTimelineResponse:
     """Orchestrate endgame timeline query and return EndgameTimelineResponse.
 
@@ -749,7 +750,7 @@ async def get_conv_recov_timeline(
     recency: str | None,
     window: int = 50,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> ConvRecovTimelineResponse:
     """Compute conversion and recovery rolling-window timelines.
 

@@ -6,6 +6,7 @@ from typing import Any, Literal, TypedDict
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
 from app.repositories.stats_repository import (
     query_position_wdl_batch,
     query_rating_history,
@@ -195,7 +196,7 @@ async def get_most_played_openings(
     rated: bool | None = None,
     opponent_type: str = "human",
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> MostPlayedOpeningsResponse:
     """Return top 10 most played openings per color with position-based game counts.
 

@@ -5,6 +5,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
+
 
 class OpeningsRequest(BaseModel):
     """Request body for POST /openings/positions."""
@@ -39,7 +41,7 @@ class OpeningsRequest(BaseModel):
     color: Literal["white", "black"] | None = None
 
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any"
-    elo_threshold: int = 100
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD
 
     # Pagination
     offset: Annotated[int, Field(ge=0)] = 0
@@ -119,7 +121,7 @@ class TimeSeriesRequest(BaseModel):
     opponent_type: Literal["human", "bot", "both"] = "human"
     recency: Literal["week", "month", "3months", "6months", "year", "all"] | None = None
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any"
-    elo_threshold: int = 100
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD
 
 
 class TimeSeriesPoint(BaseModel):
@@ -177,7 +179,7 @@ class NextMovesRequest(BaseModel):
     color: Literal["white", "black"] | None = None
     sort_by: Literal["frequency", "win_rate"] = "frequency"
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any"
-    elo_threshold: int = 100
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD
 
 
 class NextMoveEntry(BaseModel):

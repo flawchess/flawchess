@@ -8,6 +8,7 @@ from sqlalchemy import case
 
 from app.models.game import Game
 
+DEFAULT_ELO_THRESHOLD = 50
 
 def apply_game_filters(
     stmt: Any,
@@ -19,7 +20,7 @@ def apply_game_filters(
     color: str | None = None,
     *,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> Any:
     """Apply standard game filter WHERE clauses to a SELECT statement.
 
@@ -35,7 +36,7 @@ def apply_game_filters(
         opponent_strength: Filter by relative opponent strength: "any", "stronger",
                            "similar", or "weaker". Games with missing ratings are
                            excluded when any non-"any" option is selected.
-        elo_threshold: Rating difference threshold for opponent_strength filter (default 100).
+        elo_threshold: Rating difference threshold for opponent_strength filter.
 
     Returns:
         The statement with WHERE clauses appended.

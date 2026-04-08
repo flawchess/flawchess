@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_async_session
 from app.models.user import User
 from app.schemas.stats import GlobalStatsResponse, MostPlayedOpeningsResponse, RatingHistoryResponse
+from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
 from app.services import stats_service
 from app.users import current_active_user
 
@@ -54,7 +55,7 @@ async def get_most_played_openings(
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
-    elo_threshold: int = Query(default=100),
+    elo_threshold: int = Query(default=DEFAULT_ELO_THRESHOLD),
 ) -> MostPlayedOpeningsResponse:
     """Return top 10 most played openings per color with SQL-side WDL stats.
 

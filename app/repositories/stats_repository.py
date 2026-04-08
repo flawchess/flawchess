@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.repositories.query_utils import apply_game_filters
+from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD, apply_game_filters
 
 # Standalone MetaData (not Base.metadata) keeps the view invisible to Alembic autogenerate.
 _openings_dedup = Table(
@@ -175,7 +175,7 @@ async def query_top_openings_sql_wdl(
     rated: bool | None = None,
     opponent_type: str = "human",
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> list[Row[Any]]:
     """Return top openings with SQL-side WDL aggregation.
 
@@ -265,7 +265,7 @@ async def query_position_wdl_batch(
     opponent_type: str = "human",
     recency_cutoff: datetime.datetime | None = None,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> dict[int, PositionWDL]:
     """Return {full_hash: PositionWDL} for games passing through each position.
 

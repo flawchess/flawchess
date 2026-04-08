@@ -198,9 +198,32 @@ export function FilterPanel({ filters, onChange, visibleFilters = ALL_FILTERS }:
             className="w-full"
           >
             <ToggleGroupItem value="any" data-testid="filter-opponent-strength-any" className="min-h-11 sm:min-h-0 flex-1">Any</ToggleGroupItem>
-            <ToggleGroupItem value="stronger" data-testid="filter-opponent-strength-stronger" className="min-h-11 sm:min-h-0 flex-1 text-xs">+100</ToggleGroupItem>
-            <ToggleGroupItem value="similar" data-testid="filter-opponent-strength-similar" className="min-h-11 sm:min-h-0 flex-1 text-xs">&plusmn;100</ToggleGroupItem>
-            <ToggleGroupItem value="weaker" data-testid="filter-opponent-strength-weaker" className="min-h-11 sm:min-h-0 flex-1 text-xs">-100</ToggleGroupItem>
+            <ToggleGroupItem value="stronger" data-testid="filter-opponent-strength-stronger" className="min-h-11 sm:min-h-0 flex-1 text-xs">+50</ToggleGroupItem>
+            <ToggleGroupItem value="similar" data-testid="filter-opponent-strength-similar" className="min-h-11 sm:min-h-0 flex-1 text-xs">&plusmn;50</ToggleGroupItem>
+            <ToggleGroupItem value="weaker" data-testid="filter-opponent-strength-weaker" className="min-h-11 sm:min-h-0 flex-1 text-xs">-50</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+      )}
+
+      {/* Opponent Type */}
+      {show('opponent') && (
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">Opponent Type</p>
+          <ToggleGroup
+            type="single"
+            value={filters.opponentType}
+            onValueChange={(v) => {
+              if (!v) return;
+              update({ opponentType: v as OpponentType });
+            }}
+            variant="outline"
+            size="sm"
+            data-testid="filter-opponent"
+            className="w-full"
+          >
+            <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0 flex-1">Human</ToggleGroupItem>
+            <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0 flex-1">Bot</ToggleGroupItem>
+            <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0 flex-1">Both</ToggleGroupItem>
           </ToggleGroup>
         </div>
       )}
@@ -224,29 +247,6 @@ export function FilterPanel({ filters, onChange, visibleFilters = ALL_FILTERS }:
             <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0 flex-1">All</ToggleGroupItem>
             <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0 flex-1">Rated</ToggleGroupItem>
             <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0 flex-1">Casual</ToggleGroupItem>
-          </ToggleGroup>
-        </div>
-      )}
-
-      {/* Opponent */}
-      {show('opponent') && (
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">Opponent</p>
-          <ToggleGroup
-            type="single"
-            value={filters.opponentType}
-            onValueChange={(v) => {
-              if (!v) return;
-              update({ opponentType: v as OpponentType });
-            }}
-            variant="outline"
-            size="sm"
-            data-testid="filter-opponent"
-            className="w-full"
-          >
-            <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0 flex-1">Human</ToggleGroupItem>
-            <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0 flex-1">Bot</ToggleGroupItem>
-            <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0 flex-1">Both</ToggleGroupItem>
           </ToggleGroup>
         </div>
       )}

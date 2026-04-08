@@ -11,7 +11,7 @@ from sqlalchemy.orm import aliased
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.repositories.query_utils import apply_game_filters
+from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD, apply_game_filters
 
 # Maps match_side values to the corresponding GamePosition hash column.
 HASH_COLUMN_MAP = {
@@ -33,7 +33,7 @@ def _build_base_query(
     recency_cutoff: datetime.datetime | None,
     color: str | None,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> Any:
     """Build a filtered SELECT that joins game_positions -> games.
 
@@ -113,7 +113,7 @@ async def query_time_series(
     opponent_type: str = "human",
     recency_cutoff: datetime.datetime | None = None,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> list[Row[Any]]:
     """Return (played_at, result, user_color) tuples for matching games, ordered chronologically.
 
@@ -187,7 +187,7 @@ async def query_all_results(
     recency_cutoff: datetime.datetime | None,
     color: str | None,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> list[Row[Any]]:
     """Return (result, user_color) tuples for ALL matching games (for stats).
 
@@ -225,7 +225,7 @@ async def query_wdl_counts(
     recency_cutoff: datetime.datetime | None,
     color: str | None,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> Row[Any]:
     """Return a single row (total, wins, draws, losses) via SQL aggregation.
 
@@ -289,7 +289,7 @@ async def query_matching_games(
     offset: int,
     limit: int,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> tuple[list[Game], int]:
     """Return a paginated list of Game objects and the total matching count.
 
@@ -367,7 +367,7 @@ async def query_next_moves(
     recency_cutoff: datetime.datetime | None,
     color: str | None,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> list[Any]:
     """Aggregate next moves for a given position with per-move W/D/L stats.
 
@@ -445,7 +445,7 @@ async def query_transposition_counts(
     recency_cutoff: datetime.datetime | None,
     color: str | None,
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = 100,
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> dict[int, int]:
     """Return the total distinct games reaching each result_hash under the same filters.
 
