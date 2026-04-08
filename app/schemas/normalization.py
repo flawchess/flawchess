@@ -28,7 +28,6 @@ class NormalizedGame(BaseModel):
     platform_game_id: str
     platform_url: str | None
     pgn: str
-    variant: Literal["Standard"]
     result: GameResult
     user_color: Color
     termination_raw: str  # Raw platform-specific string, no fixed set

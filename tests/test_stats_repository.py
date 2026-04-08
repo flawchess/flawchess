@@ -76,7 +76,6 @@ async def _seed_game(
         platform_game_id=_unique_game_id(),
         platform_url="https://chess.com/game/123",
         pgn="1. e4 e5 *",
-        variant="Standard",
         result=result,
         user_color=user_color,
         time_control_str="600+0",

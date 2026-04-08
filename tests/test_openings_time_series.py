@@ -82,7 +82,6 @@ async def _seed_game_with_position(
         platform=platform,
         platform_game_id=_unique_id(),
         pgn="1. e4 e5 *",
-        variant="Standard",
         result=result,
         user_color=user_color,
         time_control_str="600+0",

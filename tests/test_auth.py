@@ -205,7 +205,6 @@ class TestUserIsolation:
             played_at=datetime.datetime.now(tz=datetime.timezone.utc),
             time_control_bucket="blitz",
             pgn="[Event ?]\n1. e4 *",
-            variant="Standard",
             rated=True,
         )
         db_session.add(game)

@@ -230,7 +230,6 @@ def _make_game_row(user_id: int = 1, pgn: str = _NO_EVAL_PGN) -> dict:
         "platform_game_id": f"game-{uuid.uuid4().hex}",
         "platform_url": None,
         "pgn": pgn,
-        "variant": "Standard",
         "result": "0-1",
         "user_color": "white",
         "time_control_str": "600+0",
