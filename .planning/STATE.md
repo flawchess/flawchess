@@ -62,6 +62,7 @@ Current focus: Planning next milestone (v1.9 Advanced Analytics)
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260406-rzt | Guide new users post-import: success CTA, pulsing bookmark dot, improved empty state | 2026-04-06 | 4dbdea0 | [260406-rzt-guide-new-users-post-import-success-cta-](./quick/260406-rzt-guide-new-users-post-import-success-cta-/) |
+| 260408-snn | Implement Opponent Strength filter (Any/+100/±100/-100) on Openings and Endgames pages | 2026-04-08 | ac883c6 | [260408-snn-implement-opponent-strength-filter-with-](./quick/260408-snn-implement-opponent-strength-filter-with-/) |
 
 ---
-Last activity: 2026-04-06 - Completed quick task 260406-rzt: Guide new users post-import: success CTA linking to Openings, pulsing dot on Bookmarks tab, improved bookmarks empty state hint
+Last activity: 2026-04-08 - Completed quick task 260408-snn: Opponent strength filter backed by SQL CASE WHEN rating comparison, wired through all openings and endgames API layers
