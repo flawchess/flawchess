@@ -215,7 +215,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
               </p>
               <ul className="mt-1 list-disc pl-4 space-y-0.5">
                 <li>Access your games from any device</li>
-                <li>Prevent losing your imported games and bookmarks after 30 days of inactivity</li>
+                <li>Prevent losing your imported games after 30 days of inactivity</li>
               </ul>
           </div>
         </Alert>
