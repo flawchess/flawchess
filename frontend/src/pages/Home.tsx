@@ -125,28 +125,6 @@ export function HomePageContent() {
         <p className="mt-4 text-base leading-relaxed text-muted-foreground">
           Import games from chess.com and lichess. Explore openings move by move, track endgame performance, and find exactly where you win and lose.
         </p>
-        <p
-          className="mt-4 mx-auto max-w-lg rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3 text-sm text-muted-foreground"
-          data-testid="beta-badge"
-        >
-          🏗️ Under active development. Bug
-          reports and feature requests are welcome on{' '}
-          <a
-            href="https://github.com/flawchess/flawchess"
-            className="text-primary underline-offset-4 hover:underline"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            GitHub
-          </a>{' '}
-          or via{' '}
-          <a
-            href="mailto:support@flawchess.com"
-            className="text-primary underline-offset-4 hover:underline"
-          >
-            support@flawchess.com
-          </a>.
-        </p>
         <div className="mt-8 flex flex-row items-center justify-center gap-3">
           <Button
             size="lg"
@@ -204,6 +182,28 @@ export function HomePageContent() {
             Cross-platform
           </span>
         </div>
+        <p
+          className="mt-4 mx-auto max-w-lg rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3 text-sm text-muted-foreground"
+          data-testid="beta-badge"
+        >
+          🏗️ Under active development. Bug
+          reports and feature requests are welcome on{' '}
+          <a
+            href="https://github.com/flawchess/flawchess"
+            className="text-primary underline-offset-4 hover:underline"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            GitHub
+          </a>{' '}
+          or via{' '}
+          <a
+            href="mailto:support@flawchess.com"
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            support@flawchess.com
+          </a>.
+        </p>
       </section>
 
       {/* Feature sections — alternating image left/right */}
