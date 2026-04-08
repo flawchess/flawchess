@@ -113,7 +113,7 @@ export function HomePageContent() {
       <PublicHeader />
 
       {/* Hero */}
-      <div className="bg-[radial-gradient(ellipse_at_center,rgba(139,94,60,0.18),transparent_60%)]">
+      <div className="bg-[radial-gradient(ellipse_at_center,rgba(139,94,60,0.10),transparent_60%)]">
       <section data-testid="hero-section" className="max-w-3xl mx-auto px-4 py-8 lg:py-24 text-center">
         <img
           src="/icons/logo-384.png"
@@ -163,7 +163,7 @@ export function HomePageContent() {
           </Button>
         </div>
         {/* Callout pills */}
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
+        <div className="mt-12 hidden lg:flex flex-wrap justify-center gap-2">
           <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
             Free to use
           </span>
@@ -186,28 +186,6 @@ export function HomePageContent() {
             Cross-platform
           </span>
         </div>
-        <p
-          className="mt-4 mx-auto max-w-lg rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3 text-sm text-muted-foreground"
-          data-testid="beta-badge"
-        >
-          🏗️ Under active development. Bug
-          reports and feature requests are welcome on{' '}
-          <a
-            href="https://github.com/flawchess/flawchess"
-            className="text-primary underline-offset-4 hover:underline"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            GitHub
-          </a>{' '}
-          or via{' '}
-          <a
-            href="mailto:support@flawchess.com"
-            className="text-primary underline-offset-4 hover:underline"
-          >
-            support@flawchess.com
-          </a>.
-        </p>
       </section>
       </div>
 
@@ -274,6 +252,32 @@ export function HomePageContent() {
             </section>
           );
         })}
+      </div>
+
+      {/* Development banner */}
+      <div className="max-w-2xl mx-auto px-4 pt-12">
+        <p
+          className="mx-auto max-w-lg rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3 text-sm text-muted-foreground text-center"
+          data-testid="beta-badge"
+        >
+          🏗️ Under active development. Bug
+          reports and feature requests are welcome on{' '}
+          <a
+            href="https://github.com/flawchess/flawchess"
+            className="text-primary underline-offset-4 hover:underline"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            GitHub
+          </a>{' '}
+          or via{' '}
+          <a
+            href="mailto:support@flawchess.com"
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            support@flawchess.com
+          </a>.
+        </p>
       </div>
 
       {/* FAQ */}
