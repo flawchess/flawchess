@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
-import { X, EyeOff, BookOpenIcon, ArrowRight } from 'lucide-react';
+import { X, UserX, BookOpenIcon, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Alert } from '@/components/ui/alert';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
@@ -201,7 +201,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       </h1>
 
       {profile?.is_guest && (
-        <Alert variant="info" icon={EyeOff} data-testid="import-guest-promo-info" className="mb-4">
+        <Alert variant="info" icon={UserX} data-testid="import-guest-promo-info" className="mb-4">
           <div>
               <p className="font-medium">Welcome, guest! If you like it here, consider{' '}
                 <button
