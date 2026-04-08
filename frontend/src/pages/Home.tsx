@@ -151,7 +151,7 @@ export function HomePageContent() {
           <Button
             size="lg"
             asChild
-            className={cn('btn-brand', 'min-h-11')}
+            className={cn('btn-brand', 'min-h-11 min-w-40')}
             data-testid="hero-cta-signup"
           >
             <Link to="/login?tab=register">
@@ -162,7 +162,7 @@ export function HomePageContent() {
           <Button
             size="lg"
             variant="brand-outline"
-            className="min-h-11"
+            className="min-h-11 min-w-40"
             data-testid="btn-guest"
             onClick={handleGuestLogin}
             disabled={isLoading}
@@ -175,7 +175,7 @@ export function HomePageContent() {
             ) : (
               <>
                 <UserX className="mr-1.5 h-4 w-4" />
-                Use without Sign-up
+                Skip Sign-up
               </>
             )}
           </Button>
@@ -448,7 +448,7 @@ export function HomePageContent() {
           <Button
             size="lg"
             asChild
-            className={cn('btn-brand', 'min-h-11')}
+            className={cn('btn-brand', 'min-h-11 min-w-40')}
             data-testid="footer-cta-signup"
           >
             <Link to="/login?tab=register">
@@ -459,7 +459,7 @@ export function HomePageContent() {
           <Button
             size="lg"
             variant="brand-outline"
-            className="min-h-11"
+            className="min-h-11 min-w-40"
             data-testid="footer-btn-guest"
             onClick={handleGuestLogin}
             disabled={isLoading}
@@ -472,7 +472,7 @@ export function HomePageContent() {
             ) : (
               <>
                 <UserX className="mr-1.5 h-4 w-4" />
-                Use without Sign-up
+                Skip Sign-up
               </>
             )}
           </Button>
