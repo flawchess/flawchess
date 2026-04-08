@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/select';
 import type { MatchSide, TimeControl, Recency, Color, Platform, OpponentType, OpponentStrength } from '@/types/api';
 import { cn } from '@/lib/utils';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 
@@ -184,7 +185,18 @@ export function FilterPanel({ filters, onChange, visibleFilters = ALL_FILTERS }:
       {/* Opponent Strength */}
       {show('opponentStrength') && (
         <div>
-          <p className="mb-1 text-xs text-muted-foreground">Opponent Strength</p>
+          <p className="mb-1 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              Opponent Strength
+              <InfoPopover ariaLabel="Opponent strength filter info" testId="filter-opponent-strength-info" side="bottom">
+                <div className="space-y-1">
+                  <p><strong>Stronger:</strong> Rated 50+ ELO above you</p>
+                  <p><strong>Similar:</strong> Within &plusmn;50 ELO</p>
+                  <p><strong>Weaker:</strong> Rated 50+ ELO below you</p>
+                </div>
+              </InfoPopover>
+            </span>
+          </p>
           <ToggleGroup
             type="single"
             value={filters.opponentStrength}
@@ -198,9 +210,9 @@ export function FilterPanel({ filters, onChange, visibleFilters = ALL_FILTERS }:
             className="w-full"
           >
             <ToggleGroupItem value="any" data-testid="filter-opponent-strength-any" className="min-h-11 sm:min-h-0 flex-1">Any</ToggleGroupItem>
-            <ToggleGroupItem value="stronger" data-testid="filter-opponent-strength-stronger" className="min-h-11 sm:min-h-0 flex-1 text-xs">+50</ToggleGroupItem>
-            <ToggleGroupItem value="similar" data-testid="filter-opponent-strength-similar" className="min-h-11 sm:min-h-0 flex-1 text-xs">&plusmn;50</ToggleGroupItem>
-            <ToggleGroupItem value="weaker" data-testid="filter-opponent-strength-weaker" className="min-h-11 sm:min-h-0 flex-1 text-xs">-50</ToggleGroupItem>
+            <ToggleGroupItem value="stronger" data-testid="filter-opponent-strength-stronger" className="min-h-11 sm:min-h-0 flex-1">Stronger</ToggleGroupItem>
+            <ToggleGroupItem value="similar" data-testid="filter-opponent-strength-similar" className="min-h-11 sm:min-h-0 flex-1">Similar</ToggleGroupItem>
+            <ToggleGroupItem value="weaker" data-testid="filter-opponent-strength-weaker" className="min-h-11 sm:min-h-0 flex-1">Weaker</ToggleGroupItem>
           </ToggleGroup>
         </div>
       )}
