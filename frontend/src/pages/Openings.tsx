@@ -434,36 +434,8 @@ export function OpeningsPage() {
 
   const desktopFilterPanelContent = (
     <div className="p-3 space-y-3">
-      {/* Played as + Piece filter */}
+      {/* Piece filter */}
       <div className="space-y-3">
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">Played as</p>
-          <ToggleGroup
-            type="single"
-            value={filters.color}
-            onValueChange={(v) => {
-              if (!v) return;
-              const color = v as Color;
-              setFilters(prev => ({ ...prev, color }));
-              setBoardFlipped(color === 'black');
-              if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
-            }}
-            variant="outline"
-            size="sm"
-            className="w-full"
-            data-testid="filter-played-as"
-          >
-            <ToggleGroupItem value="white" className="flex-1" data-testid="filter-played-as-white">
-              <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-white mr-1" />
-              White
-            </ToggleGroupItem>
-            <ToggleGroupItem value="black" className="flex-1" data-testid="filter-played-as-black">
-              <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-zinc-900 mr-1" />
-              Black
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </div>
-
         <div>
           <div className="mb-1 flex items-center gap-1">
             <p className="text-xs text-muted-foreground">Piece filter</p>
@@ -848,6 +820,23 @@ export function OpeningsPage() {
           ] satisfies SidebarPanelConfig[]}
           activePanel={sidebarOpen}
           onActivePanelChange={(panel) => setSidebarOpen(panel as SidebarPanel | null)}
+          stripExtra={
+            <Tooltip content={`Played as: ${filters.color === 'white' ? 'White' : 'Black'}`} side="right">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  const next = filters.color === 'white' ? 'black' : 'white';
+                  setFilters(prev => ({ ...prev, color: next as Color }));
+                  setBoardFlipped(next === 'black');
+                }}
+                aria-label={`Switch to ${filters.color === 'white' ? 'black' : 'white'}`}
+                data-testid="sidebar-strip-btn-color"
+              >
+                <span className={`inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
+              </Button>
+            </Tooltip>
+          }
           sideContent={
             <div className="flex flex-col gap-2 w-[400px]">
               <ChessBoard

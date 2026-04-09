@@ -30,10 +30,12 @@ interface SidebarLayoutProps {
    * If not provided, the strip stretches to fill the main content area height.
    */
   sideContent?: ReactNode;
+  /** Extra content rendered in the strip below the panel icons (e.g. color toggle) */
+  stripExtra?: ReactNode;
   children: ReactNode;
 }
 
-export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideContent, children }: SidebarLayoutProps) {
+export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideContent, stripExtra, children }: SidebarLayoutProps) {
   const activePanelConfig = panels.find(p => p.id === activePanel);
   const panelRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);
@@ -133,6 +135,7 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
             data-testid="sidebar-strip"
           >
             {stripIcons}
+            {stripExtra}
           </div>
           {panelContent}
           <div className="ml-6">{sideContent}</div>
@@ -147,6 +150,7 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
             data-testid="sidebar-strip"
           >
             {stripIcons}
+            {stripExtra}
           </div>
           {panelContent}
         </>
