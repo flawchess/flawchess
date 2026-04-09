@@ -1,7 +1,8 @@
 ---
 phase: 49
 slug: openings-desktop-sidebar
-status: draft
+status: approved
+reviewed_at: 2026-04-09
 shadcn_initialized: true
 preset: radix-nova / neutral / cssVariables
 created: 2026-04-09
