@@ -50,6 +50,7 @@ import { useFilterStore } from '@/hooks/useFilterStore';
 import { PositionBookmarkList } from '@/components/position-bookmarks/PositionBookmarkList';
 import { SuggestionsModal } from '@/components/position-bookmarks/SuggestionsModal';
 import { GameCardList } from '@/components/results/GameCardList';
+import { SidebarLayout, type SidebarPanelConfig } from '@/components/layout/SidebarLayout';
 import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTable';
@@ -63,13 +64,6 @@ import type { PositionBookmarkResponse, TimeSeriesRequest } from '@/types/positi
 
 const PAGE_SIZE = 20;
 // Number of most-played openings per color to use as default chart data when no bookmarks exist
-
-/** Collapsed sidebar strip width in pixels */
-const SIDEBAR_STRIP_WIDTH = 48;
-/** Open sidebar panel width in pixels */
-const SIDEBAR_PANEL_WIDTH = 280;
-/** Breakpoint (px) above which the open panel pushes content instead of overlaying */
-const SIDEBAR_PUSH_BREAKPOINT = 1280;
 
 type SidebarPanel = 'filters' | 'bookmarks';
 
@@ -105,40 +99,6 @@ export function OpeningsPage() {
   const [filtersHintDismissed, setFiltersHintDismissed] = useState(
     () => localStorage.getItem('filters-hint-dismissed') === 'true'
   );
-
-  const handleStripIconClick = useCallback((panel: SidebarPanel) => {
-    setSidebarOpen(prev => prev === panel ? null : panel);
-  }, []);
-
-  // Track xl+ breakpoint for overlay vs push panel behavior
-  const [isXlOrAbove, setIsXlOrAbove] = useState(() =>
-    typeof window !== 'undefined' && window.matchMedia(`(min-width: ${SIDEBAR_PUSH_BREAKPOINT}px)`).matches
-  );
-
-  useEffect(() => {
-    const mql = window.matchMedia(`(min-width: ${SIDEBAR_PUSH_BREAKPOINT}px)`);
-    const handler = (e: MediaQueryListEvent) => setIsXlOrAbove(e.matches);
-    mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
-  }, []);
-
-  // Outside-click-to-close handler for desktop sidebar panel
-  const sidebarPanelRef = useRef<HTMLDivElement>(null);
-  const sidebarStripRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!sidebarOpen) return;
-    const handleMouseDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        sidebarPanelRef.current?.contains(target) ||
-        sidebarStripRef.current?.contains(target)
-      ) return;
-      setSidebarOpen(null);
-    };
-    document.addEventListener('mousedown', handleMouseDown);
-    return () => document.removeEventListener('mousedown', handleMouseDown);
-  }, [sidebarOpen]);
 
   // ── Mobile sidebar state ────────────────────────────────────────────────────
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(false);
@@ -465,12 +425,17 @@ export function OpeningsPage() {
     setBookmarkSidebarOpen(false);
   }, [handleLoadBookmark]);
 
+  const handleLoadBookmarkFromDesktopSidebar = useCallback((bkm: PositionBookmarkResponse) => {
+    handleLoadBookmark(bkm);
+    setSidebarOpen(null);
+  }, [handleLoadBookmark]);
+
   // ── Desktop sidebar panel content ───────────────────────────────────────────
 
   const desktopFilterPanelContent = (
     <div className="p-3 space-y-3">
       {/* Played as + Piece filter */}
-      <div className="flex flex-wrap gap-x-4 gap-y-3">
+      <div className="space-y-3">
         <div>
           <p className="mb-1 text-xs text-muted-foreground">Played as</p>
           <ToggleGroup
@@ -485,20 +450,21 @@ export function OpeningsPage() {
             }}
             variant="outline"
             size="sm"
+            className="w-full"
             data-testid="filter-played-as"
           >
-            <ToggleGroupItem value="white" data-testid="filter-played-as-white">
+            <ToggleGroupItem value="white" className="flex-1" data-testid="filter-played-as-white">
               <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-white mr-1" />
               White
             </ToggleGroupItem>
-            <ToggleGroupItem value="black" data-testid="filter-played-as-black">
+            <ToggleGroupItem value="black" className="flex-1" data-testid="filter-played-as-black">
               <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-zinc-900 mr-1" />
               Black
             </ToggleGroupItem>
           </ToggleGroup>
         </div>
 
-        <div className="ml-auto">
+        <div>
           <div className="mb-1 flex items-center gap-1">
             <p className="text-xs text-muted-foreground">Piece filter</p>
             <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info" side="top">
@@ -515,11 +481,12 @@ export function OpeningsPage() {
             }}
             variant="outline"
             size="sm"
+            className="w-full"
             data-testid="filter-piece-filter"
           >
-            <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
-            <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
-            <ToggleGroupItem value="both" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
+            <ToggleGroupItem value="mine" className="flex-1" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
+            <ToggleGroupItem value="opponent" className="flex-1" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
+            <ToggleGroupItem value="both" className="flex-1" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
           </ToggleGroup>
         </div>
       </div>
@@ -543,22 +510,6 @@ export function OpeningsPage() {
           <Save className="h-4 w-4" />
           Save
         </Button>
-        <div className="px-1">
-          <InfoPopover ariaLabel="Opening bookmarks info" testId="position-bookmarks-info" side="top">
-            <div className="space-y-2">
-              <p>
-                Save the current position on the chess board as an opening bookmark.
-                Bookmarked openings appear in the Stats tab, showing your win/draw/loss breakdown and win rate over time for each bookmark.
-              </p>
-              <p>
-                Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
-              </p>
-              <p>
-                Use the chart toggle on each bookmark to include or exclude it from the Bookmarked Openings charts.
-              </p>
-            </div>
-          </InfoPopover>
-        </div>
         <Button
           size="lg"
           variant="brand-outline"
@@ -573,7 +524,7 @@ export function OpeningsPage() {
       <PositionBookmarkList
         bookmarks={bookmarks}
         onReorder={handleReorder}
-        onLoad={handleLoadBookmark}
+        onLoad={handleLoadBookmarkFromDesktopSidebar}
         chartEnabledMap={chartEnabledMap}
         onChartEnabledChange={handleChartEnabledChange}
       />
@@ -851,82 +802,54 @@ export function OpeningsPage() {
   return (
     <div data-testid="openings-page" className="flex min-h-0 flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
-        {/* Desktop: strip + optional panel + content */}
-        <div className="hidden md:flex md:flex-row md:min-h-0 md:flex-1 md:relative md:gap-6">
-
-          {/* Collapsed sidebar strip — always visible */}
-          <div
-            ref={sidebarStripRef}
-            className="flex flex-col items-center py-3 gap-2 bg-sidebar-bg charcoal-texture border-r border-border rounded-l-md"
-            style={{ width: SIDEBAR_STRIP_WIDTH, flexShrink: 0 }}
-            data-testid="sidebar-strip"
-          >
-            <Tooltip content="Filters" side="right">
-              <Button
-                variant={sidebarOpen === 'filters' ? 'brand-outline' : 'ghost'}
-                size="icon"
-                className="relative"
-                onClick={() => handleStripIconClick('filters')}
-                aria-label={sidebarOpen === 'filters' ? 'Close filters' : 'Open filters'}
-                data-testid="sidebar-strip-btn-filters"
-              >
-                <SlidersHorizontal className="h-5 w-5" />
-                {bookmarks.length > 0 && !filtersHintDismissed && (
-                  <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="filters-notification-dot">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                  </span>
-                )}
-              </Button>
-            </Tooltip>
-            <Tooltip content="Bookmarks" side="right">
-              <Button
-                variant={sidebarOpen === 'bookmarks' ? 'brand-outline' : 'ghost'}
-                size="icon"
-                className="relative"
-                onClick={() => handleStripIconClick('bookmarks')}
-                aria-label={sidebarOpen === 'bookmarks' ? 'Close bookmarks' : 'Open bookmarks'}
-                data-testid="sidebar-strip-btn-bookmarks"
-              >
-                <BookMarked className="h-5 w-5" />
-                {bookmarks.length === 0 && hasGames && (
-                  <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="bookmarks-notification-dot">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                  </span>
-                )}
-              </Button>
-            </Tooltip>
-          </div>
-
-          {/* Sidebar panel — single div, position toggles via isXlOrAbove */}
-          {sidebarOpen && (
-            <div
-              ref={sidebarPanelRef}
-              className={`flex flex-col bg-sidebar-bg charcoal-texture border-r border-border overflow-y-auto ${
-                isXlOrAbove ? 'relative' : 'absolute top-0 bottom-0 z-40'
-              }`}
-              style={{
-                width: SIDEBAR_PANEL_WIDTH,
-                flexShrink: 0,
-                ...(isXlOrAbove ? {} : { left: SIDEBAR_STRIP_WIDTH }),
-              }}
-              data-testid="sidebar-panel"
-            >
-              {/* Panel heading */}
-              <div className="px-3 pt-3 pb-1">
-                <h3 className="text-sm font-semibold" data-testid={`sidebar-panel-${sidebarOpen}`}>
-                  {sidebarOpen === 'filters' ? 'Filters' : 'Bookmarks'}
-                </h3>
-              </div>
-              {sidebarOpen === 'filters' ? desktopFilterPanelContent : desktopBookmarkPanelContent}
-            </div>
-          )}
-
-          {/* Main content area: board + tabs */}
-          <div className="flex-1 min-w-0">
-            {/* Board section */}
-            <div className="flex flex-col gap-2 mb-6">
+        {/* Desktop: sidebar strip + optional panel + board/tabs content */}
+        <SidebarLayout
+          panels={[
+            {
+              id: 'filters',
+              label: 'Filters',
+              icon: <SlidersHorizontal className="h-5 w-5" />,
+              content: desktopFilterPanelContent,
+              notificationDot: bookmarks.length > 0 && !filtersHintDismissed ? (
+                <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="filters-notification-dot">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                </span>
+              ) : undefined,
+            },
+            {
+              id: 'bookmarks',
+              label: 'Bookmarks',
+              icon: <BookMarked className="h-5 w-5" />,
+              content: desktopBookmarkPanelContent,
+              headerExtra: (
+                <InfoPopover ariaLabel="Opening bookmarks info" testId="position-bookmarks-info" side="top">
+                  <div className="space-y-2">
+                    <p>
+                      Save the current position on the chess board as an opening bookmark.
+                      Bookmarked openings appear in the Stats tab, showing your win/draw/loss breakdown and win rate over time for each bookmark.
+                    </p>
+                    <p>
+                      Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
+                    </p>
+                    <p>
+                      Use the chart toggle on each bookmark to include or exclude it from the Bookmarked Openings charts.
+                    </p>
+                  </div>
+                </InfoPopover>
+              ),
+              notificationDot: bookmarks.length === 0 && hasGames ? (
+                <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="bookmarks-notification-dot">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                </span>
+              ) : undefined,
+            },
+          ] satisfies SidebarPanelConfig[]}
+          activePanel={sidebarOpen}
+          onActivePanelChange={(panel) => setSidebarOpen(panel as SidebarPanel | null)}
+          sideContent={
+            <div className="flex flex-col gap-2 w-[400px]">
               <ChessBoard
                 position={chess.position}
                 onPieceDrop={chess.makeMove}
@@ -966,35 +889,36 @@ export function OpeningsPage() {
                 onMoveClick={chess.goToMove}
               />
             </div>
-
-            {/* Tabs: Moves / Games / Stats */}
-            <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
-              <TabsList variant="brand" className="w-full" data-testid="openings-tabs">
-                <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
-                  <ArrowRightLeft className="mr-1.5 h-4 w-4" />
-                  Moves
-                </TabsTrigger>
-                <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
-                  <Gamepad2 className="mr-1.5 h-4 w-4" />
-                  Games
-                </TabsTrigger>
-                <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
-                  <BarChart2 className="mr-1.5 h-4 w-4" />
-                  Stats
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="explorer" className="mt-4">
-                {moveExplorerContent}
-              </TabsContent>
-              <TabsContent value="games" className="mt-4">
-                {gamesContent}
-              </TabsContent>
-              <TabsContent value="stats" className="mt-4">
-                {statisticsContent}
-              </TabsContent>
-            </Tabs>
+          }
+        >
+          <div>
+              <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
+                <TabsList variant="brand" className="w-full" data-testid="openings-tabs">
+                  <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
+                    <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+                    Moves
+                  </TabsTrigger>
+                  <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
+                    <Gamepad2 className="mr-1.5 h-4 w-4" />
+                    Games
+                  </TabsTrigger>
+                  <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
+                    <BarChart2 className="mr-1.5 h-4 w-4" />
+                    Stats
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="explorer" className="mt-4">
+                  {moveExplorerContent}
+                </TabsContent>
+                <TabsContent value="games" className="mt-4">
+                  {gamesContent}
+                </TabsContent>
+                <TabsContent value="stats" className="mt-4">
+                  {statisticsContent}
+                </TabsContent>
+              </Tabs>
           </div>
-        </div>
+        </SidebarLayout>
 
         {/* Mobile: single column with sticky board */}
         <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)} className="md:hidden flex flex-col gap-2 min-w-0">

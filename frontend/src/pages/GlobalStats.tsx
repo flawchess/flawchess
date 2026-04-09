@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { SlidersHorizontal, X } from 'lucide-react';
+import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/api/client';
@@ -99,6 +100,9 @@ export function GlobalStatsPage() {
   // ── Mobile collapsible state ───────────────────────────────────────────────
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
+  // ── Desktop sidebar state ───────────────────────────────────────────────────
+  const [sidebarOpen, setSidebarOpen] = useState<string | null>(null);
+
   const handleFilterChange = useCallback((newFilters: FilterState) => {
     setFilters(newFilters);
   }, [setFilters]);
@@ -157,17 +161,25 @@ export function GlobalStatsPage() {
     <div data-testid="global-stats-page" className="flex min-h-0 flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
 
-        {/* Desktop: two-column layout with sidebar */}
-        <div className="hidden md:grid md:grid-cols-[280px_1fr] md:gap-8">
-          <div className="min-w-0">
-            <div className="border border-border rounded-md p-2">
-              <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['platform', 'recency']} />
-            </div>
-          </div>
-          <div className="min-w-0">
-            {content}
-          </div>
-        </div>
+        {/* Desktop: sidebar strip + filter panel + content */}
+        <SidebarLayout
+          panels={[
+            {
+              id: 'filters',
+              label: 'Filters',
+              icon: <SlidersHorizontal className="h-5 w-5" />,
+              content: (
+                <div className="p-3">
+                  <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['platform', 'recency']} />
+                </div>
+              ),
+            },
+          ]}
+          activePanel={sidebarOpen}
+          onActivePanelChange={setSidebarOpen}
+        >
+          {content}
+        </SidebarLayout>
 
         {/* Mobile: single column */}
         <div className="md:hidden flex flex-col gap-4 min-w-0">
