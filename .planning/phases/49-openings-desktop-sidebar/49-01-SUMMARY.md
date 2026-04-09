@@ -116,6 +116,12 @@ Task 1 (code implementation) is complete and committed. Task 2 (checkpoint:human
 8. Bookmark save switches panel to Bookmarks view
 9. Mobile layout unchanged at ~375px
 
+## Self-Check: PASSED
+
+- FOUND: frontend/src/pages/Openings.tsx
+- FOUND: .planning/phases/49-openings-desktop-sidebar/49-01-SUMMARY.md
+- FOUND: commit d8c77ae (feat(49-01): restructure Openings desktop layout)
+
 ---
 *Phase: 49-openings-desktop-sidebar*
 *Completed: 2026-04-09*
