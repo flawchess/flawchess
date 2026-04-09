@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { SlidersHorizontal, X, BarChart2Icon, Gamepad2Icon, HelpCircle } from 'lucide-react';
+import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
@@ -60,6 +61,9 @@ export function EndgamesPage() {
 
   // ── Mobile collapsible state ───────────────────────────────────────────────
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+
+  // ── Desktop sidebar state ───────────────────────────────────────────────────
+  const [sidebarOpen, setSidebarOpen] = useState<string | null>(null);
 
   // ── Data ─────────────────────────────────────────────────────────────────────
   const { data: statsData, isLoading: statsLoading, isError: statsError } = useEndgameStats(debouncedFilters);
@@ -302,34 +306,42 @@ export function EndgamesPage() {
     <div data-testid="endgames-page" className="flex min-h-0 flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
 
-        {/* Desktop: two-column layout */}
-        <div className="hidden md:grid md:grid-cols-[280px_1fr] md:gap-8">
-          <div className="min-w-0">
-            <div className="border border-border rounded-md p-2">
-              <FilterPanel filters={filters} onChange={handleFilterChange} />
-            </div>
-          </div>
-          <div className="min-w-0">
-            <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>
-              <TabsList variant="brand" className="w-full" data-testid="endgames-tabs">
-                <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
-                  <BarChart2Icon className="mr-1.5 h-4 w-4" />
-                  Stats
-                </TabsTrigger>
-                <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
-                  <Gamepad2Icon className="mr-1.5 h-4 w-4" />
-                  Games
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="stats" className="mt-4">
-                {statisticsContent}
-              </TabsContent>
-              <TabsContent value="games" className="mt-4">
-                {gamesContent}
-              </TabsContent>
-            </Tabs>
-          </div>
-        </div>
+        {/* Desktop: sidebar strip + filter panel + content */}
+        <SidebarLayout
+          panels={[
+            {
+              id: 'filters',
+              label: 'Filters',
+              icon: <SlidersHorizontal className="h-5 w-5" />,
+              content: (
+                <div className="p-3">
+                  <FilterPanel filters={filters} onChange={handleFilterChange} />
+                </div>
+              ),
+            },
+          ]}
+          activePanel={sidebarOpen}
+          onActivePanelChange={setSidebarOpen}
+        >
+          <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>
+            <TabsList variant="brand" className="w-full" data-testid="endgames-tabs">
+              <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
+                <BarChart2Icon className="mr-1.5 h-4 w-4" />
+                Stats
+              </TabsTrigger>
+              <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
+                <Gamepad2Icon className="mr-1.5 h-4 w-4" />
+                Games
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="stats" className="mt-4">
+              {statisticsContent}
+            </TabsContent>
+            <TabsContent value="games" className="mt-4">
+              {gamesContent}
+            </TabsContent>
+          </Tabs>
+        </SidebarLayout>
 
         {/* Mobile: single column */}
         <div className="md:hidden flex flex-col min-w-0">

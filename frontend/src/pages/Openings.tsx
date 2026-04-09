@@ -50,6 +50,7 @@ import { useFilterStore } from '@/hooks/useFilterStore';
 import { PositionBookmarkList } from '@/components/position-bookmarks/PositionBookmarkList';
 import { SuggestionsModal } from '@/components/position-bookmarks/SuggestionsModal';
 import { GameCardList } from '@/components/results/GameCardList';
+import { SidebarLayout, type SidebarPanelConfig } from '@/components/layout/SidebarLayout';
 import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTable';
@@ -63,6 +64,8 @@ import type { PositionBookmarkResponse, TimeSeriesRequest } from '@/types/positi
 
 const PAGE_SIZE = 20;
 // Number of most-played openings per color to use as default chart data when no bookmarks exist
+
+type SidebarPanel = 'filters' | 'bookmarks';
 
 export function OpeningsPage() {
   const location = useLocation();
@@ -91,8 +94,8 @@ export function OpeningsPage() {
   // ── Board arrows (hovered move) ─────────────────────────────────────────────
   const [hoveredMove, setHoveredMove] = useState<string | null>(null);
 
-  // ── Sidebar tab state (desktop only) ────────────────────────────────────────
-  const [sidebarTab, setSidebarTab] = useState<string>('filters');
+  // ── Sidebar state (desktop only) ────────────────────────────────────────────
+  const [sidebarOpen, setSidebarOpen] = useState<SidebarPanel | null>(null);
   const [filtersHintDismissed, setFiltersHintDismissed] = useState(
     () => localStorage.getItem('filters-hint-dismissed') === 'true'
   );
@@ -300,7 +303,7 @@ export function OpeningsPage() {
       await createBookmark.mutateAsync(data);
       setBookmarkDialogOpen(false);
       if (activeTab !== 'stats') navigate('/openings/stats');
-      setSidebarTab('bookmarks');
+      setSidebarOpen('bookmarks');
     } catch {
       toast.error('Failed to save bookmark');
     }
@@ -422,209 +425,109 @@ export function OpeningsPage() {
     setBookmarkSidebarOpen(false);
   }, [handleLoadBookmark]);
 
-  // ── Sidebar ─────────────────────────────────────────────────────────────────
+  const handleLoadBookmarkFromDesktopSidebar = useCallback((bkm: PositionBookmarkResponse) => {
+    handleLoadBookmark(bkm);
+    setSidebarOpen(null);
+  }, [handleLoadBookmark]);
 
-  const sidebar = (
-    <div className="flex flex-col gap-2 min-w-0">
-      {/* Chess board — always visible, NOT in collapsible */}
-      <ChessBoard
-        position={chess.position}
-        onPieceDrop={chess.makeMove}
-        flipped={boardFlipped}
-        lastMove={chess.lastMove}
-        arrows={boardArrows}
-      />
+  // ── Desktop sidebar panel content ───────────────────────────────────────────
 
-      {/* Board controls — directly below board, with info icon on the right */}
-      <BoardControls
-        onBack={chess.goBack}
-        onForward={chess.goForward}
-        onReset={() => {
-          chess.reset();
-          setGamesOffset(0);
-        }}
-        onFlip={() => setBoardFlipped((f) => !f)}
-        canGoBack={chess.currentPly > 0}
-        canGoForward={chess.currentPly < chess.moveHistory.length}
-        infoSlot={
-          <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
-            <div className="space-y-2">
-              <p>
-                Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.
-              </p>
-              <p>
-                The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.
-              </p>
-            </div>
-          </InfoPopover>
-        }
-      />
+  const desktopFilterPanelContent = (
+    <div className="p-3 space-y-3">
+      {/* Played as + Piece filter */}
+      <div className="space-y-3">
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">Played as</p>
+          <ToggleGroup
+            type="single"
+            value={filters.color}
+            onValueChange={(v) => {
+              if (!v) return;
+              const color = v as Color;
+              setFilters(prev => ({ ...prev, color }));
+              setBoardFlipped(color === 'black');
+              if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
+            }}
+            variant="outline"
+            size="sm"
+            className="w-full"
+            data-testid="filter-played-as"
+          >
+            <ToggleGroupItem value="white" className="flex-1" data-testid="filter-played-as-white">
+              <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-white mr-1" />
+              White
+            </ToggleGroupItem>
+            <ToggleGroupItem value="black" className="flex-1" data-testid="filter-played-as-black">
+              <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-zinc-900 mr-1" />
+              Black
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
 
-      {/* Opening name */}
-      <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
-        {chess.openingName ? (
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
-            <span className="text-foreground">{chess.openingName.name}</span>
+        <div>
+          <div className="mb-1 flex items-center gap-1">
+            <p className="text-xs text-muted-foreground">Piece filter</p>
+            <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info" side="top">
+              Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
+            </InfoPopover>
           </div>
-        ) : (
-          <span className="text-muted-foreground italic">Play some moves</span>
-        )}
+          <ToggleGroup
+            type="single"
+            value={filters.matchSide}
+            onValueChange={(v) => {
+              if (!v) return;
+              setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
+              if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
+            }}
+            variant="outline"
+            size="sm"
+            className="w-full"
+            data-testid="filter-piece-filter"
+          >
+            <ToggleGroupItem value="mine" className="flex-1" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
+            <ToggleGroupItem value="opponent" className="flex-1" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
+            <ToggleGroupItem value="both" className="flex-1" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
       </div>
+      <div className="border-t border-border/20" />
+      {/* FilterPanel — all filter controls. Uses filters/handleFiltersChange directly (NOT localFilters — desktop applies live) */}
+      <FilterPanel filters={filters} onChange={handleFiltersChange} />
+    </div>
+  );
 
-      {/* Move list */}
-      <MoveList
-        moveHistory={chess.moveHistory}
-        currentPly={chess.currentPly}
-        onMoveClick={chess.goToMove}
-      />
-
-      <div className="border-t border-border/40" />
-
-      {/* Sidebar tabs: Filters & Bookmarks */}
-      <div className="border border-border rounded-md">
-      <Tabs value={sidebarTab} onValueChange={setSidebarTab} className="gap-0">
-        <TabsList variant="brand" className="w-full rounded-b-none" data-testid="sidebar-tabs">
-          <TabsTrigger value="filters" data-testid="sidebar-tab-filters" className="flex-1 relative">
-            <SlidersHorizontal className="mr-1.5 h-4 w-4" />
-            Filters
-            {bookmarks.length > 0 && !filtersHintDismissed && (
-              <span
-                className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                data-testid="filters-notification-dot"
-              >
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-              </span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="bookmarks" data-testid="sidebar-tab-bookmarks" className="flex-1 relative">
-            <BookMarked className="mr-1.5 h-4 w-4" />
-            Bookmarks
-            {bookmarks.length === 0 && hasGames && (
-              <span
-                className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                data-testid="bookmarks-notification-dot"
-              >
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-              </span>
-            )}
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="filters">
-          <div className="p-2 space-y-3">
-            {/* Played as + Piece filter */}
-            <div className="flex flex-wrap gap-x-4 gap-y-3">
-              <div>
-                <p className="mb-1 text-xs text-muted-foreground">Played as</p>
-                <ToggleGroup
-                  type="single"
-                  value={filters.color}
-                  onValueChange={(v) => {
-                    if (!v) return;
-                    const color = v as Color;
-                    setFilters(prev => ({ ...prev, color }));
-                    setBoardFlipped(color === 'black');
-                    if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
-                  }}
-                  variant="outline"
-                  size="sm"
-                  data-testid="filter-played-as"
-                >
-                  <ToggleGroupItem value="white" data-testid="filter-played-as-white">
-                    <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-white mr-1" />
-                    White
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="black" data-testid="filter-played-as-black">
-                    <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-zinc-900 mr-1" />
-                    Black
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
-
-              <div className="ml-auto">
-                <div className="mb-1 flex items-center gap-1">
-                  <p className="text-xs text-muted-foreground">Piece filter</p>
-                  <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info" side="top">
-                    Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
-                  </InfoPopover>
-                </div>
-                <ToggleGroup
-                  type="single"
-                  value={filters.matchSide}
-                  onValueChange={(v) => {
-                    if (!v) return;
-                    setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
-                    if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
-                  }}
-                  variant="outline"
-                  size="sm"
-                  data-testid="filter-piece-filter"
-                >
-                  <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
-                  <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
-                  <ToggleGroupItem value="both" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
-                </ToggleGroup>
-              </div>
-            </div>
-            <div className="border-t border-border/20" />
-            {/* FilterPanel — all filter controls */}
-            <FilterPanel filters={filters} onChange={handleFiltersChange} />
-          </div>
-        </TabsContent>
-        <TabsContent value="bookmarks">
-          <div className="p-2">
-            {/* Save/Suggest buttons */}
-            <div className="flex items-center gap-2 mb-2">
-              <Button
-                size="lg"
-                variant="brand-outline"
-                className="flex-1"
-                onClick={openBookmarkDialog}
-                data-testid="btn-bookmark"
-              >
-                <Save className="h-4 w-4" />
-                Save
-              </Button>
-              <div className="px-1">
-                <InfoPopover ariaLabel="Opening bookmarks info" testId="position-bookmarks-info" side="top">
-                <div className="space-y-2">
-                  <p>
-                    Save the current position on the chess board as an opening bookmark.
-                    Bookmarked openings appear in the Stats tab, showing your win/draw/loss breakdown and win rate over time for each bookmark.
-                  </p>
-                  <p>
-                    Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
-                  </p>
-                  <p>
-                    Use the chart toggle on each bookmark to include or exclude it from the Bookmarked Openings charts.
-                  </p>
-                </div>
-              </InfoPopover>
-              </div>
-              <Button
-                size="lg"
-                variant="brand-outline"
-                className="flex-1"
-                onClick={() => setSuggestionsOpen(true)}
-                data-testid="btn-suggest-bookmarks"
-              >
-                <Sparkles className="h-4 w-4" />
-                Suggest
-              </Button>
-            </div>
-            <PositionBookmarkList
-              bookmarks={bookmarks}
-              onReorder={handleReorder}
-              onLoad={handleLoadBookmark}
-              chartEnabledMap={chartEnabledMap}
-              onChartEnabledChange={handleChartEnabledChange}
-            />
-          </div>
-        </TabsContent>
-      </Tabs>
+  const desktopBookmarkPanelContent = (
+    <div className="p-3">
+      {/* Save/Suggest buttons */}
+      <div className="flex items-center gap-2 mb-2">
+        <Button
+          size="lg"
+          variant="brand-outline"
+          className="flex-1"
+          onClick={openBookmarkDialog}
+          data-testid="btn-bookmark"
+        >
+          <Save className="h-4 w-4" />
+          Save
+        </Button>
+        <Button
+          size="lg"
+          variant="brand-outline"
+          className="flex-1"
+          onClick={() => setSuggestionsOpen(true)}
+          data-testid="btn-suggest-bookmarks"
+        >
+          <Sparkles className="h-4 w-4" />
+          Suggest
+        </Button>
       </div>
+      <PositionBookmarkList
+        bookmarks={bookmarks}
+        onReorder={handleReorder}
+        onLoad={handleLoadBookmarkFromDesktopSidebar}
+        chartEnabledMap={chartEnabledMap}
+        onChartEnabledChange={handleChartEnabledChange}
+      />
     </div>
   );
 
@@ -899,37 +802,123 @@ export function OpeningsPage() {
   return (
     <div data-testid="openings-page" className="flex min-h-0 flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
-        {/* Desktop: two-column layout */}
-        <div className="hidden md:grid md:grid-cols-[350px_1fr] md:gap-8 xl:grid-cols-[400px_1fr]">
-          <div className="min-w-0">{sidebar}</div>
-          <div className="min-w-0">
-            <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
-              <TabsList variant="brand" className="w-full" data-testid="openings-tabs">
-                <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
-                  <ArrowRightLeft className="mr-1.5 h-4 w-4" />
-                  Moves
-                </TabsTrigger>
-                <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
-                  <Gamepad2 className="mr-1.5 h-4 w-4" />
-                  Games
-                </TabsTrigger>
-                <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
-                  <BarChart2 className="mr-1.5 h-4 w-4" />
-                  Stats
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="explorer" className="mt-4">
-                {moveExplorerContent}
-              </TabsContent>
-              <TabsContent value="games" className="mt-4">
-                {gamesContent}
-              </TabsContent>
-              <TabsContent value="stats" className="mt-4">
-                {statisticsContent}
-              </TabsContent>
-            </Tabs>
+        {/* Desktop: sidebar strip + optional panel + board/tabs content */}
+        <SidebarLayout
+          panels={[
+            {
+              id: 'filters',
+              label: 'Filters',
+              icon: <SlidersHorizontal className="h-5 w-5" />,
+              content: desktopFilterPanelContent,
+              notificationDot: bookmarks.length > 0 && !filtersHintDismissed ? (
+                <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="filters-notification-dot">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                </span>
+              ) : undefined,
+            },
+            {
+              id: 'bookmarks',
+              label: 'Bookmarks',
+              icon: <BookMarked className="h-5 w-5" />,
+              content: desktopBookmarkPanelContent,
+              headerExtra: (
+                <InfoPopover ariaLabel="Opening bookmarks info" testId="position-bookmarks-info" side="top">
+                  <div className="space-y-2">
+                    <p>
+                      Save the current position on the chess board as an opening bookmark.
+                      Bookmarked openings appear in the Stats tab, showing your win/draw/loss breakdown and win rate over time for each bookmark.
+                    </p>
+                    <p>
+                      Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
+                    </p>
+                    <p>
+                      Use the chart toggle on each bookmark to include or exclude it from the Bookmarked Openings charts.
+                    </p>
+                  </div>
+                </InfoPopover>
+              ),
+              notificationDot: bookmarks.length === 0 && hasGames ? (
+                <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="bookmarks-notification-dot">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                </span>
+              ) : undefined,
+            },
+          ] satisfies SidebarPanelConfig[]}
+          activePanel={sidebarOpen}
+          onActivePanelChange={(panel) => setSidebarOpen(panel as SidebarPanel | null)}
+          sideContent={
+            <div className="flex flex-col gap-2 w-[400px]">
+              <ChessBoard
+                position={chess.position}
+                onPieceDrop={chess.makeMove}
+                flipped={boardFlipped}
+                lastMove={chess.lastMove}
+                arrows={boardArrows}
+              />
+              <BoardControls
+                onBack={chess.goBack}
+                onForward={chess.goForward}
+                onReset={() => { chess.reset(); setGamesOffset(0); }}
+                onFlip={() => setBoardFlipped((f) => !f)}
+                canGoBack={chess.currentPly > 0}
+                canGoForward={chess.currentPly < chess.moveHistory.length}
+                infoSlot={
+                  <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
+                    <div className="space-y-2">
+                      <p>Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.</p>
+                      <p>The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.</p>
+                    </div>
+                  </InfoPopover>
+                }
+              />
+              <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
+                {chess.openingName ? (
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
+                    <span className="text-foreground">{chess.openingName.name}</span>
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground italic">Play some moves</span>
+                )}
+              </div>
+              <MoveList
+                moveHistory={chess.moveHistory}
+                currentPly={chess.currentPly}
+                onMoveClick={chess.goToMove}
+              />
+            </div>
+          }
+        >
+          <div>
+              <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
+                <TabsList variant="brand" className="w-full" data-testid="openings-tabs">
+                  <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
+                    <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+                    Moves
+                  </TabsTrigger>
+                  <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
+                    <Gamepad2 className="mr-1.5 h-4 w-4" />
+                    Games
+                  </TabsTrigger>
+                  <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
+                    <BarChart2 className="mr-1.5 h-4 w-4" />
+                    Stats
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="explorer" className="mt-4">
+                  {moveExplorerContent}
+                </TabsContent>
+                <TabsContent value="games" className="mt-4">
+                  {gamesContent}
+                </TabsContent>
+                <TabsContent value="stats" className="mt-4">
+                  {statisticsContent}
+                </TabsContent>
+              </Tabs>
           </div>
-        </div>
+        </SidebarLayout>
 
         {/* Mobile: single column with sticky board */}
         <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)} className="md:hidden flex flex-col gap-2 min-w-0">
@@ -1265,7 +1254,7 @@ export function OpeningsPage() {
         bookmarks={bookmarks}
         onSaved={() => {
           if (activeTab !== 'stats') navigate('/openings/stats');
-          setSidebarTab('bookmarks');
+          setSidebarOpen('bookmarks');
         }}
       />
     </div>

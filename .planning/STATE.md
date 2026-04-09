@@ -1,35 +1,34 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.9
-milestone_name: Advanced Analytics
+milestone_name: UI/UX Restructuring
 status: executing
-last_updated: "2026-04-07T19:24:44.530Z"
-last_activity: 2026-04-07
+last_updated: "2026-04-09T17:37:53.134Z"
+last_activity: 2026-04-09 -- Phase 49 execution started
 progress:
-  total_phases: 6
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 100
+  total_phases: 2
+  completed_phases: 0
+  total_plans: 1
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 49
-Plan: Not started
-Milestone: v1.8 Guest Access — SHIPPED 2026-04-06
-Status: Executing Phase 48
-Last activity: 2026-04-07
+Phase: 49 (openings-desktop-sidebar) — EXECUTING
+Plan: 1 of 1
+Status: Executing Phase 49
+Last activity: 2026-04-09 -- Phase 49 execution started
 
-Progress: [██████████] 100% (v1.8 phases)
+Progress: [░░░░░░░░░░] 0%
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-06)
+See: .planning/PROJECT.md (updated 2026-04-09)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Planning next milestone (v1.9 Advanced Analytics)
+Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop and mobile
 
 ## Key Context
 
@@ -47,6 +46,8 @@ Current focus: Planning next milestone (v1.9 Advanced Analytics)
 - v1.8: Guest as first-class User row with is_guest=True — promotion is single-row UPDATE, no FK migration needed
 - v1.8: Register-page promotion flow instead of separate PromotionModal — cleaner UX
 - v1.8: Conversion optimization (CONV-01/02/03) deferred to post-launch Future Requirements
+- v1.9 roadmap: Old v1.9 Advanced Analytics phases (49-51) renumbered to 52-54 under v1.10; new v1.9 phases start at 49
+- v1.9 roadmap: Phase 50 (mobile subtab relocation) depends on Phase 49 — subtab placement TBD, needs discussion before planning
 
 ### Pending Todos
 
@@ -56,6 +57,7 @@ Current focus: Planning next milestone (v1.9 Advanced Analytics)
 ### Blockers/Concerns
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
+- MMOB-01 (subtab placement) has TBD placement — resolve before planning Phase 50
 
 ### Quick Tasks Completed
 
@@ -65,4 +67,4 @@ Current focus: Planning next milestone (v1.9 Advanced Analytics)
 | 260408-snn | Implement Opponent Strength filter (Any/+100/±100/-100) on Openings and Endgames pages | 2026-04-08 | ac883c6 | [260408-snn-implement-opponent-strength-filter-with-](./quick/260408-snn-implement-opponent-strength-filter-with-/) |
 
 ---
-Last activity: 2026-04-08 - Completed quick task 260408-snn: Opponent strength filter backed by SQL CASE WHEN rating comparison, wired through all openings and endgames API layers
+Last activity: 2026-04-09 - Roadmap created for v1.9 UI/UX Restructuring (3 phases: 49 Openings Desktop Sidebar, 50 Mobile Layout Restructuring, 51 Stats Subtab/Homepage/Global Stats)

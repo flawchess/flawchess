@@ -80,10 +80,14 @@ Users can determine their success rate for any opening position they specify, fi
 
 ### Active
 
-- [ ] ELO-Adjusted Endgame Skill — opponent-strength-adjusted composite score with gauge + timeline
-- [ ] Opening Risk and Drawishness metrics per position in the move explorer
+- [ ] Openings desktop: 2-column layout with collapsible left-edge Filters/Bookmarks panels overlaying the board
+- [ ] Openings mobile: restructure subtab navigation placement
+- [ ] Stats subtab: 2-column bookmarked openings on desktop, stacked most-played on mobile
+- [ ] Endgames & Games mobile: layout adjustments consistent with Openings mobile changes
+- [ ] Homepage: feature content visible without scrolling on desktop
+- [ ] Stats page: relabel to "Global Stats" and enable more filters
 
-### Future (v1.9)
+### Future (v1.10)
 
 - [ ] ELO-Adjusted Endgame Skill — opponent-strength-adjusted composite score with gauge + timeline
 - [ ] Refine existing endgame statistics (conversion/recovery rates, performance gauges)
@@ -99,14 +103,17 @@ Users can determine their success rate for any opening position they specify, fi
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: v1.9 Advanced Analytics (planned)
+## Current Milestone: v1.9 UI/UX Restructuring
 
-**Goal:** Add ELO-adjusted endgame skill metrics and opening risk/drawishness signals.
+**Goal:** Restructure page layouts across desktop and mobile based on UI/UX expert recommendations — improve information hierarchy, reduce scrolling, and unify desktop/mobile interaction patterns.
 
 **Target features:**
-- Endgame ELO per (platform, time-control) combination with breakdown table
-- Endgame ELO timeline chart with paired actual vs endgame lines
-- Opening risk and drawishness metrics per position in the move explorer
+- Openings desktop: 2-column layout (board + content) with two collapsible left-edge panels (Filters / Bookmarks) that overlay the board
+- Openings mobile: restructure subtab navigation placement (above board or bottom near nav — TBD)
+- Stats subtab: 2-column "Bookmarked Openings: Results" on desktop; stack "Most Played" on mobile
+- Endgames & Games mobile: layout adjustments consistent with Openings mobile changes
+- Homepage: make feature content visible without scrolling on desktop (carousel, remove pills, or similar)
+- Stats page: relabel to "Global Stats" and enable more existing filters
 
 ## Current State
 
@@ -189,4 +196,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-07 after Phase 48 (conversion/recovery persistence filter) complete*
+*Last updated: 2026-04-09 after milestone v1.9 UI/UX Restructuring started*
