@@ -160,7 +160,10 @@ Plans:
   3. Filter changes update the board and stats immediately while the sidebar panel is open (no deferred apply button on desktop)
   4. On smaller desktop screens the open sidebar overlays the chessboard rather than pushing it, preventing layout overflow
   5. On larger desktop screens where space permits, the sidebar can push the board without overflow
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 49-01-PLAN.md — Restructure desktop layout with collapsible sidebar strip and panel
 **UI hint**: yes
 
 ### Phase 50: Mobile Layout Restructuring
@@ -275,7 +278,7 @@ Plans:
 | 46. Email/Password Promotion | v1.8 | N/A | Complete | 2026-04-06 |
 | 47. Google SSO Promotion | v1.8 | N/A | Complete | 2026-04-06 |
 | 48. Conversion & Recovery Persistence Filter | v1.10 | 2/2 | Complete | 2026-04-07 |
-| 49. Openings Desktop Sidebar | v1.9 | 0/? | Not started | - |
+| 49. Openings Desktop Sidebar | v1.9 | 0/1 | Not started | - |
 | 50. Mobile Layout Restructuring | v1.9 | 0/? | Not started | - |
 | 51. Stats Subtab, Homepage & Global Stats | v1.9 | 0/? | Not started | - |
 | 52. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
