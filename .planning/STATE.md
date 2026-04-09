@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: UI/UX Restructuring
-status: defining_requirements
+status: roadmap_ready
 last_updated: "2026-04-09T00:00:00.000Z"
 last_activity: 2026-04-09
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 49 (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-09 — Milestone v1.9 UI/UX Restructuring started
+Status: Roadmap ready — awaiting phase planning
+Last activity: 2026-04-09 — Roadmap created for v1.9 UI/UX Restructuring (3 phases, 12 requirements)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -46,6 +46,8 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 - v1.8: Guest as first-class User row with is_guest=True — promotion is single-row UPDATE, no FK migration needed
 - v1.8: Register-page promotion flow instead of separate PromotionModal — cleaner UX
 - v1.8: Conversion optimization (CONV-01/02/03) deferred to post-launch Future Requirements
+- v1.9 roadmap: Old v1.9 Advanced Analytics phases (49-51) renumbered to 52-54 under v1.10; new v1.9 phases start at 49
+- v1.9 roadmap: Phase 50 (mobile subtab relocation) depends on Phase 49 — subtab placement TBD, needs discussion before planning
 
 ### Pending Todos
 
@@ -55,6 +57,7 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 ### Blockers/Concerns
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
+- MMOB-01 (subtab placement) has TBD placement — resolve before planning Phase 50
 
 ### Quick Tasks Completed
 
@@ -64,4 +67,4 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 | 260408-snn | Implement Opponent Strength filter (Any/+100/±100/-100) on Openings and Endgames pages | 2026-04-08 | ac883c6 | [260408-snn-implement-opponent-strength-filter-with-](./quick/260408-snn-implement-opponent-strength-filter-with-/) |
 
 ---
-Last activity: 2026-04-09 - Started milestone v1.9 UI/UX Restructuring based on UI/UX expert recommendations
+Last activity: 2026-04-09 - Roadmap created for v1.9 UI/UX Restructuring (3 phases: 49 Openings Desktop Sidebar, 50 Mobile Layout Restructuring, 51 Stats Subtab/Homepage/Global Stats)

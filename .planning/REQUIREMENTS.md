@@ -61,24 +61,24 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DESK-01 | TBD | Pending |
-| DESK-02 | TBD | Pending |
-| DESK-03 | TBD | Pending |
-| DESK-04 | TBD | Pending |
-| DESK-05 | TBD | Pending |
-| MMOB-01 | TBD | Pending |
-| STAB-01 | TBD | Pending |
-| STAB-02 | TBD | Pending |
-| EGAM-01 | TBD | Pending |
-| HOME-01 | TBD | Pending |
-| GSTA-01 | TBD | Pending |
-| GSTA-02 | TBD | Pending |
+| DESK-01 | Phase 49 | Pending |
+| DESK-02 | Phase 49 | Pending |
+| DESK-03 | Phase 49 | Pending |
+| DESK-04 | Phase 49 | Pending |
+| DESK-05 | Phase 49 | Pending |
+| MMOB-01 | Phase 50 | Pending |
+| EGAM-01 | Phase 50 | Pending |
+| STAB-01 | Phase 51 | Pending |
+| STAB-02 | Phase 51 | Pending |
+| HOME-01 | Phase 51 | Pending |
+| GSTA-01 | Phase 51 | Pending |
+| GSTA-02 | Phase 51 | Pending |
 
 **Coverage:**
 - v1.9 requirements: 12 total
-- Mapped to phases: 0
-- Unmapped: 12 (pending roadmap creation)
+- Mapped to phases: 12
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-09*
-*Last updated: 2026-04-09 after initial definition*
+*Last updated: 2026-04-09 after roadmap creation*

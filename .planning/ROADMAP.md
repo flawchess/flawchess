@@ -11,7 +11,8 @@
 - ✅ **v1.6 UI Polish & Improvements** — Phases 34-39 (shipped 2026-03-30)
 - ✅ **v1.7 Consolidation, Tooling & Refactoring** — Phases 40-43 (shipped 2026-04-03)
 - ✅ **v1.8 Guest Access** — Phases 44-47 (shipped 2026-04-06)
-- ○ **v1.9 Advanced Analytics** — Phases 48-51 (planned)
+- ○ **v1.9 UI/UX Restructuring** — Phases 49-51 (planned)
+- ○ **v1.10 Advanced Analytics** — Phases 48, 52-54 (planned)
 
 ## Phases
 
@@ -117,12 +118,18 @@
 
 </details>
 
-### v1.9 Advanced Analytics (Phases 48-51)
+### v1.9 UI/UX Restructuring (Phases 49-51)
+
+- [ ] **Phase 49: Openings Desktop Sidebar** - Collapsible left-edge sidebar with Filters/Bookmarks panels that overlay the board on smaller screens
+- [ ] **Phase 50: Mobile Layout Restructuring** - Relocate Openings subtab navigation and adjust Endgames/Games mobile layouts for consistency
+- [ ] **Phase 51: Stats Subtab, Homepage & Global Stats** - 2-column desktop stats layout, stacked mobile most-played, homepage feature visibility, Global Stats relabeling and filters
+
+### v1.10 Advanced Analytics (Phases 48, 52-54)
 
 - [x] **Phase 48: Conversion & Recovery Persistence Filter** - Reduce noise in endgame conv/recov metrics by requiring material imbalance to persist 4 plies after endgame entry, lower threshold from 300cp to 100cp (completed 2026-04-07)
-- [ ] **Phase 49: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
-- [ ] **Phase 50: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
-- [ ] **Phase 51: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
+- [ ] **Phase 52: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
+- [ ] **Phase 53: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
+- [ ] **Phase 54: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
 
 ## Phase Details
 
@@ -143,7 +150,44 @@ Plans:
 - [x] 48-01-PLAN.md — Backend: persistence field in repo queries, threshold to 100cp, persistence check in service
 - [x] 48-02-PLAN.md — Frontend: update constants, popover/tooltip/accordion text for new threshold and persistence
 
-### Phase 49: Endgame ELO — Backend + Breakdown Table
+### Phase 49: Openings Desktop Sidebar
+**Goal**: Users on desktop can access Filters and Bookmarks via a collapsible left-edge sidebar that overlays the board, replacing the current layout with an always-on approach that preserves horizontal space on smaller screens
+**Depends on**: Phase 47
+**Requirements**: DESK-01, DESK-02, DESK-03, DESK-04, DESK-05
+**Success Criteria** (what must be TRUE):
+  1. User sees a collapsed sidebar strip on the left edge of the Openings page showing filter and bookmark icons; clicking either icon opens the respective panel
+  2. Only one panel (Filters or Bookmarks) is visible at a time; clicking the other icon switches to it without a double-click
+  3. Filter changes update the board and stats immediately while the sidebar panel is open (no deferred apply button on desktop)
+  4. On smaller desktop screens the open sidebar overlays the chessboard rather than pushing it, preventing layout overflow
+  5. On larger desktop screens where space permits, the sidebar can push the board without overflow
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 50: Mobile Layout Restructuring
+**Goal**: Users on mobile can navigate Openings subtabs from a repositioned location, with Endgames and Games mobile layouts updated to match the new pattern
+**Depends on**: Phase 49
+**Requirements**: MMOB-01, EGAM-01
+**Success Criteria** (what must be TRUE):
+  1. Openings subtab navigation (Moves/Games/Stats) appears in the new agreed position (above board or near bottom nav) rather than the old location
+  2. The subtab placement is consistent across Openings, Endgames, and Games tab mobile layouts
+  3. The board remains fully usable on 375px-wide screens with no horizontal scroll introduced by the subtab relocation
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 51: Stats Subtab, Homepage & Global Stats
+**Goal**: Users see an improved information layout across three areas — desktop stats subtab uses 2-column display, mobile most-played uses stacked layout, homepage key features are visible without scrolling, and the Stats page is relabeled and has more filter options
+**Depends on**: Phase 47
+**Requirements**: STAB-01, STAB-02, HOME-01, GSTA-01, GSTA-02
+**Success Criteria** (what must be TRUE):
+  1. "Bookmarked Openings: Results" on the Stats subtab displays in 2 columns on desktop, matching the visual density of the Most Played table
+  2. "Most Played Openings as White/Black" uses a stacked single-column layout on mobile, matching the bookmarked openings style
+  3. Homepage feature content is visible without scrolling on a standard desktop viewport (1280px wide, no vertical scroll needed to see key features)
+  4. The Stats page navigation link and page header read "Global Stats" instead of the previous label
+  5. At least one additional filter (beyond what was previously available) is functional on the Global Stats page
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 52: Endgame ELO — Backend + Breakdown Table
 **Goal**: Users can see their Endgame ELO per platform/time-control combination and understand how their endgame skill compares to their actual rating
 **Depends on**: Phase 48
 **Requirements**: ELO-01, ELO-02, ELO-03, ELO-04, ELO-06
@@ -155,9 +199,9 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 50: Endgame ELO — Timeline Chart
+### Phase 53: Endgame ELO — Timeline Chart
 **Goal**: Users can track their Endgame ELO over time per combination and visually see where it diverges from their actual rating
-**Depends on**: Phase 49
+**Depends on**: Phase 52
 **Requirements**: ELO-05
 **Success Criteria** (what must be TRUE):
   1. User sees a timeline chart with paired lines per (platform, time-control) combination — one bright line for Endgame ELO and one dark line for Actual ELO
@@ -166,7 +210,7 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 51: Opening Risk & Drawishness
+### Phase 54: Opening Risk & Drawishness
 **Goal**: Users can see risk and drawishness signals per candidate move in the move explorer to inform opening selection
 **Depends on**: Phase 47
 **Requirements**: OPN-01, OPN-02
@@ -230,10 +274,13 @@ Plans:
 | 45. Guest Frontend | v1.8 | N/A | Complete | 2026-04-06 |
 | 46. Email/Password Promotion | v1.8 | N/A | Complete | 2026-04-06 |
 | 47. Google SSO Promotion | v1.8 | N/A | Complete | 2026-04-06 |
-| 48. Conversion & Recovery Persistence Filter | v1.9 | 2/2 | Complete    | 2026-04-07 |
-| 49. Endgame ELO — Backend + Breakdown Table | v1.9 | 0/? | Not started | - |
-| 50. Endgame ELO — Timeline Chart | v1.9 | 0/? | Not started | - |
-| 51. Opening Risk & Drawishness | v1.9 | 0/? | Not started | - |
+| 48. Conversion & Recovery Persistence Filter | v1.10 | 2/2 | Complete | 2026-04-07 |
+| 49. Openings Desktop Sidebar | v1.9 | 0/? | Not started | - |
+| 50. Mobile Layout Restructuring | v1.9 | 0/? | Not started | - |
+| 51. Stats Subtab, Homepage & Global Stats | v1.9 | 0/? | Not started | - |
+| 52. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
+| 53. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
+| 54. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
 
 ## Backlog
 
