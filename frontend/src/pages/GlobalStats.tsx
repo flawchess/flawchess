@@ -189,7 +189,7 @@ export function GlobalStatsPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                className="h-11 w-11 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
                 onClick={() => setMobileFiltersOpen(true)}
                 data-testid="btn-open-filter-drawer"
                 aria-label="Open filters"
