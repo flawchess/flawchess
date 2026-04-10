@@ -685,27 +685,41 @@ export function OpeningsPage() {
 
               const maxTotal = Math.max(...rows.map((r) => r.stats.total));
 
+              // STAB-01 / D-09: split rows into left and right columns (top-to-bottom, left first)
+              // so that at lg+ the section reads left column first then right column.
+              // D-10: maxTotal stays computed across ALL rows so bar widths are comparable across columns.
+              const leftColumnCount = Math.ceil(rows.length / 2);
+              const leftRows = rows.slice(0, leftColumnCount);
+              const rightRows = rows.slice(leftColumnCount);
+
+              const renderRow = (row: typeof rows[number]) => (
+                <WDLChartRow
+                  key={row.bookmark.id}
+                  data={{
+                    wins: row.stats.wins,
+                    draws: row.stats.draws,
+                    losses: row.stats.losses,
+                    total: row.stats.total,
+                    win_pct: row.stats.total > 0 ? (row.stats.wins / row.stats.total) * 100 : 0,
+                    draw_pct: row.stats.total > 0 ? (row.stats.draws / row.stats.total) * 100 : 0,
+                    loss_pct: row.stats.total > 0 ? (row.stats.losses / row.stats.total) * 100 : 0,
+                  }}
+                  label={row.label}
+                  maxTotal={maxTotal}
+                  onOpenGames={() => handleOpenChartBookmarkGames(row.bookmark)}
+                  openGamesTestId={`wdl-opening-games-${row.bookmark.id}`}
+                  testId={`wdl-opening-${row.bookmark.id}`}
+                />
+              );
+
               return (
-                <div className="space-y-2">
-                  {rows.map((row) => (
-                    <WDLChartRow
-                      key={row.bookmark.id}
-                      data={{
-                        wins: row.stats.wins,
-                        draws: row.stats.draws,
-                        losses: row.stats.losses,
-                        total: row.stats.total,
-                        win_pct: row.stats.total > 0 ? (row.stats.wins / row.stats.total) * 100 : 0,
-                        draw_pct: row.stats.total > 0 ? (row.stats.draws / row.stats.total) * 100 : 0,
-                        loss_pct: row.stats.total > 0 ? (row.stats.losses / row.stats.total) * 100 : 0,
-                      }}
-                      label={row.label}
-                      maxTotal={maxTotal}
-                      onOpenGames={() => handleOpenChartBookmarkGames(row.bookmark)}
-                      openGamesTestId={`wdl-opening-games-${row.bookmark.id}`}
-                      testId={`wdl-opening-${row.bookmark.id}`}
-                    />
-                  ))}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 gap-y-2" data-testid="wdl-bookmarked-grid">
+                  <div className="space-y-2">
+                    {leftRows.map(renderRow)}
+                  </div>
+                  <div className="space-y-2">
+                    {rightRows.map(renderRow)}
+                  </div>
                 </div>
               );
             })()}
