@@ -347,8 +347,8 @@ export function EndgamesPage() {
         <div className="md:hidden flex flex-col min-w-0">
           <Tabs value={activeTab} onValueChange={(val) => { navigate(`/endgames/${val}`); window.scrollTo({ top: 0 }); }}>
             {/* Sticky sub-navigation + filter button */}
-            <div className="sticky top-0 z-20 flex items-center gap-2 pb-2">
-              <TabsList variant="brand" className="flex-1 h-9!" data-testid="endgames-tabs-mobile">
+            <div className="sticky top-0 z-20 flex items-center gap-2 h-11 bg-background/80 backdrop-blur-md border-b border-border px-1" data-testid="endgames-mobile-control-row">
+              <TabsList variant="brand" className="flex-1 h-full" data-testid="endgames-tabs-mobile">
                 <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
                   <BarChart2Icon className="mr-1.5 h-4 w-4" />
                   Stats
@@ -362,7 +362,7 @@ export function EndgamesPage() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                  className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
                   onClick={() => setMobileFiltersOpen(true)}
                   data-testid="btn-open-filter-drawer"
                   aria-label="Open filters"
