@@ -347,7 +347,7 @@ export function EndgamesPage() {
         <div className="md:hidden flex flex-col min-w-0">
           <Tabs value={activeTab} onValueChange={(val) => { navigate(`/endgames/${val}`); window.scrollTo({ top: 0 }); }}>
             {/* Sticky sub-navigation + filter button */}
-            <div className="sticky top-0 z-20 flex items-center gap-2 h-11 bg-background/80 backdrop-blur-md border-b border-border px-1" data-testid="endgames-mobile-control-row">
+            <div className="sticky top-0 z-20 flex items-center gap-2 h-11 bg-white/20 backdrop-blur-md px-1" data-testid="endgames-mobile-control-row">
               <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="endgames-tabs-mobile">
                 <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
                   <BarChart2Icon className="mr-1.5 h-4 w-4" />
