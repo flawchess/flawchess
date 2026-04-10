@@ -4,7 +4,7 @@ milestone: v1.9
 milestone_name: UI/UX Restructuring
 status: executing
 last_updated: "2026-04-10T00:00:00.000Z"
-last_activity: 2026-04-10 -- Phase 50 context gathered
+last_activity: 2026-04-10 -- Phase 50 UI-SPEC approved
 progress:
   total_phases: 2
   completed_phases: 0
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 50 (mobile-layout-restructuring) — CONTEXT GATHERED
+Phase: 50 (mobile-layout-restructuring) — UI-SPEC APPROVED
 Plan: 0 of 0 (not yet planned)
-Status: Ready to plan Phase 50
-Last activity: 2026-04-10 -- Phase 50 context gathered
+Status: Ready to plan Phase 50 (CONTEXT.md + UI-SPEC.md approved)
+Last activity: 2026-04-10 -- Phase 50 UI-SPEC approved (6/6 dimensions passed)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -70,4 +70,4 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 | 260408-snn | Implement Opponent Strength filter (Any/+100/±100/-100) on Openings and Endgames pages | 2026-04-08 | ac883c6 | [260408-snn-implement-opponent-strength-filter-with-](./quick/260408-snn-implement-opponent-strength-filter-with-/) |
 
 ---
-Last activity: 2026-04-10 - Phase 50 context gathered (mobile layout restructuring: unified control row, backdrop-blur sticky wrapper, Endgames visual-alignment only)
+Last activity: 2026-04-10 - Phase 50 UI-SPEC approved (6/6 dimensions passed); branch gsd/phase-50-mobile-layout-restructuring
