@@ -34,13 +34,22 @@ function buildLookup(): Promise<Map<string, Opening>> {
         }
       }
       return map;
+    })
+    .catch((err) => {
+      // Clear the cache so a later call can retry — otherwise a transient
+      // fetch failure permanently breaks opening name lookup for the session.
+      lookupPromise = null;
+      throw err;
     });
   return lookupPromise;
 }
 
 /** Pre-load the openings database in the background. */
 export function preloadOpenings(): void {
-  buildLookup();
+  // Swallow errors — the opening name is a cosmetic feature and a transient
+  // fetch failure (dev server restart, offline, etc.) shouldn't surface as an
+  // unhandled promise rejection. findOpening() will retry on next call.
+  buildLookup().catch(() => {});
 }
 
 /**
