@@ -35,13 +35,14 @@ function formatName(name: string): React.ReactNode {
   return <span className="font-medium">{name}</span>;
 }
 
-function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
+function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, maxTotal }: {
   o: OpeningWDL;
   color: "white" | "black";
   index: number;
   testIdPrefix: string;
   rowKey: string;
   onOpenGames: (opening: OpeningWDL, color: "white" | "black") => void;
+  maxTotal: number;
 }) {
   const isEvenRow = index % 2 === 0;
 
@@ -79,8 +80,21 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
         </button>
       </Tooltip>
 
-      {/* Column 3: Mini WDL bar */}
-      <MiniWDLBar win_pct={o.win_pct} draw_pct={o.draw_pct} loss_pct={o.loss_pct} />
+      {/* Column 3: Mini WDL bar + proportional frequency bar below */}
+      <div>
+        <MiniWDLBar win_pct={o.win_pct} draw_pct={o.draw_pct} loss_pct={o.loss_pct} />
+        <div className="h-2 mt-0.5">
+          <div
+            className="h-full rounded-sm"
+            style={{
+              width: maxTotal > 0 ? `${(o.total / maxTotal) * 100}%` : '0%',
+              border: '1px solid oklch(0.6 0 0)',
+              backgroundColor: 'transparent',
+            }}
+            data-testid={`${testIdPrefix}-freq-${rowKey}`}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -93,6 +107,10 @@ export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenG
   const visibleOpenings = showAll || expanded ? openings : openings.slice(0, INITIAL_VISIBLE_COUNT);
   const hiddenCount = openings.length - INITIAL_VISIBLE_COUNT;
   const hasMore = !showAll && hiddenCount > 0;
+
+  // maxTotal spans ALL openings so frequency bar widths are comparable across
+  // the collapse/expand toggle (matches MobileMostPlayedRows behavior).
+  const maxTotal = Math.max(...openings.map((o) => o.total));
 
   return (
     <div data-testid={`${testIdPrefix}-table`}>
@@ -116,6 +134,7 @@ export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenG
               testIdPrefix={testIdPrefix}
               rowKey={rowKey}
               onOpenGames={onOpenGames}
+              maxTotal={maxTotal}
             />
           );
         })}
