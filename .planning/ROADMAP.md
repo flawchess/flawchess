@@ -283,7 +283,7 @@ Plans:
 | 47. Google SSO Promotion | v1.8 | N/A | Complete | 2026-04-06 |
 | 48. Conversion & Recovery Persistence Filter | v1.10 | 2/2 | Complete | 2026-04-07 |
 | 49. Openings Desktop Sidebar | v1.9 | 0/1 | Not started | - |
-| 50. Mobile Layout Restructuring | v1.9 | 2/2 | Complete   | 2026-04-10 |
+| 50. Mobile Layout Restructuring | v1.9 | 2/2 | Complete    | 2026-04-10 |
 | 51. Stats Subtab, Homepage & Global Stats | v1.9 | 0/? | Not started | - |
 | 52. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
 | 53. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |

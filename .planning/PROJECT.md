@@ -77,13 +77,13 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Account promotion via email/password or Google SSO, preserving all imported data — v1.8
 - ✓ Guest UX — persistent guest banner, import page info box, auth page logo linking — v1.8
 - ✓ OAuth CSRF fix (CVE-2025-68481) and guest creation IP rate limiting — v1.8
+- ✓ Openings mobile: unified control row (Tabs | Color | Bookmark | Filter) outside the board collapse region, staying visible when the board is collapsed; enlarged board-action column buttons and 44px collapse handle; backdrop-blur translucent sticky surface (MMOB-01) — v1.9 Phase 50
+- ✓ Endgames mobile: visual-alignment pass on the sticky top row to match the Openings unified row (backdrop-blur, 44px height, 44px filter button) (EGAM-01) — v1.9 Phase 50
 
 ### Active
 
 - [ ] Openings desktop: 2-column layout with collapsible left-edge Filters/Bookmarks panels overlaying the board
-- [ ] Openings mobile: restructure subtab navigation placement
 - [ ] Stats subtab: 2-column bookmarked openings on desktop, stacked most-played on mobile
-- [ ] Endgames & Games mobile: layout adjustments consistent with Openings mobile changes
 - [ ] Homepage: feature content visible without scrolling on desktop
 - [ ] Stats page: relabel to "Global Stats" and enable more filters
 
@@ -117,7 +117,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ## Current State
 
-v1.8 shipped 2026-04-06. Nine milestones complete (v1.0–v1.8), 48 phases (+2 inserted), live at flawchess.com. Guest access now lets visitors try the platform without signing up, with seamless promotion to full accounts via email/password or Google SSO. ~20K lines of code (8K Python, 12K TypeScript). Phase 48 complete — endgame conversion/recovery now uses persistence filter (imbalance must hold 4 plies) with lowered 100cp threshold.
+v1.8 shipped 2026-04-06. Nine milestones complete (v1.0–v1.8), 48 phases (+2 inserted), live at flawchess.com. Guest access now lets visitors try the platform without signing up, with seamless promotion to full accounts via email/password or Google SSO. ~20K lines of code (8K Python, 12K TypeScript). Phase 48 complete — endgame conversion/recovery now uses persistence filter (imbalance must hold 4 plies) with lowered 100cp threshold. v1.9 in progress: Phase 50 complete — mobile Openings unified control row outside the board collapse region plus Endgames mobile visual alignment; Phases 49 and 51 still pending.
 
 ## Context
 
@@ -196,4 +196,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-09 after milestone v1.9 UI/UX Restructuring started*
+*Last updated: 2026-04-10 after Phase 50 (Mobile Layout Restructuring) completion*
