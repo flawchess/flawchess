@@ -34,7 +34,7 @@ export function BoardControls({
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 hover:bg-accent"
+          className={`${vertical ? 'h-12 w-12' : 'h-8 w-8'} hover:bg-accent`}
           onClick={onReset}
           disabled={!canGoBack}
           aria-label="Reset to start"
@@ -47,7 +47,7 @@ export function BoardControls({
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 hover:bg-accent"
+          className={`${vertical ? 'h-12 w-12' : 'h-8 w-8'} hover:bg-accent`}
           onClick={onBack}
           disabled={!canGoBack}
           aria-label="Previous move"
@@ -60,7 +60,7 @@ export function BoardControls({
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 hover:bg-accent"
+          className={`${vertical ? 'h-12 w-12' : 'h-8 w-8'} hover:bg-accent`}
           onClick={onForward}
           disabled={!canGoForward}
           aria-label="Next move"
@@ -73,7 +73,7 @@ export function BoardControls({
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 hover:bg-accent"
+          className={`${vertical ? 'h-12 w-12' : 'h-8 w-8'} hover:bg-accent`}
           onClick={onFlip}
           aria-label="Flip board"
           data-testid="board-btn-flip"
