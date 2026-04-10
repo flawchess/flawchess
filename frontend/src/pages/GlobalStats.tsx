@@ -92,8 +92,12 @@ export function GlobalStatsPage() {
   const recency = filters.recency;
   const selectedPlatforms = filters.platforms;
 
-  const { data: ratingData, isLoading: ratingLoading } = useRatingHistory(recency, selectedPlatforms);
-  const { data: globalStats, isLoading: statsLoading } = useGlobalStats(recency, selectedPlatforms);
+  const { data: ratingData, isLoading: ratingLoading } = useRatingHistory(
+    recency, selectedPlatforms, filters.opponentType, filters.opponentStrength,
+  );
+  const { data: globalStats, isLoading: statsLoading } = useGlobalStats(
+    recency, selectedPlatforms, filters.opponentType, filters.opponentStrength,
+  );
 
   const isLoading = ratingLoading || statsLoading;
 
