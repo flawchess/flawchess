@@ -34,16 +34,14 @@ export function OAuthCallbackPage() {
       if (promoted === '1') {
         // Guest promoted via Google SSO — clear saved guest token
         localStorage.removeItem('guest_token');
+        // Defer the toast message so it appears after the final redirect
+        // (OAuthCallback → / → /openings or /import). Showing the toast here
+        // can lose it during the rapid redirect chain after a full page load.
+        sessionStorage.setItem(
+          'pending_toast',
+          'Account created with Google. Your data is saved.',
+        );
       }
-      // Defer the toast message so it appears after the final redirect
-      // (OAuthCallback → / → /openings or /import). Showing the toast here
-      // can lose it during the rapid redirect chain after a full page load.
-      sessionStorage.setItem(
-        'pending_toast',
-        promoted === '1'
-          ? 'Account created with Google. Your data is saved.'
-          : 'Signed in with Google',
-      );
       navigate('/', { replace: true });
     } else {
       toast.error('Google sign-in failed. Please try again.');
