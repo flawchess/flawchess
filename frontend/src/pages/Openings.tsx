@@ -55,7 +55,6 @@ import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTable';
 import { MinimapPopover } from '@/components/stats/MinimapPopover';
-import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { pgnToSanArray } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
@@ -85,7 +84,7 @@ function MobileMostPlayedRows({
   openings: OpeningWDL[];
   color: 'white' | 'black';
   testIdPrefix: string;
-  onOpenGames: (pgn: string, color: 'white' | 'black') => void;
+  onOpenGames: (opening: OpeningWDL, color: 'white' | 'black') => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -104,52 +103,54 @@ function MobileMostPlayedRows({
   return (
     <div data-testid={`${testIdPrefix}-mobile-list`}>
       <div className="space-y-3">
-        {visibleOpenings.map((o) => (
-          <div
-            key={`${o.opening_eco}-${o.opening_name}`}
-            data-testid={`${testIdPrefix}-row-${o.opening_eco}`}
-          >
-            {/* Name row: opening name wraps full width, games count shrink-0 on right */}
-            <div className="flex items-start justify-between gap-2 mb-1">
-              <div className="flex-1 min-w-0">
-                <MinimapPopover
-                  fen={o.fen}
-                  boardOrientation={color}
-                  testId={`${testIdPrefix}-minimap-${o.opening_eco}`}
-                >
-                  <span className="block text-sm font-medium leading-tight break-words">
-                    <span className="text-muted-foreground text-xs mr-1.5">{o.opening_eco}</span>
-                    {o.opening_name}
-                  </span>
-                </MinimapPopover>
+        {visibleOpenings.map((o, i) => {
+          const rowKey = o.opening_eco || o.full_hash || `${o.opening_name}-${i}`;
+          return (
+            <div
+              key={rowKey}
+              data-testid={`${testIdPrefix}-row-${rowKey}`}
+            >
+              {/* Name row: opening name wraps full width, games count shrink-0 on right */}
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <div className="flex-1 min-w-0">
+                  <MinimapPopover
+                    fen={o.fen}
+                    boardOrientation={color}
+                    testId={`${testIdPrefix}-minimap-${rowKey}`}
+                  >
+                    <span className="block text-sm font-medium leading-tight break-words">
+                      {o.opening_name}
+                    </span>
+                  </MinimapPopover>
+                </div>
+                <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
+                  <button
+                    className="shrink-0 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label={`View ${o.total} games for ${o.opening_name}`}
+                    data-testid={`${testIdPrefix}-games-${rowKey}`}
+                    onClick={() => onOpenGames(o, color)}
+                  >
+                    <span className="tabular-nums">{o.total}</span>
+                    <FolderOpen className="h-3.5 w-3.5" />
+                  </button>
+                </Tooltip>
               </div>
-              <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
-                <button
-                  className="shrink-0 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label={`View ${o.total} games for ${o.opening_name}`}
-                  data-testid={`${testIdPrefix}-games-${o.opening_eco}`}
-                  onClick={() => onOpenGames(o.pgn, color)}
-                >
-                  <span className="tabular-nums">{o.total}</span>
-                  <FolderOpen className="h-3.5 w-3.5" />
-                </button>
-              </Tooltip>
+              {/* Full-width WDL bar below the name */}
+              <WDLChartRow
+                data={{
+                  wins: o.wins,
+                  draws: o.draws,
+                  losses: o.losses,
+                  total: o.total,
+                  win_pct: o.win_pct,
+                  draw_pct: o.draw_pct,
+                  loss_pct: o.loss_pct,
+                }}
+                maxTotal={maxTotal}
+              />
             </div>
-            {/* Full-width WDL bar below the name */}
-            <WDLChartRow
-              data={{
-                wins: o.wins,
-                draws: o.draws,
-                losses: o.losses,
-                total: o.total,
-                win_pct: o.win_pct,
-                draw_pct: o.draw_pct,
-                loss_pct: o.loss_pct,
-              }}
-              maxTotal={maxTotal}
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {hasMore && (
@@ -752,114 +753,129 @@ export function OpeningsPage() {
             Suggest
           </Button>
         </div>
-      ) : chartBookmarks.length > 0 && (
-        <div className="charcoal-texture rounded-md p-4">
-          <div>
-            <h2 className="text-lg font-medium mb-3">
-              <span className="inline-flex items-center gap-1">
-                <BookMarked className="h-5 w-5" />
-                Bookmarked Openings: Results
-                <InfoPopover ariaLabel="Results by opening info" testId="wdl-bar-chart-info" side="top">
-                  Shows your win, draw, and loss percentages for each saved or most played position, based on the games that match the current filter settings. The length of the transparent bar indicates game count relative to other openings.
-                </InfoPopover>
-              </span>
-            </h2>
-            {!tsData ? (
-              <div className="text-center text-muted-foreground py-8">Loading chart data...</div>
-            ) : (() => {
-              const rows = chartBookmarks
-                .flatMap((b) => {
-                  const s = wdlStatsMap[b.id];
-                  // skip bookmarks with no stats or zero games
-                  if (!s || s.total <= 0) return [];
-                  const colorIcon = b.color === 'white' ? (
-                    <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-white" />
-                  ) : b.color === 'black' ? (
-                    <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-zinc-900" />
-                  ) : null;
-                  const label = colorIcon ? (
-                    <span className="inline-flex items-center gap-1.5">{colorIcon}{b.label}</span>
-                  ) : b.label;
-                  return [{ bookmark: b, label, stats: s }];
-                })
-                .sort((a, b) => b.stats.total - a.stats.total);
+      ) : chartBookmarks.length > 0 && (() => {
+        if (!tsData) {
+          return (
+            <div className="charcoal-texture rounded-md p-4 text-center text-muted-foreground">
+              Loading chart data...
+            </div>
+          );
+        }
 
-              if (rows.length === 0) {
-                return (
-                  <div className="text-center text-muted-foreground py-8">
-                    No stats available for saved positions yet.
-                  </div>
-                );
-              }
+        // Build OpeningWDL rows for bookmarks of a given color
+        const buildBookmarkRows = (targetColor: 'white' | 'black'): OpeningWDL[] =>
+          chartBookmarks
+            .filter((b) => b.color === targetColor)
+            .flatMap((b) => {
+              const s = wdlStatsMap[b.id];
+              if (!s || s.total <= 0) return [];
+              const winPct = s.total > 0 ? (s.wins / s.total) * 100 : 0;
+              const drawPct = s.total > 0 ? (s.draws / s.total) * 100 : 0;
+              const lossPct = s.total > 0 ? (s.losses / s.total) * 100 : 0;
+              const row: OpeningWDL = {
+                opening_eco: '',
+                opening_name: b.label,
+                label: b.label,
+                pgn: '',
+                fen: b.fen,
+                full_hash: b.target_hash,
+                wins: s.wins,
+                draws: s.draws,
+                losses: s.losses,
+                total: s.total,
+                win_pct: winPct,
+                draw_pct: drawPct,
+                loss_pct: lossPct,
+              };
+              return [row];
+            })
+            .sort((a, b) => b.total - a.total);
 
-              const maxTotal = Math.max(...rows.map((r) => r.stats.total));
+        const whiteBookmarkRows = buildBookmarkRows('white');
+        const blackBookmarkRows = buildBookmarkRows('black');
 
-              return (
-                <>
-                  {/* Desktop: table layout (Name | Games | Win/Draw/Loss) matching Most Played Openings */}
-                  <div className="hidden md:block" data-testid="wdl-bookmarked-table">
-                    {/* Header */}
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-2 px-2 pb-1 text-xs text-muted-foreground border-b border-white/10 mb-1">
-                      <span>Name</span>
-                      <span>Games</span>
-                      <span>Win / Draw / Loss</span>
-                    </div>
-                    {rows.map((row, i) => {
-                      const isEvenRow = i % 2 === 0;
-                      const winPct = row.stats.total > 0 ? (row.stats.wins / row.stats.total) * 100 : 0;
-                      const drawPct = row.stats.total > 0 ? (row.stats.draws / row.stats.total) * 100 : 0;
-                      const lossPct = row.stats.total > 0 ? (row.stats.losses / row.stats.total) * 100 : 0;
-                      return (
-                        <div
-                          key={row.bookmark.id}
-                          className={`grid grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-2 items-center rounded px-2 py-1.5 hover:bg-white/5 transition-colors ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
-                          data-testid={`wdl-opening-${row.bookmark.id}`}
-                        >
-                          <div className="min-w-0 text-sm font-medium truncate">{row.label}</div>
-                          <Tooltip content={`View games for ${row.bookmark.label}`}>
-                            <button
-                              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                              aria-label={`View games for ${row.bookmark.label}`}
-                              data-testid={`wdl-opening-games-${row.bookmark.id}`}
-                              onClick={() => handleOpenChartBookmarkGames(row.bookmark)}
-                            >
-                              <span className="tabular-nums">{row.stats.total}</span>
-                              <FolderOpen className="h-3.5 w-3.5" />
-                            </button>
-                          </Tooltip>
-                          <MiniWDLBar win_pct={winPct} draw_pct={drawPct} loss_pct={lossPct} />
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {/* Mobile: stacked WDLChartRow layout */}
-                  <div className="md:hidden space-y-2" data-testid="wdl-bookmarked-grid">
-                    {rows.map((row) => (
-                      <WDLChartRow
-                        key={row.bookmark.id}
-                        data={{
-                          wins: row.stats.wins,
-                          draws: row.stats.draws,
-                          losses: row.stats.losses,
-                          total: row.stats.total,
-                          win_pct: row.stats.total > 0 ? (row.stats.wins / row.stats.total) * 100 : 0,
-                          draw_pct: row.stats.total > 0 ? (row.stats.draws / row.stats.total) * 100 : 0,
-                          loss_pct: row.stats.total > 0 ? (row.stats.losses / row.stats.total) * 100 : 0,
-                        }}
-                        label={row.label}
-                        maxTotal={maxTotal}
-                        onOpenGames={() => handleOpenChartBookmarkGames(row.bookmark)}
-                        openGamesTestId={`wdl-opening-games-${row.bookmark.id}`}
-                        testId={`wdl-opening-${row.bookmark.id}`}
-                      />
-                    ))}
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        </div>
-      )}
+        if (whiteBookmarkRows.length === 0 && blackBookmarkRows.length === 0) {
+          return (
+            <div className="charcoal-texture rounded-md p-4 text-center text-muted-foreground">
+              No stats available for saved positions yet.
+            </div>
+          );
+        }
+
+        // Lookup map so the table's onOpenGames callback can resolve the bookmark by full_hash
+        const bookmarkByHash = new Map<string, PositionBookmarkResponse>(
+          chartBookmarks.map((b) => [b.target_hash, b])
+        );
+        const handleOpenBookmarkRow = (opening: OpeningWDL) => {
+          const bookmark = bookmarkByHash.get(opening.full_hash);
+          if (bookmark) handleOpenChartBookmarkGames(bookmark);
+        };
+
+        return (
+          <>
+            {whiteBookmarkRows.length > 0 && (
+              <div className="charcoal-texture rounded-md p-4" data-testid="bookmarks-white-section">
+                <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
+                  <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-white" />
+                  <span className="inline-flex items-center gap-1">
+                    <BookMarked className="h-5 w-5" />
+                    Bookmarked Openings for White
+                    <InfoPopover ariaLabel="Bookmarked White openings info" testId="bookmarks-white-info" side="top">
+                      Your saved White bookmarks with win, draw, and loss rates based on the current filter settings.
+                    </InfoPopover>
+                  </span>
+                </h2>
+                <div className="hidden md:block">
+                  <MostPlayedOpeningsTable
+                    openings={whiteBookmarkRows}
+                    color="white"
+                    testIdPrefix="bookmarks-white"
+                    onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                  />
+                </div>
+                <div className="md:hidden">
+                  <MobileMostPlayedRows
+                    openings={whiteBookmarkRows}
+                    color="white"
+                    testIdPrefix="bookmarks-white"
+                    onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                  />
+                </div>
+              </div>
+            )}
+            {blackBookmarkRows.length > 0 && (
+              <div className="charcoal-texture rounded-md p-4" data-testid="bookmarks-black-section">
+                <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
+                  <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-zinc-900" />
+                  <span className="inline-flex items-center gap-1">
+                    <BookMarked className="h-5 w-5" />
+                    Bookmarked Openings for Black
+                    <InfoPopover ariaLabel="Bookmarked Black openings info" testId="bookmarks-black-info" side="top">
+                      Your saved Black bookmarks with win, draw, and loss rates based on the current filter settings.
+                    </InfoPopover>
+                  </span>
+                </h2>
+                <div className="hidden md:block">
+                  <MostPlayedOpeningsTable
+                    openings={blackBookmarkRows}
+                    color="black"
+                    testIdPrefix="bookmarks-black"
+                    onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                  />
+                </div>
+                <div className="md:hidden">
+                  <MobileMostPlayedRows
+                    openings={blackBookmarkRows}
+                    color="black"
+                    testIdPrefix="bookmarks-black"
+                    onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                  />
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
       {/* Win Rate Over Time — shown when bookmarks have time series data */}
       {tsData && (
         <div className="charcoal-texture rounded-md p-4">
@@ -884,7 +900,7 @@ export function OpeningsPage() {
               openings={mostPlayedData.white}
               color="white"
               testIdPrefix="mpo-white"
-              onOpenGames={handleOpenGames}
+              onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
             />
           </div>
           {/* Mobile: stacked WDLChartRows (STAB-02) */}
@@ -893,7 +909,7 @@ export function OpeningsPage() {
               openings={mostPlayedData.white}
               color="white"
               testIdPrefix="mpo-white"
-              onOpenGames={handleOpenGames}
+              onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
             />
           </div>
         </div>
@@ -916,7 +932,7 @@ export function OpeningsPage() {
               openings={mostPlayedData.black}
               color="black"
               testIdPrefix="mpo-black"
-              onOpenGames={handleOpenGames}
+              onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
             />
           </div>
           {/* Mobile: stacked WDLChartRows (STAB-02) */}
@@ -925,7 +941,7 @@ export function OpeningsPage() {
               openings={mostPlayedData.black}
               color="black"
               testIdPrefix="mpo-black"
-              onOpenGames={handleOpenGames}
+              onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
             />
           </div>
         </div>
