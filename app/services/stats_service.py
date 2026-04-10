@@ -47,6 +47,7 @@ class FilterParams(TypedDict):
     Created per D-02: TypedDicts for internal data structures.
     Matches keyword parameters of query_position_wdl_batch in stats_repository.py.
     """
+
     time_control: list[str] | None
     platform: list[str] | None
     rated: bool | None
@@ -61,6 +62,9 @@ async def get_rating_history(
     user_id: int,
     recency: str | None,
     platform: str | None = None,
+    *,
+    opponent_type: str = "human",
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
 ) -> RatingHistoryResponse:
     """Return per-platform per-game rating data points.
 
@@ -75,20 +79,40 @@ async def get_rating_history(
 
     if platform == "chess.com":
         chesscom_rows = await query_rating_history(
-            session, user_id=user_id, platform="chess.com", recency_cutoff=cutoff
+            session,
+            user_id=user_id,
+            platform="chess.com",
+            recency_cutoff=cutoff,
+            opponent_type=opponent_type,
+            opponent_strength=opponent_strength,
         )
         lichess_rows: list = []
     elif platform == "lichess":
         chesscom_rows = []
         lichess_rows = await query_rating_history(
-            session, user_id=user_id, platform="lichess", recency_cutoff=cutoff
+            session,
+            user_id=user_id,
+            platform="lichess",
+            recency_cutoff=cutoff,
+            opponent_type=opponent_type,
+            opponent_strength=opponent_strength,
         )
     else:
         chesscom_rows = await query_rating_history(
-            session, user_id=user_id, platform="chess.com", recency_cutoff=cutoff
+            session,
+            user_id=user_id,
+            platform="chess.com",
+            recency_cutoff=cutoff,
+            opponent_type=opponent_type,
+            opponent_strength=opponent_strength,
         )
         lichess_rows = await query_rating_history(
-            session, user_id=user_id, platform="lichess", recency_cutoff=cutoff
+            session,
+            user_id=user_id,
+            platform="lichess",
+            recency_cutoff=cutoff,
+            opponent_type=opponent_type,
+            opponent_strength=opponent_strength,
         )
 
     def rows_to_points(rows: list) -> list[RatingDataPoint]:
@@ -155,6 +179,9 @@ async def get_global_stats(
     user_id: int,
     recency: str | None,
     platform: str | None = None,
+    *,
+    opponent_type: str = "human",
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
 ) -> GlobalStatsResponse:
     """Return global W/D/L breakdowns by time control and by color.
 
@@ -163,10 +190,20 @@ async def get_global_stats(
     cutoff = recency_cutoff(recency)
 
     tc_rows = await query_results_by_time_control(
-        session, user_id=user_id, recency_cutoff=cutoff, platform=platform
+        session,
+        user_id=user_id,
+        recency_cutoff=cutoff,
+        platform=platform,
+        opponent_type=opponent_type,
+        opponent_strength=opponent_strength,
     )
     color_rows = await query_results_by_color(
-        session, user_id=user_id, recency_cutoff=cutoff, platform=platform
+        session,
+        user_id=user_id,
+        recency_cutoff=cutoff,
+        platform=platform,
+        opponent_type=opponent_type,
+        opponent_strength=opponent_strength,
     )
 
     by_time_control = _rows_to_wdl_categories(
@@ -251,7 +288,8 @@ async def get_most_played_openings(
         elo_threshold=elo_threshold,
     )
     white_position_wdl = await query_position_wdl_batch(
-        session, user_id,
+        session,
+        user_id,
         [row[4] for row in white_rows if row[4] is not None],
         color="white",
         time_control=filter_params["time_control"],
@@ -263,7 +301,8 @@ async def get_most_played_openings(
         elo_threshold=filter_params["elo_threshold"],
     )
     black_position_wdl = await query_position_wdl_batch(
-        session, user_id,
+        session,
+        user_id,
         [row[4] for row in black_rows if row[4] is not None],
         color="black",
         time_control=filter_params["time_control"],

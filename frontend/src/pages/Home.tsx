@@ -15,7 +15,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
-import { ArrowRightLeft, Scale, Filter, TrophyIcon, DownloadIcon, Loader2, UserPlus, DoorOpen } from 'lucide-react';
+import { Scale, Filter, TrophyIcon, DownloadIcon, Loader2, UserPlus, DoorOpen } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Feature sections — imagePosition alternates right/left so text and image swap sides on desktop.
@@ -28,18 +28,6 @@ const FEATURES: {
   screenshot: { src: string; alt: string };
   imagePosition: 'left' | 'right';
 }[] = [
-  {
-    slug: 'opening-explorer',
-    icon: ArrowRightLeft,
-    heading: 'Interactive Opening Explorer',
-    desc: [
-      "Step through any opening and see your win/draw/loss rate for every move you\u2019ve played.",
-      "Discover which moves you struggle against and which traps and gambits work for you.",
-      "Scout your opponents\u2019 weaknesses and tendencies before a match."
-    ],
-    screenshot: { src: '/screenshots/opening-explorer.png', alt: 'Board with move explorer showing win/draw/loss bars per candidate move' },
-    imagePosition: 'right',
-  },
   {
     slug: 'opening-comparison',
     icon: Scale,
@@ -112,142 +100,185 @@ export function HomePageContent() {
     <>
       <PublicHeader />
 
-      {/* Hero */}
-      <div className="bg-[radial-gradient(ellipse_at_center,rgba(139,94,60,0.10),transparent_60%)]">
-      <section data-testid="hero-section" className="max-w-3xl mx-auto px-4 py-8 lg:py-24 text-center">
-        <img
-          src="/icons/logo-384.png"
-          alt="FlawChess logo"
-          className="mx-auto mb-6 h-28 w-28 lg:h-36 lg:w-36"
-        />
-        <h1 className="text-4xl lg:text-5xl font-bold leading-tight font-brand">
-          Engines are flawless, humans play{' '}
-          <span className="bg-gradient-to-r from-brand-brown-light to-brand-brown bg-clip-text text-transparent">
-            FlawChess
-          </span>
-        </h1>
-        <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-          Import games from chess.com and lichess. Explore openings move by move, track endgame performance, and find exactly where you win and lose.
-        </p>
-        <div className="mt-8 flex flex-row items-center justify-center gap-3">
-          <Button
-            size="lg"
-            asChild
-            className={cn('btn-brand', 'min-h-11 min-w-40')}
-            data-testid="hero-cta-signup"
-          >
-            <Link to="/login?tab=register">
-              <UserPlus className="mr-1.5 h-4 w-4" />
-              Sign up free
-            </Link>
-          </Button>
-          <Button
-            size="lg"
-            variant="brand-outline"
-            className="min-h-11 min-w-40"
-            data-testid="btn-guest"
-            onClick={handleGuestLogin}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                Starting...
-              </>
-            ) : (
-              <>
-                <DoorOpen className="mr-1.5 h-4 w-4" />
-                Use as Guest
-              </>
-            )}
-          </Button>
-        </div>
-        {/* Callout pills */}
-        <div className="mt-12 hidden lg:flex flex-wrap justify-center gap-2">
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Free to use
-          </span>
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Open source
-          </span>
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Mobile app
-          </span>
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Opening explorer
-          </span>
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Progress tracking
-          </span>
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Endgame stats
-          </span>
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Cross-platform
-          </span>
+      {/* Hero — radial bronze glow is centered on just the hero content (not the
+          stacked Opening Explorer below, which has its own charcoal section) */}
+      <div className="bg-[radial-gradient(ellipse_at_center,rgba(205,127,50,0.12),transparent_65%)]">
+      <section data-testid="hero-section" className="max-w-6xl mx-auto px-4 py-8 lg:py-12">
+        <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-8 lg:gap-12 items-center">
+          {/* Left column: existing hero content — centered at all breakpoints. */}
+          <div className="text-center" data-testid="hero-left-column">
+            <img
+              src="/icons/logo-384.png"
+              alt="FlawChess logo"
+              className="mx-auto mb-2 h-32 w-32 lg:h-36 lg:w-36"
+            />
+            <h1 className="text-4xl font-bold leading-tight font-brand">
+              Engines are flawless, humans play{' '}
+              <span className="bg-gradient-to-r from-brand-brown-light to-brand-brown bg-clip-text text-transparent">
+                FlawChess
+              </span>
+            </h1>
+            <p className="mt-4 text-base leading-relaxed text-muted-foreground">
+              Import games from chess.com and lichess. Explore openings move by move, track endgame performance, and find exactly where you win and lose.
+            </p>
+            <div className="mt-8 flex flex-row items-center justify-center gap-3">
+              <Button
+                size="lg"
+                asChild
+                className={cn('btn-brand', 'min-h-11 min-w-40')}
+                data-testid="hero-cta-signup"
+              >
+                <Link to="/login?tab=register">
+                  <UserPlus className="mr-1.5 h-4 w-4" />
+                  Sign up free
+                </Link>
+              </Button>
+              <Button
+                size="lg"
+                variant="brand-outline"
+                className="min-h-11 min-w-40"
+                data-testid="btn-guest"
+                onClick={handleGuestLogin}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <DoorOpen className="mr-1.5 h-4 w-4" />
+                    Use as Guest
+                  </>
+                )}
+              </Button>
+            </div>
+            {/* Callout pills — desktop only (hidden on mobile / small desktop) */}
+            <div className="mt-10 hidden lg:flex flex-wrap justify-center gap-2">
+              <span className="bg-muted text-muted-foreground w-36 rounded-full px-3 py-1 text-center text-sm">
+                Free to use
+              </span>
+              <span className="bg-muted text-muted-foreground w-36 rounded-full px-3 py-1 text-center text-sm">
+                Mobile friendly
+              </span>
+              <span className="bg-muted text-muted-foreground w-36 rounded-full px-3 py-1 text-center text-sm">
+                Cross-Platform
+              </span>
+            </div>
+          </div>
+
+          {/* Right column: Interactive Opening Explorer preview — lg and up only.
+              Title → image → bullets stacking matches the feature sections below.
+              Below lg the explorer renders as a standalone charcoal section further down. */}
+          <div data-testid="hero-explorer-preview" className="hidden lg:block">
+            <h2 className="text-2xl font-bold mb-4">Interactive Opening Explorer</h2>
+            <img
+              src="/screenshots/opening-explorer.png"
+              alt="Board with move explorer showing win/draw/loss bars per candidate move"
+              className="rounded-lg border border-border shadow-md w-full mb-4"
+            />
+            <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
+              <li>Step through any opening and see your win/draw/loss rate for every move you&apos;ve played.</li>
+              <li>Discover which moves you struggle against and which traps and gambits work for you.</li>
+              <li>Scout your opponents&apos; weaknesses and tendencies before a match.</li>
+            </ul>
+          </div>
         </div>
       </section>
       </div>
 
+      {/* Interactive Opening Explorer — standalone section (mobile / small desktop only).
+          Title → image → bullets, matching the feature sections below. Hidden on lg+
+          because the hero's right column already shows the same content there. */}
+      <section
+        data-testid="feature-opening-explorer-mobile"
+        className="lg:hidden bg-[#1a1a1a] py-12"
+      >
+        <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
+          <div className="flex items-center gap-4">
+            <Scale className="h-10 w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+            <h2 className="text-2xl font-bold">Interactive Opening Explorer</h2>
+          </div>
+          <img
+            src="/screenshots/opening-explorer.png"
+            alt="Board with move explorer showing win/draw/loss bars per candidate move"
+            className="rounded-lg border border-border shadow-md w-full"
+          />
+          <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
+            <li>Step through any opening and see your win/draw/loss rate for every move you&apos;ve played.</li>
+            <li>Discover which moves you struggle against and which traps and gambits work for you.</li>
+            <li>Scout your opponents&apos; weaknesses and tendencies before a match.</li>
+          </ul>
+        </div>
+      </section>
+
       {/* Feature sections — alternating image left/right */}
       <div id="features" data-testid="screenshots-section" className="scroll-mt-16">
         {FEATURES.map(({ slug, icon: Icon, heading, desc, screenshot, imagePosition }, index) => {
-          const isCharcoal = index % 2 === 0;
+          // On desktop, even-indexed features get charcoal bg. On mobile the Interactive
+          // Opening Explorer (charcoal) sits in front of the feature list, so the mobile
+          // alternation is flipped: odd-indexed features get charcoal on mobile to avoid
+          // two consecutive charcoal bands at the top of the stack.
+          const bgClass = index % 2 === 0
+            ? 'lg:bg-[#1a1a1a]'
+            : 'max-lg:bg-[#1a1a1a]';
           const gridCols = imagePosition === 'left'
             ? 'lg:grid-cols-[3fr_2fr]'
             : 'lg:grid-cols-[2fr_3fr]';
 
-          const textBlock = (
-            <div className="flex flex-col justify-center">
-              <div className="flex gap-4">
-                <div className="shrink-0 mt-1">
-                  <Icon className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold">{heading}</h2>
-                  {Array.isArray(desc) ? (
-                    <ul className="mt-3 list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
-                      {desc.map((item, i) => <li key={i}>{item}</li>)}
-                    </ul>
-                  ) : (
-                    <p className="mt-3 text-base leading-relaxed text-muted-foreground">{desc}</p>
-                  )}
-                </div>
-              </div>
+          const titleBlock = (
+            <div className="flex items-center gap-4">
+              <Icon className="h-10 w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+              <h2 className="text-2xl font-bold">{heading}</h2>
             </div>
           );
+          const bulletsBlock = Array.isArray(desc) ? (
+            <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
+              {desc.map((item, i) => <li key={i}>{item}</li>)}
+            </ul>
+          ) : (
+            <p className="text-base leading-relaxed text-muted-foreground">{desc}</p>
+          );
           const imageBlock = (
-            <div className="flex items-center justify-center">
-              <img
-                src={screenshot.src}
-                alt={screenshot.alt}
-                className="rounded-lg border border-border shadow-md w-full lg:transition-transform lg:duration-300 lg:hover:scale-[1.02] lg:hover:shadow-lg"
-              />
+            <img
+              src={screenshot.src}
+              alt={screenshot.alt}
+              className="rounded-lg border border-border shadow-md w-full lg:transition-transform lg:duration-300 lg:hover:scale-[1.02] lg:hover:shadow-lg"
+            />
+          );
+          const desktopTextCol = (
+            <div>
+              {titleBlock}
+              <div className="mt-3">{bulletsBlock}</div>
             </div>
           );
           return (
             <section
               key={slug}
               data-testid={`feature-${slug}`}
-              className={cn(
-                'py-12 lg:py-16',
-                isCharcoal ? 'bg-[#1a1a1a]' : '',
-              )}
+              className={cn('py-12 lg:py-16', bgClass)}
             >
-              <div className={cn('max-w-5xl mx-auto px-4 grid gap-8 lg:gap-12 items-center', gridCols)}>
-              {/* On mobile: always text first, image second.
-                  On desktop: alternate via order classes. */}
-              {imagePosition === 'left' ? (
-                <>
-                  <div className="order-2 lg:order-1">{imageBlock}</div>
-                  <div className="order-1 lg:order-2">{textBlock}</div>
-                </>
-              ) : (
-                <>
-                  <div>{textBlock}</div>
-                  <div>{imageBlock}</div>
-                </>
-              )}
+              {/* Mobile layout: title → image → bullets stacked in a single column. */}
+              <div className="lg:hidden max-w-5xl mx-auto px-4 flex flex-col gap-6">
+                {titleBlock}
+                {imageBlock}
+                {bulletsBlock}
+              </div>
+              {/* Desktop layout: 2-col grid alternating image left/right, text column
+                  stacks title above bullets. */}
+              <div className={cn('hidden lg:grid max-w-5xl mx-auto px-4 gap-12 items-center', gridCols)}>
+                {imagePosition === 'left' ? (
+                  <>
+                    {imageBlock}
+                    {desktopTextCol}
+                  </>
+                ) : (
+                  <>
+                    {desktopTextCol}
+                    {imageBlock}
+                  </>
+                )}
               </div>
             </section>
           );

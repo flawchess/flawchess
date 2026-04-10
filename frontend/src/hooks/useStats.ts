@@ -1,24 +1,34 @@
 import { useQuery } from '@tanstack/react-query';
 import { statsApi } from '@/api/client';
-import type { Platform, Recency, TimeControl, OpponentType } from '@/types/api';
+import type { Platform, Recency, TimeControl, OpponentType, OpponentStrength } from '@/types/api';
 
-export function useRatingHistory(recency: Recency | null, platforms: Platform[] | null) {
+export function useRatingHistory(
+  recency: Recency | null,
+  platforms: Platform[] | null,
+  opponentType: OpponentType,
+  opponentStrength: OpponentStrength,
+) {
   const normalizedRecency = recency === 'all' ? null : recency;
   // safe: length === 1 check guarantees index 0 exists
   const platform = platforms && platforms.length === 1 ? platforms[0]! : null;
   return useQuery({
-    queryKey: ['ratingHistory', normalizedRecency, platform],
-    queryFn: () => statsApi.getRatingHistory(normalizedRecency, platform),
+    queryKey: ['ratingHistory', normalizedRecency, platform, opponentType, opponentStrength],
+    queryFn: () => statsApi.getRatingHistory(normalizedRecency, platform, opponentType, opponentStrength),
   });
 }
 
-export function useGlobalStats(recency: Recency | null, platforms: Platform[] | null) {
+export function useGlobalStats(
+  recency: Recency | null,
+  platforms: Platform[] | null,
+  opponentType: OpponentType,
+  opponentStrength: OpponentStrength,
+) {
   const normalizedRecency = recency === 'all' ? null : recency;
   // safe: length === 1 check guarantees index 0 exists
   const platform = platforms && platforms.length === 1 ? platforms[0]! : null;
   return useQuery({
-    queryKey: ['globalStats', normalizedRecency, platform],
-    queryFn: () => statsApi.getGlobalStats(normalizedRecency, platform),
+    queryKey: ['globalStats', normalizedRecency, platform, opponentType, opponentStrength],
+    queryFn: () => statsApi.getGlobalStats(normalizedRecency, platform, opponentType, opponentStrength),
   });
 }
 

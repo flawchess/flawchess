@@ -93,16 +93,12 @@ class TestGetRatingHistory:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get(
-                "/api/stats/rating-history?recency=month", headers=auth_headers
-            )
+            resp = await client.get("/api/stats/rating-history?recency=month", headers=auth_headers)
 
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_data_point_structure_when_present(
-        self, auth_headers: dict[str, str]
-    ) -> None:
+    async def test_data_point_structure_when_present(self, auth_headers: dict[str, str]) -> None:
         """If data points exist, each has date, rating, time_control_bucket fields."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -120,7 +116,9 @@ class TestGetRatingHistory:
                 assert isinstance(pt["date"], str)
 
     @pytest.mark.asyncio
-    async def test_platform_chess_com_returns_empty_lichess(self, auth_headers: dict[str, str]) -> None:
+    async def test_platform_chess_com_returns_empty_lichess(
+        self, auth_headers: dict[str, str]
+    ) -> None:
         """?platform=chess.com returns populated chess_com structure and empty lichess list."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -208,9 +206,7 @@ class TestGetGlobalStats:
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_wdl_category_structure_when_present(
-        self, auth_headers: dict[str, str]
-    ) -> None:
+    async def test_wdl_category_structure_when_present(self, auth_headers: dict[str, str]) -> None:
         """Each WDL category entry has the required fields."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -218,7 +214,16 @@ class TestGetGlobalStats:
             resp = await client.get("/api/stats/global", headers=auth_headers)
 
         data = resp.json()
-        required_fields = {"label", "wins", "draws", "losses", "total", "win_pct", "draw_pct", "loss_pct"}
+        required_fields = {
+            "label",
+            "wins",
+            "draws",
+            "losses",
+            "total",
+            "win_pct",
+            "draw_pct",
+            "loss_pct",
+        }
         for categories in [data["by_time_control"], data["by_color"]]:
             for cat in categories:
                 for field in required_fields:
@@ -234,9 +239,7 @@ class TestGetGlobalStats:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get(
-                "/api/stats/global?platform=lichess", headers=auth_headers
-            )
+            resp = await client.get("/api/stats/global?platform=lichess", headers=auth_headers)
 
         assert resp.status_code == 200
         data = resp.json()
@@ -244,7 +247,9 @@ class TestGetGlobalStats:
         assert "by_color" in data
 
     @pytest.mark.asyncio
-    async def test_no_platform_param_returns_full_results(self, auth_headers: dict[str, str]) -> None:
+    async def test_no_platform_param_returns_full_results(
+        self, auth_headers: dict[str, str]
+    ) -> None:
         """No platform param returns results from all platforms (backward compatibility)."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -276,7 +281,9 @@ class TestGetMostPlayedOpenings:
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_most_played_openings_returns_structure(self, auth_headers: dict[str, str]) -> None:
+    async def test_most_played_openings_returns_structure(
+        self, auth_headers: dict[str, str]
+    ) -> None:
         """Request with valid auth returns 200 with white and black list keys."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -291,7 +298,9 @@ class TestGetMostPlayedOpenings:
         assert isinstance(data["black"], list)
 
     @pytest.mark.asyncio
-    async def test_most_played_openings_includes_pgn_fen(self, auth_headers: dict[str, str]) -> None:
+    async def test_most_played_openings_includes_pgn_fen(
+        self, auth_headers: dict[str, str]
+    ) -> None:
         """Response openings should include pgn and fen fields per ORT-03."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -326,7 +335,9 @@ class TestGetMostPlayedOpenings:
         assert "black" in data
 
     @pytest.mark.asyncio
-    async def test_most_played_openings_accepts_opponent_type(self, auth_headers: dict[str, str]) -> None:
+    async def test_most_played_openings_accepts_opponent_type(
+        self, auth_headers: dict[str, str]
+    ) -> None:
         """Endpoint should accept opponent_type param without error."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -338,3 +349,105 @@ class TestGetMostPlayedOpenings:
             )
 
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Additional tests for opponent_type/opponent_strength on /stats/global
+# (added to TestGetGlobalStats class below as stand-alone tests outside the class)
+# ---------------------------------------------------------------------------
+
+
+class TestGetGlobalStatsOpponentFilters:
+    """Tests for opponent_type + opponent_strength params on GET /stats/global."""
+
+    @pytest.mark.asyncio
+    async def test_accepts_opponent_type(self, auth_headers: dict[str, str]) -> None:
+        """Endpoint should accept opponent_type param without error (D-18)."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/stats/global",
+                params={"opponent_type": "bot"},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "by_time_control" in body
+        assert "by_color" in body
+
+    @pytest.mark.asyncio
+    async def test_accepts_opponent_strength(self, auth_headers: dict[str, str]) -> None:
+        """Endpoint should accept opponent_strength param without error (D-18)."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/stats/global",
+                params={"opponent_strength": "stronger"},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_opponent_strength(self, auth_headers: dict[str, str]) -> None:
+        """Invalid opponent_strength returns 422 via Literal validation."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/stats/global",
+                params={"opponent_strength": "bogus"},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 422
+
+
+class TestGetRatingHistoryOpponentFilters:
+    """Tests for opponent_type + opponent_strength params on GET /stats/rating-history."""
+
+    @pytest.mark.asyncio
+    async def test_rating_history_accepts_opponent_type(self, auth_headers: dict[str, str]) -> None:
+        """Endpoint should accept opponent_type param without error (D-18)."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/stats/rating-history",
+                params={"opponent_type": "bot", "opponent_strength": "similar"},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "chess_com" in body
+        assert "lichess" in body
+
+    @pytest.mark.asyncio
+    async def test_rating_history_accepts_opponent_strength(
+        self, auth_headers: dict[str, str]
+    ) -> None:
+        """Endpoint should accept opponent_strength param without error (D-18)."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/stats/rating-history",
+                params={"opponent_strength": "similar"},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_rating_history_rejects_invalid_opponent_strength(
+        self, auth_headers: dict[str, str]
+    ) -> None:
+        """Invalid opponent_strength returns 422 via Literal validation."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/stats/rating-history",
+                params={"opponent_strength": "bogus"},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 422

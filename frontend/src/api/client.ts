@@ -111,14 +111,36 @@ export const timeSeriesApi = {
 // ─── Stats API ────────────────────────────────────────────────────────────────
 
 export const statsApi = {
-  getRatingHistory: (recency: string | null, platform: string | null) =>
+  getRatingHistory: (
+    recency: string | null,
+    platform: string | null,
+    opponentType: string,
+    opponentStrength: string,
+  ) =>
     apiClient.get<RatingHistoryResponse>('/stats/rating-history', {
-      params: { ...(recency ? { recency } : {}), ...(platform ? { platform } : {}) },
+      params: buildFilterParams({
+        recency,
+        platform: platform ? [platform] : null,
+        opponent_type: opponentType,
+        opponent_strength: opponentStrength,
+      }),
     }).then(r => r.data),
-  getGlobalStats: (recency: string | null, platform: string | null) =>
+
+  getGlobalStats: (
+    recency: string | null,
+    platform: string | null,
+    opponentType: string,
+    opponentStrength: string,
+  ) =>
     apiClient.get<GlobalStatsResponse>('/stats/global', {
-      params: { ...(recency ? { recency } : {}), ...(platform ? { platform } : {}) },
+      params: buildFilterParams({
+        recency,
+        platform: platform ? [platform] : null,
+        opponent_type: opponentType,
+        opponent_strength: opponentStrength,
+      }),
     }).then(r => r.data),
+
   getMostPlayedOpenings: (params?: {
     recency?: string | null;
     time_control?: string[] | null;

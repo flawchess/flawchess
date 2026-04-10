@@ -162,7 +162,12 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
 
 export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, arrows = [] }: ChessBoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [boardWidth, setBoardWidth] = useState(400);
+  // Start at 0 so we don't mount react-chessboard until the container has measured.
+  // Mounting with a non-zero width inside a display:none parent (e.g. the hidden
+  // breakpoint variant — both desktop and mobile ChessBoards are in the DOM, one
+  // hidden via Tailwind `hidden lg:flex` / `lg:hidden`) causes react-chessboard's
+  // passive effect to throw "Square width not found" when it measures squares at 0.
+  const [boardWidth, setBoardWidth] = useState(0);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [prevPosition, setPrevPosition] = useState<string>(position);
 
@@ -234,6 +239,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
 
   return (
     <div ref={containerRef} className="w-full" data-testid="chessboard">
+      {boardWidth > 0 && (
       <div style={{ position: 'relative', width: boardWidth, height: boardWidth, touchAction: 'none' }}>
         <Chessboard
           options={{
@@ -283,6 +289,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
         />
         <ArrowOverlay arrows={arrows} boardWidth={boardWidth} flipped={flipped} />
       </div>
+      )}
     </div>
   );
 }

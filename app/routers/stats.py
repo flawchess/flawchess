@@ -21,13 +21,21 @@ async def get_rating_history(
     user: Annotated[User, Depends(current_active_user)],
     recency: str | None = Query(default=None),
     platform: str | None = Query(default=None),
+    opponent_type: str = Query(default="human"),
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
 ) -> RatingHistoryResponse:
     """Return per-platform per-game rating data points.
 
-    Optionally filtered by recency (week, month, 3months, 6months, year)
-    and by platform (chess.com or lichess).
+    Optionally filtered by recency, platform, opponent_type, and opponent_strength.
     """
-    return await stats_service.get_rating_history(session, user.id, recency, platform)
+    return await stats_service.get_rating_history(
+        session,
+        user.id,
+        recency,
+        platform,
+        opponent_type=opponent_type,
+        opponent_strength=opponent_strength,
+    )
 
 
 @router.get("/global", response_model=GlobalStatsResponse)
@@ -36,13 +44,21 @@ async def get_global_stats(
     user: Annotated[User, Depends(current_active_user)],
     recency: str | None = Query(default=None),
     platform: str | None = Query(default=None),
+    opponent_type: str = Query(default="human"),
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
 ) -> GlobalStatsResponse:
     """Return global W/D/L breakdowns by time control and by color.
 
-    Optionally filtered by recency (week, month, 3months, 6months, year)
-    and by platform (chess.com or lichess).
+    Optionally filtered by recency, platform, opponent_type, and opponent_strength.
     """
-    return await stats_service.get_global_stats(session, user.id, recency, platform)
+    return await stats_service.get_global_stats(
+        session,
+        user.id,
+        recency,
+        platform,
+        opponent_type=opponent_type,
+        opponent_strength=opponent_strength,
+    )
 
 
 @router.get("/most-played-openings", response_model=MostPlayedOpeningsResponse)

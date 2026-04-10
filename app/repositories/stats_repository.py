@@ -4,7 +4,22 @@ import datetime
 from collections.abc import Sequence
 from typing import Any, Literal
 
-from sqlalchemy import BigInteger, Column, Date, MetaData, SmallInteger, String, Table, Text, and_, case, cast, func, or_, select
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    Date,
+    MetaData,
+    SmallInteger,
+    String,
+    Table,
+    Text,
+    and_,
+    case,
+    cast,
+    func,
+    or_,
+    select,
+)
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +48,9 @@ async def query_rating_history(
     user_id: int,
     platform: str,
     recency_cutoff: datetime.datetime | None,
+    *,
+    opponent_type: str = "human",
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
 ) -> list[Row[Any]]:
     """Return one rating data point per (date, time_control_bucket) for a given platform.
 
@@ -54,7 +72,6 @@ async def query_rating_history(
         .distinct(date_col, Game.time_control_bucket)
         .where(
             Game.user_id == user_id,
-            Game.platform == platform,
             user_rating_expr.is_not(None),
             Game.played_at.is_not(None),
         )
@@ -63,8 +80,18 @@ async def query_rating_history(
         .order_by(date_col, Game.time_control_bucket, Game.played_at.desc())
     )
 
-    if recency_cutoff is not None:
-        stmt = stmt.where(Game.played_at >= recency_cutoff)
+    # Use shared filter helper per CLAUDE.md "Shared Query Filters".
+    # platform is wrapped in a single-element list because apply_game_filters
+    # expects Sequence[str] | None for the platform arg.
+    stmt = apply_game_filters(
+        stmt,
+        time_control=None,
+        platform=[platform],
+        rated=None,
+        opponent_type=opponent_type,
+        recency_cutoff=recency_cutoff,
+        opponent_strength=opponent_strength,
+    )
 
     result = await session.execute(stmt)
     return list(result.fetchall())
@@ -75,11 +102,14 @@ async def query_results_by_time_control(
     user_id: int,
     recency_cutoff: datetime.datetime | None,
     platform: str | None = None,
+    *,
+    opponent_type: str = "human",
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
 ) -> list[Row[Any]]:
     """Return (time_control_bucket, total, wins, draws, losses) via SQL aggregation.
 
     Excludes games where time_control_bucket is NULL.
-    Optionally filtered by platform (chess.com or lichess).
+    Optionally filtered by platform, recency, opponent_type, and opponent_strength.
     """
     win_cond = or_(
         and_(Game.result == "1-0", Game.user_color == "white"),
@@ -106,11 +136,16 @@ async def query_results_by_time_control(
         .group_by(Game.time_control_bucket)
     )
 
-    if recency_cutoff is not None:
-        stmt = stmt.where(Game.played_at >= recency_cutoff)
-
-    if platform is not None:
-        stmt = stmt.where(Game.platform == platform)
+    # Use shared filter helper per CLAUDE.md "Shared Query Filters".
+    stmt = apply_game_filters(
+        stmt,
+        time_control=None,
+        platform=[platform] if platform is not None else None,
+        rated=None,
+        opponent_type=opponent_type,
+        recency_cutoff=recency_cutoff,
+        opponent_strength=opponent_strength,
+    )
 
     result = await session.execute(stmt)
     return list(result.fetchall())
@@ -121,11 +156,14 @@ async def query_results_by_color(
     user_id: int,
     recency_cutoff: datetime.datetime | None,
     platform: str | None = None,
+    *,
+    opponent_type: str = "human",
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
 ) -> list[Row[Any]]:
     """Return (user_color, total, wins, draws, losses) via SQL aggregation.
 
     Excludes games where user_color is NULL.
-    Optionally filtered by platform (chess.com or lichess).
+    Optionally filtered by platform, recency, opponent_type, and opponent_strength.
     """
     win_cond = or_(
         and_(Game.result == "1-0", Game.user_color == "white"),
@@ -152,11 +190,16 @@ async def query_results_by_color(
         .group_by(Game.user_color)
     )
 
-    if recency_cutoff is not None:
-        stmt = stmt.where(Game.played_at >= recency_cutoff)
-
-    if platform is not None:
-        stmt = stmt.where(Game.platform == platform)
+    # Use shared filter helper per CLAUDE.md "Shared Query Filters".
+    stmt = apply_game_filters(
+        stmt,
+        time_control=None,
+        platform=[platform] if platform is not None else None,
+        rated=None,
+        opponent_type=opponent_type,
+        recency_cutoff=recency_cutoff,
+        opponent_strength=opponent_strength,
+    )
 
     result = await session.execute(stmt)
     return list(result.fetchall())
@@ -234,8 +277,14 @@ async def query_top_openings_sql_wdl(
     )
 
     stmt = apply_game_filters(
-        stmt, time_control, platform, rated, opponent_type, recency_cutoff,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     result = await session.execute(stmt)
@@ -294,31 +343,38 @@ async def query_position_wdl_batch(
     if color is not None:
         dedup = dedup.where(Game.user_color == color)
     dedup = apply_game_filters(
-        dedup, time_control, platform, rated, opponent_type, recency_cutoff,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        dedup,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
     dedup = dedup.subquery()
 
-    stmt = (
-        select(
-            dedup.c.full_hash,
-            func.count().label("total"),
-            func.count().filter(
-                or_(
-                    and_(dedup.c.result == "1-0", dedup.c.user_color == "white"),
-                    and_(dedup.c.result == "0-1", dedup.c.user_color == "black"),
-                )
-            ).label("wins"),
-            func.count().filter(dedup.c.result == "1/2-1/2").label("draws"),
-            func.count().filter(
-                or_(
-                    and_(dedup.c.result == "0-1", dedup.c.user_color == "white"),
-                    and_(dedup.c.result == "1-0", dedup.c.user_color == "black"),
-                )
-            ).label("losses"),
+    stmt = select(
+        dedup.c.full_hash,
+        func.count().label("total"),
+        func.count()
+        .filter(
+            or_(
+                and_(dedup.c.result == "1-0", dedup.c.user_color == "white"),
+                and_(dedup.c.result == "0-1", dedup.c.user_color == "black"),
+            )
         )
-        .group_by(dedup.c.full_hash)
-    )
+        .label("wins"),
+        func.count().filter(dedup.c.result == "1/2-1/2").label("draws"),
+        func.count()
+        .filter(
+            or_(
+                and_(dedup.c.result == "0-1", dedup.c.user_color == "white"),
+                and_(dedup.c.result == "1-0", dedup.c.user_color == "black"),
+            )
+        )
+        .label("losses"),
+    ).group_by(dedup.c.full_hash)
 
     result = await session.execute(stmt)
     return {
