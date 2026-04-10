@@ -12,7 +12,7 @@ import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, SlidersHorizontal, BookMarked, X, ChevronDown } from 'lucide-react';
+import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, SlidersHorizontal, BookMarked, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -54,6 +54,7 @@ import { SidebarLayout, type SidebarPanelConfig } from '@/components/layout/Side
 import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTable';
+import { MinimapPopover } from '@/components/stats/MinimapPopover';
 import { pgnToSanArray } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
@@ -61,11 +62,106 @@ import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
 import { resolveMatchSide } from '@/types/api';
 import type { PositionBookmarkResponse, TimeSeriesRequest } from '@/types/position_bookmarks';
+import type { OpeningWDL } from '@/types/stats';
 
 const PAGE_SIZE = 20;
 // Number of most-played openings per color to use as default chart data when no bookmarks exist
 
 type SidebarPanel = 'filters' | 'bookmarks';
+
+// MOBILE MostPlayedOpenings renderer (STAB-02 / D-11-D-14)
+// Renders each opening as a WDLChartRow, matching the Bookmarked Openings: Results
+// visual style. Desktop keeps the existing MostPlayedOpeningsTable (unchanged).
+// Preserves the INITIAL_VISIBLE_COUNT = 3 collapse/expand behavior from MostPlayedOpeningsTable.
+const MOBILE_MPO_INITIAL_VISIBLE_COUNT = 3;
+
+function MobileMostPlayedRows({
+  openings,
+  color,
+  testIdPrefix,
+  onOpenGames,
+}: {
+  openings: OpeningWDL[];
+  color: 'white' | 'black';
+  testIdPrefix: string;
+  onOpenGames: (pgn: string, color: 'white' | 'black') => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (openings.length === 0) return null;
+
+  const visibleOpenings = expanded
+    ? openings
+    : openings.slice(0, MOBILE_MPO_INITIAL_VISIBLE_COUNT);
+  const hiddenCount = openings.length - MOBILE_MPO_INITIAL_VISIBLE_COUNT;
+  const hasMore = hiddenCount > 0;
+
+  // maxTotal spans ALL openings in this color's list so bar widths are comparable
+  // across the collapse/expand toggle (D-10 rationale applied to D-11).
+  const maxTotal = Math.max(...openings.map((o) => o.total));
+
+  return (
+    <div data-testid={`${testIdPrefix}-mobile-list`}>
+      <div className="space-y-2">
+        {visibleOpenings.map((o) => {
+          const label = (
+            <MinimapPopover
+              fen={o.fen}
+              boardOrientation={color}
+              testId={`${testIdPrefix}-minimap-${o.opening_eco}`}
+            >
+              <span className="inline-flex items-baseline gap-1.5 min-w-0">
+                <span className="text-muted-foreground text-xs shrink-0">{o.opening_eco}</span>
+                <span className="truncate">{o.opening_name}</span>
+              </span>
+            </MinimapPopover>
+          );
+
+          return (
+            <WDLChartRow
+              key={`${o.opening_eco}-${o.opening_name}`}
+              data={{
+                wins: o.wins,
+                draws: o.draws,
+                losses: o.losses,
+                total: o.total,
+                win_pct: o.win_pct,
+                draw_pct: o.draw_pct,
+                loss_pct: o.loss_pct,
+              }}
+              label={label}
+              maxTotal={maxTotal}
+              onOpenGames={() => onOpenGames(o.pgn, color)}
+              openGamesTestId={`${testIdPrefix}-games-${o.opening_eco}`}
+              testId={`${testIdPrefix}-row-${o.opening_eco}`}
+            />
+          );
+        })}
+      </div>
+
+      {hasMore && (
+        <button
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mt-2 px-2"
+          onClick={() => setExpanded(!expanded)}
+          data-testid={`${testIdPrefix}-btn-more-mobile`}
+          aria-label={expanded ? 'Show fewer openings' : `Show ${hiddenCount} more openings`}
+        >
+          {expanded ? (
+            <>
+              <ChevronUp className="h-4 w-4" />
+              Less
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-4 w-4" />
+              {hiddenCount} more
+            </>
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function OpeningsPage() {
   const location = useLocation();
@@ -744,12 +840,24 @@ export function OpeningsPage() {
               </InfoPopover>
             </span>
           </h2>
-          <MostPlayedOpeningsTable
-            openings={mostPlayedData.white}
-            color="white"
-            testIdPrefix="mpo-white"
-            onOpenGames={handleOpenGames}
-          />
+          {/* Desktop: 3-col table (unchanged) */}
+          <div className="hidden md:block">
+            <MostPlayedOpeningsTable
+              openings={mostPlayedData.white}
+              color="white"
+              testIdPrefix="mpo-white"
+              onOpenGames={handleOpenGames}
+            />
+          </div>
+          {/* Mobile: stacked WDLChartRows (STAB-02) */}
+          <div className="md:hidden">
+            <MobileMostPlayedRows
+              openings={mostPlayedData.white}
+              color="white"
+              testIdPrefix="mpo-white"
+              onOpenGames={handleOpenGames}
+            />
+          </div>
         </div>
       )}
       {/* Most Played Openings as Black */}
@@ -764,12 +872,24 @@ export function OpeningsPage() {
               </InfoPopover>
             </span>
           </h2>
-          <MostPlayedOpeningsTable
-            openings={mostPlayedData.black}
-            color="black"
-            testIdPrefix="mpo-black"
-            onOpenGames={handleOpenGames}
-          />
+          {/* Desktop: 3-col table (unchanged) */}
+          <div className="hidden md:block">
+            <MostPlayedOpeningsTable
+              openings={mostPlayedData.black}
+              color="black"
+              testIdPrefix="mpo-black"
+              onOpenGames={handleOpenGames}
+            />
+          </div>
+          {/* Mobile: stacked WDLChartRows (STAB-02) */}
+          <div className="md:hidden">
+            <MobileMostPlayedRows
+              openings={mostPlayedData.black}
+              color="black"
+              testIdPrefix="mpo-black"
+              onOpenGames={handleOpenGames}
+            />
+          </div>
         </div>
       )}
     </div>
