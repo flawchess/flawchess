@@ -169,14 +169,15 @@ export function HomePageContent() {
           </div>
 
           {/* Right column: Interactive Opening Explorer preview — lg and up only.
+              Title → image → bullets stacking matches the feature sections below.
               Below lg the explorer renders as a standalone charcoal section further down. */}
           <div data-testid="hero-explorer-preview" className="hidden lg:block">
+            <h2 className="text-2xl font-bold mb-4">Interactive Opening Explorer</h2>
             <img
               src="/screenshots/opening-explorer.png"
               alt="Board with move explorer showing win/draw/loss bars per candidate move"
               className="rounded-lg border border-border shadow-md w-full mb-4"
             />
-            <h2 className="text-2xl font-bold mb-3">Interactive Opening Explorer</h2>
             <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
               <li>Step through any opening and see your win/draw/loss rate for every move you&apos;ve played.</li>
               <li>Discover which moves you struggle against and which traps and gambits work for you.</li>
@@ -188,32 +189,27 @@ export function HomePageContent() {
       </div>
 
       {/* Interactive Opening Explorer — standalone section (mobile / small desktop only).
-          Image goes first, text block below, matching the mobile stack order used for
-          every feature section. Hidden on lg+ because the hero's right column already
-          shows the same content there. */}
+          Title → image → bullets, matching the feature sections below. Hidden on lg+
+          because the hero's right column already shows the same content there. */}
       <section
         data-testid="feature-opening-explorer-mobile"
         className="lg:hidden bg-[#1a1a1a] py-12"
       >
-        <div className="max-w-5xl mx-auto px-4 flex flex-col gap-4">
+        <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
+          <div className="flex items-center gap-4">
+            <Scale className="h-10 w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+            <h2 className="text-2xl font-bold">Interactive Opening Explorer</h2>
+          </div>
           <img
             src="/screenshots/opening-explorer.png"
             alt="Board with move explorer showing win/draw/loss bars per candidate move"
             className="rounded-lg border border-border shadow-md w-full"
           />
-          <div className="flex gap-4">
-            <div className="shrink-0 mt-1">
-              <Scale className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold">Interactive Opening Explorer</h2>
-              <ul className="mt-3 list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
-                <li>Step through any opening and see your win/draw/loss rate for every move you&apos;ve played.</li>
-                <li>Discover which moves you struggle against and which traps and gambits work for you.</li>
-                <li>Scout your opponents&apos; weaknesses and tendencies before a match.</li>
-              </ul>
-            </div>
-          </div>
+          <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
+            <li>Step through any opening and see your win/draw/loss rate for every move you&apos;ve played.</li>
+            <li>Discover which moves you struggle against and which traps and gambits work for you.</li>
+            <li>Scout your opponents&apos; weaknesses and tendencies before a match.</li>
+          </ul>
         </div>
       </section>
 
@@ -231,32 +227,30 @@ export function HomePageContent() {
             ? 'lg:grid-cols-[3fr_2fr]'
             : 'lg:grid-cols-[2fr_3fr]';
 
-          const textBlock = (
-            <div className="flex flex-col justify-center">
-              <div className="flex gap-4">
-                <div className="shrink-0 mt-1">
-                  <Icon className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold">{heading}</h2>
-                  {Array.isArray(desc) ? (
-                    <ul className="mt-3 list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
-                      {desc.map((item, i) => <li key={i}>{item}</li>)}
-                    </ul>
-                  ) : (
-                    <p className="mt-3 text-base leading-relaxed text-muted-foreground">{desc}</p>
-                  )}
-                </div>
-              </div>
+          const titleBlock = (
+            <div className="flex items-center gap-4">
+              <Icon className="h-10 w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+              <h2 className="text-2xl font-bold">{heading}</h2>
             </div>
           );
+          const bulletsBlock = Array.isArray(desc) ? (
+            <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
+              {desc.map((item, i) => <li key={i}>{item}</li>)}
+            </ul>
+          ) : (
+            <p className="text-base leading-relaxed text-muted-foreground">{desc}</p>
+          );
           const imageBlock = (
-            <div className="flex items-center justify-center">
-              <img
-                src={screenshot.src}
-                alt={screenshot.alt}
-                className="rounded-lg border border-border shadow-md w-full lg:transition-transform lg:duration-300 lg:hover:scale-[1.02] lg:hover:shadow-lg"
-              />
+            <img
+              src={screenshot.src}
+              alt={screenshot.alt}
+              className="rounded-lg border border-border shadow-md w-full lg:transition-transform lg:duration-300 lg:hover:scale-[1.02] lg:hover:shadow-lg"
+            />
+          );
+          const desktopTextCol = (
+            <div>
+              {titleBlock}
+              <div className="mt-3">{bulletsBlock}</div>
             </div>
           );
           return (
@@ -265,20 +259,26 @@ export function HomePageContent() {
               data-testid={`feature-${slug}`}
               className={cn('py-12 lg:py-16', bgClass)}
             >
-              <div className={cn('max-w-5xl mx-auto px-4 grid gap-8 lg:gap-12 items-center', gridCols)}>
-              {/* On mobile: always image first, text second. On desktop: alternate via
-                  imagePosition (DOM order = left→first, flipped via order classes for right). */}
-              {imagePosition === 'left' ? (
-                <>
-                  <div>{imageBlock}</div>
-                  <div>{textBlock}</div>
-                </>
-              ) : (
-                <>
-                  <div className="order-2 lg:order-1">{textBlock}</div>
-                  <div className="order-1 lg:order-2">{imageBlock}</div>
-                </>
-              )}
+              {/* Mobile layout: title → image → bullets stacked in a single column. */}
+              <div className="lg:hidden max-w-5xl mx-auto px-4 flex flex-col gap-6">
+                {titleBlock}
+                {imageBlock}
+                {bulletsBlock}
+              </div>
+              {/* Desktop layout: 2-col grid alternating image left/right, text column
+                  stacks title above bullets. */}
+              <div className={cn('hidden lg:grid max-w-5xl mx-auto px-4 gap-12 items-center', gridCols)}>
+                {imagePosition === 'left' ? (
+                  <>
+                    {imageBlock}
+                    {desktopTextCol}
+                  </>
+                ) : (
+                  <>
+                    {desktopTextCol}
+                    {imageBlock}
+                  </>
+                )}
               </div>
             </section>
           );
