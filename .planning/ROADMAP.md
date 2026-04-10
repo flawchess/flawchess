@@ -194,9 +194,9 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 51-01-PLAN.md — Backend + API client + hooks: wire opponent_type/opponent_strength end-to-end through /stats/global and /stats/rating-history
-- [ ] 51-02-PLAN.md — Stats Subtab: 2-col Bookmarked Results on desktop + stacked WDLChartRow Most Played on mobile
-- [ ] 51-03-PLAN.md — Homepage: desktop 2-col split hero with Opening Explorer preview, remove pills, remove Opening Explorer from FEATURES
+- [x] 51-01-PLAN.md — Backend + API client + hooks: wire opponent_type/opponent_strength end-to-end through /stats/global and /stats/rating-history
+- [x] 51-02-PLAN.md — Stats Subtab: 2-col Bookmarked Results on desktop + stacked WDLChartRow Most Played on mobile
+- [x] 51-03-PLAN.md — Homepage: desktop 2-col split hero with Opening Explorer preview, remove pills, remove Opening Explorer from FEATURES
 - [ ] 51-04-PLAN.md — Global Stats rename + FilterPanel enable opponent filters + page h1
 **UI hint**: yes
 
@@ -290,7 +290,7 @@ Plans:
 | 48. Conversion & Recovery Persistence Filter | v1.10 | 2/2 | Complete | 2026-04-07 |
 | 49. Openings Desktop Sidebar | v1.9 | 1/1 | Complete    | 2026-04-09 |
 | 50. Mobile Layout Restructuring | v1.9 | 2/2 | Complete    | 2026-04-10 |
-| 51. Stats Subtab, Homepage & Global Stats | v1.9 | 0/4 | Not started | - |
+| 51. Stats Subtab, Homepage & Global Stats | v1.9 | 3/4 | In Progress|  |
 | 52. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
 | 53. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
 | 54. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
@@ -301,7 +301,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/2 plans complete
+**Plans:** 0 plans
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
