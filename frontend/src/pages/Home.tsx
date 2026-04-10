@@ -154,8 +154,8 @@ export function HomePageContent() {
                 )}
               </Button>
             </div>
-            {/* Callout pills — fixed width so all three are identical regardless of text length */}
-            <div className="mt-10 flex flex-wrap justify-center gap-2">
+            {/* Callout pills — desktop only (hidden on mobile / small desktop) */}
+            <div className="mt-10 hidden lg:flex flex-wrap justify-center gap-2">
               <span className="bg-muted text-muted-foreground w-36 rounded-full px-3 py-1 text-center text-sm">
                 Free to use
               </span>
@@ -188,14 +188,19 @@ export function HomePageContent() {
       </div>
 
       {/* Interactive Opening Explorer — standalone section (mobile / small desktop only).
-          Matches the alternating charcoal background and text-above-image order of the
-          feature sections below. Hidden on lg+ because the hero's right column already
+          Image goes first, text block below, matching the mobile stack order used for
+          every feature section. Hidden on lg+ because the hero's right column already
           shows the same content there. */}
       <section
         data-testid="feature-opening-explorer-mobile"
         className="lg:hidden bg-[#1a1a1a] py-12"
       >
         <div className="max-w-5xl mx-auto px-4 flex flex-col gap-4">
+          <img
+            src="/screenshots/opening-explorer.png"
+            alt="Board with move explorer showing win/draw/loss bars per candidate move"
+            className="rounded-lg border border-border shadow-md w-full"
+          />
           <div className="flex gap-4">
             <div className="shrink-0 mt-1">
               <Scale className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
@@ -209,11 +214,6 @@ export function HomePageContent() {
               </ul>
             </div>
           </div>
-          <img
-            src="/screenshots/opening-explorer.png"
-            alt="Board with move explorer showing win/draw/loss bars per candidate move"
-            className="rounded-lg border border-border shadow-md w-full"
-          />
         </div>
       </section>
 
@@ -266,17 +266,17 @@ export function HomePageContent() {
               className={cn('py-12 lg:py-16', bgClass)}
             >
               <div className={cn('max-w-5xl mx-auto px-4 grid gap-8 lg:gap-12 items-center', gridCols)}>
-              {/* On mobile: always text first, image second.
-                  On desktop: alternate via order classes. */}
+              {/* On mobile: always image first, text second. On desktop: alternate via
+                  imagePosition (DOM order = left→first, flipped via order classes for right). */}
               {imagePosition === 'left' ? (
                 <>
-                  <div className="order-2 lg:order-1">{imageBlock}</div>
-                  <div className="order-1 lg:order-2">{textBlock}</div>
+                  <div>{imageBlock}</div>
+                  <div>{textBlock}</div>
                 </>
               ) : (
                 <>
-                  <div>{textBlock}</div>
-                  <div>{imageBlock}</div>
+                  <div className="order-2 lg:order-1">{textBlock}</div>
+                  <div className="order-1 lg:order-2">{imageBlock}</div>
                 </>
               )}
               </div>
