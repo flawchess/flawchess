@@ -913,7 +913,7 @@ export function OpeningsPage() {
         <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)} className="md:hidden flex flex-col gap-2 min-w-0">
           {/* Sticky board + controls — sticks to top of viewport while scrolling content below */}
           {/* z-20 to stay above ToggleGroupItem's focus:z-10 */}
-          <div className="sticky top-0 z-20 bg-background/80 backdrop-blur-md">
+          <div className="sticky top-0 z-20 bg-white/20 backdrop-blur-md">
             {/* Collapsible board section — animates via grid-rows trick */}
             <div className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${boardCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}>
               <div className="overflow-hidden">
@@ -1025,7 +1025,7 @@ export function OpeningsPage() {
             </div>
             {/* Swipe/tap handle — toggle board collapse (D-11, D-12: enlarged to 44px touch target) */}
             <button
-              className="flex w-full items-center justify-center h-11 touch-none bg-white/10 border-t border-white/10 rounded-b-xl mt-1"
+              className="flex w-full items-center justify-center h-11 touch-none bg-white/20 border-t border-white/10 rounded-b-xl mt-1"
               onTouchStart={handleHandleTouchStart}
               onTouchEnd={handleHandleTouchEnd}
               onClick={() => setBoardCollapsed((c) => !c)}
