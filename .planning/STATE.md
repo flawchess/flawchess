@@ -1,26 +1,26 @@
 ---
-gsd-state-version: 1.0
+gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: UI/UX Restructuring
-status: planning
-last_updated: "2026-04-10T12:26:35.969Z"
-last_activity: 2026-04-10
+status: executing
+last_updated: "2026-04-10T14:25:14.725Z"
+last_activity: 2026-04-10 -- Phase 51 execution started
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 2
-  total_plans: 3
+  total_plans: 7
   completed_plans: 3
-  percent: 67
+  percent: 43
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 51 (stats-subtab-homepage-global-stats) — CONTEXT GATHERED
-Plan: pending
-Status: Phase 51 context captured via /gsd-discuss-phase. Ready for /gsd-plan-phase 51. Homepage: static split hero (Opening Explorer right column) — carousel dropped mid-discussion. Stats subtab: 2-col Bookmarked Results at lg, mobile Most Played uses WDLChartRow. Global Stats: rename + narrow backend exception adding opponent_type+opponent_strength params.
-Last activity: 2026-04-10 — Phase 51 context gathered
+Phase: 51 (stats-subtab-homepage-global-stats) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 51
+Last activity: 2026-04-10 -- Phase 51 execution started
 
 Progress: [██████░░░░] 67% (2/3 v1.9 phases complete)
 
