@@ -2,27 +2,27 @@
 gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: UI/UX Restructuring
-status: executing
-last_updated: "2026-04-09T17:37:53.134Z"
-last_activity: 2026-04-09 -- Phase 49 execution started
+status: planning
+last_updated: "2026-04-10T10:16:44.947Z"
+last_activity: 2026-04-10
 progress:
-  total_phases: 2
-  completed_phases: 0
-  total_plans: 1
-  completed_plans: 0
-  percent: 0
+  total_phases: 3
+  completed_phases: 2
+  total_plans: 3
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 49 (openings-desktop-sidebar) — EXECUTING
-Plan: 1 of 1
-Status: Executing Phase 49
-Last activity: 2026-04-09 -- Phase 49 execution started
+Phase: 50 (mobile-layout-restructuring) — COMPLETE
+Plan: 2 of 2 complete
+Status: Phase 50 complete. Milestone v1.9 has Phase 49 (Openings Desktop Sidebar) and Phase 51 (Stats Subtab, Homepage & Global Stats) still incomplete — pick next via /gsd-progress.
+Last activity: 2026-04-10 — Phase 50 complete with 5 rounds of human-verification gap closure
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████░░░░] 67% (2/3 v1.9 phases complete)
 
 ## Project Reference
 
@@ -57,7 +57,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 ### Blockers/Concerns
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
-- MMOB-01 (subtab placement) has TBD placement — resolve before planning Phase 50
+
+### Recently Resolved
+
+- MMOB-01 (subtab placement TBD) resolved 2026-04-10: unified row holding Tabs | color toggle | bookmark | filter inside sticky wrapper but outside the board collapse region — see `.planning/phases/50-mobile-layout-restructuring/50-CONTEXT.md`
 
 ### Quick Tasks Completed
 
@@ -67,4 +70,5 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 | 260408-snn | Implement Opponent Strength filter (Any/+100/±100/-100) on Openings and Endgames pages | 2026-04-08 | ac883c6 | [260408-snn-implement-opponent-strength-filter-with-](./quick/260408-snn-implement-opponent-strength-filter-with-/) |
 
 ---
-Last activity: 2026-04-09 - Roadmap created for v1.9 UI/UX Restructuring (3 phases: 49 Openings Desktop Sidebar, 50 Mobile Layout Restructuring, 51 Stats Subtab/Homepage/Global Stats)
+Last activity: 2026-04-10 - Phase 50 complete (5 gap-closure rounds from human verification); branch gsd/phase-50-mobile-layout-restructuring
+| 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
