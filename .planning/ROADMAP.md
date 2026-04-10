@@ -120,7 +120,7 @@
 
 ### v1.9 UI/UX Restructuring (Phases 49-51)
 
-- [ ] **Phase 49: Openings Desktop Sidebar** - Collapsible left-edge sidebar with Filters/Bookmarks panels that overlay the board on smaller screens
+- [x] **Phase 49: Openings Desktop Sidebar** - Collapsible left-edge sidebar with Filters/Bookmarks panels that overlay the board on smaller screens (completed 2026-04-09)
 - [x] **Phase 50: Mobile Layout Restructuring** - Relocate Openings subtab navigation and adjust Endgames/Games mobile layouts for consistency (completed 2026-04-10)
 - [ ] **Phase 51: Stats Subtab, Homepage & Global Stats** - 2-column desktop stats layout, stacked mobile most-played, homepage feature visibility, Global Stats relabeling and filters
 
@@ -163,7 +163,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 49-01-PLAN.md — Restructure desktop layout with collapsible sidebar strip and panel
+- [x] 49-01-PLAN.md — Restructure desktop layout with collapsible sidebar strip and panel
 **UI hint**: yes
 
 ### Phase 50: Mobile Layout Restructuring
@@ -191,7 +191,13 @@ Plans:
   3. Homepage feature content is visible without scrolling on a standard desktop viewport (1280px wide, no vertical scroll needed to see key features)
   4. The Stats page navigation link and page header read "Global Stats" instead of the previous label
   5. At least one additional filter (beyond what was previously available) is functional on the Global Stats page
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 51-01-PLAN.md — Backend + API client + hooks: wire opponent_type/opponent_strength end-to-end through /stats/global and /stats/rating-history
+- [ ] 51-02-PLAN.md — Stats Subtab: 2-col Bookmarked Results on desktop + stacked WDLChartRow Most Played on mobile
+- [ ] 51-03-PLAN.md — Homepage: desktop 2-col split hero with Opening Explorer preview, remove pills, remove Opening Explorer from FEATURES
+- [ ] 51-04-PLAN.md — Global Stats rename + FilterPanel enable opponent filters + page h1
 **UI hint**: yes
 
 ### Phase 52: Endgame ELO — Backend + Breakdown Table
@@ -282,9 +288,9 @@ Plans:
 | 46. Email/Password Promotion | v1.8 | N/A | Complete | 2026-04-06 |
 | 47. Google SSO Promotion | v1.8 | N/A | Complete | 2026-04-06 |
 | 48. Conversion & Recovery Persistence Filter | v1.10 | 2/2 | Complete | 2026-04-07 |
-| 49. Openings Desktop Sidebar | v1.9 | 0/1 | Not started | - |
+| 49. Openings Desktop Sidebar | v1.9 | 1/1 | Complete    | 2026-04-09 |
 | 50. Mobile Layout Restructuring | v1.9 | 2/2 | Complete    | 2026-04-10 |
-| 51. Stats Subtab, Homepage & Global Stats | v1.9 | 0/? | Not started | - |
+| 51. Stats Subtab, Homepage & Global Stats | v1.9 | 0/4 | Not started | - |
 | 52. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
 | 53. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
 | 54. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
