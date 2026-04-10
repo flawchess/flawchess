@@ -174,7 +174,11 @@ Plans:
   1. Openings subtab navigation (Moves/Games/Stats) appears in the new agreed position (above board or near bottom nav) rather than the old location
   2. The subtab placement is consistent across Openings, Endgames, and Games tab mobile layouts
   3. The board remains fully usable on 375px-wide screens with no horizontal scroll introduced by the subtab relocation
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 50-01-PLAN.md — Restructure Openings mobile sticky wrapper with unified control row (Tabs | Color | Bookmark | Filter) outside board collapse region, 5-item vertical board-action column, enlarged collapse handle, backdrop-blur surface
+- [ ] 50-02-PLAN.md — Endgames mobile visual-alignment pass: backdrop-blur sticky row at 44px height with 44px filter button
 **UI hint**: yes
 
 ### Phase 51: Stats Subtab, Homepage & Global Stats
@@ -279,7 +283,7 @@ Plans:
 | 47. Google SSO Promotion | v1.8 | N/A | Complete | 2026-04-06 |
 | 48. Conversion & Recovery Persistence Filter | v1.10 | 2/2 | Complete | 2026-04-07 |
 | 49. Openings Desktop Sidebar | v1.9 | 0/1 | Not started | - |
-| 50. Mobile Layout Restructuring | v1.9 | 0/? | Not started | - |
+| 50. Mobile Layout Restructuring | v1.9 | 0/2 | Not started | - |
 | 51. Stats Subtab, Homepage & Global Stats | v1.9 | 0/? | Not started | - |
 | 52. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
 | 53. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
