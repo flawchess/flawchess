@@ -80,21 +80,23 @@ function MobileMostPlayedRows({
   color,
   testIdPrefix,
   onOpenGames,
+  showAll = false,
 }: {
   openings: OpeningWDL[];
   color: 'white' | 'black';
   testIdPrefix: string;
   onOpenGames: (opening: OpeningWDL, color: 'white' | 'black') => void;
+  showAll?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
   if (openings.length === 0) return null;
 
-  const visibleOpenings = expanded
+  const visibleOpenings = showAll || expanded
     ? openings
     : openings.slice(0, MOBILE_MPO_INITIAL_VISIBLE_COUNT);
   const hiddenCount = openings.length - MOBILE_MPO_INITIAL_VISIBLE_COUNT;
-  const hasMore = hiddenCount > 0;
+  const hasMore = !showAll && hiddenCount > 0;
 
   // maxTotal spans ALL openings in this color's list so bar widths are comparable
   // across the collapse/expand toggle (D-10 rationale applied to D-11).
@@ -815,60 +817,62 @@ export function OpeningsPage() {
           <>
             {whiteBookmarkRows.length > 0 && (
               <div className="charcoal-texture rounded-md p-4" data-testid="bookmarks-white-section">
-                <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
+                <h2 className="text-lg font-medium mb-3 flex items-center gap-1">
+                  <BookMarked className="h-5 w-5" />
+                  Bookmarked Openings for
                   <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-white" />
-                  <span className="inline-flex items-center gap-1">
-                    <BookMarked className="h-5 w-5" />
-                    Bookmarked Openings for White
-                    <InfoPopover ariaLabel="Bookmarked White openings info" testId="bookmarks-white-info" side="top">
-                      Your saved White bookmarks with win, draw, and loss rates based on the current filter settings.
-                    </InfoPopover>
-                  </span>
+                  White
+                  <InfoPopover ariaLabel="Bookmarked White openings info" testId="bookmarks-white-info" side="top">
+                    Your saved White bookmarks with win, draw, and loss rates based on the current filter settings.
+                  </InfoPopover>
                 </h2>
-                <div className="hidden md:block">
+                <div className="hidden lg:block">
                   <MostPlayedOpeningsTable
                     openings={whiteBookmarkRows}
                     color="white"
                     testIdPrefix="bookmarks-white"
                     onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                    showAll
                   />
                 </div>
-                <div className="md:hidden">
+                <div className="lg:hidden">
                   <MobileMostPlayedRows
                     openings={whiteBookmarkRows}
                     color="white"
                     testIdPrefix="bookmarks-white"
                     onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                    showAll
                   />
                 </div>
               </div>
             )}
             {blackBookmarkRows.length > 0 && (
               <div className="charcoal-texture rounded-md p-4" data-testid="bookmarks-black-section">
-                <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
+                <h2 className="text-lg font-medium mb-3 flex items-center gap-1">
+                  <BookMarked className="h-5 w-5" />
+                  Bookmarked Openings for
                   <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-zinc-900" />
-                  <span className="inline-flex items-center gap-1">
-                    <BookMarked className="h-5 w-5" />
-                    Bookmarked Openings for Black
-                    <InfoPopover ariaLabel="Bookmarked Black openings info" testId="bookmarks-black-info" side="top">
-                      Your saved Black bookmarks with win, draw, and loss rates based on the current filter settings.
-                    </InfoPopover>
-                  </span>
+                  Black
+                  <InfoPopover ariaLabel="Bookmarked Black openings info" testId="bookmarks-black-info" side="top">
+                    Your saved Black bookmarks with win, draw, and loss rates based on the current filter settings.
+                  </InfoPopover>
                 </h2>
-                <div className="hidden md:block">
+                <div className="hidden lg:block">
                   <MostPlayedOpeningsTable
                     openings={blackBookmarkRows}
                     color="black"
                     testIdPrefix="bookmarks-black"
                     onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                    showAll
                   />
                 </div>
-                <div className="md:hidden">
+                <div className="lg:hidden">
                   <MobileMostPlayedRows
                     openings={blackBookmarkRows}
                     color="black"
                     testIdPrefix="bookmarks-black"
                     onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                    showAll
                   />
                 </div>
               </div>
@@ -895,7 +899,7 @@ export function OpeningsPage() {
             </span>
           </h2>
           {/* Desktop: 3-col table (unchanged) */}
-          <div className="hidden md:block">
+          <div className="hidden lg:block">
             <MostPlayedOpeningsTable
               openings={mostPlayedData.white}
               color="white"
@@ -904,7 +908,7 @@ export function OpeningsPage() {
             />
           </div>
           {/* Mobile: stacked WDLChartRows (STAB-02) */}
-          <div className="md:hidden">
+          <div className="lg:hidden">
             <MobileMostPlayedRows
               openings={mostPlayedData.white}
               color="white"
@@ -927,7 +931,7 @@ export function OpeningsPage() {
             </span>
           </h2>
           {/* Desktop: 3-col table (unchanged) */}
-          <div className="hidden md:block">
+          <div className="hidden lg:block">
             <MostPlayedOpeningsTable
               openings={mostPlayedData.black}
               color="black"
@@ -936,7 +940,7 @@ export function OpeningsPage() {
             />
           </div>
           {/* Mobile: stacked WDLChartRows (STAB-02) */}
-          <div className="md:hidden">
+          <div className="lg:hidden">
             <MobileMostPlayedRows
               openings={mostPlayedData.black}
               color="black"
@@ -964,6 +968,7 @@ export function OpeningsPage() {
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
         {/* Desktop: sidebar strip + optional panel + board/tabs content */}
         <SidebarLayout
+          breakpoint="lg"
           panels={[
             {
               id: 'filters',
@@ -1098,7 +1103,7 @@ export function OpeningsPage() {
         </SidebarLayout>
 
         {/* Mobile: single column with sticky board */}
-        <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)} className="md:hidden flex flex-col gap-2 min-w-0">
+        <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)} className="lg:hidden flex flex-col gap-2 min-w-0">
           {/* Sticky board + controls — sticks to top of viewport while scrolling content below */}
           {/* z-20 to stay above ToggleGroupItem's focus:z-10 */}
           <div className="sticky top-0 z-20 bg-white/20 backdrop-blur-md pt-1 rounded-b-xl">

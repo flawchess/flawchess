@@ -14,6 +14,8 @@ interface MostPlayedOpeningsTableProps {
   testIdPrefix: string;
   /** Called when user clicks the games link on a row. Receives the full opening object so callers can route on any field. */
   onOpenGames: (opening: OpeningWDL, color: "white" | "black") => void;
+  /** When true, render every opening without the collapsible "X more" fold. */
+  showAll?: boolean;
 }
 
 /** Format opening name: split on ": " — line break only on mobile. */
@@ -83,14 +85,14 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
   );
 }
 
-export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenGames }: MostPlayedOpeningsTableProps) {
+export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenGames, showAll = false }: MostPlayedOpeningsTableProps) {
   const [expanded, setExpanded] = React.useState(false);
 
   if (openings.length === 0) return null;
 
-  const visibleOpenings = expanded ? openings : openings.slice(0, INITIAL_VISIBLE_COUNT);
+  const visibleOpenings = showAll || expanded ? openings : openings.slice(0, INITIAL_VISIBLE_COUNT);
   const hiddenCount = openings.length - INITIAL_VISIBLE_COUNT;
-  const hasMore = hiddenCount > 0;
+  const hasMore = !showAll && hiddenCount > 0;
 
   return (
     <div data-testid={`${testIdPrefix}-table`}>
