@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: UI/UX Restructuring
 status: executing
-last_updated: "2026-04-09T17:37:53.134Z"
-last_activity: 2026-04-09 -- Phase 49 execution started
+last_updated: "2026-04-10T00:00:00.000Z"
+last_activity: 2026-04-10 -- Phase 50 context gathered
 progress:
   total_phases: 2
   completed_phases: 0
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 49 (openings-desktop-sidebar) — EXECUTING
-Plan: 1 of 1
-Status: Executing Phase 49
-Last activity: 2026-04-09 -- Phase 49 execution started
+Phase: 50 (mobile-layout-restructuring) — CONTEXT GATHERED
+Plan: 0 of 0 (not yet planned)
+Status: Ready to plan Phase 50
+Last activity: 2026-04-10 -- Phase 50 context gathered
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -57,7 +57,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 ### Blockers/Concerns
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
-- MMOB-01 (subtab placement) has TBD placement — resolve before planning Phase 50
+
+### Recently Resolved
+
+- MMOB-01 (subtab placement TBD) resolved 2026-04-10: unified row holding Tabs | color toggle | bookmark | filter inside sticky wrapper but outside the board collapse region — see `.planning/phases/50-mobile-layout-restructuring/50-CONTEXT.md`
 
 ### Quick Tasks Completed
 
@@ -67,4 +70,4 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 | 260408-snn | Implement Opponent Strength filter (Any/+100/±100/-100) on Openings and Endgames pages | 2026-04-08 | ac883c6 | [260408-snn-implement-opponent-strength-filter-with-](./quick/260408-snn-implement-opponent-strength-filter-with-/) |
 
 ---
-Last activity: 2026-04-09 - Roadmap created for v1.9 UI/UX Restructuring (3 phases: 49 Openings Desktop Sidebar, 50 Mobile Layout Restructuring, 51 Stats Subtab/Homepage/Global Stats)
+Last activity: 2026-04-10 - Phase 50 context gathered (mobile layout restructuring: unified control row, backdrop-blur sticky wrapper, Endgames visual-alignment only)
