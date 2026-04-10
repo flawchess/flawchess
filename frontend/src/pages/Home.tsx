@@ -104,12 +104,12 @@ export function HomePageContent() {
       <div className="bg-[radial-gradient(ellipse_at_center,rgba(139,94,60,0.10),transparent_60%)]">
       <section data-testid="hero-section" className="max-w-6xl mx-auto px-4 py-8 lg:py-12">
         <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-8 lg:gap-12 items-center">
-          {/* Left column: existing hero content (shrunk on lg for narrower column) */}
-          <div className="text-center lg:text-left" data-testid="hero-left-column">
+          {/* Left column: existing hero content — centered at all breakpoints. */}
+          <div className="text-center" data-testid="hero-left-column">
             <img
               src="/icons/logo-384.png"
               alt="FlawChess logo"
-              className="mx-auto lg:mx-0 mb-6 h-28 w-28 lg:h-24 lg:w-24"
+              className="mx-auto mb-6 h-32 w-32 lg:h-36 lg:w-36"
             />
             <h1 className="text-4xl font-bold leading-tight font-brand">
               Engines are flawless, humans play{' '}
@@ -120,7 +120,7 @@ export function HomePageContent() {
             <p className="mt-4 text-base leading-relaxed text-muted-foreground">
               Import games from chess.com and lichess. Explore openings move by move, track endgame performance, and find exactly where you win and lose.
             </p>
-            <div className="mt-8 flex flex-row items-center justify-center lg:justify-start gap-3">
+            <div className="mt-8 flex flex-row items-center justify-center gap-3">
               <Button
                 size="lg"
                 asChild
@@ -153,16 +153,29 @@ export function HomePageContent() {
                 )}
               </Button>
             </div>
+            {/* Callout pills */}
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              <span className="bg-muted text-muted-foreground rounded-full px-3 py-1 text-center text-sm">
+                Free to use
+              </span>
+              <span className="bg-muted text-muted-foreground rounded-full px-3 py-1 text-center text-sm">
+                Mobile friendly
+              </span>
+              <span className="bg-muted text-muted-foreground rounded-full px-3 py-1 text-center text-sm">
+                Cross-Platform
+              </span>
+            </div>
           </div>
 
-          {/* Right column: Interactive Opening Explorer preview (desktop only) */}
-          <div className="hidden lg:block" data-testid="hero-explorer-preview">
-            <h2 className="text-2xl font-bold mb-4">Interactive Opening Explorer</h2>
+          {/* Right column: Interactive Opening Explorer preview. Stacks under the
+              left column below lg via the parent grid's grid-cols-1. */}
+          <div data-testid="hero-explorer-preview">
             <img
               src="/screenshots/opening-explorer.png"
               alt="Board with move explorer showing win/draw/loss bars per candidate move"
               className="rounded-lg border border-border shadow-md w-full mb-4"
             />
+            <h2 className="text-2xl font-bold mb-3">Interactive Opening Explorer</h2>
             <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
               <li>Step through any opening and see your win/draw/loss rate for every move you&apos;ve played.</li>
               <li>Discover which moves you struggle against and which traps and gambits work for you.</li>
