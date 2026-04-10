@@ -913,11 +913,11 @@ export function OpeningsPage() {
         <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)} className="md:hidden flex flex-col gap-2 min-w-0">
           {/* Sticky board + controls — sticks to top of viewport while scrolling content below */}
           {/* z-20 to stay above ToggleGroupItem's focus:z-10 */}
-          <div className="sticky top-0 z-20 bg-white/20 backdrop-blur-md">
+          <div className="sticky top-0 z-20 bg-white/20 backdrop-blur-md pt-1 rounded-b-xl">
             {/* Collapsible board section — animates via grid-rows trick */}
             <div className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${boardCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}>
               <div className="overflow-hidden">
-                <div className="flex items-stretch gap-1">
+                <div className="flex items-stretch gap-1 px-1">
                   <div className="flex-1 min-w-0">
                     <ChessBoard
                       position={chess.position}
@@ -928,7 +928,7 @@ export function OpeningsPage() {
                     />
                   </div>
                   {/* Vertical board-action column: 5 items (Reset, Back, Forward, Flip, Info) */}
-                  <div className="flex flex-col gap-1 w-12">
+                  <div className="flex flex-col gap-1 w-11">
                     <BoardControls
                       vertical
                       className="flex-1"
