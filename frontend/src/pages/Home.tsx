@@ -109,7 +109,7 @@ export function HomePageContent() {
             <img
               src="/icons/logo-384.png"
               alt="FlawChess logo"
-              className="mx-auto mb-6 h-32 w-32 lg:h-36 lg:w-36"
+              className="mx-auto mb-2 h-32 w-32 lg:h-36 lg:w-36"
             />
             <h1 className="text-4xl font-bold leading-tight font-brand">
               Engines are flawless, humans play{' '}
@@ -153,30 +153,33 @@ export function HomePageContent() {
                 )}
               </Button>
             </div>
-            {/* Callout pills */}
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              <span className="bg-muted text-muted-foreground rounded-full px-3 py-1 text-center text-sm">
+            {/* Callout pills — fixed width so all three are identical regardless of text length */}
+            <div className="mt-10 flex flex-wrap justify-center gap-2">
+              <span className="bg-muted text-muted-foreground w-36 rounded-full px-3 py-1 text-center text-sm">
                 Free to use
               </span>
-              <span className="bg-muted text-muted-foreground rounded-full px-3 py-1 text-center text-sm">
+              <span className="bg-muted text-muted-foreground w-36 rounded-full px-3 py-1 text-center text-sm">
                 Mobile friendly
               </span>
-              <span className="bg-muted text-muted-foreground rounded-full px-3 py-1 text-center text-sm">
+              <span className="bg-muted text-muted-foreground w-36 rounded-full px-3 py-1 text-center text-sm">
                 Cross-Platform
               </span>
             </div>
           </div>
 
           {/* Right column: Interactive Opening Explorer preview. Stacks under the
-              left column below lg via the parent grid's grid-cols-1. */}
-          <div data-testid="hero-explorer-preview">
+              left column below lg via the parent grid's grid-cols-1. Order classes
+              reorder the children when stacked so the section reads heading → bullets →
+              image on mobile (matching the feature sections below), and image → heading →
+              bullets on desktop inside the narrow hero column. */}
+          <div data-testid="hero-explorer-preview" className="flex flex-col gap-4">
             <img
               src="/screenshots/opening-explorer.png"
               alt="Board with move explorer showing win/draw/loss bars per candidate move"
-              className="rounded-lg border border-border shadow-md w-full mb-4"
+              className="rounded-lg border border-border shadow-md w-full order-3 lg:order-1"
             />
-            <h2 className="text-2xl font-bold mb-3">Interactive Opening Explorer</h2>
-            <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
+            <h2 className="text-2xl font-bold order-1 lg:order-2">Interactive Opening Explorer</h2>
+            <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground order-2 lg:order-3">
               <li>Step through any opening and see your win/draw/loss rate for every move you&apos;ve played.</li>
               <li>Discover which moves you struggle against and which traps and gambits work for you.</li>
               <li>Scout your opponents&apos; weaknesses and tendencies before a match.</li>
