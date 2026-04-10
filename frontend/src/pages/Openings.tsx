@@ -913,7 +913,7 @@ export function OpeningsPage() {
         <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)} className="md:hidden flex flex-col gap-2 min-w-0">
           {/* Sticky board + controls — sticks to top of viewport while scrolling content below */}
           {/* z-20 to stay above ToggleGroupItem's focus:z-10 */}
-          <div className="sticky top-0 z-20 bg-background shadow-[0_6px_20px_rgba(0,0,0,0.8)]">
+          <div className="sticky top-0 z-20 bg-background/80 backdrop-blur-md border-b border-border">
             {/* Collapsible board section — animates via grid-rows trick */}
             <div className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${boardCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}>
               <div className="overflow-hidden">
@@ -927,8 +927,8 @@ export function OpeningsPage() {
                       arrows={boardArrows}
                     />
                   </div>
-                  {/* Vertical controls column: board nav + sidebar triggers */}
-                  <div className="flex flex-col gap-0.5">
+                  {/* Vertical board-action column: 5 items (Reset, Back, Forward, Flip, Info) */}
+                  <div className="flex flex-col gap-1 w-12">
                     <BoardControls
                       vertical
                       className="flex-1"
@@ -946,93 +946,93 @@ export function OpeningsPage() {
                         </InfoPopover>
                       }
                     />
-                    {/* Sidebar trigger buttons — icon-only, separated from nav buttons */}
-                    <div className="mt-1 flex flex-col gap-1">
-                      <Tooltip content={`Playing as ${filters.color}`} side="left">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9 !bg-toggle-active text-toggle-active-foreground hover:!bg-toggle-active"
-                          onClick={() => {
-                            const newColor: Color = filters.color === 'white' ? 'black' : 'white';
-                            handleFiltersChange({ ...filters, color: newColor });
-                            setBoardFlipped(newColor === 'black');
-                            if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
-                          }}
-                          data-testid="btn-toggle-played-as"
-                          aria-label={`Playing as ${filters.color}, tap to switch`}
-                        >
-                          <span className={`inline-block h-4 w-4 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
-                        </Button>
-                      </Tooltip>
-                      <Tooltip content="Open filters" side="left">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
-                          onClick={openFilterSidebar}
-                          data-testid="btn-open-filter-sidebar"
-                          aria-label="Open filters"
-                        >
-                          <SlidersHorizontal className="h-4 w-4" />
-                          {bookmarks.length > 0 && !filtersHintDismissed && (
-                            <span
-                              className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                              data-testid="filters-notification-dot-mobile"
-                            >
-                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                            </span>
-                          )}
-                        </Button>
-                      </Tooltip>
-                      <Tooltip content="Open bookmarks" side="left">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
-                          onClick={openBookmarkSidebar}
-                          data-testid="btn-open-bookmark-sidebar"
-                          aria-label="Open bookmarks"
-                        >
-                          <BookMarked className="h-4 w-4" />
-                          {bookmarks.length === 0 && hasGames && (
-                            <span
-                              className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                              data-testid="bookmarks-notification-dot-mobile"
-                            >
-                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                            </span>
-                          )}
-                        </Button>
-                      </Tooltip>
-                    </div>
                   </div>
                 </div>
               </div>
             </div>
-            <TabsList variant="brand" className="w-full h-8! mt-0.5" data-testid="openings-tabs-mobile">
-              <TabsTrigger value="explorer" className="flex-1 text-xs!" data-testid="tab-move-explorer-mobile">
-                Moves
-              </TabsTrigger>
-              <TabsTrigger value="games" className="flex-1 text-xs!" data-testid="tab-games-mobile">
-                Games
-              </TabsTrigger>
-              <TabsTrigger value="stats" className="flex-1 text-xs!" data-testid="tab-stats-mobile">
-                Stats
-              </TabsTrigger>
-            </TabsList>
-            {/* Swipe/tap handle — toggle board collapse */}
+            {/* Unified control row — stays visible when board is collapsed (D-03) */}
+            <div className="flex items-center gap-2 h-11 px-1 mt-1" data-testid="openings-mobile-control-row">
+              <TabsList variant="brand" className="flex-1 h-full" data-testid="openings-tabs-mobile">
+                <TabsTrigger value="explorer" className="flex-1 text-xs!" data-testid="tab-move-explorer-mobile">
+                  Moves
+                </TabsTrigger>
+                <TabsTrigger value="games" className="flex-1 text-xs!" data-testid="tab-games-mobile">
+                  Games
+                </TabsTrigger>
+                <TabsTrigger value="stats" className="flex-1 text-xs!" data-testid="tab-stats-mobile">
+                  Stats
+                </TabsTrigger>
+              </TabsList>
+              <Tooltip content={`Playing as ${filters.color}`} side="left">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-11 w-11 shrink-0 !bg-toggle-active text-toggle-active-foreground hover:!bg-toggle-active"
+                  onClick={() => {
+                    const newColor: Color = filters.color === 'white' ? 'black' : 'white';
+                    handleFiltersChange({ ...filters, color: newColor });
+                    setBoardFlipped(newColor === 'black');
+                    if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
+                  }}
+                  data-testid="btn-toggle-played-as"
+                  aria-label={`Playing as ${filters.color}, tap to switch`}
+                >
+                  <span className={`inline-block h-4 w-4 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
+                </Button>
+              </Tooltip>
+              <Tooltip content="Open bookmarks" side="left">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
+                  onClick={openBookmarkSidebar}
+                  data-testid="btn-open-bookmark-sidebar"
+                  aria-label="Open bookmarks"
+                >
+                  <BookMarked className="h-4 w-4" />
+                  {bookmarks.length === 0 && hasGames && (
+                    <span
+                      className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                      data-testid="bookmarks-notification-dot-mobile"
+                    >
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                    </span>
+                  )}
+                </Button>
+              </Tooltip>
+              <Tooltip content="Open filters" side="left">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
+                  onClick={openFilterSidebar}
+                  data-testid="btn-open-filter-sidebar"
+                  aria-label="Open filters"
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                  {bookmarks.length > 0 && !filtersHintDismissed && (
+                    <span
+                      className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                      data-testid="filters-notification-dot-mobile"
+                    >
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                    </span>
+                  )}
+                </Button>
+              </Tooltip>
+            </div>
+            {/* Swipe/tap handle — toggle board collapse (D-11, D-12: enlarged to 44px touch target) */}
             <button
-              className="mt-1 flex w-full items-center justify-center py-0.5 touch-none bg-white/15 border-t border-white/15 rounded-b-md"
+              className="flex w-full items-center justify-center h-11 touch-none bg-white/5 border-t border-white/10 rounded-b-md"
               onTouchStart={handleHandleTouchStart}
               onTouchEnd={handleHandleTouchEnd}
               onClick={() => setBoardCollapsed((c) => !c)}
               aria-label={boardCollapsed ? 'Expand board' : 'Collapse board'}
               data-testid="btn-board-collapse-handle"
             >
-              <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${boardCollapsed ? 'rotate-0' : 'rotate-180'}`} />
+              <ChevronDown className={`h-5 w-5 text-muted-foreground transition-transform duration-200 ${boardCollapsed ? 'rotate-0' : 'rotate-180'}`} />
             </button>
           </div>
 
