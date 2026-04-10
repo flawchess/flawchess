@@ -913,7 +913,7 @@ export function OpeningsPage() {
         <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)} className="md:hidden flex flex-col gap-2 min-w-0">
           {/* Sticky board + controls — sticks to top of viewport while scrolling content below */}
           {/* z-20 to stay above ToggleGroupItem's focus:z-10 */}
-          <div className="sticky top-0 z-20 bg-white/20 backdrop-blur-md pt-0.5 rounded-b-xl">
+          <div className="sticky top-0 z-20 bg-white/20 backdrop-blur-md pt-1 rounded-b-xl">
             {/* Collapsible board section — animates via grid-rows trick */}
             <div className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${boardCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}>
               <div className="overflow-hidden">
