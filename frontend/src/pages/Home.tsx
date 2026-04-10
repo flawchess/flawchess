@@ -15,7 +15,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
-import { ArrowRightLeft, Scale, Filter, TrophyIcon, DownloadIcon, Loader2, UserPlus, UserX } from 'lucide-react';
+import { ArrowRightLeft, Scale, Filter, TrophyIcon, DownloadIcon, Loader2, UserPlus, DoorOpen } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Feature sections — imagePosition alternates right/left so text and image swap sides on desktop.
@@ -156,8 +156,8 @@ export function HomePageContent() {
               </>
             ) : (
               <>
-                <UserX className="mr-1.5 h-4 w-4" />
-                Skip Sign-up
+                <DoorOpen className="mr-1.5 h-4 w-4" />
+                Use as Guest
               </>
             )}
           </Button>
@@ -480,8 +480,8 @@ export function HomePageContent() {
               </>
             ) : (
               <>
-                <UserX className="mr-1.5 h-4 w-4" />
-                Skip Sign-up
+                <DoorOpen className="mr-1.5 h-4 w-4" />
+                Use as Guest
               </>
             )}
           </Button>

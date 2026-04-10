@@ -10,7 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon, TrophyIcon, UserX } from 'lucide-react';
+import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
@@ -125,7 +125,7 @@ function NavHeader() {
               data-testid="nav-guest-badge"
               aria-label="Guest session"
             >
-              <UserX className="h-3 w-3 mr-1" />
+              <DoorOpen className="h-3 w-3 mr-1" />
               Guest
             </Badge>
           )}
