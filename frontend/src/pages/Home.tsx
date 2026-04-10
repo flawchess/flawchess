@@ -100,9 +100,9 @@ export function HomePageContent() {
     <>
       <PublicHeader />
 
-      {/* Hero — radial gold glow is centered on just the hero content (not the
+      {/* Hero — radial bronze glow is centered on just the hero content (not the
           stacked Opening Explorer below, which has its own charcoal section) */}
-      <div className="bg-[radial-gradient(ellipse_at_center,rgba(212,175,55,0.18),transparent_65%)]">
+      <div className="bg-[radial-gradient(ellipse_at_center,rgba(205,127,50,0.12),transparent_65%)]">
       <section data-testid="hero-section" className="max-w-6xl mx-auto px-4 py-8 lg:py-12">
         <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-8 lg:gap-12 items-center">
           {/* Left column: existing hero content — centered at all breakpoints. */}
@@ -220,7 +220,13 @@ export function HomePageContent() {
       {/* Feature sections — alternating image left/right */}
       <div id="features" data-testid="screenshots-section" className="scroll-mt-16">
         {FEATURES.map(({ slug, icon: Icon, heading, desc, screenshot, imagePosition }, index) => {
-          const isCharcoal = index % 2 === 0;
+          // On desktop, even-indexed features get charcoal bg. On mobile the Interactive
+          // Opening Explorer (charcoal) sits in front of the feature list, so the mobile
+          // alternation is flipped: odd-indexed features get charcoal on mobile to avoid
+          // two consecutive charcoal bands at the top of the stack.
+          const bgClass = index % 2 === 0
+            ? 'lg:bg-[#1a1a1a]'
+            : 'max-lg:bg-[#1a1a1a]';
           const gridCols = imagePosition === 'left'
             ? 'lg:grid-cols-[3fr_2fr]'
             : 'lg:grid-cols-[2fr_3fr]';
@@ -257,10 +263,7 @@ export function HomePageContent() {
             <section
               key={slug}
               data-testid={`feature-${slug}`}
-              className={cn(
-                'py-12 lg:py-16',
-                isCharcoal ? 'bg-[#1a1a1a]' : '',
-              )}
+              className={cn('py-12 lg:py-16', bgClass)}
             >
               <div className={cn('max-w-5xl mx-auto px-4 grid gap-8 lg:gap-12 items-center', gridCols)}>
               {/* On mobile: always text first, image second.
