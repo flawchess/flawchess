@@ -12,7 +12,7 @@ import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, SlidersHorizontal, BookMarked, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, SlidersHorizontal, BookMarked, X, ChevronDown, ChevronUp, FolderOpen } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -55,6 +55,7 @@ import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTable';
 import { MinimapPopover } from '@/components/stats/MinimapPopover';
+import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { pgnToSanArray } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
@@ -102,24 +103,40 @@ function MobileMostPlayedRows({
 
   return (
     <div data-testid={`${testIdPrefix}-mobile-list`}>
-      <div className="space-y-2">
-        {visibleOpenings.map((o) => {
-          const label = (
-            <MinimapPopover
-              fen={o.fen}
-              boardOrientation={color}
-              testId={`${testIdPrefix}-minimap-${o.opening_eco}`}
-            >
-              <span className="inline-flex items-baseline gap-1.5 min-w-0">
-                <span className="text-muted-foreground text-xs shrink-0">{o.opening_eco}</span>
-                <span className="truncate">{o.opening_name}</span>
-              </span>
-            </MinimapPopover>
-          );
-
-          return (
+      <div className="space-y-3">
+        {visibleOpenings.map((o) => (
+          <div
+            key={`${o.opening_eco}-${o.opening_name}`}
+            data-testid={`${testIdPrefix}-row-${o.opening_eco}`}
+          >
+            {/* Name row: opening name wraps full width, games count shrink-0 on right */}
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <div className="flex-1 min-w-0">
+                <MinimapPopover
+                  fen={o.fen}
+                  boardOrientation={color}
+                  testId={`${testIdPrefix}-minimap-${o.opening_eco}`}
+                >
+                  <span className="block text-sm font-medium leading-tight break-words">
+                    <span className="text-muted-foreground text-xs mr-1.5">{o.opening_eco}</span>
+                    {o.opening_name}
+                  </span>
+                </MinimapPopover>
+              </div>
+              <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
+                <button
+                  className="shrink-0 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={`View ${o.total} games for ${o.opening_name}`}
+                  data-testid={`${testIdPrefix}-games-${o.opening_eco}`}
+                  onClick={() => onOpenGames(o.pgn, color)}
+                >
+                  <span className="tabular-nums">{o.total}</span>
+                  <FolderOpen className="h-3.5 w-3.5" />
+                </button>
+              </Tooltip>
+            </div>
+            {/* Full-width WDL bar below the name */}
             <WDLChartRow
-              key={`${o.opening_eco}-${o.opening_name}`}
               data={{
                 wins: o.wins,
                 draws: o.draws,
@@ -129,14 +146,10 @@ function MobileMostPlayedRows({
                 draw_pct: o.draw_pct,
                 loss_pct: o.loss_pct,
               }}
-              label={label}
               maxTotal={maxTotal}
-              onOpenGames={() => onOpenGames(o.pgn, color)}
-              openGamesTestId={`${testIdPrefix}-games-${o.opening_eco}`}
-              testId={`${testIdPrefix}-row-${o.opening_eco}`}
             />
-          );
-        })}
+          </div>
+        ))}
       </div>
 
       {hasMore && (
@@ -781,42 +794,67 @@ export function OpeningsPage() {
 
               const maxTotal = Math.max(...rows.map((r) => r.stats.total));
 
-              // STAB-01 / D-09: split rows into left and right columns (top-to-bottom, left first)
-              // so that at lg+ the section reads left column first then right column.
-              // D-10: maxTotal stays computed across ALL rows so bar widths are comparable across columns.
-              const leftColumnCount = Math.ceil(rows.length / 2);
-              const leftRows = rows.slice(0, leftColumnCount);
-              const rightRows = rows.slice(leftColumnCount);
-
-              const renderRow = (row: typeof rows[number]) => (
-                <WDLChartRow
-                  key={row.bookmark.id}
-                  data={{
-                    wins: row.stats.wins,
-                    draws: row.stats.draws,
-                    losses: row.stats.losses,
-                    total: row.stats.total,
-                    win_pct: row.stats.total > 0 ? (row.stats.wins / row.stats.total) * 100 : 0,
-                    draw_pct: row.stats.total > 0 ? (row.stats.draws / row.stats.total) * 100 : 0,
-                    loss_pct: row.stats.total > 0 ? (row.stats.losses / row.stats.total) * 100 : 0,
-                  }}
-                  label={row.label}
-                  maxTotal={maxTotal}
-                  onOpenGames={() => handleOpenChartBookmarkGames(row.bookmark)}
-                  openGamesTestId={`wdl-opening-games-${row.bookmark.id}`}
-                  testId={`wdl-opening-${row.bookmark.id}`}
-                />
-              );
-
               return (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 gap-y-2" data-testid="wdl-bookmarked-grid">
-                  <div className="space-y-2">
-                    {leftRows.map(renderRow)}
+                <>
+                  {/* Desktop: table layout (Name | Games | Win/Draw/Loss) matching Most Played Openings */}
+                  <div className="hidden md:block" data-testid="wdl-bookmarked-table">
+                    {/* Header */}
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-2 px-2 pb-1 text-xs text-muted-foreground border-b border-white/10 mb-1">
+                      <span>Name</span>
+                      <span>Games</span>
+                      <span>Win / Draw / Loss</span>
+                    </div>
+                    {rows.map((row, i) => {
+                      const isEvenRow = i % 2 === 0;
+                      const winPct = row.stats.total > 0 ? (row.stats.wins / row.stats.total) * 100 : 0;
+                      const drawPct = row.stats.total > 0 ? (row.stats.draws / row.stats.total) * 100 : 0;
+                      const lossPct = row.stats.total > 0 ? (row.stats.losses / row.stats.total) * 100 : 0;
+                      return (
+                        <div
+                          key={row.bookmark.id}
+                          className={`grid grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-2 items-center rounded px-2 py-1.5 hover:bg-white/5 transition-colors ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
+                          data-testid={`wdl-opening-${row.bookmark.id}`}
+                        >
+                          <div className="min-w-0 text-sm font-medium truncate">{row.label}</div>
+                          <Tooltip content={`View games for ${row.bookmark.label}`}>
+                            <button
+                              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                              aria-label={`View games for ${row.bookmark.label}`}
+                              data-testid={`wdl-opening-games-${row.bookmark.id}`}
+                              onClick={() => handleOpenChartBookmarkGames(row.bookmark)}
+                            >
+                              <span className="tabular-nums">{row.stats.total}</span>
+                              <FolderOpen className="h-3.5 w-3.5" />
+                            </button>
+                          </Tooltip>
+                          <MiniWDLBar win_pct={winPct} draw_pct={drawPct} loss_pct={lossPct} />
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="space-y-2">
-                    {rightRows.map(renderRow)}
+                  {/* Mobile: stacked WDLChartRow layout */}
+                  <div className="md:hidden space-y-2" data-testid="wdl-bookmarked-grid">
+                    {rows.map((row) => (
+                      <WDLChartRow
+                        key={row.bookmark.id}
+                        data={{
+                          wins: row.stats.wins,
+                          draws: row.stats.draws,
+                          losses: row.stats.losses,
+                          total: row.stats.total,
+                          win_pct: row.stats.total > 0 ? (row.stats.wins / row.stats.total) * 100 : 0,
+                          draw_pct: row.stats.total > 0 ? (row.stats.draws / row.stats.total) * 100 : 0,
+                          loss_pct: row.stats.total > 0 ? (row.stats.losses / row.stats.total) * 100 : 0,
+                        }}
+                        label={row.label}
+                        maxTotal={maxTotal}
+                        onOpenGames={() => handleOpenChartBookmarkGames(row.bookmark)}
+                        openGamesTestId={`wdl-opening-games-${row.bookmark.id}`}
+                        testId={`wdl-opening-${row.bookmark.id}`}
+                      />
+                    ))}
                   </div>
-                </div>
+                </>
               );
             })()}
           </div>
