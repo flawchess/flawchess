@@ -1,10 +1,11 @@
 ---
 phase: 50
 slug: mobile-layout-restructuring
-status: draft
+status: approved
 shadcn_initialized: true
 preset: radix-nova / neutral / cssVariables
 created: 2026-04-10
+reviewed_at: 2026-04-10
 ---
 
 # Phase 50 — UI Design Contract: Mobile Layout Restructuring
