@@ -100,8 +100,9 @@ export function HomePageContent() {
     <>
       <PublicHeader />
 
-      {/* Hero */}
-      <div className="bg-[radial-gradient(ellipse_at_center,rgba(139,94,60,0.10),transparent_60%)]">
+      {/* Hero — radial gold glow is centered on just the hero content (not the
+          stacked Opening Explorer below, which has its own charcoal section) */}
+      <div className="bg-[radial-gradient(ellipse_at_center,rgba(212,175,55,0.18),transparent_65%)]">
       <section data-testid="hero-section" className="max-w-6xl mx-auto px-4 py-8 lg:py-12">
         <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-8 lg:gap-12 items-center">
           {/* Left column: existing hero content — centered at all breakpoints. */}
@@ -167,19 +168,16 @@ export function HomePageContent() {
             </div>
           </div>
 
-          {/* Right column: Interactive Opening Explorer preview. Stacks under the
-              left column below lg via the parent grid's grid-cols-1. Order classes
-              reorder the children when stacked so the section reads heading → bullets →
-              image on mobile (matching the feature sections below), and image → heading →
-              bullets on desktop inside the narrow hero column. */}
-          <div data-testid="hero-explorer-preview" className="flex flex-col gap-4">
+          {/* Right column: Interactive Opening Explorer preview — lg and up only.
+              Below lg the explorer renders as a standalone charcoal section further down. */}
+          <div data-testid="hero-explorer-preview" className="hidden lg:block">
             <img
               src="/screenshots/opening-explorer.png"
               alt="Board with move explorer showing win/draw/loss bars per candidate move"
-              className="rounded-lg border border-border shadow-md w-full order-3 lg:order-1"
+              className="rounded-lg border border-border shadow-md w-full mb-4"
             />
-            <h2 className="text-2xl font-bold order-1 lg:order-2">Interactive Opening Explorer</h2>
-            <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground order-2 lg:order-3">
+            <h2 className="text-2xl font-bold mb-3">Interactive Opening Explorer</h2>
+            <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
               <li>Step through any opening and see your win/draw/loss rate for every move you&apos;ve played.</li>
               <li>Discover which moves you struggle against and which traps and gambits work for you.</li>
               <li>Scout your opponents&apos; weaknesses and tendencies before a match.</li>
@@ -188,6 +186,36 @@ export function HomePageContent() {
         </div>
       </section>
       </div>
+
+      {/* Interactive Opening Explorer — standalone section (mobile / small desktop only).
+          Matches the alternating charcoal background and text-above-image order of the
+          feature sections below. Hidden on lg+ because the hero's right column already
+          shows the same content there. */}
+      <section
+        data-testid="feature-opening-explorer-mobile"
+        className="lg:hidden bg-[#1a1a1a] py-12"
+      >
+        <div className="max-w-5xl mx-auto px-4 flex flex-col gap-4">
+          <div className="flex gap-4">
+            <div className="shrink-0 mt-1">
+              <Scale className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold">Interactive Opening Explorer</h2>
+              <ul className="mt-3 list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
+                <li>Step through any opening and see your win/draw/loss rate for every move you&apos;ve played.</li>
+                <li>Discover which moves you struggle against and which traps and gambits work for you.</li>
+                <li>Scout your opponents&apos; weaknesses and tendencies before a match.</li>
+              </ul>
+            </div>
+          </div>
+          <img
+            src="/screenshots/opening-explorer.png"
+            alt="Board with move explorer showing win/draw/loss bars per candidate move"
+            className="rounded-lg border border-border shadow-md w-full"
+          />
+        </div>
+      </section>
 
       {/* Feature sections — alternating image left/right */}
       <div id="features" data-testid="screenshots-section" className="scroll-mt-16">
