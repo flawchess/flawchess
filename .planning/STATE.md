@@ -71,3 +71,4 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 
 ---
 Last activity: 2026-04-10 - Phase 50 complete (5 gap-closure rounds from human verification); branch gsd/phase-50-mobile-layout-restructuring
+| 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
