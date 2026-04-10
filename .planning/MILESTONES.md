@@ -1,5 +1,22 @@
 # Milestones: FlawChess
 
+## v1.9 UI/UX Restructuring (Shipped: 2026-04-10)
+
+**Phases completed:** 3 phases (49-51), 7 plans, delivered via PRs #40, #41, #42
+**Stats:** 57 files changed, +8692 / -1602 lines, ~21-hour execution window
+
+**Key accomplishments:**
+
+- Openings desktop sidebar — collapsible left-edge 48px icon strip + 280px on-demand Filters/Bookmarks panel with overlay/push behavior at the 1280px breakpoint, live filter apply on desktop
+- Openings mobile unified control row — Tabs | Color | Bookmark | Filter lifted outside the board collapse region so controls stay visible when the board is collapsed; 44px tappable collapse handle; backdrop-blur translucent sticky surface
+- Endgames mobile visual alignment — 44px backdrop-blur sticky row with 44px filter button matching the Openings mobile pattern (EGAM-01)
+- Global Stats filters wired end-to-end — `opponent_type` and `opponent_strength` through `/stats/global` and `/stats/rating-history`, plus hooks/API client layer; bot games now excluded by default
+- Stats subtab layout restructuring — 2-column Bookmarked Openings: Results on desktop (lg breakpoint), stacked WDLChartRows for mobile Most Played replacing the cramped 3-col table
+- Homepage 2-column desktop hero — left=hero content, right=Interactive Opening Explorer preview (heading + screenshot + bullets), pills row removed, Opening Explorer removed from FEATURES list
+- Global Stats rename — "Stats" → "Global Stats" across desktop nav, mobile bottom bar, More drawer, mobile header, plus new page h1; FilterPanel opponent controls enabled
+
+---
+
 ## v1.8 Guest Access (Shipped: 2026-04-06)
 
 **Phases completed:** 4 phases (44-47), delivered via PR #37

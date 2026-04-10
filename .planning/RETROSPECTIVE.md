@@ -2,6 +2,56 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v1.9 — UI/UX Restructuring
+
+**Shipped:** 2026-04-10
+**Phases:** 3 (49-51) | **Plans:** 7 | **Delivered via:** PRs #40, #41, #42
+
+### What Was Built
+- Openings desktop sidebar: collapsible 48px icon strip + 280px on-demand Filters/Bookmarks panel with overlay/push behavior at the 1280px breakpoint, plus a shared SidebarLayout component used by both Openings and Global Stats
+- Openings mobile unified control row: Tabs | Color | Bookmark | Filter lifted outside the board collapse grid so controls stay visible when the board is collapsed; 5-item vertical board-action column with 48×48 touch targets; 44px tappable collapse handle; backdrop-blur sticky surface
+- Endgames mobile visual alignment: 44px backdrop-blur sticky row with 44px filter button matching the Openings mobile pattern (EGAM-01)
+- Global Stats filters wired end-to-end: `opponent_type` + `opponent_strength` through `/stats/global` and `/stats/rating-history` plus the React hooks/API client layer; bot games now excluded by default
+- Stats subtab 2-col layout: explicit leftRows/rightRows grid split for Bookmarked Results at the lg breakpoint; new `MobileMostPlayedRows` component for stacked WDLChartRows on mobile
+- Homepage 2-column desktop hero: left hero content + right Interactive Opening Explorer preview (heading + screenshot + bullets); pills row removed; Opening Explorer removed from FEATURES list
+- Global Stats rename: "Stats" → "Global Stats" across desktop nav, mobile bottom bar, More drawer, mobile page header, plus new page h1 — all driven via existing label-to-testid auto-derivation so testids updated with zero manual edits
+
+### What Worked
+- Label-to-testid auto-derivation meant the "Stats" → "Global Stats" rename needed only 3 label string swaps in `App.tsx`; all nav testids, mobile header title, and More drawer entries updated automatically
+- Explicit `leftRows`/`rightRows` array split beat CSS `columns-2` for the 2-col Bookmarked Results — deterministic odd-count behavior, no `break-inside` edge cases
+- Unified mobile control row lifted outside the board collapse region (D-03) solved the "controls disappear when board collapsed" problem cleanly — one structural change, no prop plumbing
+- Shared SidebarLayout component emerged organically from Phase 49 and was immediately reusable for Phase 51-04's Global Stats FilterPanel placement
+- Plan 51-01 wiring opponent filters first, Plan 51-04 enabling the UI controls second — kept each plan small and let the end-to-end path come online in two independent commits
+- Static 2-col homepage hero (not a carousel) — simpler, no JS state, preserves scroll-free visibility on a 1280px viewport
+
+### What Was Inefficient
+- `gsd-tools milestone complete` hard-coded "Phases completed: 4 phases" and copied the full ROADMAP.md verbatim into the v1.9 archive — required manual rewrite of the archive file plus MILESTONES.md entry
+- `summary-extract --fields one_liner` returned null or "One-liner:" for 5 of 7 summary files because the summaries use an H2 heading format rather than the YAML field the CLI expects — accomplishments had to be re-extracted by hand
+- ROADMAP.md left `[ ] 51-04-PLAN.md` unchecked even after the phase shipped (PR #42 merged) — post-ship state drift between the roadmap checkbox and the actual commit/summary state
+- Worktree Plan 51-04 execution started from the wrong HEAD (`45c5b80` instead of `f77dbf3`) and required a `git reset --soft` + `git checkout HEAD -- .` to recover — worktree initialization edge case worth investigating in `gsd-tools`
+
+### Patterns Established
+- **Label-driven testid derivation** — keep `NAV_ITEMS[].label` as the single source of truth and derive testids via `label.toLowerCase().replace(/\s+/g, '-')`; renames cost one label edit
+- **Unified control row outside collapse region** — when a collapsible section hides controls needed for navigation (like subtabs), lift them into a sibling of the collapse grid rather than inside it
+- **Grid-column push/overlay breakpoint** — at 1280px, the Openings sidebar switches from overlay (for ≤1279px) to push (for ≥1280px); this is now the project's reference breakpoint for sidebar-plus-board layouts
+- **Shared SidebarLayout component** — any future page that needs a collapsible left strip with Filters should consume SidebarLayout rather than reimplementing
+- **Viewport branch at call site, not via prop** — when desktop and mobile need different variants of a component, branch at the page (`hidden md:block` / `md:hidden`) rather than adding a `mobileMode` prop; keeps the desktop component byte-identical and zero-risk
+
+### Key Lessons
+1. **CLI milestone archival is a first draft, not a final document.** `gsd-tools milestone complete` creates skeletal archive files and a MILESTONES.md stub, but the accomplishments list, phase count, and archive structure need human cleanup for every milestone — budget 10-15 minutes for the rewrite
+2. **Summary extraction depends on file format discipline.** If summaries use H2 `## One-liner` headings instead of YAML frontmatter fields, the extractor returns null. Either standardize on one format or the tooling needs to fall back between both
+3. **Post-ship checkbox drift is the norm unless explicitly maintained.** When a PR merges, the ROADMAP plan checkboxes don't auto-update — the next milestone completion pass must reconcile them or add a tooling gate
+4. **Mobile-first visual-alignment passes are cheap once a pattern exists.** Phase 50-02 (Endgames visual alignment) was 3 classname swaps + 1 testid — ~10 minutes because Phase 50-01 had already established the `h-11 bg-background/80 backdrop-blur-md` pattern
+5. **The "apply to mobile too" CLAUDE.md rule is load-bearing.** Phase 51-04's FilterPanel visibleFilters change updated both the desktop SidebarLayout and the mobile Drawer instances — missing one would have silently diverged the two viewports
+
+### Cost Observations
+- 3 phases, 7 plans, ~21-hour execution window end-to-end (2026-04-09 21:42 → 2026-04-10 18:43)
+- 57 files changed, +8692 / -1602 lines
+- Each phase was delivered in its own PR (#40, #41, #42) with squash merge — clean main history, easy rollback granularity
+- Plans stayed small: median 1 plan per phase for 49, 2 for 50, 4 for 51 — the 4-plan split on Phase 51 was the right call because the 4 concerns (opponent filter wiring, stats layout, homepage hero, Global Stats rename) had distinct code surfaces and minimal coupling
+
+---
+
 ## Milestone: v1.8 — Guest Access
 
 **Shipped:** 2026-04-06

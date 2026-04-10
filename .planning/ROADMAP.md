@@ -11,7 +11,7 @@
 - ✅ **v1.6 UI Polish & Improvements** — Phases 34-39 (shipped 2026-03-30)
 - ✅ **v1.7 Consolidation, Tooling & Refactoring** — Phases 40-43 (shipped 2026-04-03)
 - ✅ **v1.8 Guest Access** — Phases 44-47 (shipped 2026-04-06)
-- ○ **v1.9 UI/UX Restructuring** — Phases 49-51 (planned)
+- ✅ **v1.9 UI/UX Restructuring** — Phases 49-51 (shipped 2026-04-10) — see [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md)
 - ○ **v1.10 Advanced Analytics** — Phases 48, 52-54 (planned)
 
 ## Phases
@@ -118,11 +118,16 @@
 
 </details>
 
-### v1.9 UI/UX Restructuring (Phases 49-51)
+<details>
+<summary>✅ v1.9 UI/UX Restructuring (Phases 49-51) — SHIPPED 2026-04-10</summary>
 
-- [x] **Phase 49: Openings Desktop Sidebar** - Collapsible left-edge sidebar with Filters/Bookmarks panels that overlay the board on smaller screens (completed 2026-04-09)
-- [x] **Phase 50: Mobile Layout Restructuring** - Relocate Openings subtab navigation and adjust Endgames/Games mobile layouts for consistency (completed 2026-04-10)
-- [ ] **Phase 51: Stats Subtab, Homepage & Global Stats** - 2-column desktop stats layout, stacked mobile most-played, homepage feature visibility, Global Stats relabeling and filters
+- [x] Phase 49: Openings Desktop Sidebar (1/1 plan) — completed 2026-04-09
+- [x] Phase 50: Mobile Layout Restructuring (2/2 plans) — completed 2026-04-10
+- [x] Phase 51: Stats Subtab, Homepage & Global Stats (4/4 plans) — completed 2026-04-10
+
+See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
+
+</details>
 
 ### v1.10 Advanced Analytics (Phases 48, 52-54)
 
@@ -149,56 +154,6 @@
 Plans:
 - [x] 48-01-PLAN.md — Backend: persistence field in repo queries, threshold to 100cp, persistence check in service
 - [x] 48-02-PLAN.md — Frontend: update constants, popover/tooltip/accordion text for new threshold and persistence
-
-### Phase 49: Openings Desktop Sidebar
-**Goal**: Users on desktop can access Filters and Bookmarks via a collapsible left-edge sidebar that overlays the board, replacing the current layout with an always-on approach that preserves horizontal space on smaller screens
-**Depends on**: Phase 47
-**Requirements**: DESK-01, DESK-02, DESK-03, DESK-04, DESK-05
-**Success Criteria** (what must be TRUE):
-  1. User sees a collapsed sidebar strip on the left edge of the Openings page showing filter and bookmark icons; clicking either icon opens the respective panel
-  2. Only one panel (Filters or Bookmarks) is visible at a time; clicking the other icon switches to it without a double-click
-  3. Filter changes update the board and stats immediately while the sidebar panel is open (no deferred apply button on desktop)
-  4. On smaller desktop screens the open sidebar overlays the chessboard rather than pushing it, preventing layout overflow
-  5. On larger desktop screens where space permits, the sidebar can push the board without overflow
-**Plans**: 1 plan
-
-Plans:
-- [x] 49-01-PLAN.md — Restructure desktop layout with collapsible sidebar strip and panel
-**UI hint**: yes
-
-### Phase 50: Mobile Layout Restructuring
-**Goal**: Users on mobile can navigate Openings subtabs from a repositioned location, with Endgames and Games mobile layouts updated to match the new pattern
-**Depends on**: Phase 49
-**Requirements**: MMOB-01, EGAM-01
-**Success Criteria** (what must be TRUE):
-  1. Openings subtab navigation (Moves/Games/Stats) appears in the new agreed position (above board or near bottom nav) rather than the old location
-  2. The subtab placement is consistent across Openings, Endgames, and Games tab mobile layouts
-  3. The board remains fully usable on 375px-wide screens with no horizontal scroll introduced by the subtab relocation
-**Plans**: 2 plans
-
-Plans:
-- [x] 50-01-PLAN.md — Restructure Openings mobile sticky wrapper with unified control row (Tabs | Color | Bookmark | Filter) outside board collapse region, 5-item vertical board-action column, enlarged collapse handle, backdrop-blur surface
-- [x] 50-02-PLAN.md — Endgames mobile visual-alignment pass: backdrop-blur sticky row at 44px height with 44px filter button
-**UI hint**: yes
-
-### Phase 51: Stats Subtab, Homepage & Global Stats
-**Goal**: Users see an improved information layout across three areas — desktop stats subtab uses 2-column display, mobile most-played uses stacked layout, homepage key features are visible without scrolling, and the Stats page is relabeled and has more filter options
-**Depends on**: Phase 47
-**Requirements**: STAB-01, STAB-02, HOME-01, GSTA-01, GSTA-02
-**Success Criteria** (what must be TRUE):
-  1. "Bookmarked Openings: Results" on the Stats subtab displays in 2 columns on desktop, matching the visual density of the Most Played table
-  2. "Most Played Openings as White/Black" uses a stacked single-column layout on mobile, matching the bookmarked openings style
-  3. Homepage feature content is visible without scrolling on a standard desktop viewport (1280px wide, no vertical scroll needed to see key features)
-  4. The Stats page navigation link and page header read "Global Stats" instead of the previous label
-  5. At least one additional filter (beyond what was previously available) is functional on the Global Stats page
-**Plans**: 4 plans
-
-Plans:
-- [x] 51-01-PLAN.md — Backend + API client + hooks: wire opponent_type/opponent_strength end-to-end through /stats/global and /stats/rating-history
-- [x] 51-02-PLAN.md — Stats Subtab: 2-col Bookmarked Results on desktop + stacked WDLChartRow Most Played on mobile
-- [x] 51-03-PLAN.md — Homepage: desktop 2-col split hero with Opening Explorer preview, remove pills, remove Opening Explorer from FEATURES
-- [ ] 51-04-PLAN.md — Global Stats rename + FilterPanel enable opponent filters + page h1
-**UI hint**: yes
 
 ### Phase 52: Endgame ELO — Backend + Breakdown Table
 **Goal**: Users can see their Endgame ELO per platform/time-control combination and understand how their endgame skill compares to their actual rating
@@ -288,9 +243,9 @@ Plans:
 | 46. Email/Password Promotion | v1.8 | N/A | Complete | 2026-04-06 |
 | 47. Google SSO Promotion | v1.8 | N/A | Complete | 2026-04-06 |
 | 48. Conversion & Recovery Persistence Filter | v1.10 | 2/2 | Complete | 2026-04-07 |
-| 49. Openings Desktop Sidebar | v1.9 | 1/1 | Complete    | 2026-04-09 |
-| 50. Mobile Layout Restructuring | v1.9 | 2/2 | Complete    | 2026-04-10 |
-| 51. Stats Subtab, Homepage & Global Stats | v1.9 | 3/4 | In Progress|  |
+| 49. Openings Desktop Sidebar | v1.9 | 1/1 | Complete | 2026-04-09 |
+| 50. Mobile Layout Restructuring | v1.9 | 2/2 | Complete | 2026-04-10 |
+| 51. Stats Subtab, Homepage & Global Stats | v1.9 | 4/4 | Complete | 2026-04-10 |
 | 52. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
 | 53. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
 | 54. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |

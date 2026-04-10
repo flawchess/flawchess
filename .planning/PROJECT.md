@@ -79,13 +79,14 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ OAuth CSRF fix (CVE-2025-68481) and guest creation IP rate limiting — v1.8
 - ✓ Openings mobile: unified control row (Tabs | Color | Bookmark | Filter) outside the board collapse region, staying visible when the board is collapsed; enlarged board-action column buttons and 44px collapse handle; backdrop-blur translucent sticky surface (MMOB-01) — v1.9 Phase 50
 - ✓ Endgames mobile: visual-alignment pass on the sticky top row to match the Openings unified row (backdrop-blur, 44px height, 44px filter button) (EGAM-01) — v1.9 Phase 50
+- ✓ Openings desktop: collapsible left-edge sidebar (48px icon strip + 280px on-demand Filters/Bookmarks panel) with overlay/push behavior at the 1280px breakpoint, live filter apply on desktop (DESK-01..05) — v1.9 Phase 49
+- ✓ Stats subtab: 2-column Bookmarked Openings: Results on desktop (lg breakpoint) and stacked WDLChartRows for mobile Most Played (STAB-01, STAB-02) — v1.9 Phase 51
+- ✓ Homepage: static 2-column desktop hero with Opening Explorer preview (heading + screenshot + bullets), pills row removed, Opening Explorer removed from FEATURES (HOME-01) — v1.9 Phase 51
+- ✓ Stats page relabeled to "Global Stats" across desktop nav, mobile bottom bar, More drawer, and mobile header, with new page h1; opponent_type + opponent_strength filters wired end-to-end through /stats/global and /stats/rating-history, defaulting to excluding bot games (GSTA-01, GSTA-02) — v1.9 Phase 51
 
 ### Active
 
-- [ ] Openings desktop: 2-column layout with collapsible left-edge Filters/Bookmarks panels overlaying the board
-- [ ] Stats subtab: 2-column bookmarked openings on desktop, stacked most-played on mobile
-- [ ] Homepage: feature content visible without scrolling on desktop
-- [ ] Stats page: relabel to "Global Stats" and enable more filters
+_No active requirements — v1.9 shipped. Next milestone requirements will be defined via `/gsd-new-milestone`._
 
 ### Future (v1.10)
 
@@ -103,25 +104,17 @@ Users can determine their success rate for any opening position they specify, fi
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: v1.9 UI/UX Restructuring
+## Current Milestone
 
-**Goal:** Restructure page layouts across desktop and mobile based on UI/UX expert recommendations — improve information hierarchy, reduce scrolling, and unify desktop/mobile interaction patterns.
-
-**Target features:**
-- Openings desktop: 2-column layout (board + content) with two collapsible left-edge panels (Filters / Bookmarks) that overlay the board
-- Openings mobile: restructure subtab navigation placement (above board or bottom near nav — TBD)
-- Stats subtab: 2-column "Bookmarked Openings: Results" on desktop; stack "Most Played" on mobile
-- Endgames & Games mobile: layout adjustments consistent with Openings mobile changes
-- Homepage: make feature content visible without scrolling on desktop (carousel, remove pills, or similar)
-- Stats page: relabel to "Global Stats" and enable more existing filters
+_v1.9 shipped. Next milestone TBD — start with `/gsd-new-milestone`._
 
 ## Current State
 
-v1.8 shipped 2026-04-06. Nine milestones complete (v1.0–v1.8), 48 phases (+2 inserted), live at flawchess.com. Guest access now lets visitors try the platform without signing up, with seamless promotion to full accounts via email/password or Google SSO. ~20K lines of code (8K Python, 12K TypeScript). Phase 48 complete — endgame conversion/recovery now uses persistence filter (imbalance must hold 4 plies) with lowered 100cp threshold. v1.9 in progress: Phase 50 complete — mobile Openings unified control row outside the board collapse region plus Endgames mobile visual alignment; Phases 49 and 51 still pending.
+v1.9 shipped 2026-04-10. Ten milestones complete (v1.0–v1.9), 51 phases (+2 inserted), live at flawchess.com. v1.9 delivered a UI/UX restructuring pass: collapsible left-edge sidebar for the Openings desktop layout, a unified mobile control row that stays visible when the board is collapsed, visual alignment across Openings/Endgames mobile surfaces, a 2-column Stats subtab, a 2-column homepage hero, and a "Stats" → "Global Stats" rename with opponent filters wired end-to-end (bot games excluded by default). ~20K lines of code (8K Python, 12K TypeScript). v1.10 "Advanced Analytics" is queued with Phase 48 already complete (conv/recov persistence filter) plus Phases 52–54 planned.
 
 ## Context
 
-- **Current state:** v1.8 shipped. 47 phases complete across 9 milestones. Live at flawchess.com with CI/CD and Sentry.
+- **Current state:** v1.9 shipped 2026-04-10. 50 phases complete across 10 milestones. Live at flawchess.com with CI/CD and Sentry.
 - **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui
 - **Auth:** FastAPI-Users (JWT + Google SSO + guest sessions with is_guest flag)
 - **Core algorithm:** Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import for indexed integer equality lookups
@@ -196,4 +189,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-10 after Phase 50 (Mobile Layout Restructuring) completion*
+*Last updated: 2026-04-10 after v1.9 UI/UX Restructuring milestone*

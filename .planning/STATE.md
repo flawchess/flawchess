@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: UI/UX Restructuring
-status: shipped
-last_updated: "2026-04-10T16:42:19Z"
-last_activity: 2026-04-10 -- Phase 51 shipped — PR #42 merged
+status: "Phase 51 shipped — PR #42"
+last_updated: "2026-04-10T16:50:16.881Z"
+last_activity: 2026-04-10
 progress:
   total_phases: 4
-  completed_phases: 4
+  completed_phases: 3
   total_plans: 7
   completed_plans: 7
   percent: 100
@@ -20,7 +20,7 @@ progress:
 Phase: 51 (stats-subtab-homepage-global-stats) — SHIPPED (PR #42 merged)
 Plan: 4 of 4 complete
 Status: Phase 51 shipped — PR #42
-Last activity: 2026-04-10 -- Phase 51 shipped — PR #42 merged into main
+Last activity: 2026-04-10
 
 Progress: [██████████] 100% (4/4 v1.9 phases complete)
 
