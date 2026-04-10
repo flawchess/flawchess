@@ -208,9 +208,17 @@ export function OpeningsPage() {
 
   // ── Sidebar state (desktop only) ────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = useState<SidebarPanel | null>(null);
+  const [playedAsHintDismissed, setPlayedAsHintDismissed] = useState(
+    () => localStorage.getItem('played-as-hint-dismissed') === 'true'
+  );
   const [filtersHintDismissed, setFiltersHintDismissed] = useState(
     () => localStorage.getItem('filters-hint-dismissed') === 'true'
   );
+
+  const dismissPlayedAsHint = useCallback(() => {
+    setPlayedAsHintDismissed(true);
+    localStorage.setItem('played-as-hint-dismissed', 'true');
+  }, []);
 
   // ── Mobile sidebar state ────────────────────────────────────────────────────
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(false);
@@ -260,6 +268,13 @@ export function OpeningsPage() {
   const [bookmarkDialogOpen, setBookmarkDialogOpen] = useState(false);
   const [bookmarkLabel, setBookmarkLabel] = useState('');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+
+  // Onboarding hint progression (only one red dot visible at a time):
+  // played-as → filters → bookmarks. Each step unlocks the next once used.
+  const showPlayedAsHint = hasGames && !playedAsHintDismissed;
+  const showFiltersHint = hasGames && playedAsHintDismissed && !filtersHintDismissed;
+  const showBookmarksHint =
+    hasGames && playedAsHintDismissed && filtersHintDismissed && bookmarks.length === 0;
 
   // ── Chart-enable toggle (persisted per bookmark in localStorage) ─────────────
   // Version counter to force chartEnabledMap recompute when a toggle changes
@@ -560,7 +575,7 @@ export function OpeningsPage() {
             value={filters.matchSide}
             onValueChange={(v) => {
               if (!v) return;
-              setFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
+              handleFiltersChange({ ...filters, matchSide: v as MatchSide });
               if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
             }}
             variant="outline"
@@ -975,7 +990,7 @@ export function OpeningsPage() {
               label: 'Filters',
               icon: <SlidersHorizontal className="h-5 w-5" />,
               content: desktopFilterPanelContent,
-              notificationDot: bookmarks.length > 0 && !filtersHintDismissed ? (
+              notificationDot: showFiltersHint ? (
                 <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="filters-notification-dot">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
@@ -1003,7 +1018,7 @@ export function OpeningsPage() {
                   </div>
                 </InfoPopover>
               ),
-              notificationDot: bookmarks.length === 0 && hasGames ? (
+              notificationDot: showBookmarksHint ? (
                 <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="bookmarks-notification-dot">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
@@ -1018,15 +1033,23 @@ export function OpeningsPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                className="relative"
                 onClick={() => {
                   const next = filters.color === 'white' ? 'black' : 'white';
                   setFilters(prev => ({ ...prev, color: next as Color }));
                   setBoardFlipped(next === 'black');
+                  dismissPlayedAsHint();
                 }}
                 aria-label={`Switch to ${filters.color === 'white' ? 'black' : 'white'}`}
                 data-testid="sidebar-strip-btn-color"
               >
                 <span className={`inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
+                {showPlayedAsHint && (
+                  <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="played-as-notification-dot">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                  </span>
+                )}
               </Button>
             </Tooltip>
           }
@@ -1160,17 +1183,30 @@ export function OpeningsPage() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-11 w-11 shrink-0 !bg-toggle-active text-toggle-active-foreground hover:!bg-toggle-active"
+                  className="relative h-11 w-11 shrink-0 !bg-toggle-active text-toggle-active-foreground hover:!bg-toggle-active"
                   onClick={() => {
                     const newColor: Color = filters.color === 'white' ? 'black' : 'white';
-                    handleFiltersChange({ ...filters, color: newColor });
+                    // Change color without dismissing the filters hint — only the
+                    // Played-as hint advances when the color toggle is used.
+                    setFilters({ ...filters, color: newColor });
+                    setGamesOffset(0);
                     setBoardFlipped(newColor === 'black');
+                    dismissPlayedAsHint();
                     if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
                   }}
                   data-testid="btn-toggle-played-as"
                   aria-label={`Playing as ${filters.color}, tap to switch`}
                 >
                   <span className={`inline-block h-4 w-4 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
+                  {showPlayedAsHint && (
+                    <span
+                      className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                      data-testid="played-as-notification-dot-mobile"
+                    >
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                    </span>
+                  )}
                 </Button>
               </Tooltip>
               <Tooltip content="Open bookmarks" side="left">
@@ -1183,7 +1219,7 @@ export function OpeningsPage() {
                   aria-label="Open bookmarks"
                 >
                   <BookMarked className="h-4 w-4" />
-                  {bookmarks.length === 0 && hasGames && (
+                  {showBookmarksHint && (
                     <span
                       className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                       data-testid="bookmarks-notification-dot-mobile"
@@ -1204,7 +1240,7 @@ export function OpeningsPage() {
                   aria-label="Open filters"
                 >
                   <SlidersHorizontal className="h-4 w-4" />
-                  {bookmarks.length > 0 && !filtersHintDismissed && (
+                  {showFiltersHint && (
                     <span
                       className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                       data-testid="filters-notification-dot-mobile"
