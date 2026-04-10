@@ -15,7 +15,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
-import { ArrowRightLeft, Scale, Filter, TrophyIcon, DownloadIcon, Loader2, UserPlus, DoorOpen } from 'lucide-react';
+import { Scale, Filter, TrophyIcon, DownloadIcon, Loader2, UserPlus, DoorOpen } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Feature sections — imagePosition alternates right/left so text and image swap sides on desktop.
@@ -28,18 +28,6 @@ const FEATURES: {
   screenshot: { src: string; alt: string };
   imagePosition: 'left' | 'right';
 }[] = [
-  {
-    slug: 'opening-explorer',
-    icon: ArrowRightLeft,
-    heading: 'Interactive Opening Explorer',
-    desc: [
-      "Step through any opening and see your win/draw/loss rate for every move you\u2019ve played.",
-      "Discover which moves you struggle against and which traps and gambits work for you.",
-      "Scout your opponents\u2019 weaknesses and tendencies before a match."
-    ],
-    screenshot: { src: '/screenshots/opening-explorer.png', alt: 'Board with move explorer showing win/draw/loss bars per candidate move' },
-    imagePosition: 'right',
-  },
   {
     slug: 'opening-comparison',
     icon: Scale,
@@ -114,77 +102,73 @@ export function HomePageContent() {
 
       {/* Hero */}
       <div className="bg-[radial-gradient(ellipse_at_center,rgba(139,94,60,0.10),transparent_60%)]">
-      <section data-testid="hero-section" className="max-w-3xl mx-auto px-4 py-8 lg:py-24 text-center">
-        <img
-          src="/icons/logo-384.png"
-          alt="FlawChess logo"
-          className="mx-auto mb-6 h-28 w-28 lg:h-36 lg:w-36"
-        />
-        <h1 className="text-4xl lg:text-5xl font-bold leading-tight font-brand">
-          Engines are flawless, humans play{' '}
-          <span className="bg-gradient-to-r from-brand-brown-light to-brand-brown bg-clip-text text-transparent">
-            FlawChess
-          </span>
-        </h1>
-        <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-          Import games from chess.com and lichess. Explore openings move by move, track endgame performance, and find exactly where you win and lose.
-        </p>
-        <div className="mt-8 flex flex-row items-center justify-center gap-3">
-          <Button
-            size="lg"
-            asChild
-            className={cn('btn-brand', 'min-h-11 min-w-40')}
-            data-testid="hero-cta-signup"
-          >
-            <Link to="/login?tab=register">
-              <UserPlus className="mr-1.5 h-4 w-4" />
-              Sign up free
-            </Link>
-          </Button>
-          <Button
-            size="lg"
-            variant="brand-outline"
-            className="min-h-11 min-w-40"
-            data-testid="btn-guest"
-            onClick={handleGuestLogin}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                Starting...
-              </>
-            ) : (
-              <>
-                <DoorOpen className="mr-1.5 h-4 w-4" />
-                Use as Guest
-              </>
-            )}
-          </Button>
-        </div>
-        {/* Callout pills */}
-        <div className="mt-12 hidden lg:flex flex-wrap justify-center gap-2">
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Free to use
-          </span>
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Open source
-          </span>
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Mobile app
-          </span>
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Opening explorer
-          </span>
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Progress tracking
-          </span>
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Endgame stats
-          </span>
-          <span className="bg-muted text-muted-foreground min-w-32 rounded-full px-3 py-1 text-center text-sm">
-            Cross-platform
-          </span>
+      <section data-testid="hero-section" className="max-w-6xl mx-auto px-4 py-8 lg:py-12">
+        <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-8 lg:gap-12 items-center">
+          {/* Left column: existing hero content (shrunk on lg for narrower column) */}
+          <div className="text-center lg:text-left" data-testid="hero-left-column">
+            <img
+              src="/icons/logo-384.png"
+              alt="FlawChess logo"
+              className="mx-auto lg:mx-0 mb-6 h-28 w-28 lg:h-24 lg:w-24"
+            />
+            <h1 className="text-4xl font-bold leading-tight font-brand">
+              Engines are flawless, humans play{' '}
+              <span className="bg-gradient-to-r from-brand-brown-light to-brand-brown bg-clip-text text-transparent">
+                FlawChess
+              </span>
+            </h1>
+            <p className="mt-4 text-base leading-relaxed text-muted-foreground">
+              Import games from chess.com and lichess. Explore openings move by move, track endgame performance, and find exactly where you win and lose.
+            </p>
+            <div className="mt-8 flex flex-row items-center justify-center lg:justify-start gap-3">
+              <Button
+                size="lg"
+                asChild
+                className={cn('btn-brand', 'min-h-11 min-w-40')}
+                data-testid="hero-cta-signup"
+              >
+                <Link to="/login?tab=register">
+                  <UserPlus className="mr-1.5 h-4 w-4" />
+                  Sign up free
+                </Link>
+              </Button>
+              <Button
+                size="lg"
+                variant="brand-outline"
+                className="min-h-11 min-w-40"
+                data-testid="btn-guest"
+                onClick={handleGuestLogin}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <DoorOpen className="mr-1.5 h-4 w-4" />
+                    Use as Guest
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* Right column: Interactive Opening Explorer preview (desktop only) */}
+          <div className="hidden lg:block" data-testid="hero-explorer-preview">
+            <h2 className="text-2xl font-bold mb-4">Interactive Opening Explorer</h2>
+            <img
+              src="/screenshots/opening-explorer.png"
+              alt="Board with move explorer showing win/draw/loss bars per candidate move"
+              className="rounded-lg border border-border shadow-md w-full mb-4"
+            />
+            <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
+              <li>Step through any opening and see your win/draw/loss rate for every move you&apos;ve played.</li>
+              <li>Discover which moves you struggle against and which traps and gambits work for you.</li>
+              <li>Scout your opponents&apos; weaknesses and tendencies before a match.</li>
+            </ul>
+          </div>
         </div>
       </section>
       </div>
