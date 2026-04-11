@@ -14,6 +14,8 @@ interface AuthState {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   loginWithToken: (token: string) => void;
+  /** Replace the stored token for the same user without clearing the query cache. */
+  refreshAuthToken: (token: string) => void;
   loginAsGuest: () => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -68,6 +70,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     queryClient.clear();
     setToken(externalToken);
     setUser(null);
+  }, []);
+
+  // Replace the stored token for the same user without clearing the query cache.
+  // Bug fix: the guest-JWT refresh on /import used loginWithToken, which cleared
+  // userProfile cache mid-keystroke. useUserProfile's isLoading flipped back to
+  // true, the Import page swapped the inputs for a "Loading profile..." placeholder,
+  // and the focused username input lost focus after the first character.
+  const refreshAuthToken = useCallback((externalToken: string): void => {
+    localStorage.setItem('auth_token', externalToken);
+    setToken(externalToken);
   }, []);
 
   const register = async (email: string, password: string): Promise<void> => {
@@ -134,7 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // guest_token is preserved so RegisterForm can promote the guest account.
   }, []);
 
-  const value: AuthState = { user, token, isLoading, login, loginWithToken, loginAsGuest, register, logout, logoutForPromotion };
+  const value: AuthState = { user, token, isLoading, login, loginWithToken, refreshAuthToken, loginAsGuest, register, logout, logoutForPromotion };
 
   return React.createElement(AuthContext.Provider, { value }, children);
 }

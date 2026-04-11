@@ -270,7 +270,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
 // ─── Layout (protected pages) ─────────────────────────────────────────────────
 
 function ProtectedLayout() {
-  const { token, loginWithToken } = useAuth();
+  const { token, refreshAuthToken } = useAuth();
   const { data: profile } = useUserProfile();
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -287,15 +287,18 @@ function ProtectedLayout() {
     }
   }, []);
 
-  // GUEST-05: Refresh guest JWT on each visit, resetting the 30-day expiry
+  // GUEST-05: Refresh guest JWT on each visit, resetting the 30-day expiry.
+  // Uses refreshAuthToken (not loginWithToken) to avoid clearing the query cache
+  // on the same user — otherwise useUserProfile refetches mid-keystroke on the
+  // Import page and the focused username input loses focus after the first char.
   useEffect(() => {
     if (profile?.is_guest && !refreshedRef.current) {
       refreshedRef.current = true;
       apiClient.post<{ access_token: string }>('/auth/guest/refresh')
-        .then((res) => loginWithToken(res.data.access_token))
+        .then((res) => refreshAuthToken(res.data.access_token))
         .catch(() => { /* token still valid, refresh is best-effort */ });
     }
-  }, [profile?.is_guest, loginWithToken]);
+  }, [profile?.is_guest, refreshAuthToken]);
 
   if (!token) {
     return <Navigate to="/login" replace />;

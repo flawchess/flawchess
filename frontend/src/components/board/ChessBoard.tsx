@@ -240,12 +240,12 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
   return (
     <div ref={containerRef} className="w-full" data-testid="chessboard">
       {boardWidth > 0 && (
-      <div style={{ position: 'relative', width: boardWidth, height: boardWidth, touchAction: 'none' }}>
+      <div style={{ position: 'relative', width: boardWidth, height: boardWidth, touchAction: 'none', borderRadius: '0.5rem', overflow: 'hidden' }}>
         <Chessboard
           options={{
             position,
             boardOrientation: flipped ? 'black' : 'white',
-            boardStyle: { width: boardWidth, height: boardWidth },
+            boardStyle: { width: boardWidth, height: boardWidth, borderRadius: '0.5rem' },
             darkSquareStyle,
             lightSquareStyle,
             darkSquareNotationStyle: DARK_SQUARE_NOTATION,
