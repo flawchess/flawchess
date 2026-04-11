@@ -6,7 +6,7 @@ import type {
   MatchSideUpdateRequest
 } from '@/types/position_bookmarks';
 import type { RatingHistoryResponse, GlobalStatsResponse, MostPlayedOpeningsResponse } from '@/types/stats';
-import type { EndgameStatsResponse, EndgameGamesResponse, EndgamePerformanceResponse, EndgameTimelineResponse, ConvRecovTimelineResponse } from '@/types/endgames';
+import type { EndgameGamesResponse, EndgameOverviewResponse } from '@/types/endgames';
 
 /**
  * Central Axios instance.
@@ -158,15 +158,16 @@ export const statsApi = {
 
 // No color parameter passed — endgame stats are color-agnostic per D-02.
 export const endgameApi = {
-  getStats: (params: {
+  getOverview: (params: {
     time_control?: string[] | null;
     platform?: string[] | null;
     recency?: string | null;
     rated?: boolean | null;
     opponent_type?: string;
     opponent_strength?: string;
+    window?: number;
   }) =>
-    apiClient.get<EndgameStatsResponse>('/endgames/stats', {
+    apiClient.get<EndgameOverviewResponse>('/endgames/overview', {
       params: buildFilterParams(params),
     }).then(r => r.data),
 
@@ -188,43 +189,5 @@ export const endgameApi = {
         offset: params.offset ?? 0,
         limit: params.limit ?? 20,
       },
-    }).then(r => r.data),
-
-  getPerformance: (params: {
-    time_control?: string[] | null;
-    platform?: string[] | null;
-    recency?: string | null;
-    rated?: boolean | null;
-    opponent_type?: string;
-    opponent_strength?: string;
-  }) =>
-    apiClient.get<EndgamePerformanceResponse>('/endgames/performance', {
-      params: buildFilterParams(params),
-    }).then(r => r.data),
-
-  getTimeline: (params: {
-    time_control?: string[] | null;
-    platform?: string[] | null;
-    recency?: string | null;
-    rated?: boolean | null;
-    opponent_type?: string;
-    opponent_strength?: string;
-    window?: number;
-  }) =>
-    apiClient.get<EndgameTimelineResponse>('/endgames/timeline', {
-      params: buildFilterParams(params),
-    }).then(r => r.data),
-
-  getConvRecovTimeline: (params: {
-    time_control?: string[] | null;
-    platform?: string[] | null;
-    recency?: string | null;
-    rated?: boolean | null;
-    opponent_type?: string;
-    opponent_strength?: string;
-    window?: number;
-  }) =>
-    apiClient.get<ConvRecovTimelineResponse>('/endgames/conv-recov-timeline', {
-      params: buildFilterParams(params),
     }).then(r => r.data),
 };

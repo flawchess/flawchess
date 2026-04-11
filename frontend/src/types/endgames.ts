@@ -104,3 +104,10 @@ export interface ConvRecovTimelineResponse {
   recovery: ConvRecovTimelinePoint[];
   window: number;
 }
+
+export interface EndgameOverviewResponse {
+  stats: EndgameStatsResponse;
+  performance: EndgamePerformanceResponse;
+  timeline: EndgameTimelineResponse;
+  conv_recov_timeline: ConvRecovTimelineResponse;
+}
