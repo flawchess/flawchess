@@ -45,7 +45,7 @@ import { ChessBoard } from '@/components/board/ChessBoard';
 import { MoveExplorer } from '@/components/move-explorer/MoveExplorer';
 import { MoveList } from '@/components/board/MoveList';
 import { BoardControls } from '@/components/board/BoardControls';
-import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual } from '@/components/filters/FilterPanel';
+import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { PositionBookmarkList } from '@/components/position-bookmarks/PositionBookmarkList';
 import { SuggestionsModal } from '@/components/position-bookmarks/SuggestionsModal';
@@ -283,7 +283,7 @@ export function OpeningsPage() {
   // localFilters differed from filters at close time.
   const justCommittedFromDrawerRef = useRef(false);
   const isFiltersModified = useMemo(
-    () => !areFiltersEqual(filters, DEFAULT_FILTERS),
+    () => !areFiltersEqual(filters, DEFAULT_FILTERS, FILTER_DOT_FIELDS),
     [filters],
   );
   const [isFiltersPulsing, setIsFiltersPulsing] = useState(false);
@@ -1346,54 +1346,31 @@ export function OpeningsPage() {
                 </Tooltip>
               </DrawerHeader>
               <div className="overflow-y-auto flex-1 p-4 space-y-4">
-                {/* Played as + Piece filter — same row like desktop */}
-                <div className="flex flex-wrap gap-x-4 gap-y-3">
-                  <div>
-                    <p className="mb-1 text-xs text-muted-foreground">Played as</p>
-                    <ToggleGroup
-                      type="single"
-                      value={localFilters.color}
-                      onValueChange={(v) => {
-                        if (!v) return;
-                        setLocalFilters(prev => ({ ...prev, color: v as Color }));
-                      }}
-                      variant="outline"
-                      size="sm"
-                      data-testid="filter-played-as-sidebar"
-                    >
-                      <ToggleGroupItem value="white" data-testid="filter-played-as-white-sidebar" className="min-h-11">
-                        <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-white mr-1" />
-                        White
-                      </ToggleGroupItem>
-                      <ToggleGroupItem value="black" data-testid="filter-played-as-black-sidebar" className="min-h-11">
-                        <span className="inline-block h-3 w-3 rounded-xs border border-muted-foreground bg-zinc-900 mr-1" />
-                        Black
-                      </ToggleGroupItem>
-                    </ToggleGroup>
+                {/* Piece filter — spans full drawer width. Played-as is intentionally NOT here:
+                    it's always accessible via btn-toggle-played-as in the sticky mobile header. */}
+                <div>
+                  <div className="mb-1 flex items-center gap-1">
+                    <p className="text-xs text-muted-foreground">Piece filter</p>
+                    <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info-sidebar" side="top">
+                      Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
+                    </InfoPopover>
                   </div>
-                  <div className="ml-auto">
-                    <div className="mb-1 flex items-center gap-1">
-                      <p className="text-xs text-muted-foreground">Piece filter</p>
-                      <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info-sidebar" side="top">
-                        Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
-                      </InfoPopover>
-                    </div>
-                    <ToggleGroup
-                      type="single"
-                      value={localFilters.matchSide}
-                      onValueChange={(v) => {
-                        if (!v) return;
-                        setLocalFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
-                      }}
-                      variant="outline"
-                      size="sm"
-                      data-testid="filter-piece-filter-sidebar"
-                    >
-                      <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-sidebar" className="min-h-11">Mine</ToggleGroupItem>
-                      <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-sidebar" className="min-h-11">Opponent</ToggleGroupItem>
-                      <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-sidebar" className="min-h-11">Both</ToggleGroupItem>
-                    </ToggleGroup>
-                  </div>
+                  <ToggleGroup
+                    type="single"
+                    value={localFilters.matchSide}
+                    onValueChange={(v) => {
+                      if (!v) return;
+                      setLocalFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
+                    }}
+                    variant="outline"
+                    size="sm"
+                    data-testid="filter-piece-filter-sidebar"
+                    className="w-full"
+                  >
+                    <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-sidebar" className="flex-1 min-h-11">Mine</ToggleGroupItem>
+                    <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-sidebar" className="flex-1 min-h-11">Opponent</ToggleGroupItem>
+                    <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-sidebar" className="flex-1 min-h-11">Both</ToggleGroupItem>
+                  </ToggleGroup>
                 </div>
 
                 {/* Remaining filters (5 fields: timeControl, platform, rated, opponent, recency) */}
