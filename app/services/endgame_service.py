@@ -38,6 +38,7 @@ from app.schemas.endgames import (
     EndgameGamesResponse,
     EndgameLabel,
     EndgameOverallPoint,
+    EndgameOverviewResponse,
     EndgamePerformanceResponse,
     EndgameStatsResponse,
     EndgameTimelinePoint,
@@ -814,4 +815,82 @@ async def get_conv_recov_timeline(
         conversion=conversion_series,
         recovery=recovery_series,
         window=window,
+    )
+
+
+async def get_endgame_overview(
+    session: AsyncSession,
+    user_id: int,
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency: str | None,
+    window: int = 50,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+) -> EndgameOverviewResponse:
+    """Compose all four endgame dashboard payloads into a single response.
+
+    Delegates to the four individual service functions sequentially, all awaited
+    in turn on the same AsyncSession — no asyncio.gather.
+    # sequential on one AsyncSession — see endgame_repository.py:423-428
+
+    This reduces the Endgames tab from 4 parallel HTTP requests (each on its own
+    DB session) down to a single request running its queries sequentially on one
+    connection (Phase 52).
+    """
+    # sequential on one AsyncSession — see endgame_repository.py:423-428
+    stats = await get_endgame_stats(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency=recency,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+    performance = await get_endgame_performance(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        recency=recency,
+        rated=rated,
+        opponent_type=opponent_type,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+    timeline = await get_endgame_timeline(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        recency=recency,
+        rated=rated,
+        opponent_type=opponent_type,
+        window=window,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+    conv_recov_timeline = await get_conv_recov_timeline(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency=recency,
+        window=window,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+
+    return EndgameOverviewResponse(
+        stats=stats,
+        performance=performance,
+        timeline=timeline,
+        conv_recov_timeline=conv_recov_timeline,
     )

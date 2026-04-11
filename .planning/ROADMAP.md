@@ -12,7 +12,7 @@
 - ✅ **v1.7 Consolidation, Tooling & Refactoring** — Phases 40-43 (shipped 2026-04-03)
 - ✅ **v1.8 Guest Access** — Phases 44-47 (shipped 2026-04-06)
 - ✅ **v1.9 UI/UX Restructuring** — Phases 49-51 (shipped 2026-04-10) — see [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md)
-- ○ **v1.10 Advanced Analytics** — Phases 48, 52-54 (planned)
+- ○ **v1.10 Advanced Analytics** — Phases 48, 52-55 (planned)
 
 ## Phases
 
@@ -129,12 +129,13 @@ See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
 
 </details>
 
-### v1.10 Advanced Analytics (Phases 48, 52-54)
+### v1.10 Advanced Analytics (Phases 48, 52-55)
 
 - [x] **Phase 48: Conversion & Recovery Persistence Filter** - Reduce noise in endgame conv/recov metrics by requiring material imbalance to persist 4 plies after endgame entry, lower threshold from 300cp to 100cp (completed 2026-04-07)
-- [ ] **Phase 52: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
-- [ ] **Phase 53: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
-- [ ] **Phase 54: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
+- [x] **Phase 52: Endgame Tab Performance** - Collapse timeline fan-out, consolidate endgame endpoints on a single session, and defer desktop filter apply until the filter sidebar closes (completed 2026-04-11)
+- [ ] **Phase 53: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
+- [ ] **Phase 54: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
+- [ ] **Phase 55: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
 
 ## Phase Details
 
@@ -155,7 +156,24 @@ Plans:
 - [x] 48-01-PLAN.md — Backend: persistence field in repo queries, threshold to 100cp, persistence check in service
 - [x] 48-02-PLAN.md — Frontend: update constants, popover/tooltip/accordion text for new threshold and persistence
 
-### Phase 52: Endgame ELO — Backend + Breakdown Table
+### Phase 52: Endgame Tab Performance
+**Goal**: Endgame tab loads complete in a few seconds even under concurrent user load on production, down from the current 150–500 seconds observed in pg_stat_statements. Achieved by (a) collapsing `/api/endgames/timeline`'s 8 per-class queries into 2, (b) consolidating the endgame endpoints so they run sequentially on a single session instead of fanning out across 5 parallel connections, and (c) deferring desktop filter apply until the filter sidebar is closed, matching the mobile pattern.
+**Depends on**: Phase 51
+**Requirements**: N/A (performance improvement motivated by user-testing incident 2026-04-10)
+**Success Criteria** (what must be TRUE):
+  1. `query_endgame_timeline_rows` in `app/repositories/endgame_repository.py` runs at most 2 queries against `game_positions` (one grouped by `endgame_class` returning per-class rows, one for non-endgame rows) instead of the current 8 sequential per-class queries
+  2. A single consolidated endgame overview endpoint serves the charts currently backed by `/stats`, `/performance`, `/timeline`, and `/conv-recov-timeline`; the individual endpoints are either removed or become thin wrappers over the same service functions
+  3. The consolidated endpoint runs all of its internal queries sequentially on one `AsyncSession` (no `asyncio.gather`, no parallel HTTP fan-out from the frontend for these four datasets)
+  4. `/api/endgames/games` remains a separate endpoint because it changes independently with the selected endgame class
+  5. On the desktop Endgames tab, changing any filter does NOT fire backend queries immediately; queries fire only when the filter sidebar is closed (applied), matching the mobile behavior already present in the codebase
+  6. Mobile Endgames tab continues to behave correctly (deferred apply already in place)
+  7. All existing Endgames charts render correctly after filter apply with no visual regressions (stats WDL, per-type WDL, performance gauges, conv/recov timeline, endgame timeline, games list)
+  8. Loading state is visible for the consolidated fetch so users see progress feedback during the single request
+  9. After deployment to production, pg_stat_statements shows that the previously top-offender endgame queries either disappear (replaced) or run with p95 under 10 seconds for the biggest user (verified via MCP prod DB query)
+**Plans**: ~3 plans (backend consolidation, frontend deferred filters, prod verification)
+**UI hint**: no (no new UI, only behavior change)
+
+### Phase 53: Endgame ELO — Backend + Breakdown Table
 **Goal**: Users can see their Endgame ELO per platform/time-control combination and understand how their endgame skill compares to their actual rating
 **Depends on**: Phase 48
 **Requirements**: ELO-01, ELO-02, ELO-03, ELO-04, ELO-06
@@ -167,9 +185,9 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 53: Endgame ELO — Timeline Chart
+### Phase 54: Endgame ELO — Timeline Chart
 **Goal**: Users can track their Endgame ELO over time per combination and visually see where it diverges from their actual rating
-**Depends on**: Phase 52
+**Depends on**: Phase 53
 **Requirements**: ELO-05
 **Success Criteria** (what must be TRUE):
   1. User sees a timeline chart with paired lines per (platform, time-control) combination — one bright line for Endgame ELO and one dark line for Actual ELO
@@ -178,7 +196,7 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 54: Opening Risk & Drawishness
+### Phase 55: Opening Risk & Drawishness
 **Goal**: Users can see risk and drawishness signals per candidate move in the move explorer to inform opening selection
 **Depends on**: Phase 47
 **Requirements**: OPN-01, OPN-02
@@ -246,9 +264,10 @@ Plans:
 | 49. Openings Desktop Sidebar | v1.9 | 1/1 | Complete | 2026-04-09 |
 | 50. Mobile Layout Restructuring | v1.9 | 2/2 | Complete | 2026-04-10 |
 | 51. Stats Subtab, Homepage & Global Stats | v1.9 | 4/4 | Complete | 2026-04-10 |
-| 52. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
-| 53. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
-| 54. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
+| 52. Endgame Tab Performance | v1.10 | 3/3 | Complete    | 2026-04-11 |
+| 53. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
+| 54. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
+| 55. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
 
 ## Backlog
 
@@ -256,7 +275,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 0 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

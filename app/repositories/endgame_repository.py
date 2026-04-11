@@ -442,15 +442,96 @@ async def query_endgame_timeline_rows(
 ) -> tuple[list[Row[Any]], list[Row[Any]], dict[int, list[Row[Any]]]]:
     """Return rows for rolling-window time series (overall and per endgame class).
 
-    Runs 8 queries sequentially (AsyncSession is not safe for concurrent use
-    from multiple coroutines, and shares a single DB connection anyway).
+    Issues exactly 2 queries against game_positions (see comment at lines 423-428:
+    sequential execution is mandatory on the same AsyncSession).
+
+    Query A: one pass over game_positions grouped by (game_id, endgame_class) with
+    HAVING count(ply) >= ENDGAME_PLY_THRESHOLD. Returns one row per qualifying
+    (game, class) span including the endgame_class column so Python can bucket them.
+    The overall endgame series is derived from these rows by deduplicating per game_id.
+
+    Query B: non-endgame games (games never reaching any qualifying endgame span),
+    derived via NOT IN on the game_ids from Query A.
 
     Returns: (endgame_rows, non_endgame_rows, per_type_rows)
     where per_type_rows is dict[class_int, list[(played_at, result, user_color)]].
+    All lists in per_type_rows are ordered by played_at ASC.
+    All 6 class integers (1..6) are initialized (to empty lists) for deterministic iteration.
 
-    Each row is (played_at, result, user_color), ordered by played_at ASC.
+    Each row in endgame_rows and non_endgame_rows is (played_at, result, user_color).
     """
-    # Subquery: game_ids reaching any endgame class (for overall split)
+    # --- Query A: one pass returns (game_id, endgame_class, played_at, result, user_color) ---
+    # Subquery: (game_id, endgame_class) pairs with >= ENDGAME_PLY_THRESHOLD plies.
+    # Uses ix_gp_user_endgame_game index for an Index Only Scan.
+    per_class_subq = (
+        select(
+            GamePosition.game_id.label("game_id"),
+            GamePosition.endgame_class.label("endgame_class"),
+        )
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.endgame_class.isnot(None),
+        )
+        .group_by(GamePosition.game_id, GamePosition.endgame_class)
+        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
+        .subquery("per_class_spans")
+    )
+
+    # Join Game to the per-class subquery; select game data + class column.
+    per_class_stmt = (
+        select(
+            Game.id.label("game_id"),
+            per_class_subq.c.endgame_class,
+            Game.played_at,
+            Game.result,
+            Game.user_color,
+        )
+        .join(per_class_subq, Game.id == per_class_subq.c.game_id)
+        .where(
+            Game.user_id == user_id,
+            Game.played_at.isnot(None),
+        )
+        .order_by(Game.played_at.asc())
+    )
+    per_class_stmt = apply_game_filters(
+        per_class_stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+    )
+
+    # Execute sequentially — AsyncSession is not safe for concurrent use from
+    # multiple coroutines, and a single session uses one DB connection so there's
+    # no concurrency benefit from asyncio.gather here. See lines 423-428.
+    per_class_result = await session.execute(per_class_stmt)
+    per_class_raw = list(per_class_result.fetchall())
+
+    # --- Python-side bucketing (no extra DB round trips) ---
+    # Initialize all 6 class slots to empty lists so downstream callers can
+    # iterate deterministically even when some classes have no data.
+    per_type_rows: dict[int, list[Row[Any]]] = {ci: [] for ci in _ENDGAME_CLASS_INTS}
+
+    # Deduplicate per game_id for the overall endgame series.
+    # Walk rows once: bucket by class, and collect one (played_at, result, user_color)
+    # row per distinct game_id (first seen = earliest class span, already ordered ASC).
+    seen_game_ids: set[int] = set()
+    endgame_rows_unsorted: list[tuple] = []
+
+    for row in per_class_raw:
+        game_id = row.game_id
+        class_int = row.endgame_class
+        # Strip endgame_class: service layer expects 3-tuple (played_at, result, user_color)
+        three_tuple = (row.played_at, row.result, row.user_color)
+        per_type_rows[class_int].append(three_tuple)  # ty: ignore[invalid-argument-type] — 3-tuple compatible with Row consumer
+        if game_id not in seen_game_ids:
+            seen_game_ids.add(game_id)
+            endgame_rows_unsorted.append(three_tuple)
+
+    # Sort the deduplicated overall series by played_at ASC (same ordering as Query B).
+    endgame_rows: list[Row[Any]] = sorted(  # ty: ignore[invalid-assignment] — plain tuples are Row-compatible for service consumers
+        endgame_rows_unsorted, key=lambda r: r[0]
+    )
+
+    # --- Query B: non-endgame games (games never reaching any qualifying span) ---
+    # Uses the game_ids collected from Query A to drive the NOT IN filter.
     endgame_game_ids_subq = (
         select(GamePosition.game_id)
         .where(
@@ -467,15 +548,6 @@ async def query_endgame_timeline_rows(
         Game.played_at.isnot(None),
     )
 
-    endgame_stmt = (
-        game_cols.where(Game.id.in_(select(endgame_game_ids_subq.c.game_id)))
-        .order_by(Game.played_at.asc())
-    )
-    endgame_stmt = apply_game_filters(
-        endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
-    )
-
     non_endgame_stmt = (
         game_cols.where(Game.id.notin_(select(endgame_game_ids_subq.c.game_id)))
         .order_by(Game.played_at.asc())
@@ -485,40 +557,7 @@ async def query_endgame_timeline_rows(
         opponent_strength=opponent_strength, elo_threshold=elo_threshold,
     )
 
-    # Per-type subqueries: one per endgame class integer
-    def _per_class_stmt(class_int: int):
-        per_class_game_ids_subq = (
-            select(GamePosition.game_id)
-            .where(
-                GamePosition.user_id == user_id,
-                GamePosition.endgame_class == class_int,
-            )
-            .group_by(GamePosition.game_id)
-            .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
-            .subquery(f"endgame_game_ids_{class_int}")
-        )
-        stmt = (
-            game_cols.where(Game.id.in_(select(per_class_game_ids_subq.c.game_id)))
-            .order_by(Game.played_at.asc())
-        )
-        return apply_game_filters(
-            stmt, time_control, platform, rated, opponent_type, recency_cutoff,
-            opponent_strength=opponent_strength, elo_threshold=elo_threshold,
-        )
-
-    class_ints = list(_ENDGAME_CLASS_INTS)
-    per_class_stmts = [_per_class_stmt(ci) for ci in class_ints]
-
-    # Execute sequentially — AsyncSession is not safe for concurrent use.
-    endgame_result = await session.execute(endgame_stmt)
-    endgame_rows = list(endgame_result.fetchall())
-
     non_endgame_result = await session.execute(non_endgame_stmt)
-    non_endgame_rows = list(non_endgame_result.fetchall())
-
-    per_type_rows: dict[int, list[Row[Any]]] = {}
-    for i, class_int in enumerate(class_ints):
-        result = await session.execute(per_class_stmts[i])
-        per_type_rows[class_int] = list(result.fetchall())
+    non_endgame_rows: list[Row[Any]] = list(non_endgame_result.fetchall())
 
     return endgame_rows, non_endgame_rows, per_type_rows

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { SlidersHorizontal, X, BarChart2Icon, Gamepad2Icon, HelpCircle } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
@@ -23,8 +23,7 @@ import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
 import { EndgameConvRecovTimelineChart } from '@/components/charts/EndgameConvRecovTimelineChart';
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
-import { useEndgameStats, useEndgameGames, useEndgamePerformance, useEndgameTimeline, useEndgameConvRecovTimeline } from '@/hooks/useEndgames';
-import { useDebounce } from '@/hooks/useDebounce';
+import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
 
@@ -52,8 +51,15 @@ export function EndgamesPage() {
   const activeTab = location.pathname.includes('/games') ? 'games' : 'stats';
 
   // ── Filter state (shared across pages) — color and matchSide are not used for endgames ──
-  const [filters, setFilters] = useFilterStore();
-  const debouncedFilters = useDebounce(filters, 300);
+  // appliedFilters keys the backend query; pendingFilters tracks in-progress sidebar edits.
+  // Queries only fire when the sidebar/drawer closes and commits pending -> applied.
+  const [appliedFilters, setAppliedFilters] = useFilterStore();
+  const [pendingFilters, setPendingFilters] = useState<FilterState>(appliedFilters);
+
+  // Sync pending -> applied when the filter store changes from another page/tab
+  useEffect(() => {
+    setPendingFilters(appliedFilters);
+  }, [appliedFilters]);
 
   // ── Category selection state ─────────────────────────────────────────────────
   const [selectedCategory, setSelectedCategory] = useState<EndgameClass>(DEFAULT_ENDGAME_CLASS);
@@ -66,22 +72,50 @@ export function EndgamesPage() {
   const [sidebarOpen, setSidebarOpen] = useState<string | null>(null);
 
   // ── Data ─────────────────────────────────────────────────────────────────────
-  const { data: statsData, isLoading: statsLoading, isError: statsError } = useEndgameStats(debouncedFilters);
-  const { data: perfData } = useEndgamePerformance(debouncedFilters);
-  const { data: timelineData } = useEndgameTimeline(debouncedFilters);
-  const { data: convRecovData } = useEndgameConvRecovTimeline(debouncedFilters);
+  const {
+    data: overviewData,
+    isLoading: overviewLoading,
+    isError: overviewError,
+  } = useEndgameOverview(appliedFilters);
+
+  const statsData = overviewData?.stats;
+  const perfData = overviewData?.performance;
+  const timelineData = overviewData?.timeline;
+  const convRecovData = overviewData?.conv_recov_timeline;
+
   const { data: gamesData, isLoading: gamesLoading, isError: gamesError } = useEndgameGames(
     selectedCategory,
-    debouncedFilters,
+    appliedFilters,
     gamesOffset,
     PAGE_SIZE,
   );
 
-  // ── Filter change handler — wraps setFilters + resets pagination ────────────
-  const handleFilterChange = useCallback((newFilters: FilterState) => {
-    setFilters(newFilters);
-    setGamesOffset(0); // D-03: reset pagination on filter change
-  }, [setFilters]);
+  // ── Desktop sidebar handler — defers filter apply until the panel closes ────
+  // When the filter panel closes (filters -> null or filters -> other), commit
+  // pending -> applied. When it opens, snapshot applied as pending.
+  const handleSidebarOpenChange = useCallback((panelId: string | null) => {
+    if (sidebarOpen === 'filters' && panelId !== 'filters') {
+      setAppliedFilters(pendingFilters);
+      setGamesOffset(0);
+    }
+    if (sidebarOpen !== 'filters' && panelId === 'filters') {
+      setPendingFilters(appliedFilters);
+    }
+    setSidebarOpen(panelId);
+  }, [sidebarOpen, pendingFilters, appliedFilters, setAppliedFilters]);
+
+  // ── Mobile drawer handler — defers filter apply until the drawer closes ─────
+  const handleMobileFiltersOpenChange = useCallback((open: boolean) => {
+    if (!open && mobileFiltersOpen) {
+      // Commit deferred filters on close
+      setAppliedFilters(pendingFilters);
+      setGamesOffset(0);
+    }
+    if (open && !mobileFiltersOpen) {
+      setPendingFilters(appliedFilters);
+    }
+    setMobileFiltersOpen(open);
+  }, [mobileFiltersOpen, pendingFilters, appliedFilters, setAppliedFilters]);
 
   // ── Category selection handler ──────────────────────────────────────────────
 
@@ -151,9 +185,9 @@ export function EndgamesPage() {
 
   const statisticsContent = (
     <div className="flex flex-col gap-4">
-      {statsLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <p className="text-muted-foreground">Loading endgame statistics...</p>
+      {overviewLoading ? (
+        <div className="charcoal-texture rounded-md p-12 flex items-center justify-center">
+          <p className="text-muted-foreground">Loading endgame analytics...</p>
         </div>
       ) : statsData && statsData.categories.length > 0 ? (
         <>
@@ -185,7 +219,7 @@ export function EndgamesPage() {
             </div>
           )}
         </>
-      ) : statsError ? (
+      ) : overviewError ? (
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
           <p className="mb-2 text-base font-medium text-foreground">Failed to load endgame data</p>
           <p className="text-sm text-muted-foreground">
@@ -315,13 +349,13 @@ export function EndgamesPage() {
               icon: <SlidersHorizontal className="h-5 w-5" />,
               content: (
                 <div className="p-3">
-                  <FilterPanel filters={filters} onChange={handleFilterChange} />
+                  <FilterPanel filters={pendingFilters} onChange={setPendingFilters} />
                 </div>
               ),
             },
           ]}
           activePanel={sidebarOpen}
-          onActivePanelChange={setSidebarOpen}
+          onActivePanelChange={handleSidebarOpenChange}
         >
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>
             <TabsList variant="brand" className="w-full" data-testid="endgames-tabs">
@@ -373,7 +407,7 @@ export function EndgamesPage() {
             </div>
 
             {/* Filter drawer */}
-            <Drawer open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen} direction="right">
+            <Drawer open={mobileFiltersOpen} onOpenChange={handleMobileFiltersOpenChange} direction="right">
               <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-filter-sidebar">
                 <DrawerHeader className="flex flex-row items-center justify-between">
                   <DrawerTitle>Filters</DrawerTitle>
@@ -386,7 +420,7 @@ export function EndgamesPage() {
                   </Tooltip>
                 </DrawerHeader>
                 <div className="overflow-y-auto flex-1 p-4 space-y-4">
-                  <FilterPanel filters={filters} onChange={handleFilterChange} />
+                  <FilterPanel filters={pendingFilters} onChange={setPendingFilters} />
                 </div>
               </DrawerContent>
             </Drawer>
