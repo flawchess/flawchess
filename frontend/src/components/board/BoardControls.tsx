@@ -13,9 +13,17 @@ interface BoardControlsProps {
   infoSlot?: React.ReactNode;
   /** Render buttons in a vertical column (used on mobile beside the board) */
   vertical?: boolean;
+  /** Button size. 'sm' = h-8 w-8 (desktop), 'md' = h-9 w-9 (mobile slim row), 'lg' = h-11 w-11 (mobile vertical column). Defaults to 'lg' when vertical, 'sm' otherwise. */
+  size?: 'sm' | 'md' | 'lg';
   /** Additional CSS classes for the root container */
   className?: string;
 }
+
+const SIZE_CLASSES: Record<'sm' | 'md' | 'lg', string> = {
+  sm: 'h-8 w-8',
+  md: 'h-9 w-9',
+  lg: 'h-11 w-11',
+};
 
 export function BoardControls({
   onBack,
@@ -26,15 +34,18 @@ export function BoardControls({
   canGoForward,
   infoSlot,
   vertical = false,
+  size,
   className,
 }: BoardControlsProps) {
+  const resolvedSize = size ?? (vertical ? 'lg' : 'sm');
+  const buttonSizeClass = SIZE_CLASSES[resolvedSize];
   return (
     <div className={`flex items-center justify-evenly rounded-lg charcoal-texture ${vertical ? 'flex-col' : ''} ${className ?? ''}`}>
       <Tooltip content="Reset to start">
         <Button
           variant="ghost"
           size="icon"
-          className={`${vertical ? 'h-11 w-11' : 'h-8 w-8'} hover:bg-accent`}
+          className={`${buttonSizeClass} hover:bg-accent`}
           onClick={onReset}
           disabled={!canGoBack}
           aria-label="Reset to start"
@@ -47,7 +58,7 @@ export function BoardControls({
         <Button
           variant="ghost"
           size="icon"
-          className={`${vertical ? 'h-11 w-11' : 'h-8 w-8'} hover:bg-accent`}
+          className={`${buttonSizeClass} hover:bg-accent`}
           onClick={onBack}
           disabled={!canGoBack}
           aria-label="Previous move"
@@ -60,7 +71,7 @@ export function BoardControls({
         <Button
           variant="ghost"
           size="icon"
-          className={`${vertical ? 'h-11 w-11' : 'h-8 w-8'} hover:bg-accent`}
+          className={`${buttonSizeClass} hover:bg-accent`}
           onClick={onForward}
           disabled={!canGoForward}
           aria-label="Next move"
@@ -73,7 +84,7 @@ export function BoardControls({
         <Button
           variant="ghost"
           size="icon"
-          className={`${vertical ? 'h-11 w-11' : 'h-8 w-8'} hover:bg-accent`}
+          className={`${buttonSizeClass} hover:bg-accent`}
           onClick={onFlip}
           aria-label="Flip board"
           data-testid="board-btn-flip"
