@@ -132,7 +132,7 @@ See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
 ### v1.10 Advanced Analytics (Phases 48, 52-55)
 
 - [x] **Phase 48: Conversion & Recovery Persistence Filter** - Reduce noise in endgame conv/recov metrics by requiring material imbalance to persist 4 plies after endgame entry, lower threshold from 300cp to 100cp (completed 2026-04-07)
-- [ ] **Phase 52: Endgame Tab Performance** - Collapse timeline fan-out, consolidate endgame endpoints on a single session, and defer desktop filter apply until the filter sidebar closes
+- [x] **Phase 52: Endgame Tab Performance** - Collapse timeline fan-out, consolidate endgame endpoints on a single session, and defer desktop filter apply until the filter sidebar closes (completed 2026-04-11)
 - [ ] **Phase 53: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
 - [ ] **Phase 54: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
 - [ ] **Phase 55: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
@@ -264,7 +264,7 @@ Plans:
 | 49. Openings Desktop Sidebar | v1.9 | 1/1 | Complete | 2026-04-09 |
 | 50. Mobile Layout Restructuring | v1.9 | 2/2 | Complete | 2026-04-10 |
 | 51. Stats Subtab, Homepage & Global Stats | v1.9 | 4/4 | Complete | 2026-04-10 |
-| 52. Endgame Tab Performance | v1.10 | 2/3 | In Progress|  |
+| 52. Endgame Tab Performance | v1.10 | 3/3 | Complete    | 2026-04-11 |
 | 53. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
 | 54. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
 | 55. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
@@ -275,7 +275,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
