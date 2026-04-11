@@ -1199,59 +1199,8 @@ export function OpeningsPage() {
                       arrows={boardArrows}
                     />
                   </div>
-                  {/* Settings column: 4 stacked 44px buttons — played-as, bookmarks, filters, info */}
+                  {/* Settings column: 4 stacked 44px buttons — filters, bookmarks, played-as, info */}
                   <div className="flex flex-col gap-1 w-11" data-testid="openings-mobile-settings-column">
-                    <Tooltip content={`Playing as ${filters.color}`} side="left">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="relative h-11 w-11 shrink-0 !bg-toggle-active text-toggle-active-foreground hover:!bg-toggle-active"
-                        onClick={() => {
-                          const newColor: Color = filters.color === 'white' ? 'black' : 'white';
-                          // Change color without dismissing the filters hint — only the
-                          // Played-as hint advances when the color toggle is used.
-                          setFilters({ ...filters, color: newColor });
-                          setGamesOffset(0);
-                          setBoardFlipped(newColor === 'black');
-                          dismissPlayedAsHint();
-                          if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
-                        }}
-                        data-testid="btn-toggle-played-as"
-                        aria-label={`Playing as ${filters.color}, tap to switch`}
-                      >
-                        <span className={`inline-block h-4 w-4 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
-                        {showPlayedAsHint && (
-                          <span
-                            className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                            data-testid="played-as-notification-dot-mobile"
-                          >
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                          </span>
-                        )}
-                      </Button>
-                    </Tooltip>
-                    <Tooltip content="Open bookmarks" side="left">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
-                        onClick={openBookmarkSidebar}
-                        data-testid="btn-open-bookmark-sidebar"
-                        aria-label="Open bookmarks"
-                      >
-                        <BookMarked className="h-4 w-4" />
-                        {showBookmarksHint && (
-                          <span
-                            className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                            data-testid="bookmarks-notification-dot-mobile"
-                          >
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                          </span>
-                        )}
-                      </Button>
-                    </Tooltip>
                     <Tooltip content="Open filters" side="left">
                       <Button
                         variant="ghost"
@@ -1282,6 +1231,57 @@ export function OpeningsPage() {
                             <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
                           </span>
                         ) : null}
+                      </Button>
+                    </Tooltip>
+                    <Tooltip content="Open bookmarks" side="left">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
+                        onClick={openBookmarkSidebar}
+                        data-testid="btn-open-bookmark-sidebar"
+                        aria-label="Open bookmarks"
+                      >
+                        <BookMarked className="h-4 w-4" />
+                        {showBookmarksHint && (
+                          <span
+                            className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                            data-testid="bookmarks-notification-dot-mobile"
+                          >
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                          </span>
+                        )}
+                      </Button>
+                    </Tooltip>
+                    <Tooltip content={`Playing as ${filters.color}`} side="left">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="relative h-11 w-11 shrink-0 !bg-toggle-active text-toggle-active-foreground hover:!bg-toggle-active"
+                        onClick={() => {
+                          const newColor: Color = filters.color === 'white' ? 'black' : 'white';
+                          // Change color without dismissing the filters hint — only the
+                          // Played-as hint advances when the color toggle is used.
+                          setFilters({ ...filters, color: newColor });
+                          setGamesOffset(0);
+                          setBoardFlipped(newColor === 'black');
+                          dismissPlayedAsHint();
+                          if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
+                        }}
+                        data-testid="btn-toggle-played-as"
+                        aria-label={`Playing as ${filters.color}, tap to switch`}
+                      >
+                        <span className={`inline-block h-4 w-4 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
+                        {showPlayedAsHint && (
+                          <span
+                            className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                            data-testid="played-as-notification-dot-mobile"
+                          >
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                          </span>
+                        )}
                       </Button>
                     </Tooltip>
                     <div className="flex h-11 w-11 items-center justify-center">
