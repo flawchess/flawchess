@@ -329,7 +329,7 @@ export function FilterPanel({
         <Button
           type="button"
           variant="brand-outline"
-          size="sm"
+          size="lg"
           className="w-full min-h-11 sm:min-h-0"
           data-testid="btn-reset-filters"
           onClick={() => {

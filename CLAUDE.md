@@ -201,19 +201,16 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
 
 ## Coding Guidelines
 
+These apply to both backend and frontend code. For frontend-only rules, see the [Frontend](#frontend) section below.
+
 - **No magic numbers** — extract thresholds, limits, and configuration values into named constants. Example: `const MIN_GAMES_FOR_COLOR = 10` not a bare `10` in a conditional.
-- **Theme constants in theme.ts** — all theme-relevant color constants (WDL colors, gauge zone colors, glass overlays, opacity factors) must be defined in `frontend/src/lib/theme.ts` and imported from there. Never hard-code color values that have semantic meaning (win/loss/draw, danger/warning/success, muted states) directly in components.
 - **Type safety** — leverage TypeScript's type system and Python type hints fully. Avoid `any`, prefer explicit types for function signatures, props, and return values. Use discriminated unions over loose string types. On the backend, use Pydantic models for validation and typed dataclasses/TypedDicts where appropriate. Never use bare `str` for fields with a fixed set of values — use `Literal["a", "b", "c"]` in Pydantic schemas, function signatures, and return types. This applies to both schemas and service/repository function parameters.
-- **`noUncheckedIndexedAccess` is enabled** — every array/Record index access in TypeScript returns `T | undefined`. You must narrow before use: assign to a local variable and check (`const val = arr[i]; if (val) { ... }`), use `!` non-null assertion when the index is provably in bounds, or use `?? fallback` for Records. Never use `// @ts-ignore` to suppress these errors.
-- **Knip runs in CI** — `npm run knip` in the frontend detects dead exports and unused dependencies. CI fails if knip finds issues. When removing a feature, also remove its exports. When adding exports, ensure they're actually imported somewhere.
 - **ty compliance** — all backend code must pass `uv run ty check app/ tests/` with zero errors. ty runs in CI between ruff and pytest and blocks the build. When writing new code:
   - Add explicit return type annotations on all functions.
   - Use `Sequence[str]` (not `list[str]`) for function parameters that accept `list[Literal[...]]` values — list is invariant, Sequence is covariant.
   - Use Pydantic models at system boundaries (external API input/output) and TypedDicts for internal structured data (filter params, accumulators). See `app/schemas/normalization.py` and `app/services/stats_service.py` for examples.
   - Use `# ty: ignore[rule-name]` (not `# type: ignore`) to suppress errors that can't be fixed (e.g., SQLAlchemy forward refs, FastAPI-Users generics). Always include the rule name and a brief reason.
 - **Comment bug fixes** — when fixing a bug, add a comment at the fix site explaining what broke and why. Future readers shouldn't have to dig through git history to understand why non-obvious code exists.
-- **Always apply changes to mobile too** — when modifying a component that has separate desktop and mobile sections (e.g. Openings page sidebar vs mobile drawer layout), apply the same change to both unless the change is desktop-specific by nature (e.g. a desktop-only layout restructuring). Search for duplicated markup before considering a change complete. This includes styling changes (button variants, colors), adding/removing UI elements (info popovers, icons), and behavioral changes.
-- **Primary vs secondary buttons** — "primary" buttons use `variant="default"` (solid filled, high emphasis) for the main call-to-action on a screen/panel. "Secondary" buttons use `variant="brand-outline"` (outlined, lower emphasis) for supporting actions like Save/Suggest in the Bookmarks panel or Reset Filters in the FilterPanel. Do NOT use `variant="secondary"` for secondary actions — that variant is reserved for neutral gray chips/toggles. When a user asks for a "secondary button", they mean `brand-outline`.
 
 ## Error Handling & Sentry
 
@@ -261,15 +258,27 @@ Sentry is initialized in both backend (`app/main.py`) and frontend (`frontend/sr
 - chess.com requires `User-Agent` header; fetch archives sequentially with 100-300ms delays
 - API responses never expose internal hashes — return FEN for display
 
-## User Interface
+## Frontend
 
-- The UI must be mobile friendly. Use responsive design patterns (Tailwind breakpoints, flexible layouts) so all pages and components work well on small screens.
+Rules specific to `frontend/` (React + TypeScript + Vite). Shared cross-stack rules live in [Coding Guidelines](#coding-guidelines).
 
-## Browser Automation Rules
+### Code Style & Safety
+
+- **Theme constants in theme.ts** — all theme-relevant color constants (WDL colors, gauge zone colors, glass overlays, opacity factors) must be defined in `frontend/src/lib/theme.ts` and imported from there. Never hard-code color values that have semantic meaning (win/loss/draw, danger/warning/success, muted states) directly in components.
+- **`noUncheckedIndexedAccess` is enabled** — every array/Record index access in TypeScript returns `T | undefined`. You must narrow before use: assign to a local variable and check (`const val = arr[i]; if (val) { ... }`), use `!` non-null assertion when the index is provably in bounds, or use `?? fallback` for Records. Never use `// @ts-ignore` to suppress these errors.
+- **Knip runs in CI** — `npm run knip` in the frontend detects dead exports and unused dependencies. CI fails if knip finds issues. When removing a feature, also remove its exports. When adding exports, ensure they're actually imported somewhere.
+
+### UI & Components
+
+- **Mobile friendly UI** — use responsive design patterns (Tailwind breakpoints, flexible layouts) so all pages and components work well on small screens.
+- **Always apply changes to mobile too** — when modifying a component that has separate desktop and mobile sections (e.g. Openings page sidebar vs mobile drawer layout), apply the same change to both unless the change is desktop-specific by nature (e.g. a desktop-only layout restructuring). Search for duplicated markup before considering a change complete. This includes styling changes (button variants, colors), adding/removing UI elements (info popovers, icons), and behavioral changes.
+- **Primary vs secondary buttons** — "primary" buttons use `variant="default"` (solid filled, high emphasis) for the main call-to-action on a screen/panel. "Secondary" buttons use `variant="brand-outline"` (outlined, lower emphasis) for supporting actions like Save/Suggest in the Bookmarks panel or Reset Filters in the FilterPanel. Do NOT use `variant="secondary"` for secondary actions — that variant is reserved for neutral gray chips/toggles. When a user asks for a "secondary button", they mean `brand-outline`.
+
+### Browser Automation Rules
 
 These rules ensure the UI remains compatible with the Claude Chrome extension and other automated testing tools.
 
-### Required on All New Frontend Code
+**Required on All New Frontend Code:**
 
 1. **`data-testid` on every interactive element** — buttons, links, inputs, select triggers, toggle items, and collapsible triggers. Use kebab-case, component-prefixed format: `data-testid="btn-import"`, `data-testid="nav-bookmarks"`, `data-testid="filter-time-control-bullet"`.
 
@@ -281,7 +290,7 @@ These rules ensure the UI remains compatible with the Claude Chrome extension an
 
 5. **Chess board** — the board container must have `data-testid="chessboard"` and the `id="chessboard"` option set (generates stable square IDs like `chessboard-square-e4`). Board moves must support both drag-drop and click-to-click (two clicks: source then target).
 
-### Naming Convention
+**Naming Convention:**
 - `btn-{action}` — standalone action buttons
 - `nav-{page}` — navigation links
 - `filter-{name}` — filter controls
