@@ -264,7 +264,7 @@ Plans:
 | 49. Openings Desktop Sidebar | v1.9 | 1/1 | Complete | 2026-04-09 |
 | 50. Mobile Layout Restructuring | v1.9 | 2/2 | Complete | 2026-04-10 |
 | 51. Stats Subtab, Homepage & Global Stats | v1.9 | 4/4 | Complete | 2026-04-10 |
-| 52. Endgame Tab Performance | v1.10 | 0/? | Not started | - |
+| 52. Endgame Tab Performance | v1.10 | 1/3 | In Progress|  |
 | 53. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
 | 54. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
 | 55. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
@@ -275,7 +275,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 0 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
