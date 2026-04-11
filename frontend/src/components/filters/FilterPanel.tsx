@@ -37,6 +37,23 @@ export const DEFAULT_FILTERS: FilterState = {
 };
 
 /**
+ * FilterState keys used to compute the "modified filters" dot across all three pages
+ * (Openings, Endgames, GlobalStats). Intentionally EXCLUDES `color` — changing
+ * Played-as does not light the dot because the user's current piece color is not
+ * considered part of "the filter query" for indicator purposes, and Reset preserves
+ * it for the same reason.
+ */
+export const FILTER_DOT_FIELDS: ReadonlyArray<keyof FilterState> = [
+  'matchSide',
+  'timeControls',
+  'platforms',
+  'rated',
+  'opponentType',
+  'opponentStrength',
+  'recency',
+] as const;
+
+/**
  * Compare two FilterState values for equality, treating array fields (timeControls, platforms)
  * as set-equal regardless of order. Used to detect "filters are modified from defaults" for
  * the sidebar modified-indicator dot.
@@ -76,14 +93,6 @@ interface FilterPanelProps {
   visibleFilters?: FilterField[];
   /** When true, shows a muted helper line below the Reset button explaining deferred apply. */
   showDeferredApplyHint?: boolean;
-  /**
-   * Called when the user clicks the Reset Filters button. If omitted, Reset applies
-   * DEFAULT_FILTERS via onChange RESTRICTED to the visibleFilters subset — i.e. panel-scoped.
-   * This is the correct behavior for every current consumer; no page should override this.
-   * The prop exists only as an escape hatch for hypothetical future consumers that need
-   * to do additional work on reset (e.g. reset gamesOffset alongside the filter reset).
-   */
-  onReset?: () => void;
 }
 
 const ALL_FILTERS: FilterField[] = ['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency'];
@@ -107,7 +116,6 @@ export function FilterPanel({
   onChange,
   visibleFilters = ALL_FILTERS,
   showDeferredApplyHint = false,
-  onReset,
 }: FilterPanelProps) {
   const update = (partial: Partial<FilterState>) => {
     onChange({ ...filters, ...partial });
@@ -312,36 +320,20 @@ export function FilterPanel({
       )}
 
       {/* Reset Filters — full panel width, below the last filter row.
-          PANEL-SCOPED by default: only resets fields listed in `visibleFilters`, preserving
-          everything else in the shared filter store. This prevents cross-page side effects —
-          e.g. Endgames Reset must not clobber Openings' color/matchSide, and clicking Reset
-          inside the Openings desktop FilterPanel must not reach the Played-as/Piece filter
-          ToggleGroups that live OUTSIDE FilterPanel. */}
+          GLOBAL RESET: clears every FilterState field to DEFAULT_FILTERS EXCEPT `color`
+          (Played-as), which is preserved at its current value. This uniform behavior applies
+          on every consumer (Openings, Endgames, GlobalStats) and every form factor (desktop
+          sidebar, mobile drawer). Because the modified-dot also ignores `color` (see
+          FILTER_DOT_FIELDS), Reset is guaranteed to drop the dot on every page. */}
       <div className="pt-2 border-t border-border/40">
         <Button
           type="button"
-          variant="outline"
+          variant="secondary"
           size="sm"
           className="w-full min-h-11 sm:min-h-0"
           data-testid="btn-reset-filters"
           onClick={() => {
-            if (onReset) {
-              onReset();
-              return;
-            }
-            // Default behavior: reset only the visible subset, preserve hidden fields.
-            // This is panel-scoped and correct for EVERY current consumer.
-            const patch: Partial<FilterState> = {};
-            for (const field of visibleFilters) {
-              // Map FilterField -> FilterState key. Most are 1:1 except 'timeControl' -> 'timeControls'.
-              if (field === 'timeControl') patch.timeControls = DEFAULT_FILTERS.timeControls;
-              else if (field === 'platform') patch.platforms = DEFAULT_FILTERS.platforms;
-              else if (field === 'rated') patch.rated = DEFAULT_FILTERS.rated;
-              else if (field === 'opponent') patch.opponentType = DEFAULT_FILTERS.opponentType;
-              else if (field === 'opponentStrength') patch.opponentStrength = DEFAULT_FILTERS.opponentStrength;
-              else if (field === 'recency') patch.recency = DEFAULT_FILTERS.recency;
-            }
-            onChange({ ...filters, ...patch });
+            onChange({ ...DEFAULT_FILTERS, color: filters.color });
           }}
         >
           Reset Filters
