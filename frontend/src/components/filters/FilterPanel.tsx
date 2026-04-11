@@ -328,7 +328,7 @@ export function FilterPanel({
       <div className="pt-2 border-t border-border/40">
         <Button
           type="button"
-          variant="secondary"
+          variant="brand-outline"
           size="sm"
           className="w-full min-h-11 sm:min-h-0"
           data-testid="btn-reset-filters"

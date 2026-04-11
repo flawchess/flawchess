@@ -213,6 +213,7 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
   - Use `# ty: ignore[rule-name]` (not `# type: ignore`) to suppress errors that can't be fixed (e.g., SQLAlchemy forward refs, FastAPI-Users generics). Always include the rule name and a brief reason.
 - **Comment bug fixes** — when fixing a bug, add a comment at the fix site explaining what broke and why. Future readers shouldn't have to dig through git history to understand why non-obvious code exists.
 - **Always apply changes to mobile too** — when modifying a component that has separate desktop and mobile sections (e.g. Openings page sidebar vs mobile drawer layout), apply the same change to both unless the change is desktop-specific by nature (e.g. a desktop-only layout restructuring). Search for duplicated markup before considering a change complete. This includes styling changes (button variants, colors), adding/removing UI elements (info popovers, icons), and behavioral changes.
+- **Primary vs secondary buttons** — "primary" buttons use `variant="default"` (solid filled, high emphasis) for the main call-to-action on a screen/panel. "Secondary" buttons use `variant="brand-outline"` (outlined, lower emphasis) for supporting actions like Save/Suggest in the Bookmarks panel or Reset Filters in the FilterPanel. Do NOT use `variant="secondary"` for secondary actions — that variant is reserved for neutral gray chips/toggles. When a user asks for a "secondary button", they mean `brand-outline`.
 
 ## Error Handling & Sentry
 
