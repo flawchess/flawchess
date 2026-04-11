@@ -31,7 +31,7 @@ const tabsListVariants = cva(
       variant: {
         default: "bg-muted",
         line: "gap-1 bg-transparent",
-        brand: "charcoal-texture gap-0 shadow-[inset_0_3px_10px_rgba(0,0,0,0.8)] bg-charcoal-hover!",
+        brand: "charcoal-texture gap-0",
         underline: "gap-0 bg-transparent rounded-none p-0 h-full",
       },
     },

@@ -15,6 +15,8 @@ interface BoardControlsProps {
   vertical?: boolean;
   /** Button size. 'sm' = h-8 w-8 (desktop), 'md' = h-9 w-9 (mobile slim row), 'lg' = h-11 w-11 (mobile vertical column). Defaults to 'lg' when vertical, 'sm' otherwise. */
   size?: 'sm' | 'md' | 'lg';
+  /** Explicit Tailwind size classes for the buttons. Overrides `size` when provided — use when width and height need to be decoupled (e.g. `h-9 w-11`). */
+  buttonClassName?: string;
   /** Additional CSS classes for the root container */
   className?: string;
 }
@@ -35,10 +37,11 @@ export function BoardControls({
   infoSlot,
   vertical = false,
   size,
+  buttonClassName,
   className,
 }: BoardControlsProps) {
   const resolvedSize = size ?? (vertical ? 'lg' : 'sm');
-  const buttonSizeClass = SIZE_CLASSES[resolvedSize];
+  const buttonSizeClass = buttonClassName ?? SIZE_CLASSES[resolvedSize];
   return (
     <div className={`flex items-center justify-evenly rounded-lg charcoal-texture ${vertical ? 'flex-col' : ''} ${className ?? ''}`}>
       <Tooltip content="Reset to start">

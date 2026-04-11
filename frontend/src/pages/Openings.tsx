@@ -231,15 +231,6 @@ export function OpeningsPage() {
   const [boardCollapsed, setBoardCollapsed] = useState(false);
   const touchStartY = useRef(0);
 
-  // Auto-collapse board when switching away from Moves tab, expand when returning
-  const prevCollapseTab = useRef(activeTab);
-  useEffect(() => {
-    if (activeTab !== prevCollapseTab.current) {
-      prevCollapseTab.current = activeTab;
-      setBoardCollapsed(activeTab !== 'explorer');
-    }
-  }, [activeTab]);
-
   const handleHandleTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartY.current = e.touches[0]!.clientY;
   }, []);
@@ -1295,10 +1286,11 @@ export function OpeningsPage() {
                 </div>
               </div>
             </div>
-            {/* Slim 36px row — Reset/Back/Fwd/Flip + underline Tabs + collapse chevron. Stays visible when board is collapsed. */}
+            {/* Slim control row — shorter than settings column buttons above but same 44px width on the BoardControls buttons and chevron. Stays visible when board is collapsed. */}
             <div className="flex items-center gap-1 h-9 px-1" data-testid="openings-mobile-control-row">
               <BoardControls
-                size="md"
+                buttonClassName="h-9 w-9"
+                className="flex-1 justify-center! gap-1"
                 onBack={chess.goBack}
                 onForward={chess.goForward}
                 onReset={() => { chess.reset(); setGamesOffset(0); }}
@@ -1306,20 +1298,20 @@ export function OpeningsPage() {
                 canGoBack={chess.currentPly > 0}
                 canGoForward={chess.currentPly < chess.moveHistory.length}
               />
-              <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
-                <TabsTrigger value="explorer" className="flex-1 text-xs!" data-testid="tab-move-explorer-mobile">
+              <TabsList variant="brand" className="flex-1 !h-full !p-0 overflow-x-auto snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-testid="openings-tabs-mobile">
+                <TabsTrigger value="explorer" className="shrink-0 snap-start px-2 text-xs!" data-testid="tab-move-explorer-mobile">
                   Moves
                 </TabsTrigger>
-                <TabsTrigger value="games" className="flex-1 text-xs!" data-testid="tab-games-mobile">
+                <TabsTrigger value="games" className="shrink-0 snap-start px-2 text-xs!" data-testid="tab-games-mobile">
                   Games
                 </TabsTrigger>
-                <TabsTrigger value="stats" className="flex-1 text-xs!" data-testid="tab-stats-mobile">
+                <TabsTrigger value="stats" className="shrink-0 snap-start px-2 text-xs!" data-testid="tab-stats-mobile">
                   Stats
                 </TabsTrigger>
               </TabsList>
-              {/* Slim collapse chevron — inline at the end of the slim row. Swipe-to-collapse still bound here. */}
+              {/* Collapse chevron — 44px wide (matches settings column above) but shorter to keep the control row slim. Swipe-to-collapse bound here. */}
               <button
-                className="flex h-9 w-9 shrink-0 items-center justify-center touch-none rounded-md hover:bg-accent"
+                className="flex h-9 w-11 shrink-0 items-center justify-center touch-none rounded-lg charcoal-texture"
                 onTouchStart={handleHandleTouchStart}
                 onTouchEnd={handleHandleTouchEnd}
                 onClick={() => setBoardCollapsed((c) => !c)}
