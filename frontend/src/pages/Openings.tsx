@@ -1306,7 +1306,7 @@ export function OpeningsPage() {
                 canGoBack={chess.currentPly > 0}
                 canGoForward={chess.currentPly < chess.moveHistory.length}
               />
-              <TabsList variant="underline" className="flex-1 !h-full" data-testid="openings-tabs-mobile">
+              <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
                 <TabsTrigger value="explorer" className="flex-1 text-xs!" data-testid="tab-move-explorer-mobile">
                   Moves
                 </TabsTrigger>
