@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { SlidersHorizontal, X, BarChart2Icon, Gamepad2Icon, HelpCircle } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { FilterPanel } from '@/components/filters/FilterPanel';
+import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
 import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/charts/EndgamePerformanceSection';
@@ -70,6 +70,54 @@ export function EndgamesPage() {
 
   // ── Desktop sidebar state ───────────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = useState<string | null>(null);
+
+  // ── Modified-filters indicator state ────────────────────────────────────────
+  // The dot reflects APPLIED filters (what the backend is filtering by), not pending.
+  // When appliedFilters changes away from defaults via a commit, pulse once.
+  const isModified = useMemo(
+    () => !areFiltersEqual(appliedFilters, DEFAULT_FILTERS),
+    [appliedFilters],
+  );
+  const [isPulsing, setIsPulsing] = useState(false);
+  const pulseTimeoutRef = useRef<number | null>(null);
+  const prevAppliedRef = useRef(appliedFilters);
+
+  useEffect(() => {
+    // Pulse once whenever appliedFilters transitions to a new value (i.e. a commit fired).
+    // On initial mount prevAppliedRef.current === appliedFilters so no pulse fires on load.
+    // Subsequent changes to appliedFilters (via setAppliedFilters in handleSidebarOpenChange
+    // or handleMobileFiltersOpenChange) will trigger the pulse.
+    if (prevAppliedRef.current !== appliedFilters) {
+      prevAppliedRef.current = appliedFilters;
+      setIsPulsing(true);
+      if (pulseTimeoutRef.current !== null) {
+        window.clearTimeout(pulseTimeoutRef.current);
+      }
+      pulseTimeoutRef.current = window.setTimeout(() => {
+        setIsPulsing(false);
+        pulseTimeoutRef.current = null;
+      }, 1000); // ~1s pulse duration
+    }
+    return () => {
+      if (pulseTimeoutRef.current !== null) {
+        window.clearTimeout(pulseTimeoutRef.current);
+        pulseTimeoutRef.current = null;
+      }
+    };
+  }, [appliedFilters]);
+
+  const modifiedDotNode = isModified ? (
+    <span
+      className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+      data-testid="filters-modified-dot"
+      aria-hidden="true"
+    >
+      {isPulsing && (
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-brown opacity-75" />
+      )}
+      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
+    </span>
+  ) : undefined;
 
   // ── Data ─────────────────────────────────────────────────────────────────────
   const {
@@ -347,9 +395,14 @@ export function EndgamesPage() {
               id: 'filters',
               label: 'Filters',
               icon: <SlidersHorizontal className="h-5 w-5" />,
+              notificationDot: modifiedDotNode,
               content: (
                 <div className="p-3">
-                  <FilterPanel filters={pendingFilters} onChange={setPendingFilters} />
+                  <FilterPanel
+                    filters={pendingFilters}
+                    onChange={setPendingFilters}
+                    showDeferredApplyHint
+                  />
                 </div>
               ),
             },
@@ -396,12 +449,24 @@ export function EndgamesPage() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                  className="relative h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
                   onClick={() => setMobileFiltersOpen(true)}
                   data-testid="btn-open-filter-drawer"
                   aria-label="Open filters"
                 >
                   <SlidersHorizontal className="h-4 w-4" />
+                  {isModified && (
+                    <span
+                      className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                      data-testid="filters-modified-dot-mobile"
+                      aria-hidden="true"
+                    >
+                      {isPulsing && (
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-brown opacity-75" />
+                      )}
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
+                    </span>
+                  )}
                 </Button>
               </Tooltip>
             </div>
@@ -420,7 +485,11 @@ export function EndgamesPage() {
                   </Tooltip>
                 </DrawerHeader>
                 <div className="overflow-y-auto flex-1 p-4 space-y-4">
-                  <FilterPanel filters={pendingFilters} onChange={setPendingFilters} />
+                  <FilterPanel
+                    filters={pendingFilters}
+                    onChange={setPendingFilters}
+                    showDeferredApplyHint
+                  />
                 </div>
               </DrawerContent>
             </Drawer>
