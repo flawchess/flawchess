@@ -73,3 +73,4 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 Last activity: 2026-04-10 - Phase 51 shipped — PR #42 merged into main (squash), branch deleted
 | 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
 | 2026-04-10 | ship | Phase 51 shipped — PR #42 merged into main | done |
+| 2026-04-11 | fast | Preserve Openings board position across main tab navigation | ✅ |
