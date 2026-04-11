@@ -37,20 +37,97 @@ interface ChessGameState {
 }
 
 const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+const STORAGE_KEY = 'flawchess:openings-board-state';
 
-function computeInitialHashes(): ZobristHashes {
+interface PersistedBoardState {
+  moveHistory: string[];
+  currentPly: number;
+}
+
+interface InitialChessState {
+  chess: Chess;
+  position: string;
+  moveHistory: string[];
+  currentPly: number;
+  hashes: ZobristHashes;
+  lastMove: { from: string; to: string } | null;
+}
+
+function readPersistedBoardState(): PersistedBoardState | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PersistedBoardState;
+    if (!Array.isArray(parsed.moveHistory)) return null;
+    if (!parsed.moveHistory.every((m) => typeof m === 'string')) return null;
+    if (typeof parsed.currentPly !== 'number') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function freshInitialState(): InitialChessState {
   const chess = new Chess();
-  return computeHashes(chess);
+  return {
+    chess,
+    position: STARTING_FEN,
+    moveHistory: [],
+    currentPly: 0,
+    hashes: computeHashes(chess),
+    lastMove: null,
+  };
+}
+
+function computeInitialChessState(): InitialChessState {
+  const persisted = readPersistedBoardState();
+  if (!persisted || persisted.moveHistory.length === 0) return freshInitialState();
+
+  const chess = new Chess();
+  const ply = Math.max(0, Math.min(persisted.currentPly, persisted.moveHistory.length));
+  let fromSq: string | null = null;
+  let toSq: string | null = null;
+  try {
+    for (let i = 0; i < ply; i++) {
+      // safe: loop bound ensures i < ply <= moveHistory.length
+      const move = chess.move(persisted.moveHistory[i]!);
+      if (i === ply - 1 && move) {
+        fromSq = move.from;
+        toSq = move.to;
+      }
+    }
+  } catch {
+    // Persisted SAN became illegal (e.g. chess.js upgrade) — fall back to start
+    return freshInitialState();
+  }
+
+  return {
+    chess,
+    position: chess.fen(),
+    moveHistory: persisted.moveHistory,
+    currentPly: ply,
+    hashes: computeHashes(chess),
+    lastMove: fromSq && toSq ? { from: fromSq, to: toSq } : null,
+  };
 }
 
 export function useChessGame(): ChessGameState {
-  const chessRef = useRef<Chess>(new Chess());
+  // Rehydrate from sessionStorage on mount so switching main tabs
+  // (Openings → Endgames → back) doesn't lose the current position.
+  // Openings.tsx is remounted on every route change, so hook state
+  // would otherwise reset to the starting position.
+  // useState's lazy initializer runs computeInitialChessState exactly once,
+  // and `initial` is a stable reference shared by the refs/states below.
+  const [initial] = useState<InitialChessState>(computeInitialChessState);
 
-  const [position, setPosition] = useState<string>(STARTING_FEN);
-  const [moveHistory, setMoveHistory] = useState<string[]>([]);
-  const [currentPly, setCurrentPly] = useState<number>(0);
-  const [hashes, setHashes] = useState<ZobristHashes>(computeInitialHashes);
-  const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
+  const chessRef = useRef<Chess>(initial.chess);
+
+  const [position, setPosition] = useState<string>(initial.position);
+  const [moveHistory, setMoveHistory] = useState<string[]>(initial.moveHistory);
+  const [currentPly, setCurrentPly] = useState<number>(initial.currentPly);
+  const [hashes, setHashes] = useState<ZobristHashes>(initial.hashes);
+  const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(initial.lastMove);
   const [openingName, setOpeningName] = useState<Opening | null>(null);
 
   // Pre-load openings database on mount
@@ -200,6 +277,19 @@ export function useChessGame(): ChessGameState {
   useEffect(() => {
     const movesAtPly = moveHistory.slice(0, currentPly);
     findOpening(movesAtPly).then(setOpeningName);
+  }, [moveHistory, currentPly]);
+
+  // Persist board state to sessionStorage so it survives route changes.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ moveHistory, currentPly }),
+      );
+    } catch {
+      // Storage quota exceeded or unavailable — non-fatal
+    }
   }, [moveHistory, currentPly]);
 
   return {
