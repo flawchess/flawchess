@@ -68,9 +68,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 |---|-------------|------|--------|-----------|
 | 260406-rzt | Guide new users post-import: success CTA, pulsing bookmark dot, improved empty state | 2026-04-06 | 4dbdea0 | [260406-rzt-guide-new-users-post-import-success-cta-](./quick/260406-rzt-guide-new-users-post-import-success-cta-/) |
 | 260408-snn | Implement Opponent Strength filter (Any/+100/±100/-100) on Openings and Endgames pages | 2026-04-08 | ac883c6 | [260408-snn-implement-opponent-strength-filter-with-](./quick/260408-snn-implement-opponent-strength-filter-with-/) |
+| 260411-fcs | Add Reset Filters button, deferred-apply hint, and pulsing modified indicator across filter panels | 2026-04-11 | c106fc9 | [260411-fcs-add-reset-filters-button-deferred-apply-](./quick/260411-fcs-add-reset-filters-button-deferred-apply-/) |
 
 ---
-Last activity: 2026-04-10 - Phase 51 shipped — PR #42 merged into main (squash), branch deleted
+Last activity: 2026-04-11 - Completed quick task 260411-fcs: Reset Filters button + deferred-apply hint + pulsing modified indicator
 | 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
 | 2026-04-10 | ship | Phase 51 shipped — PR #42 merged into main | done |
 | 2026-04-11 | fast | Preserve Openings board position across main tab navigation | ✅ |
