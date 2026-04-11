@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
+import { Button } from '@/components/ui/button';
 
 export interface FilterState {
   matchSide: MatchSide;
@@ -35,6 +36,37 @@ export const DEFAULT_FILTERS: FilterState = {
   color: 'white',
 };
 
+/**
+ * Compare two FilterState values for equality, treating array fields (timeControls, platforms)
+ * as set-equal regardless of order. Used to detect "filters are modified from defaults" for
+ * the sidebar modified-indicator dot.
+ *
+ * If `fields` is provided, only those FilterState keys are compared — used by GlobalStats
+ * which only exposes platform + recency (other fields must be ignored even if non-default).
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function areFiltersEqual(
+  a: FilterState,
+  b: FilterState,
+  fields?: ReadonlyArray<keyof FilterState>,
+): boolean {
+  const keys = fields ?? (Object.keys(a) as (keyof FilterState)[]);
+  for (const key of keys) {
+    const av = a[key];
+    const bv = b[key];
+    if (av === bv) continue;
+    // Both null already handled by === above; handle array set-equality
+    if (Array.isArray(av) && Array.isArray(bv)) {
+      if (av.length !== bv.length) return false;
+      const setB = new Set<string>(bv as readonly string[]);
+      if (!(av as readonly string[]).every((v) => setB.has(v))) return false;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
 type FilterField = 'timeControl' | 'platform' | 'rated' | 'opponent' | 'opponentStrength' | 'recency';
 
 interface FilterPanelProps {
@@ -42,6 +74,16 @@ interface FilterPanelProps {
   onChange: (filters: FilterState) => void;
   /** Which filter sections to show. Defaults to all. */
   visibleFilters?: FilterField[];
+  /** When true, shows a muted helper line below the Reset button explaining deferred apply. */
+  showDeferredApplyHint?: boolean;
+  /**
+   * Called when the user clicks the Reset Filters button. If omitted, Reset applies
+   * DEFAULT_FILTERS via onChange RESTRICTED to the visibleFilters subset — i.e. panel-scoped.
+   * This is the correct behavior for every current consumer; no page should override this.
+   * The prop exists only as an escape hatch for hypothetical future consumers that need
+   * to do additional work on reset (e.g. reset gamesOffset alongside the filter reset).
+   */
+  onReset?: () => void;
 }
 
 const ALL_FILTERS: FilterField[] = ['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency'];
@@ -60,7 +102,13 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   lichess: 'Lichess',
 };
 
-export function FilterPanel({ filters, onChange, visibleFilters = ALL_FILTERS }: FilterPanelProps) {
+export function FilterPanel({
+  filters,
+  onChange,
+  visibleFilters = ALL_FILTERS,
+  showDeferredApplyHint = false,
+  onReset,
+}: FilterPanelProps) {
   const update = (partial: Partial<FilterState>) => {
     onChange({ ...filters, ...partial });
   };
@@ -262,6 +310,51 @@ export function FilterPanel({ filters, onChange, visibleFilters = ALL_FILTERS }:
           </ToggleGroup>
         </div>
       )}
+
+      {/* Reset Filters — full panel width, below the last filter row.
+          PANEL-SCOPED by default: only resets fields listed in `visibleFilters`, preserving
+          everything else in the shared filter store. This prevents cross-page side effects —
+          e.g. Endgames Reset must not clobber Openings' color/matchSide, and clicking Reset
+          inside the Openings desktop FilterPanel must not reach the Played-as/Piece filter
+          ToggleGroups that live OUTSIDE FilterPanel. */}
+      <div className="pt-2 border-t border-border/40">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full min-h-11 sm:min-h-0"
+          data-testid="btn-reset-filters"
+          onClick={() => {
+            if (onReset) {
+              onReset();
+              return;
+            }
+            // Default behavior: reset only the visible subset, preserve hidden fields.
+            // This is panel-scoped and correct for EVERY current consumer.
+            const patch: Partial<FilterState> = {};
+            for (const field of visibleFilters) {
+              // Map FilterField -> FilterState key. Most are 1:1 except 'timeControl' -> 'timeControls'.
+              if (field === 'timeControl') patch.timeControls = DEFAULT_FILTERS.timeControls;
+              else if (field === 'platform') patch.platforms = DEFAULT_FILTERS.platforms;
+              else if (field === 'rated') patch.rated = DEFAULT_FILTERS.rated;
+              else if (field === 'opponent') patch.opponentType = DEFAULT_FILTERS.opponentType;
+              else if (field === 'opponentStrength') patch.opponentStrength = DEFAULT_FILTERS.opponentStrength;
+              else if (field === 'recency') patch.recency = DEFAULT_FILTERS.recency;
+            }
+            onChange({ ...filters, ...patch });
+          }}
+        >
+          Reset Filters
+        </Button>
+        {showDeferredApplyHint && (
+          <p
+            className="mt-2 text-[11px] leading-tight text-muted-foreground"
+            data-testid="filter-deferred-apply-hint"
+          >
+            Filter changes apply on closing the filters panel.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
