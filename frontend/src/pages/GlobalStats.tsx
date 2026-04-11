@@ -7,7 +7,7 @@ import { apiClient } from '@/api/client';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Tooltip } from '@/components/ui/tooltip';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual } from '@/components/filters/FilterPanel';
+import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
@@ -111,9 +111,12 @@ export function GlobalStatsPage() {
     setFilters(newFilters);
   }, [setFilters]);
 
-  // GlobalStats only exposes platform + recency — restrict "modified" detection to those fields.
-  const isGlobalStatsFiltersModified = useMemo(
-    () => !areFiltersEqual(filters, DEFAULT_FILTERS, ['platforms', 'recency'] as const),
+  // Modified-dot uses the uniform FILTER_DOT_FIELDS comparison (all FilterState keys except
+  // `color`). GlobalStats's own UI only exposes platform + recency, but the dot reflects the
+  // shared filter store — if the user set e.g. timeControls on Openings, the GlobalStats dot
+  // lights up, and clicking Reset here will clear those too (global reset semantics).
+  const isFiltersModified = useMemo(
+    () => !areFiltersEqual(filters, DEFAULT_FILTERS, FILTER_DOT_FIELDS),
     [filters],
   );
   // NOTE: no pulse on GlobalStats — it's immediate-apply.
@@ -179,7 +182,7 @@ export function GlobalStatsPage() {
               id: 'filters',
               label: 'Filters',
               icon: <SlidersHorizontal className="h-5 w-5" />,
-              notificationDot: isGlobalStatsFiltersModified ? (
+              notificationDot: isFiltersModified ? (
                 <span
                   className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                   data-testid="filters-modified-dot"
@@ -215,7 +218,7 @@ export function GlobalStatsPage() {
                 aria-label="Open filters"
               >
                 <SlidersHorizontal className="h-4 w-4" />
-                {isGlobalStatsFiltersModified && (
+                {isFiltersModified && (
                   <span
                     className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                     data-testid="filters-modified-dot-mobile"

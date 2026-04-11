@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual } from '@/components/filters/FilterPanel';
+import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
 import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/charts/EndgamePerformanceSection';
@@ -75,7 +75,7 @@ export function EndgamesPage() {
   // The dot reflects APPLIED filters (what the backend is filtering by), not pending.
   // When appliedFilters changes away from defaults via a commit, pulse once.
   const isModified = useMemo(
-    () => !areFiltersEqual(appliedFilters, DEFAULT_FILTERS),
+    () => !areFiltersEqual(appliedFilters, DEFAULT_FILTERS, FILTER_DOT_FIELDS),
     [appliedFilters],
   );
   const [isPulsing, setIsPulsing] = useState(false);
