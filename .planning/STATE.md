@@ -70,9 +70,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 | 260408-snn | Implement Opponent Strength filter (Any/+100/±100/-100) on Openings and Endgames pages | 2026-04-08 | ac883c6 | [260408-snn-implement-opponent-strength-filter-with-](./quick/260408-snn-implement-opponent-strength-filter-with-/) |
 | 260411-fcs | Add Reset Filters button, deferred-apply hint, and pulsing modified indicator across filter panels | 2026-04-11 | c106fc9 | [260411-fcs-add-reset-filters-button-deferred-apply-](./quick/260411-fcs-add-reset-filters-button-deferred-apply-/) |
 | 260411-ni2 | Global Reset (except color), uniform modified-dot via FILTER_DOT_FIELDS, secondary button, Openings mobile drawer cleanup | 2026-04-11 | 595bd3b | [260411-ni2-global-reset-filters-matchside-exempt-fr](./quick/260411-ni2-global-reset-filters-matchside-exempt-fr/) |
+| 260411-p1c | Prototype Option A mobile layout for Opening Explorer (settings column + slim control row + underline tabs) | 2026-04-11 | b5b0c31 | [260411-p1c-prototype-option-a-mobile-layout-for-ope](./quick/260411-p1c-prototype-option-a-mobile-layout-for-ope/) |
 
 ---
-Last activity: 2026-04-11 - Completed quick task 260411-ni2: global Reset (except Played-as), uniform modified-dot, Openings mobile drawer cleanup
+Last activity: 2026-04-11 - Completed quick task 260411-p1c: prototype Option A mobile layout for Opening Explorer
 | 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
 | 2026-04-10 | ship | Phase 51 shipped — PR #42 merged into main | done |
 | 2026-04-11 | fast | Preserve Openings board position across main tab navigation | ✅ |
