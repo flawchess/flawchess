@@ -31,6 +31,7 @@ from app.repositories.endgame_repository import (
     ENDGAME_PLY_THRESHOLD,
     query_endgame_entry_rows,
     query_endgame_games,
+    query_endgame_timeline_rows,
 )
 
 
@@ -395,3 +396,155 @@ class TestQueryEndgameGames:
         )
         assert matched_count == 0
         assert games == []
+
+
+# ---------------------------------------------------------------------------
+# TestQueryEndgameTimelineRows
+# ---------------------------------------------------------------------------
+
+
+class TestQueryEndgameTimelineRows:
+    """Tests for the rewritten query_endgame_timeline_rows (2-query implementation)."""
+
+    @pytest.mark.asyncio
+    async def test_empty_user_returns_all_empty(self, db_session: AsyncSession) -> None:
+        """User with no games returns empty endgame_rows, non_endgame_rows, and empty per_type dicts."""
+        endgame_rows, non_endgame_rows, per_type_rows = await query_endgame_timeline_rows(
+            db_session,
+            user_id=99999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+        )
+        assert endgame_rows == []
+        assert non_endgame_rows == []
+        # All 6 class slots initialized to empty lists
+        assert set(per_type_rows.keys()) == {1, 2, 3, 4, 5, 6}
+        assert all(v == [] for v in per_type_rows.values())
+
+    @pytest.mark.asyncio
+    async def test_per_class_bucketing_selective_classes(self, db_session: AsyncSession) -> None:
+        """Seeding classes 1, 3, 5 only: those slots are non-empty; 2, 4, 6 stay empty."""
+        import datetime
+
+        base_dt = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+
+        # Game with rook endgame (class 1)
+        game1 = await _seed_game(db_session, played_at=base_dt)
+        for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
+            await _seed_game_position(
+                db_session, game=game1, ply=ply, material_signature="KR_KR", endgame_class=1
+            )
+
+        # Game with pawn endgame (class 3)
+        game3 = await _seed_game(db_session, played_at=base_dt + datetime.timedelta(days=1))
+        for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
+            await _seed_game_position(
+                db_session, game=game3, ply=ply, material_signature="KPP_KP", endgame_class=3
+            )
+
+        # Game with mixed endgame (class 5)
+        game5 = await _seed_game(db_session, played_at=base_dt + datetime.timedelta(days=2))
+        for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
+            await _seed_game_position(
+                db_session, game=game5, ply=ply, material_signature="KRBP_KRP", endgame_class=5
+            )
+
+        endgame_rows, non_endgame_rows, per_type_rows = await query_endgame_timeline_rows(
+            db_session,
+            user_id=99999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+        )
+
+        # All 6 class slots must be present
+        assert set(per_type_rows.keys()) == {1, 2, 3, 4, 5, 6}
+
+        # Classes 1, 3, 5 were seeded — must be non-empty
+        assert len(per_type_rows[1]) == 1
+        assert len(per_type_rows[3]) == 1
+        assert len(per_type_rows[5]) == 1
+
+        # Classes 2, 4, 6 were NOT seeded — must be empty
+        assert per_type_rows[2] == []
+        assert per_type_rows[4] == []
+        assert per_type_rows[6] == []
+
+        # Overall endgame series must have one entry per game (3 games = 3 rows)
+        assert len(endgame_rows) == 3
+
+        # No non-endgame games were seeded
+        assert non_endgame_rows == []
+
+    @pytest.mark.asyncio
+    async def test_per_type_rows_have_three_tuple_shape(self, db_session: AsyncSession) -> None:
+        """Each row in per_type_rows must be (played_at, result, user_color) — 3 elements."""
+        import datetime
+
+        game = await _seed_game(
+            db_session, played_at=datetime.datetime(2024, 6, 1, tzinfo=datetime.timezone.utc)
+        )
+        for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
+            await _seed_game_position(
+                db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
+            )
+
+        _endgame_rows, _non_endgame_rows, per_type_rows = await query_endgame_timeline_rows(
+            db_session,
+            user_id=99999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+        )
+
+        rook_rows = per_type_rows[1]
+        assert len(rook_rows) == 1
+        row = rook_rows[0]
+        # Service layer expects exactly 3 columns: played_at, result, user_color
+        assert len(row) == 3  # type: ignore[arg-type]
+        played_at, result, user_color = row  # type: ignore[misc]
+        assert isinstance(played_at, datetime.datetime)
+        assert result in ("1-0", "0-1", "1/2-1/2")
+        assert user_color in ("white", "black")
+
+    @pytest.mark.asyncio
+    async def test_non_endgame_games_bucketed_correctly(self, db_session: AsyncSession) -> None:
+        """Games without any qualifying endgame span land in non_endgame_rows, not endgame_rows."""
+        import datetime
+
+        base_dt = datetime.datetime(2024, 3, 1, tzinfo=datetime.timezone.utc)
+
+        # Game that reaches rook endgame
+        endgame_game = await _seed_game(db_session, played_at=base_dt)
+        for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
+            await _seed_game_position(
+                db_session, game=endgame_game, ply=ply, material_signature="KR_KR", endgame_class=1
+            )
+
+        # Game that never reaches any endgame class (endgame_class=None for all positions)
+        non_eg_game = await _seed_game(db_session, played_at=base_dt + datetime.timedelta(days=1))
+        for ply in range(1, 10):
+            await _seed_game_position(
+                db_session, game=non_eg_game, ply=ply, endgame_class=None
+            )
+
+        endgame_rows, non_endgame_rows, per_type_rows = await query_endgame_timeline_rows(
+            db_session,
+            user_id=99999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+        )
+
+        assert len(endgame_rows) == 1
+        assert len(non_endgame_rows) == 1
+        assert len(per_type_rows[1]) == 1

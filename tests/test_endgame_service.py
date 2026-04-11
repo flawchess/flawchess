@@ -19,6 +19,7 @@ from app.services.endgame_service import (
     _compute_rolling_series,
     classify_endgame_class,
     get_endgame_games,
+    get_endgame_overview,
     get_endgame_performance,
     get_endgame_stats,
     get_endgame_timeline,
@@ -764,3 +765,121 @@ class TestGetEndgamePerformanceSmoke:
         )
         assert result.overall == []
         assert result.window == 50
+
+
+class TestGetEndgameOverview:
+    """Tests for get_endgame_overview service function."""
+
+    @pytest.mark.asyncio
+    async def test_overview_composes_all_four_payloads(self):
+        """get_endgame_overview calls all four sub-functions and assembles the response."""
+        with (
+            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
+            patch("app.services.endgame_service.get_endgame_performance", new_callable=AsyncMock) as mock_perf,
+            patch("app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock) as mock_timeline,
+            patch("app.services.endgame_service.get_conv_recov_timeline", new_callable=AsyncMock) as mock_conv,
+        ):
+            from app.schemas.endgames import (
+                ConvRecovTimelineResponse,
+                EndgamePerformanceResponse,
+                EndgameStatsResponse,
+                EndgameTimelineResponse,
+                EndgameWDLSummary,
+            )
+
+            mock_stats.return_value = EndgameStatsResponse(
+                categories=[], total_games=0, endgame_games=0
+            )
+            mock_perf.return_value = EndgamePerformanceResponse(
+                endgame_wdl=EndgameWDLSummary(wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0),
+                non_endgame_wdl=EndgameWDLSummary(wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0),
+                overall_win_rate=0.0,
+                endgame_win_rate=0.0,
+                aggregate_conversion_pct=0.0,
+                aggregate_conversion_wins=0,
+                aggregate_conversion_games=0,
+                aggregate_recovery_pct=0.0,
+                aggregate_recovery_saves=0,
+                aggregate_recovery_games=0,
+                relative_strength=0.0,
+                endgame_skill=0.0,
+            )
+            mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=50)
+            mock_conv.return_value = ConvRecovTimelineResponse(conversion=[], recovery=[], window=50)
+
+            result = await get_endgame_overview(
+                AsyncMock(), user_id=1, time_control=None, platform=None,
+                rated=None, opponent_type="human", recency=None, window=50,
+            )
+
+        # All four sub-functions must be called exactly once
+        mock_stats.assert_called_once()
+        mock_perf.assert_called_once()
+        mock_timeline.assert_called_once()
+        mock_conv.assert_called_once()
+
+        # Response must contain all four sub-payloads
+        assert result.stats is not None
+        assert result.performance is not None
+        assert result.timeline is not None
+        assert result.conv_recov_timeline is not None
+
+    @pytest.mark.asyncio
+    async def test_overview_passes_window_to_both_timelines(self):
+        """The window parameter must be forwarded to both get_endgame_timeline and get_conv_recov_timeline."""
+        with (
+            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
+            patch("app.services.endgame_service.get_endgame_performance", new_callable=AsyncMock) as mock_perf,
+            patch("app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock) as mock_timeline,
+            patch("app.services.endgame_service.get_conv_recov_timeline", new_callable=AsyncMock) as mock_conv,
+        ):
+            from app.schemas.endgames import (
+                ConvRecovTimelineResponse,
+                EndgamePerformanceResponse,
+                EndgameStatsResponse,
+                EndgameTimelineResponse,
+                EndgameWDLSummary,
+            )
+
+            mock_stats.return_value = EndgameStatsResponse(categories=[], total_games=0, endgame_games=0)
+            mock_perf.return_value = EndgamePerformanceResponse(
+                endgame_wdl=EndgameWDLSummary(wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0),
+                non_endgame_wdl=EndgameWDLSummary(wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0),
+                overall_win_rate=0.0,
+                endgame_win_rate=0.0,
+                aggregate_conversion_pct=0.0,
+                aggregate_conversion_wins=0,
+                aggregate_conversion_games=0,
+                aggregate_recovery_pct=0.0,
+                aggregate_recovery_saves=0,
+                aggregate_recovery_games=0,
+                relative_strength=0.0,
+                endgame_skill=0.0,
+            )
+            mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=75)
+            mock_conv.return_value = ConvRecovTimelineResponse(conversion=[], recovery=[], window=75)
+
+            await get_endgame_overview(
+                AsyncMock(), user_id=1, time_control=None, platform=None,
+                rated=None, opponent_type="human", recency=None, window=75,
+            )
+
+        # Both timeline functions must receive window=75
+        _, timeline_kwargs = mock_timeline.call_args
+        _, conv_kwargs = mock_conv.call_args
+        assert timeline_kwargs.get("window") == 75 or mock_timeline.call_args[0][4] == 75  # type: ignore[index]
+        assert conv_kwargs.get("window") == 75 or mock_conv.call_args[0][4] == 75  # type: ignore[index]
+
+    @pytest.mark.asyncio
+    async def test_overview_returns_empty_for_nonexistent_user(self, db_session: AsyncSession):
+        """get_endgame_overview with a user that has no games returns all empty/zero payloads."""
+        result = await get_endgame_overview(
+            db_session, user_id=999999, time_control=None, platform=None,
+            rated=None, opponent_type="human", recency=None, window=50,
+        )
+        # All four sub-payloads must be present
+        assert result.stats.categories == []
+        assert result.performance.endgame_wdl.total == 0
+        assert result.timeline.overall == []
+        assert result.conv_recov_timeline.conversion == []
+        assert result.conv_recov_timeline.recovery == []

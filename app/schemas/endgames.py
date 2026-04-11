@@ -182,3 +182,17 @@ class ConvRecovTimelineResponse(BaseModel):
     conversion: list[ConvRecovTimelinePoint]
     recovery: list[ConvRecovTimelinePoint]
     window: int
+
+
+class EndgameOverviewResponse(BaseModel):
+    """Composed response for GET /api/endgames/overview.
+
+    Serves the four endgame dashboard payloads from a single request so the
+    frontend can issue one HTTP call that runs sequentially on one AsyncSession
+    instead of fanning out into 5 parallel connections (Phase 52).
+    """
+
+    stats: EndgameStatsResponse
+    performance: EndgamePerformanceResponse
+    timeline: EndgameTimelineResponse
+    conv_recov_timeline: ConvRecovTimelineResponse
