@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { useQuery } from '@tanstack/react-query';
@@ -7,7 +7,7 @@ import { apiClient } from '@/api/client';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Tooltip } from '@/components/ui/tooltip';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { FilterPanel } from '@/components/filters/FilterPanel';
+import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
@@ -111,6 +111,13 @@ export function GlobalStatsPage() {
     setFilters(newFilters);
   }, [setFilters]);
 
+  // GlobalStats only exposes platform + recency — restrict "modified" detection to those fields.
+  const isGlobalStatsFiltersModified = useMemo(
+    () => !areFiltersEqual(filters, DEFAULT_FILTERS, ['platforms', 'recency'] as const),
+    [filters],
+  );
+  // NOTE: no pulse on GlobalStats — it's immediate-apply.
+
   const content = isLoading ? (
     <div className="text-muted-foreground">Loading...</div>
   ) : (
@@ -172,6 +179,15 @@ export function GlobalStatsPage() {
               id: 'filters',
               label: 'Filters',
               icon: <SlidersHorizontal className="h-5 w-5" />,
+              notificationDot: isGlobalStatsFiltersModified ? (
+                <span
+                  className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                  data-testid="filters-modified-dot"
+                  aria-hidden="true"
+                >
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
+                </span>
+              ) : undefined,
               content: (
                 <div className="p-3">
                   <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['platform', 'recency']} />
@@ -193,12 +209,21 @@ export function GlobalStatsPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-11 w-11 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                className="relative h-11 w-11 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
                 onClick={() => setMobileFiltersOpen(true)}
                 data-testid="btn-open-filter-drawer"
                 aria-label="Open filters"
               >
                 <SlidersHorizontal className="h-4 w-4" />
+                {isGlobalStatsFiltersModified && (
+                  <span
+                    className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                    data-testid="filters-modified-dot-mobile"
+                    aria-hidden="true"
+                  >
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
+                  </span>
+                )}
               </Button>
             </Tooltip>
           </div>

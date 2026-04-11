@@ -45,7 +45,7 @@ import { ChessBoard } from '@/components/board/ChessBoard';
 import { MoveExplorer } from '@/components/move-explorer/MoveExplorer';
 import { MoveList } from '@/components/board/MoveList';
 import { BoardControls } from '@/components/board/BoardControls';
-import { FilterPanel } from '@/components/filters/FilterPanel';
+import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { PositionBookmarkList } from '@/components/position-bookmarks/PositionBookmarkList';
 import { SuggestionsModal } from '@/components/position-bookmarks/SuggestionsModal';
@@ -276,6 +276,46 @@ export function OpeningsPage() {
   const showBookmarksHint =
     hasGames && playedAsHintDismissed && filtersHintDismissed && bookmarks.length === 0;
 
+  // ── Modified-filters indicator ─────────────────────────────────────────────
+  // Desktop: filters apply immediately, so the dot tracks `filters` directly.
+  // Mobile drawer: defers apply until drawer close, so the dot also tracks `filters`
+  // (the committed state), and we add a one-shot pulse on drawer close when
+  // localFilters differed from filters at close time.
+  const justCommittedFromDrawerRef = useRef(false);
+  const isFiltersModified = useMemo(
+    () => !areFiltersEqual(filters, DEFAULT_FILTERS),
+    [filters],
+  );
+  const [isFiltersPulsing, setIsFiltersPulsing] = useState(false);
+  const filtersPulseTimeoutRef = useRef<number | null>(null);
+  const prevFiltersRef = useRef(filters);
+
+  useEffect(() => {
+    if (prevFiltersRef.current !== filters) {
+      prevFiltersRef.current = filters;
+      // On Openings desktop, `filters` changes live as the user toggles — pulsing on every
+      // change would be noisy. Only pulse when the mobile drawer JUST closed AND committed
+      // a change. We guard via `justCommittedFromDrawerRef` set inside handleFilterSidebarOpenChange.
+      if (justCommittedFromDrawerRef.current) {
+        justCommittedFromDrawerRef.current = false;
+        setIsFiltersPulsing(true);
+        if (filtersPulseTimeoutRef.current !== null) {
+          window.clearTimeout(filtersPulseTimeoutRef.current);
+        }
+        filtersPulseTimeoutRef.current = window.setTimeout(() => {
+          setIsFiltersPulsing(false);
+          filtersPulseTimeoutRef.current = null;
+        }, 1000);
+      }
+    }
+    return () => {
+      if (filtersPulseTimeoutRef.current !== null) {
+        window.clearTimeout(filtersPulseTimeoutRef.current);
+        filtersPulseTimeoutRef.current = null;
+      }
+    };
+  }, [filters]);
+
   // ── Chart-enable toggle (persisted per bookmark in localStorage) ─────────────
   // Version counter to force chartEnabledMap recompute when a toggle changes
   const [chartToggleVersion, setChartToggleVersion] = useState(0);
@@ -486,6 +526,11 @@ export function OpeningsPage() {
 
   const handleFilterSidebarOpenChange = useCallback((open: boolean) => {
     if (!open && filterSidebarOpen) {
+      // Pulse the filter indicator if the drawer commit actually changes `filters`.
+      // Check BEFORE handleFiltersChange runs (which updates `filters`).
+      if (!areFiltersEqual(localFilters, filters)) {
+        justCommittedFromDrawerRef.current = true;
+      }
       // Commit deferred filters on close (D-10, D-12)
       handleFiltersChange(localFilters);
       setBoardFlipped(localFilters.color === 'black');
@@ -496,7 +541,7 @@ export function OpeningsPage() {
       }
     }
     setFilterSidebarOpen(open);
-  }, [filterSidebarOpen, localFilters, handleFiltersChange, filters.color, filters.matchSide, activeTab, navigate]);
+  }, [filterSidebarOpen, localFilters, handleFiltersChange, filters, activeTab, navigate]);
 
   const updateMatchSide = useUpdateMatchSide();
 
@@ -995,6 +1040,17 @@ export function OpeningsPage() {
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
                 </span>
+              ) : isFiltersModified ? (
+                <span
+                  className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                  data-testid="filters-modified-dot"
+                  aria-hidden="true"
+                >
+                  {isFiltersPulsing && (
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-brown opacity-75" />
+                  )}
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
+                </span>
               ) : undefined,
             },
             {
@@ -1240,7 +1296,7 @@ export function OpeningsPage() {
                   aria-label="Open filters"
                 >
                   <SlidersHorizontal className="h-4 w-4" />
-                  {showFiltersHint && (
+                  {showFiltersHint ? (
                     <span
                       className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                       data-testid="filters-notification-dot-mobile"
@@ -1248,7 +1304,18 @@ export function OpeningsPage() {
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
                       <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
                     </span>
-                  )}
+                  ) : isFiltersModified ? (
+                    <span
+                      className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                      data-testid="filters-modified-dot-mobile"
+                      aria-hidden="true"
+                    >
+                      {isFiltersPulsing && (
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-brown opacity-75" />
+                      )}
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
+                    </span>
+                  ) : null}
                 </Button>
               </Tooltip>
             </div>
@@ -1330,7 +1397,11 @@ export function OpeningsPage() {
                 </div>
 
                 {/* Remaining filters (5 fields: timeControl, platform, rated, opponent, recency) */}
-                <FilterPanel filters={localFilters} onChange={setLocalFilters} />
+                <FilterPanel
+                  filters={localFilters}
+                  onChange={setLocalFilters}
+                  showDeferredApplyHint
+                />
               </div>
             </DrawerContent>
           </Drawer>
