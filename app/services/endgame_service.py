@@ -44,6 +44,10 @@ from app.schemas.endgames import (
     EndgameTimelinePoint,
     EndgameTimelineResponse,
     EndgameWDLSummary,
+    MaterialBucket,
+    MaterialRow,
+    ScoreGapMaterialResponse,
+    Verdict,
 )
 from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
 
@@ -455,6 +459,151 @@ def _build_wdl_summary(rows: list[Row[Any]]) -> EndgameWDLSummary:
     )
 
 
+def _wdl_to_score(wdl: EndgameWDLSummary) -> float:
+    """Convert WDL summary to score in range 0.0-1.0.
+
+    Score formula: (Win% + Draw%/2) / 100.
+    Returns 0.0 for empty WDL (total == 0).
+    """
+    if wdl.total == 0:
+        return 0.0
+    return (wdl.win_pct + wdl.draw_pct / 2) / 100
+
+
+def _compute_verdict(row_score: float, overall_score: float) -> Verdict:
+    """Determine verdict relative to user's overall score.
+
+    good: score >= overall_score (includes equal).
+    ok: score >= overall_score - 0.05 (within -0.05 of overall, inclusive).
+    bad: score < overall_score - 0.05.
+    """
+    if row_score >= overall_score:
+        return "good"
+    elif row_score >= overall_score - 0.05:
+        return "ok"
+    else:
+        return "bad"
+
+
+# Display labels for material buckets (section 2 of endgame-analysis-v2.md).
+# Unicode: \u2265 = >=, \u2264 = <=, \u2212 = minus sign
+_MATERIAL_BUCKET_LABELS: dict[MaterialBucket, str] = {
+    "ahead": "Ahead (\u2265 +1)",
+    "equal": "Equal",
+    "behind": "Behind (\u2264 \u22121)",
+}
+
+
+def _compute_score_gap_material(
+    endgame_wdl: EndgameWDLSummary,
+    non_endgame_wdl: EndgameWDLSummary,
+    entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> ScoreGapMaterialResponse:
+    """Compute endgame score gap and material-stratified WDL table.
+
+    Args:
+        endgame_wdl: WDL summary for games that reached an endgame.
+        non_endgame_wdl: WDL summary for games that never reached an endgame.
+        entry_rows: Per-(game, class) rows from query_endgame_entry_rows.
+            Each row: (game_id, endgame_class_int, result, user_color,
+                       user_material_imbalance, user_material_imbalance_after).
+
+    Returns:
+        ScoreGapMaterialResponse with score gap and 3-row material breakdown.
+    """
+    endgame_score = _wdl_to_score(endgame_wdl)
+    non_endgame_score = _wdl_to_score(non_endgame_wdl)
+    score_difference = endgame_score - non_endgame_score
+
+    # overall_score: weighted combination from both WDL summaries combined.
+    combined_wins = endgame_wdl.wins + non_endgame_wdl.wins
+    combined_draws = endgame_wdl.draws + non_endgame_wdl.draws
+    combined_total = endgame_wdl.total + non_endgame_wdl.total
+    if combined_total > 0:
+        overall_win_pct = combined_wins / combined_total * 100
+        overall_draw_pct = combined_draws / combined_total * 100
+        overall_score = (overall_win_pct + overall_draw_pct / 2) / 100
+    else:
+        overall_score = 0.0
+
+    # Deduplicate entry_rows by game_id — multi-class games appear multiple times
+    # but should count as one game in the material breakdown (Phase 53).
+    seen_game_ids: set[int] = set()
+    bucket_wins: dict[MaterialBucket, int] = {"ahead": 0, "equal": 0, "behind": 0}
+    bucket_draws: dict[MaterialBucket, int] = {"ahead": 0, "equal": 0, "behind": 0}
+    bucket_losses: dict[MaterialBucket, int] = {"ahead": 0, "equal": 0, "behind": 0}
+    bucket_games: dict[MaterialBucket, int] = {"ahead": 0, "equal": 0, "behind": 0}
+
+    for row in entry_rows:
+        game_id: int = row[0]
+        if game_id in seen_game_ids:
+            continue
+        seen_game_ids.add(game_id)
+
+        user_material_imbalance: int | None = row[4]
+        if user_material_imbalance is None:
+            continue
+
+        # Assign to bucket based on material imbalance at endgame entry.
+        # No persistence check — user_material_imbalance_after is NOT used here.
+        bucket: MaterialBucket
+        if user_material_imbalance >= _MATERIAL_ADVANTAGE_THRESHOLD:
+            bucket = "ahead"
+        elif user_material_imbalance <= -_MATERIAL_ADVANTAGE_THRESHOLD:
+            bucket = "behind"
+        else:
+            bucket = "equal"
+
+        result: str = row[2]
+        user_color: str = row[3]
+        outcome = derive_user_result(result, user_color)
+
+        bucket_games[bucket] += 1
+        if outcome == "win":
+            bucket_wins[bucket] += 1
+        elif outcome == "draw":
+            bucket_draws[bucket] += 1
+        else:
+            bucket_losses[bucket] += 1
+
+    # Build MaterialRow for each bucket in fixed order: ahead, equal, behind.
+    material_rows: list[MaterialRow] = []
+    for bucket_key in ("ahead", "equal", "behind"):
+        b: MaterialBucket = bucket_key  # type: ignore[assignment]
+        games = bucket_games[b]
+        if games > 0:
+            win_pct = round(bucket_wins[b] / games * 100, 1)
+            draw_pct = round(bucket_draws[b] / games * 100, 1)
+            loss_pct = round(bucket_losses[b] / games * 100, 1)
+            row_score = (win_pct + draw_pct / 2) / 100
+            verdict = _compute_verdict(row_score, overall_score)
+        else:
+            win_pct = draw_pct = loss_pct = 0.0
+            row_score = 0.0
+            verdict = "bad"
+
+        material_rows.append(
+            MaterialRow(
+                bucket=b,
+                label=_MATERIAL_BUCKET_LABELS[b],
+                games=games,
+                win_pct=win_pct,
+                draw_pct=draw_pct,
+                loss_pct=loss_pct,
+                score=row_score,
+                verdict=verdict,
+            )
+        )
+
+    return ScoreGapMaterialResponse(
+        endgame_score=endgame_score,
+        non_endgame_score=non_endgame_score,
+        score_difference=score_difference,
+        overall_score=overall_score,
+        material_rows=material_rows,
+    )
+
+
 def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:
     """Compute a rolling-window win-rate series from chronological game rows.
 
@@ -493,55 +642,22 @@ def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:
     return [pt for pt in data_by_date.values() if pt["game_count"] >= MIN_GAMES_FOR_TIMELINE]
 
 
-async def get_endgame_performance(
-    session: AsyncSession,
-    user_id: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
-    recency: str | None,
-    rated: bool | None,
-    opponent_type: str,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+def _get_endgame_performance_from_rows(
+    endgame_rows: list[Row[Any]],
+    non_endgame_rows: list[Row[Any]],
+    entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
 ) -> EndgamePerformanceResponse:
-    """Orchestrate endgame performance query and return EndgamePerformanceResponse.
+    """Compute EndgamePerformanceResponse from pre-fetched rows.
 
-    Steps:
-    1. Convert recency to cutoff datetime.
-    2. Fetch WDL comparison rows and entry rows concurrently.
-    3. Aggregate entry rows inline for conversion/recovery stats.
-    4. Build WDL summaries and compute gauge values.
-    5. Return EndgamePerformanceResponse.
+    Extracted from get_endgame_performance so get_endgame_overview can share
+    the rows it already fetched — avoids a redundant query_endgame_entry_rows call.
+
+    Args:
+        endgame_rows: (played_at, result, user_color) for games that reached endgame.
+        non_endgame_rows: (played_at, result, user_color) for games that did not.
+        entry_rows: (game_id, endgame_class_int, result, user_color,
+                     user_material_imbalance, user_material_imbalance_after).
     """
-    cutoff = recency_cutoff(recency)
-
-    # Fetch entry rows directly (not via get_endgame_stats) to avoid redundant
-    # count_filtered_games query.
-    # Execute sequentially — AsyncSession is not safe for concurrent use from
-    # multiple coroutines, and shares a single DB connection anyway.
-    endgame_rows, non_endgame_rows = await query_endgame_performance_rows(
-        session,
-        user_id=user_id,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        recency_cutoff=cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
-    )
-    entry_rows = await query_endgame_entry_rows(
-        session,
-        user_id=user_id,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        recency_cutoff=cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
-    )
-
     # Build WDL summaries for each group
     endgame_wdl = _build_wdl_summary(endgame_rows)
     non_endgame_wdl = _build_wdl_summary(non_endgame_rows)
@@ -597,6 +713,55 @@ async def get_endgame_performance(
         relative_strength=round(relative_strength, 1),
         endgame_skill=round(endgame_skill, 1),
     )
+
+
+async def get_endgame_performance(
+    session: AsyncSession,
+    user_id: int,
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    recency: str | None,
+    rated: bool | None,
+    opponent_type: str,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+) -> EndgamePerformanceResponse:
+    """Orchestrate endgame performance query and return EndgamePerformanceResponse.
+
+    Steps:
+    1. Convert recency to cutoff datetime.
+    2. Fetch WDL comparison rows and entry rows sequentially.
+    3. Delegate aggregation to _get_endgame_performance_from_rows.
+    4. Return EndgamePerformanceResponse.
+    """
+    cutoff = recency_cutoff(recency)
+
+    # Execute sequentially — AsyncSession is not safe for concurrent use from
+    # multiple coroutines, and shares a single DB connection anyway.
+    endgame_rows, non_endgame_rows = await query_endgame_performance_rows(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+    entry_rows = await query_endgame_entry_rows(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+
+    return _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, entry_rows)
 
 
 async def get_endgame_timeline(
@@ -830,39 +995,71 @@ async def get_endgame_overview(
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
     elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> EndgameOverviewResponse:
-    """Compose all four endgame dashboard payloads into a single response.
+    """Compose all five endgame dashboard payloads into a single response.
 
-    Delegates to the four individual service functions sequentially, all awaited
-    in turn on the same AsyncSession — no asyncio.gather.
-    # sequential on one AsyncSession — see endgame_repository.py:423-428
+    Fetches entry_rows and performance rows once, then threads them to both
+    the stats/performance builders and _compute_score_gap_material — eliminating
+    redundant DB queries that the previous implementation issued separately in
+    get_endgame_stats and get_endgame_performance (Phase 53).
 
-    This reduces the Endgames tab from 4 parallel HTTP requests (each on its own
-    DB session) down to a single request running its queries sequentially on one
-    connection (Phase 52).
+    All queries run sequentially on one AsyncSession — no asyncio.gather.
+    See endgame_repository.py for AsyncSession concurrency notes.
     """
-    # sequential on one AsyncSession — see endgame_repository.py:423-428
-    stats = await get_endgame_stats(
+    cutoff = recency_cutoff(recency)
+
+    # Fetch entry_rows once — shared by stats, performance, and score_gap_material.
+    # Previously fetched redundantly by both get_endgame_stats and get_endgame_performance.
+    entry_rows = await query_endgame_entry_rows(
         session,
         user_id=user_id,
         time_control=time_control,
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency=recency,
+        recency_cutoff=cutoff,
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
-    performance = await get_endgame_performance(
+
+    # Stats: aggregate per-category W/D/L + conversion/recovery from entry_rows
+    categories = _aggregate_endgame_stats(entry_rows)
+    total_games = await count_filtered_games(
         session,
         user_id=user_id,
         time_control=time_control,
         platform=platform,
-        recency=recency,
         rated=rated,
         opponent_type=opponent_type,
+        recency_cutoff=cutoff,
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
+    endgame_games = len({row[0] for row in entry_rows})  # unique game_ids
+    stats = EndgameStatsResponse(
+        categories=categories,
+        total_games=total_games,
+        endgame_games=endgame_games,
+    )
+
+    # Performance: fetch WDL comparison rows, then use shared entry_rows
+    endgame_rows, non_endgame_rows = await query_endgame_performance_rows(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+    performance = _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, entry_rows)
+
+    # Score gap & material breakdown — zero extra queries, reuses performance WDLs + entry_rows
+    score_gap_material = _compute_score_gap_material(
+        performance.endgame_wdl, performance.non_endgame_wdl, entry_rows
+    )
+
     timeline = await get_endgame_timeline(
         session,
         user_id=user_id,
@@ -893,4 +1090,5 @@ async def get_endgame_overview(
         performance=performance,
         timeline=timeline,
         conv_recov_timeline=conv_recov_timeline,
+        score_gap_material=score_gap_material,
     )

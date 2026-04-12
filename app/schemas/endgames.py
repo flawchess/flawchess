@@ -184,6 +184,45 @@ class ConvRecovTimelineResponse(BaseModel):
     window: int
 
 
+MaterialBucket = Literal["ahead", "equal", "behind"]
+Verdict = Literal["good", "ok", "bad"]
+
+
+class MaterialRow(BaseModel):
+    """One row in the material-stratified WDL table (section 2 of endgame-analysis-v2.md).
+
+    Represents the user's performance when entering endgames with a specific
+    material imbalance: ahead (>= +1 pawn), equal, or behind (<= -1 pawn).
+    Bucket assignment uses user_material_imbalance only — no persistence check.
+    """
+
+    bucket: MaterialBucket
+    label: str           # "Ahead (\u2265 +1)" | "Equal" | "Behind (\u2264 \u22121)"
+    games: int
+    win_pct: float       # 0-100
+    draw_pct: float      # 0-100
+    loss_pct: float      # 0-100
+    score: float         # 0.0-1.0, formula: (win_pct + draw_pct/2) / 100
+    verdict: Verdict     # "good" | "ok" | "bad" relative to overall_score
+
+
+class ScoreGapMaterialResponse(BaseModel):
+    """Endgame score difference + material-stratified WDL table (Phase 53).
+
+    endgame_score: user's score (0.0-1.0) in games that reached an endgame.
+    non_endgame_score: user's score in games that never reached an endgame.
+    score_difference: endgame_score - non_endgame_score (signed, can be negative).
+    overall_score: weighted combination across all games.
+    material_rows: 3-row table — ahead / equal / behind — always present.
+    """
+
+    endgame_score: float        # 0.0-1.0
+    non_endgame_score: float    # 0.0-1.0
+    score_difference: float     # endgame_score - non_endgame_score (signed)
+    overall_score: float        # user's overall score across ALL games
+    material_rows: list[MaterialRow]  # 3 rows: ahead / equal / behind
+
+
 class EndgameOverviewResponse(BaseModel):
     """Composed response for GET /api/endgames/overview.
 
@@ -196,3 +235,4 @@ class EndgameOverviewResponse(BaseModel):
     performance: EndgamePerformanceResponse
     timeline: EndgameTimelineResponse
     conv_recov_timeline: ConvRecovTimelineResponse
+    score_gap_material: ScoreGapMaterialResponse  # Phase 53: score gap & material breakdown
