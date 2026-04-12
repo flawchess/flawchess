@@ -24,7 +24,38 @@ Both accept a single `sql` parameter. Run one SQL statement per call (no semicol
 
 ## Report scope
 
-The report has two sections. By default, run **both** sections. If the user only asks for storage/sizes, run Section 1 only. If the user only asks for performance/slow queries, run Section 2 only.
+The report has three sections. By default, run **all** sections. If the user only asks for storage/sizes, run Section 1 only. If the user only asks for performance/slow queries, run Section 2 only.
+
+---
+
+## Section 0: Users Overview
+
+Run all three queries in parallel (separate MCP tool calls in a single message) since they are independent.
+
+### Query 0a — User summary
+```sql
+SELECT count(*) AS total_users, count(*) FILTER (WHERE NOT is_guest) AS registered_users, count(*) FILTER (WHERE is_guest) AS guest_users FROM users
+```
+
+### Query 0b — 10 most recent users with game and position counts
+```sql
+SELECT u.id, u.email, u.chess_com_username, u.lichess_username, u.is_guest, u.created_at, u.last_login, COALESCE(g.game_count, 0) AS games, COALESCE(gp.position_count, 0) AS positions FROM users u LEFT JOIN (SELECT user_id, count(*) AS game_count FROM games GROUP BY user_id) g ON g.user_id = u.id LEFT JOIN (SELECT user_id, count(*) AS position_count FROM game_positions GROUP BY user_id) gp ON gp.user_id = u.id ORDER BY u.created_at DESC LIMIT 10
+```
+
+### Query 0c — Platform breakdown across all users
+```sql
+SELECT platform, count(DISTINCT user_id) AS users, count(*) AS games FROM games GROUP BY platform ORDER BY games DESC
+```
+
+### Users output format
+
+Present results as:
+
+1. **User summary** — single-row table: total users, registered users, guest users
+2. **10 most recent users** — table with columns: email (truncated/masked if needed), chess.com username, lichess username, guest?, registered, last login, games, positions. Format dates as YYYY-MM-DD. For users with 0 games, this highlights signups that never imported.
+3. **Platform breakdown** — table: platform, users, games
+
+End with a brief note on user activity (e.g., how many recent signups have actually imported games, guest vs registered ratio).
 
 ---
 
