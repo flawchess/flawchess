@@ -3,6 +3,7 @@
 Provides response models for:
 - GET /api/endgames/stats: per-category W/D/L with inline conversion/recovery stats
 - GET /api/endgames/games: paginated game list filtered by endgame class
+- GET /api/endgames/overview: composed response including clock pressure stats (Phase 54)
 """
 
 from typing import Literal
@@ -223,12 +224,45 @@ class ScoreGapMaterialResponse(BaseModel):
     material_rows: list[MaterialRow]  # 3 rows: ahead / equal / behind
 
 
+class ClockStatsRow(BaseModel):
+    """One row in the Clock Stats table — one per time control (Phase 54).
+
+    Represents clock state at endgame entry for a specific time control bucket.
+    Games without clock data are excluded from time columns but counted for net timeout.
+    """
+
+    time_control: Literal["bullet", "blitz", "rapid", "classical"]
+    label: str  # "Bullet" | "Blitz" | "Rapid" | "Classical"
+    total_endgame_games: int
+    clock_games: int              # games where both user and opp clocks were available
+    user_avg_pct: float | None    # mean (user_clock / time_control_seconds * 100) at entry; None if no time_control_seconds
+    user_avg_seconds: float | None  # mean user_clock at entry in seconds; None if no clock data
+    opp_avg_pct: float | None     # mean (opp_clock / time_control_seconds * 100) at entry; None if no time_control_seconds
+    opp_avg_seconds: float | None   # mean opp_clock at entry in seconds; None if no clock data
+    avg_clock_diff_seconds: float | None  # mean (user_clock - opp_clock) in seconds at entry; None if no clock data
+    net_timeout_rate: float       # (timeout wins - timeout losses) / total_endgame_games * 100
+
+
+class ClockPressureResponse(BaseModel):
+    """Time Pressure at Endgame Entry — table broken down by time control (Phase 54).
+
+    rows: per-time-control stats (only rows with >= MIN_GAMES_FOR_CLOCK_STATS games).
+    total_clock_games: total games (across all time controls) with both clocks present.
+    total_endgame_games: total distinct endgame games across all time controls.
+    Both totals include all time controls (even hidden rows) for "Based on X of Y" note.
+    """
+
+    rows: list[ClockStatsRow]
+    total_clock_games: int
+    total_endgame_games: int
+
+
 class EndgameOverviewResponse(BaseModel):
     """Composed response for GET /api/endgames/overview.
 
-    Serves the four endgame dashboard payloads from a single request so the
+    Serves the endgame dashboard payloads from a single request so the
     frontend can issue one HTTP call that runs sequentially on one AsyncSession
-    instead of fanning out into 5 parallel connections (Phase 52).
+    instead of fanning out into parallel connections (Phase 52).
     """
 
     stats: EndgameStatsResponse
@@ -236,3 +270,4 @@ class EndgameOverviewResponse(BaseModel):
     timeline: EndgameTimelineResponse
     conv_recov_timeline: ConvRecovTimelineResponse
     score_gap_material: ScoreGapMaterialResponse  # Phase 53: score gap & material breakdown
+    clock_pressure: ClockPressureResponse          # Phase 54: time pressure at endgame entry

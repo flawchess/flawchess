@@ -5,6 +5,7 @@ Functions:
 - query_endgame_games: paginated Game objects for a given endgame class
 - query_endgame_performance_rows: endgame and non-endgame game rows for performance comparison
 - query_endgame_timeline_rows: rows for rolling-window time series, overall and per-type
+- query_clock_stats_rows: rows for time pressure at endgame entry (Phase 54)
 """
 
 import datetime
@@ -14,6 +15,7 @@ from typing import Any, Literal
 from sqlalchemy import case, func, select, type_coerce
 from sqlalchemy.dialects.postgresql import ARRAY, aggregate_order_by
 from sqlalchemy.engine import Row
+from sqlalchemy.types import Float as FloatType
 from sqlalchemy.types import SmallInteger as SmallIntegerType
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -561,3 +563,86 @@ async def query_endgame_timeline_rows(
     non_endgame_rows: list[Row[Any]] = list(non_endgame_result.fetchall())
 
     return endgame_rows, non_endgame_rows, per_type_rows
+
+
+async def query_clock_stats_rows(
+    session: AsyncSession,
+    user_id: int,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+) -> list[Row[Any]]:
+    """Return rows for time pressure at endgame entry (Phase 54).
+
+    One row per (game, endgame_class) span meeting the ply threshold, including
+    full ply and clock_seconds arrays for the service layer to extract entry clocks.
+
+    Returns rows of: (game_id, time_control_bucket, time_control_seconds, termination,
+                      result, user_color, ply_array, clock_array)
+
+    ply_array: array_agg(ply ORDER BY ply) — all plies in the span (ARRAY of SmallInteger)
+    clock_array: array_agg(clock_seconds ORDER BY ply) — clock at each ply (ARRAY of Float)
+
+    Full arrays (not indexed with [1]) are needed so the service can find the first
+    user-ply and first opp-ply by parity rather than always using the first element.
+
+    NO color filter is applied — stats cover both white and black games.
+    """
+    # Aggregate full ply and clock arrays ordered by ply ascending.
+    # Using type_coerce with ARRAY types so SQLAlchemy returns Python lists.
+    ply_array_agg = type_coerce(
+        func.array_agg(
+            aggregate_order_by(GamePosition.ply, GamePosition.ply.asc())
+        ),
+        ARRAY(SmallIntegerType),
+    )
+
+    clock_array_agg = type_coerce(
+        func.array_agg(
+            aggregate_order_by(GamePosition.clock_seconds, GamePosition.ply.asc())
+        ),
+        ARRAY(FloatType()),
+    )
+
+    span_subq = (
+        select(
+            GamePosition.game_id.label("game_id"),
+            GamePosition.endgame_class.label("endgame_class"),
+            ply_array_agg.label("ply_array"),
+            clock_array_agg.label("clock_array"),
+        )
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.endgame_class.isnot(None),
+        )
+        .group_by(GamePosition.game_id, GamePosition.endgame_class)
+        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
+        .subquery("clock_span")
+    )
+
+    stmt = (
+        select(
+            Game.id.label("game_id"),
+            Game.time_control_bucket,
+            Game.time_control_seconds,
+            Game.termination,
+            Game.result,
+            Game.user_color,
+            span_subq.c.ply_array,
+            span_subq.c.clock_array,
+        )
+        .join(span_subq, Game.id == span_subq.c.game_id)
+        .where(Game.user_id == user_id)
+    )
+
+    stmt = apply_game_filters(
+        stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+    )
+
+    result = await session.execute(stmt)
+    return list(result.fetchall())
