@@ -21,6 +21,7 @@ import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
 import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
 import { EndgameConvRecovTimelineChart } from '@/components/charts/EndgameConvRecovTimelineChart';
+import { EndgameScoreGapSection } from '@/components/charts/EndgameScoreGapSection';
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
@@ -130,6 +131,7 @@ export function EndgamesPage() {
   const perfData = overviewData?.performance;
   const timelineData = overviewData?.timeline;
   const convRecovData = overviewData?.conv_recov_timeline;
+  const scoreGapData = overviewData?.score_gap_material;
 
   const { data: gamesData, isLoading: gamesLoading, isError: gamesError } = useEndgameGames(
     selectedCategory,
@@ -264,6 +266,11 @@ export function EndgamesPage() {
           {timelineData && timelineData.overall.length > 0 && (
             <div className="charcoal-texture rounded-md p-4">
               <EndgameTimelineChart data={timelineData} />
+            </div>
+          )}
+          {scoreGapData && (perfData?.endgame_wdl.total ?? 0) > 0 && (
+            <div className="charcoal-texture rounded-md p-4">
+              <EndgameScoreGapSection data={scoreGapData} />
             </div>
           )}
         </>
