@@ -55,7 +55,6 @@ from app.schemas.endgames import (
     TimePressureBucketPoint,
     TimePressureChartResponse,
     TimePressureChartRow,
-    Verdict,
 )
 from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
 
@@ -488,21 +487,6 @@ def _wdl_to_score(wdl: EndgameWDLSummary) -> float:
     return (wdl.win_pct + wdl.draw_pct / 2) / 100
 
 
-def _compute_verdict(row_score: float, overall_score: float) -> Verdict:
-    """Determine verdict relative to user's overall score.
-
-    good: score >= overall_score (includes equal).
-    ok: score >= overall_score - 0.05 (within -0.05 of overall, inclusive).
-    bad: score < overall_score - 0.05.
-    """
-    if row_score >= overall_score:
-        return "good"
-    elif row_score >= overall_score - 0.05:
-        return "ok"
-    else:
-        return "bad"
-
-
 # Display labels for material buckets (section 2 of endgame-analysis-v2.md).
 # Unicode: \u2265 = >=, \u2264 = <=, \u2212 = minus sign
 _MATERIAL_BUCKET_LABELS: dict[MaterialBucket, str] = {
@@ -594,11 +578,9 @@ def _compute_score_gap_material(
             draw_pct = round(bucket_draws[b] / games * 100, 1)
             loss_pct = round(bucket_losses[b] / games * 100, 1)
             row_score = (win_pct + draw_pct / 2) / 100
-            verdict = _compute_verdict(row_score, overall_score)
         else:
             win_pct = draw_pct = loss_pct = 0.0
             row_score = 0.0
-            verdict = "bad"
 
         material_rows.append(
             MaterialRow(
@@ -609,7 +591,6 @@ def _compute_score_gap_material(
                 draw_pct=draw_pct,
                 loss_pct=loss_pct,
                 score=row_score,
-                verdict=verdict,
             )
         )
 

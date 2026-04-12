@@ -106,7 +106,6 @@ export interface ConvRecovTimelineResponse {
 }
 
 export type MaterialBucket = 'ahead' | 'equal' | 'behind';
-export type Verdict = 'good' | 'ok' | 'bad';
 
 export interface MaterialRow {
   bucket: MaterialBucket;
@@ -116,7 +115,6 @@ export interface MaterialRow {
   draw_pct: number;
   loss_pct: number;
   score: number;
-  verdict: Verdict;
 }
 
 export interface ScoreGapMaterialResponse {

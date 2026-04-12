@@ -186,7 +186,6 @@ class ConvRecovTimelineResponse(BaseModel):
 
 
 MaterialBucket = Literal["ahead", "equal", "behind"]
-Verdict = Literal["good", "ok", "bad"]
 
 
 class MaterialRow(BaseModel):
@@ -204,7 +203,6 @@ class MaterialRow(BaseModel):
     draw_pct: float      # 0-100
     loss_pct: float      # 0-100
     score: float         # 0.0-1.0, formula: (win_pct + draw_pct/2) / 100
-    verdict: Verdict     # "good" | "ok" | "bad" relative to overall_score
 
 
 class ScoreGapMaterialResponse(BaseModel):

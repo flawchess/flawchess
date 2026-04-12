@@ -1,19 +1,23 @@
 /**
  * Endgame Score Gap & Material Breakdown section:
  * - Signed score difference (endgame score vs non-endgame score), green >= 0, red < 0
- * - Material-stratified WDL table: Ahead / Equal / Behind, with verdict badges
+ * - Material-stratified WDL table: Ahead / Equal / Behind, with a mini bullet
+ *   chart comparing each bucket's score to the user's overall score.
  */
 
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
-import { WDL_WIN, WDL_LOSS, GAUGE_WARNING } from '@/lib/theme';
-import type { ScoreGapMaterialResponse, Verdict } from '@/types/endgames';
+import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
+import type { MaterialBucket, ScoreGapMaterialResponse } from '@/types/endgames';
 
-// Verdict badge config — colors from theme constants, not hard-coded
-const VERDICT_CONFIG: Record<Verdict, { label: string; color: string }> = {
-  good: { label: 'Good', color: WDL_WIN },
-  ok:   { label: 'OK',   color: GAUGE_WARNING },
-  bad:  { label: 'Bad',  color: WDL_LOSS },
+// Per-bucket amber (neutral) zones for the bullet chart. Overall score is a
+// weighted average across material situations, so the "expected" diff is not
+// zero for every bucket: when ahead, users should outperform overall; when
+// behind, underperforming overall is expected. Each zone is 0.10 wide.
+const AMBER_ZONES: Record<MaterialBucket, { min: number; max: number }> = {
+  ahead: { min: 0.05, max: 0.15 },     // converting advantage: neutral is +0 to +0.10
+  equal: { min: -0.05, max: 0.05 }, // equal material: neutral is symmetric around 0
+  behind: { min: -0.15, max: -0.05 },   // recovering: neutral is -0.10 to 0
 };
 
 interface EndgameScoreGapSectionProps {
@@ -23,7 +27,9 @@ interface EndgameScoreGapSectionProps {
 export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
   const diffPositive = data.score_difference >= 0;
   const diffFormatted =
-    (diffPositive ? '+' : '') + data.score_difference.toFixed(3);
+    (diffPositive ? '+' : '') + data.score_difference.toFixed(2);
+
+  const overallFormatted = data.overall_score.toFixed(2);
 
   return (
     <div className="space-y-4" data-testid="score-gap-section">
@@ -39,7 +45,11 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
             Compares your endgame score (wins + half draws) with your non-endgame
             score. The material table shows how your performance varies based on
             whether you entered endgames with a material advantage, equal material,
-            or a deficit.
+            or a deficit. The bar shows each bucket's score minus your overall
+            score, with amber (neutral) zones calibrated per material context —
+            when ahead you're expected to outperform overall, when behind you're
+            expected to underperform, and when equal you should be near overall.
+            Tick marks show the amber zone boundaries.
           </InfoPopover>
         </span>
       </h3>
@@ -62,15 +72,15 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
           </span>
         </div>
         <p className="text-xs text-muted-foreground">
-          Endgame: {data.endgame_score.toFixed(3)} | Non-endgame:{' '}
-          {data.non_endgame_score.toFixed(3)}
+          Endgame: {data.endgame_score.toFixed(2)} | Non-endgame:{' '}
+          {data.non_endgame_score.toFixed(2)}
         </p>
       </div>
 
       {/* Material-stratified WDL table */}
       <div className="overflow-x-auto">
         <table
-          className="w-full min-w-[440px] text-sm sm:text-base"
+          className="w-full min-w-[520px] text-sm sm:text-base"
           data-testid="material-table"
         >
           <thead>
@@ -78,13 +88,20 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               <th className="py-1 pr-3 font-medium">Material at entry</th>
               <th className="py-1 px-2 font-medium text-right">Games</th>
               <th className="py-1 px-2 font-medium">Win / Draw / Loss</th>
-              <th className="py-1 px-2 font-medium text-right">Score</th>
-              <th className="py-1 pl-2 font-medium text-right">Verdict</th>
+              <th className="py-1 px-2 font-medium text-right">
+                Score (Diff)
+              </th>
+              <th className="py-1 px-2 font-medium">
+                Score vs Overall ({overallFormatted})
+              </th>
             </tr>
           </thead>
           <tbody>
             {data.material_rows.map((row) => {
-              const config = VERDICT_CONFIG[row.verdict];
+              const diff = row.score - data.overall_score;
+              const diffLabel =
+                (diff >= 0 ? '+' : '') + diff.toFixed(2);
+              const amberZone = AMBER_ZONES[row.bucket];
               return (
                 <tr
                   key={row.bucket}
@@ -96,18 +113,22 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                     {row.games.toLocaleString()}
                   </td>
                   <td className="py-1.5 px-2 min-w-[120px]">
-                    <MiniWDLBar win_pct={row.win_pct} draw_pct={row.draw_pct} loss_pct={row.loss_pct} />
+                    <MiniWDLBar
+                      win_pct={row.win_pct}
+                      draw_pct={row.draw_pct}
+                      loss_pct={row.loss_pct}
+                    />
                   </td>
-                  <td className="py-1.5 px-2 text-right text-sm tabular-nums">
-                    {row.score.toFixed(3)}
+                  <td className="py-1.5 px-2 text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                    {row.score.toFixed(2)} ({diffLabel})
                   </td>
-                  <td className="py-1.5 pl-2 text-right">
-                    <span
-                      className="inline-block rounded px-1.5 py-0.5 text-xs font-medium text-white"
-                      style={{ backgroundColor: config.color }}
-                    >
-                      {config.label}
-                    </span>
+                  <td className="py-1.5 px-2 min-w-[140px]">
+                    <MiniBulletChart
+                      value={diff}
+                      amberMin={amberZone.min}
+                      amberMax={amberZone.max}
+                      ariaLabel={`${row.label}: ${diffLabel} vs overall`}
+                    />
                   </td>
                 </tr>
               );

@@ -24,7 +24,6 @@ from app.services.endgame_service import (
     _compute_rolling_series,
     _compute_score_gap_material,
     _compute_time_pressure_chart,
-    _compute_verdict,
     _extract_entry_clocks,
     _wdl_to_score,
     classify_endgame_class,
@@ -886,7 +885,7 @@ class TestGetEndgameOverview:
 
 
 class TestScoreGapMaterial:
-    """Unit tests for _wdl_to_score, _compute_verdict, and _compute_score_gap_material."""
+    """Unit tests for _wdl_to_score and _compute_score_gap_material."""
 
     def _make_wdl(self, wins: int, draws: int, losses: int) -> EndgameWDLSummary:
         total = wins + draws + losses
@@ -926,28 +925,6 @@ class TestScoreGapMaterial:
         """Score for 100 wins / 0 draws / 0 losses should be 1.0."""
         wdl = self._make_wdl(100, 0, 0)
         assert _wdl_to_score(wdl) == 1.0
-
-    # --- _compute_verdict tests ---
-
-    def test_compute_verdict_good(self):
-        """Score above overall -> good."""
-        assert _compute_verdict(0.55, 0.50) == "good"
-
-    def test_compute_verdict_ok(self):
-        """Score within -0.05 of overall -> ok."""
-        assert _compute_verdict(0.47, 0.50) == "ok"
-
-    def test_compute_verdict_bad(self):
-        """Score below overall - 0.05 -> bad."""
-        assert _compute_verdict(0.40, 0.50) == "bad"
-
-    def test_compute_verdict_equal_is_good(self):
-        """Score exactly equal to overall -> good."""
-        assert _compute_verdict(0.50, 0.50) == "good"
-
-    def test_compute_verdict_boundary_ok(self):
-        """Score exactly at overall - 0.05 boundary -> ok."""
-        assert _compute_verdict(0.45, 0.50) == "ok"
 
     # --- _compute_score_gap_material tests ---
 
