@@ -133,7 +133,7 @@ See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
 
 - [x] **Phase 48: Conversion & Recovery Persistence Filter** - Reduce noise in endgame conv/recov metrics by requiring material imbalance to persist 4 plies after endgame entry, lower threshold from 300cp to 100cp (completed 2026-04-07)
 - [x] **Phase 52: Endgame Tab Performance** - Collapse timeline fan-out, consolidate endgame endpoints on a single session, and defer desktop filter apply until the filter sidebar closes (completed 2026-04-11)
-- [ ] **Phase 53: Endgame Score Gap & Material Breakdown** - Endgame score difference metric + material-stratified WDL table by material balance at endgame entry
+- [x] **Phase 53: Endgame Score Gap & Material Breakdown** - Endgame score difference metric + material-stratified WDL table by material balance at endgame entry (completed 2026-04-12)
 - [ ] **Phase 54: Time Pressure — Clock Stats Table** - Per-time-control summary table of clock state at endgame entry with avg time, clock diff, and net timeout rate
 - [ ] **Phase 55: Time Pressure — Performance Chart** - Two-line comparison chart (user vs opponents) showing score by time pressure bucket, tabbed by time control
 - [ ] **Phase 56: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
@@ -190,8 +190,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 53-01-PLAN.md — Backend: schemas, service logic, refactored overview, and tests
-- [ ] 53-02-PLAN.md — Frontend: TypeScript types, EndgameScoreGapSection component, wired into Endgames page
+- [x] 53-01-PLAN.md — Backend: schemas, service logic, refactored overview, and tests
+- [x] 53-02-PLAN.md — Frontend: TypeScript types, EndgameScoreGapSection component, wired into Endgames page
 **UI hint**: yes
 
 ### Phase 54: Time Pressure — Clock Stats Table
@@ -205,7 +205,11 @@ Plans:
   4. Games without clock_seconds are excluded from time/clock columns; net timeout uses all endgame games; a note shows "Based on X of Y endgame games (Z% have clock data)"
   5. Time control filter behavior: no filter → all rows (hide < 10 games), one selected → single row, multiple → selected rows only
   6. Section appears in a new "Time Pressure at Endgame Entry" container after the Score Gap section
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 54-01-PLAN.md — Backend: schemas, repository query, service logic (clock extraction, pressure computation), unit tests
+- [ ] 54-02-PLAN.md — Frontend: TypeScript types, EndgameClockPressureSection component, Endgames page wiring
 **UI hint**: yes
 
 ### Phase 55: Time Pressure — Performance Chart
@@ -314,8 +318,8 @@ Plans:
 | 50. Mobile Layout Restructuring | v1.9 | 2/2 | Complete | 2026-04-10 |
 | 51. Stats Subtab, Homepage & Global Stats | v1.9 | 4/4 | Complete | 2026-04-10 |
 | 52. Endgame Tab Performance | v1.10 | 3/3 | Complete    | 2026-04-11 |
-| 53. Endgame Score Gap & Material Breakdown | v1.10 | 0/2 | Planned | - |
-| 54. Time Pressure — Clock Stats Table | v1.10 | 0/? | Not started | - |
+| 53. Endgame Score Gap & Material Breakdown | v1.10 | 2/2 | Complete    | 2026-04-12 |
+| 54. Time Pressure — Clock Stats Table | v1.10 | 0/2 | Planned     | - |
 | 55. Time Pressure — Performance Chart | v1.10 | 0/? | Not started | - |
 | 56. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
 | 57. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
@@ -327,7 +331,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
