@@ -11,6 +11,7 @@ left untouched.
 
 Usage (local dev):
     uv run python scripts/reimport_games.py --user-id 42
+    uv run python scripts/reimport_games.py --all --platform lichess --yes
     uv run python scripts/reimport_games.py --all --yes
 
 Usage (production):
@@ -35,6 +36,8 @@ from sqlalchemy import delete, select
 
 from app.core.config import settings
 from app.core.database import async_session_maker
+from app.models.game import Game
+from app.models.game_position import GamePosition
 from app.models.import_job import ImportJob
 from app.models.oauth_account import OAuthAccount  # noqa: F401 — required for User relationship resolution
 from app.models.user import User
@@ -71,6 +74,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         dest="all_users",
         help="Re-import games for all users.",
+    )
+    parser.add_argument(
+        "--platform",
+        choices=["chess.com", "lichess"],
+        default=None,
+        help="Only re-import games from this platform (default: both).",
     )
     parser.add_argument(
         "--yes",
@@ -113,48 +122,74 @@ async def get_platform_jobs_for_user(
     return list(result.fetchall())
 
 
-async def reimport_user(session, user_id: int) -> tuple[bool, int]:
-    """Delete and re-import all games for a single user.
+async def reimport_user(
+    session, user_id: int, platform_filter: str | None = None,
+) -> tuple[bool, int]:
+    """Delete and re-import games for a single user.
 
     Args:
         session: AsyncSession to use.
         user_id: Internal user ID to re-import.
+        platform_filter: If set, only reimport this platform ("chess.com" or "lichess").
 
     Returns:
         (success, games_imported) tuple. success=False if an error occurred.
     """
     # Find which platforms the user has imported from
     platform_jobs = await get_platform_jobs_for_user(session, user_id)
+    if platform_filter:
+        platform_jobs = [(p, u) for p, u in platform_jobs if p == platform_filter]
     if not platform_jobs:
         _log(f"  User {user_id}: no completed import jobs found — skipping.")
         return True, 0
 
-    # Count current games before deletion
-    game_count = await game_repository.count_games_for_user(session, user_id)
     platform_list = ", ".join(f"{p} ({u})" for p, u in platform_jobs)
-    _log(
-        f"  User {user_id}: {game_count} games across: {platform_list}. "
-        f"This will DELETE all games and re-import from scratch."
-    )
 
-    # Delete all games for the user
-    _log(f"  Deleting {game_count} games for user {user_id}...")
-    deleted_count = await game_repository.delete_all_games_for_user(session, user_id)
+    if platform_filter:
+        # Platform-scoped delete: only remove games and jobs for the filtered platform
+        game_subq = select(Game.id).where(
+            Game.user_id == user_id, Game.platform == platform_filter,
+        )
+        await session.execute(
+            delete(GamePosition).where(GamePosition.game_id.in_(game_subq))
+        )
+        result = await session.execute(
+            delete(Game).where(
+                Game.user_id == user_id, Game.platform == platform_filter,
+            ).returning(Game.id)
+        )
+        deleted_count = len(result.fetchall())
 
-    # Delete all completed import jobs for this user. The (platform, username)
-    # pairs have already been read into platform_jobs above, and create_job()
-    # below will create fresh rows for each re-import. Without this, each run
-    # leaves stale completed jobs behind (verified in prod: a single user had
-    # 3 jobs per platform after one reimport + one regular sync). This also
-    # fixes an older bug where lichess re-imports returned 0 games because the
-    # old last_synced_at told the client nothing was new since last import.
-    await session.execute(
-        delete(ImportJob)
-        .where(ImportJob.user_id == user_id, ImportJob.status == "completed")
-    )
+        await session.execute(
+            delete(ImportJob).where(
+                ImportJob.user_id == user_id,
+                ImportJob.status == "completed",
+                ImportJob.platform == platform_filter,
+            )
+        )
+    else:
+        # Full delete: all games and jobs for the user
+        game_count = await game_repository.count_games_for_user(session, user_id)
+        _log(
+            f"  User {user_id}: {game_count} games across: {platform_list}. "
+            f"This will DELETE all games and re-import from scratch."
+        )
+        deleted_count = await game_repository.delete_all_games_for_user(session, user_id)
 
+        # Delete all completed import jobs for this user. The (platform, username)
+        # pairs have already been read into platform_jobs above, and create_job()
+        # below will create fresh rows for each re-import. Without this, each run
+        # leaves stale completed jobs behind (verified in prod: a single user had
+        # 3 jobs per platform after one reimport + one regular sync). This also
+        # fixes an older bug where lichess re-imports returned 0 games because the
+        # old last_synced_at told the client nothing was new since last import.
+        await session.execute(
+            delete(ImportJob)
+            .where(ImportJob.user_id == user_id, ImportJob.status == "completed")
+        )
+
+    _log(f"  User {user_id}: deleted {deleted_count} games for {platform_list}.")
     await session.commit()
-    _log(f"  Deleted {deleted_count} games.")
 
     # Re-import from each platform
     total_imported = 0
@@ -206,14 +241,15 @@ async def main() -> None:
         _log("No users found. Exiting.")
         return
 
-    _log(f"Re-import script: targeting {target_label}")
+    platform_label = args.platform or "all platforms"
+    _log(f"Re-import script: targeting {target_label}, platform: {platform_label}")
     _log(f"Batch size: {_BATCH_SIZE} games per commit")
     _log()
 
     # Confirm before proceeding (unless --yes flag given)
     if not args.yes:
         response = input(
-            f"This will DELETE all games for {target_label} and re-import from scratch. "
+            f"This will DELETE {platform_label} games for {target_label} and re-import from scratch. "
             f"Proceed? [y/N] "
         )
         if response.strip().lower() not in ("y", "yes"):
@@ -228,7 +264,7 @@ async def main() -> None:
     for user_id in user_ids:
         try:
             async with async_session_maker() as session:
-                success, games_imported = await reimport_user(session, user_id)
+                success, games_imported = await reimport_user(session, user_id, args.platform)
                 if success:
                     total_success += 1
                     total_games_imported += games_imported
