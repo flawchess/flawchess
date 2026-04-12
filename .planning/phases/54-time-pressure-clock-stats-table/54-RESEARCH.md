@@ -584,21 +584,20 @@ hide the entire time control row if total endgame games for that time control < 
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should the backend filter out rows with < 10 games, or return all rows and let the frontend filter?**
-   - What we know: The spec says hide rows with < 10 games.
-   - Recommendation: Filter in the service layer (Python), not the DB. This mirrors the pattern in
+   - **RESOLVED:** Filter in the service layer (Python), not the DB. This mirrors the pattern in
      `_aggregate_endgame_stats` where filtering logic lives in the service. The frontend renders
-     what it receives.
+     what it receives. Incorporated into Plan 54-01 Task 2.
 
 2. **Should `clock_pressure` be `None` vs an empty `ClockPressureResponse` when there are no endgame games?**
-   - Recommendation: Always return a `ClockPressureResponse` (never None in the Pydantic model);
-     the `rows` list will simply be empty. The frontend already handles empty lists consistently.
+   - **RESOLVED:** Always return a `ClockPressureResponse` (never None in the Pydantic model);
+     the `rows` list will simply be empty. The frontend already handles empty lists consistently. Incorporated into Plan 54-01 Task 1.
 
 3. **Row ordering in the frontend table?**
-   - Recommendation: Fixed order matching time control from fastest to slowest: bullet → blitz →
-     rapid → classical. Backend service should sort rows in this order.
+   - **RESOLVED:** Fixed order matching time control from fastest to slowest: bullet → blitz →
+     rapid → classical. Backend service should sort rows in this order. Incorporated into Plan 54-01 Task 2.
 
 ---
 
