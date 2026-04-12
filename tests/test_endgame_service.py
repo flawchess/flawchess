@@ -6,6 +6,8 @@ Tests cover:
 - get_endgame_stats / get_endgame_games: smoke tests to catch wiring bugs (typos, import errors)
 - get_endgame_performance: WDL comparison + gauge values
 - get_endgame_timeline: rolling-window time series
+- _extract_entry_clocks: ply-parity clock extraction (Phase 54)
+- _compute_clock_pressure: time pressure aggregation by time control (Phase 54)
 """
 
 import datetime
@@ -17,9 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.endgames import EndgameWDLSummary
 from app.services.endgame_service import (
     _aggregate_endgame_stats,
+    _compute_clock_pressure,
     _compute_rolling_series,
     _compute_score_gap_material,
     _compute_verdict,
+    _extract_entry_clocks,
     _wdl_to_score,
     classify_endgame_class,
     get_endgame_games,
@@ -782,7 +786,7 @@ class TestGetEndgameOverview:
 
     @pytest.mark.asyncio
     async def test_overview_composes_all_five_payloads(self):
-        """get_endgame_overview assembles stats, performance, timeline, conv_recov_timeline, score_gap_material."""
+        """get_endgame_overview assembles stats, performance, timeline, conv_recov_timeline, score_gap_material, clock_pressure."""
         from app.schemas.endgames import (
             ConvRecovTimelineResponse,
             EndgameTimelineResponse,
@@ -794,12 +798,14 @@ class TestGetEndgameOverview:
             patch("app.services.endgame_service.count_filtered_games", new_callable=AsyncMock) as mock_count,
             patch("app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock) as mock_timeline,
             patch("app.services.endgame_service.get_conv_recov_timeline", new_callable=AsyncMock) as mock_conv,
+            patch("app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock) as mock_clock,
         ):
             mock_entry.return_value = []
             mock_perf_rows.return_value = ([], [])
             mock_count.return_value = 0
             mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=50)
             mock_conv.return_value = ConvRecovTimelineResponse(conversion=[], recovery=[], window=50)
+            mock_clock.return_value = []
 
             result = await get_endgame_overview(
                 AsyncMock(), user_id=1, time_control=None, platform=None,
@@ -812,13 +818,16 @@ class TestGetEndgameOverview:
         mock_count.assert_called_once()
         mock_timeline.assert_called_once()
         mock_conv.assert_called_once()
+        mock_clock.assert_called_once()
 
-        # All five sub-payloads must be present
+        # All six sub-payloads must be present
         assert result.stats is not None
         assert result.performance is not None
         assert result.timeline is not None
         assert result.conv_recov_timeline is not None
         assert result.score_gap_material is not None
+        assert result.clock_pressure is not None
+        assert result.clock_pressure.rows == []
 
     @pytest.mark.asyncio
     async def test_overview_passes_window_to_both_timelines(self):
@@ -834,12 +843,14 @@ class TestGetEndgameOverview:
             patch("app.services.endgame_service.count_filtered_games", new_callable=AsyncMock) as mock_count,
             patch("app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock) as mock_timeline,
             patch("app.services.endgame_service.get_conv_recov_timeline", new_callable=AsyncMock) as mock_conv,
+            patch("app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock) as mock_clock,
         ):
             mock_entry.return_value = []
             mock_perf_rows.return_value = ([], [])
             mock_count.return_value = 0
             mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=75)
             mock_conv.return_value = ConvRecovTimelineResponse(conversion=[], recovery=[], window=75)
+            mock_clock.return_value = []
 
             await get_endgame_overview(
                 AsyncMock(), user_id=1, time_control=None, platform=None,
@@ -1055,3 +1066,261 @@ class TestScoreGapMaterial:
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
         assert result.material_rows[2].bucket == "behind"
         assert result.material_rows[2].games == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 54: _extract_entry_clocks and _compute_clock_pressure tests
+# ---------------------------------------------------------------------------
+
+
+def _make_clock_row(
+    game_id: int,
+    time_control_bucket: str | None,
+    time_control_seconds: int | None,
+    termination: str | None,
+    result: str,
+    user_color: str,
+    ply_array: list[int],
+    clock_array: list[float | None],
+) -> tuple:
+    """Build a tuple matching the query_clock_stats_rows output shape.
+
+    Shape: (game_id, time_control_bucket, time_control_seconds, termination,
+            result, user_color, ply_array, clock_array)
+    """
+    return (game_id, time_control_bucket, time_control_seconds, termination,
+            result, user_color, ply_array, clock_array)
+
+
+class TestExtractEntryClocks:
+    """Unit tests for _extract_entry_clocks helper (Phase 54).
+
+    Verifies ply-parity logic: white player's clocks are at even plies (0,2,4,...),
+    black player's clocks are at odd plies (1,3,5,...).
+    """
+
+    def test_white_user_even_plies(self):
+        """White user: first even-ply clock is user clock, first odd-ply clock is opp clock."""
+        result = _extract_entry_clocks([0, 1, 2, 3], [10.0, 8.0, 9.0, 7.0], "white")
+        assert result == (10.0, 8.0)
+
+    def test_black_user_odd_plies(self):
+        """Black user: first odd-ply clock is user clock, first even-ply clock is opp clock."""
+        result = _extract_entry_clocks([0, 1, 2, 3], [10.0, 8.0, 9.0, 7.0], "black")
+        assert result == (8.0, 10.0)
+
+    def test_all_none_clocks(self):
+        """All None clocks return (None, None)."""
+        result = _extract_entry_clocks([0, 1, 2, 3], [None, None, None, None], "white")
+        assert result == (None, None)
+
+    def test_user_clock_only(self):
+        """User clock present, opp clock None -> (value, None)."""
+        result = _extract_entry_clocks([0, 1], [10.0, None], "white")
+        assert result == (10.0, None)
+
+    def test_opp_clock_only(self):
+        """Opp clock present, user clock None -> (None, value)."""
+        result = _extract_entry_clocks([0, 1], [None, 8.0], "white")
+        assert result == (None, 8.0)
+
+    def test_skips_none_finds_later(self):
+        """Skips None entries; finds first non-None for each parity.
+
+        plies=[0,1,2,3], clocks=[None,8.0,9.0,7.0], user=white:
+        - first user ply (even): ply 0 -> None; next even ply 2 -> 9.0
+        - first opp ply (odd): ply 1 -> 8.0
+        -> (9.0, 8.0)
+        """
+        result = _extract_entry_clocks([0, 1, 2, 3], [None, 8.0, 9.0, 7.0], "white")
+        assert result == (9.0, 8.0)
+
+    def test_empty_plies(self):
+        """Empty ply array returns (None, None)."""
+        result = _extract_entry_clocks([], [], "white")
+        assert result == (None, None)
+
+    def test_single_ply_user_parity(self):
+        """Single ply matching user parity -> (value, None)."""
+        result = _extract_entry_clocks([0], [5.0], "white")
+        assert result == (5.0, None)
+
+    def test_single_ply_opp_parity(self):
+        """Single ply matching opp parity -> (None, value)."""
+        result = _extract_entry_clocks([1], [5.0], "white")
+        assert result == (None, 5.0)
+
+
+class TestComputeClockPressure:
+    """Unit tests for _compute_clock_pressure (Phase 54).
+
+    Verifies grouping by time control, deduplication, row filtering, and net timeout rate.
+    """
+
+    def _make_blitz_rows(
+        self,
+        count: int,
+        user_clock: float = 50.0,
+        opp_clock: float = 60.0,
+        time_control_seconds: int | None = 180,
+        termination: str = "checkmate",
+        result: str = "1-0",
+        user_color: str = "white",
+        start_id: int = 1,
+    ) -> list[tuple]:
+        """Build `count` blitz rows, each with a distinct game_id."""
+        rows = []
+        for i in range(count):
+            game_id = start_id + i
+            # White even ply 0 = user_clock, odd ply 1 = opp_clock
+            rows.append(_make_clock_row(
+                game_id=game_id,
+                time_control_bucket="blitz",
+                time_control_seconds=time_control_seconds,
+                termination=termination,
+                result=result,
+                user_color=user_color,
+                ply_array=[0, 1],
+                clock_array=[user_clock, opp_clock],
+            ))
+        return rows
+
+    def test_basic_single_bucket(self):
+        """12 blitz games with clock data produce one ClockStatsRow for blitz with correct averages."""
+        rows = self._make_blitz_rows(12, user_clock=50.0, opp_clock=60.0, time_control_seconds=180)
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.time_control == "blitz"
+        assert row.label == "Blitz"
+        assert row.total_endgame_games == 12
+        assert row.clock_games == 12
+        assert row.user_avg_seconds == pytest.approx(50.0)
+        assert row.opp_avg_seconds == pytest.approx(60.0)
+        assert row.avg_clock_diff_seconds == pytest.approx(-10.0)
+        # Pct: 50/180*100 and 60/180*100
+        assert row.user_avg_pct == pytest.approx(50.0 / 180 * 100, abs=0.01)
+        assert row.opp_avg_pct == pytest.approx(60.0 / 180 * 100, abs=0.01)
+
+    def test_hides_below_threshold(self):
+        """5 games for bullet -> bullet row not in output (below MIN_GAMES_FOR_CLOCK_STATS=10)."""
+        rows = []
+        for i in range(5):
+            rows.append(_make_clock_row(
+                game_id=i + 1,
+                time_control_bucket="bullet",
+                time_control_seconds=60,
+                termination="checkmate",
+                result="1-0",
+                user_color="white",
+                ply_array=[0, 1],
+                clock_array=[5.0, 4.0],
+            ))
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 0
+
+    def test_net_timeout_rate_deduplication(self):
+        """Same game_id in two spans (different endgame_class), both timeout wins -> counted once."""
+        # game_id=1 appears twice (two endgame spans), timeout win
+        rows = [
+            _make_clock_row(1, "blitz", 180, "timeout", "1-0", "white", [0, 1], [5.0, 3.0]),
+            _make_clock_row(1, "blitz", 180, "timeout", "1-0", "white", [0, 1], [5.0, 3.0]),
+        ]
+        # Add 9 more games (total 10 unique) so the row passes the threshold
+        for i in range(2, 11):
+            rows.append(_make_clock_row(i, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [5.0, 3.0]))
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # 10 unique games, 1 timeout win, 0 timeout losses -> rate = 1/10 * 100 = 10.0
+        assert row.total_endgame_games == 10
+        assert row.net_timeout_rate == pytest.approx(10.0)
+
+    def test_net_timeout_rate_computation(self):
+        """20 games, 3 timeout wins, 1 timeout loss -> rate = (3-1)/20*100 = 10.0."""
+        rows = []
+        for i in range(3):
+            rows.append(_make_clock_row(i + 1, "blitz", 180, "timeout", "1-0", "white", [0, 1], [3.0, 10.0]))
+        rows.append(_make_clock_row(4, "blitz", 180, "timeout", "0-1", "white", [0, 1], [3.0, 10.0]))
+        for i in range(16):
+            rows.append(_make_clock_row(i + 5, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [50.0, 60.0]))
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        assert result.rows[0].net_timeout_rate == pytest.approx(10.0)
+
+    def test_time_control_seconds_none_pct_is_none(self):
+        """Games with time_control_seconds=None -> pct fields are None, seconds fields computed."""
+        rows = self._make_blitz_rows(10, user_clock=50.0, opp_clock=60.0, time_control_seconds=None)
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.user_avg_pct is None
+        assert row.opp_avg_pct is None
+        # Seconds should still be computed
+        assert row.user_avg_seconds == pytest.approx(50.0)
+        assert row.opp_avg_seconds == pytest.approx(60.0)
+
+    def test_both_clocks_none_excluded_from_clock_games(self):
+        """Spans where both user and opp clocks are None -> clock_games=0, averages=None."""
+        rows = []
+        for i in range(10):
+            rows.append(_make_clock_row(
+                game_id=i + 1,
+                time_control_bucket="rapid",
+                time_control_seconds=600,
+                termination="checkmate",
+                result="1-0",
+                user_color="white",
+                ply_array=[0, 1],
+                clock_array=[None, None],
+            ))
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.clock_games == 0
+        assert row.user_avg_seconds is None
+        assert row.opp_avg_seconds is None
+        assert row.avg_clock_diff_seconds is None
+
+    def test_fixed_row_order(self):
+        """Rows returned in bullet, blitz, rapid, classical order."""
+        rows = []
+        for tc, tc_secs in [("rapid", 600), ("bullet", 60), ("classical", 1800), ("blitz", 180)]:
+            for i in range(10):
+                rows.append(_make_clock_row(
+                    game_id=len(rows) + 1,
+                    time_control_bucket=tc,
+                    time_control_seconds=tc_secs,
+                    termination="checkmate",
+                    result="1-0",
+                    user_color="white",
+                    ply_array=[0, 1],
+                    clock_array=[20.0, 25.0],
+                ))
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 4
+        assert [r.time_control for r in result.rows] == ["bullet", "blitz", "rapid", "classical"]
+
+    def test_response_totals_include_hidden_rows(self):
+        """total_clock_games and total_endgame_games include all time controls, even hidden rows."""
+        # 5 bullet games (hidden — below threshold) + 10 blitz games (visible)
+        rows = []
+        for i in range(5):
+            rows.append(_make_clock_row(i + 1, "bullet", 60, "checkmate", "1-0", "white", [0, 1], [5.0, 4.0]))
+        for i in range(10):
+            rows.append(_make_clock_row(i + 6, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [50.0, 60.0]))
+        result = _compute_clock_pressure(rows)
+        # Only blitz row visible
+        assert len(result.rows) == 1
+        # But totals include bullet games too
+        assert result.total_endgame_games == 15
+        assert result.total_clock_games == 15
+
+    def test_none_time_control_bucket_skipped(self):
+        """Rows with time_control_bucket=None are skipped entirely."""
+        rows = []
+        for i in range(10):
+            rows.append(_make_clock_row(i + 1, None, None, "checkmate", "1-0", "white", [0, 1], [5.0, 4.0]))
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 0
+        assert result.total_endgame_games == 0

@@ -11,10 +11,11 @@ Exposes:
 - get_endgame_timeline: orchestrator for GET /api/endgames/timeline
 """
 
+import statistics
 from collections import defaultdict
 from collections.abc import Sequence
 from enum import IntEnum
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
 from app.repositories.endgame_repository import (
     count_filtered_games,
+    query_clock_stats_rows,
     query_conv_recov_timeline_rows,
     query_endgame_entry_rows,
     query_endgame_games as _query_endgame_games,
@@ -30,6 +32,8 @@ from app.repositories.endgame_repository import (
 )
 from app.schemas.openings import GameRecord
 from app.schemas.endgames import (
+    ClockPressureResponse,
+    ClockStatsRow,
     ConvRecovTimelinePoint,
     ConvRecovTimelineResponse,
     ConversionRecoveryStats,
@@ -604,6 +608,172 @@ def _compute_score_gap_material(
     )
 
 
+# Minimum endgame games per time control to include a row in the clock stats table.
+# Rows below this threshold are too sparse for meaningful averages.
+MIN_GAMES_FOR_CLOCK_STATS = 10
+
+# Display labels for time control buckets.
+_TIME_CONTROL_LABELS: dict[str, str] = {
+    "bullet": "Bullet",
+    "blitz": "Blitz",
+    "rapid": "Rapid",
+    "classical": "Classical",
+}
+
+# Fixed display order for time control rows (fastest to slowest).
+_TIME_CONTROL_ORDER: list[str] = ["bullet", "blitz", "rapid", "classical"]
+
+
+def _extract_entry_clocks(
+    plies: list[int],
+    clocks: list[float | None],
+    user_color: str,
+) -> tuple[float | None, float | None]:
+    """Return (user_entry_clock, opp_entry_clock) at endgame entry.
+
+    user_color determines ply parity: white=even plies (0,2,4,...), black=odd plies (1,3,...).
+    Scans the ply/clock arrays and returns the first non-None clock for each parity.
+    Returns (None, None) if the expected entry plies have no clock data.
+    """
+    user_parity = 0 if user_color == "white" else 1
+    user_clock: float | None = None
+    opp_clock: float | None = None
+    for ply, clock in zip(plies, clocks):
+        if ply % 2 == user_parity and user_clock is None:
+            user_clock = clock
+        elif ply % 2 != user_parity and opp_clock is None:
+            opp_clock = clock
+        if user_clock is not None and opp_clock is not None:
+            break
+    return user_clock, opp_clock
+
+
+def _compute_clock_pressure(
+    clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> ClockPressureResponse:
+    """Compute time pressure stats at endgame entry, grouped by time control.
+
+    Each row from query_clock_stats_rows has the shape:
+    (game_id, time_control_bucket, time_control_seconds, termination, result,
+     user_color, ply_array, clock_array)
+
+    Returns ClockPressureResponse with:
+    - rows: one ClockStatsRow per time control with >= MIN_GAMES_FOR_CLOCK_STATS games
+    - total_clock_games: total games with both clocks present (all time controls, pre-filter)
+    - total_endgame_games: total distinct endgame games (all time controls, pre-filter)
+    """
+    # Accumulators per time control bucket.
+    # Using plain dicts to avoid ty complaints with mutable defaults in TypedDict.
+    tc_game_ids: dict[str, set[int]] = defaultdict(set)
+    tc_timeout_win_ids: dict[str, set[int]] = defaultdict(set)
+    tc_timeout_loss_ids: dict[str, set[int]] = defaultdict(set)
+    tc_user_clocks: dict[str, list[float]] = defaultdict(list)
+    tc_opp_clocks: dict[str, list[float]] = defaultdict(list)
+    tc_clock_diffs: dict[str, list[float]] = defaultdict(list)
+    tc_user_pcts: dict[str, list[float]] = defaultdict(list)
+    tc_opp_pcts: dict[str, list[float]] = defaultdict(list)
+    # time_control_seconds per bucket (consistent within bucket; store first seen)
+    tc_seconds: dict[str, int | None] = {}
+
+    for row in clock_rows:
+        game_id: int = row[0]
+        time_control_bucket: str | None = row[1]
+        time_control_seconds: int | None = row[2]
+        termination: str | None = row[3]
+        result: str = row[4]
+        user_color: str = row[5]
+        ply_array: list[int] = row[6]
+        clock_array: list[float | None] = row[7]
+
+        # Skip rows without a time control bucket
+        if time_control_bucket is None:
+            continue
+
+        tc = time_control_bucket
+        tc_game_ids[tc].add(game_id)
+
+        # Store time_control_seconds for pct computation (first seen per bucket)
+        if tc not in tc_seconds:
+            tc_seconds[tc] = time_control_seconds
+
+        # Extract entry clocks using ply parity
+        user_clock, opp_clock = _extract_entry_clocks(ply_array, clock_array, user_color)
+
+        # Only accumulate clock stats when BOTH clocks are available
+        if user_clock is not None and opp_clock is not None:
+            tc_user_clocks[tc].append(user_clock)
+            tc_opp_clocks[tc].append(opp_clock)
+            tc_clock_diffs[tc].append(user_clock - opp_clock)
+
+            tc_secs = tc_seconds.get(tc)
+            if tc_secs is not None and tc_secs > 0:
+                tc_user_pcts[tc].append(user_clock / tc_secs * 100)
+                tc_opp_pcts[tc].append(opp_clock / tc_secs * 100)
+
+        # Track timeouts — deduplicated by game_id per bucket
+        if termination == "timeout":
+            outcome = derive_user_result(result, user_color)
+            if outcome == "win":
+                tc_timeout_win_ids[tc].add(game_id)
+            elif outcome == "loss":
+                tc_timeout_loss_ids[tc].add(game_id)
+
+    # Build response rows in fixed order; collect pre-filter totals
+    grand_endgame_game_ids: set[int] = set()
+    grand_clock_game_count = 0
+    for game_ids in tc_game_ids.values():
+        grand_endgame_game_ids.update(game_ids)
+    for user_clocks in tc_user_clocks.values():
+        grand_clock_game_count += len(user_clocks)
+
+    rows: list[ClockStatsRow] = []
+    for tc in _TIME_CONTROL_ORDER:
+        game_ids = tc_game_ids.get(tc, set())
+        total_endgame_games = len(game_ids)
+
+        # Filter rows below the minimum games threshold
+        if total_endgame_games < MIN_GAMES_FOR_CLOCK_STATS:
+            continue
+
+        user_clocks = tc_user_clocks.get(tc, [])
+        opp_clocks = tc_opp_clocks.get(tc, [])
+        clock_diffs = tc_clock_diffs.get(tc, [])
+        user_pcts = tc_user_pcts.get(tc, [])
+        opp_pcts = tc_opp_pcts.get(tc, [])
+
+        clock_games = len(user_clocks)
+        user_avg_seconds = statistics.mean(user_clocks) if user_clocks else None
+        opp_avg_seconds = statistics.mean(opp_clocks) if opp_clocks else None
+        avg_clock_diff_seconds = statistics.mean(clock_diffs) if clock_diffs else None
+        user_avg_pct = statistics.mean(user_pcts) if user_pcts else None
+        opp_avg_pct = statistics.mean(opp_pcts) if opp_pcts else None
+
+        timeout_wins = len(tc_timeout_win_ids.get(tc, set()))
+        timeout_losses = len(tc_timeout_loss_ids.get(tc, set()))
+        net_timeout_rate = (timeout_wins - timeout_losses) / total_endgame_games * 100
+
+        label = _TIME_CONTROL_LABELS.get(tc, tc.capitalize())
+
+        rows.append(ClockStatsRow(
+            time_control=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
+            label=label,
+            total_endgame_games=total_endgame_games,
+            clock_games=clock_games,
+            user_avg_pct=user_avg_pct,
+            user_avg_seconds=user_avg_seconds,
+            opp_avg_pct=opp_avg_pct,
+            opp_avg_seconds=opp_avg_seconds,
+            avg_clock_diff_seconds=avg_clock_diff_seconds,
+            net_timeout_rate=net_timeout_rate,
+        ))
+
+    return ClockPressureResponse(
+        rows=rows,
+        total_clock_games=grand_clock_game_count,
+        total_endgame_games=len(grand_endgame_game_ids),
+    )
+
+
 def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:
     """Compute a rolling-window win-rate series from chronological game rows.
 
@@ -1085,10 +1255,25 @@ async def get_endgame_overview(
         elo_threshold=elo_threshold,
     )
 
+    # Clock pressure: fetch per-span arrays, then compute stats in service layer
+    clock_rows = await query_clock_stats_rows(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+    clock_pressure = _compute_clock_pressure(clock_rows)
+
     return EndgameOverviewResponse(
         stats=stats,
         performance=performance,
         timeline=timeline,
         conv_recov_timeline=conv_recov_timeline,
         score_gap_material=score_gap_material,
+        clock_pressure=clock_pressure,
     )
