@@ -257,6 +257,47 @@ class ClockPressureResponse(BaseModel):
     total_endgame_games: int
 
 
+class TimePressureBucketPoint(BaseModel):
+    """One data point in the time-pressure performance chart (Phase 55).
+
+    bucket_index: 0-9 (0 = 0-10% time remaining, 9 = 90-100%)
+    bucket_label: "0-10%" ... "90-100%"
+    score: AVG score for this series in this bucket (0.0-1.0); None if game_count == 0
+    game_count: number of games backing this data point
+    """
+
+    bucket_index: int
+    bucket_label: str
+    score: float | None
+    game_count: int
+
+
+class TimePressureChartRow(BaseModel):
+    """Per-time-control data for the time-pressure chart (Phase 55).
+
+    time_control: one of bullet/blitz/rapid/classical
+    label: "Bullet" etc.
+    total_endgame_games: total endgame games for this time control (with or without clock data)
+    user_series: 10 points -- user's score by user's time bucket
+    opp_series: 10 points -- opponent's score by opponent's time bucket
+    """
+
+    time_control: Literal["bullet", "blitz", "rapid", "classical"]
+    label: str
+    total_endgame_games: int
+    user_series: list[TimePressureBucketPoint]
+    opp_series: list[TimePressureBucketPoint]
+
+
+class TimePressureChartResponse(BaseModel):
+    """Time Pressure vs Performance chart data (Phase 55).
+
+    rows: per-time-control data; only rows with >= MIN_GAMES_FOR_CLOCK_STATS games included.
+    """
+
+    rows: list[TimePressureChartRow]
+
+
 class EndgameOverviewResponse(BaseModel):
     """Composed response for GET /api/endgames/overview.
 
@@ -271,3 +312,4 @@ class EndgameOverviewResponse(BaseModel):
     conv_recov_timeline: ConvRecovTimelineResponse
     score_gap_material: ScoreGapMaterialResponse  # Phase 53: score gap & material breakdown
     clock_pressure: ClockPressureResponse          # Phase 54: time pressure at endgame entry
+    time_pressure_chart: TimePressureChartResponse  # Phase 55: time pressure vs performance chart

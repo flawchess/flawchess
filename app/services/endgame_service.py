@@ -51,6 +51,9 @@ from app.schemas.endgames import (
     MaterialBucket,
     MaterialRow,
     ScoreGapMaterialResponse,
+    TimePressureBucketPoint,
+    TimePressureChartResponse,
+    TimePressureChartRow,
     Verdict,
 )
 from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
@@ -612,6 +615,10 @@ def _compute_score_gap_material(
 # Rows below this threshold are too sparse for meaningful averages.
 MIN_GAMES_FOR_CLOCK_STATS = 10
 
+# Number of time-remaining buckets for the pressure-performance chart (Phase 55).
+NUM_BUCKETS = 10
+BUCKET_WIDTH_PCT = 10  # each bucket spans 10 percentage points
+
 # Display labels for time control buckets.
 _TIME_CONTROL_LABELS: dict[str, str] = {
     "bullet": "Bullet",
@@ -772,6 +779,121 @@ def _compute_clock_pressure(
         total_clock_games=grand_clock_game_count,
         total_endgame_games=len(grand_endgame_game_ids),
     )
+
+
+def _build_bucket_series(
+    buckets: list[list[float]],
+) -> list[TimePressureBucketPoint]:
+    """Build 10-point series from accumulated [score_sum, game_count] pairs.
+
+    Each element of buckets is [score_sum, game_count] for one bucket index.
+    Returns a list of TimePressureBucketPoint with score=None when game_count==0.
+    """
+    points: list[TimePressureBucketPoint] = []
+    for i, bucket in enumerate(buckets):
+        score_sum = bucket[0]
+        count = bucket[1]
+        lo = i * BUCKET_WIDTH_PCT
+        hi = (i + 1) * BUCKET_WIDTH_PCT
+        label = f"{lo}-{hi}%"
+        score = (score_sum / count) if count > 0 else None
+        points.append(TimePressureBucketPoint(
+            bucket_index=i,
+            bucket_label=label,
+            score=score,
+            game_count=int(count),
+        ))
+    return points
+
+
+def _compute_time_pressure_chart(
+    clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> TimePressureChartResponse:
+    """Compute time-pressure performance chart data from clock_rows.
+
+    Reuses the same clock_rows already fetched by query_clock_stats_rows in
+    get_endgame_overview -- no additional DB query needed.
+
+    For each game with both clocks and valid time_control_seconds:
+    - Bucket user's time% -> accumulate user_score into user_series
+    - Bucket opp's time% -> accumulate (1 - user_score) into opp_series
+
+    Returns rows for time controls with >= MIN_GAMES_FOR_CLOCK_STATS games.
+    Each row contains exactly NUM_BUCKETS (10) points per series.
+    """
+    # Accumulators: [score_sum, game_count] per bucket per time control.
+    tc_user_buckets: dict[str, list[list[float]]] = defaultdict(
+        lambda: [[0.0, 0] for _ in range(NUM_BUCKETS)]
+    )
+    tc_opp_buckets: dict[str, list[list[float]]] = defaultdict(
+        lambda: [[0.0, 0] for _ in range(NUM_BUCKETS)]
+    )
+    # Count games with valid time_control_bucket (regardless of clock data).
+    tc_game_count: dict[str, int] = defaultdict(int)
+
+    for row in clock_rows:
+        game_id: int = row[0]
+        time_control_bucket: str | None = row[1]
+        time_control_seconds: int | None = row[2]
+        termination: str | None = row[3]
+        result: str = row[4]
+        user_color: str = row[5]
+        ply_array: list[int] = row[6]
+        clock_array: list[float | None] = row[7]
+
+        # Skip rows without a time control bucket
+        if time_control_bucket is None:
+            continue
+
+        tc = time_control_bucket
+        tc_game_count[tc] += 1
+
+        # Extract entry clocks via ply parity — same as _compute_clock_pressure
+        user_clock, opp_clock = _extract_entry_clocks(ply_array, clock_array, user_color)
+
+        # Skip if either clock is missing — can't bucket without both
+        if user_clock is None or opp_clock is None:
+            continue
+
+        # Skip if time_control_seconds is absent or zero — can't compute percentage
+        if time_control_seconds is None or time_control_seconds <= 0:
+            continue
+
+        user_pct = user_clock / time_control_seconds * 100
+        opp_pct = opp_clock / time_control_seconds * 100
+
+        # Clamp to [0, NUM_BUCKETS-1] — 100% maps to bucket 9, not 10
+        user_bucket = min(int(user_pct / BUCKET_WIDTH_PCT), NUM_BUCKETS - 1)
+        opp_bucket = min(int(opp_pct / BUCKET_WIDTH_PCT), NUM_BUCKETS - 1)
+
+        user_score = {"win": 1.0, "draw": 0.5, "loss": 0.0}[derive_user_result(result, user_color)]
+
+        # Accumulate: initialise defaultdict entry if needed, then update
+        tc_user_buckets[tc][user_bucket][0] += user_score
+        tc_user_buckets[tc][user_bucket][1] += 1
+        tc_opp_buckets[tc][opp_bucket][0] += (1.0 - user_score)
+        tc_opp_buckets[tc][opp_bucket][1] += 1
+
+    # Build rows in fixed time control order, filtering below minimum threshold
+    rows: list[TimePressureChartRow] = []
+    for tc in _TIME_CONTROL_ORDER:
+        total_games = tc_game_count.get(tc, 0)
+        if total_games < MIN_GAMES_FOR_CLOCK_STATS:
+            continue
+
+        label = _TIME_CONTROL_LABELS.get(tc, tc.capitalize())
+        user_series = _build_bucket_series(tc_user_buckets[tc])
+        opp_series = _build_bucket_series(tc_opp_buckets[tc])
+
+        rows.append(TimePressureChartRow(
+            time_control=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
+            label=label,
+            total_endgame_games=total_games,
+            user_series=user_series,
+            opp_series=opp_series,
+        ))
+
+    return TimePressureChartResponse(rows=rows)
 
 
 def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:
@@ -1268,6 +1390,7 @@ async def get_endgame_overview(
         elo_threshold=elo_threshold,
     )
     clock_pressure = _compute_clock_pressure(clock_rows)
+    time_pressure_chart = _compute_time_pressure_chart(clock_rows)
 
     return EndgameOverviewResponse(
         stats=stats,
@@ -1276,4 +1399,5 @@ async def get_endgame_overview(
         conv_recov_timeline=conv_recov_timeline,
         score_gap_material=score_gap_material,
         clock_pressure=clock_pressure,
+        time_pressure_chart=time_pressure_chart,
     )
