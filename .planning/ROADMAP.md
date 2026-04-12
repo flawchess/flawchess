@@ -187,7 +187,11 @@ Plans:
   4. Verdict calibration: score ≥ user's overall score → Good, within −0.05 → OK, below −0.05 → Bad
   5. Both metrics appear in a new "Endgame Score Gap & Material Breakdown" container on the Stats tab, positioned after existing sections
   6. All existing sidebar filters apply correctly to the new metrics
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 53-01-PLAN.md — Backend: schemas, service logic, refactored overview, and tests
+- [ ] 53-02-PLAN.md — Frontend: TypeScript types, EndgameScoreGapSection component, wired into Endgames page
 **UI hint**: yes
 
 ### Phase 54: Time Pressure — Clock Stats Table
@@ -310,7 +314,7 @@ Plans:
 | 50. Mobile Layout Restructuring | v1.9 | 2/2 | Complete | 2026-04-10 |
 | 51. Stats Subtab, Homepage & Global Stats | v1.9 | 4/4 | Complete | 2026-04-10 |
 | 52. Endgame Tab Performance | v1.10 | 3/3 | Complete    | 2026-04-11 |
-| 53. Endgame Score Gap & Material Breakdown | v1.10 | 0/? | Not started | - |
+| 53. Endgame Score Gap & Material Breakdown | v1.10 | 0/2 | Planned | - |
 | 54. Time Pressure — Clock Stats Table | v1.10 | 0/? | Not started | - |
 | 55. Time Pressure — Performance Chart | v1.10 | 0/? | Not started | - |
 | 56. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
