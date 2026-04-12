@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import select, update as sa_update
 
 from app.main import app
-from app.middleware.last_activity import LastActivityMiddleware
+from app.middleware.last_activity import _extract_user_id, _last_updated
 from app.models.user import User
 from app.users import auth_backend
 
@@ -60,7 +60,7 @@ class TestExtractUserId:
             "headers": [],
         }
         starlette_req = StarletteRequest(scope)
-        result = LastActivityMiddleware._extract_user_id(starlette_req)
+        result = _extract_user_id(starlette_req)
         assert result is None
 
     @pytest.mark.asyncio
@@ -75,7 +75,7 @@ class TestExtractUserId:
             "headers": [(b"authorization", b"Bearer not-a-valid-jwt")],
         }
         starlette_req = StarletteRequest(scope)
-        result = LastActivityMiddleware._extract_user_id(starlette_req)
+        result = _extract_user_id(starlette_req)
         assert result is None
 
     @pytest.mark.asyncio
@@ -97,7 +97,7 @@ class TestExtractUserId:
             "headers": [(b"authorization", f"Bearer {token}".encode())],
         }
         starlette_req = StarletteRequest(scope)
-        result = LastActivityMiddleware._extract_user_id(starlette_req)
+        result = _extract_user_id(starlette_req)
         assert result == 42
 
 
@@ -185,6 +185,9 @@ class TestLastActivityIntegration:
                 "/api/users/me/profile",
                 headers={"Authorization": f"Bearer {token}"},
             )
+
+        # Clear in-memory throttle cache so the middleware checks the DB again
+        _last_updated.pop(user_id, None)
 
         # Manually backdate last_activity by 2 hours
         from sqlalchemy.ext.asyncio import async_sessionmaker as _maker
