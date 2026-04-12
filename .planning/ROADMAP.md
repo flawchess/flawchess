@@ -134,7 +134,7 @@ See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
 - [x] **Phase 48: Conversion & Recovery Persistence Filter** - Reduce noise in endgame conv/recov metrics by requiring material imbalance to persist 4 plies after endgame entry, lower threshold from 300cp to 100cp (completed 2026-04-07)
 - [x] **Phase 52: Endgame Tab Performance** - Collapse timeline fan-out, consolidate endgame endpoints on a single session, and defer desktop filter apply until the filter sidebar closes (completed 2026-04-11)
 - [x] **Phase 53: Endgame Score Gap & Material Breakdown** - Endgame score difference metric + material-stratified WDL table by material balance at endgame entry (completed 2026-04-12)
-- [ ] **Phase 54: Time Pressure — Clock Stats Table** - Per-time-control summary table of clock state at endgame entry with avg time, clock diff, and net timeout rate
+- [x] **Phase 54: Time Pressure — Clock Stats Table** - Per-time-control summary table of clock state at endgame entry with avg time, clock diff, and net timeout rate (completed 2026-04-12)
 - [ ] **Phase 55: Time Pressure — Performance Chart** - Two-line comparison chart (user vs opponents) showing score by time pressure bucket, tabbed by time control
 - [ ] **Phase 56: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
 - [ ] **Phase 57: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
@@ -181,7 +181,7 @@ Plans:
 **Depends on**: Phase 52
 **Requirements**: N/A (new endgame analytics feature, spec in `docs/endgame-analysis-v2.md` sections 1-2)
 **Success Criteria** (what must be TRUE):
-  1. Endgame Score Difference is displayed as a signed number (green ≥ 0, red < 0) showing the gap between endgame score and non-endgame score, where Score = (Win% + Draw%/2) / 100
+  1. Endgame Score Difference is displayed as a signed number (green �� 0, red < 0) showing the gap between endgame score and non-endgame score, where Score = (Win% + Draw%/2) / 100
   2. Material-stratified WDL table shows 3 rows (Ahead ≥ +100cp, Equal, Behind ≤ −100cp) with Games, Win%, Draw%, Loss%, Score, and Verdict columns
   3. Material balance is read from `material_imbalance` at the first ply of each endgame span (same entry logic as conversion/recovery)
   4. Verdict calibration: score ≥ user's overall score → Good, within −0.05 → OK, below −0.05 → Bad
@@ -208,8 +208,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 54-01-PLAN.md — Backend: schemas, repository query, service logic (clock extraction, pressure computation), unit tests
-- [ ] 54-02-PLAN.md — Frontend: TypeScript types, EndgameClockPressureSection component, Endgames page wiring
+- [x] 54-01-PLAN.md — Backend: schemas, repository query, service logic (clock extraction, pressure computation), unit tests
+- [x] 54-02-PLAN.md — Frontend: TypeScript types, EndgameClockPressureSection component, Endgames page wiring
 **UI hint**: yes
 
 ### Phase 55: Time Pressure — Performance Chart
@@ -223,7 +223,11 @@ Plans:
   4. Individual data points backed by fewer than 10 games are dimmed (reduced opacity); tabs with < 10 total endgame games are hidden
   5. Games without clock_seconds are excluded
   6. Section appears in a new "Time Pressure vs Performance" container after the Clock Stats section
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 55-01-PLAN.md — Backend: Pydantic schemas, _compute_time_pressure_chart service function, wiring into overview, unit tests
+- [ ] 55-02-PLAN.md — Frontend: TypeScript types, theme colors, EndgameTimePressureSection component, Endgames page wiring
 **UI hint**: yes
 
 ### Phase 56: Endgame ELO — Backend + Breakdown Table
@@ -319,8 +323,8 @@ Plans:
 | 51. Stats Subtab, Homepage & Global Stats | v1.9 | 4/4 | Complete | 2026-04-10 |
 | 52. Endgame Tab Performance | v1.10 | 3/3 | Complete    | 2026-04-11 |
 | 53. Endgame Score Gap & Material Breakdown | v1.10 | 2/2 | Complete    | 2026-04-12 |
-| 54. Time Pressure — Clock Stats Table | v1.10 | 0/2 | Planned     | - |
-| 55. Time Pressure — Performance Chart | v1.10 | 0/? | Not started | - |
+| 54. Time Pressure — Clock Stats Table | v1.10 | 2/2 | Complete    | 2026-04-12 |
+| 55. Time Pressure — Performance Chart | v1.10 | 0/2 | Planned     | - |
 | 56. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
 | 57. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
 | 58. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
