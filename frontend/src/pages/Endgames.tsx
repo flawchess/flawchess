@@ -22,6 +22,7 @@ import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart
 import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
 import { EndgameConvRecovTimelineChart } from '@/components/charts/EndgameConvRecovTimelineChart';
 import { EndgameScoreGapSection } from '@/components/charts/EndgameScoreGapSection';
+import { EndgameClockPressureSection } from '@/components/charts/EndgameClockPressureSection';
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
@@ -132,6 +133,7 @@ export function EndgamesPage() {
   const timelineData = overviewData?.timeline;
   const convRecovData = overviewData?.conv_recov_timeline;
   const scoreGapData = overviewData?.score_gap_material;
+  const clockPressureData = overviewData?.clock_pressure;
 
   const { data: gamesData, isLoading: gamesLoading, isError: gamesError } = useEndgameGames(
     selectedCategory,
@@ -271,6 +273,11 @@ export function EndgamesPage() {
           {scoreGapData && (perfData?.endgame_wdl.total ?? 0) > 0 && (
             <div className="charcoal-texture rounded-md p-4">
               <EndgameScoreGapSection data={scoreGapData} />
+            </div>
+          )}
+          {clockPressureData && clockPressureData.rows.length > 0 && (
+            <div className="charcoal-texture rounded-md p-4">
+              <EndgameClockPressureSection data={clockPressureData} />
             </div>
           )}
         </>
