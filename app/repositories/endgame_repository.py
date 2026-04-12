@@ -38,6 +38,25 @@ ENDGAME_PIECE_COUNT_THRESHOLD = 6
 # 6 plies = 3 full moves of sustained endgame play. Per D-03.
 ENDGAME_PLY_THRESHOLD = 6
 
+
+def _any_endgame_ply_subquery(user_id: int) -> Any:
+    """Subquery returning game_ids that have at least one endgame position.
+
+    Used for the binary "reached an endgame phase" split (performance bars,
+    timeline overall series, summary line).  No ply threshold — any game with
+    endgame_class IS NOT NULL qualifies.  The per-type stats use
+    ENDGAME_PLY_THRESHOLD separately for meaningful classification.
+    """
+    return (
+        select(GamePosition.game_id)
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.endgame_class.isnot(None),
+        )
+        .group_by(GamePosition.game_id)
+        .subquery("any_endgame_game_ids")
+    )
+
 # Number of plies after endgame entry to check for persistence of material imbalance.
 # Filters out transient imbalances from piece trades at the endgame transition.
 PERSISTENCE_PLIES = 4
@@ -60,6 +79,39 @@ async def count_filtered_games(
     used to provide context like "X of Y games reached an endgame".
     """
     stmt = select(func.count()).select_from(Game).where(Game.user_id == user_id)
+    stmt = apply_game_filters(
+        stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one()
+
+
+async def count_endgame_games(
+    session: AsyncSession,
+    user_id: int,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+) -> int:
+    """Count games that reached an endgame phase (any endgame_class IS NOT NULL position).
+
+    No ply threshold — any game that entered an endgame phase counts.
+    Used for the summary line "X of Y games reached an endgame phase".
+    """
+    endgame_subq = _any_endgame_ply_subquery(user_id)
+    stmt = (
+        select(func.count())
+        .select_from(Game)
+        .where(
+            Game.user_id == user_id,
+            Game.id.in_(select(endgame_subq.c.game_id)),
+        )
+    )
     stmt = apply_game_filters(
         stmt, time_control, platform, rated, opponent_type, recency_cutoff,
         opponent_strength=opponent_strength, elo_threshold=elo_threshold,
@@ -373,28 +425,18 @@ async def query_endgame_performance_rows(
 ) -> tuple[list[Row[Any]], list[Row[Any]]]:
     """Return endgame and non-endgame game rows for performance comparison.
 
-    Endgame games: games where the user spent >= ENDGAME_PLY_THRESHOLD plies
-    in any endgame class (endgame_class IS NOT NULL).
+    Endgame games: any game with at least one position where
+    endgame_class IS NOT NULL (i.e. the game reached an endgame phase).
+    No ply threshold — the threshold is only for per-type classification.
 
-    Non-endgame games: all other games that did not meet the ply threshold
-    in any endgame class.
+    Non-endgame games: all other games that never reached an endgame phase.
 
     Returns: (endgame_rows, non_endgame_rows) where each row is
     (played_at, result, user_color).
 
     Rows are ordered by played_at ASC for chronological processing.
     """
-    # Subquery: game_ids that spent >= ENDGAME_PLY_THRESHOLD plies in ANY endgame class
-    endgame_game_ids_subq = (
-        select(GamePosition.game_id)
-        .where(
-            GamePosition.user_id == user_id,
-            GamePosition.endgame_class.isnot(None),
-        )
-        .group_by(GamePosition.game_id)
-        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
-        .subquery("endgame_game_ids")
-    )
+    endgame_game_ids_subq = _any_endgame_ply_subquery(user_id)
 
     # Base select for game rows — columns needed for WDL derivation and timeline
     game_cols = select(Game.played_at, Game.result, Game.user_color).where(
@@ -444,8 +486,8 @@ async def query_endgame_timeline_rows(
 ) -> tuple[list[Row[Any]], list[Row[Any]], dict[int, list[Row[Any]]]]:
     """Return rows for rolling-window time series (overall and per endgame class).
 
-    Issues exactly 2 queries against game_positions (see comment at lines 423-428:
-    sequential execution is mandatory on the same AsyncSession).
+    Issues exactly 2 queries against game_positions (sequential execution is
+    mandatory on the same AsyncSession).
 
     Query A: one pass over game_positions grouped by (game_id, endgame_class) with
     HAVING count(ply) >= ENDGAME_PLY_THRESHOLD. Returns one row per qualifying
@@ -502,7 +544,7 @@ async def query_endgame_timeline_rows(
 
     # Execute sequentially — AsyncSession is not safe for concurrent use from
     # multiple coroutines, and a single session uses one DB connection so there's
-    # no concurrency benefit from asyncio.gather here. See lines 423-428.
+    # no concurrency benefit from asyncio.gather here.
     per_class_result = await session.execute(per_class_stmt)
     per_class_raw = list(per_class_result.fetchall())
 
@@ -533,7 +575,6 @@ async def query_endgame_timeline_rows(
     )
 
     # --- Query B: non-endgame games (games never reaching any qualifying span) ---
-    # Uses the game_ids collected from Query A to drive the NOT IN filter.
     endgame_game_ids_subq = (
         select(GamePosition.game_id)
         .where(

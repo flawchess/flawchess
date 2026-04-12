@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
 from app.repositories.endgame_repository import (
+    count_endgame_games,
     count_filtered_games,
     query_clock_stats_rows,
     query_conv_recov_timeline_rows,
@@ -349,9 +350,19 @@ async def get_endgame_stats(
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
-    # Count unique games that reached an endgame phase (not game×class combinations,
-    # since a game can appear in multiple endgame classes).
-    endgame_games = len({row[0] for row in rows})  # row[0] = game_id
+    # Count games that reached an endgame phase (any endgame_class IS NOT NULL position).
+    # No ply threshold — simpler definition than per-type classification.
+    endgame_games = await count_endgame_games(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
 
     return EndgameStatsResponse(
         categories=categories,
@@ -1326,7 +1337,19 @@ async def get_endgame_overview(
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
-    endgame_games = len({row[0] for row in entry_rows})  # unique game_ids
+    # Count games that reached an endgame phase (any endgame_class IS NOT NULL position).
+    # No ply threshold — matches the "reached an endgame phase" wording in the UI.
+    endgame_games = await count_endgame_games(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
     stats = EndgameStatsResponse(
         categories=categories,
         total_games=total_games,
