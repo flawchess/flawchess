@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from fastapi_users.exceptions import UserAlreadyExists
 from fastapi_users.password import PasswordHelper
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +42,7 @@ async def create_guest_user(session: AsyncSession) -> tuple[User, str]:
         is_verified=True,
         is_superuser=False,
         is_guest=True,
+        last_login=func.now(),
     )
     session.add(user)
     await session.flush()

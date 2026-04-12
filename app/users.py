@@ -46,6 +46,18 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
     reset_password_token_secret = settings.SECRET_KEY
     verification_token_secret = settings.SECRET_KEY
 
+    async def on_after_register(
+        self,
+        user: User,
+        request: Request | None = None,
+    ) -> None:
+        """Set last_login on email registration so it's never NULL."""
+        async with async_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user.id).values(last_login=func.now())
+            )
+            await session.commit()
+
     async def on_after_login(
         self,
         user: User,
