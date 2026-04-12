@@ -52,3 +52,9 @@ export const UNRELIABLE_OPACITY = 0.5;
 // Tailwind classes (referenced in components): bg-brand-brown, text-brand-brown.
 // The raw oklch is here for any JS-side usage (currently none).
 export const FILTER_MODIFIED_DOT = 'oklch(0.55 0.08 55)'; // brand brown mid
+
+// Time Pressure chart line colors (Phase 55)
+// Blue for user's score line — same hue as recovery line in EndgameConvRecovChart
+export const MY_SCORE_COLOR = 'oklch(0.55 0.18 260)';
+// Red for opponent's score line — same as WDL_LOSS
+export const OPP_SCORE_COLOR = WDL_LOSS;

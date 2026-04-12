@@ -146,6 +146,25 @@ export interface ClockPressureResponse {
   total_endgame_games: number;
 }
 
+export interface TimePressureBucketPoint {
+  bucket_index: number;      // 0-9
+  bucket_label: string;      // "0-10%" etc.
+  score: number | null;      // null when game_count == 0
+  game_count: number;
+}
+
+export interface TimePressureChartRow {
+  time_control: string;      // "bullet" | "blitz" | "rapid" | "classical"
+  label: string;             // "Bullet" etc.
+  total_endgame_games: number;
+  user_series: TimePressureBucketPoint[];   // always 10 elements
+  opp_series: TimePressureBucketPoint[];    // always 10 elements
+}
+
+export interface TimePressureChartResponse {
+  rows: TimePressureChartRow[];
+}
+
 export interface EndgameOverviewResponse {
   stats: EndgameStatsResponse;
   performance: EndgamePerformanceResponse;
@@ -153,4 +172,5 @@ export interface EndgameOverviewResponse {
   conv_recov_timeline: ConvRecovTimelineResponse;
   score_gap_material: ScoreGapMaterialResponse;  // NEW — Phase 53
   clock_pressure: ClockPressureResponse;         // NEW — Phase 54
+  time_pressure_chart: TimePressureChartResponse; // NEW — Phase 55
 }
