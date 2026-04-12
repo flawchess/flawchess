@@ -24,6 +24,7 @@ class User(SQLAlchemyBaseUserTable[int], Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_activity: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Guest session flag — True for anonymous users created via POST /auth/guest/create
     is_guest: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
