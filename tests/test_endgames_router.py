@@ -262,6 +262,32 @@ class TestOverviewComposesAllPayloads:
         assert isinstance(data["conv_recov_timeline"]["recovery"], list)
 
 
+class TestOverviewScoreGapMaterial:
+    """GET /api/endgames/overview response contains score_gap_material field (Phase 53)."""
+
+    @pytest.mark.asyncio
+    async def test_overview_has_score_gap_material_field(self, auth_headers: dict[str, str]) -> None:
+        """Response JSON has 'score_gap_material' key with correct shape."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/endgames/overview", headers=auth_headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "score_gap_material" in data
+        sgm = data["score_gap_material"]
+        assert "endgame_score" in sgm
+        assert "non_endgame_score" in sgm
+        assert "score_difference" in sgm
+        assert "overall_score" in sgm
+        assert "material_rows" in sgm
+        assert isinstance(sgm["material_rows"], list)
+        assert len(sgm["material_rows"]) == 3
+        buckets = [row["bucket"] for row in sgm["material_rows"]]
+        assert buckets == ["ahead", "equal", "behind"]
+
+
 class TestLegacyEndpointsRemoved:
     """The four legacy endpoints must return 404 after removal."""
 

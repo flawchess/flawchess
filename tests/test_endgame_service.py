@@ -14,9 +14,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.schemas.endgames import EndgameWDLSummary
 from app.services.endgame_service import (
     _aggregate_endgame_stats,
     _compute_rolling_series,
+    _compute_score_gap_material,
+    _compute_verdict,
+    _wdl_to_score,
     classify_endgame_class,
     get_endgame_games,
     get_endgame_overview,
@@ -768,42 +772,32 @@ class TestGetEndgamePerformanceSmoke:
 
 
 class TestGetEndgameOverview:
-    """Tests for get_endgame_overview service function."""
+    """Tests for get_endgame_overview service function.
+
+    get_endgame_overview was refactored in Phase 53 to fetch entry_rows once and
+    call repository functions directly (query_endgame_entry_rows, query_endgame_performance_rows,
+    count_filtered_games) instead of delegating to get_endgame_stats and get_endgame_performance.
+    The timeline functions are still called as before.
+    """
 
     @pytest.mark.asyncio
-    async def test_overview_composes_all_four_payloads(self):
-        """get_endgame_overview calls all four sub-functions and assembles the response."""
+    async def test_overview_composes_all_five_payloads(self):
+        """get_endgame_overview assembles stats, performance, timeline, conv_recov_timeline, score_gap_material."""
+        from app.schemas.endgames import (
+            ConvRecovTimelineResponse,
+            EndgameTimelineResponse,
+        )
+
         with (
-            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
-            patch("app.services.endgame_service.get_endgame_performance", new_callable=AsyncMock) as mock_perf,
+            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
+            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf_rows,
+            patch("app.services.endgame_service.count_filtered_games", new_callable=AsyncMock) as mock_count,
             patch("app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock) as mock_timeline,
             patch("app.services.endgame_service.get_conv_recov_timeline", new_callable=AsyncMock) as mock_conv,
         ):
-            from app.schemas.endgames import (
-                ConvRecovTimelineResponse,
-                EndgamePerformanceResponse,
-                EndgameStatsResponse,
-                EndgameTimelineResponse,
-                EndgameWDLSummary,
-            )
-
-            mock_stats.return_value = EndgameStatsResponse(
-                categories=[], total_games=0, endgame_games=0
-            )
-            mock_perf.return_value = EndgamePerformanceResponse(
-                endgame_wdl=EndgameWDLSummary(wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0),
-                non_endgame_wdl=EndgameWDLSummary(wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0),
-                overall_win_rate=0.0,
-                endgame_win_rate=0.0,
-                aggregate_conversion_pct=0.0,
-                aggregate_conversion_wins=0,
-                aggregate_conversion_games=0,
-                aggregate_recovery_pct=0.0,
-                aggregate_recovery_saves=0,
-                aggregate_recovery_games=0,
-                relative_strength=0.0,
-                endgame_skill=0.0,
-            )
+            mock_entry.return_value = []
+            mock_perf_rows.return_value = ([], [])
+            mock_count.return_value = 0
             mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=50)
             mock_conv.return_value = ConvRecovTimelineResponse(conversion=[], recovery=[], window=50)
 
@@ -812,50 +806,38 @@ class TestGetEndgameOverview:
                 rated=None, opponent_type="human", recency=None, window=50,
             )
 
-        # All four sub-functions must be called exactly once
-        mock_stats.assert_called_once()
-        mock_perf.assert_called_once()
+        # Repository functions called once each
+        mock_entry.assert_called_once()
+        mock_perf_rows.assert_called_once()
+        mock_count.assert_called_once()
         mock_timeline.assert_called_once()
         mock_conv.assert_called_once()
 
-        # Response must contain all four sub-payloads
+        # All five sub-payloads must be present
         assert result.stats is not None
         assert result.performance is not None
         assert result.timeline is not None
         assert result.conv_recov_timeline is not None
+        assert result.score_gap_material is not None
 
     @pytest.mark.asyncio
     async def test_overview_passes_window_to_both_timelines(self):
         """The window parameter must be forwarded to both get_endgame_timeline and get_conv_recov_timeline."""
+        from app.schemas.endgames import (
+            ConvRecovTimelineResponse,
+            EndgameTimelineResponse,
+        )
+
         with (
-            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
-            patch("app.services.endgame_service.get_endgame_performance", new_callable=AsyncMock) as mock_perf,
+            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
+            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf_rows,
+            patch("app.services.endgame_service.count_filtered_games", new_callable=AsyncMock) as mock_count,
             patch("app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock) as mock_timeline,
             patch("app.services.endgame_service.get_conv_recov_timeline", new_callable=AsyncMock) as mock_conv,
         ):
-            from app.schemas.endgames import (
-                ConvRecovTimelineResponse,
-                EndgamePerformanceResponse,
-                EndgameStatsResponse,
-                EndgameTimelineResponse,
-                EndgameWDLSummary,
-            )
-
-            mock_stats.return_value = EndgameStatsResponse(categories=[], total_games=0, endgame_games=0)
-            mock_perf.return_value = EndgamePerformanceResponse(
-                endgame_wdl=EndgameWDLSummary(wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0),
-                non_endgame_wdl=EndgameWDLSummary(wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0),
-                overall_win_rate=0.0,
-                endgame_win_rate=0.0,
-                aggregate_conversion_pct=0.0,
-                aggregate_conversion_wins=0,
-                aggregate_conversion_games=0,
-                aggregate_recovery_pct=0.0,
-                aggregate_recovery_saves=0,
-                aggregate_recovery_games=0,
-                relative_strength=0.0,
-                endgame_skill=0.0,
-            )
+            mock_entry.return_value = []
+            mock_perf_rows.return_value = ([], [])
+            mock_count.return_value = 0
             mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=75)
             mock_conv.return_value = ConvRecovTimelineResponse(conversion=[], recovery=[], window=75)
 
@@ -877,9 +859,199 @@ class TestGetEndgameOverview:
             db_session, user_id=999999, time_control=None, platform=None,
             rated=None, opponent_type="human", recency=None, window=50,
         )
-        # All four sub-payloads must be present
+        # All five sub-payloads must be present
         assert result.stats.categories == []
         assert result.performance.endgame_wdl.total == 0
         assert result.timeline.overall == []
         assert result.conv_recov_timeline.conversion == []
         assert result.conv_recov_timeline.recovery == []
+        assert result.score_gap_material is not None
+
+
+class TestScoreGapMaterial:
+    """Unit tests for _wdl_to_score, _compute_verdict, and _compute_score_gap_material."""
+
+    def _make_wdl(self, wins: int, draws: int, losses: int) -> EndgameWDLSummary:
+        total = wins + draws + losses
+        if total > 0:
+            win_pct = round(wins / total * 100, 1)
+            draw_pct = round(draws / total * 100, 1)
+            loss_pct = round(losses / total * 100, 1)
+        else:
+            win_pct = draw_pct = loss_pct = 0.0
+        return EndgameWDLSummary(
+            wins=wins, draws=draws, losses=losses, total=total,
+            win_pct=win_pct, draw_pct=draw_pct, loss_pct=loss_pct,
+        )
+
+    def _make_wdl_pct(self, win_pct: float, draw_pct: float, loss_pct: float, total: int = 100) -> EndgameWDLSummary:
+        wins = round(win_pct * total / 100)
+        draws = round(draw_pct * total / 100)
+        losses = total - wins - draws
+        return EndgameWDLSummary(
+            wins=wins, draws=draws, losses=losses, total=total,
+            win_pct=win_pct, draw_pct=draw_pct, loss_pct=loss_pct,
+        )
+
+    # --- _wdl_to_score tests ---
+
+    def test_wdl_to_score_standard_case(self):
+        """Score for 45/10/45 WDL (100 total) should be 0.5."""
+        wdl = self._make_wdl(45, 10, 45)
+        assert _wdl_to_score(wdl) == 0.5
+
+    def test_wdl_to_score_zero_total(self):
+        """Score for 0-total WDL should be 0.0."""
+        wdl = self._make_wdl(0, 0, 0)
+        assert _wdl_to_score(wdl) == 0.0
+
+    def test_wdl_to_score_all_wins(self):
+        """Score for 100 wins / 0 draws / 0 losses should be 1.0."""
+        wdl = self._make_wdl(100, 0, 0)
+        assert _wdl_to_score(wdl) == 1.0
+
+    # --- _compute_verdict tests ---
+
+    def test_compute_verdict_good(self):
+        """Score above overall -> good."""
+        assert _compute_verdict(0.55, 0.50) == "good"
+
+    def test_compute_verdict_ok(self):
+        """Score within -0.05 of overall -> ok."""
+        assert _compute_verdict(0.47, 0.50) == "ok"
+
+    def test_compute_verdict_bad(self):
+        """Score below overall - 0.05 -> bad."""
+        assert _compute_verdict(0.40, 0.50) == "bad"
+
+    def test_compute_verdict_equal_is_good(self):
+        """Score exactly equal to overall -> good."""
+        assert _compute_verdict(0.50, 0.50) == "good"
+
+    def test_compute_verdict_boundary_ok(self):
+        """Score exactly at overall - 0.05 boundary -> ok."""
+        assert _compute_verdict(0.45, 0.50) == "ok"
+
+    # --- _compute_score_gap_material tests ---
+
+    def test_score_gap_material_ahead_bucket(self):
+        """Entry row with imbalance=150 goes into 'ahead' bucket."""
+        # entry_rows: (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after)
+        entry_rows = [(1, 1, "1-0", "white", 150, 150)]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        ahead = result.material_rows[0]
+        assert ahead.bucket == "ahead"
+        assert ahead.games == 1
+        assert ahead.win_pct == 100.0
+
+    def test_score_gap_material_equal_bucket(self):
+        """Entry row with imbalance=50 goes into 'equal' bucket."""
+        entry_rows = [(1, 1, "1-0", "white", 50, 50)]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        equal = result.material_rows[1]
+        assert equal.bucket == "equal"
+        assert equal.games == 1
+
+    def test_score_gap_material_behind_bucket(self):
+        """Entry row with imbalance=-200 goes into 'behind' bucket."""
+        entry_rows = [(1, 1, "0-1", "white", -200, -200)]
+        endgame_wdl = self._make_wdl(0, 0, 1)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        behind = result.material_rows[2]
+        assert behind.bucket == "behind"
+        assert behind.games == 1
+        assert behind.loss_pct == 100.0
+
+    def test_score_gap_material_deduplication(self):
+        """Two rows with same game_id but different endgame_class -> only 1 game in material table."""
+        entry_rows = [
+            (1, 1, "1-0", "white", 150, 150),  # game_id=1, class rook
+            (1, 3, "1-0", "white", 150, 150),  # game_id=1, class pawn — duplicate
+        ]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        ahead = result.material_rows[0]
+        assert ahead.bucket == "ahead"
+        assert ahead.games == 1  # not 2
+
+    def test_score_gap_material_none_imbalance_excluded(self):
+        """Entry row with user_material_imbalance=None is excluded from all buckets."""
+        entry_rows = [(1, 1, "1-0", "white", None, None)]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert all(row.games == 0 for row in result.material_rows)
+
+    def test_score_gap_material_empty_rows(self):
+        """Empty entry_rows -> 3 material_rows all with games=0, score_difference=0.0."""
+        endgame_wdl = self._make_wdl(0, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert len(result.material_rows) == 3
+        assert all(row.games == 0 for row in result.material_rows)
+        assert result.score_difference == 0.0
+
+    def test_score_gap_material_score_difference_negative(self):
+        """score_difference = endgame_score - non_endgame_score (signed, can be negative)."""
+        # endgame score: win_pct=40, draw_pct=10 -> (40 + 5) / 100 = 0.45
+        endgame_wdl = self._make_wdl_pct(40.0, 10.0, 50.0, total=100)
+        # non_endgame score: win_pct=55, draw_pct=10 -> (55 + 5) / 100 = 0.60
+        non_endgame_wdl = self._make_wdl_pct(55.0, 10.0, 35.0, total=100)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert result.score_difference == pytest.approx(-0.15, abs=1e-9)
+
+    def test_score_gap_material_overall_score_weighted(self):
+        """overall_score is weighted from both WDL summaries combined."""
+        # endgame: 45W 10D 45L (total=100), non_endgame: 55W 10D 35L (total=100)
+        # combined: 100W 20D 80L (total=200) -> (100 + 10) / 200 = 0.55
+        endgame_wdl = self._make_wdl(45, 10, 45)
+        non_endgame_wdl = self._make_wdl(55, 10, 35)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert result.overall_score == pytest.approx(0.55, abs=1e-9)
+
+    def test_score_gap_material_no_persistence_check(self):
+        """Material bucket uses user_material_imbalance only — no persistence check.
+
+        A row with imbalance=150 (ahead threshold) but imbalance_after=-50 should
+        STILL go into the 'ahead' bucket (unlike conversion/recovery which require
+        both imbalance and imbalance_after to exceed the threshold).
+        """
+        entry_rows = [(1, 1, "1-0", "white", 150, -50)]  # imbalance_after negative
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        ahead = result.material_rows[0]
+        assert ahead.bucket == "ahead"
+        assert ahead.games == 1  # counted despite imbalance_after < threshold
+
+    def test_score_gap_material_all_three_rows_always_present(self):
+        """All three material_rows (ahead, equal, behind) present even when games=0."""
+        endgame_wdl = self._make_wdl(0, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        buckets = [r.bucket for r in result.material_rows]
+        assert buckets == ["ahead", "equal", "behind"]
+
+    def test_score_gap_material_boundary_ahead(self):
+        """Imbalance exactly == 100 -> 'ahead' bucket (>= 100)."""
+        entry_rows = [(1, 1, "1-0", "white", 100, 100)]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert result.material_rows[0].bucket == "ahead"
+        assert result.material_rows[0].games == 1
+
+    def test_score_gap_material_boundary_behind(self):
+        """Imbalance exactly == -100 -> 'behind' bucket (<= -100)."""
+        entry_rows = [(1, 1, "0-1", "white", -100, -100)]
+        endgame_wdl = self._make_wdl(0, 0, 1)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert result.material_rows[2].bucket == "behind"
+        assert result.material_rows[2].games == 1
