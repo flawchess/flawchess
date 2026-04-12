@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
+from app.middleware.last_activity import LastActivityMiddleware
 from app.routers import openings, position_bookmarks, imports, auth
 from app.routers.endgames import router as endgames_router
 from app.routers.stats import router as stats_router
@@ -64,6 +65,8 @@ if settings.ENVIRONMENT == "development":
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+app.add_middleware(LastActivityMiddleware)
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(imports.router, prefix="/api")
