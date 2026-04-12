@@ -5,6 +5,7 @@
  */
 
 import { InfoPopover } from '@/components/ui/info-popover';
+import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { WDL_WIN, WDL_LOSS, GAUGE_WARNING } from '@/lib/theme';
 import type { ScoreGapMaterialResponse, Verdict } from '@/types/endgames';
 
@@ -69,16 +70,14 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
       {/* Material-stratified WDL table */}
       <div className="overflow-x-auto">
         <table
-          className="w-full min-w-[480px] text-sm sm:text-base"
+          className="w-full min-w-[440px] text-sm sm:text-base"
           data-testid="material-table"
         >
           <thead>
             <tr className="text-left text-xs text-muted-foreground border-b border-border">
               <th className="py-1 pr-3 font-medium">Material at entry</th>
               <th className="py-1 px-2 font-medium text-right">Games</th>
-              <th className="py-1 px-2 font-medium text-right">Win</th>
-              <th className="py-1 px-2 font-medium text-right">Draw</th>
-              <th className="py-1 px-2 font-medium text-right">Loss</th>
+              <th className="py-1 px-2 font-medium">Win / Draw / Loss</th>
               <th className="py-1 px-2 font-medium text-right">Score</th>
               <th className="py-1 pl-2 font-medium text-right">Verdict</th>
             </tr>
@@ -96,14 +95,8 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   <td className="py-1.5 px-2 text-right text-sm tabular-nums">
                     {row.games.toLocaleString()}
                   </td>
-                  <td className="py-1.5 px-2 text-right text-sm tabular-nums">
-                    {row.win_pct.toFixed(1)}%
-                  </td>
-                  <td className="py-1.5 px-2 text-right text-sm tabular-nums">
-                    {row.draw_pct.toFixed(1)}%
-                  </td>
-                  <td className="py-1.5 px-2 text-right text-sm tabular-nums">
-                    {row.loss_pct.toFixed(1)}%
+                  <td className="py-1.5 px-2 min-w-[120px]">
+                    <MiniWDLBar win_pct={row.win_pct} draw_pct={row.draw_pct} loss_pct={row.loss_pct} />
                   </td>
                   <td className="py-1.5 px-2 text-right text-sm tabular-nums">
                     {row.score.toFixed(3)}
