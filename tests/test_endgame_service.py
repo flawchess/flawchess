@@ -19,9 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.endgames import EndgameWDLSummary
 from app.services.endgame_service import (
     _aggregate_endgame_stats,
+    _build_bucket_series,
     _compute_clock_pressure,
     _compute_rolling_series,
     _compute_score_gap_material,
+    _compute_time_pressure_chart,
     _compute_verdict,
     _extract_entry_clocks,
     _wdl_to_score,
@@ -1324,3 +1326,182 @@ class TestComputeClockPressure:
         result = _compute_clock_pressure(rows)
         assert len(result.rows) == 0
         assert result.total_endgame_games == 0
+
+
+class TestComputeTimePressureChart:
+    """Unit tests for _compute_time_pressure_chart (Phase 55).
+
+    Verifies bucket assignment, score averaging, exclusion rules,
+    and the minimum games threshold.
+    """
+
+    def test_single_game_win_user_bucket_populated(self):
+        """Test 1: 10 bullet wins, user 50% time -> user_score=1.0 -> user bucket 5 (50-60%) populated."""
+        # time_control_seconds=60, user_clock=30 -> 50% -> bucket index 5
+        # opp_clock=20 -> 33% -> bucket index 3
+        rows = [_make_clock_row(
+            game_id=i + 1,
+            time_control_bucket="bullet",
+            time_control_seconds=60,
+            termination="checkmate",
+            result="1-0",
+            user_color="white",
+            ply_array=[0, 1],
+            clock_array=[30.0, 20.0],
+        ) for i in range(10)]
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.time_control == "bullet"
+        assert len(row.user_series) == 10
+        assert len(row.opp_series) == 10
+        # User bucket 5 (50-60%) should have score 1.0
+        user_bucket5 = row.user_series[5]
+        assert user_bucket5.bucket_index == 5
+        assert user_bucket5.game_count == 10
+        assert user_bucket5.score == pytest.approx(1.0)
+        # Opp bucket 3 (30-40%) should have score 0.0 (1 - 1.0)
+        opp_bucket3 = row.opp_series[3]
+        assert opp_bucket3.game_count == 10
+        assert opp_bucket3.score == pytest.approx(0.0)
+
+    def test_two_games_same_bucket_scores_averaged(self):
+        """Test 2: Two games, same user bucket -> scores averaged correctly."""
+        # game 1: win -> score=1.0; game 2: loss -> score=0.0; both at 50% -> bucket 5
+        # Add 8 draws at same bucket to reach MIN_GAMES threshold
+        rows = [
+            _make_clock_row(1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]),
+            _make_clock_row(2, "blitz", 180, "checkmate", "0-1", "white", [0, 1], [90.0, 60.0]),
+        ]
+        for i in range(3, 11):
+            rows.append(_make_clock_row(i, "blitz", 180, "checkmate", "1/2-1/2", "white", [0, 1], [90.0, 60.0]))
+        result = _compute_time_pressure_chart(rows)
+        row = result.rows[0]
+        # All games in user bucket 5 (90/180=50%) -> average of 1.0 + 0.0 + 8*0.5 = 5.0 / 10 = 0.5
+        user_bucket5 = row.user_series[5]
+        assert user_bucket5.game_count == 10
+        assert user_bucket5.score == pytest.approx(0.5)
+
+    def test_game_without_both_clocks_excluded(self):
+        """Test 3: Game without both clocks is excluded from both series."""
+        rows = []
+        # 9 games with clocks (ply=[0,1] clock=[90,60])
+        for i in range(9):
+            rows.append(_make_clock_row(i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]))
+        # This game has only user ply/clock (no opp) -> opp_clock=None -> excluded from series
+        rows.append(_make_clock_row(10, "blitz", 180, "checkmate", "1-0", "white", [0], [90.0]))
+        # Total = 10 games -> row appears; only 9 contribute to series
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.total_endgame_games == 10
+        # Only 9 games with both clocks contribute to series
+        total_user = sum(p.game_count for p in row.user_series)
+        assert total_user == 9
+
+    def test_game_without_time_control_seconds_excluded(self):
+        """Test 4: Game without time_control_seconds is excluded from chart series."""
+        rows = []
+        for i in range(10):
+            # time_control_seconds=None -> excluded from bucket computation
+            rows.append(_make_clock_row(i + 1, "blitz", None, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]))
+        result = _compute_time_pressure_chart(rows)
+        # 10 games with valid TC bucket -> row appears; but no time_control_seconds -> series empty
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        for p in row.user_series:
+            assert p.game_count == 0
+            assert p.score is None
+
+    def test_time_control_below_min_games_excluded(self):
+        """Test 5: Time control with fewer than MIN_GAMES_FOR_CLOCK_STATS=10 games excluded."""
+        rows = [_make_clock_row(i + 1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0])
+                for i in range(9)]
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 0
+
+    def test_bucket_clamping_100_percent_time(self):
+        """Test 6: 100% time remaining -> clamped to bucket index 9 (not 10)."""
+        rows = [_make_clock_row(i + 1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [600.0, 300.0])
+                for i in range(10)]
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # 100% time -> int(100/10)=10, clamped to 9
+        user_bucket9 = row.user_series[9]
+        assert user_bucket9.bucket_index == 9
+        assert user_bucket9.bucket_label == "90-100%"
+        assert user_bucket9.game_count == 10
+
+    def test_empty_clock_rows_returns_empty_response(self):
+        """Test 7: Empty clock_rows produces response with no rows."""
+        result = _compute_time_pressure_chart([])
+        assert result.rows == []
+
+    def test_multiple_time_controls_separate_rows(self):
+        """Test 8: Multiple time controls produce separate rows in correct order."""
+        rows = []
+        for i in range(10):
+            rows.append(_make_clock_row(i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]))
+        for i in range(10):
+            rows.append(_make_clock_row(i + 11, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]))
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 2
+        # blitz before rapid in _TIME_CONTROL_ORDER
+        assert result.rows[0].time_control == "blitz"
+        assert result.rows[1].time_control == "rapid"
+
+    def test_user_score_derivation_win_draw_loss(self):
+        """Test 9: win=1.0, draw=0.5, loss=0.0 for user_score; opp gets 1-user_score."""
+        # 10 games: 4 wins, 3 draws, 3 losses — all at same bucket (50%) so we check the average
+        # user_score avg = (4*1.0 + 3*0.5 + 3*0.0) / 10 = 5.5/10 = 0.55
+        # opp_score avg = 1 - 0.55 = 0.45
+        rows = []
+        for i in range(4):
+            rows.append(_make_clock_row(i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]))
+        for i in range(3):
+            rows.append(_make_clock_row(i + 5, "blitz", 180, "checkmate", "1/2-1/2", "white", [0, 1], [90.0, 60.0]))
+        for i in range(3):
+            rows.append(_make_clock_row(i + 8, "blitz", 180, "checkmate", "0-1", "white", [0, 1], [90.0, 60.0]))
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # 90/180 = 50% -> bucket index 5
+        user_bucket5 = row.user_series[5]
+        assert user_bucket5.game_count == 10
+        assert user_bucket5.score == pytest.approx(0.55)
+        # opp: 60/180 = 33% -> bucket index 3
+        opp_bucket3 = row.opp_series[3]
+        assert opp_bucket3.game_count == 10
+        assert opp_bucket3.score == pytest.approx(0.45)
+
+    def test_bucket_labels_correct(self):
+        """Bucket labels are formatted as '0-10%', '10-20%', ..., '90-100%'."""
+        buckets: list[list[float]] = [[0.0, 0] for _ in range(10)]
+        series = _build_bucket_series(buckets)
+        assert len(series) == 10
+        assert series[0].bucket_label == "0-10%"
+        assert series[4].bucket_label == "40-50%"
+        assert series[9].bucket_label == "90-100%"
+
+    def test_bucket_score_none_when_no_games(self):
+        """Buckets with no games have score=None (not 0.0)."""
+        buckets: list[list[float]] = [[0.0, 0] for _ in range(10)]
+        series = _build_bucket_series(buckets)
+        for point in series:
+            assert point.score is None
+            assert point.game_count == 0
+
+    def test_total_endgame_games_counts_all_with_valid_tc(self):
+        """total_endgame_games = games with valid time_control_bucket (regardless of clock data)."""
+        rows = []
+        # 5 games with clocks
+        for i in range(5):
+            rows.append(_make_clock_row(i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]))
+        # 5 games without clock data (empty arrays) but valid TC bucket
+        for i in range(5):
+            rows.append(_make_clock_row(i + 6, "blitz", 180, "checkmate", "1-0", "white", [], []))
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.total_endgame_games == 10
