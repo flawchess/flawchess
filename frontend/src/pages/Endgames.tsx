@@ -17,7 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
-import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/charts/EndgamePerformanceSection';
+import { EndgamePerformanceSection, EndgameGaugesSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/charts/EndgamePerformanceSection';
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
 import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
 import { EndgameConvRecovTimelineChart } from '@/components/charts/EndgameConvRecovTimelineChart';
@@ -183,59 +183,11 @@ export function EndgamesPage() {
   // ── Stats tab content ──────────────────────────────────────────────────────
 
   // Summary line + collapsible explaining endgame concepts and metric limitations
-  const endgameSummary = statsData ? (
-    statsData.total_games === 0 ? null : (
-      <div data-testid="endgame-summary">
-        <p className="text-sm text-muted-foreground mb-2">
-          {statsData.endgame_games} of {statsData.total_games} games
-          ({(statsData.endgame_games / statsData.total_games * 100).toFixed(1)}%) reached an endgame phase
-        </p>
-        <Accordion type="single" collapsible>
-          <AccordionItem value="concepts" className="charcoal-texture rounded-md px-4" data-testid="endgame-concepts-trigger">
-            <AccordionTrigger className="text-foreground justify-start flex-none gap-2 **:data-[slot=accordion-trigger-icon]:ml-0 **:data-[slot=accordion-trigger-icon]:order-first">
-              <HelpCircle className="h-4 w-4 text-brand-brown/70 shrink-0 order-last" />
-              Endgame statistics concepts
-            </AccordionTrigger>
-            <AccordionContent className="text-muted-foreground space-y-2">
-              <p>
-                <strong>Endgame phase:</strong> positions where the total count of major and minor pieces
-                (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
-                counted. This follows the Lichess definition.
-              </p>
-              <p>
-                <strong>Endgame types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
-                Queen, Mixed (two or more piece types), and Pawnless (no pawns on board).
-              </p>
-              <p>
-                <strong>Endgame sequence:</strong> a continuous stretch of at least 3 full moves (6 half-moves)
-                spent in a single endgame type. A single game can produce multiple sequences — for example,
-                a rook endgame where the rooks get traded becomes a pawn endgame, giving that game one rook
-                sequence and one pawn sequence. Each sequence is counted independently for conversion and
-                recovery statistics.
-              </p>
-              <p>
-                <strong>Conversion:</strong> percentage of endgame sequences with a material
-                advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at
-                least {PERSISTENCE_MOVES} moves) where you went on to win the game. Measures
-                how well you close out winning endgames.
-              </p>
-              <p>
-                <strong>Recovery:</strong> percentage of endgame sequences with a material
-                deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at
-                least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game.
-                Measures how well you defend losing endgames.
-              </p>
-              <p>
-                These rates reflect your performance against opponents at your current rating level.
-                As your rating changes, you face stronger or weaker opponents, so trends may not
-                directly indicate improvement or stagnation in absolute terms.
-              </p>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-      </div>
-    )
-  ) : null;
+  const showPerfSection = !!(perfData && perfData.endgame_wdl.total > 0);
+  const showConvRecovTimeline = !!(convRecovData && (convRecovData.conversion.length > 0 || convRecovData.recovery.length > 0));
+  const showClockPressure = !!(clockPressureData && clockPressureData.rows.length > 0);
+  const showTimePressureChart = !!(timePressureChartData && timePressureChartData.rows.length > 0);
+  const showTimeline = !!(timelineData && timelineData.overall.length > 0);
 
   const statisticsContent = (
     <div className="flex flex-col gap-4">
@@ -245,46 +197,114 @@ export function EndgamesPage() {
         </div>
       ) : statsData && statsData.categories.length > 0 ? (
         <>
-          {endgameSummary}
-          {perfData && perfData.endgame_wdl.total > 0 && (
-            <div className="charcoal-texture rounded-md p-4">
-              <EndgamePerformanceSection data={perfData} />
-            </div>
+          {/* ── Endgame Overall Performance ── */}
+          {showPerfSection && (
+            <>
+              <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Overall Performance</h2>
+              <Accordion type="single" collapsible>
+                <AccordionItem value="concepts" className="charcoal-texture rounded-md px-4" data-testid="endgame-concepts-trigger">
+                  <AccordionTrigger className="text-foreground justify-start flex-none gap-2 **:data-[slot=accordion-trigger-icon]:ml-0 **:data-[slot=accordion-trigger-icon]:order-first">
+                    <HelpCircle className="h-4 w-4 text-brand-brown/70 shrink-0 order-last" />
+                    Endgame statistics concepts
+                  </AccordionTrigger>
+                  <AccordionContent className="text-muted-foreground space-y-2">
+                    <p>
+                      <strong>Endgame phase:</strong> positions where the total count of major and minor pieces
+                      (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
+                      counted. This follows the Lichess definition.
+                    </p>
+                    <p>
+                      <strong>Endgame types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
+                      Queen, Mixed (two or more piece types), and Pawnless (no pawns on board).
+                    </p>
+                    <p>
+                      <strong>Endgame sequence:</strong> a continuous stretch of at least 3 full moves (6 half-moves)
+                      spent in a single endgame type. A single game can produce multiple sequences — for example,
+                      a rook endgame where the rooks get traded becomes a pawn endgame, giving that game one rook
+                      sequence and one pawn sequence. Each sequence is counted independently for conversion and
+                      recovery statistics.
+                    </p>
+                    <p>
+                      <strong>Conversion:</strong> percentage of endgame sequences with a material
+                      advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at
+                      least {PERSISTENCE_MOVES} moves) where you went on to win the game. Measures
+                      how well you close out winning endgames.
+                    </p>
+                    <p>
+                      <strong>Recovery:</strong> percentage of endgame sequences with a material
+                      deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at
+                      least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game.
+                      Measures how well you defend losing endgames.
+                    </p>
+                    <p>
+                      These rates reflect your performance against opponents at your current rating level.
+                      As your rating changes, you face stronger or weaker opponents, so trends may not
+                      directly indicate improvement or stagnation in absolute terms.
+                    </p>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+              <div className="charcoal-texture rounded-md p-4">
+                <EndgamePerformanceSection data={perfData} />
+              </div>
+              {scoreGapData && (
+                <div className="charcoal-texture rounded-md p-4">
+                  <EndgameScoreGapSection data={scoreGapData} />
+                </div>
+              )}
+            </>
           )}
-          {convRecovData && (convRecovData.conversion.length > 0 || convRecovData.recovery.length > 0) && (
-            <div className="charcoal-texture rounded-md p-4">
-              <EndgameConvRecovTimelineChart data={convRecovData} />
-            </div>
+
+          {/* ── Conversion and Recovery ── */}
+          {(showPerfSection || showConvRecovTimeline) && (
+            <>
+              <h2 className="text-lg font-semibold text-foreground mt-2">Conversion and Recovery</h2>
+              {showPerfSection && (
+                <div className="charcoal-texture rounded-md p-4">
+                  <EndgameGaugesSection data={perfData} />
+                </div>
+              )}
+              {showConvRecovTimeline && (
+                <div className="charcoal-texture rounded-md p-4">
+                  <EndgameConvRecovTimelineChart data={convRecovData} />
+                </div>
+              )}
+            </>
           )}
+
+          {/* ── Time Pressure ── */}
+          {(showClockPressure || showTimePressureChart) && (
+            <>
+              <h2 className="text-lg font-semibold text-foreground mt-2">Time Pressure</h2>
+              {showClockPressure && (
+                <div className="charcoal-texture rounded-md p-4">
+                  <EndgameClockPressureSection data={clockPressureData} />
+                </div>
+              )}
+              {showTimePressureChart && (
+                <div className="charcoal-texture rounded-md p-4">
+                  <EndgameTimePressureSection data={timePressureChartData} />
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── Endgame Type Breakdown ── */}
+          <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Type Breakdown</h2>
           <div className="charcoal-texture rounded-md p-4">
             <EndgameWDLChart
               categories={statsData.categories}
               onCategorySelect={handleCategorySelect}
             />
           </div>
-          {statsData && statsData.categories.length > 0 && (
+          {statsData.categories.length > 0 && (
             <div className="charcoal-texture rounded-md p-4">
               <EndgameConvRecovChart categories={statsData.categories} />
             </div>
           )}
-          {timelineData && timelineData.overall.length > 0 && (
+          {showTimeline && (
             <div className="charcoal-texture rounded-md p-4">
               <EndgameTimelineChart data={timelineData} />
-            </div>
-          )}
-          {scoreGapData && (perfData?.endgame_wdl.total ?? 0) > 0 && (
-            <div className="charcoal-texture rounded-md p-4">
-              <EndgameScoreGapSection data={scoreGapData} />
-            </div>
-          )}
-          {clockPressureData && clockPressureData.rows.length > 0 && (
-            <div className="charcoal-texture rounded-md p-4">
-              <EndgameClockPressureSection data={clockPressureData} />
-            </div>
-          )}
-          {timePressureChartData && timePressureChartData.rows.length > 0 && (
-            <div className="charcoal-texture rounded-md p-4">
-              <EndgameTimePressureSection data={timePressureChartData} />
             </div>
           )}
         </>

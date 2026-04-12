@@ -46,6 +46,9 @@ interface WDLChartRowProps {
   /** Minimum games threshold for reliable stats. Below this, bar and legend are dimmed. Defaults to MIN_GAMES_FOR_RELIABLE_STATS (10). */
   minGamesForReliable?: number;
 
+  /** Custom label for the game count (right side of header). Overrides default "{total} games" text. */
+  gameCountLabel?: ReactNode;
+
   /** Bar height class. Defaults to 'h-5' (reference implementation). */
   barHeight?: 'h-5' | 'h-6';
 
@@ -65,6 +68,7 @@ export function WDLChartRow({
   openGamesTestId,
   maxTotal,
   minGamesForReliable = MIN_GAMES_FOR_RELIABLE_STATS,
+  gameCountLabel,
   barHeight = 'h-5',
   testId,
 }: WDLChartRowProps) {
@@ -117,7 +121,7 @@ export function WDLChartRow({
           ) : (
             <span className="inline-flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground">
-                {data.total} games{isUnreliable && ' (low)'}
+                {gameCountLabel ?? <>{data.total} games{isUnreliable && ' (low)'}</>}
               </span>
             </span>
           )}

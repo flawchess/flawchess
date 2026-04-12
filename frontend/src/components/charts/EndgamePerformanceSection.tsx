@@ -40,12 +40,16 @@ interface EndgamePerformanceSectionProps {
 }
 
 export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionProps) {
+  const totalGames = data.endgame_wdl.total + data.non_endgame_wdl.total;
+  const endgamePct = totalGames > 0 ? (data.endgame_wdl.total / totalGames * 100).toFixed(1) : '0.0';
+  const nonEndgamePct = totalGames > 0 ? (data.non_endgame_wdl.total / totalGames * 100).toFixed(1) : '0.0';
+
   return (
     <div className="space-y-4">
       <h3 className="text-base font-semibold">
         <span className="inline-flex items-center gap-1">
-          Endgame Performance
-          <InfoPopover ariaLabel="Endgame Performance info" testId="perf-section-info" side="top">
+          Endgame vs. Non-Endgame Games
+          <InfoPopover ariaLabel="Endgame vs. Non-Endgame Games info" testId="perf-section-info" side="top">
             Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not.
           </InfoPopover>
         </span>
@@ -56,17 +60,32 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
         <WDLChartRow
           data={data.endgame_wdl}
           label="Endgame games"
+          gameCountLabel={<>{endgamePct}% ({data.endgame_wdl.total}) games</>}
           testId="perf-wdl-endgame"
         />
         <WDLChartRow
           data={data.non_endgame_wdl}
           label="Non-endgame games"
+          gameCountLabel={<>{nonEndgamePct}% ({data.non_endgame_wdl.total}) games</>}
           testId="perf-wdl-non-endgame"
         />
       </div>
+    </div>
+  );
+}
 
-      {/* Gauge charts: Conversion, Recovery, Endgame Skill (D-04, D-05, D-06) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-4 mt-8 mb-6" data-testid="perf-gauges">
+/**
+ * Gauge charts for Conversion, Recovery, and Endgame Skill.
+ * Split from EndgamePerformanceSection for layout flexibility.
+ */
+export function EndgameGaugesSection({ data }: EndgamePerformanceSectionProps) {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-base font-semibold">
+        Conversion, Recovery, and Endgame Skill
+      </h3>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-4 mb-2" data-testid="perf-gauges">
 
         {/* Conversion gauge */}
         <div className="flex flex-col items-center gap-0">
