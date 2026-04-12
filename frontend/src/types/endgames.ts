@@ -127,10 +127,30 @@ export interface ScoreGapMaterialResponse {
   material_rows: MaterialRow[];
 }
 
+export interface ClockStatsRow {
+  time_control: string;       // "bullet" | "blitz" | "rapid" | "classical"
+  label: string;              // "Bullet" | "Blitz" | "Rapid" | "Classical"
+  total_endgame_games: number;
+  clock_games: number;
+  user_avg_pct: number | null;
+  user_avg_seconds: number | null;
+  opp_avg_pct: number | null;
+  opp_avg_seconds: number | null;
+  avg_clock_diff_seconds: number | null;
+  net_timeout_rate: number;
+}
+
+export interface ClockPressureResponse {
+  rows: ClockStatsRow[];
+  total_clock_games: number;
+  total_endgame_games: number;
+}
+
 export interface EndgameOverviewResponse {
   stats: EndgameStatsResponse;
   performance: EndgamePerformanceResponse;
   timeline: EndgameTimelineResponse;
   conv_recov_timeline: ConvRecovTimelineResponse;
   score_gap_material: ScoreGapMaterialResponse;  // NEW — Phase 53
+  clock_pressure: ClockPressureResponse;         // NEW — Phase 54
 }
