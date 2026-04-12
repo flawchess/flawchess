@@ -105,9 +105,32 @@ export interface ConvRecovTimelineResponse {
   window: number;
 }
 
+export type MaterialBucket = 'ahead' | 'equal' | 'behind';
+export type Verdict = 'good' | 'ok' | 'bad';
+
+export interface MaterialRow {
+  bucket: MaterialBucket;
+  label: string;
+  games: number;
+  win_pct: number;
+  draw_pct: number;
+  loss_pct: number;
+  score: number;
+  verdict: Verdict;
+}
+
+export interface ScoreGapMaterialResponse {
+  endgame_score: number;
+  non_endgame_score: number;
+  score_difference: number;
+  overall_score: number;
+  material_rows: MaterialRow[];
+}
+
 export interface EndgameOverviewResponse {
   stats: EndgameStatsResponse;
   performance: EndgamePerformanceResponse;
   timeline: EndgameTimelineResponse;
   conv_recov_timeline: ConvRecovTimelineResponse;
+  score_gap_material: ScoreGapMaterialResponse;  // NEW — Phase 53
 }
