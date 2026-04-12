@@ -60,6 +60,7 @@ async def fetch_lichess_games(
         "moves": True,
         "tags": True,
         "opening": True,
+        "clocks": True,  # include %clk annotations for time-per-move data
         "evals": True,  # include %eval annotations when prior computer analysis exists
         "accuracy": True,  # include per-player accuracy % for analyzed games
     }
