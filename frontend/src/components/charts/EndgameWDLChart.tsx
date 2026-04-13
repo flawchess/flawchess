@@ -1,5 +1,13 @@
+import { Link } from 'react-router-dom';
+import { FolderOpen } from 'lucide-react';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
+import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
+import { Tooltip } from '@/components/ui/tooltip';
+import {
+  MIN_GAMES_FOR_RELIABLE_STATS,
+  UNRELIABLE_OPACITY,
+} from '@/lib/theme';
 import type { EndgameCategoryStats, EndgameClass } from '@/types/endgames';
 
 interface EndgameWDLChartProps {
@@ -26,6 +34,7 @@ const ENDGAME_TYPE_DESCRIPTIONS: Record<EndgameClass, string> = {
   pawnless: 'Endgames with no pawns on the board — only kings and pieces.',
 };
 
+// Mobile (<lg): stacked full-width WDL bar via WDLChartRow.
 function EndgameCategoryRow({ cat, maxTotal, onCategorySelect }: {
   cat: EndgameCategoryStats & { slug: string };
   maxTotal: number;
@@ -52,6 +61,72 @@ function EndgameCategoryRow({ cat, maxTotal, onCategorySelect }: {
         maxTotal={maxTotal}
         testId={`endgame-category-${cat.slug}-row`}
       />
+    </div>
+  );
+}
+
+// Desktop (lg+): single-row layout with label | games link | constrained MiniWDLBar.
+// Mirrors the Openings Stats (MostPlayedOpeningsTable) column pattern so WDL bars
+// don't stretch the full viewport width.
+function EndgameCategoryRowDesktop({ cat, maxTotal, onCategorySelect, isEvenRow }: {
+  cat: EndgameCategoryStats & { slug: string };
+  maxTotal: number;
+  onCategorySelect: (category: EndgameClass) => void;
+  isEvenRow: boolean;
+}) {
+  const isUnreliable = cat.total < MIN_GAMES_FOR_RELIABLE_STATS;
+
+  return (
+    <div
+      className={`grid grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-3 items-center rounded px-2 py-1.5 ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
+      data-testid={`endgame-category-${cat.slug}-row`}
+    >
+      {/* Column 1: label + info popover */}
+      <span className="inline-flex items-center gap-1 min-w-0">
+        <span className="text-sm font-medium truncate">{cat.label}</span>
+        <InfoPopover
+          ariaLabel={`${cat.label} endgame type info`}
+          testId={`endgame-type-info-${cat.slug}`}
+          side="top"
+        >
+          {ENDGAME_TYPE_DESCRIPTIONS[cat.endgame_class]}
+        </InfoPopover>
+      </span>
+
+      {/* Column 2: games link */}
+      <Tooltip content={`View ${cat.label} endgame games`}>
+        <Link
+          to="/endgames/games"
+          onClick={() => onCategorySelect(cat.endgame_class)}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap"
+          aria-label={`View ${cat.label} endgame games`}
+          data-testid={`endgame-games-link-${cat.slug}`}
+        >
+          <span className="tabular-nums">{cat.total} games{isUnreliable && ' (low)'}</span>
+          <FolderOpen className="h-3.5 w-3.5" />
+        </Link>
+      </Tooltip>
+
+      {/* Column 3: MiniWDL bar + proportional frequency bar below */}
+      <div style={isUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}>
+        {cat.total === 0 ? (
+          <div className="h-5 rounded bg-muted" />
+        ) : (
+          <MiniWDLBar win_pct={cat.win_pct} draw_pct={cat.draw_pct} loss_pct={cat.loss_pct} />
+        )}
+        {maxTotal > 0 && (
+          <div className="h-2 mt-0.5">
+            <div
+              className="h-full rounded-sm"
+              style={{
+                width: `${(cat.total / maxTotal) * 100}%`,
+                border: '1px solid oklch(0.6 0 0)',
+                backgroundColor: 'transparent',
+              }}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -87,8 +162,21 @@ export function EndgameWDLChart({
         </span>
       </h2>
 
-      {/* Per-category rows with game links */}
-      <div className="space-y-2">
+      {/* Desktop (lg+): single-row grid layout matching Openings Stats pattern */}
+      <div className="hidden lg:block">
+        {data.map((cat, i) => (
+          <div key={cat.endgame_class} data-testid={`endgame-category-${cat.slug}`}>
+            <EndgameCategoryRowDesktop
+              cat={cat}
+              maxTotal={maxTotal}
+              onCategorySelect={onCategorySelect}
+              isEvenRow={i % 2 === 0}
+            />
+          </div>
+        ))}
+      </div>
+      {/* Mobile (<lg): stacked full-width WDL bars */}
+      <div className="lg:hidden space-y-2">
         {data.map((cat) => (
           <EndgameCategoryRow
             key={cat.endgame_class}

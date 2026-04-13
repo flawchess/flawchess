@@ -7,8 +7,9 @@
 import { EndgameGauge, type GaugeZone } from '@/components/charts/EndgameGauge';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
+import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { GAUGE_DANGER, GAUGE_WARNING, GAUGE_SUCCESS } from '@/lib/theme';
-import type { EndgamePerformanceResponse } from '@/types/endgames';
+import type { EndgamePerformanceResponse, EndgameWDLSummary } from '@/types/endgames';
 
 // Material advantage/deficit threshold in pawn points (backend uses 100 centipawns)
 export const MATERIAL_ADVANTAGE_POINTS = 1;
@@ -39,6 +40,37 @@ interface EndgamePerformanceSectionProps {
   data: EndgamePerformanceResponse;
 }
 
+// Desktop-only single-row layout: label | games count | constrained MiniWDLBar.
+// Matches the Openings Stats (MostPlayedOpeningsTable) column pattern.
+function PerfWDLDesktopRow({
+  label,
+  pct,
+  data,
+  testId,
+}: {
+  label: string;
+  pct: string;
+  data: EndgameWDLSummary;
+  testId: string;
+}) {
+  return (
+    <div
+      className="grid grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-3 items-center py-1.5"
+      data-testid={testId}
+    >
+      <span className="text-sm font-medium truncate">{label}</span>
+      <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+        {pct}% ({data.total}) games
+      </span>
+      {data.total === 0 ? (
+        <div className="h-5 rounded bg-muted" />
+      ) : (
+        <MiniWDLBar win_pct={data.win_pct} draw_pct={data.draw_pct} loss_pct={data.loss_pct} />
+      )}
+    </div>
+  );
+}
+
 export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionProps) {
   const totalGames = data.endgame_wdl.total + data.non_endgame_wdl.total;
   const endgamePct = totalGames > 0 ? (data.endgame_wdl.total / totalGames * 100).toFixed(1) : '0.0';
@@ -56,7 +88,23 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
       </h3>
 
       {/* WDL comparison bars (D-03) */}
-      <div className="space-y-3">
+      {/* Desktop (lg+): label | games count | constrained WDL bar on a single row */}
+      <div className="hidden lg:block">
+        <PerfWDLDesktopRow
+          label="Endgame games"
+          pct={endgamePct}
+          data={data.endgame_wdl}
+          testId="perf-wdl-endgame"
+        />
+        <PerfWDLDesktopRow
+          label="Non-endgame games"
+          pct={nonEndgamePct}
+          data={data.non_endgame_wdl}
+          testId="perf-wdl-non-endgame"
+        />
+      </div>
+      {/* Mobile (<lg): stacked full-width WDL bars below headers */}
+      <div className="lg:hidden space-y-3">
         <WDLChartRow
           data={data.endgame_wdl}
           label="Endgame games"
