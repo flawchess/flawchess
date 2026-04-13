@@ -28,10 +28,6 @@ interface EndgameScoreGapSectionProps {
 }
 
 export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
-  const diffPositive = data.score_difference >= 0;
-  const diffFormatted =
-    (diffPositive ? '+' : '') + data.score_difference.toFixed(2);
-
   const overallFormatted = data.overall_score.toFixed(2);
 
   return (
@@ -39,14 +35,13 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
       {/* Section header */}
       <h3 className="text-base font-semibold">
         <span className="inline-flex items-center gap-1">
-          Endgame Score Gap &amp; Material Breakdown
+          Endgame Material Breakdown
           <InfoPopover
-            ariaLabel="Score Gap info"
-            testId="score-gap-section-info"
+            ariaLabel="Material Breakdown info"
+            testId="material-breakdown-section-info"
             side="top"
           >
-            Compares your endgame score (wins + half draws) with your non-endgame
-            score. The material table shows how your performance varies based on
+            The material table shows how your performance varies based on
             whether you entered endgames with a material advantage (Conversion),
             roughly even material (Even), or a deficit (Recovery). Conversion
             and Recovery require the imbalance to persist 4 plies into the
@@ -59,29 +54,6 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
           </InfoPopover>
         </span>
       </h3>
-
-      {/* Score difference display */}
-      <div
-        className="flex flex-col gap-1 rounded-md bg-muted/30 px-3 py-2"
-        data-testid="score-gap-difference"
-      >
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Endgame Score Difference</span>
-          <span
-            className={
-              diffPositive
-                ? 'text-green-500 font-semibold text-base'
-                : 'text-red-500 font-semibold text-base'
-            }
-          >
-            {diffFormatted}
-          </span>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Endgame: {data.endgame_score.toFixed(2)} | Non-endgame:{' '}
-          {data.non_endgame_score.toFixed(2)}
-        </p>
-      </div>
 
       {/* Material-stratified WDL table */}
       <div className="overflow-x-auto">
