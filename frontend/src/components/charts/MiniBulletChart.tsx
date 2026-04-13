@@ -1,39 +1,39 @@
 /**
  * Compact diverging bar chart for showing a signed score difference relative
- * to a baseline. Three muted background zones (poor/warning/good) convey the
+ * to a baseline. Three muted background zones (poor/neutral/good) convey the
  * verdict thresholds; a solid overlay bar fills from 0 to the value in the
  * color of the zone it lands in.
  *
  * Used in the Material Breakdown table to visualize each bucket's score
- * relative to the user's overall score. The warning zone is configurable per
- * row so expectations can shift with material context (e.g. when ahead in
- * material, the warning band sits higher than when behind).
+ * relative to the user's overall score. The neutral zone is configurable per
+ * row so expectations can shift with material context (e.g. when converting
+ * material, the neutral band sits higher than when recovering).
  */
 
-import { GAUGE_DANGER, GAUGE_WARNING, GAUGE_SUCCESS } from '@/lib/theme';
+import { GAUGE_DANGER, GAUGE_NEUTRAL, GAUGE_SUCCESS } from '@/lib/theme';
 
 // Bar domain: values beyond +/- DOMAIN are clamped to the edge.
-// 0.30 covers realistic score-diff ranges without making typical values look tiny.
-const DOMAIN = 0.30;
+// 0.40 covers realistic score-diff ranges without making typical values look tiny.
+const DOMAIN = 0.40;
 
-// Default warning zone: -0.10 to 0 (slight underperformance vs overall).
-const DEFAULT_WARNING_MIN = -0.10;
-const DEFAULT_WARNING_MAX = 0;
+// Default neutral zone: -0.10 to 0 (slight underperformance vs overall).
+const DEFAULT_NEUTRAL_MIN = -0.10;
+const DEFAULT_NEUTRAL_MAX = 0;
 
 // Background zone tint — muted but visible enough to read the zones clearly.
 const ZONE_OPACITY = 0.35;
 
 // Tolerance below which two zone boundaries are treated as coincident
-// (used to suppress a redundant tick where a warning boundary meets zero).
+// (used to suppress a redundant tick where a neutral boundary meets zero).
 const BOUNDARY_EPSILON = 1e-6;
 
 interface MiniBulletChartProps {
   /** Signed difference to visualize (e.g. row_score - overall_score). */
   value: number;
-  /** Lower bound of the warning zone. Default -0.10. */
-  warningMin?: number;
-  /** Upper bound of the warning zone. Default 0. */
-  warningMax?: number;
+  /** Lower bound of the neutral zone. Default -0.10. */
+  neutralMin?: number;
+  /** Upper bound of the neutral zone. Default 0. */
+  neutralMax?: number;
   /** Accessible label. Falls back to the signed numeric value. */
   ariaLabel?: string;
   /** Height class for the zone background, default h-5 (matches MiniWDLBar). */
@@ -49,8 +49,8 @@ function formatSigned(value: number): string {
 
 export function MiniBulletChart({
   value,
-  warningMin = DEFAULT_WARNING_MIN,
-  warningMax = DEFAULT_WARNING_MAX,
+  neutralMin = DEFAULT_NEUTRAL_MIN,
+  neutralMax = DEFAULT_NEUTRAL_MAX,
   ariaLabel,
   heightClass = 'h-5',
   valueHeightClass = 'h-2',
@@ -60,16 +60,16 @@ export function MiniBulletChart({
   // Map domain value to percent position (0% = left edge, 100% = right edge).
   const toPct = (v: number): number => ((v + DOMAIN) / (2 * DOMAIN)) * 100;
   const zeroPct = toPct(0);
-  const warningMinPct = toPct(Math.max(-DOMAIN, warningMin));
-  const warningMaxPct = toPct(Math.min(DOMAIN, warningMax));
+  const neutralMinPct = toPct(Math.max(-DOMAIN, neutralMin));
+  const neutralMaxPct = toPct(Math.min(DOMAIN, neutralMax));
   const markerPct = toPct(clamped);
 
   // Fill color follows the zone the raw (unclamped) value falls into.
   let fillColor: string;
-  if (value >= warningMax) {
+  if (value >= neutralMax) {
     fillColor = GAUGE_SUCCESS;
-  } else if (value >= warningMin) {
-    fillColor = GAUGE_WARNING;
+  } else if (value >= neutralMin) {
+    fillColor = GAUGE_NEUTRAL;
   } else {
     fillColor = GAUGE_DANGER;
   }
@@ -80,8 +80,8 @@ export function MiniBulletChart({
   const barWidth = Math.max(0, barRight - barLeft);
 
   // Suppress ticks that coincide with the zero reference line.
-  const showWarningMinTick = Math.abs(warningMin) > BOUNDARY_EPSILON;
-  const showWarningMaxTick = Math.abs(warningMax) > BOUNDARY_EPSILON;
+  const showNeutralMinTick = Math.abs(neutralMin) > BOUNDARY_EPSILON;
+  const showNeutralMaxTick = Math.abs(neutralMax) > BOUNDARY_EPSILON;
 
   return (
     <div
@@ -90,12 +90,12 @@ export function MiniBulletChart({
       aria-label={ariaLabel ?? `Score difference ${formatSigned(value)}`}
       data-testid="mini-bullet-chart"
     >
-      {/* Background zones: poor | warning | good */}
+      {/* Background zones: poor | neutral | good */}
       <div className="absolute inset-0 flex">
         <div
           className="h-full"
           style={{
-            width: `${warningMinPct}%`,
+            width: `${neutralMinPct}%`,
             backgroundColor: GAUGE_DANGER,
             opacity: ZONE_OPACITY,
           }}
@@ -103,15 +103,15 @@ export function MiniBulletChart({
         <div
           className="h-full"
           style={{
-            width: `${warningMaxPct - warningMinPct}%`,
-            backgroundColor: GAUGE_WARNING,
+            width: `${neutralMaxPct - neutralMinPct}%`,
+            backgroundColor: GAUGE_NEUTRAL,
             opacity: ZONE_OPACITY,
           }}
         />
         <div
           className="h-full"
           style={{
-            width: `${100 - warningMaxPct}%`,
+            width: `${100 - neutralMaxPct}%`,
             backgroundColor: GAUGE_SUCCESS,
             opacity: ZONE_OPACITY,
           }}
@@ -122,17 +122,17 @@ export function MiniBulletChart({
         className="absolute top-0 bottom-0 w-px bg-foreground/50"
         style={{ left: `${zeroPct}%` }}
       />
-      {/* Warning zone boundary ticks — subtle, only shown when distinct from zero */}
-      {showWarningMinTick && (
+      {/* Neutral zone boundary ticks — subtle, only shown when distinct from zero */}
+      {showNeutralMinTick && (
         <div
           className="absolute top-0 bottom-0 w-px bg-gray-700"
-          style={{ left: `${warningMinPct}%` }}
+          style={{ left: `${neutralMinPct}%` }}
         />
       )}
-      {showWarningMaxTick && (
+      {showNeutralMaxTick && (
         <div
           className="absolute top-0 bottom-0 w-px bg-gray-700"
-          style={{ left: `${warningMaxPct}%` }}
+          style={{ left: `${neutralMaxPct}%` }}
         />
       )}
       {/* Value fill bar — thinner than zones, vertically centered */}

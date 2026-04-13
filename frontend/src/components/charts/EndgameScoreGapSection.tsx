@@ -13,13 +13,13 @@ import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import type { MaterialBucket, ScoreGapMaterialResponse } from '@/types/endgames';
 
-// Per-bucket warning zones for the bullet chart. Overall score is a
+// Per-bucket neutral zones for the bullet chart. Overall score is a
 // weighted average across material situations, so the "expected" diff is not
 // zero for every bucket: when converting, users should outperform overall;
 // when recovering, underperforming overall is expected. Each zone is 0.10 wide.
-const WARNING_ZONES: Record<MaterialBucket, { min: number; max: number }> = {
+const NEUTRAL_ZONES: Record<MaterialBucket, { min: number; max: number }> = {
   conversion: { min: 0.05, max: 0.15 },  // converting advantage
-  even: { min: -0.10, max: 0.00 },       // even material: warning is symmetric around 0
+  even: { min: -0.10, max: 0.00 },       // even material: zone sits symmetric around 0
   recovery: { min: -0.25, max: -0.15 },  // recovering from deficit
 };
 
@@ -107,7 +107,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               const diff = row.score - data.overall_score;
               const diffLabel =
                 (diff >= 0 ? '+' : '') + diff.toFixed(2);
-              const warningZone = WARNING_ZONES[row.bucket];
+              const neutralZone = NEUTRAL_ZONES[row.bucket];
               return (
                 <tr
                   key={row.bucket}
@@ -131,8 +131,8 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   <td className="py-1.5 px-2 min-w-[140px]">
                     <MiniBulletChart
                       value={diff}
-                      warningMin={warningZone.min}
-                      warningMax={warningZone.max}
+                      neutralMin={neutralZone.min}
+                      neutralMax={neutralZone.max}
                       ariaLabel={`${row.label}: ${diffLabel} vs overall`}
                     />
                   </td>
