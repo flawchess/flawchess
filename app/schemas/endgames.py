@@ -185,19 +185,21 @@ class ConvRecovTimelineResponse(BaseModel):
     window: int
 
 
-MaterialBucket = Literal["ahead", "equal", "behind"]
+MaterialBucket = Literal["conversion", "even", "recovery"]
 
 
 class MaterialRow(BaseModel):
     """One row in the material-stratified WDL table (section 2 of endgame-analysis-v2.md).
 
     Represents the user's performance when entering endgames with a specific
-    material imbalance: ahead (>= +1 pawn), equal, or behind (<= -1 pawn).
-    Bucket assignment uses user_material_imbalance only — no persistence check.
+    material imbalance that persists 4 plies into the endgame:
+    conversion (>= +1 pawn preserved), even, or recovery (<= -1 pawn preserved).
+    Games where the imbalance does not persist fall into the "even" bucket to
+    filter out transient noise from piece trades at the endgame boundary.
     """
 
     bucket: MaterialBucket
-    label: str           # "Ahead (\u2265 +1)" | "Equal" | "Behind (\u2264 \u22121)"
+    label: str           # "Conversion (\u2265 +1)" | "Even" | "Recovery (\u2264 \u22121)"
     games: int
     win_pct: float       # 0-100
     draw_pct: float      # 0-100
@@ -212,14 +214,14 @@ class ScoreGapMaterialResponse(BaseModel):
     non_endgame_score: user's score in games that never reached an endgame.
     score_difference: endgame_score - non_endgame_score (signed, can be negative).
     overall_score: weighted combination across all games.
-    material_rows: 3-row table — ahead / equal / behind — always present.
+    material_rows: 3-row table — conversion / even / recovery — always present.
     """
 
     endgame_score: float        # 0.0-1.0
     non_endgame_score: float    # 0.0-1.0
     score_difference: float     # endgame_score - non_endgame_score (signed)
     overall_score: float        # user's overall score across ALL games
-    material_rows: list[MaterialRow]  # 3 rows: ahead / equal / behind
+    material_rows: list[MaterialRow]  # 3 rows: conversion / even / recovery
 
 
 class ClockStatsRow(BaseModel):

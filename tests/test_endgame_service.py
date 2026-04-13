@@ -928,38 +928,38 @@ class TestScoreGapMaterial:
 
     # --- _compute_score_gap_material tests ---
 
-    def test_score_gap_material_ahead_bucket(self):
-        """Entry row with imbalance=150 goes into 'ahead' bucket."""
+    def test_score_gap_material_conversion_bucket(self):
+        """Entry row with imbalance=150 preserved goes into 'conversion' bucket."""
         # entry_rows: (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after)
         entry_rows = [(1, 1, "1-0", "white", 150, 150)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        ahead = result.material_rows[0]
-        assert ahead.bucket == "ahead"
-        assert ahead.games == 1
-        assert ahead.win_pct == 100.0
+        conversion = result.material_rows[0]
+        assert conversion.bucket == "conversion"
+        assert conversion.games == 1
+        assert conversion.win_pct == 100.0
 
-    def test_score_gap_material_equal_bucket(self):
-        """Entry row with imbalance=50 goes into 'equal' bucket."""
+    def test_score_gap_material_even_bucket(self):
+        """Entry row with imbalance=50 goes into 'even' bucket."""
         entry_rows = [(1, 1, "1-0", "white", 50, 50)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        equal = result.material_rows[1]
-        assert equal.bucket == "equal"
-        assert equal.games == 1
+        even = result.material_rows[1]
+        assert even.bucket == "even"
+        assert even.games == 1
 
-    def test_score_gap_material_behind_bucket(self):
-        """Entry row with imbalance=-200 goes into 'behind' bucket."""
+    def test_score_gap_material_recovery_bucket(self):
+        """Entry row with imbalance=-200 preserved goes into 'recovery' bucket."""
         entry_rows = [(1, 1, "0-1", "white", -200, -200)]
         endgame_wdl = self._make_wdl(0, 0, 1)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        behind = result.material_rows[2]
-        assert behind.bucket == "behind"
-        assert behind.games == 1
-        assert behind.loss_pct == 100.0
+        recovery = result.material_rows[2]
+        assert recovery.bucket == "recovery"
+        assert recovery.games == 1
+        assert recovery.loss_pct == 100.0
 
     def test_score_gap_material_deduplication(self):
         """Two rows with same game_id but different endgame_class -> only 1 game in material table."""
@@ -970,9 +970,9 @@ class TestScoreGapMaterial:
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        ahead = result.material_rows[0]
-        assert ahead.bucket == "ahead"
-        assert ahead.games == 1  # not 2
+        conversion = result.material_rows[0]
+        assert conversion.bucket == "conversion"
+        assert conversion.games == 1  # not 2
 
     def test_score_gap_material_none_imbalance_excluded(self):
         """Entry row with user_material_imbalance=None is excluded from all buckets."""
@@ -1009,45 +1009,64 @@ class TestScoreGapMaterial:
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
         assert result.overall_score == pytest.approx(0.55, abs=1e-9)
 
-    def test_score_gap_material_no_persistence_check(self):
-        """Material bucket uses user_material_imbalance only — no persistence check.
+    def test_score_gap_material_persistence_required_for_conversion(self):
+        """Material bucket applies 4-ply persistence rule matching conversion/recovery.
 
-        A row with imbalance=150 (ahead threshold) but imbalance_after=-50 should
-        STILL go into the 'ahead' bucket (unlike conversion/recovery which require
-        both imbalance and imbalance_after to exceed the threshold).
+        A row with imbalance=150 (advantage threshold) but imbalance_after=-50
+        falls into the 'even' bucket because the advantage did not persist.
+        This filters transient imbalances from trades at the endgame boundary.
         """
         entry_rows = [(1, 1, "1-0", "white", 150, -50)]  # imbalance_after negative
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        ahead = result.material_rows[0]
-        assert ahead.bucket == "ahead"
-        assert ahead.games == 1  # counted despite imbalance_after < threshold
+        assert result.material_rows[0].games == 0  # conversion: not counted
+        assert result.material_rows[1].games == 1  # even: counted here
+        assert result.material_rows[1].bucket == "even"
+
+    def test_score_gap_material_persistence_required_for_recovery(self):
+        """Transient deficit that does not persist falls into 'even' bucket."""
+        entry_rows = [(1, 1, "0-1", "white", -150, 50)]  # imbalance_after positive
+        endgame_wdl = self._make_wdl(0, 0, 1)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert result.material_rows[2].games == 0  # recovery: not counted
+        assert result.material_rows[1].games == 1  # even: counted here
+        assert result.material_rows[1].bucket == "even"
+
+    def test_score_gap_material_persistence_none_after_falls_to_even(self):
+        """imbalance_after=None means persistence cannot be verified -> 'even' bucket."""
+        entry_rows = [(1, 1, "1-0", "white", 150, None)]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert result.material_rows[0].games == 0  # conversion: not counted
+        assert result.material_rows[1].games == 1  # even: counted here
 
     def test_score_gap_material_all_three_rows_always_present(self):
-        """All three material_rows (ahead, equal, behind) present even when games=0."""
+        """All three material_rows (conversion, even, recovery) present even when games=0."""
         endgame_wdl = self._make_wdl(0, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
         buckets = [r.bucket for r in result.material_rows]
-        assert buckets == ["ahead", "equal", "behind"]
+        assert buckets == ["conversion", "even", "recovery"]
 
-    def test_score_gap_material_boundary_ahead(self):
-        """Imbalance exactly == 100 -> 'ahead' bucket (>= 100)."""
+    def test_score_gap_material_boundary_conversion(self):
+        """Imbalance exactly == 100 (preserved) -> 'conversion' bucket (>= 100)."""
         entry_rows = [(1, 1, "1-0", "white", 100, 100)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        assert result.material_rows[0].bucket == "ahead"
+        assert result.material_rows[0].bucket == "conversion"
         assert result.material_rows[0].games == 1
 
-    def test_score_gap_material_boundary_behind(self):
-        """Imbalance exactly == -100 -> 'behind' bucket (<= -100)."""
+    def test_score_gap_material_boundary_recovery(self):
+        """Imbalance exactly == -100 (preserved) -> 'recovery' bucket (<= -100)."""
         entry_rows = [(1, 1, "0-1", "white", -100, -100)]
         endgame_wdl = self._make_wdl(0, 0, 1)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        assert result.material_rows[2].bucket == "behind"
+        assert result.material_rows[2].bucket == "recovery"
         assert result.material_rows[2].games == 1
 
 

@@ -490,9 +490,9 @@ def _wdl_to_score(wdl: EndgameWDLSummary) -> float:
 # Display labels for material buckets (section 2 of endgame-analysis-v2.md).
 # Unicode: \u2265 = >=, \u2264 = <=, \u2212 = minus sign
 _MATERIAL_BUCKET_LABELS: dict[MaterialBucket, str] = {
-    "ahead": "Ahead (\u2265 +1)",
-    "equal": "Equal",
-    "behind": "Behind (\u2264 \u22121)",
+    "conversion": "Conversion (\u2265 +1)",
+    "even": "Even",
+    "recovery": "Recovery (\u2264 \u22121)",
 }
 
 
@@ -531,10 +531,10 @@ def _compute_score_gap_material(
     # Deduplicate entry_rows by game_id — multi-class games appear multiple times
     # but should count as one game in the material breakdown (Phase 53).
     seen_game_ids: set[int] = set()
-    bucket_wins: dict[MaterialBucket, int] = {"ahead": 0, "equal": 0, "behind": 0}
-    bucket_draws: dict[MaterialBucket, int] = {"ahead": 0, "equal": 0, "behind": 0}
-    bucket_losses: dict[MaterialBucket, int] = {"ahead": 0, "equal": 0, "behind": 0}
-    bucket_games: dict[MaterialBucket, int] = {"ahead": 0, "equal": 0, "behind": 0}
+    bucket_wins: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
+    bucket_draws: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
+    bucket_losses: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
+    bucket_games: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
 
     for row in entry_rows:
         game_id: int = row[0]
@@ -546,15 +546,27 @@ def _compute_score_gap_material(
         if user_material_imbalance is None:
             continue
 
-        # Assign to bucket based on material imbalance at endgame entry.
-        # No persistence check — user_material_imbalance_after is NOT used here.
+        user_material_imbalance_after: int | None = row[5]
+
+        # Assign to bucket based on material imbalance at endgame entry PLUS
+        # 4-ply persistence — matches the conversion/recovery sequence rule so
+        # transient imbalances from trades at the endgame boundary fall into
+        # the "even" bucket rather than contaminating conversion/recovery.
         bucket: MaterialBucket
-        if user_material_imbalance >= _MATERIAL_ADVANTAGE_THRESHOLD:
-            bucket = "ahead"
-        elif user_material_imbalance <= -_MATERIAL_ADVANTAGE_THRESHOLD:
-            bucket = "behind"
+        if (
+            user_material_imbalance >= _MATERIAL_ADVANTAGE_THRESHOLD
+            and user_material_imbalance_after is not None
+            and user_material_imbalance_after >= _MATERIAL_ADVANTAGE_THRESHOLD
+        ):
+            bucket = "conversion"
+        elif (
+            user_material_imbalance <= -_MATERIAL_ADVANTAGE_THRESHOLD
+            and user_material_imbalance_after is not None
+            and user_material_imbalance_after <= -_MATERIAL_ADVANTAGE_THRESHOLD
+        ):
+            bucket = "recovery"
         else:
-            bucket = "equal"
+            bucket = "even"
 
         result: str = row[2]
         user_color: str = row[3]
@@ -568,9 +580,9 @@ def _compute_score_gap_material(
         else:
             bucket_losses[bucket] += 1
 
-    # Build MaterialRow for each bucket in fixed order: ahead, equal, behind.
+    # Build MaterialRow for each bucket in fixed order: conversion, even, recovery.
     material_rows: list[MaterialRow] = []
-    for bucket_key in ("ahead", "equal", "behind"):
+    for bucket_key in ("conversion", "even", "recovery"):
         b: MaterialBucket = bucket_key  # type: ignore[assignment]
         games = bucket_games[b]
         if games > 0:

@@ -285,7 +285,7 @@ class TestOverviewScoreGapMaterial:
         assert isinstance(sgm["material_rows"], list)
         assert len(sgm["material_rows"]) == 3
         buckets = [row["bucket"] for row in sgm["material_rows"]]
-        assert buckets == ["ahead", "equal", "behind"]
+        assert buckets == ["conversion", "even", "recovery"]
 
 
 class TestLegacyEndpointsRemoved:

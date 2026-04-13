@@ -105,7 +105,7 @@ export interface ConvRecovTimelineResponse {
   window: number;
 }
 
-export type MaterialBucket = 'ahead' | 'equal' | 'behind';
+export type MaterialBucket = 'conversion' | 'even' | 'recovery';
 
 export interface MaterialRow {
   bucket: MaterialBucket;

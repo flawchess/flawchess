@@ -1,8 +1,11 @@
 /**
  * Endgame Score Gap & Material Breakdown section:
  * - Signed score difference (endgame score vs non-endgame score), green >= 0, red < 0
- * - Material-stratified WDL table: Ahead / Equal / Behind, with a mini bullet
- *   chart comparing each bucket's score to the user's overall score.
+ * - Material-stratified WDL table: Conversion / Even / Recovery, with a mini
+ *   bullet chart comparing each bucket's score to the user's overall score.
+ *   Conversion/Recovery require the material imbalance to persist 4 plies into
+ *   the endgame to filter out transient trade noise — games that don't persist
+ *   fall into the Even bucket.
  */
 
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -12,12 +15,12 @@ import type { MaterialBucket, ScoreGapMaterialResponse } from '@/types/endgames'
 
 // Per-bucket warning zones for the bullet chart. Overall score is a
 // weighted average across material situations, so the "expected" diff is not
-// zero for every bucket: when ahead, users should outperform overall; when
-// behind, underperforming overall is expected. Each zone is 0.10 wide.
+// zero for every bucket: when converting, users should outperform overall;
+// when recovering, underperforming overall is expected. Each zone is 0.10 wide.
 const WARNING_ZONES: Record<MaterialBucket, { min: number; max: number }> = {
-  ahead: { min: 0.05, max: 0.15 },     // converting advantage
-  equal: { min: -0.10, max: -0.00 }, // equal material: warning is symmetric around 0
-  behind: { min: -0.25, max: -0.15 },   // recovering
+  conversion: { min: 0.05, max: 0.15 },  // converting advantage
+  even: { min: -0.10, max: 0.00 },       // even material: warning is symmetric around 0
+  recovery: { min: -0.25, max: -0.15 },  // recovering from deficit
 };
 
 interface EndgameScoreGapSectionProps {
@@ -44,11 +47,14 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
           >
             Compares your endgame score (wins + half draws) with your non-endgame
             score. The material table shows how your performance varies based on
-            whether you entered endgames with a material advantage, equal material,
-            or a deficit. The bar shows each bucket's score minus your overall
-            score, with warning zones calibrated per material context —
-            when ahead you're expected to outperform overall, when behind you're
-            expected to underperform, and when equal you should be near overall.
+            whether you entered endgames with a material advantage (Conversion),
+            roughly even material (Even), or a deficit (Recovery). Conversion
+            and Recovery require the imbalance to persist 4 plies into the
+            endgame — transient imbalances from piece trades fall into Even.
+            The bar shows each bucket's score minus your overall score, with
+            warning zones calibrated per material context: when converting
+            you're expected to outperform overall, when recovering you're
+            expected to underperform, and when even you should be near overall.
             Tick marks show the warning zone boundaries.
           </InfoPopover>
         </span>
