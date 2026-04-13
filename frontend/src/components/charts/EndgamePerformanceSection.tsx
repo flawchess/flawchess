@@ -139,7 +139,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
                     className="py-1.5 px-2 align-middle"
                     data-testid="score-gap-difference"
                   >
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col items-center gap-0.5">
                       <div className="text-xs tabular-nums text-muted-foreground whitespace-nowrap">
                         {scoreGap.endgame_score.toFixed(2)} −{' '}
                         {scoreGap.non_endgame_score.toFixed(2)} ={' '}
