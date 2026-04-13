@@ -175,20 +175,25 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
   if (data.rows.length === 0) return null;
 
   const sectionHeader = (
-    <h3 className="text-base font-semibold mb-3">
-      <span className="inline-flex items-center gap-1">
-        Time Pressure vs Performance
-        <InfoPopover ariaLabel="Time pressure chart info" testId="time-pressure-chart-info" side="top">
-          <div className="space-y-2">
-            <p>Compares how you perform under time pressure vs how your opponents perform.</p>
-            <p><strong>Blue line (My score):</strong> your average score when <em>you</em> had this much time remaining at endgame entry.</p>
-            <p><strong>Red line (Opponent&apos;s score):</strong> average score of your opponents when <em>they</em> had this much time remaining.</p>
-            <p>Where the lines diverge reveals who handles time pressure better. If your line drops faster as time decreases, you crack under pressure more than your opponents.</p>
-            <p className="text-xs text-muted-foreground">Dimmed dots indicate fewer than 10 games in that bucket.</p>
-          </div>
-        </InfoPopover>
-      </span>
-    </h3>
+    <div className="mb-3">
+      <h3 className="text-base font-semibold">
+        <span className="inline-flex items-center gap-1">
+          Time Pressure vs Performance
+          <InfoPopover ariaLabel="Time pressure chart info" testId="time-pressure-chart-info" side="top">
+            <div className="space-y-2">
+              <p>Compares how you perform under time pressure vs how your opponents perform.</p>
+              <p><strong>Blue line (My score):</strong> your average score when <em>you</em> had this much time remaining at endgame entry.</p>
+              <p><strong>Red line (Opponent&apos;s score):</strong> average score of your opponents when <em>they</em> had this much time remaining.</p>
+              <p>Where the lines diverge reveals who handles time pressure better. If your line drops faster as time decreases, you crack under pressure more than your opponents.</p>
+              <p className="text-xs text-muted-foreground">Dimmed dots indicate fewer than 10 games in that bucket.</p>
+            </div>
+          </InfoPopover>
+        </span>
+      </h3>
+      <p className="text-sm text-muted-foreground mt-1">
+        Does your score drop faster than your opponent&apos;s as the clock winds down?
+      </p>
+    </div>
   );
 
   // Single time control — render chart directly without tabs

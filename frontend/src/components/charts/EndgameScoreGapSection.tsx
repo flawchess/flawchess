@@ -34,27 +34,32 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
   return (
     <div className="space-y-4" data-testid="score-gap-section">
       {/* Section header */}
-      <h3 className="text-base font-semibold">
-        <span className="inline-flex items-center gap-1">
-          Endgame Material Breakdown
-          <InfoPopover
-            ariaLabel="Material Breakdown info"
-            testId="material-breakdown-section-info"
-            side="top"
-          >
-            The material table shows how your performance varies based on
-            whether you entered endgames with a material advantage (Conversion),
-            roughly even material (Even), or a deficit (Recovery). Conversion
-            and Recovery require the imbalance to persist 4 plies into the
-            endgame — transient imbalances from piece trades fall into Even.
-            The bar shows each bucket's score minus your overall score, with
-            warning zones calibrated per material context: when converting
-            you're expected to outperform overall, when recovering you're
-            expected to underperform, and when even you should be near overall.
-            Tick marks show the warning zone boundaries.
-          </InfoPopover>
-        </span>
-      </h3>
+      <div>
+        <h3 className="text-base font-semibold">
+          <span className="inline-flex items-center gap-1">
+            Endgame Material Breakdown
+            <InfoPopover
+              ariaLabel="Material Breakdown info"
+              testId="material-breakdown-section-info"
+              side="top"
+            >
+              The material table shows how your performance varies based on
+              whether you entered endgames with a material advantage (Conversion),
+              roughly even material (Even), or a deficit (Recovery). Conversion
+              and Recovery require the imbalance to persist 4 plies into the
+              endgame — transient imbalances from piece trades fall into Even.
+              The bar shows each bucket's score minus your overall score, with
+              warning zones calibrated per material context: when converting
+              you're expected to outperform overall, when recovering you're
+              expected to underperform, and when even you should be near overall.
+              Tick marks show the warning zone boundaries.
+            </InfoPopover>
+          </span>
+        </h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Your win rate when entering endgames up, even, or down in material.
+        </p>
+      </div>
 
       {/* Material-stratified WDL table */}
       <div className="overflow-x-auto">

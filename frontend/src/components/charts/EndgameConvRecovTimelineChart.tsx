@@ -72,26 +72,30 @@ export function EndgameConvRecovTimelineChart({ data }: EndgameConvRecovTimeline
 
   return (
     <div>
-      <h3 className="text-base font-semibold mb-3">
-        <span className="inline-flex items-center gap-1">
-          Conversion & Recovery Over Time
-          <InfoPopover ariaLabel="Conversion recovery chart info" testId="conv-recov-timeline-info" side="top">
-            <div className="space-y-2">
-              <p>
-                <strong>Conversion</strong>: rolling percentage of the last {data.window} endgame sequences
-                with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for
-                at least {PERSISTENCE_MOVES} moves) where you went on to win the game.
-              </p>
-              <p>
-                <strong>Recovery</strong>: rolling percentage of the last {data.window} endgame sequences
-                with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for
-                at least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game.
-              </p>
-            </div>
-          </InfoPopover>
-
-        </span>
-      </h3>
+      <div className="mb-3">
+        <h3 className="text-base font-semibold">
+          <span className="inline-flex items-center gap-1">
+            Conversion & Recovery Over Time
+            <InfoPopover ariaLabel="Conversion recovery chart info" testId="conv-recov-timeline-info" side="top">
+              <div className="space-y-2">
+                <p>
+                  <strong>Conversion</strong>: rolling percentage of the last {data.window} endgame sequences
+                  with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for
+                  at least {PERSISTENCE_MOVES} moves) where you went on to win the game.
+                </p>
+                <p>
+                  <strong>Recovery</strong>: rolling percentage of the last {data.window} endgame sequences
+                  with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for
+                  at least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game.
+                </p>
+              </div>
+            </InfoPopover>
+          </span>
+        </h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Rolling {data.window}-sequence trend — is your endgame play improving?
+        </p>
+      </div>
       <ChartContainer config={chartConfig} className="w-full h-72" data-testid="conv-recov-timeline-chart">
         <LineChart data={mergedData}>
           <CartesianGrid vertical={false} />

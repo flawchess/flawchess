@@ -82,14 +82,19 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
 
   return (
     <div className="space-y-4">
-      <h3 className="text-base font-semibold">
-        <span className="inline-flex items-center gap-1">
-          Games with vs without Endgame
-          <InfoPopover ariaLabel="Games with vs without Endgame info" testId="perf-section-info" side="top">
-            Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not. The Score Difference column shows the signed gap between your endgame score and non-endgame score (green = endgame stronger, red = endgame weaker, narrow grey band = near parity).
-          </InfoPopover>
-        </span>
-      </h3>
+      <div>
+        <h3 className="text-base font-semibold">
+          <span className="inline-flex items-center gap-1">
+            Games with vs without Endgame
+            <InfoPopover ariaLabel="Games with vs without Endgame info" testId="perf-section-info" side="top">
+              Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not. The Score Difference column shows the signed gap between your endgame score and non-endgame score (green = endgame stronger, red = endgame weaker, narrow grey band = near parity).
+            </InfoPopover>
+          </span>
+        </h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Do you perform better when games reach an endgame, or when they end earlier?
+        </p>
+      </div>
 
       <div className="overflow-x-auto">
         <table
@@ -182,9 +187,14 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
 export function EndgameGaugesSection({ data }: EndgameGaugesSectionProps) {
   return (
     <div className="space-y-4">
-      <h3 className="text-base font-semibold">
-        Conversion, Recovery, and Endgame Skill
-      </h3>
+      <div>
+        <h3 className="text-base font-semibold">
+          Conversion, Recovery, and Endgame Skill
+        </h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          How well you close out winning endgames and save losing ones.
+        </p>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-4 mb-2" data-testid="perf-gauges">
 

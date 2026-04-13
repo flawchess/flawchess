@@ -145,22 +145,27 @@ export function EndgameWDLChart({
 
   return (
     <div data-testid="endgame-wdl-chart">
-      <h2 className="text-lg font-medium mb-3">
-        <span className="inline-flex items-center gap-1">
-          Results by Endgame Type
-          <InfoPopover ariaLabel="Results by endgame type info" testId="endgame-chart-info" side="top">
-            <div className="space-y-2">
-              <p>
-                Shows your win, draw, and loss percentages for each endgame type, based on games
-            that included the endgame type. Note that a game can include more than one type of endgame.
-              </p>
-              <p>
-                Click the link icon to view matching games.
-              </p>
-            </div>
-          </InfoPopover>
-        </span>
-      </h2>
+      <div className="mb-3">
+        <h2 className="text-lg font-medium">
+          <span className="inline-flex items-center gap-1">
+            Results by Endgame Type
+            <InfoPopover ariaLabel="Results by endgame type info" testId="endgame-chart-info" side="top">
+              <div className="space-y-2">
+                <p>
+                  Shows your win, draw, and loss percentages for each endgame type, based on games
+              that included the endgame type. Note that a game can include more than one type of endgame.
+                </p>
+                <p>
+                  Click the link icon to view matching games.
+                </p>
+              </div>
+            </InfoPopover>
+          </span>
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Win/draw/loss rate for each endgame type — a game can count toward multiple types.
+        </p>
+      </div>
 
       {/* Desktop (lg+): single-row grid layout matching Openings Stats pattern */}
       <div className="hidden lg:block">
