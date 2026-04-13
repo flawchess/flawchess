@@ -29,6 +29,7 @@ interface EndgameScoreGapSectionProps {
 
 export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
   const overallFormatted = data.overall_score.toFixed(2);
+  const totalMaterialGames = data.material_rows.reduce((sum, r) => sum + r.games, 0);
 
   return (
     <div className="space-y-4" data-testid="score-gap-section">
@@ -87,6 +88,10 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               const diffLabel =
                 (diff >= 0 ? '+' : '') + diff.toFixed(2);
               const neutralZone = NEUTRAL_ZONES[row.bucket];
+              const pct =
+                totalMaterialGames > 0
+                  ? ((row.games / totalMaterialGames) * 100).toFixed(1)
+                  : '0.0';
               return (
                 <tr
                   key={row.bucket}
@@ -94,8 +99,8 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   data-testid={`material-row-${row.bucket}`}
                 >
                   <td className="py-1.5 pr-3 text-sm">{row.label}</td>
-                  <td className="py-1.5 px-2 text-right text-sm tabular-nums">
-                    {row.games.toLocaleString()}
+                  <td className="py-1.5 px-2 text-right text-sm tabular-nums whitespace-nowrap">
+                    {pct}% ({row.games.toLocaleString()})
                   </td>
                   <td className="py-1.5 px-2">
                     <MiniWDLBar
