@@ -1,18 +1,16 @@
 /**
  * Endgame Performance section (D-03 through D-07):
- * - Two side-by-side WDL comparison bars (endgame vs non-endgame)
+ * - Endgame vs Non-Endgame WDL comparison table (games, WDL, score, score diff)
  * - Three semicircle gauge charts (Conversion, Recovery, Endgame Skill) in a single row
  */
 
 import { EndgameGauge, type GaugeZone } from '@/components/charts/EndgameGauge';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { GAUGE_DANGER, GAUGE_WARNING, GAUGE_SUCCESS } from '@/lib/theme';
 import type {
   EndgamePerformanceResponse,
-  EndgameWDLSummary,
   ScoreGapMaterialResponse,
 } from '@/types/endgames';
 
@@ -50,41 +48,37 @@ interface EndgameGaugesSectionProps {
   data: EndgamePerformanceResponse;
 }
 
-// Desktop-only single-row layout: label | games count | constrained MiniWDLBar.
-// Matches the Openings Stats (MostPlayedOpeningsTable) column pattern.
-function PerfWDLDesktopRow({
-  label,
-  pct,
-  data,
-  testId,
-}: {
-  label: string;
-  pct: string;
-  data: EndgameWDLSummary;
-  testId: string;
-}) {
-  return (
-    <div
-      className="grid grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-3 items-center py-1.5"
-      data-testid={testId}
-    >
-      <span className="text-sm font-medium truncate">{label}</span>
-      <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-        {pct}% ({data.total}) games
-      </span>
-      {data.total === 0 ? (
-        <div className="h-5 rounded bg-muted" />
-      ) : (
-        <MiniWDLBar win_pct={data.win_pct} draw_pct={data.draw_pct} loss_pct={data.loss_pct} />
-      )}
-    </div>
-  );
-}
+// Neutral zone around zero for the endgame-vs-non-endgame score difference
+// bullet chart: ±0.05 marks near-parity between the two splits.
+const SCORE_DIFF_NEUTRAL_MIN = -0.05;
+const SCORE_DIFF_NEUTRAL_MAX = 0.05;
 
 export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformanceSectionProps) {
   const totalGames = data.endgame_wdl.total + data.non_endgame_wdl.total;
   const endgamePct = totalGames > 0 ? (data.endgame_wdl.total / totalGames * 100).toFixed(1) : '0.0';
   const nonEndgamePct = totalGames > 0 ? (data.non_endgame_wdl.total / totalGames * 100).toFixed(1) : '0.0';
+
+  const diffPositive = scoreGap ? scoreGap.score_difference >= 0 : false;
+  const diffFormatted = scoreGap
+    ? (diffPositive ? '+' : '') + scoreGap.score_difference.toFixed(2)
+    : '';
+
+  const rows = [
+    {
+      label: 'Yes',
+      pct: endgamePct,
+      wdl: data.endgame_wdl,
+      score: scoreGap?.endgame_score,
+      testId: 'perf-wdl-endgame',
+    },
+    {
+      label: 'No',
+      pct: nonEndgamePct,
+      wdl: data.non_endgame_wdl,
+      score: scoreGap?.non_endgame_score,
+      testId: 'perf-wdl-non-endgame',
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -92,84 +86,74 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
         <span className="inline-flex items-center gap-1">
           Games with vs without Endgame
           <InfoPopover ariaLabel="Games with vs without Endgame info" testId="perf-section-info" side="top">
-            Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not. The bar below shows the signed difference between your endgame score and non-endgame score (green = endgame stronger, red = endgame weaker, narrow grey band = near parity).
+            Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not. The Score Difference column shows the signed gap between your endgame score and non-endgame score (green = endgame stronger, red = endgame weaker, narrow grey band = near parity).
           </InfoPopover>
         </span>
       </h3>
 
-      {/* WDL comparison bars (D-03) */}
-      {/* Desktop (lg+): label | games count | constrained WDL bar on a single row */}
-      <div className="hidden lg:block">
-        <PerfWDLDesktopRow
-          label="Games with Endgame"
-          pct={endgamePct}
-          data={data.endgame_wdl}
-          testId="perf-wdl-endgame"
-        />
-        <PerfWDLDesktopRow
-          label="Games without Endgame"
-          pct={nonEndgamePct}
-          data={data.non_endgame_wdl}
-          testId="perf-wdl-non-endgame"
-        />
-      </div>
-      {/* Mobile (<lg): stacked full-width WDL bars below headers */}
-      <div className="lg:hidden space-y-3">
-        <WDLChartRow
-          data={data.endgame_wdl}
-          label="Games with Endgame"
-          gameCountLabel={<>{endgamePct}% ({data.endgame_wdl.total}) games</>}
-          testId="perf-wdl-endgame"
-        />
-        <WDLChartRow
-          data={data.non_endgame_wdl}
-          label="Games without Endgame"
-          gameCountLabel={<>{nonEndgamePct}% ({data.non_endgame_wdl.total}) games</>}
-          testId="perf-wdl-non-endgame"
-        />
-      </div>
-
-      {/* Score difference (relocated from EndgameScoreGapSection) — direct
-          endgame-vs-non-endgame comparison sits with the two WDL rows above. */}
-      {scoreGap && (() => {
-        const diffPositive = scoreGap.score_difference >= 0;
-        const diffFormatted = (diffPositive ? '+' : '') + scoreGap.score_difference.toFixed(2);
-        return (
-          <div data-testid="score-gap-difference">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(80px,160px)] lg:grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-3 items-center py-1.5">
-              <span className="text-sm font-medium truncate inline-flex items-center gap-1">
-                Endgame Score Difference
-                <InfoPopover
-                  ariaLabel="Endgame Score Difference info"
-                  testId="score-gap-diff-info"
-                  side="top"
+      <div className="overflow-x-auto">
+        <table
+          className="w-full min-w-[520px] text-sm sm:text-base"
+          data-testid="perf-wdl-table"
+        >
+          <thead>
+            <tr className="text-left text-xs text-muted-foreground border-b border-border">
+              <th className="py-1 pr-3 font-medium">Endgame</th>
+              <th className="py-1 px-2 font-medium text-right">Games</th>
+              <th className="py-1 px-2 font-medium">Win / Draw / Loss</th>
+              <th className="py-1 px-2 font-medium text-right">Score</th>
+              <th className="py-1 px-2 font-medium">Score Difference</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={row.label} data-testid={row.testId}>
+                <td className="py-1.5 pr-3 text-sm">{row.label}</td>
+                <td className="py-1.5 px-2 text-right text-sm tabular-nums whitespace-nowrap">
+                  {row.pct}% ({row.wdl.total.toLocaleString()})
+                </td>
+                <td className="py-1.5 px-2 min-w-[120px]">
+                  {row.wdl.total === 0 ? (
+                    <div className="h-5 rounded bg-muted" />
+                  ) : (
+                    <MiniWDLBar
+                      win_pct={row.wdl.win_pct}
+                      draw_pct={row.wdl.draw_pct}
+                      loss_pct={row.wdl.loss_pct}
+                    />
+                  )}
+                </td>
+                <td className="py-1.5 px-2 text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                  {row.score !== undefined ? row.score.toFixed(2) : '—'}
+                </td>
+                <td
+                  className="py-1.5 px-2 min-w-[140px]"
+                  data-testid={i === 0 ? 'score-gap-difference' : undefined}
                 >
-                  Signed difference between your endgame score (wins + half draws) and your non-endgame score. Positive = you score higher in endgames; negative = you score lower. The narrow grey band around zero marks near-parity.
-                </InfoPopover>
-              </span>
-              <span
-                className={
-                  (diffPositive
-                    ? 'text-green-500 font-semibold'
-                    : 'text-red-500 font-semibold') +
-                  ' tabular-nums whitespace-nowrap'
-                }
-              >
-                {diffFormatted}
-              </span>
-              <MiniBulletChart
-                value={scoreGap.score_difference}
-                neutralMin={-0.05}
-                neutralMax={0.05}
-                ariaLabel={`Endgame score difference: ${diffFormatted}`}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Endgame: {scoreGap.endgame_score.toFixed(2)} | Non-endgame: {scoreGap.non_endgame_score.toFixed(2)}
-            </p>
-          </div>
-        );
-      })()}
+                  {scoreGap && i === 0 && (
+                    <span
+                      className={
+                        (diffPositive ? 'text-green-500' : 'text-red-500') +
+                        ' font-semibold tabular-nums whitespace-nowrap'
+                      }
+                    >
+                      {diffFormatted}
+                    </span>
+                  )}
+                  {scoreGap && i === 1 && (
+                    <MiniBulletChart
+                      value={scoreGap.score_difference}
+                      neutralMin={SCORE_DIFF_NEUTRAL_MIN}
+                      neutralMax={SCORE_DIFF_NEUTRAL_MAX}
+                      ariaLabel={`Endgame score difference: ${diffFormatted}`}
+                    />
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
