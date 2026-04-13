@@ -1,14 +1,14 @@
 /**
- * Endgame Performance section (D-03 through D-07):
+ * Endgame Performance section:
  * - Endgame vs Non-Endgame WDL comparison table (games, WDL, score, score diff)
- * - Three semicircle gauge charts (Conversion, Recovery, Endgame Skill) in a single row
+ *
+ * Phase 59 removed the admin-only gauge charts (Conversion, Recovery, Endgame Skill);
+ * the associated EndgameGaugesSection and its gauge-zone constants were deleted.
  */
 
-import { EndgameGauge, type GaugeZone } from '@/components/charts/EndgameGauge';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
-import { GAUGE_DANGER, GAUGE_WARNING, GAUGE_SUCCESS } from '@/lib/theme';
 import type {
   EndgamePerformanceResponse,
   ScoreGapMaterialResponse,
@@ -20,32 +20,9 @@ export const MATERIAL_ADVANTAGE_POINTS = 1;
 // Persistence requirement in full moves (= 4 plies on the backend)
 export const PERSISTENCE_MOVES = 2;
 
-// Per-gauge zone definitions — thresholds differ per metric, colors from theme constants
-const CONVERSION_ZONES: GaugeZone[] = [
-  { from: 0,    to: 0.5,  color: GAUGE_DANGER },
-  { from: 0.5,  to: 0.7,  color: GAUGE_WARNING },
-  { from: 0.7,  to: 1.0,  color: GAUGE_SUCCESS },
-];
-
-const RECOVERY_ZONES: GaugeZone[] = [
-  { from: 0,    to: 0.15,  color: GAUGE_DANGER },
-  { from: 0.15,  to: 0.35, color: GAUGE_WARNING },
-  { from: 0.35, to: 1.0,  color: GAUGE_SUCCESS },
-];
-
-const ENDGAME_SKILL_ZONES: GaugeZone[] = [
-  { from: 0,    to: 0.4,  color: GAUGE_DANGER },
-  { from: 0.4,  to: 0.6,  color: GAUGE_WARNING },
-  { from: 0.6,  to: 1.0,  color: GAUGE_SUCCESS },
-];
-
 interface EndgamePerformanceSectionProps {
   data: EndgamePerformanceResponse;
   scoreGap?: ScoreGapMaterialResponse;
-}
-
-interface EndgameGaugesSectionProps {
-  data: EndgamePerformanceResponse;
 }
 
 // Neutral zone around zero for the endgame-vs-non-endgame score difference
@@ -245,72 +222,3 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
   );
 }
 
-/**
- * Gauge charts for Conversion, Recovery, and Endgame Skill.
- * Split from EndgamePerformanceSection for layout flexibility.
- */
-export function EndgameGaugesSection({ data }: EndgameGaugesSectionProps) {
-  return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-base font-semibold">
-          Conversion, Recovery, and Endgame Skill
-        </h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          How well you close out winning endgames and save losing ones.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-4 mb-2" data-testid="perf-gauges">
-
-        {/* Conversion gauge */}
-        <div className="flex flex-col items-center gap-0">
-          <div className="relative z-10 flex items-center gap-1 text-sm text-foreground text-center">
-            <span>Conversion</span>
-            <InfoPopover ariaLabel="Conversion info" testId="gauge-conversion-info" side="top">
-              Percentage of endgame sequences with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at least {PERSISTENCE_MOVES} moves) where you went on to win the game. Measures how well you close out winning endgames.
-            </InfoPopover>
-          </div>
-          <EndgameGauge
-            value={data.aggregate_conversion_pct}
-            label="Conversion"
-            zones={CONVERSION_ZONES}
-          />
-          <span className="-mt-1 text-xs text-muted-foreground">({data.aggregate_conversion_wins} of {data.aggregate_conversion_games} sequences)</span>
-        </div>
-
-        {/* Recovery gauge */}
-        <div className="flex flex-col items-center gap-0">
-          <div className="relative z-10 flex items-center gap-1 text-sm text-foreground text-center">
-            <span>Recovery</span>
-            <InfoPopover ariaLabel="Recovery info" testId="gauge-recovery-info" side="top">
-              Percentage of endgame sequences with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game. Measures how well you defend losing endgames.
-            </InfoPopover>
-          </div>
-          <EndgameGauge
-            value={data.aggregate_recovery_pct}
-            label="Recovery"
-            zones={RECOVERY_ZONES}
-          />
-          <span className="-mt-1 text-xs text-muted-foreground">({data.aggregate_recovery_saves} of {data.aggregate_recovery_games} sequences)</span>
-        </div>
-
-        {/* Endgame Skill gauge */}
-        <div className="flex flex-col items-center gap-0">
-          <div className="relative z-10 flex items-center gap-1 text-sm text-foreground text-center">
-            <span>Endgame Skill</span>
-            <InfoPopover ariaLabel="Endgame Skill info" testId="gauge-endgame-skill-info" side="top">
-              A weighted average of your conversion rate (70%) and recovery rate (30%). Measures overall endgame proficiency.
-            </InfoPopover>
-          </div>
-          <EndgameGauge
-            value={data.endgame_skill}
-            label="Endgame Skill"
-            zones={ENDGAME_SKILL_ZONES}
-          />
-        </div>
-
-      </div>
-    </div>
-  );
-}
