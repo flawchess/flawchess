@@ -136,7 +136,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
                 {i === 0 && scoreGap && (
                   <td
                     rowSpan={2}
-                    className="py-1.5 px-2 align-middle"
+                    className="py-1.5 px-2 align-top"
                     data-testid="score-gap-difference"
                   >
                     <div className="flex flex-col items-center gap-0.5">
