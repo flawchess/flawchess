@@ -157,7 +157,6 @@ class TestOverviewEmptyUser:
         assert "stats" in data
         assert "performance" in data
         assert "timeline" in data
-        assert "conv_recov_timeline" in data
 
     @pytest.mark.asyncio
     async def test_overview_empty_user_stats_shape(self, auth_headers: dict[str, str]) -> None:
@@ -191,7 +190,7 @@ class TestOverviewEmptyUser:
 
     @pytest.mark.asyncio
     async def test_overview_default_window_is_50(self, auth_headers: dict[str, str]) -> None:
-        """timeline.window and conv_recov_timeline.window default to 50."""
+        """timeline.window defaults to 50."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -199,7 +198,6 @@ class TestOverviewEmptyUser:
 
         data = resp.json()
         assert data["timeline"]["window"] == 50
-        assert data["conv_recov_timeline"]["window"] == 50
 
 
 class TestOverviewComposesAllPayloads:
@@ -250,16 +248,12 @@ class TestOverviewComposesAllPayloads:
 
         assert resp.status_code == 200
         data = resp.json()
-        # All four sub-payloads present
+        # All sub-payloads present
         assert "stats" in data
         assert "performance" in data
         assert "timeline" in data
-        assert "conv_recov_timeline" in data
         # per_type is a dict (may be empty for fresh user with no games, but must be a dict)
         assert isinstance(data["timeline"]["per_type"], dict)
-        # conv_recov_timeline has conversion and recovery lists
-        assert isinstance(data["conv_recov_timeline"]["conversion"], list)
-        assert isinstance(data["conv_recov_timeline"]["recovery"], list)
 
 
 class TestOverviewScoreGapMaterial:
@@ -380,4 +374,3 @@ class TestGamesEndpointStillWorks:
         assert resp.status_code == 200
         data = resp.json()
         assert data["timeline"]["window"] == 25
-        assert data["conv_recov_timeline"]["window"] == 25

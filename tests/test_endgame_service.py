@@ -428,12 +428,7 @@ class TestGetEndgamePerformance:
 
         assert result.endgame_wdl.total == 0
         assert result.non_endgame_wdl.total == 0
-        assert result.overall_win_rate == 0.0
         assert result.endgame_win_rate == 0.0
-        assert result.relative_strength == 0.0
-        assert result.aggregate_conversion_pct == 0.0
-        assert result.aggregate_recovery_pct == 0.0
-        assert result.endgame_skill == 0.0
 
     @pytest.mark.asyncio
     async def test_wdl_counts_and_percentages(self):
@@ -465,159 +460,6 @@ class TestGetEndgamePerformance:
         assert result.non_endgame_wdl.draws == 3
         assert result.non_endgame_wdl.losses == 5
         assert result.non_endgame_wdl.total == 10
-
-    @pytest.mark.asyncio
-    async def test_overall_win_rate_across_all_games(self):
-        """overall_win_rate = total wins / total games (endgame + non-endgame)."""
-        # 3 endgame wins out of 5 + 0 non-endgame wins out of 5 = 3/10 = 30%
-        endgame_rows = self._make_wdl_rows(wins=3, draws=1, losses=1)
-        non_endgame_rows = self._make_wdl_rows(wins=0, draws=2, losses=3)
-
-        with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-        ):
-            mock_perf.return_value = (endgame_rows, non_endgame_rows)
-            mock_entry.return_value = []
-
-            result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
-            )
-
-        assert abs(result.overall_win_rate - 30.0) < 0.2
-
-    @pytest.mark.asyncio
-    async def test_relative_strength_above_100_possible(self):
-        """relative_strength can exceed 100 when endgame_win_rate > overall_win_rate."""
-        # endgame: 4W/0D/0L = 100% win rate; non-endgame: 0W/0D/4L = 0% win rate
-        # overall = 4/8 = 50%, endgame = 4/4 = 100% → relative_strength = 200
-        endgame_rows = self._make_wdl_rows(wins=4, draws=0, losses=0)
-        non_endgame_rows = self._make_wdl_rows(wins=0, draws=0, losses=4)
-
-        with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-        ):
-            mock_perf.return_value = (endgame_rows, non_endgame_rows)
-            mock_entry.return_value = []
-
-            result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
-            )
-
-        assert abs(result.relative_strength - 200.0) < 0.2
-
-    @pytest.mark.asyncio
-    async def test_relative_strength_zero_when_overall_win_rate_zero(self):
-        """relative_strength should be 0.0 when overall_win_rate is 0 (guard div by zero)."""
-        endgame_rows = self._make_wdl_rows(wins=0, draws=0, losses=2)
-        non_endgame_rows = self._make_wdl_rows(wins=0, draws=0, losses=2)
-
-        with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-        ):
-            mock_perf.return_value = (endgame_rows, non_endgame_rows)
-            mock_entry.return_value = []
-
-            result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
-            )
-
-        assert result.relative_strength == 0.0
-
-
-class TestEndgameGaugeCalculations:
-    """Unit tests for gauge value formulas: aggregate conversion/recovery and endgame_skill."""
-
-    def _entry_row(self, game_id: int, endgame_class_int: int, result: str, user_color: str, imbalance: int):
-        """Build a (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after) entry row.
-
-        Sets imbalance_after equal to imbalance so the persistence check always passes in these gauge tests.
-        """
-        return (game_id, endgame_class_int, result, user_color, imbalance, imbalance)
-
-    @pytest.mark.asyncio
-    async def test_aggregate_conversion_uses_sum_of_raw_not_mean_of_percentages(self):
-        """Aggregate conversion_pct = sum(conv_wins) / sum(conv_games) * 100 (not mean of pcts)."""
-        # Category A (rook=1): 2 games up material, 1 win → 50%
-        # Category B (minor=2): 4 games up material, 3 wins → 75%
-        # Mean of percentages: (50 + 75) / 2 = 62.5%
-        # Sum of raw: 4 wins / 6 games = 66.67%
-        entry_rows = [
-            # Category A: rook (1), positive imbalance — 1 win, 1 loss
-            self._entry_row(1, 1, "1-0", "white", 500),
-            self._entry_row(2, 1, "0-1", "white", 500),
-            # Category B: minor_piece (2), positive imbalance — 3 wins, 1 loss
-            self._entry_row(3, 2, "1-0", "white", 500),
-            self._entry_row(4, 2, "1-0", "white", 500),
-            self._entry_row(5, 2, "1-0", "white", 500),
-            self._entry_row(6, 2, "0-1", "white", 500),
-        ]
-
-        with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-        ):
-            mock_perf.return_value = ([], [])
-            mock_entry.return_value = entry_rows
-
-            result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
-            )
-
-        # Should be 4/6 * 100 = 66.67, not (50+75)/2 = 62.5
-        assert abs(result.aggregate_conversion_pct - 66.7) < 0.2
-
-    @pytest.mark.asyncio
-    async def test_endgame_skill_formula(self):
-        """endgame_skill = 0.7 * conversion_pct + 0.3 * recovery_pct."""
-        # conversion: 8 wins / 10 games up material = 80%
-        # recovery: 6 saves / 10 games down material = 60% → skill = 0.7*80 + 0.3*60 = 74
-        entry_rows = (
-            # 10 games with positive imbalance (rook=1): 8 wins, 2 losses
-            [self._entry_row(i, 1, "1-0", "white", 500) for i in range(1, 9)]
-            + [self._entry_row(i, 1, "0-1", "white", 500) for i in range(9, 11)]
-            # 10 games with negative imbalance (rook=1): 4 wins, 2 draws, 4 losses (6 saves)
-            + [self._entry_row(i, 1, "1-0", "white", -500) for i in range(11, 15)]
-            + [self._entry_row(i, 1, "1/2-1/2", "white", -500) for i in range(15, 17)]
-            + [self._entry_row(i, 1, "0-1", "white", -500) for i in range(17, 21)]
-        )
-
-        with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-        ):
-            mock_perf.return_value = ([], [])
-            mock_entry.return_value = entry_rows
-
-            result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
-            )
-
-        assert abs(result.endgame_skill - 74.0) < 0.2
-
-    @pytest.mark.asyncio
-    async def test_endgame_skill_zero_with_no_conversion_recovery_data(self):
-        """endgame_skill should be 0.0 when no conversion/recovery games exist."""
-        with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-        ):
-            mock_perf.return_value = ([], [])
-            mock_entry.return_value = []
-
-            result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
-            )
-
-        assert result.endgame_skill == 0.0
 
 
 class TestGetEndgameTimeline:
@@ -762,8 +604,6 @@ class TestGetEndgamePerformanceSmoke:
         )
         assert result.endgame_wdl.total == 0
         assert result.non_endgame_wdl.total == 0
-        assert result.overall_win_rate == 0.0
-        assert result.relative_strength == 0.0
 
     @pytest.mark.asyncio
     async def test_get_endgame_timeline_returns_empty_for_nonexistent_user(self, db_session: AsyncSession):
@@ -787,11 +627,8 @@ class TestGetEndgameOverview:
 
     @pytest.mark.asyncio
     async def test_overview_composes_all_five_payloads(self):
-        """get_endgame_overview assembles stats, performance, timeline, conv_recov_timeline, score_gap_material, clock_pressure."""
-        from app.schemas.endgames import (
-            ConvRecovTimelineResponse,
-            EndgameTimelineResponse,
-        )
+        """get_endgame_overview assembles stats, performance, timeline, score_gap_material, clock_pressure."""
+        from app.schemas.endgames import EndgameTimelineResponse
 
         with (
             patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
@@ -799,7 +636,6 @@ class TestGetEndgameOverview:
             patch("app.services.endgame_service.count_filtered_games", new_callable=AsyncMock) as mock_count,
             patch("app.services.endgame_service.count_endgame_games", new_callable=AsyncMock) as mock_eg_count,
             patch("app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock) as mock_timeline,
-            patch("app.services.endgame_service.get_conv_recov_timeline", new_callable=AsyncMock) as mock_conv,
             patch("app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock) as mock_clock,
         ):
             mock_entry.return_value = []
@@ -807,7 +643,6 @@ class TestGetEndgameOverview:
             mock_count.return_value = 0
             mock_eg_count.return_value = 0
             mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=50)
-            mock_conv.return_value = ConvRecovTimelineResponse(conversion=[], recovery=[], window=50)
             mock_clock.return_value = []
 
             result = await get_endgame_overview(
@@ -821,25 +656,20 @@ class TestGetEndgameOverview:
         mock_count.assert_called_once()
         mock_eg_count.assert_called_once()
         mock_timeline.assert_called_once()
-        mock_conv.assert_called_once()
         mock_clock.assert_called_once()
 
-        # All six sub-payloads must be present
+        # All sub-payloads must be present
         assert result.stats is not None
         assert result.performance is not None
         assert result.timeline is not None
-        assert result.conv_recov_timeline is not None
         assert result.score_gap_material is not None
         assert result.clock_pressure is not None
         assert result.clock_pressure.rows == []
 
     @pytest.mark.asyncio
-    async def test_overview_passes_window_to_both_timelines(self):
-        """The window parameter must be forwarded to both get_endgame_timeline and get_conv_recov_timeline."""
-        from app.schemas.endgames import (
-            ConvRecovTimelineResponse,
-            EndgameTimelineResponse,
-        )
+    async def test_overview_passes_window_to_timeline(self):
+        """The window parameter must be forwarded to get_endgame_timeline."""
+        from app.schemas.endgames import EndgameTimelineResponse
 
         with (
             patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
@@ -847,14 +677,12 @@ class TestGetEndgameOverview:
             patch("app.services.endgame_service.count_filtered_games", new_callable=AsyncMock) as mock_count,
             patch("app.services.endgame_service.count_endgame_games", new_callable=AsyncMock),
             patch("app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock) as mock_timeline,
-            patch("app.services.endgame_service.get_conv_recov_timeline", new_callable=AsyncMock) as mock_conv,
             patch("app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock) as mock_clock,
         ):
             mock_entry.return_value = []
             mock_perf_rows.return_value = ([], [])
             mock_count.return_value = 0
             mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=75)
-            mock_conv.return_value = ConvRecovTimelineResponse(conversion=[], recovery=[], window=75)
             mock_clock.return_value = []
 
             await get_endgame_overview(
@@ -862,11 +690,9 @@ class TestGetEndgameOverview:
                 rated=None, opponent_type="human", recency=None, window=75,
             )
 
-        # Both timeline functions must receive window=75
+        # Timeline function must receive window=75
         _, timeline_kwargs = mock_timeline.call_args
-        _, conv_kwargs = mock_conv.call_args
         assert timeline_kwargs.get("window") == 75 or mock_timeline.call_args[0][4] == 75  # type: ignore[index]
-        assert conv_kwargs.get("window") == 75 or mock_conv.call_args[0][4] == 75  # type: ignore[index]
 
     @pytest.mark.asyncio
     async def test_overview_returns_empty_for_nonexistent_user(self, db_session: AsyncSession):
@@ -875,12 +701,10 @@ class TestGetEndgameOverview:
             db_session, user_id=999999, time_control=None, platform=None,
             rated=None, opponent_type="human", recency=None, window=50,
         )
-        # All five sub-payloads must be present
+        # All sub-payloads must be present
         assert result.stats.categories == []
         assert result.performance.endgame_wdl.total == 0
         assert result.timeline.overall == []
-        assert result.conv_recov_timeline.conversion == []
-        assert result.conv_recov_timeline.recovery == []
         assert result.score_gap_material is not None
 
 
