@@ -528,57 +528,83 @@ def _compute_score_gap_material(
     else:
         overall_score = 0.0
 
-    # Deduplicate entry_rows by game_id — multi-class games appear multiple times
-    # but should count as one game in the material breakdown (Phase 53).
-    seen_game_ids: set[int] = set()
     bucket_wins: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
     bucket_draws: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
     bucket_losses: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
     bucket_games: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
 
+    # Phase 59: group rows by game_id, then pick one span per game.
+    # Priority within a game's rows:
+    #   1) any row satisfying CONVERSION persistence (imbalance >= +threshold AND imbalance_after >= +threshold)
+    #   2) else any row satisfying RECOVERY persistence (imbalance <= -threshold AND imbalance_after <= -threshold)
+    #   3) else fall back to the row with the LOWEST endgame_class_int for determinism; bucket as "even".
+    #
+    # Conversion-over-recovery tiebreak (priority 1 > priority 2): when a game has BOTH a
+    # conversion-qualifying span AND a recovery-qualifying span, we bucket as "conversion".
+    # Rationale: reaching a winning position is the earlier causal event in the game — the
+    # user first had an advantage, then (possibly after trades) a disadvantage. Inverting this
+    # would systematically double-penalize conversion failures. Do NOT change this without
+    # updating the invariant test (see tests/test_endgame_service.py::TestScoreGapMaterialInvariant).
+    #
+    # NULL imbalance rows (user_material_imbalance is None OR user_material_imbalance_after
+    # is None) cannot satisfy priorities 1 or 2, so they fall through to priority 3 and the
+    # game is bucketed as "even". This replaces the Phase 53 `continue` that silently
+    # dropped such games and broke sum(material_rows.games) == endgame_wdl.total.
+
+    rows_by_game: dict[int, list[Sequence[Any]]] = defaultdict(list)
     for row in entry_rows:
-        game_id: int = row[0]
-        if game_id in seen_game_ids:
-            continue
-        seen_game_ids.add(game_id)
+        rows_by_game[row[0]].append(row)
 
-        user_material_imbalance: int | None = row[4]
-        if user_material_imbalance is None:
-            continue
+    for game_id, game_rows in rows_by_game.items():
+        chosen_row: Sequence[Any] | None = None
+        chosen_bucket: MaterialBucket = "even"
 
-        user_material_imbalance_after: int | None = row[5]
+        # Pass 1: look for a CONVERSION-qualifying span.
+        for r in game_rows:
+            imb = r[4]
+            imb_after = r[5]
+            if (
+                imb is not None
+                and imb_after is not None
+                and imb >= _MATERIAL_ADVANTAGE_THRESHOLD
+                and imb_after >= _MATERIAL_ADVANTAGE_THRESHOLD
+            ):
+                chosen_row = r
+                chosen_bucket = "conversion"
+                break
 
-        # Assign to bucket based on material imbalance at endgame entry PLUS
-        # 4-ply persistence — matches the conversion/recovery sequence rule so
-        # transient imbalances from trades at the endgame boundary fall into
-        # the "even" bucket rather than contaminating conversion/recovery.
-        bucket: MaterialBucket
-        if (
-            user_material_imbalance >= _MATERIAL_ADVANTAGE_THRESHOLD
-            and user_material_imbalance_after is not None
-            and user_material_imbalance_after >= _MATERIAL_ADVANTAGE_THRESHOLD
-        ):
-            bucket = "conversion"
-        elif (
-            user_material_imbalance <= -_MATERIAL_ADVANTAGE_THRESHOLD
-            and user_material_imbalance_after is not None
-            and user_material_imbalance_after <= -_MATERIAL_ADVANTAGE_THRESHOLD
-        ):
-            bucket = "recovery"
-        else:
-            bucket = "even"
+        # Pass 2: look for a RECOVERY-qualifying span (only if no conversion match).
+        if chosen_row is None:
+            for r in game_rows:
+                imb = r[4]
+                imb_after = r[5]
+                if (
+                    imb is not None
+                    and imb_after is not None
+                    and imb <= -_MATERIAL_ADVANTAGE_THRESHOLD
+                    and imb_after <= -_MATERIAL_ADVANTAGE_THRESHOLD
+                ):
+                    chosen_row = r
+                    chosen_bucket = "recovery"
+                    break
 
-        result: str = row[2]
-        user_color: str = row[3]
-        outcome = derive_user_result(result, user_color)
+        # Pass 3: fallback to "even". Pick the row with the lowest endgame_class_int for
+        # deterministic output regardless of SQL row order.
+        if chosen_row is None:
+            chosen_row = min(game_rows, key=lambda r: r[1])
+            chosen_bucket = "even"
 
-        bucket_games[bucket] += 1
+        result_str: str = chosen_row[2]
+        user_color: str = chosen_row[3]
+        outcome = derive_user_result(result_str, user_color)
+
+        bucket_games[chosen_bucket] += 1
         if outcome == "win":
-            bucket_wins[bucket] += 1
+            bucket_wins[chosen_bucket] += 1
         elif outcome == "draw":
-            bucket_draws[bucket] += 1
+            bucket_draws[chosen_bucket] += 1
         else:
-            bucket_losses[bucket] += 1
+            bucket_losses[chosen_bucket] += 1
 
     # Build MaterialRow for each bucket in fixed order: conversion, even, recovery.
     material_rows: list[MaterialRow] = []
