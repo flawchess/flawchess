@@ -1,13 +1,13 @@
 /**
  * Compact diverging bar chart for showing a signed score difference relative
- * to a baseline. Three muted background zones (red/amber/green) convey the
+ * to a baseline. Three muted background zones (poor/warning/good) convey the
  * verdict thresholds; a solid overlay bar fills from 0 to the value in the
  * color of the zone it lands in.
  *
  * Used in the Material Breakdown table to visualize each bucket's score
- * relative to the user's overall score. The amber zone is configurable per
+ * relative to the user's overall score. The warning zone is configurable per
  * row so expectations can shift with material context (e.g. when ahead in
- * material, neutral performance is above overall, not at overall).
+ * material, the warning band sits higher than when behind).
  */
 
 import { GAUGE_DANGER, GAUGE_WARNING, GAUGE_SUCCESS } from '@/lib/theme';
@@ -16,24 +16,24 @@ import { GAUGE_DANGER, GAUGE_WARNING, GAUGE_SUCCESS } from '@/lib/theme';
 // 0.30 covers realistic score-diff ranges without making typical values look tiny.
 const DOMAIN = 0.30;
 
-// Default amber zone: -0.10 to 0 (slight underperformance vs overall).
-const DEFAULT_AMBER_MIN = -0.10;
-const DEFAULT_AMBER_MAX = 0;
+// Default warning zone: -0.10 to 0 (slight underperformance vs overall).
+const DEFAULT_WARNING_MIN = -0.10;
+const DEFAULT_WARNING_MAX = 0;
 
 // Background zone tint — muted but visible enough to read the zones clearly.
 const ZONE_OPACITY = 0.35;
 
 // Tolerance below which two zone boundaries are treated as coincident
-// (used to suppress a redundant tick where an amber boundary meets zero).
+// (used to suppress a redundant tick where a warning boundary meets zero).
 const BOUNDARY_EPSILON = 1e-6;
 
 interface MiniBulletChartProps {
   /** Signed difference to visualize (e.g. row_score - overall_score). */
   value: number;
-  /** Lower bound of the amber (neutral) zone. Default -0.10. */
-  amberMin?: number;
-  /** Upper bound of the amber (neutral) zone. Default 0. */
-  amberMax?: number;
+  /** Lower bound of the warning zone. Default -0.10. */
+  warningMin?: number;
+  /** Upper bound of the warning zone. Default 0. */
+  warningMax?: number;
   /** Accessible label. Falls back to the signed numeric value. */
   ariaLabel?: string;
   /** Height class for the zone background, default h-5 (matches MiniWDLBar). */
@@ -49,8 +49,8 @@ function formatSigned(value: number): string {
 
 export function MiniBulletChart({
   value,
-  amberMin = DEFAULT_AMBER_MIN,
-  amberMax = DEFAULT_AMBER_MAX,
+  warningMin = DEFAULT_WARNING_MIN,
+  warningMax = DEFAULT_WARNING_MAX,
   ariaLabel,
   heightClass = 'h-5',
   valueHeightClass = 'h-2',
@@ -60,15 +60,15 @@ export function MiniBulletChart({
   // Map domain value to percent position (0% = left edge, 100% = right edge).
   const toPct = (v: number): number => ((v + DOMAIN) / (2 * DOMAIN)) * 100;
   const zeroPct = toPct(0);
-  const amberMinPct = toPct(Math.max(-DOMAIN, amberMin));
-  const amberMaxPct = toPct(Math.min(DOMAIN, amberMax));
+  const warningMinPct = toPct(Math.max(-DOMAIN, warningMin));
+  const warningMaxPct = toPct(Math.min(DOMAIN, warningMax));
   const markerPct = toPct(clamped);
 
   // Fill color follows the zone the raw (unclamped) value falls into.
   let fillColor: string;
-  if (value >= amberMax) {
+  if (value >= warningMax) {
     fillColor = GAUGE_SUCCESS;
-  } else if (value >= amberMin) {
+  } else if (value >= warningMin) {
     fillColor = GAUGE_WARNING;
   } else {
     fillColor = GAUGE_DANGER;
@@ -80,8 +80,8 @@ export function MiniBulletChart({
   const barWidth = Math.max(0, barRight - barLeft);
 
   // Suppress ticks that coincide with the zero reference line.
-  const showAmberMinTick = Math.abs(amberMin) > BOUNDARY_EPSILON;
-  const showAmberMaxTick = Math.abs(amberMax) > BOUNDARY_EPSILON;
+  const showWarningMinTick = Math.abs(warningMin) > BOUNDARY_EPSILON;
+  const showWarningMaxTick = Math.abs(warningMax) > BOUNDARY_EPSILON;
 
   return (
     <div
@@ -90,12 +90,12 @@ export function MiniBulletChart({
       aria-label={ariaLabel ?? `Score difference ${formatSigned(value)}`}
       data-testid="mini-bullet-chart"
     >
-      {/* Background zones: red | amber | green */}
+      {/* Background zones: poor | warning | good */}
       <div className="absolute inset-0 flex">
         <div
           className="h-full"
           style={{
-            width: `${amberMinPct}%`,
+            width: `${warningMinPct}%`,
             backgroundColor: GAUGE_DANGER,
             opacity: ZONE_OPACITY,
           }}
@@ -103,7 +103,7 @@ export function MiniBulletChart({
         <div
           className="h-full"
           style={{
-            width: `${amberMaxPct - amberMinPct}%`,
+            width: `${warningMaxPct - warningMinPct}%`,
             backgroundColor: GAUGE_WARNING,
             opacity: ZONE_OPACITY,
           }}
@@ -111,7 +111,7 @@ export function MiniBulletChart({
         <div
           className="h-full"
           style={{
-            width: `${100 - amberMaxPct}%`,
+            width: `${100 - warningMaxPct}%`,
             backgroundColor: GAUGE_SUCCESS,
             opacity: ZONE_OPACITY,
           }}
@@ -122,17 +122,17 @@ export function MiniBulletChart({
         className="absolute top-0 bottom-0 w-px bg-foreground/50"
         style={{ left: `${zeroPct}%` }}
       />
-      {/* Amber zone boundary ticks — subtle, only shown when distinct from zero */}
-      {showAmberMinTick && (
+      {/* Warning zone boundary ticks — subtle, only shown when distinct from zero */}
+      {showWarningMinTick && (
         <div
           className="absolute top-0 bottom-0 w-px bg-gray-700"
-          style={{ left: `${amberMinPct}%` }}
+          style={{ left: `${warningMinPct}%` }}
         />
       )}
-      {showAmberMaxTick && (
+      {showWarningMaxTick && (
         <div
           className="absolute top-0 bottom-0 w-px bg-gray-700"
-          style={{ left: `${amberMaxPct}%` }}
+          style={{ left: `${warningMaxPct}%` }}
         />
       )}
       {/* Value fill bar — thinner than zones, vertically centered */}

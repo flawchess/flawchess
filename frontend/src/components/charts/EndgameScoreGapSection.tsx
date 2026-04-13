@@ -10,14 +10,14 @@ import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import type { MaterialBucket, ScoreGapMaterialResponse } from '@/types/endgames';
 
-// Per-bucket amber (neutral) zones for the bullet chart. Overall score is a
+// Per-bucket warning zones for the bullet chart. Overall score is a
 // weighted average across material situations, so the "expected" diff is not
 // zero for every bucket: when ahead, users should outperform overall; when
 // behind, underperforming overall is expected. Each zone is 0.10 wide.
-const AMBER_ZONES: Record<MaterialBucket, { min: number; max: number }> = {
+const WARNING_ZONES: Record<MaterialBucket, { min: number; max: number }> = {
   ahead: { min: 0.05, max: 0.15 },     // converting advantage
-  equal: { min: -0.05, max: 0.05 }, // equal material: neutral is symmetric around 0
-  behind: { min: -0.15, max: -0.05 },   // recovering
+  equal: { min: -0.10, max: -0.00 }, // equal material: warning is symmetric around 0
+  behind: { min: -0.25, max: -0.15 },   // recovering
 };
 
 interface EndgameScoreGapSectionProps {
@@ -46,10 +46,10 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
             score. The material table shows how your performance varies based on
             whether you entered endgames with a material advantage, equal material,
             or a deficit. The bar shows each bucket's score minus your overall
-            score, with amber (neutral) zones calibrated per material context —
+            score, with warning zones calibrated per material context —
             when ahead you're expected to outperform overall, when behind you're
             expected to underperform, and when equal you should be near overall.
-            Tick marks show the amber zone boundaries.
+            Tick marks show the warning zone boundaries.
           </InfoPopover>
         </span>
       </h3>
@@ -101,7 +101,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               const diff = row.score - data.overall_score;
               const diffLabel =
                 (diff >= 0 ? '+' : '') + diff.toFixed(2);
-              const amberZone = AMBER_ZONES[row.bucket];
+              const warningZone = WARNING_ZONES[row.bucket];
               return (
                 <tr
                   key={row.bucket}
@@ -125,8 +125,8 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   <td className="py-1.5 px-2 min-w-[140px]">
                     <MiniBulletChart
                       value={diff}
-                      amberMin={amberZone.min}
-                      amberMax={amberZone.max}
+                      warningMin={warningZone.min}
+                      warningMax={warningZone.max}
                       ariaLabel={`${row.label}: ${diffLabel} vs overall`}
                     />
                   </td>
