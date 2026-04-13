@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Advanced Analytics
 status: executing
-last_updated: "2026-04-12T17:38:34.701Z"
-last_activity: 2026-04-12
+last_updated: "2026-04-13T20:30:28.594Z"
+last_activity: 2026-04-13
 progress:
-  total_phases: 11
-  completed_phases: 4
-  total_plans: 9
-  completed_plans: 9
+  total_phases: 12
+  completed_phases: 5
+  total_plans: 12
+  completed_plans: 12
   percent: 100
 ---
 
@@ -19,8 +19,8 @@ progress:
 
 Phase: 999.5
 Plan: Not started
-Status: Executing Phase 52
-Last activity: 2026-04-12
+Status: Executing Phase 59
+Last activity: 2026-04-13
 
 Progress: [██████████] 100% (4/4 v1.9 phases complete)
 
@@ -39,6 +39,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 - Deployment: Docker Compose on Hetzner CX32 (4 vCPUs, 7.6 GB RAM + 2 GB swap)
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 59 added: Fix Endgame Conv/Even/Recov per-game stats so Conv+Even+Recov game counts sum to Games-with-Endgame total; drop obsolete admin-gated gauges + timeline
 
 ### Decisions
 
