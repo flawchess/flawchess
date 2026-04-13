@@ -18,9 +18,9 @@ import type { MaterialBucket, ScoreGapMaterialResponse } from '@/types/endgames'
 // zero for every bucket: when converting, users should outperform overall;
 // when recovering, underperforming overall is expected. Each zone is 0.10 wide.
 const NEUTRAL_ZONES: Record<MaterialBucket, { min: number; max: number }> = {
-  conversion: { min: 0.05, max: 0.15 },  // converting advantage
-  even: { min: -0.10, max: 0.00 },       // even material: zone sits symmetric around 0
-  recovery: { min: -0.25, max: -0.15 },  // recovering from deficit
+  conversion: { min: 0.10, max: 0.20 },  // converting advantage
+  even: { min: -0.05, max: 0.05 },       // even material: zone sits symmetric around 0
+  recovery: { min: -0.20, max: -0.10 },  // recovering from deficit
 };
 
 interface EndgameScoreGapSectionProps {
