@@ -58,16 +58,7 @@ export interface EndgameWDLSummary {
 export interface EndgamePerformanceResponse {
   endgame_wdl: EndgameWDLSummary;
   non_endgame_wdl: EndgameWDLSummary;
-  overall_win_rate: number;
   endgame_win_rate: number;
-  aggregate_conversion_pct: number;
-  aggregate_conversion_wins: number;
-  aggregate_conversion_games: number;
-  aggregate_recovery_pct: number;
-  aggregate_recovery_saves: number;
-  aggregate_recovery_games: number;
-  relative_strength: number;
-  endgame_skill: number;
 }
 
 export interface EndgameTimelinePoint {
@@ -89,19 +80,6 @@ export interface EndgameOverallPoint {
 export interface EndgameTimelineResponse {
   overall: EndgameOverallPoint[];
   per_type: Record<string, EndgameTimelinePoint[]>;
-  window: number;
-}
-
-export interface ConvRecovTimelinePoint {
-  date: string;
-  rate: number; // 0.0-1.0 fraction
-  game_count: number; // games in rolling window at this point
-  window_size: number;
-}
-
-export interface ConvRecovTimelineResponse {
-  conversion: ConvRecovTimelinePoint[];
-  recovery: ConvRecovTimelinePoint[];
   window: number;
 }
 
@@ -167,8 +145,7 @@ export interface EndgameOverviewResponse {
   stats: EndgameStatsResponse;
   performance: EndgamePerformanceResponse;
   timeline: EndgameTimelineResponse;
-  conv_recov_timeline: ConvRecovTimelineResponse;
-  score_gap_material: ScoreGapMaterialResponse;  // NEW — Phase 53
-  clock_pressure: ClockPressureResponse;         // NEW — Phase 54
-  time_pressure_chart: TimePressureChartResponse; // NEW — Phase 55
+  score_gap_material: ScoreGapMaterialResponse;  // Phase 53
+  clock_pressure: ClockPressureResponse;         // Phase 54
+  time_pressure_chart: TimePressureChartResponse; // Phase 55
 }
