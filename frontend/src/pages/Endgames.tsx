@@ -245,7 +245,7 @@ export function EndgamesPage() {
                 </AccordionItem>
               </Accordion>
               <div className="charcoal-texture rounded-md p-4">
-                <EndgamePerformanceSection data={perfData} />
+                <EndgamePerformanceSection data={perfData} scoreGap={scoreGapData} />
               </div>
               {scoreGapData && (
                 <div className="charcoal-texture rounded-md p-4">
