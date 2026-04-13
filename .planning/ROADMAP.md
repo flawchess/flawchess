@@ -292,7 +292,11 @@ Plans:
   4. Scope is limited to the "Endgame Conversion & Recovery" aggregate section — per-endgame-type breakdowns (pawn, rook, etc.) are untouched
   5. Labels, tooltip/popover copy, and info-icon explanations are updated from "average" framing to peer/opponent framing
   6. Backend stats test asserts opponent baseline math and sample-size muting behavior
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 60-01-PLAN.md — Backend: opponent baseline computation in _compute_score_gap_material, schema additions (opponent_score/opponent_games), drop overall_score, tests
+- [ ] 60-02-PLAN.md — Frontend: TS type mirror, EndgameScoreGapSection rewrite (desktop + mobile, single neutral zone, muted state, peer-framing copy)
 **UI hint**: yes
 
 ## Progress
