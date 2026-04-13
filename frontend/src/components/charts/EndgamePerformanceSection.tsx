@@ -96,7 +96,8 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
         </p>
       </div>
 
-      <div className="overflow-x-auto">
+      {/* Desktop: table layout */}
+      <div className="hidden lg:block overflow-x-auto">
         <table
           className="w-full min-w-[720px] text-sm sm:text-base table-fixed"
           data-testid="perf-wdl-table"
@@ -175,6 +176,70 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile: stacked cards */}
+      <div className="lg:hidden space-y-3" data-testid="perf-wdl-cards">
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="rounded border border-border p-3 space-y-2"
+            data-testid={row.testId}
+          >
+            <div className="flex items-baseline justify-between">
+              <div className="text-sm font-medium">Endgame: {row.label}</div>
+              <div className="text-xs tabular-nums text-muted-foreground">
+                {row.pct}% ({row.wdl.total.toLocaleString()} games)
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Win / Draw / Loss</div>
+              {row.wdl.total === 0 ? (
+                <div className="h-5 rounded bg-muted" />
+              ) : (
+                <MiniWDLBar
+                  win_pct={row.wdl.win_pct}
+                  draw_pct={row.wdl.draw_pct}
+                  loss_pct={row.wdl.loss_pct}
+                />
+              )}
+            </div>
+            <div className="flex items-baseline justify-between text-xs">
+              <span className="text-muted-foreground">Score</span>
+              <span className="tabular-nums text-muted-foreground">
+                {row.score !== undefined ? row.score.toFixed(2) : '—'}
+              </span>
+            </div>
+          </div>
+        ))}
+        {scoreGap && (
+          <div
+            className="rounded border border-border p-3 space-y-2"
+            data-testid="score-gap-difference-mobile"
+          >
+            <div className="flex items-baseline justify-between">
+              <div className="text-sm font-medium">Score Difference</div>
+              <div className="text-xs tabular-nums text-muted-foreground">
+                {scoreGap.endgame_score.toFixed(2)} −{' '}
+                {scoreGap.non_endgame_score.toFixed(2)} ={' '}
+                <span
+                  className={
+                    (diffPositive ? 'text-green-500' : 'text-red-500') +
+                    ' font-semibold'
+                  }
+                >
+                  {diffFormatted}
+                </span>
+              </div>
+            </div>
+            <MiniBulletChart
+              value={scoreGap.score_difference}
+              neutralMin={SCORE_DIFF_NEUTRAL_MIN}
+              neutralMax={SCORE_DIFF_NEUTRAL_MAX}
+              ariaLabel={`Endgame score difference: ${diffFormatted}`}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -23,6 +23,14 @@ const NEUTRAL_ZONES: Record<MaterialBucket, { min: number; max: number }> = {
   recovery: { min: -0.20, max: -0.10 },  // recovering from deficit
 };
 
+// Short display names — the material indicator ("≥ +1", "≤ −1") lives in the
+// section description, freeing column/card space (especially on mobile).
+const BUCKET_DISPLAY_LABELS: Record<MaterialBucket, string> = {
+  conversion: 'Conversion',
+  even: 'Even',
+  recovery: 'Recovery',
+};
+
 interface EndgameScoreGapSectionProps {
   data: ScoreGapMaterialResponse;
 }
@@ -37,9 +45,9 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
       <div>
         <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">
-            Endgame Material Breakdown
+            Endgame Conversion & Recovery
             <InfoPopover
-              ariaLabel="Material Breakdown info"
+              ariaLabel="Conversion & Recovery info"
               testId="material-breakdown-section-info"
               side="top"
             >
@@ -57,12 +65,14 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Your win rate when entering endgames up, even, or down in material.
+          How you perform entering endgames with a material advantage
+          (Conversion, ≥ +1 point), roughly even material (Even), or a
+          material deficit (Recovery, ≤ −1 point).
         </p>
       </div>
 
-      {/* Material-stratified WDL table */}
-      <div className="overflow-x-auto">
+      {/* Desktop: table layout */}
+      <div className="hidden lg:block overflow-x-auto">
         <table
           className="w-full min-w-[720px] text-sm sm:text-base table-fixed"
           data-testid="material-table"
@@ -76,14 +86,14 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
           </colgroup>
           <thead>
             <tr className="text-left text-xs text-muted-foreground border-b border-border">
-              <th className="py-1 pr-3 font-medium">Material at entry</th>
+              <th className="py-1 pr-3 font-medium" aria-label="Material bucket" />
               <th className="py-1 px-2 font-medium text-right">Games</th>
               <th className="py-1 px-2 font-medium">Win / Draw / Loss</th>
               <th className="py-1 px-2 font-medium text-right">
                 Score (Diff)
               </th>
               <th className="py-1 px-2 font-medium">
-                Score vs Overall ({overallFormatted})
+                Score vs Overall Score ({overallFormatted})
               </th>
             </tr>
           </thead>
@@ -103,7 +113,9 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   className={row.games === 0 ? 'opacity-50' : undefined}
                   data-testid={`material-row-${row.bucket}`}
                 >
-                  <td className="py-1.5 pr-3 text-sm">{row.label}</td>
+                  <td className="py-1.5 pr-3 text-sm">
+                    {BUCKET_DISPLAY_LABELS[row.bucket]}
+                  </td>
                   <td className="py-1.5 px-2 text-right text-sm tabular-nums whitespace-nowrap">
                     {pct}% ({row.games.toLocaleString()})
                   </td>
@@ -122,7 +134,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                       value={diff}
                       neutralMin={neutralZone.min}
                       neutralMax={neutralZone.max}
-                      ariaLabel={`${row.label}: ${diffLabel} vs overall`}
+                      ariaLabel={`${BUCKET_DISPLAY_LABELS[row.bucket]}: ${diffLabel} vs overall`}
                     />
                   </td>
                 </tr>
@@ -130,6 +142,64 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile: stacked cards */}
+      <div className="lg:hidden space-y-3" data-testid="material-cards">
+        {data.material_rows.map((row) => {
+          const diff = row.score - data.overall_score;
+          const diffLabel = (diff >= 0 ? '+' : '') + diff.toFixed(2);
+          const neutralZone = NEUTRAL_ZONES[row.bucket];
+          const pct =
+            totalMaterialGames > 0
+              ? ((row.games / totalMaterialGames) * 100).toFixed(1)
+              : '0.0';
+          return (
+            <div
+              key={row.bucket}
+              className={
+                'rounded border border-border p-3 space-y-2' +
+                (row.games === 0 ? ' opacity-50' : '')
+              }
+              data-testid={`material-card-${row.bucket}`}
+            >
+              <div className="flex items-baseline justify-between">
+                <div className="text-sm font-medium">
+                  {BUCKET_DISPLAY_LABELS[row.bucket]}
+                </div>
+                <div className="text-xs tabular-nums text-muted-foreground">
+                  {pct}% ({row.games.toLocaleString()} games)
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">
+                  Win / Draw / Loss
+                </div>
+                <MiniWDLBar
+                  win_pct={row.win_pct}
+                  draw_pct={row.draw_pct}
+                  loss_pct={row.loss_pct}
+                />
+              </div>
+              <div>
+                <div className="flex items-baseline justify-between text-xs mb-1">
+                  <span className="text-muted-foreground">
+                    Score vs Overall Score ({overallFormatted})
+                  </span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {row.score.toFixed(2)} ({diffLabel})
+                  </span>
+                </div>
+                <MiniBulletChart
+                  value={diff}
+                  neutralMin={neutralZone.min}
+                  neutralMax={neutralZone.max}
+                  ariaLabel={`${BUCKET_DISPLAY_LABELS[row.bucket]}: ${diffLabel} vs overall`}
+                />
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
