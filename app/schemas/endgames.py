@@ -100,25 +100,18 @@ class EndgameWDLSummary(BaseModel):
 
 
 class EndgamePerformanceResponse(BaseModel):
-    """Response for GET /api/endgames/performance.
+    """Response for GET /api/endgames/performance (Phase 59-trimmed).
 
-    Provides WDL comparison and gauge values for endgame performance analytics.
+    Provides WDL comparison for endgame vs non-endgame games and the endgame win rate.
     Endgame games = games that spent >= ENDGAME_PLY_THRESHOLD plies in any endgame class.
     Non-endgame games = games that never reached any endgame class above the threshold.
+    Phase 59 removed the aggregate conversion/recovery/skill fields (along with the
+    admin gauge UI that consumed them) — see .planning/phases/59-*/59-CONTEXT.md.
     """
 
     endgame_wdl: EndgameWDLSummary       # games reaching any endgame class >= ENDGAME_PLY_THRESHOLD
     non_endgame_wdl: EndgameWDLSummary   # games NOT reaching any endgame class
-    overall_win_rate: float              # wins / total across ALL games, 0-100
     endgame_win_rate: float              # wins / total for endgame games only, 0-100
-    aggregate_conversion_pct: float      # sum of conversion_wins / sum of conversion_games * 100 (D-07)
-    aggregate_conversion_wins: int       # total games converted (won from material advantage)
-    aggregate_conversion_games: int      # total games entering endgame with material advantage
-    aggregate_recovery_pct: float        # sum of recovery_saves / sum of recovery_games * 100 (D-07)
-    aggregate_recovery_saves: int        # total games recovered (won or drawn from material deficit)
-    aggregate_recovery_games: int        # total games entering endgame with material deficit
-    relative_strength: float             # endgame_win_rate / overall_win_rate * 100, can exceed 100 (D-05)
-    endgame_skill: float                 # 0.6 * conversion_pct + 0.4 * recovery_pct, 0-100 (D-06)
 
 
 class EndgameTimelinePoint(BaseModel):
@@ -161,27 +154,6 @@ class EndgameTimelineResponse(BaseModel):
 
     overall: list[EndgameOverallPoint]
     per_type: dict[str, list[EndgameTimelinePoint]]
-    window: int
-
-
-class ConvRecovTimelinePoint(BaseModel):
-    """Single data point in a conversion or recovery rolling timeline."""
-
-    date: str
-    rate: float  # 0.0-1.0 fraction
-    game_count: int  # games in rolling window at this point
-    window_size: int
-
-
-class ConvRecovTimelineResponse(BaseModel):
-    """Response for GET /api/endgames/conv-recov-timeline.
-
-    Two rolling-window series showing how conversion rate (winning when up material)
-    and recovery rate (saving when down material) trend over game history.
-    """
-
-    conversion: list[ConvRecovTimelinePoint]
-    recovery: list[ConvRecovTimelinePoint]
     window: int
 
 
@@ -303,13 +275,13 @@ class EndgameOverviewResponse(BaseModel):
 
     Serves the endgame dashboard payloads from a single request so the
     frontend can issue one HTTP call that runs sequentially on one AsyncSession
-    instead of fanning out into parallel connections (Phase 52).
+    (Phase 52). The conv/recov rolling timeline sub-payload was removed in Phase 59
+    along with the admin gauge UI that consumed it.
     """
 
     stats: EndgameStatsResponse
     performance: EndgamePerformanceResponse
     timeline: EndgameTimelineResponse
-    conv_recov_timeline: ConvRecovTimelineResponse
     score_gap_material: ScoreGapMaterialResponse  # Phase 53: score gap & material breakdown
     clock_pressure: ClockPressureResponse          # Phase 54: time pressure at endgame entry
     time_pressure_chart: TimePressureChartResponse  # Phase 55: time pressure vs performance chart
