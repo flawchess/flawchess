@@ -56,6 +56,7 @@ from app.schemas.endgames import (
 )
 from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
 
+
 class EndgameClassInt(IntEnum):
     """Integer encoding for endgame_class column (SmallInteger, 2 bytes per row).
     Maps 1:1 to EndgameClass Literal strings. Per D-06."""
@@ -153,8 +154,15 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
 # from piece trades, allowing a lower threshold for a larger meaningful dataset.
 _MATERIAL_ADVANTAGE_THRESHOLD = 100
 
+# Phase 60: minimum opponent sample size required to display the opponent
+# baseline in the Conversion/Even/Recovery bullet chart. Matches the WDL-bar
+# mute threshold used elsewhere (e.g. Opening Explorer moves list).
+_MIN_OPPONENT_SAMPLE = 10
 
-def _aggregate_endgame_stats(rows: Sequence[Row[Any] | tuple[Any, ...]]) -> list[EndgameCategoryStats]:
+
+def _aggregate_endgame_stats(
+    rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> list[EndgameCategoryStats]:
     """Aggregate raw per-(game, class) endgame rows into EndgameCategoryStats list.
 
     Each row is: (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after)
@@ -185,7 +193,14 @@ def _aggregate_endgame_stats(rows: Sequence[Row[Any] | tuple[Any, ...]]) -> list
         lambda: {"games": 0, "wins": 0, "draws": 0}
     )
 
-    for _game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after in rows:
+    for (
+        _game_id,
+        endgame_class_int,
+        result,
+        user_color,
+        user_material_imbalance,
+        user_material_imbalance_after,
+    ) in rows:
         endgame_class = _INT_TO_CLASS[endgame_class_int]
         outcome = derive_user_result(result, user_color)
 
@@ -249,9 +264,7 @@ def _aggregate_endgame_stats(rows: Sequence[Row[Any] | tuple[Any, ...]]) -> list
         conversion_draws = conv_data["draws"]
         conversion_losses = conversion_games - conversion_wins - conversion_draws
         conversion_pct = (
-            round(conversion_wins / conversion_games * 100, 1)
-            if conversion_games > 0
-            else 0.0
+            round(conversion_wins / conversion_games * 100, 1) if conversion_games > 0 else 0.0
         )
 
         recovery_games = recov_data["games"]
@@ -259,9 +272,7 @@ def _aggregate_endgame_stats(rows: Sequence[Row[Any] | tuple[Any, ...]]) -> list
         recovery_draws = recov_data["draws"]
         recovery_saves = recovery_wins + recovery_draws  # derived, kept for backward compat
         recovery_pct = (
-            round(recovery_saves / recovery_games * 100, 1)
-            if recovery_games > 0
-            else 0.0
+            round(recovery_saves / recovery_games * 100, 1) if recovery_games > 0 else 0.0
         )
 
         conversion_stats = ConversionRecoveryStats(
@@ -515,17 +526,6 @@ def _compute_score_gap_material(
     non_endgame_score = _wdl_to_score(non_endgame_wdl)
     score_difference = endgame_score - non_endgame_score
 
-    # overall_score: weighted combination from both WDL summaries combined.
-    combined_wins = endgame_wdl.wins + non_endgame_wdl.wins
-    combined_draws = endgame_wdl.draws + non_endgame_wdl.draws
-    combined_total = endgame_wdl.total + non_endgame_wdl.total
-    if combined_total > 0:
-        overall_win_pct = combined_wins / combined_total * 100
-        overall_draw_pct = combined_draws / combined_total * 100
-        overall_score = (overall_win_pct + overall_draw_pct / 2) / 100
-    else:
-        overall_score = 0.0
-
     bucket_wins: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
     bucket_draws: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
     bucket_losses: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
@@ -604,29 +604,55 @@ def _compute_score_gap_material(
         else:
             bucket_losses[chosen_bucket] += 1
 
-    # Build MaterialRow for each bucket in fixed order: conversion, even, recovery.
-    material_rows: list[MaterialRow] = []
+    # First pass: compute per-bucket user score (needed before opponent lookup).
+    bucket_score: dict[MaterialBucket, float] = {"conversion": 0.0, "even": 0.0, "recovery": 0.0}
+    bucket_pct: dict[
+        MaterialBucket, tuple[float, float, float]
+    ] = {}  # (win_pct, draw_pct, loss_pct)
     for bucket_key in ("conversion", "even", "recovery"):
-        b: MaterialBucket = bucket_key  # type: ignore[assignment]
+        b: MaterialBucket = bucket_key
         games = bucket_games[b]
         if games > 0:
             win_pct = round(bucket_wins[b] / games * 100, 1)
             draw_pct = round(bucket_draws[b] / games * 100, 1)
             loss_pct = round(bucket_losses[b] / games * 100, 1)
-            row_score = (win_pct + draw_pct / 2) / 100
+            bucket_score[b] = (win_pct + draw_pct / 2) / 100
         else:
             win_pct = draw_pct = loss_pct = 0.0
-            row_score = 0.0
+            bucket_score[b] = 0.0
+        bucket_pct[b] = (win_pct, draw_pct, loss_pct)
 
+    # Phase 60: opponent baseline via same-game symmetry. The opponent's
+    # score in any game set is 1 - user_score (arithmetic identity from
+    # user_wins + draws/2 + opp_wins + draws/2 = games). Mirror buckets:
+    # user Conversion <-> opponent Recovery, Even <-> Even.
+    swap: dict[MaterialBucket, MaterialBucket] = {
+        "conversion": "recovery",
+        "even": "even",
+        "recovery": "conversion",
+    }
+
+    material_rows: list[MaterialRow] = []
+    for bucket_key in ("conversion", "even", "recovery"):
+        b2: MaterialBucket = bucket_key
+        swap_bucket = swap[b2]
+        swap_games = bucket_games[swap_bucket]
+        if swap_games >= _MIN_OPPONENT_SAMPLE:
+            opponent_score: float | None = 1.0 - bucket_score[swap_bucket]
+        else:
+            opponent_score = None
+        win_pct, draw_pct, loss_pct = bucket_pct[b2]
         material_rows.append(
             MaterialRow(
-                bucket=b,
-                label=_MATERIAL_BUCKET_LABELS[b],
-                games=games,
+                bucket=b2,
+                label=_MATERIAL_BUCKET_LABELS[b2],
+                games=bucket_games[b2],
                 win_pct=win_pct,
                 draw_pct=draw_pct,
                 loss_pct=loss_pct,
-                score=row_score,
+                score=bucket_score[b2],
+                opponent_score=opponent_score,
+                opponent_games=swap_games,
             )
         )
 
@@ -634,7 +660,6 @@ def _compute_score_gap_material(
         endgame_score=endgame_score,
         non_endgame_score=non_endgame_score,
         score_difference=score_difference,
-        overall_score=overall_score,
         material_rows=material_rows,
     )
 
@@ -789,18 +814,20 @@ def _compute_clock_pressure(
 
         label = _TIME_CONTROL_LABELS.get(tc, tc.capitalize())
 
-        rows.append(ClockStatsRow(
-            time_control=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
-            label=label,
-            total_endgame_games=total_endgame_games,
-            clock_games=clock_games,
-            user_avg_pct=user_avg_pct,
-            user_avg_seconds=user_avg_seconds,
-            opp_avg_pct=opp_avg_pct,
-            opp_avg_seconds=opp_avg_seconds,
-            avg_clock_diff_seconds=avg_clock_diff_seconds,
-            net_timeout_rate=net_timeout_rate,
-        ))
+        rows.append(
+            ClockStatsRow(
+                time_control=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
+                label=label,
+                total_endgame_games=total_endgame_games,
+                clock_games=clock_games,
+                user_avg_pct=user_avg_pct,
+                user_avg_seconds=user_avg_seconds,
+                opp_avg_pct=opp_avg_pct,
+                opp_avg_seconds=opp_avg_seconds,
+                avg_clock_diff_seconds=avg_clock_diff_seconds,
+                net_timeout_rate=net_timeout_rate,
+            )
+        )
 
     return ClockPressureResponse(
         rows=rows,
@@ -825,12 +852,14 @@ def _build_bucket_series(
         hi = (i + 1) * BUCKET_WIDTH_PCT
         label = f"{lo}-{hi}%"
         score = (score_sum / count) if count > 0 else None
-        points.append(TimePressureBucketPoint(
-            bucket_index=i,
-            bucket_label=label,
-            score=score,
-            game_count=int(count),
-        ))
+        points.append(
+            TimePressureBucketPoint(
+                bucket_index=i,
+                bucket_label=label,
+                score=score,
+                game_count=int(count),
+            )
+        )
     return points
 
 
@@ -899,7 +928,7 @@ def _compute_time_pressure_chart(
         # Accumulate: initialise defaultdict entry if needed, then update
         tc_user_buckets[tc][user_bucket][0] += user_score
         tc_user_buckets[tc][user_bucket][1] += 1
-        tc_opp_buckets[tc][opp_bucket][0] += (1.0 - user_score)
+        tc_opp_buckets[tc][opp_bucket][0] += 1.0 - user_score
         tc_opp_buckets[tc][opp_bucket][1] += 1
 
     # Build rows in fixed time control order, filtering below minimum threshold
@@ -913,13 +942,15 @@ def _compute_time_pressure_chart(
         user_series = _build_bucket_series(tc_user_buckets[tc])
         opp_series = _build_bucket_series(tc_opp_buckets[tc])
 
-        rows.append(TimePressureChartRow(
-            time_control=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
-            label=label,
-            total_endgame_games=total_games,
-            user_series=user_series,
-            opp_series=opp_series,
-        ))
+        rows.append(
+            TimePressureChartRow(
+                time_control=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
+                label=label,
+                total_endgame_games=total_games,
+                user_series=user_series,
+                opp_series=opp_series,
+            )
+        )
 
     return TimePressureChartResponse(rows=rows)
 
@@ -1109,9 +1140,13 @@ async def get_endgame_timeline(
             EndgameOverallPoint(
                 date=date,
                 endgame_win_rate=last_endgame_pt["win_rate"] if last_endgame_pt else None,
-                non_endgame_win_rate=last_non_endgame_pt["win_rate"] if last_non_endgame_pt else None,
+                non_endgame_win_rate=last_non_endgame_pt["win_rate"]
+                if last_non_endgame_pt
+                else None,
                 endgame_game_count=last_endgame_pt["game_count"] if last_endgame_pt else 0,
-                non_endgame_game_count=last_non_endgame_pt["game_count"] if last_non_endgame_pt else 0,
+                non_endgame_game_count=last_non_endgame_pt["game_count"]
+                if last_non_endgame_pt
+                else 0,
                 window_size=window,
             )
         )

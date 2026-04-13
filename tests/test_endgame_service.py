@@ -130,9 +130,9 @@ class TestAggregateEndgameStats:
     def test_win_draw_loss_percentages(self):
         """Percentages computed correctly for 1W/1D/1L split."""
         rows = [
-            (1, 1, "1-0", "white", 0, 0),       # rook win (endgame_class_int=1)
-            (2, 1, "1/2-1/2", "white", 0, 0),   # rook draw
-            (3, 1, "0-1", "white", 0, 0),        # rook loss
+            (1, 1, "1-0", "white", 0, 0),  # rook win (endgame_class_int=1)
+            (2, 1, "1/2-1/2", "white", 0, 0),  # rook draw
+            (3, 1, "0-1", "white", 0, 0),  # rook loss
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -145,11 +145,25 @@ class TestAggregateEndgameStats:
     def test_conversion_pct_per_category(self):
         """D-08: Conversion = win rate when user entered endgame with >= 100cp material advantage (persisted)."""
         rows = [
-            (1, 1, "1-0", "white", 500, 500),     # rook, up 500cp, persisted, won → converted
-            (2, 1, "0-1", "white", 350, 350),      # rook, up 350cp, persisted, lost → failed conversion
-            (3, 1, "1/2-1/2", "white", 100, 100),  # rook, up 100cp (threshold), persisted, draw → draw conversion
-            (4, 1, "1-0", "white", 200, 50),        # rook, up 200cp at entry but only 50cp after → NOT conversion (didn't persist)
-            (5, 1, "1-0", "white", -400, -400),     # rook, down, won → not a conversion game
+            (1, 1, "1-0", "white", 500, 500),  # rook, up 500cp, persisted, won → converted
+            (2, 1, "0-1", "white", 350, 350),  # rook, up 350cp, persisted, lost → failed conversion
+            (
+                3,
+                1,
+                "1/2-1/2",
+                "white",
+                100,
+                100,
+            ),  # rook, up 100cp (threshold), persisted, draw → draw conversion
+            (
+                4,
+                1,
+                "1-0",
+                "white",
+                200,
+                50,
+            ),  # rook, up 200cp at entry but only 50cp after → NOT conversion (didn't persist)
+            (5, 1, "1-0", "white", -400, -400),  # rook, down, won → not a conversion game
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -163,10 +177,31 @@ class TestAggregateEndgameStats:
     def test_recovery_pct_per_category(self):
         """D-09: Recovery = draw+win rate when user entered endgame with <= -100cp material deficit (persisted)."""
         rows = [
-            (1, 1, "1-0", "white", -400, -400),    # rook, down 400cp, persisted, won → recovery win
-            (2, 1, "1/2-1/2", "white", -500, -500), # rook, down 500cp, persisted, draw → recovery draw
-            (3, 1, "0-1", "white", -100, -100),      # rook, down 100cp (threshold), persisted, lost → not recovered
-            (4, 1, "0-1", "white", -200, -50),       # rook, down 200cp but only -50cp after → NOT recovery (didn't persist)
+            (1, 1, "1-0", "white", -400, -400),  # rook, down 400cp, persisted, won → recovery win
+            (
+                2,
+                1,
+                "1/2-1/2",
+                "white",
+                -500,
+                -500,
+            ),  # rook, down 500cp, persisted, draw → recovery draw
+            (
+                3,
+                1,
+                "0-1",
+                "white",
+                -100,
+                -100,
+            ),  # rook, down 100cp (threshold), persisted, lost → not recovered
+            (
+                4,
+                1,
+                "0-1",
+                "white",
+                -200,
+                -50,
+            ),  # rook, down 200cp but only -50cp after → NOT recovery (didn't persist)
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -194,9 +229,9 @@ class TestAggregateEndgameStats:
     def test_multiple_categories_aggregated_correctly(self):
         """Multiple categories are computed independently, not mixed together."""
         rows = [
-            (1, 1, "1-0", "white", 0, 0),     # rook win (endgame_class_int=1)
-            (2, 1, "0-1", "white", 0, 0),      # rook loss
-            (3, 4, "1-0", "white", 0, 0),      # queen win (endgame_class_int=4)
+            (1, 1, "1-0", "white", 0, 0),  # rook win (endgame_class_int=1)
+            (2, 1, "0-1", "white", 0, 0),  # rook loss
+            (3, 4, "1-0", "white", 0, 0),  # queen win (endgame_class_int=4)
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -210,8 +245,8 @@ class TestAggregateEndgameStats:
     def test_zero_conversion_games_returns_zero_pct(self):
         """When no games have material advantage, conversion_pct should be 0 (not a divide-by-zero error)."""
         rows = [
-            (1, 1, "1-0", "white", -100, -100),   # rook, down, won → recovery only
-            (2, 1, "0-1", "white", 0, 0),          # rook, equal, lost → neither
+            (1, 1, "1-0", "white", -100, -100),  # rook, down, won → recovery only
+            (2, 1, "0-1", "white", 0, 0),  # rook, equal, lost → neither
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -221,8 +256,8 @@ class TestAggregateEndgameStats:
     def test_zero_recovery_games_returns_zero_pct(self):
         """When no games have material disadvantage, recovery_pct should be 0."""
         rows = [
-            (1, 1, "1-0", "white", 200, 200),    # rook, up, won → conversion only
-            (2, 1, "0-1", "white", 0, 0),         # rook, equal, lost → neither
+            (1, 1, "1-0", "white", 200, 200),  # rook, up, won → conversion only
+            (2, 1, "0-1", "white", 0, 0),  # rook, equal, lost → neither
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -233,8 +268,8 @@ class TestAggregateEndgameStats:
         """A game_id appearing with two different endgame_class_int values contributes to both classes."""
         rows = [
             # Same game (game_id=1) in two classes: rook (1) and pawn (3)
-            (1, 1, "1-0", "white", 100, 100),   # rook class for game 1
-            (1, 3, "1-0", "white", 50, 50),      # pawn class for game 1
+            (1, 1, "1-0", "white", 100, 100),  # rook class for game 1
+            (1, 3, "1-0", "white", 50, 50),  # pawn class for game 1
             # Another game in rook only
             (2, 1, "0-1", "white", 0, 0),
         ]
@@ -287,21 +322,37 @@ class TestGetEndgameStatsSmoke:
     """Smoke tests for service entry points — catch wiring bugs like typos and broken imports."""
 
     @pytest.mark.asyncio
-    async def test_get_endgame_stats_returns_empty_for_nonexistent_user(self, db_session: AsyncSession):
+    async def test_get_endgame_stats_returns_empty_for_nonexistent_user(
+        self, db_session: AsyncSession
+    ):
         """Calling get_endgame_stats with a user that has no games should return empty categories."""
         result = await get_endgame_stats(
-            db_session, user_id=999999, time_control=None, platform=None,
-            rated=None, opponent_type="human", recency=None,
+            db_session,
+            user_id=999999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="human",
+            recency=None,
         )
         assert result.categories == []
 
     @pytest.mark.asyncio
-    async def test_get_endgame_games_returns_empty_for_nonexistent_user(self, db_session: AsyncSession):
+    async def test_get_endgame_games_returns_empty_for_nonexistent_user(
+        self, db_session: AsyncSession
+    ):
         """Calling get_endgame_games with a user that has no games should return empty."""
         result = await get_endgame_games(
-            db_session, user_id=999999, endgame_class="rook",
-            time_control=None, platform=None, rated=None,
-            opponent_type="human", recency=None, offset=0, limit=20,
+            db_session,
+            user_id=999999,
+            endgame_class="rook",
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="human",
+            recency=None,
+            offset=0,
+            limit=20,
         )
         assert result.games == []
         assert result.matched_count == 0
@@ -309,9 +360,12 @@ class TestGetEndgameStatsSmoke:
 
 # --- Helpers ---
 
+
 def _dt(days_offset: int) -> datetime.datetime:
     """Return a UTC datetime N days from epoch for use in test rows."""
-    return datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc) + datetime.timedelta(days=days_offset)
+    return datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc) + datetime.timedelta(
+        days=days_offset
+    )
 
 
 def _row(result: str, user_color: str, days: int = 0):
@@ -338,6 +392,7 @@ class TestComputeRollingSeries:
     def test_threshold_game_emits_first_point(self):
         """Exactly MIN_GAMES_FOR_TIMELINE games produce one data point."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         rows = [_row("1-0", "white", i) for i in range(n)]
         result = _compute_rolling_series(rows, window=50)
@@ -348,6 +403,7 @@ class TestComputeRollingSeries:
     def test_rolling_drops_old_games(self):
         """Window fills up and oldest games drop off, changing win rate."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         # n wins followed by n losses = 2n games with window=n
         # At game n: window is all wins → 100%
@@ -365,16 +421,20 @@ class TestComputeRollingSeries:
     def test_date_formatting(self):
         """Date field is formatted as YYYY-MM-DD string."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         rows = [_row("1-0", "white", i) for i in range(n)]
         result = _compute_rolling_series(rows, window=50)
         # Last date: 2024-01-01 + (n-1) days
-        expected = (datetime.datetime(2024, 1, 1) + datetime.timedelta(days=n - 1)).strftime("%Y-%m-%d")
+        expected = (datetime.datetime(2024, 1, 1) + datetime.timedelta(days=n - 1)).strftime(
+            "%Y-%m-%d"
+        )
         assert result[-1]["date"] == expected
 
     def test_draw_does_not_count_as_win(self):
         """Draw games do not count toward win_rate."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         rows = [_row("1/2-1/2", "white", i) for i in range(n)]
         result = _compute_rolling_series(rows, window=50)
@@ -383,6 +443,7 @@ class TestComputeRollingSeries:
     def test_black_win_counted_correctly(self):
         """Black player winning (0-1) should be a win for black."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         # Alternating black wins and losses
         rows = []
@@ -415,15 +476,25 @@ class TestGetEndgamePerformance:
     async def test_zero_games_returns_all_zeros(self):
         """With no games, all fields should be 0.0 without ZeroDivisionError."""
         with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
+            patch(
+                "app.services.endgame_service.query_endgame_performance_rows",
+                new_callable=AsyncMock,
+            ) as mock_perf,
+            patch(
+                "app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock
+            ) as mock_entry,
         ):
             mock_perf.return_value = ([], [])
             mock_entry.return_value = []
 
             result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
             )
 
         assert result.endgame_wdl.total == 0
@@ -437,15 +508,25 @@ class TestGetEndgamePerformance:
         non_endgame_rows = self._make_wdl_rows(wins=2, draws=3, losses=5)
 
         with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
+            patch(
+                "app.services.endgame_service.query_endgame_performance_rows",
+                new_callable=AsyncMock,
+            ) as mock_perf,
+            patch(
+                "app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock
+            ) as mock_entry,
         ):
             mock_perf.return_value = (endgame_rows, non_endgame_rows)
             mock_entry.return_value = []
 
             result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
             )
 
         # Endgame WDL
@@ -468,12 +549,20 @@ class TestGetEndgameTimeline:
     @pytest.mark.asyncio
     async def test_empty_rows_returns_empty_series(self):
         """With no games, overall and per_type should be empty."""
-        with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
+        with patch(
+            "app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock
+        ) as mock_timeline:
             mock_timeline.return_value = ([], [], {1: [], 2: [], 3: [], 4: [], 5: [], 6: []})
 
             result = await get_endgame_timeline(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human", window=50,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
+                window=50,
             )
 
         assert result.overall == []
@@ -487,18 +576,31 @@ class TestGetEndgameTimeline:
     async def test_rolling_window_with_known_sequence(self):
         """With window=n and 2n games (n wins then n losses), rolling window drops old games."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         # n wins followed by n losses
         endgame_rows = [_row("1-0", "white", i) for i in range(n)]
         endgame_rows += [_row("0-1", "white", n + i) for i in range(n)]
         non_endgame_rows = [_row("1-0", "white", i) for i in range(n)]
 
-        with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
-            mock_timeline.return_value = (endgame_rows, non_endgame_rows, {1: [], 2: [], 3: [], 4: [], 5: [], 6: []})
+        with patch(
+            "app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock
+        ) as mock_timeline:
+            mock_timeline.return_value = (
+                endgame_rows,
+                non_endgame_rows,
+                {1: [], 2: [], 3: [], 4: [], 5: [], 6: []},
+            )
 
             result = await get_endgame_timeline(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human", window=n,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
+                window=n,
             )
 
         # Find the last endgame point in overall that has endgame data
@@ -514,12 +616,24 @@ class TestGetEndgameTimeline:
         """Partial windows below MIN_GAMES_FOR_TIMELINE produce no data points."""
         endgame_rows = [_row("1-0", "white", 0), _row("1-0", "white", 1)]
 
-        with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
-            mock_timeline.return_value = (endgame_rows, [], {1: [], 2: [], 3: [], 4: [], 5: [], 6: []})
+        with patch(
+            "app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock
+        ) as mock_timeline:
+            mock_timeline.return_value = (
+                endgame_rows,
+                [],
+                {1: [], 2: [], 3: [], 4: [], 5: [], 6: []},
+            )
 
             result = await get_endgame_timeline(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human", window=50,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
+                window=50,
             )
 
         # 2 games < MIN_GAMES_FOR_TIMELINE → no data points emitted
@@ -529,17 +643,30 @@ class TestGetEndgameTimeline:
     async def test_date_merge_both_series_present(self):
         """Overall series merges dates from both endgame and non-endgame rows."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         # Seed n endgame games and n non-endgame games on distinct date ranges
         endgame_rows = [_row("1-0", "white", i) for i in range(n)]
         non_endgame_rows = [_row("0-1", "white", n + i) for i in range(n)]
 
-        with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
-            mock_timeline.return_value = (endgame_rows, non_endgame_rows, {1: [], 2: [], 3: [], 4: [], 5: [], 6: []})
+        with patch(
+            "app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock
+        ) as mock_timeline:
+            mock_timeline.return_value = (
+                endgame_rows,
+                non_endgame_rows,
+                {1: [], 2: [], 3: [], 4: [], 5: [], 6: []},
+            )
 
             result = await get_endgame_timeline(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human", window=50,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
+                window=50,
             )
 
         # Both series emit points starting at game n
@@ -557,15 +684,24 @@ class TestGetEndgameTimeline:
     async def test_per_type_keys_are_endgame_class_strings(self):
         """per_type keys should be EndgameClass strings (rook, minor_piece, etc.), not integers."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         rook_rows = [_row("1-0", "white", i) for i in range(n)]
 
-        with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
+        with patch(
+            "app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock
+        ) as mock_timeline:
             mock_timeline.return_value = ([], [], {1: rook_rows, 2: [], 3: [], 4: [], 5: [], 6: []})
 
             result = await get_endgame_timeline(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human", window=50,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
+                window=50,
             )
 
         assert "rook" in result.per_type
@@ -581,12 +717,20 @@ class TestGetEndgameTimeline:
     @pytest.mark.asyncio
     async def test_window_parameter_reflected_in_response(self):
         """window field in response matches the requested window parameter."""
-        with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
+        with patch(
+            "app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock
+        ) as mock_timeline:
             mock_timeline.return_value = ([], [], {1: [], 2: [], 3: [], 4: [], 5: [], 6: []})
 
             result = await get_endgame_timeline(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human", window=25,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
+                window=25,
             )
 
         assert result.window == 25
@@ -596,21 +740,35 @@ class TestGetEndgamePerformanceSmoke:
     """Smoke tests for performance/timeline service entry points with real DB."""
 
     @pytest.mark.asyncio
-    async def test_get_endgame_performance_returns_zeros_for_nonexistent_user(self, db_session: AsyncSession):
+    async def test_get_endgame_performance_returns_zeros_for_nonexistent_user(
+        self, db_session: AsyncSession
+    ):
         """Calling get_endgame_performance with no data should return all-zero response."""
         result = await get_endgame_performance(
-            db_session, user_id=999999, time_control=None, platform=None,
-            recency=None, rated=None, opponent_type="human",
+            db_session,
+            user_id=999999,
+            time_control=None,
+            platform=None,
+            recency=None,
+            rated=None,
+            opponent_type="human",
         )
         assert result.endgame_wdl.total == 0
         assert result.non_endgame_wdl.total == 0
 
     @pytest.mark.asyncio
-    async def test_get_endgame_timeline_returns_empty_for_nonexistent_user(self, db_session: AsyncSession):
+    async def test_get_endgame_timeline_returns_empty_for_nonexistent_user(
+        self, db_session: AsyncSession
+    ):
         """Calling get_endgame_timeline with no data should return empty series."""
         result = await get_endgame_timeline(
-            db_session, user_id=999999, time_control=None, platform=None,
-            recency=None, rated=None, opponent_type="human",
+            db_session,
+            user_id=999999,
+            time_control=None,
+            platform=None,
+            recency=None,
+            rated=None,
+            opponent_type="human",
         )
         assert result.overall == []
         assert result.window == 50
@@ -631,13 +789,28 @@ class TestGetEndgameOverview:
         from app.schemas.endgames import EndgameTimelineResponse
 
         with (
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-            patch("app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock) as mock_bucket,
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf_rows,
-            patch("app.services.endgame_service.count_filtered_games", new_callable=AsyncMock) as mock_count,
-            patch("app.services.endgame_service.count_endgame_games", new_callable=AsyncMock) as mock_eg_count,
-            patch("app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock) as mock_timeline,
-            patch("app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock) as mock_clock,
+            patch(
+                "app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock
+            ) as mock_entry,
+            patch(
+                "app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock
+            ) as mock_bucket,
+            patch(
+                "app.services.endgame_service.query_endgame_performance_rows",
+                new_callable=AsyncMock,
+            ) as mock_perf_rows,
+            patch(
+                "app.services.endgame_service.count_filtered_games", new_callable=AsyncMock
+            ) as mock_count,
+            patch(
+                "app.services.endgame_service.count_endgame_games", new_callable=AsyncMock
+            ) as mock_eg_count,
+            patch(
+                "app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock
+            ) as mock_timeline,
+            patch(
+                "app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock
+            ) as mock_clock,
         ):
             mock_entry.return_value = []
             mock_bucket.return_value = []
@@ -648,8 +821,14 @@ class TestGetEndgameOverview:
             mock_clock.return_value = []
 
             result = await get_endgame_overview(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                rated=None, opponent_type="human", recency=None, window=50,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                rated=None,
+                opponent_type="human",
+                recency=None,
+                window=50,
             )
 
         # Repository functions called once each
@@ -675,13 +854,26 @@ class TestGetEndgameOverview:
         from app.schemas.endgames import EndgameTimelineResponse
 
         with (
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-            patch("app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock) as mock_bucket,
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf_rows,
-            patch("app.services.endgame_service.count_filtered_games", new_callable=AsyncMock) as mock_count,
+            patch(
+                "app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock
+            ) as mock_entry,
+            patch(
+                "app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock
+            ) as mock_bucket,
+            patch(
+                "app.services.endgame_service.query_endgame_performance_rows",
+                new_callable=AsyncMock,
+            ) as mock_perf_rows,
+            patch(
+                "app.services.endgame_service.count_filtered_games", new_callable=AsyncMock
+            ) as mock_count,
             patch("app.services.endgame_service.count_endgame_games", new_callable=AsyncMock),
-            patch("app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock) as mock_timeline,
-            patch("app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock) as mock_clock,
+            patch(
+                "app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock
+            ) as mock_timeline,
+            patch(
+                "app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock
+            ) as mock_clock,
         ):
             mock_entry.return_value = []
             mock_bucket.return_value = []
@@ -691,8 +883,14 @@ class TestGetEndgameOverview:
             mock_clock.return_value = []
 
             await get_endgame_overview(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                rated=None, opponent_type="human", recency=None, window=75,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                rated=None,
+                opponent_type="human",
+                recency=None,
+                window=75,
             )
 
         # Timeline function must receive window=75
@@ -703,8 +901,14 @@ class TestGetEndgameOverview:
     async def test_overview_returns_empty_for_nonexistent_user(self, db_session: AsyncSession):
         """get_endgame_overview with a user that has no games returns all empty/zero payloads."""
         result = await get_endgame_overview(
-            db_session, user_id=999999, time_control=None, platform=None,
-            rated=None, opponent_type="human", recency=None, window=50,
+            db_session,
+            user_id=999999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="human",
+            recency=None,
+            window=50,
         )
         # All sub-payloads must be present
         assert result.stats.categories == []
@@ -725,17 +929,29 @@ class TestScoreGapMaterial:
         else:
             win_pct = draw_pct = loss_pct = 0.0
         return EndgameWDLSummary(
-            wins=wins, draws=draws, losses=losses, total=total,
-            win_pct=win_pct, draw_pct=draw_pct, loss_pct=loss_pct,
+            wins=wins,
+            draws=draws,
+            losses=losses,
+            total=total,
+            win_pct=win_pct,
+            draw_pct=draw_pct,
+            loss_pct=loss_pct,
         )
 
-    def _make_wdl_pct(self, win_pct: float, draw_pct: float, loss_pct: float, total: int = 100) -> EndgameWDLSummary:
+    def _make_wdl_pct(
+        self, win_pct: float, draw_pct: float, loss_pct: float, total: int = 100
+    ) -> EndgameWDLSummary:
         wins = round(win_pct * total / 100)
         draws = round(draw_pct * total / 100)
         losses = total - wins - draws
         return EndgameWDLSummary(
-            wins=wins, draws=draws, losses=losses, total=total,
-            win_pct=win_pct, draw_pct=draw_pct, loss_pct=loss_pct,
+            wins=wins,
+            draws=draws,
+            losses=losses,
+            total=total,
+            win_pct=win_pct,
+            draw_pct=draw_pct,
+            loss_pct=loss_pct,
         )
 
     # --- _wdl_to_score tests ---
@@ -809,10 +1025,10 @@ class TestScoreGapMaterial:
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        assert result.material_rows[0].games == 0       # conversion
+        assert result.material_rows[0].games == 0  # conversion
         assert result.material_rows[1].bucket == "even"
-        assert result.material_rows[1].games == 1       # even — NULL rows now land here
-        assert result.material_rows[2].games == 0       # recovery
+        assert result.material_rows[1].games == 1  # even — NULL rows now land here
+        assert result.material_rows[2].games == 0  # recovery
 
     def test_score_gap_material_empty_rows(self):
         """Empty entry_rows -> 3 material_rows all with games=0, score_difference=0.0."""
@@ -901,9 +1117,9 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
 
     def test_invariant_single_span_each_bucket(self):
         entry_rows = [
-            (1, 1, "1-0",    "white", 150, 150),   # conversion
-            (2, 1, "0-1",    "white", -150, -150), # recovery
-            (3, 1, "1/2-1/2","white", 50, 50),     # even
+            (1, 1, "1-0", "white", 150, 150),  # conversion
+            (2, 1, "0-1", "white", -150, -150),  # recovery
+            (3, 1, "1/2-1/2", "white", 50, 50),  # even
         ]
         endgame_wdl = self._make_wdl(1, 1, 1)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -917,8 +1133,8 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
     def test_invariant_multi_span_conversion_over_recovery(self):
         """Decision 2 tiebreak: when a game has both conversion and recovery spans, pick conversion."""
         entry_rows = [
-            (1, 1, "1-0", "white", 150, 150),   # conversion span (rook)
-            (1, 3, "1-0", "white", -150, -150), # recovery span (pawn) — same game
+            (1, 1, "1-0", "white", 150, 150),  # conversion span (rook)
+            (1, 3, "1-0", "white", -150, -150),  # recovery span (pawn) — same game
         ]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -931,7 +1147,7 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
         """Decision 1+2: first-seen NULL row must not drop the game if another span qualifies."""
         entry_rows = [
             (1, 1, "1-0", "white", None, None),  # NULL first (would have been dropped pre-Phase 59)
-            (1, 3, "1-0", "white", 150, 150),    # qualifying conversion span
+            (1, 3, "1-0", "white", 150, 150),  # qualifying conversion span
         ]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1052,11 +1268,13 @@ class TestScoreGapMaterialOpponentBaseline(TestScoreGapMaterial):
         Conv row's opponent_score == 1 - 0.40 = 0.60 (mirror of Recov),
         Recov row's opponent_score == 1 - 0.60 = 0.40 (mirror of Conv)."""
         # Conversion: 100 games, score 0.60 -> 60 wins, 0 draws, 40 losses
-        conv_rows = [self._conversion_row(i, "1-0") for i in range(60)] + \
-                    [self._conversion_row(i + 60, "0-1") for i in range(40)]
+        conv_rows = [self._conversion_row(i, "1-0") for i in range(60)] + [
+            self._conversion_row(i + 60, "0-1") for i in range(40)
+        ]
         # Recovery: 100 games, score 0.40 -> 40 wins, 0 draws, 60 losses
-        rec_rows = [self._recovery_row(i + 100, "1-0") for i in range(40)] + \
-                   [self._recovery_row(i + 140, "0-1") for i in range(60)]
+        rec_rows = [self._recovery_row(i + 100, "1-0") for i in range(40)] + [
+            self._recovery_row(i + 140, "0-1") for i in range(60)
+        ]
         entry_rows = conv_rows + rec_rows
         endgame_wdl = self._make_wdl(100, 0, 100)  # 60+40 wins, 40+60 losses
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1111,15 +1329,18 @@ class TestScoreGapMaterialOpponentBaseline(TestScoreGapMaterial):
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
         conv = result.material_rows[0]
         assert conv.opponent_score is not None
-        assert conv.opponent_score == pytest.approx(1.0 - 0.0, abs=1e-9)  # rec score is 0.0 (10 losses)
+        assert conv.opponent_score == pytest.approx(
+            1.0 - 0.0, abs=1e-9
+        )  # rec score is 0.0 (10 losses)
         assert conv.opponent_games == 10
 
     def test_opponent_baseline_even_self_mirror(self):
         """Even bucket mirrors itself: opponent_score == 1 - even.score
         with opponent_games == even.games. Threshold still applies."""
         # 10 even games, 50% score
-        entry_rows = [self._even_row(i, "1-0") for i in range(5)] + \
-                     [self._even_row(i + 5, "0-1") for i in range(5)]
+        entry_rows = [self._even_row(i, "1-0") for i in range(5)] + [
+            self._even_row(i + 5, "0-1") for i in range(5)
+        ]
         endgame_wdl = self._make_wdl(5, 0, 5)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1163,8 +1384,16 @@ def _make_clock_row(
     Shape: (game_id, time_control_bucket, time_control_seconds, termination,
             result, user_color, ply_array, clock_array)
     """
-    return (game_id, time_control_bucket, time_control_seconds, termination,
-            result, user_color, ply_array, clock_array)
+    return (
+        game_id,
+        time_control_bucket,
+        time_control_seconds,
+        termination,
+        result,
+        user_color,
+        ply_array,
+        clock_array,
+    )
 
 
 class TestExtractEntryClocks:
@@ -1248,16 +1477,18 @@ class TestComputeClockPressure:
         for i in range(count):
             game_id = start_id + i
             # White even ply 0 = user_clock, odd ply 1 = opp_clock
-            rows.append(_make_clock_row(
-                game_id=game_id,
-                time_control_bucket="blitz",
-                time_control_seconds=time_control_seconds,
-                termination=termination,
-                result=result,
-                user_color=user_color,
-                ply_array=[0, 1],
-                clock_array=[user_clock, opp_clock],
-            ))
+            rows.append(
+                _make_clock_row(
+                    game_id=game_id,
+                    time_control_bucket="blitz",
+                    time_control_seconds=time_control_seconds,
+                    termination=termination,
+                    result=result,
+                    user_color=user_color,
+                    ply_array=[0, 1],
+                    clock_array=[user_clock, opp_clock],
+                )
+            )
         return rows
 
     def test_basic_single_bucket(self):
@@ -1281,16 +1512,18 @@ class TestComputeClockPressure:
         """5 games for bullet -> bullet row not in output (below MIN_GAMES_FOR_CLOCK_STATS=10)."""
         rows = []
         for i in range(5):
-            rows.append(_make_clock_row(
-                game_id=i + 1,
-                time_control_bucket="bullet",
-                time_control_seconds=60,
-                termination="checkmate",
-                result="1-0",
-                user_color="white",
-                ply_array=[0, 1],
-                clock_array=[5.0, 4.0],
-            ))
+            rows.append(
+                _make_clock_row(
+                    game_id=i + 1,
+                    time_control_bucket="bullet",
+                    time_control_seconds=60,
+                    termination="checkmate",
+                    result="1-0",
+                    user_color="white",
+                    ply_array=[0, 1],
+                    clock_array=[5.0, 4.0],
+                )
+            )
         result = _compute_clock_pressure(rows)
         assert len(result.rows) == 0
 
@@ -1303,7 +1536,9 @@ class TestComputeClockPressure:
         ]
         # Add 9 more games (total 10 unique) so the row passes the threshold
         for i in range(2, 11):
-            rows.append(_make_clock_row(i, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [5.0, 3.0]))
+            rows.append(
+                _make_clock_row(i, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [5.0, 3.0])
+            )
         result = _compute_clock_pressure(rows)
         assert len(result.rows) == 1
         row = result.rows[0]
@@ -1315,10 +1550,18 @@ class TestComputeClockPressure:
         """20 games, 3 timeout wins, 1 timeout loss -> rate = (3-1)/20*100 = 10.0."""
         rows = []
         for i in range(3):
-            rows.append(_make_clock_row(i + 1, "blitz", 180, "timeout", "1-0", "white", [0, 1], [3.0, 10.0]))
-        rows.append(_make_clock_row(4, "blitz", 180, "timeout", "0-1", "white", [0, 1], [3.0, 10.0]))
+            rows.append(
+                _make_clock_row(i + 1, "blitz", 180, "timeout", "1-0", "white", [0, 1], [3.0, 10.0])
+            )
+        rows.append(
+            _make_clock_row(4, "blitz", 180, "timeout", "0-1", "white", [0, 1], [3.0, 10.0])
+        )
         for i in range(16):
-            rows.append(_make_clock_row(i + 5, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [50.0, 60.0]))
+            rows.append(
+                _make_clock_row(
+                    i + 5, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [50.0, 60.0]
+                )
+            )
         result = _compute_clock_pressure(rows)
         assert len(result.rows) == 1
         assert result.rows[0].net_timeout_rate == pytest.approx(10.0)
@@ -1339,16 +1582,18 @@ class TestComputeClockPressure:
         """Spans where both user and opp clocks are None -> clock_games=0, averages=None."""
         rows = []
         for i in range(10):
-            rows.append(_make_clock_row(
-                game_id=i + 1,
-                time_control_bucket="rapid",
-                time_control_seconds=600,
-                termination="checkmate",
-                result="1-0",
-                user_color="white",
-                ply_array=[0, 1],
-                clock_array=[None, None],
-            ))
+            rows.append(
+                _make_clock_row(
+                    game_id=i + 1,
+                    time_control_bucket="rapid",
+                    time_control_seconds=600,
+                    termination="checkmate",
+                    result="1-0",
+                    user_color="white",
+                    ply_array=[0, 1],
+                    clock_array=[None, None],
+                )
+            )
         result = _compute_clock_pressure(rows)
         assert len(result.rows) == 1
         row = result.rows[0]
@@ -1362,16 +1607,18 @@ class TestComputeClockPressure:
         rows = []
         for tc, tc_secs in [("rapid", 600), ("bullet", 60), ("classical", 1800), ("blitz", 180)]:
             for i in range(10):
-                rows.append(_make_clock_row(
-                    game_id=len(rows) + 1,
-                    time_control_bucket=tc,
-                    time_control_seconds=tc_secs,
-                    termination="checkmate",
-                    result="1-0",
-                    user_color="white",
-                    ply_array=[0, 1],
-                    clock_array=[20.0, 25.0],
-                ))
+                rows.append(
+                    _make_clock_row(
+                        game_id=len(rows) + 1,
+                        time_control_bucket=tc,
+                        time_control_seconds=tc_secs,
+                        termination="checkmate",
+                        result="1-0",
+                        user_color="white",
+                        ply_array=[0, 1],
+                        clock_array=[20.0, 25.0],
+                    )
+                )
         result = _compute_clock_pressure(rows)
         assert len(result.rows) == 4
         assert [r.time_control for r in result.rows] == ["bullet", "blitz", "rapid", "classical"]
@@ -1381,9 +1628,17 @@ class TestComputeClockPressure:
         # 5 bullet games (hidden — below threshold) + 10 blitz games (visible)
         rows = []
         for i in range(5):
-            rows.append(_make_clock_row(i + 1, "bullet", 60, "checkmate", "1-0", "white", [0, 1], [5.0, 4.0]))
+            rows.append(
+                _make_clock_row(
+                    i + 1, "bullet", 60, "checkmate", "1-0", "white", [0, 1], [5.0, 4.0]
+                )
+            )
         for i in range(10):
-            rows.append(_make_clock_row(i + 6, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [50.0, 60.0]))
+            rows.append(
+                _make_clock_row(
+                    i + 6, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [50.0, 60.0]
+                )
+            )
         result = _compute_clock_pressure(rows)
         # Only blitz row visible
         assert len(result.rows) == 1
@@ -1395,7 +1650,9 @@ class TestComputeClockPressure:
         """Rows with time_control_bucket=None are skipped entirely."""
         rows = []
         for i in range(10):
-            rows.append(_make_clock_row(i + 1, None, None, "checkmate", "1-0", "white", [0, 1], [5.0, 4.0]))
+            rows.append(
+                _make_clock_row(i + 1, None, None, "checkmate", "1-0", "white", [0, 1], [5.0, 4.0])
+            )
         result = _compute_clock_pressure(rows)
         assert len(result.rows) == 0
         assert result.total_endgame_games == 0
@@ -1412,16 +1669,19 @@ class TestComputeTimePressureChart:
         """Test 1: 10 bullet wins, user 50% time -> user_score=1.0 -> user bucket 5 (50-60%) populated."""
         # time_control_seconds=60, user_clock=30 -> 50% -> bucket index 5
         # opp_clock=20 -> 33% -> bucket index 3
-        rows = [_make_clock_row(
-            game_id=i + 1,
-            time_control_bucket="bullet",
-            time_control_seconds=60,
-            termination="checkmate",
-            result="1-0",
-            user_color="white",
-            ply_array=[0, 1],
-            clock_array=[30.0, 20.0],
-        ) for i in range(10)]
+        rows = [
+            _make_clock_row(
+                game_id=i + 1,
+                time_control_bucket="bullet",
+                time_control_seconds=60,
+                termination="checkmate",
+                result="1-0",
+                user_color="white",
+                ply_array=[0, 1],
+                clock_array=[30.0, 20.0],
+            )
+            for i in range(10)
+        ]
         result = _compute_time_pressure_chart(rows)
         assert len(result.rows) == 1
         row = result.rows[0]
@@ -1447,7 +1707,11 @@ class TestComputeTimePressureChart:
             _make_clock_row(2, "blitz", 180, "checkmate", "0-1", "white", [0, 1], [90.0, 60.0]),
         ]
         for i in range(3, 11):
-            rows.append(_make_clock_row(i, "blitz", 180, "checkmate", "1/2-1/2", "white", [0, 1], [90.0, 60.0]))
+            rows.append(
+                _make_clock_row(
+                    i, "blitz", 180, "checkmate", "1/2-1/2", "white", [0, 1], [90.0, 60.0]
+                )
+            )
         result = _compute_time_pressure_chart(rows)
         row = result.rows[0]
         # All games in user bucket 5 (90/180=50%) -> average of 1.0 + 0.0 + 8*0.5 = 5.0 / 10 = 0.5
@@ -1460,7 +1724,11 @@ class TestComputeTimePressureChart:
         rows = []
         # 9 games with clocks (ply=[0,1] clock=[90,60])
         for i in range(9):
-            rows.append(_make_clock_row(i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]))
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
         # This game has only user ply/clock (no opp) -> opp_clock=None -> excluded from series
         rows.append(_make_clock_row(10, "blitz", 180, "checkmate", "1-0", "white", [0], [90.0]))
         # Total = 10 games -> row appears; only 9 contribute to series
@@ -1477,7 +1745,11 @@ class TestComputeTimePressureChart:
         rows = []
         for i in range(10):
             # time_control_seconds=None -> excluded from bucket computation
-            rows.append(_make_clock_row(i + 1, "blitz", None, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]))
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", None, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
         result = _compute_time_pressure_chart(rows)
         # 10 games with valid TC bucket -> row appears; but no time_control_seconds -> series empty
         assert len(result.rows) == 1
@@ -1488,15 +1760,23 @@ class TestComputeTimePressureChart:
 
     def test_time_control_below_min_games_excluded(self):
         """Test 5: Time control with fewer than MIN_GAMES_FOR_CLOCK_STATS=10 games excluded."""
-        rows = [_make_clock_row(i + 1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0])
-                for i in range(9)]
+        rows = [
+            _make_clock_row(
+                i + 1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]
+            )
+            for i in range(9)
+        ]
         result = _compute_time_pressure_chart(rows)
         assert len(result.rows) == 0
 
     def test_bucket_clamping_100_percent_time(self):
         """Test 6: 100% time remaining -> clamped to bucket index 9 (not 10)."""
-        rows = [_make_clock_row(i + 1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [600.0, 300.0])
-                for i in range(10)]
+        rows = [
+            _make_clock_row(
+                i + 1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [600.0, 300.0]
+            )
+            for i in range(10)
+        ]
         result = _compute_time_pressure_chart(rows)
         assert len(result.rows) == 1
         row = result.rows[0]
@@ -1515,9 +1795,17 @@ class TestComputeTimePressureChart:
         """Test 8: Multiple time controls produce separate rows in correct order."""
         rows = []
         for i in range(10):
-            rows.append(_make_clock_row(i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]))
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
         for i in range(10):
-            rows.append(_make_clock_row(i + 11, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]))
+            rows.append(
+                _make_clock_row(
+                    i + 11, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]
+                )
+            )
         result = _compute_time_pressure_chart(rows)
         assert len(result.rows) == 2
         # blitz before rapid in _TIME_CONTROL_ORDER
@@ -1531,11 +1819,23 @@ class TestComputeTimePressureChart:
         # opp_score avg = 1 - 0.55 = 0.45
         rows = []
         for i in range(4):
-            rows.append(_make_clock_row(i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]))
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
         for i in range(3):
-            rows.append(_make_clock_row(i + 5, "blitz", 180, "checkmate", "1/2-1/2", "white", [0, 1], [90.0, 60.0]))
+            rows.append(
+                _make_clock_row(
+                    i + 5, "blitz", 180, "checkmate", "1/2-1/2", "white", [0, 1], [90.0, 60.0]
+                )
+            )
         for i in range(3):
-            rows.append(_make_clock_row(i + 8, "blitz", 180, "checkmate", "0-1", "white", [0, 1], [90.0, 60.0]))
+            rows.append(
+                _make_clock_row(
+                    i + 8, "blitz", 180, "checkmate", "0-1", "white", [0, 1], [90.0, 60.0]
+                )
+            )
         result = _compute_time_pressure_chart(rows)
         assert len(result.rows) == 1
         row = result.rows[0]
@@ -1570,7 +1870,11 @@ class TestComputeTimePressureChart:
         rows = []
         # 5 games with clocks
         for i in range(5):
-            rows.append(_make_clock_row(i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]))
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
         # 5 games without clock data (empty arrays) but valid TC bucket
         for i in range(5):
             rows.append(_make_clock_row(i + 6, "blitz", 180, "checkmate", "1-0", "white", [], []))

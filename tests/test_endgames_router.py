@@ -146,7 +146,9 @@ class TestOverviewEmptyUser:
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_overview_empty_user_has_all_sub_payloads(self, auth_headers: dict[str, str]) -> None:
+    async def test_overview_empty_user_has_all_sub_payloads(
+        self, auth_headers: dict[str, str]
+    ) -> None:
         """Response contains all four required top-level keys."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -216,12 +218,10 @@ class TestOverviewComposesAllPayloads:
         # Seed classes 1 (rook), 3 (pawn), 4 (queen)
         await _seed_game_with_endgame(db_session, user_id, endgame_class_int=1, played_at=base_dt)
         await _seed_game_with_endgame(
-            db_session, user_id, endgame_class_int=3,
-            played_at=base_dt + datetime.timedelta(days=1)
+            db_session, user_id, endgame_class_int=3, played_at=base_dt + datetime.timedelta(days=1)
         )
         await _seed_game_with_endgame(
-            db_session, user_id, endgame_class_int=4,
-            played_at=base_dt + datetime.timedelta(days=2)
+            db_session, user_id, endgame_class_int=4, played_at=base_dt + datetime.timedelta(days=2)
         )
         await db_session.commit()
 
@@ -260,7 +260,9 @@ class TestOverviewScoreGapMaterial:
     """GET /api/endgames/overview response contains score_gap_material field (Phase 53)."""
 
     @pytest.mark.asyncio
-    async def test_overview_has_score_gap_material_field(self, auth_headers: dict[str, str]) -> None:
+    async def test_overview_has_score_gap_material_field(
+        self, auth_headers: dict[str, str]
+    ) -> None:
         """Response JSON has 'score_gap_material' key with correct shape."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -363,9 +365,7 @@ class TestGamesEndpointStillWorks:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get(
-                "/api/endgames/games", params={"endgame_class": "rook"}
-            )
+            resp = await client.get("/api/endgames/games", params={"endgame_class": "rook"})
 
         assert resp.status_code == 401
 

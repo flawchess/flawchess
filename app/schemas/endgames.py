@@ -24,17 +24,17 @@ class ConversionRecoveryStats(BaseModel):
     Both are computed per endgame type (D-11), not per game phase.
     """
 
-    conversion_pct: float   # win rate when up material entering endgame (0-100), per D-08
-    conversion_games: int   # games where user entered this endgame type with material advantage
-    conversion_wins: int    # wins among those games
-    conversion_draws: int   # draws among those games
+    conversion_pct: float  # win rate when up material entering endgame (0-100), per D-08
+    conversion_games: int  # games where user entered this endgame type with material advantage
+    conversion_wins: int  # wins among those games
+    conversion_draws: int  # draws among those games
     conversion_losses: int  # losses among those games (= conversion_games - wins - draws)
 
-    recovery_pct: float     # draw+win rate when down material entering endgame (0-100), per D-09
-    recovery_games: int     # games where user entered this endgame type with material disadvantage
-    recovery_saves: int     # draws+wins among those games (kept for backward compat)
-    recovery_wins: int      # wins among those games
-    recovery_draws: int     # draws among those games
+    recovery_pct: float  # draw+win rate when down material entering endgame (0-100), per D-09
+    recovery_games: int  # games where user entered this endgame type with material disadvantage
+    recovery_saves: int  # draws+wins among those games (kept for backward compat)
+    recovery_wins: int  # wins among those games
+    recovery_draws: int  # draws among those games
 
 
 class EndgameCategoryStats(BaseModel):
@@ -64,8 +64,8 @@ class EndgameStatsResponse(BaseModel):
     """
 
     categories: list[EndgameCategoryStats]
-    total_games: int       # Total games matching current filters (not just endgame games)
-    endgame_games: int     # Games that reached an endgame phase
+    total_games: int  # Total games matching current filters (not just endgame games)
+    endgame_games: int  # Games that reached an endgame phase
 
 
 class EndgameGamesResponse(BaseModel):
@@ -109,9 +109,9 @@ class EndgamePerformanceResponse(BaseModel):
     admin gauge UI that consumed them) — see .planning/phases/59-*/59-CONTEXT.md.
     """
 
-    endgame_wdl: EndgameWDLSummary       # games reaching any endgame class >= ENDGAME_PLY_THRESHOLD
-    non_endgame_wdl: EndgameWDLSummary   # games NOT reaching any endgame class
-    endgame_win_rate: float              # wins / total for endgame games only, 0-100
+    endgame_wdl: EndgameWDLSummary  # games reaching any endgame class >= ENDGAME_PLY_THRESHOLD
+    non_endgame_wdl: EndgameWDLSummary  # games NOT reaching any endgame class
+    endgame_win_rate: float  # wins / total for endgame games only, 0-100
 
 
 class EndgameTimelinePoint(BaseModel):
@@ -120,10 +120,10 @@ class EndgameTimelinePoint(BaseModel):
     Represents win rate over the trailing `window_size` games (or fewer if early in the series).
     """
 
-    date: str           # ISO date string "YYYY-MM-DD" of the game
-    win_rate: float     # fraction (0.0–1.0) wins in the rolling window
-    game_count: int     # number of games in the rolling window (may be < window_size early on)
-    window_size: int    # configured window size
+    date: str  # ISO date string "YYYY-MM-DD" of the game
+    win_rate: float  # fraction (0.0–1.0) wins in the rolling window
+    game_count: int  # number of games in the rolling window (may be < window_size early on)
+    window_size: int  # configured window size
 
 
 class EndgameOverallPoint(BaseModel):
@@ -134,11 +134,11 @@ class EndgameOverallPoint(BaseModel):
     """
 
     date: str
-    endgame_win_rate: float | None          # rolling win rate for endgame games
-    non_endgame_win_rate: float | None      # rolling win rate for non-endgame games
-    endgame_game_count: int                 # rolling window size for endgame series
-    non_endgame_game_count: int             # rolling window size for non-endgame series
-    window_size: int                        # configured window size
+    endgame_win_rate: float | None  # rolling win rate for endgame games
+    non_endgame_win_rate: float | None  # rolling win rate for non-endgame games
+    endgame_game_count: int  # rolling window size for endgame series
+    non_endgame_game_count: int  # rolling window size for non-endgame series
+    window_size: int  # configured window size
 
 
 class EndgameTimelineResponse(BaseModel):
@@ -171,12 +171,16 @@ class MaterialRow(BaseModel):
     """
 
     bucket: MaterialBucket
-    label: str           # "Conversion (\u2265 +1)" | "Even" | "Recovery (\u2264 \u22121)"
+    label: str  # "Conversion (\u2265 +1)" | "Even" | "Recovery (\u2264 \u22121)"
     games: int
-    win_pct: float       # 0-100
-    draw_pct: float      # 0-100
-    loss_pct: float      # 0-100
-    score: float         # 0.0-1.0, formula: (win_pct + draw_pct/2) / 100
+    win_pct: float  # 0-100
+    draw_pct: float  # 0-100
+    loss_pct: float  # 0-100
+    score: float  # 0.0-1.0, formula: (win_pct + draw_pct/2) / 100
+    # opponent_score: mirror-bucket score (1 - user_score); None when sample < _MIN_OPPONENT_SAMPLE.
+    opponent_score: float | None
+    # opponent_games: opponent's sample size (== swap-bucket game count).
+    opponent_games: int
 
 
 class ScoreGapMaterialResponse(BaseModel):
@@ -185,14 +189,16 @@ class ScoreGapMaterialResponse(BaseModel):
     endgame_score: user's score (0.0-1.0) in games that reached an endgame.
     non_endgame_score: user's score in games that never reached an endgame.
     score_difference: endgame_score - non_endgame_score (signed, can be negative).
-    overall_score: weighted combination across all games.
     material_rows: 3-row table — conversion / even / recovery — always present.
+
+    Phase 60: each MaterialRow carries an opponent_score (1 - user_score[swap_bucket])
+    and opponent_games. overall_score was removed; it was only consumed by the old
+    global-average baseline display.
     """
 
-    endgame_score: float        # 0.0-1.0
-    non_endgame_score: float    # 0.0-1.0
-    score_difference: float     # endgame_score - non_endgame_score (signed)
-    overall_score: float        # user's overall score across ALL games
+    endgame_score: float  # 0.0-1.0
+    non_endgame_score: float  # 0.0-1.0
+    score_difference: float  # endgame_score - non_endgame_score (signed)
     material_rows: list[MaterialRow]  # 3 rows: conversion / even / recovery
 
 
@@ -206,13 +212,19 @@ class ClockStatsRow(BaseModel):
     time_control: Literal["bullet", "blitz", "rapid", "classical"]
     label: str  # "Bullet" | "Blitz" | "Rapid" | "Classical"
     total_endgame_games: int
-    clock_games: int              # games where both user and opp clocks were available
-    user_avg_pct: float | None    # mean (user_clock / time_control_seconds * 100) at entry; None if no time_control_seconds
+    clock_games: int  # games where both user and opp clocks were available
+    user_avg_pct: (
+        float | None
+    )  # mean (user_clock / time_control_seconds * 100) at entry; None if no time_control_seconds
     user_avg_seconds: float | None  # mean user_clock at entry in seconds; None if no clock data
-    opp_avg_pct: float | None     # mean (opp_clock / time_control_seconds * 100) at entry; None if no time_control_seconds
-    opp_avg_seconds: float | None   # mean opp_clock at entry in seconds; None if no clock data
-    avg_clock_diff_seconds: float | None  # mean (user_clock - opp_clock) in seconds at entry; None if no clock data
-    net_timeout_rate: float       # (timeout wins - timeout losses) / total_endgame_games * 100
+    opp_avg_pct: (
+        float | None
+    )  # mean (opp_clock / time_control_seconds * 100) at entry; None if no time_control_seconds
+    opp_avg_seconds: float | None  # mean opp_clock at entry in seconds; None if no clock data
+    avg_clock_diff_seconds: (
+        float | None
+    )  # mean (user_clock - opp_clock) in seconds at entry; None if no clock data
+    net_timeout_rate: float  # (timeout wins - timeout losses) / total_endgame_games * 100
 
 
 class ClockPressureResponse(BaseModel):
@@ -283,5 +295,5 @@ class EndgameOverviewResponse(BaseModel):
     performance: EndgamePerformanceResponse
     timeline: EndgameTimelineResponse
     score_gap_material: ScoreGapMaterialResponse  # Phase 53: score gap & material breakdown
-    clock_pressure: ClockPressureResponse          # Phase 54: time pressure at endgame entry
+    clock_pressure: ClockPressureResponse  # Phase 54: time pressure at endgame entry
     time_pressure_chart: TimePressureChartResponse  # Phase 55: time pressure vs performance chart
