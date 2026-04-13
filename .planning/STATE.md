@@ -74,9 +74,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 | 260412-fis | Implement last_login defaults and last_activity tracking | 2026-04-12 | 2beabd3 | [260412-fis-implement-last-login-defaults-and-last-a](./quick/260412-fis-implement-last-login-defaults-and-last-a/) |
 | 260413-pwv | Rename material buckets ahead/equal/behind → conversion/even/recovery + apply 4-ply preservation | 2026-04-13 | 9f24d5c | [260413-pwv-implement-conversion-even-recovery-label](./quick/260413-pwv-implement-conversion-even-recovery-label/) |
 | 260413-qg0 | Apply Openings Stats responsive layout (desktop row / mobile stacked) to endgame WDL sections | 2026-04-13 | b399ac9 | [260413-qg0-apply-same-desktop-mobile-layout-from-op](./quick/260413-qg0-apply-same-desktop-mobile-layout-from-op/) |
+| 260413-qq0 | Move Endgame Score Difference into Games with vs without Endgame as bullet chart and rename labels | 2026-04-13 | e4e2768 | [260413-qq0-move-endgame-score-difference-into-games](./quick/260413-qq0-move-endgame-score-difference-into-games/) |
 
 ---
-Last activity: 2026-04-13 - Completed quick task 260413-qg0: Apply Openings Stats responsive layout to endgame chart sections
+Last activity: 2026-04-13 - Completed quick task 260413-qq0: Move Endgame Score Difference into Games with vs without Endgame as bullet chart and rename labels
 | 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
 | 2026-04-10 | ship | Phase 51 shipped — PR #42 merged into main | done |
 | 2026-04-11 | fast | Preserve Openings board position across main tab navigation | ✅ |
