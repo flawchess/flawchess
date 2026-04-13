@@ -29,8 +29,11 @@ from app.models.game_position import GamePosition
 from app.repositories.endgame_repository import (
     ENDGAME_PIECE_COUNT_THRESHOLD,
     ENDGAME_PLY_THRESHOLD,
+    PERSISTENCE_PLIES,
+    query_endgame_bucket_rows,
     query_endgame_entry_rows,
     query_endgame_games,
+    query_endgame_performance_rows,
     query_endgame_timeline_rows,
 )
 
@@ -548,3 +551,178 @@ class TestQueryEndgameTimelineRows:
         assert len(endgame_rows) == 1
         assert len(non_endgame_rows) == 1
         assert len(per_type_rows[1]) == 1
+
+
+# ---------------------------------------------------------------------------
+# TestQueryEndgameBucketRows (Phase 59 gap-closure)
+# ---------------------------------------------------------------------------
+
+
+class TestQueryEndgameBucketRows:
+    """Tests for query_endgame_bucket_rows — one row per endgame game, no ply threshold.
+
+    Phase 59 gap-closure regression suite: guarantees every game counted in
+    `endgame_wdl.total` is also represented here exactly once, so the material-bucket
+    invariant sum(material_rows.games) == endgame_wdl.total holds for any filter.
+    """
+
+    @pytest.mark.asyncio
+    async def test_empty_user_returns_empty(self, db_session: AsyncSession) -> None:
+        rows = await query_endgame_bucket_rows(
+            db_session, user_id=99999, time_control=None, platform=None,
+            rated=None, opponent_type="both", recency_cutoff=None,
+        )
+        assert rows == []
+
+    @pytest.mark.asyncio
+    async def test_short_endgame_still_counted_as_even(self, db_session: AsyncSession) -> None:
+        """Game with fewer than ENDGAME_PLY_THRESHOLD endgame plies is INCLUDED (as 'even').
+
+        This is the core Phase 59 gap-closure: query_endgame_entry_rows would drop this game
+        via its HAVING clause, breaking the bucket-sum invariant. query_endgame_bucket_rows
+        must return it with NULL user_material_imbalance_after (since the endgame didn't
+        persist 4 plies) → _compute_score_gap_material routes it to 'even'.
+        """
+        game = await _seed_game(db_session, result="1-0", user_color="white")
+        # Only 2 endgame plies — well under the 6-ply threshold
+        for ply in range(30, 32):
+            await _seed_game_position(
+                db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1,
+                material_imbalance=0,
+            )
+
+        rows = await query_endgame_bucket_rows(
+            db_session, user_id=99999, time_control=None, platform=None,
+            rated=None, opponent_type="both", recency_cutoff=None,
+        )
+
+        assert len(rows) == 1
+        game_id, _endgame_class, result, user_color, imb, imb_after = rows[0]
+        assert game_id == game.id
+        assert result == "1-0"
+        assert user_color == "white"
+        assert imb == 0
+        # Endgame < 4 plies → no persistence position → NULL → routes to "even"
+        assert imb_after is None
+
+    @pytest.mark.asyncio
+    async def test_long_endgame_returns_imbalance_after(self, db_session: AsyncSession) -> None:
+        """Game with endgame >= 4 plies returns non-NULL user_material_imbalance_after."""
+        game = await _seed_game(db_session, result="1-0", user_color="white")
+        entry_ply = 30
+        for offset in range(PERSISTENCE_PLIES + 1):
+            await _seed_game_position(
+                db_session, game=game, ply=entry_ply + offset,
+                material_signature="KR_KR", endgame_class=1,
+                material_imbalance=150,  # conversion-qualifying
+            )
+
+        rows = await query_endgame_bucket_rows(
+            db_session, user_id=99999, time_control=None, platform=None,
+            rated=None, opponent_type="both", recency_cutoff=None,
+        )
+
+        assert len(rows) == 1
+        _game_id, _endgame_class, _result, _user_color, imb, imb_after = rows[0]
+        assert imb == 150
+        assert imb_after == 150  # conversion-qualifying, persisted 4 plies
+
+    @pytest.mark.asyncio
+    async def test_black_user_sign_flip(self, db_session: AsyncSession) -> None:
+        """material_imbalance is sign-flipped when user_color == black (user perspective)."""
+        game = await _seed_game(db_session, result="0-1", user_color="black")
+        entry_ply = 30
+        for offset in range(PERSISTENCE_PLIES + 1):
+            await _seed_game_position(
+                db_session, game=game, ply=entry_ply + offset,
+                material_signature="KR_KR", endgame_class=1,
+                material_imbalance=-150,  # white is behind by 150 → black (user) is ahead by 150
+            )
+
+        rows = await query_endgame_bucket_rows(
+            db_session, user_id=99999, time_control=None, platform=None,
+            rated=None, opponent_type="both", recency_cutoff=None,
+        )
+
+        assert len(rows) == 1
+        _game_id, _endgame_class, _result, user_color, imb, imb_after = rows[0]
+        assert user_color == "black"
+        assert imb == 150   # sign-flipped: user is +150 from their perspective
+        assert imb_after == 150
+
+    @pytest.mark.asyncio
+    async def test_invariant_matches_performance_rows_count(self, db_session: AsyncSession) -> None:
+        """Phase 59 core invariant at query level: bucket_rows count == endgame_rows count.
+
+        Mix of games: one long-endgame game (would pass entry_rows HAVING), one short-endgame
+        game (would be dropped by entry_rows HAVING), and one non-endgame game (excluded from
+        both). The bucket query must return BOTH endgame games; performance_rows must return
+        the same two as endgame_rows.
+        """
+        # Game A: endgame spans 7 plies (above threshold)
+        game_a = await _seed_game(db_session, result="1-0", user_color="white")
+        for ply in range(30, 37):
+            await _seed_game_position(
+                db_session, game=game_a, ply=ply, material_signature="KR_KR", endgame_class=1,
+                material_imbalance=0,
+            )
+
+        # Game B: endgame only 2 plies (short-endgame — the gap-closure case)
+        game_b = await _seed_game(db_session, result="1/2-1/2", user_color="black")
+        for ply in range(30, 32):
+            await _seed_game_position(
+                db_session, game=game_b, ply=ply, material_signature="KR_KR", endgame_class=1,
+                material_imbalance=0,
+            )
+
+        # Game C: never enters endgame (endgame_class=None)
+        game_c = await _seed_game(db_session, result="0-1", user_color="white")
+        await _seed_game_position(
+            db_session, game=game_c, ply=10,
+            piece_count=ENDGAME_PIECE_COUNT_THRESHOLD + 2,
+            material_signature="KQRB_KQRB", endgame_class=None,
+        )
+
+        bucket_rows = await query_endgame_bucket_rows(
+            db_session, user_id=99999, time_control=None, platform=None,
+            rated=None, opponent_type="both", recency_cutoff=None,
+        )
+        endgame_rows, non_endgame_rows = await query_endgame_performance_rows(
+            db_session, user_id=99999, time_control=None, platform=None,
+            rated=None, opponent_type="both", recency_cutoff=None,
+        )
+
+        assert len(bucket_rows) == len(endgame_rows) == 2
+        assert len(non_endgame_rows) == 1
+        bucket_game_ids = {r[0] for r in bucket_rows}
+        assert bucket_game_ids == {game_a.id, game_b.id}
+
+        # Confirm entry_rows (with 6-ply HAVING) would have dropped game_b — documenting
+        # the exact bug this query closes.
+        entry_rows = await query_endgame_entry_rows(
+            db_session, user_id=99999, time_control=None, platform=None,
+            rated=None, opponent_type="both", recency_cutoff=None,
+        )
+        entry_game_ids = {r[0] for r in entry_rows}
+        assert entry_game_ids == {game_a.id}  # game_b dropped
+        assert game_b.id in bucket_game_ids - entry_game_ids
+
+    @pytest.mark.asyncio
+    async def test_time_control_filter(self, db_session: AsyncSession) -> None:
+        game_blitz = await _seed_game(db_session, time_control_bucket="blitz")
+        for ply in range(30, 32):
+            await _seed_game_position(
+                db_session, game=game_blitz, ply=ply, material_signature="KR_KR", endgame_class=1,
+            )
+        game_bullet = await _seed_game(db_session, time_control_bucket="bullet")
+        for ply in range(30, 32):
+            await _seed_game_position(
+                db_session, game=game_bullet, ply=ply, material_signature="KR_KR", endgame_class=1,
+            )
+
+        rows = await query_endgame_bucket_rows(
+            db_session, user_id=99999, time_control=["blitz"], platform=None,
+            rated=None, opponent_type="both", recency_cutoff=None,
+        )
+        assert len(rows) == 1
+        assert rows[0][0] == game_blitz.id

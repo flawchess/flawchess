@@ -632,6 +632,7 @@ class TestGetEndgameOverview:
 
         with (
             patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
+            patch("app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock) as mock_bucket,
             patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf_rows,
             patch("app.services.endgame_service.count_filtered_games", new_callable=AsyncMock) as mock_count,
             patch("app.services.endgame_service.count_endgame_games", new_callable=AsyncMock) as mock_eg_count,
@@ -639,6 +640,7 @@ class TestGetEndgameOverview:
             patch("app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock) as mock_clock,
         ):
             mock_entry.return_value = []
+            mock_bucket.return_value = []
             mock_perf_rows.return_value = ([], [])
             mock_count.return_value = 0
             mock_eg_count.return_value = 0
@@ -652,6 +654,7 @@ class TestGetEndgameOverview:
 
         # Repository functions called once each
         mock_entry.assert_called_once()
+        mock_bucket.assert_called_once()
         mock_perf_rows.assert_called_once()
         mock_count.assert_called_once()
         mock_eg_count.assert_called_once()
@@ -673,6 +676,7 @@ class TestGetEndgameOverview:
 
         with (
             patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
+            patch("app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock) as mock_bucket,
             patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf_rows,
             patch("app.services.endgame_service.count_filtered_games", new_callable=AsyncMock) as mock_count,
             patch("app.services.endgame_service.count_endgame_games", new_callable=AsyncMock),
@@ -680,6 +684,7 @@ class TestGetEndgameOverview:
             patch("app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock) as mock_clock,
         ):
             mock_entry.return_value = []
+            mock_bucket.return_value = []
             mock_perf_rows.return_value = ([], [])
             mock_count.return_value = 0
             mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=75)

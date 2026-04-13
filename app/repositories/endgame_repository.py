@@ -12,9 +12,10 @@ import datetime
 from collections.abc import Sequence
 from typing import Any, Literal
 
-from sqlalchemy import case, func, select, type_coerce
+from sqlalchemy import and_, case, func, select, type_coerce
 from sqlalchemy.dialects.postgresql import ARRAY, aggregate_order_by
 from sqlalchemy.engine import Row
+from sqlalchemy.orm import aliased
 from sqlalchemy.types import Float as FloatType
 from sqlalchemy.types import SmallInteger as SmallIntegerType
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -227,6 +228,109 @@ async def query_endgame_entry_rows(
     )
 
     # Apply standard game filters
+    stmt = apply_game_filters(
+        stmt, time_control, platform, rated, opponent_type, recency_cutoff,
+        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+    )
+
+    result = await session.execute(stmt)
+    return list(result.fetchall())
+
+
+async def query_endgame_bucket_rows(
+    session: AsyncSession,
+    user_id: int,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+) -> list[Row[Any]]:
+    """Return exactly one row per endgame game for conv/even/recov bucketing.
+
+    Phase 59 gap-closure: the per-game bucket accounting path (feeding
+    `_compute_score_gap_material`) must cover every game counted in
+    `endgame_wdl.total` — i.e. every game with at least one position where
+    `endgame_class IS NOT NULL`, regardless of how many plies the game spent
+    in any given endgame class. The per-class 6-ply threshold used by
+    `query_endgame_entry_rows` (per-type stats) drops ~11% of endgame games
+    here, breaking the `sum(material_rows.games) == endgame_wdl.total`
+    invariant.
+
+    Returns rows of: (game_id, endgame_class, result, user_color,
+    user_material_imbalance, user_material_imbalance_after)
+
+    Tuple shape matches `query_endgame_entry_rows` so callers of
+    `_compute_score_gap_material` can swap queries without change. The
+    `endgame_class` column here is the class of the FIRST endgame position
+    for the game (purely informational — bucketing is now game-level and no
+    longer tiebreaks on it).
+
+    Semantics:
+    - One row per endgame game (no per-class split, no ply HAVING).
+    - `user_material_imbalance` = material_imbalance at the game's first
+      endgame position, sign-flipped for black so positive = user ahead.
+    - `user_material_imbalance_after` = material_imbalance 4 plies later in
+      the SAME game, but only if that position ALSO has
+      `endgame_class IS NOT NULL`. If the endgame ended (or the game
+      ended) within 4 plies, this is NULL and the game routes to the
+      "even" bucket via the NULL-handling rule in
+      `_compute_score_gap_material`.
+    """
+    # Per-game first endgame ply
+    entry_subq = (
+        select(
+            GamePosition.game_id.label("game_id"),
+            func.min(GamePosition.ply).label("entry_ply"),
+        )
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.endgame_class.isnot(None),
+        )
+        .group_by(GamePosition.game_id)
+        .subquery("first_endgame")
+    )
+
+    entry_pos = aliased(GamePosition, name="entry_pos")
+    after_pos = aliased(GamePosition, name="after_pos")
+
+    color_sign = case(
+        (Game.user_color == "white", 1),
+        else_=-1,
+    )
+
+    stmt = (
+        select(
+            Game.id.label("game_id"),
+            entry_pos.endgame_class.label("endgame_class"),
+            Game.result,
+            Game.user_color,
+            (entry_pos.material_imbalance * color_sign).label("user_material_imbalance"),
+            (after_pos.material_imbalance * color_sign).label("user_material_imbalance_after"),
+        )
+        .join(entry_subq, Game.id == entry_subq.c.game_id)
+        .join(
+            entry_pos,
+            and_(
+                entry_pos.user_id == user_id,
+                entry_pos.game_id == entry_subq.c.game_id,
+                entry_pos.ply == entry_subq.c.entry_ply,
+            ),
+        )
+        .outerjoin(
+            after_pos,
+            and_(
+                after_pos.user_id == user_id,
+                after_pos.game_id == entry_subq.c.game_id,
+                after_pos.ply == entry_subq.c.entry_ply + PERSISTENCE_PLIES,
+                after_pos.endgame_class.isnot(None),
+            ),
+        )
+        .where(Game.user_id == user_id)
+    )
+
     stmt = apply_game_filters(
         stmt, time_control, platform, rated, opponent_type, recency_cutoff,
         opponent_strength=opponent_strength, elo_threshold=elo_threshold,

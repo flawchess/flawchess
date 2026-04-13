@@ -25,6 +25,7 @@ from app.repositories.endgame_repository import (
     count_endgame_games,
     count_filtered_games,
     query_clock_stats_rows,
+    query_endgame_bucket_rows,
     query_endgame_entry_rows,
     query_endgame_games as _query_endgame_games,
     query_endgame_performance_rows,
@@ -498,9 +499,14 @@ def _compute_score_gap_material(
     Args:
         endgame_wdl: WDL summary for games that reached an endgame.
         non_endgame_wdl: WDL summary for games that never reached an endgame.
-        entry_rows: Per-(game, class) rows from query_endgame_entry_rows.
+        entry_rows: One row per endgame game from query_endgame_bucket_rows.
             Each row: (game_id, endgame_class_int, result, user_color,
                        user_material_imbalance, user_material_imbalance_after).
+            Expected to contain exactly one row per game in endgame_wdl; the
+            function still dedupes by game_id defensively. For any game where
+            `user_material_imbalance_after` is NULL (endgame didn't persist
+            for 4 plies), the game routes to the "even" bucket. This keeps
+            `sum(material_rows.games) == endgame_wdl.total`.
 
     Returns:
         ScoreGapMaterialResponse with score gap and 3-row material breakdown.
@@ -1213,9 +1219,24 @@ async def get_endgame_overview(
     )
     performance = _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, entry_rows)
 
-    # Score gap & material breakdown — zero extra queries, reuses performance WDLs + entry_rows
+    # Score gap & material breakdown — use game-level bucket_rows (one row per endgame game,
+    # no per-class split, no 6-ply HAVING) to preserve the invariant
+    # sum(material_rows.games) == endgame_wdl.total. The entry_rows query filters out
+    # ~11% of endgame games whose class spans are all < 6 plies; those short-endgame games
+    # now route to "even" via the NULL persistence rule in _compute_score_gap_material.
+    bucket_rows = await query_endgame_bucket_rows(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
     score_gap_material = _compute_score_gap_material(
-        performance.endgame_wdl, performance.non_endgame_wdl, entry_rows
+        performance.endgame_wdl, performance.non_endgame_wdl, bucket_rows
     )
 
     timeline = await get_endgame_timeline(
