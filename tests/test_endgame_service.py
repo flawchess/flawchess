@@ -974,13 +974,16 @@ class TestScoreGapMaterial:
         assert conversion.bucket == "conversion"
         assert conversion.games == 1  # not 2
 
-    def test_score_gap_material_none_imbalance_excluded(self):
-        """Entry row with user_material_imbalance=None is excluded from all buckets."""
+    def test_score_gap_material_none_imbalance_bucketed_as_even(self):
+        """Entry row with user_material_imbalance=None goes into the 'even' bucket (Phase 59)."""
         entry_rows = [(1, 1, "1-0", "white", None, None)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        assert all(row.games == 0 for row in result.material_rows)
+        assert result.material_rows[0].games == 0       # conversion
+        assert result.material_rows[1].bucket == "even"
+        assert result.material_rows[1].games == 1       # even — NULL rows now land here
+        assert result.material_rows[2].games == 0       # recovery
 
     def test_score_gap_material_empty_rows(self):
         """Empty entry_rows -> 3 material_rows all with games=0, score_difference=0.0."""
@@ -1068,6 +1071,136 @@ class TestScoreGapMaterial:
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
         assert result.material_rows[2].bucket == "recovery"
         assert result.material_rows[2].games == 1
+
+
+class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
+    """Phase 59 (Decision 4): assert sum(material_rows[i].games) == endgame_wdl.total.
+
+    Inherits _make_wdl and _make_wdl_pct helpers from TestScoreGapMaterial.
+    """
+
+    def test_invariant_single_span_each_bucket(self):
+        entry_rows = [
+            (1, 1, "1-0",    "white", 150, 150),   # conversion
+            (2, 1, "0-1",    "white", -150, -150), # recovery
+            (3, 1, "1/2-1/2","white", 50, 50),     # even
+        ]
+        endgame_wdl = self._make_wdl(1, 1, 1)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        total = sum(row.games for row in result.material_rows)
+        assert total == endgame_wdl.total == 3
+        assert result.material_rows[0].games == 1  # conversion
+        assert result.material_rows[1].games == 1  # even
+        assert result.material_rows[2].games == 1  # recovery
+
+    def test_invariant_multi_span_conversion_over_recovery(self):
+        """Decision 2 tiebreak: when a game has both conversion and recovery spans, pick conversion."""
+        entry_rows = [
+            (1, 1, "1-0", "white", 150, 150),   # conversion span (rook)
+            (1, 3, "1-0", "white", -150, -150), # recovery span (pawn) — same game
+        ]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 1
+        assert result.material_rows[0].bucket == "conversion"
+        assert result.material_rows[0].games == 1
+
+    def test_invariant_multi_span_null_then_qualifying(self):
+        """Decision 1+2: first-seen NULL row must not drop the game if another span qualifies."""
+        entry_rows = [
+            (1, 1, "1-0", "white", None, None),  # NULL first (would have been dropped pre-Phase 59)
+            (1, 3, "1-0", "white", 150, 150),    # qualifying conversion span
+        ]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 1
+        assert result.material_rows[0].bucket == "conversion"
+        assert result.material_rows[0].games == 1
+
+    def test_invariant_null_imbalance_lands_in_even(self):
+        """Decision 1: NULL imbalance -> 'even' bucket (not dropped)."""
+        entry_rows = [(1, 1, "1/2-1/2", "white", None, None)]
+        endgame_wdl = self._make_wdl(0, 1, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 1
+        assert result.material_rows[1].games == 1  # even
+        assert result.material_rows[1].draw_pct == 100.0
+
+    def test_invariant_null_after_lands_in_even(self):
+        """Decision 1: NULL user_material_imbalance_after (non-contiguous span) -> 'even'."""
+        entry_rows = [(1, 1, "1-0", "white", 150, None)]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 1
+        assert result.material_rows[1].games == 1  # even
+
+    def test_invariant_empty_input_no_divide_by_zero(self):
+        endgame_wdl = self._make_wdl(0, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 0
+        for row in result.material_rows:
+            assert row.win_pct == 0.0
+            assert row.draw_pct == 0.0
+            assert row.loss_pct == 0.0
+            assert row.score == 0.0
+
+    def test_invariant_mixed_10_games(self):
+        """10 distinct games across all decision cases; sum must equal endgame_wdl.total=10."""
+        entry_rows = [
+            # 3 pure conversion
+            (1, 1, "1-0", "white", 150, 150),
+            (2, 1, "1-0", "white", 200, 200),
+            (3, 1, "0-1", "white", 150, 150),
+            # 2 pure recovery
+            (4, 1, "1/2-1/2", "white", -150, -150),
+            (5, 1, "0-1", "white", -200, -200),
+            # 2 pure even (below threshold)
+            (6, 1, "1-0", "white", 50, 50),
+            (7, 1, "0-1", "white", -50, -50),
+            # 1 multi-span conversion-over-recovery
+            (8, 1, "1-0", "white", 150, 150),
+            (8, 3, "1-0", "white", -150, -150),
+            # 1 NULL-first but conversion-qualifying second
+            (9, 1, "1-0", "white", None, None),
+            (9, 3, "1-0", "white", 150, 150),
+            # 1 all-NULL (lands in even)
+            (10, 1, "1/2-1/2", "white", None, None),
+        ]
+        endgame_wdl = self._make_wdl(6, 2, 2)  # total=10
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 10
+
+    def test_invariant_deterministic_ordering(self):
+        """Decision 2: within the 'even' fallback, lowest endgame_class_int wins for reproducibility."""
+        rows_order_a = [
+            (1, 1, "1-0", "white", 50, 50),
+            (1, 3, "0-1", "white", 40, 40),
+        ]
+        rows_order_b = [
+            (1, 3, "0-1", "white", 40, 40),
+            (1, 1, "1-0", "white", 50, 50),
+        ]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result_a = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, rows_order_a)
+        result_b = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, rows_order_b)
+        # Lowest endgame_class_int = 1 (result "1-0") should win — outcome is "win"
+        assert result_a.material_rows[1].games == 1
+        assert result_a.material_rows[1].win_pct == 100.0
+        # Same across both orderings
+        for i in range(3):
+            assert result_a.material_rows[i].bucket == result_b.material_rows[i].bucket
+            assert result_a.material_rows[i].games == result_b.material_rows[i].games
+            assert result_a.material_rows[i].win_pct == result_b.material_rows[i].win_pct
+            assert result_a.material_rows[i].draw_pct == result_b.material_rows[i].draw_pct
+            assert result_a.material_rows[i].loss_pct == result_b.material_rows[i].loss_pct
 
 
 # ---------------------------------------------------------------------------
