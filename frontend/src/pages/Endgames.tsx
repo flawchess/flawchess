@@ -17,17 +17,15 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
-import { EndgamePerformanceSection, EndgameGaugesSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/charts/EndgamePerformanceSection';
+import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/charts/EndgamePerformanceSection';
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
 import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
-import { EndgameConvRecovTimelineChart } from '@/components/charts/EndgameConvRecovTimelineChart';
 import { EndgameScoreGapSection } from '@/components/charts/EndgameScoreGapSection';
 import { EndgameClockPressureSection } from '@/components/charts/EndgameClockPressureSection';
 import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePressureSection';
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
-import { useUserProfile } from '@/hooks/useUserProfile';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
 
@@ -123,10 +121,6 @@ export function EndgamesPage() {
     </span>
   ) : undefined;
 
-  // ── Admin gating ────────────────────────────────────────────────────────────
-  const { data: userProfile } = useUserProfile();
-  const isAdmin = !!userProfile?.is_superuser;
-
   // ── Data ─────────────────────────────────────────────────────────────────────
   const {
     data: overviewData,
@@ -137,7 +131,6 @@ export function EndgamesPage() {
   const statsData = overviewData?.stats;
   const perfData = overviewData?.performance;
   const timelineData = overviewData?.timeline;
-  const convRecovData = overviewData?.conv_recov_timeline;
   const scoreGapData = overviewData?.score_gap_material;
   const clockPressureData = overviewData?.clock_pressure;
   const timePressureChartData = overviewData?.time_pressure_chart;
@@ -189,7 +182,6 @@ export function EndgamesPage() {
 
   // Summary line + collapsible explaining endgame concepts and metric limitations
   const showPerfSection = !!(perfData && perfData.endgame_wdl.total > 0);
-  const showConvRecovTimeline = !!(convRecovData && (convRecovData.conversion.length > 0 || convRecovData.recovery.length > 0));
   const showClockPressure = !!(clockPressureData && clockPressureData.rows.length > 0);
   const showTimePressureChart = !!(timePressureChartData && timePressureChartData.rows.length > 0);
   const showTimeline = !!(timelineData && timelineData.overall.length > 0);
@@ -255,23 +247,6 @@ export function EndgamesPage() {
               {scoreGapData && (
                 <div className="charcoal-texture rounded-md p-4">
                   <EndgameScoreGapSection data={scoreGapData} />
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ── Conversion and Recovery (admin only) ── */}
-          {isAdmin && (showPerfSection || showConvRecovTimeline) && (
-            <>
-              <h2 className="text-lg font-semibold text-foreground mt-2">Conversion and Recovery</h2>
-              {showPerfSection && (
-                <div className="charcoal-texture rounded-md p-4">
-                  <EndgameGaugesSection data={perfData} />
-                </div>
-              )}
-              {showConvRecovTimeline && (
-                <div className="charcoal-texture rounded-md p-4">
-                  <EndgameConvRecovTimelineChart data={convRecovData} />
                 </div>
               )}
             </>
