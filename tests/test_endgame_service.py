@@ -832,15 +832,6 @@ class TestScoreGapMaterial:
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
         assert result.score_difference == pytest.approx(-0.15, abs=1e-9)
 
-    def test_score_gap_material_overall_score_weighted(self):
-        """overall_score is weighted from both WDL summaries combined."""
-        # endgame: 45W 10D 45L (total=100), non_endgame: 55W 10D 35L (total=100)
-        # combined: 100W 20D 80L (total=200) -> (100 + 10) / 200 = 0.55
-        endgame_wdl = self._make_wdl(45, 10, 45)
-        non_endgame_wdl = self._make_wdl(55, 10, 35)
-        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
-        assert result.overall_score == pytest.approx(0.55, abs=1e-9)
-
     def test_score_gap_material_persistence_required_for_conversion(self):
         """Material bucket applies 4-ply persistence rule matching conversion/recovery.
 
@@ -1030,6 +1021,126 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
             assert result_a.material_rows[i].win_pct == result_b.material_rows[i].win_pct
             assert result_a.material_rows[i].draw_pct == result_b.material_rows[i].draw_pct
             assert result_a.material_rows[i].loss_pct == result_b.material_rows[i].loss_pct
+
+
+class TestScoreGapMaterialOpponentBaseline(TestScoreGapMaterial):
+    """Phase 60: opponent baseline via same-game symmetry.
+
+    Per CONTEXT decision #1, opponent_score on a user-perspective row is
+    `1 - user_score[swap_bucket]` where swap = {conversion: recovery,
+    even: even, recovery: conversion}. Below the 10-game threshold on the
+    swap bucket, opponent_score is None but opponent_games still reports
+    the actual swap-bucket count.
+    """
+
+    @staticmethod
+    def _conversion_row(game_id: int, result: str) -> tuple:
+        # imbalance >= +100 AND imbalance_after >= +100 -> conversion
+        return (game_id, 1, result, "white", 150, 150)
+
+    @staticmethod
+    def _recovery_row(game_id: int, result: str) -> tuple:
+        # imbalance <= -100 AND imbalance_after <= -100 -> recovery
+        return (game_id, 1, result, "white", -150, -150)
+
+    @staticmethod
+    def _even_row(game_id: int, result: str) -> tuple:
+        return (game_id, 1, result, "white", 0, 0)
+
+    def test_opponent_baseline_symmetric_60_40(self):
+        """User Conv 60% over 100 games and User Recov 40% over 100 games:
+        Conv row's opponent_score == 1 - 0.40 = 0.60 (mirror of Recov),
+        Recov row's opponent_score == 1 - 0.60 = 0.40 (mirror of Conv)."""
+        # Conversion: 100 games, score 0.60 -> 60 wins, 0 draws, 40 losses
+        conv_rows = [self._conversion_row(i, "1-0") for i in range(60)] + \
+                    [self._conversion_row(i + 60, "0-1") for i in range(40)]
+        # Recovery: 100 games, score 0.40 -> 40 wins, 0 draws, 60 losses
+        rec_rows = [self._recovery_row(i + 100, "1-0") for i in range(40)] + \
+                   [self._recovery_row(i + 140, "0-1") for i in range(60)]
+        entry_rows = conv_rows + rec_rows
+        endgame_wdl = self._make_wdl(100, 0, 100)  # 60+40 wins, 40+60 losses
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        conv = result.material_rows[0]
+        rec = result.material_rows[2]
+        assert conv.bucket == "conversion"
+        assert conv.games == 100
+        assert conv.score == pytest.approx(0.60, abs=1e-9)
+        assert conv.opponent_score == pytest.approx(0.60, abs=1e-9)  # 1 - rec.score (1 - 0.40)
+        assert conv.opponent_games == 100
+        assert rec.bucket == "recovery"
+        assert rec.games == 100
+        assert rec.score == pytest.approx(0.40, abs=1e-9)
+        assert rec.opponent_score == pytest.approx(0.40, abs=1e-9)  # 1 - conv.score (1 - 0.60)
+        assert rec.opponent_games == 100
+
+    def test_opponent_baseline_empty_swap_bucket(self):
+        """User Conversion has games, user Recovery has zero -> Conversion
+        row's opponent_score is None, opponent_games == 0."""
+        entry_rows = [self._conversion_row(1, "1-0")]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        conv = result.material_rows[0]
+        assert conv.games == 1
+        assert conv.opponent_score is None
+        assert conv.opponent_games == 0
+
+    def test_opponent_baseline_below_threshold_9_games(self):
+        """Swap bucket has 9 games (< 10) -> opponent_score is None,
+        opponent_games == 9."""
+        conv_rows = [self._conversion_row(1, "1-0")]
+        # 9 recovery games -> swap bucket count for Conversion row is 9
+        rec_rows = [self._recovery_row(i + 2, "0-1") for i in range(9)]
+        entry_rows = conv_rows + rec_rows
+        endgame_wdl = self._make_wdl(1, 0, 9)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        conv = result.material_rows[0]
+        assert conv.opponent_score is None
+        assert conv.opponent_games == 9
+
+    def test_opponent_baseline_at_threshold_10_games(self):
+        """Swap bucket has exactly 10 games (>= 10) -> opponent_score is
+        computed (non-None), opponent_games == 10."""
+        conv_rows = [self._conversion_row(1, "1-0")]
+        rec_rows = [self._recovery_row(i + 2, "0-1") for i in range(10)]
+        entry_rows = conv_rows + rec_rows
+        endgame_wdl = self._make_wdl(1, 0, 10)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        conv = result.material_rows[0]
+        assert conv.opponent_score is not None
+        assert conv.opponent_score == pytest.approx(1.0 - 0.0, abs=1e-9)  # rec score is 0.0 (10 losses)
+        assert conv.opponent_games == 10
+
+    def test_opponent_baseline_even_self_mirror(self):
+        """Even bucket mirrors itself: opponent_score == 1 - even.score
+        with opponent_games == even.games. Threshold still applies."""
+        # 10 even games, 50% score
+        entry_rows = [self._even_row(i, "1-0") for i in range(5)] + \
+                     [self._even_row(i + 5, "0-1") for i in range(5)]
+        endgame_wdl = self._make_wdl(5, 0, 5)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        even = result.material_rows[1]
+        assert even.bucket == "even"
+        assert even.games == 10
+        assert even.score == pytest.approx(0.5, abs=1e-9)
+        assert even.opponent_score == pytest.approx(0.5, abs=1e-9)
+        assert even.opponent_games == 10
+
+    def test_opponent_baseline_even_below_threshold(self):
+        """Even bucket with < 10 games -> opponent_score is None even though
+        it mirrors itself."""
+        entry_rows = [self._even_row(1, "1-0")]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        even = result.material_rows[1]
+        assert even.games == 1
+        assert even.opponent_score is None
+        assert even.opponent_games == 1
 
 
 # ---------------------------------------------------------------------------

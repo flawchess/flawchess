@@ -274,12 +274,22 @@ class TestOverviewScoreGapMaterial:
         assert "endgame_score" in sgm
         assert "non_endgame_score" in sgm
         assert "score_difference" in sgm
-        assert "overall_score" in sgm
+        assert "overall_score" not in sgm  # Phase 60: dropped from response
         assert "material_rows" in sgm
         assert isinstance(sgm["material_rows"], list)
         assert len(sgm["material_rows"]) == 3
         buckets = [row["bucket"] for row in sgm["material_rows"]]
         assert buckets == ["conversion", "even", "recovery"]
+        # Phase 60: each row carries opponent baseline fields
+        for row in sgm["material_rows"]:
+            assert "opponent_score" in row
+            assert "opponent_games" in row
+            assert isinstance(row["opponent_games"], int)
+            assert row["opponent_games"] >= 0
+            assert row["opponent_score"] is None or (
+                isinstance(row["opponent_score"], (int, float))
+                and 0.0 <= row["opponent_score"] <= 1.0
+            )
 
 
 class TestLegacyEndpointsRemoved:
