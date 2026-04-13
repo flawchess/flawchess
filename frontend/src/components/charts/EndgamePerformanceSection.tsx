@@ -8,8 +8,13 @@ import { EndgameGauge, type GaugeZone } from '@/components/charts/EndgameGauge';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
+import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { GAUGE_DANGER, GAUGE_WARNING, GAUGE_SUCCESS } from '@/lib/theme';
-import type { EndgamePerformanceResponse, EndgameWDLSummary } from '@/types/endgames';
+import type {
+  EndgamePerformanceResponse,
+  EndgameWDLSummary,
+  ScoreGapMaterialResponse,
+} from '@/types/endgames';
 
 // Material advantage/deficit threshold in pawn points (backend uses 100 centipawns)
 export const MATERIAL_ADVANTAGE_POINTS = 1;
@@ -37,6 +42,11 @@ const ENDGAME_SKILL_ZONES: GaugeZone[] = [
 ];
 
 interface EndgamePerformanceSectionProps {
+  data: EndgamePerformanceResponse;
+  scoreGap?: ScoreGapMaterialResponse;
+}
+
+interface EndgameGaugesSectionProps {
   data: EndgamePerformanceResponse;
 }
 
@@ -71,7 +81,7 @@ function PerfWDLDesktopRow({
   );
 }
 
-export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionProps) {
+export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformanceSectionProps) {
   const totalGames = data.endgame_wdl.total + data.non_endgame_wdl.total;
   const endgamePct = totalGames > 0 ? (data.endgame_wdl.total / totalGames * 100).toFixed(1) : '0.0';
   const nonEndgamePct = totalGames > 0 ? (data.non_endgame_wdl.total / totalGames * 100).toFixed(1) : '0.0';
@@ -80,9 +90,9 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
     <div className="space-y-4">
       <h3 className="text-base font-semibold">
         <span className="inline-flex items-center gap-1">
-          Endgame vs. Non-Endgame Games
-          <InfoPopover ariaLabel="Endgame vs. Non-Endgame Games info" testId="perf-section-info" side="top">
-            Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not.
+          Games with vs without Endgame
+          <InfoPopover ariaLabel="Games with vs without Endgame info" testId="perf-section-info" side="top">
+            Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not. The bar below shows the signed difference between your endgame score and non-endgame score (green = endgame stronger, red = endgame weaker, narrow grey band = near parity).
           </InfoPopover>
         </span>
       </h3>
@@ -91,13 +101,13 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
       {/* Desktop (lg+): label | games count | constrained WDL bar on a single row */}
       <div className="hidden lg:block">
         <PerfWDLDesktopRow
-          label="Endgame games"
+          label="Games with Endgame"
           pct={endgamePct}
           data={data.endgame_wdl}
           testId="perf-wdl-endgame"
         />
         <PerfWDLDesktopRow
-          label="Non-endgame games"
+          label="Games without Endgame"
           pct={nonEndgamePct}
           data={data.non_endgame_wdl}
           testId="perf-wdl-non-endgame"
@@ -107,17 +117,59 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
       <div className="lg:hidden space-y-3">
         <WDLChartRow
           data={data.endgame_wdl}
-          label="Endgame games"
+          label="Games with Endgame"
           gameCountLabel={<>{endgamePct}% ({data.endgame_wdl.total}) games</>}
           testId="perf-wdl-endgame"
         />
         <WDLChartRow
           data={data.non_endgame_wdl}
-          label="Non-endgame games"
+          label="Games without Endgame"
           gameCountLabel={<>{nonEndgamePct}% ({data.non_endgame_wdl.total}) games</>}
           testId="perf-wdl-non-endgame"
         />
       </div>
+
+      {/* Score difference (relocated from EndgameScoreGapSection) — direct
+          endgame-vs-non-endgame comparison sits with the two WDL rows above. */}
+      {scoreGap && (() => {
+        const diffPositive = scoreGap.score_difference >= 0;
+        const diffFormatted = (diffPositive ? '+' : '') + scoreGap.score_difference.toFixed(2);
+        return (
+          <div data-testid="score-gap-difference">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(80px,160px)] lg:grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-3 items-center py-1.5">
+              <span className="text-sm font-medium truncate inline-flex items-center gap-1">
+                Endgame Score Difference
+                <InfoPopover
+                  ariaLabel="Endgame Score Difference info"
+                  testId="score-gap-diff-info"
+                  side="top"
+                >
+                  Signed difference between your endgame score (wins + half draws) and your non-endgame score. Positive = you score higher in endgames; negative = you score lower. The narrow grey band around zero marks near-parity.
+                </InfoPopover>
+              </span>
+              <span
+                className={
+                  (diffPositive
+                    ? 'text-green-500 font-semibold'
+                    : 'text-red-500 font-semibold') +
+                  ' tabular-nums whitespace-nowrap'
+                }
+              >
+                {diffFormatted}
+              </span>
+              <MiniBulletChart
+                value={scoreGap.score_difference}
+                neutralMin={-0.05}
+                neutralMax={0.05}
+                ariaLabel={`Endgame score difference: ${diffFormatted}`}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Endgame: {scoreGap.endgame_score.toFixed(2)} | Non-endgame: {scoreGap.non_endgame_score.toFixed(2)}
+            </p>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -126,7 +178,7 @@ export function EndgamePerformanceSection({ data }: EndgamePerformanceSectionPro
  * Gauge charts for Conversion, Recovery, and Endgame Skill.
  * Split from EndgamePerformanceSection for layout flexibility.
  */
-export function EndgameGaugesSection({ data }: EndgamePerformanceSectionProps) {
+export function EndgameGaugesSection({ data }: EndgameGaugesSectionProps) {
   return (
     <div className="space-y-4">
       <h3 className="text-base font-semibold">
