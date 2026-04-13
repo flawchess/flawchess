@@ -25,7 +25,6 @@ from app.repositories.endgame_repository import (
     count_endgame_games,
     count_filtered_games,
     query_clock_stats_rows,
-    query_conv_recov_timeline_rows,
     query_endgame_entry_rows,
     query_endgame_games as _query_endgame_games,
     query_endgame_performance_rows,
@@ -35,8 +34,6 @@ from app.schemas.openings import GameRecord
 from app.schemas.endgames import (
     ClockPressureResponse,
     ClockStatsRow,
-    ConvRecovTimelinePoint,
-    ConvRecovTimelineResponse,
     ConversionRecoveryStats,
     EndgameClass,
     EndgameCategoryStats,
@@ -440,11 +437,6 @@ async def get_endgame_games(
 
 
 # --- Performance chart service functions (Phase 32) ---
-
-# Weights for endgame_skill score. Conversion (winning when up) weighted 70/30
-# over recovery (drawing/winning when down) per D-06 (updated from 60/40).
-_ENDGAME_SKILL_CONVERSION_WEIGHT = 0.7
-_ENDGAME_SKILL_RECOVERY_WEIGHT = 0.3
 
 
 def _build_wdl_summary(rows: list[Row[Any]]) -> EndgameWDLSummary:
@@ -971,69 +963,19 @@ def _get_endgame_performance_from_rows(
 ) -> EndgamePerformanceResponse:
     """Compute EndgamePerformanceResponse from pre-fetched rows.
 
-    Extracted from get_endgame_performance so get_endgame_overview can share
-    the rows it already fetched — avoids a redundant query_endgame_entry_rows call.
-
-    Args:
-        endgame_rows: (played_at, result, user_color) for games that reached endgame.
-        non_endgame_rows: (played_at, result, user_color) for games that did not.
-        entry_rows: (game_id, endgame_class_int, result, user_color,
-                     user_material_imbalance, user_material_imbalance_after).
+    Phase 59 removed the aggregate conversion/recovery/skill fields this function
+    previously computed; it now returns only the WDL comparison and endgame_win_rate.
+    The `entry_rows` parameter is retained for call-site compatibility with
+    get_endgame_overview (which passes the same entry_rows to _compute_score_gap_material
+    and _aggregate_endgame_stats) but is no longer consumed here.
     """
-    # Build WDL summaries for each group
+    del entry_rows  # kept for signature compat; aggregates moved out in Phase 59
     endgame_wdl = _build_wdl_summary(endgame_rows)
     non_endgame_wdl = _build_wdl_summary(non_endgame_rows)
-
-    # Gauge: overall win rate across all games
-    total_wins = endgame_wdl.wins + non_endgame_wdl.wins
-    total_games = endgame_wdl.total + non_endgame_wdl.total
-    overall_win_rate = total_wins / total_games * 100 if total_games > 0 else 0.0
-    endgame_win_rate = endgame_wdl.win_pct  # already computed as wins/total*100
-
-    # Relative strength: endgame win rate normalized by overall win rate (D-05)
-    # Returns 0 when overall_win_rate is 0 to avoid division by zero
-    relative_strength = (
-        endgame_win_rate / overall_win_rate * 100 if overall_win_rate > 0 else 0.0
-    )
-
-    # Aggregate conversion/recovery: use sum-of-raw (not mean of percentages) per D-07.
-    # Compute inline from entry_rows — avoids redundant get_endgame_stats + count_filtered_games calls.
-    categories = _aggregate_endgame_stats(entry_rows)
-    total_conversion_wins = sum(c.conversion.conversion_wins for c in categories)
-    total_conversion_games = sum(c.conversion.conversion_games for c in categories)
-    total_recovery_saves = sum(c.conversion.recovery_saves for c in categories)
-    total_recovery_games = sum(c.conversion.recovery_games for c in categories)
-
-    aggregate_conversion_pct = (
-        total_conversion_wins / total_conversion_games * 100
-        if total_conversion_games > 0
-        else 0.0
-    )
-    aggregate_recovery_pct = (
-        total_recovery_saves / total_recovery_games * 100
-        if total_recovery_games > 0
-        else 0.0
-    )
-
-    # Endgame skill: weighted combination of conversion and recovery rates (D-06)
-    endgame_skill = (
-        _ENDGAME_SKILL_CONVERSION_WEIGHT * aggregate_conversion_pct
-        + _ENDGAME_SKILL_RECOVERY_WEIGHT * aggregate_recovery_pct
-    )
-
     return EndgamePerformanceResponse(
         endgame_wdl=endgame_wdl,
         non_endgame_wdl=non_endgame_wdl,
-        overall_win_rate=round(overall_win_rate, 1),
-        endgame_win_rate=endgame_win_rate,
-        aggregate_conversion_pct=round(aggregate_conversion_pct, 1),
-        aggregate_conversion_wins=total_conversion_wins,
-        aggregate_conversion_games=total_conversion_games,
-        aggregate_recovery_pct=round(aggregate_recovery_pct, 1),
-        aggregate_recovery_saves=total_recovery_saves,
-        aggregate_recovery_games=total_recovery_games,
-        relative_strength=round(relative_strength, 1),
-        endgame_skill=round(endgame_skill, 1),
+        endgame_win_rate=endgame_wdl.win_pct,
     )
 
 
@@ -1187,124 +1129,6 @@ async def get_endgame_timeline(
     return EndgameTimelineResponse(overall=overall, per_type=per_type, window=window)
 
 
-def _compute_conv_recov_rolling_series(
-    rows: list[Row[Any]],
-    window: int,
-    rate_fn,
-) -> list[ConvRecovTimelinePoint]:
-    """Compute a rolling-window timeline series from chronologically sorted rows.
-
-    Args:
-        rows: list of (played_at, result, user_color, ...) tuples, sorted by played_at asc.
-        window: rolling window size (number of trailing games).
-        rate_fn: function taking a list of outcome strings ("win"/"draw"/"loss")
-                 and returning a float rate (0.0-1.0).
-
-    Partial windows (fewer games than `window`) are included from the start.
-    Returns one point per date (last game of the day), not per game.
-    """
-    if not rows:
-        return []
-
-    outcomes: list[Literal["win", "draw", "loss"]] = []
-    points_by_date: dict[str, ConvRecovTimelinePoint] = {}
-
-    for played_at, result, user_color, *_rest in rows:
-        outcome = derive_user_result(result, user_color)
-        outcomes.append(outcome)
-        date = played_at.strftime("%Y-%m-%d") if hasattr(played_at, "strftime") else str(played_at)
-
-        # Rolling window: trailing `window` results (partial windows included)
-        trailing = outcomes[-window:]
-        rate = rate_fn(trailing)
-        points_by_date[date] = ConvRecovTimelinePoint(
-            date=date,
-            rate=round(rate, 4),
-            game_count=len(trailing),
-            window_size=window,
-        )
-
-    # Drop early points with too few games in the rolling window
-    return [pt for pt in points_by_date.values() if pt.game_count >= MIN_GAMES_FOR_TIMELINE]
-
-
-async def get_conv_recov_timeline(
-    session: AsyncSession,
-    user_id: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
-    rated: bool | None,
-    opponent_type: str,
-    recency: str | None,
-    window: int = 50,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
-) -> ConvRecovTimelineResponse:
-    """Compute conversion and recovery rolling-window timelines.
-
-    Conversion: win rate over trailing `window` games where user entered endgame
-    with >= _MATERIAL_ADVANTAGE_THRESHOLD cp advantage.
-    Recovery: save rate (win+draw) over trailing `window` games where user entered
-    endgame with >= _MATERIAL_ADVANTAGE_THRESHOLD cp disadvantage.
-
-    Fetches all games (no recency filter) so the rolling window is pre-filled
-    with games before the cutoff. Output points are filtered to recency window.
-    """
-    cutoff = recency_cutoff(recency)
-    cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
-
-    # Fetch all games (no recency filter) so rolling windows are pre-filled
-    rows = await query_conv_recov_timeline_rows(
-        session,
-        user_id=user_id,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        recency_cutoff=None,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
-    )
-
-    # Split by material advantage direction — require persistence at entry AND 4 plies later.
-    # r[3] = user_material_imbalance (at entry), r[4] = user_material_imbalance_after (4 plies later)
-    conversion_rows = [
-        r for r in rows
-        if r[3] is not None and r[3] >= _MATERIAL_ADVANTAGE_THRESHOLD
-        and r[4] is not None and r[4] >= _MATERIAL_ADVANTAGE_THRESHOLD
-    ]
-    recovery_rows = [
-        r for r in rows
-        if r[3] is not None and r[3] <= -_MATERIAL_ADVANTAGE_THRESHOLD
-        and r[4] is not None and r[4] <= -_MATERIAL_ADVANTAGE_THRESHOLD
-    ]
-
-    # Conversion rate: wins / total in window
-    conversion_series = _compute_conv_recov_rolling_series(
-        conversion_rows,
-        window,
-        lambda outcomes: outcomes.count("win") / len(outcomes),
-    )
-
-    # Recovery rate: (wins + draws) / total in window
-    recovery_series = _compute_conv_recov_rolling_series(
-        recovery_rows,
-        window,
-        lambda outcomes: (outcomes.count("win") + outcomes.count("draw")) / len(outcomes),
-    )
-
-    # Filter output to recency window
-    if cutoff_str:
-        conversion_series = [pt for pt in conversion_series if pt.date >= cutoff_str]
-        recovery_series = [pt for pt in recovery_series if pt.date >= cutoff_str]
-
-    return ConvRecovTimelineResponse(
-        conversion=conversion_series,
-        recovery=recovery_series,
-        window=window,
-    )
-
-
 async def get_endgame_overview(
     session: AsyncSession,
     user_id: int,
@@ -1406,19 +1230,6 @@ async def get_endgame_overview(
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
-    conv_recov_timeline = await get_conv_recov_timeline(
-        session,
-        user_id=user_id,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        recency=recency,
-        window=window,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
-    )
-
     # Clock pressure: fetch per-span arrays, then compute stats in service layer
     clock_rows = await query_clock_stats_rows(
         session,
@@ -1438,7 +1249,6 @@ async def get_endgame_overview(
         stats=stats,
         performance=performance,
         timeline=timeline,
-        conv_recov_timeline=conv_recov_timeline,
         score_gap_material=score_gap_material,
         clock_pressure=clock_pressure,
         time_pressure_chart=time_pressure_chart,
