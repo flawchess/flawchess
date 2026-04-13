@@ -27,6 +27,7 @@ import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePress
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
 
@@ -121,6 +122,10 @@ export function EndgamesPage() {
       <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
     </span>
   ) : undefined;
+
+  // ── Admin gating ────────────────────────────────────────────────────────────
+  const { data: userProfile } = useUserProfile();
+  const isAdmin = !!userProfile?.is_superuser;
 
   // ── Data ─────────────────────────────────────────────────────────────────────
   const {
@@ -255,8 +260,8 @@ export function EndgamesPage() {
             </>
           )}
 
-          {/* ── Conversion and Recovery ── */}
-          {(showPerfSection || showConvRecovTimeline) && (
+          {/* ── Conversion and Recovery (admin only) ── */}
+          {isAdmin && (showPerfSection || showConvRecovTimeline) && (
             <>
               <h2 className="text-lg font-semibold text-foreground mt-2">Conversion and Recovery</h2>
               {showPerfSection && (
