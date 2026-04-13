@@ -15,9 +15,9 @@ import type { MaterialBucket, ScoreGapMaterialResponse } from '@/types/endgames'
 // zero for every bucket: when ahead, users should outperform overall; when
 // behind, underperforming overall is expected. Each zone is 0.10 wide.
 const AMBER_ZONES: Record<MaterialBucket, { min: number; max: number }> = {
-  ahead: { min: 0.05, max: 0.15 },     // converting advantage: neutral is +0 to +0.10
+  ahead: { min: 0.05, max: 0.15 },     // converting advantage
   equal: { min: -0.05, max: 0.05 }, // equal material: neutral is symmetric around 0
-  behind: { min: -0.15, max: -0.05 },   // recovering: neutral is -0.10 to 0
+  behind: { min: -0.15, max: -0.05 },   // recovering
 };
 
 interface EndgameScoreGapSectionProps {

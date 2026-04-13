@@ -135,7 +135,7 @@ See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
 - [x] **Phase 52: Endgame Tab Performance** - Collapse timeline fan-out, consolidate endgame endpoints on a single session, and defer desktop filter apply until the filter sidebar closes (completed 2026-04-11)
 - [x] **Phase 53: Endgame Score Gap & Material Breakdown** - Endgame score difference metric + material-stratified WDL table by material balance at endgame entry (completed 2026-04-12)
 - [x] **Phase 54: Time Pressure — Clock Stats Table** - Per-time-control summary table of clock state at endgame entry with avg time, clock diff, and net timeout rate (completed 2026-04-12)
-- [ ] **Phase 55: Time Pressure — Performance Chart** - Two-line comparison chart (user vs opponents) showing score by time pressure bucket, tabbed by time control
+- [x] **Phase 55: Time Pressure — Performance Chart** - Two-line comparison chart (user vs opponents) showing score by time pressure bucket, tabbed by time control (completed 2026-04-12)
 - [ ] **Phase 56: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
 - [ ] **Phase 57: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
 - [ ] **Phase 58: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
@@ -226,8 +226,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 55-01-PLAN.md — Backend: Pydantic schemas, _compute_time_pressure_chart service function, wiring into overview, unit tests
-- [ ] 55-02-PLAN.md — Frontend: TypeScript types, theme colors, EndgameTimePressureSection component, Endgames page wiring
+- [x] 55-01-PLAN.md — Backend: Pydantic schemas, _compute_time_pressure_chart service function, wiring into overview, unit tests
+- [x] 55-02-PLAN.md — Frontend: TypeScript types, theme colors, EndgameTimePressureSection component, Endgames page wiring
 **UI hint**: yes
 
 ### Phase 56: Endgame ELO — Backend + Breakdown Table
@@ -324,7 +324,7 @@ Plans:
 | 52. Endgame Tab Performance | v1.10 | 3/3 | Complete    | 2026-04-11 |
 | 53. Endgame Score Gap & Material Breakdown | v1.10 | 2/2 | Complete    | 2026-04-12 |
 | 54. Time Pressure — Clock Stats Table | v1.10 | 2/2 | Complete    | 2026-04-12 |
-| 55. Time Pressure — Performance Chart | v1.10 | 0/2 | Planned     | - |
+| 55. Time Pressure — Performance Chart | v1.10 | 2/2 | Complete    | 2026-04-12 |
 | 56. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
 | 57. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
 | 58. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
