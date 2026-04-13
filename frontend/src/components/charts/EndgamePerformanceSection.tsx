@@ -93,9 +93,16 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
 
       <div className="overflow-x-auto">
         <table
-          className="w-full min-w-[520px] text-sm sm:text-base"
+          className="w-full min-w-[720px] text-sm sm:text-base table-fixed"
           data-testid="perf-wdl-table"
         >
+          <colgroup>
+            <col style={{ width: '140px' }} />
+            <col style={{ width: '130px' }} />
+            <col style={{ width: '160px' }} />
+            <col style={{ width: '110px' }} />
+            <col style={{ width: '180px' }} />
+          </colgroup>
           <thead>
             <tr className="text-left text-xs text-muted-foreground border-b border-border">
               <th className="py-1 pr-3 font-medium">Endgame</th>
@@ -112,7 +119,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
                 <td className="py-1.5 px-2 text-right text-sm tabular-nums whitespace-nowrap">
                   {row.pct}% ({row.wdl.total.toLocaleString()})
                 </td>
-                <td className="py-1.5 px-2 min-w-[120px]">
+                <td className="py-1.5 px-2">
                   {row.wdl.total === 0 ? (
                     <div className="h-5 rounded bg-muted" />
                   ) : (
@@ -127,7 +134,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
                   {row.score !== undefined ? row.score.toFixed(2) : '—'}
                 </td>
                 <td
-                  className="py-1.5 px-2 min-w-[140px]"
+                  className="py-1.5 px-2"
                   data-testid={i === 0 ? 'score-gap-difference' : undefined}
                 >
                   {scoreGap && i === 0 && (

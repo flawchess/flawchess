@@ -58,9 +58,16 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
       {/* Material-stratified WDL table */}
       <div className="overflow-x-auto">
         <table
-          className="w-full min-w-[520px] text-sm sm:text-base"
+          className="w-full min-w-[720px] text-sm sm:text-base table-fixed"
           data-testid="material-table"
         >
+          <colgroup>
+            <col style={{ width: '140px' }} />
+            <col style={{ width: '130px' }} />
+            <col style={{ width: '160px' }} />
+            <col style={{ width: '110px' }} />
+            <col style={{ width: '180px' }} />
+          </colgroup>
           <thead>
             <tr className="text-left text-xs text-muted-foreground border-b border-border">
               <th className="py-1 pr-3 font-medium">Material at entry</th>
@@ -90,7 +97,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   <td className="py-1.5 px-2 text-right text-sm tabular-nums">
                     {row.games.toLocaleString()}
                   </td>
-                  <td className="py-1.5 px-2 min-w-[120px]">
+                  <td className="py-1.5 px-2">
                     <MiniWDLBar
                       win_pct={row.win_pct}
                       draw_pct={row.draw_pct}
@@ -100,7 +107,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   <td className="py-1.5 px-2 text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap">
                     {row.score.toFixed(2)} ({diffLabel})
                   </td>
-                  <td className="py-1.5 px-2 min-w-[140px]">
+                  <td className="py-1.5 px-2">
                     <MiniBulletChart
                       value={diff}
                       neutralMin={neutralZone.min}
