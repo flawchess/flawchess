@@ -281,6 +281,20 @@ Plans:
 - [x] 59-03-PLAN.md — Remove orphaned backend schemas/service/repo + sync frontend types
 **UI hint**: yes
 
+### Phase 60: Opponent-based baseline for Endgame Conversion & Recovery
+**Goal**: Replace the global-average baseline in the "Endgame Conversion & Recovery" section with a self-calibrating opponent-based baseline — compute the opponent's conversion/even/recovery rates against the user (with the user's active filters applied) and use those in the comparison bullet charts, matching the philosophy of the existing self-calibrating time-pressure metrics.
+**Depends on**: Phase 59
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+  1. For the three Endgame Conv/Even/Recov bullet charts, the comparison baseline is the opponent's rate against the user (not a global average), computed from the same filtered game set
+  2. Opponent baseline respects the user's active filters (color, time control, platform, rated, opponent strength, recency) via shared `apply_game_filters()` utility
+  3. Baseline is hidden or visually muted when the opponent-winning sample size is below 10 games (matches the WDL-bar mute threshold in the Opening Explorer moves list)
+  4. Scope is limited to the "Endgame Conversion & Recovery" aggregate section — per-endgame-type breakdowns (pawn, rook, etc.) are untouched
+  5. Labels, tooltip/popover copy, and info-icon explanations are updated from "average" framing to peer/opponent framing
+  6. Backend stats test asserts opponent baseline math and sample-size muting behavior
+**Plans**: TBD
+**UI hint**: yes
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -345,6 +359,7 @@ Plans:
 | 57. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
 | 58. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
 | 59. Fix Endgame Conv/Even/Recov per-game stats | v1.10 | 3/3 | Complete    | 2026-04-13 |
+| 60. Opponent-based baseline for Endgame Conv/Even/Recov | v1.10 | 0/? | Not started | - |
 
 ## Backlog
 
