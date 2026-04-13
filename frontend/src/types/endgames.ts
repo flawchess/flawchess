@@ -93,13 +93,16 @@ export interface MaterialRow {
   draw_pct: number;
   loss_pct: number;
   score: number;
+  // Phase 60: opponent's score in the mirror bucket; null when opponent_games < 10
+  opponent_score: number | null;
+  // Phase 60: opponent's sample size (== swap-bucket game count)
+  opponent_games: number;
 }
 
 export interface ScoreGapMaterialResponse {
   endgame_score: number;
   non_endgame_score: number;
   score_difference: number;
-  overall_score: number;
   material_rows: MaterialRow[];
 }
 
