@@ -691,6 +691,12 @@ MIN_GAMES_FOR_CLOCK_STATS = 10
 NUM_BUCKETS = 10
 BUCKET_WIDTH_PCT = 10  # each bucket spans 10 percentage points
 
+# Clamp: games where either clock at endgame entry exceeds this multiple of
+# base_time_seconds are treated as bad data (bogus clock readings, e.g. from
+# adjudicated or disconnected games). 2x handles legitimate banked increment
+# (p99 in prod is 109%), but >200% is noise (saw max 2047% in prod).
+MAX_CLOCK_PCT_OF_BASE = 2.0
+
 # Display labels for time control buckets.
 _TIME_CONTROL_LABELS: dict[str, str] = {
     "bullet": "Bullet",
@@ -733,12 +739,21 @@ def _compute_clock_pressure(
     """Compute time pressure stats at endgame entry, grouped by time control.
 
     Each row from query_clock_stats_rows has the shape:
-    (game_id, time_control_bucket, time_control_seconds, termination, result,
+    (game_id, time_control_bucket, base_time_seconds, termination, result,
      user_color, ply_array, clock_array)
 
     query_clock_stats_rows returns one row per qualifying game (whole-game 6-ply
     rule via _any_endgame_ply_subquery, per quick-260414-pv4), so no Python-side
     deduplication is needed — rows can be iterated directly.
+
+    Percentage is computed per-game as user_clock / base_time_seconds * 100,
+    where base_time_seconds is the actual starting clock for that game (e.g. 600
+    for a 600+0 game, 900 for a 900+10 game). This avoids the old bucket-first-seen
+    bug where time_control_seconds (base + inc*40) mixed different starting clocks
+    within a bucket (quick-260414-smt).
+
+    Games where either clock exceeds MAX_CLOCK_PCT_OF_BASE * base_time_seconds are
+    excluded entirely from clock accumulation as bad data.
 
     Returns ClockPressureResponse with:
     - rows: one ClockStatsRow per time control with >= MIN_GAMES_FOR_CLOCK_STATS games
@@ -758,13 +773,11 @@ def _compute_clock_pressure(
     tc_clock_diffs: dict[str, list[float]] = defaultdict(list)
     tc_user_pcts: dict[str, list[float]] = defaultdict(list)
     tc_opp_pcts: dict[str, list[float]] = defaultdict(list)
-    # time_control_seconds per bucket (consistent within bucket; store first seen)
-    tc_seconds: dict[str, int | None] = {}
 
     for row in clock_rows:
         game_id: int = row[0]
         time_control_bucket: str | None = row[1]
-        time_control_seconds: int | None = row[2]
+        base_time_seconds: int | None = row[2]
         termination: str | None = row[3]
         result: str = row[4]
         user_color: str = row[5]
@@ -780,23 +793,33 @@ def _compute_clock_pressure(
         # contract, game_ids are already unique (one row per game).
         tc_game_ids[tc].add(game_id)
 
-        # Store time_control_seconds for pct computation (first seen per bucket)
-        if tc not in tc_seconds:
-            tc_seconds[tc] = time_control_seconds
-
         # Extract entry clocks using ply parity
         user_clock, opp_clock = _extract_entry_clocks(ply_array, clock_array, user_color)
 
         # Only accumulate clock stats when BOTH clocks are available
         if user_clock is not None and opp_clock is not None:
-            tc_user_clocks[tc].append(user_clock)
-            tc_opp_clocks[tc].append(opp_clock)
-            tc_clock_diffs[tc].append(user_clock - opp_clock)
-
-            tc_secs = tc_seconds.get(tc)
-            if tc_secs is not None and tc_secs > 0:
-                tc_user_pcts[tc].append(user_clock / tc_secs * 100)
-                tc_opp_pcts[tc].append(opp_clock / tc_secs * 100)
+            # Clamp: when base_time_seconds is known, exclude games where either clock
+            # exceeds 2x base time — bogus readings (e.g. adjudicated/disconnected games).
+            # Banked increment can push clocks over 100% legitimately (p99 ~109%), but
+            # >200% is noise. Skip the whole game from ALL clock accumulation when clamped —
+            # don't pollute absolute seconds either, since the reading is unreliable.
+            if (
+                base_time_seconds is not None
+                and base_time_seconds > 0
+                and (
+                    user_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+                    or opp_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+                )
+            ):
+                pass  # Skip entire game — bogus clock reading
+            else:
+                tc_user_clocks[tc].append(user_clock)
+                tc_opp_clocks[tc].append(opp_clock)
+                tc_clock_diffs[tc].append(user_clock - opp_clock)
+                # Only compute pct when base_time_seconds is valid (> 0)
+                if base_time_seconds is not None and base_time_seconds > 0:
+                    tc_user_pcts[tc].append(user_clock / base_time_seconds * 100)
+                    tc_opp_pcts[tc].append(opp_clock / base_time_seconds * 100)
 
         # Track timeouts — deduplicated by game_id per bucket
         if termination == "timeout":
@@ -925,7 +948,7 @@ def _compute_time_pressure_chart(
         # game_id (row[0]) and termination (row[3]) are unused in this consumer —
         # _compute_clock_pressure handles the timeout accounting.
         time_control_bucket: str | None = row[1]
-        time_control_seconds: int | None = row[2]
+        base_time_seconds: int | None = row[2]
         result: str = row[4]
         user_color: str = row[5]
         ply_array: list[int] = row[6]
@@ -947,12 +970,21 @@ def _compute_time_pressure_chart(
         if user_clock is None or opp_clock is None:
             continue
 
-        # Skip if time_control_seconds is absent or zero — can't compute percentage
-        if time_control_seconds is None or time_control_seconds <= 0:
+        # Skip if base_time_seconds is absent or zero — can't compute per-game percentage
+        # (quick-260414-smt: switched from bucket-first-seen time_control_seconds to
+        # per-game base_time_seconds for apples-to-apples % within each bucket)
+        if base_time_seconds is None or base_time_seconds <= 0:
             continue
 
-        user_pct = user_clock / time_control_seconds * 100
-        opp_pct = opp_clock / time_control_seconds * 100
+        # Clamp: skip games where either clock exceeds 2x base time — bogus readings
+        if (
+            user_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+            or opp_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+        ):
+            continue
+
+        user_pct = user_clock / base_time_seconds * 100
+        opp_pct = opp_clock / base_time_seconds * 100
 
         # Clamp to [0, NUM_BUCKETS-1] — 100% maps to bucket 9, not 10
         user_bucket = min(int(user_pct / BUCKET_WIDTH_PCT), NUM_BUCKETS - 1)

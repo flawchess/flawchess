@@ -65,6 +65,7 @@ def _any_endgame_ply_subquery(user_id: int) -> Any:
         .subquery("any_endgame_game_ids")
     )
 
+
 # Number of plies after endgame entry to check for persistence of material imbalance.
 # Filters out transient imbalances from piece trades at the endgame transition.
 PERSISTENCE_PLIES = 4
@@ -88,8 +89,14 @@ async def count_filtered_games(
     """
     stmt = select(func.count()).select_from(Game).where(Game.user_id == user_id)
     stmt = apply_game_filters(
-        stmt, time_control, platform, rated, opponent_type, recency_cutoff,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
     result = await session.execute(stmt)
     return result.scalar_one()
@@ -122,8 +129,14 @@ async def count_endgame_games(
         )
     )
     stmt = apply_game_filters(
-        stmt, time_control, platform, rated, opponent_type, recency_cutoff,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
     result = await session.execute(stmt)
     return result.scalar_one()
@@ -166,9 +179,7 @@ async def query_endgame_entry_rows(
     # (array_agg(material_imbalance ORDER BY ply))[1] gets the value at the min ply
     # without needing a separate lookup join.
     entry_imbalance_agg = type_coerce(
-        func.array_agg(
-            aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())
-        ),
+        func.array_agg(aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())),
         ARRAY(SmallIntegerType),
     )[1]
 
@@ -180,16 +191,12 @@ async def query_endgame_entry_rows(
     # meaningless. Returns NULL for non-contiguous spans, which the service layer's
     # "is not None" check correctly excludes from conversion/recovery.
     raw_imbalance_after = type_coerce(
-        func.array_agg(
-            aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())
-        ),
+        func.array_agg(aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())),
         ARRAY(SmallIntegerType),
     )[PERSISTENCE_PLIES + 1]
 
     ply_at_persistence = type_coerce(
-        func.array_agg(
-            aggregate_order_by(GamePosition.ply, GamePosition.ply.asc())
-        ),
+        func.array_agg(aggregate_order_by(GamePosition.ply, GamePosition.ply.asc())),
         ARRAY(SmallIntegerType),
     )[PERSISTENCE_PLIES + 1]
 
@@ -237,8 +244,14 @@ async def query_endgame_entry_rows(
 
     # Apply standard game filters
     stmt = apply_game_filters(
-        stmt, time_control, platform, rated, opponent_type, recency_cutoff,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     result = await session.execute(stmt)
@@ -339,8 +352,14 @@ async def query_endgame_bucket_rows(
     )
 
     stmt = apply_game_filters(
-        stmt, time_control, platform, rated, opponent_type, recency_cutoff,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     result = await session.execute(stmt)
@@ -396,8 +415,14 @@ async def query_endgame_games(
         Game.id.in_(select(span_subq.c.game_id)),
     )
     base_stmt = apply_game_filters(
-        base_stmt, time_control, platform, rated, opponent_type, recency_cutoff,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        base_stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     # Count total matching games (before pagination)
@@ -409,12 +434,7 @@ async def query_endgame_games(
         return [], 0
 
     # Paginated game objects ordered most-recent first
-    games_stmt = (
-        base_stmt
-        .order_by(Game.played_at.desc().nulls_last())
-        .offset(offset)
-        .limit(limit)
-    )
+    games_stmt = base_stmt.order_by(Game.played_at.desc().nulls_last()).offset(offset).limit(limit)
     games_result = await session.execute(games_stmt)
     games = list(games_result.scalars().all())
 
@@ -462,23 +482,33 @@ async def query_endgame_performance_rows(
     )
 
     # Endgame games: id in the endgame subquery
-    endgame_stmt = (
-        game_cols.where(Game.id.in_(select(endgame_game_ids_subq.c.game_id)))
-        .order_by(Game.played_at.asc())
+    endgame_stmt = game_cols.where(Game.id.in_(select(endgame_game_ids_subq.c.game_id))).order_by(
+        Game.played_at.asc()
     )
     endgame_stmt = apply_game_filters(
-        endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        endgame_stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     # Non-endgame games: id NOT in the endgame subquery
-    non_endgame_stmt = (
-        game_cols.where(Game.id.notin_(select(endgame_game_ids_subq.c.game_id)))
-        .order_by(Game.played_at.asc())
-    )
+    non_endgame_stmt = game_cols.where(
+        Game.id.notin_(select(endgame_game_ids_subq.c.game_id))
+    ).order_by(Game.played_at.asc())
     non_endgame_stmt = apply_game_filters(
-        non_endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        non_endgame_stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     # Execute sequentially — AsyncSession is not safe for concurrent use from
@@ -557,8 +587,14 @@ async def query_endgame_timeline_rows(
         .order_by(Game.played_at.asc())
     )
     per_class_stmt = apply_game_filters(
-        per_class_stmt, time_control, platform, rated, opponent_type, recency_cutoff,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        per_class_stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     # Execute sequentially — AsyncSession is not safe for concurrent use from
@@ -603,13 +639,18 @@ async def query_endgame_timeline_rows(
         Game.played_at.isnot(None),
     )
 
-    non_endgame_stmt = (
-        game_cols.where(Game.id.notin_(select(per_class_subq.c.game_id)))
-        .order_by(Game.played_at.asc())
+    non_endgame_stmt = game_cols.where(Game.id.notin_(select(per_class_subq.c.game_id))).order_by(
+        Game.played_at.asc()
     )
     non_endgame_stmt = apply_game_filters(
-        non_endgame_stmt, time_control, platform, rated, opponent_type, recency_cutoff,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        non_endgame_stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     non_endgame_result = await session.execute(non_endgame_stmt)
@@ -640,8 +681,12 @@ async def query_clock_stats_rows(
     are split across multiple classes (e.g. 4 in KP_KP plus 4 in KR_KR, neither of
     which hits the threshold alone).
 
-    Returns rows of: (game_id, time_control_bucket, time_control_seconds, termination,
+    Returns rows of: (game_id, time_control_bucket, base_time_seconds, termination,
                       result, user_color, ply_array, clock_array)
+
+    base_time_seconds: the actual starting clock for that game (e.g. 600 for 600+0,
+    900 for 900+10). Used as the per-game denominator for % computations in
+    _compute_clock_pressure and _compute_time_pressure_chart (quick-260414-smt).
 
     ply_array: array_agg(ply ORDER BY ply) — all endgame plies in the game
     clock_array: array_agg(clock_seconds ORDER BY ply) — clock at each endgame ply
@@ -665,16 +710,12 @@ async def query_clock_stats_rows(
     # Aggregate full ply and clock arrays ordered by ply ascending.
     # Using type_coerce with ARRAY types so SQLAlchemy returns Python lists.
     ply_array_agg = type_coerce(
-        func.array_agg(
-            aggregate_order_by(GamePosition.ply, GamePosition.ply.asc())
-        ),
+        func.array_agg(aggregate_order_by(GamePosition.ply, GamePosition.ply.asc())),
         ARRAY(SmallIntegerType),
     )
 
     clock_array_agg = type_coerce(
-        func.array_agg(
-            aggregate_order_by(GamePosition.clock_seconds, GamePosition.ply.asc())
-        ),
+        func.array_agg(aggregate_order_by(GamePosition.clock_seconds, GamePosition.ply.asc())),
         ARRAY(FloatType()),
     )
 
@@ -695,11 +736,16 @@ async def query_clock_stats_rows(
         .subquery("clock_per_game")
     )
 
+    # quick-260414-smt: replaced Game.time_control_seconds (bucket-first-seen estimate,
+    # base + inc*40) with Game.base_time_seconds (actual per-game starting clock).
+    # This gives an apples-to-apples % denominator within each time control bucket:
+    # a 1800+0 and a 600+0 rapid game each divide by their own starting clock, not
+    # a shared bucket estimate that could be 600 for both (producing 250%+ for 1800s games).
     stmt = (
         select(
             Game.id.label("game_id"),
             Game.time_control_bucket,
-            Game.time_control_seconds,
+            Game.base_time_seconds,
             Game.termination,
             Game.result,
             Game.user_color,
@@ -711,8 +757,14 @@ async def query_clock_stats_rows(
     )
 
     stmt = apply_game_filters(
-        stmt, time_control, platform, rated, opponent_type, recency_cutoff,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     result = await session.execute(stmt)

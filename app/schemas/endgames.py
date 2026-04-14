@@ -215,11 +215,11 @@ class ClockStatsRow(BaseModel):
     clock_games: int  # games where both user and opp clocks were available
     user_avg_pct: (
         float | None
-    )  # mean (user_clock / time_control_seconds * 100) at entry; None if no time_control_seconds
+    )  # mean (user_clock / base_time_seconds * 100) at entry; None if no base_time_seconds
     user_avg_seconds: float | None  # mean user_clock at entry in seconds; None if no clock data
     opp_avg_pct: (
         float | None
-    )  # mean (opp_clock / time_control_seconds * 100) at entry; None if no time_control_seconds
+    )  # mean (opp_clock / base_time_seconds * 100) at entry; None if no base_time_seconds
     opp_avg_seconds: float | None  # mean opp_clock at entry in seconds; None if no clock data
     avg_clock_diff_seconds: (
         float | None

@@ -1392,7 +1392,7 @@ class TestScoreGapMaterialOpponentBaseline(TestScoreGapMaterial):
 def _make_clock_row(
     game_id: int,
     time_control_bucket: str | None,
-    time_control_seconds: int | None,
+    base_time_seconds: int | None,
     termination: str | None,
     result: str,
     user_color: str,
@@ -1401,8 +1401,11 @@ def _make_clock_row(
 ) -> tuple:
     """Build a tuple matching the query_clock_stats_rows output shape.
 
-    Shape: (game_id, time_control_bucket, time_control_seconds, termination,
+    Shape: (game_id, time_control_bucket, base_time_seconds, termination,
             result, user_color, ply_array, clock_array)
+
+    base_time_seconds is the per-game starting clock (e.g. 600 for 600+0, 900
+    for 900+10). Used as the denominator for % computation (quick-260414-smt).
 
     Since quick-260414-pv4, query_clock_stats_rows emits one row per qualifying
     game (whole-game 6-ply rule), so test rows should use distinct game_ids
@@ -1411,7 +1414,7 @@ def _make_clock_row(
     return (
         game_id,
         time_control_bucket,
-        time_control_seconds,
+        base_time_seconds,
         termination,
         result,
         user_color,
@@ -1490,7 +1493,7 @@ class TestComputeClockPressure:
         count: int,
         user_clock: float = 50.0,
         opp_clock: float = 60.0,
-        time_control_seconds: int | None = 180,
+        base_time_seconds: int | None = 180,
         termination: str = "checkmate",
         result: str = "1-0",
         user_color: str = "white",
@@ -1505,7 +1508,7 @@ class TestComputeClockPressure:
                 _make_clock_row(
                     game_id=game_id,
                     time_control_bucket="blitz",
-                    time_control_seconds=time_control_seconds,
+                    base_time_seconds=base_time_seconds,
                     termination=termination,
                     result=result,
                     user_color=user_color,
@@ -1517,7 +1520,7 @@ class TestComputeClockPressure:
 
     def test_basic_single_bucket(self):
         """12 blitz games with clock data produce one ClockStatsRow for blitz with correct averages."""
-        rows = self._make_blitz_rows(12, user_clock=50.0, opp_clock=60.0, time_control_seconds=180)
+        rows = self._make_blitz_rows(12, user_clock=50.0, opp_clock=60.0, base_time_seconds=180)
         result = _compute_clock_pressure(rows)
         assert len(result.rows) == 1
         row = result.rows[0]
@@ -1540,7 +1543,7 @@ class TestComputeClockPressure:
                 _make_clock_row(
                     game_id=i + 1,
                     time_control_bucket="bullet",
-                    time_control_seconds=60,
+                    base_time_seconds=60,
                     termination="checkmate",
                     result="1-0",
                     user_color="white",
@@ -1625,9 +1628,9 @@ class TestComputeClockPressure:
         assert len(result.rows) == 1
         assert result.rows[0].net_timeout_rate == pytest.approx(10.0)
 
-    def test_time_control_seconds_none_pct_is_none(self):
-        """Games with time_control_seconds=None -> pct fields are None, seconds fields computed."""
-        rows = self._make_blitz_rows(10, user_clock=50.0, opp_clock=60.0, time_control_seconds=None)
+    def test_base_time_seconds_none_pct_is_none(self):
+        """Games with base_time_seconds=None -> pct fields are None, seconds fields computed."""
+        rows = self._make_blitz_rows(10, user_clock=50.0, opp_clock=60.0, base_time_seconds=None)
         result = _compute_clock_pressure(rows)
         assert len(result.rows) == 1
         row = result.rows[0]
@@ -1645,7 +1648,7 @@ class TestComputeClockPressure:
                 _make_clock_row(
                     game_id=i + 1,
                     time_control_bucket="rapid",
-                    time_control_seconds=600,
+                    base_time_seconds=600,
                     termination="checkmate",
                     result="1-0",
                     user_color="white",
@@ -1670,7 +1673,7 @@ class TestComputeClockPressure:
                     _make_clock_row(
                         game_id=len(rows) + 1,
                         time_control_bucket=tc,
-                        time_control_seconds=tc_secs,
+                        base_time_seconds=tc_secs,
                         termination="checkmate",
                         result="1-0",
                         user_color="white",
@@ -1774,13 +1777,13 @@ class TestComputeTimePressureChart:
 
     def test_single_game_win_user_bucket_populated(self):
         """Test 1: 10 bullet wins, user 50% time -> user_score=1.0 -> user bucket 5 (50-60%) populated."""
-        # time_control_seconds=60, user_clock=30 -> 50% -> bucket index 5
+        # base_time_seconds=60, user_clock=30 -> 50% -> bucket index 5
         # opp_clock=20 -> 33% -> bucket index 3
         rows = [
             _make_clock_row(
                 game_id=i + 1,
                 time_control_bucket="bullet",
-                time_control_seconds=60,
+                base_time_seconds=60,
                 termination="checkmate",
                 result="1-0",
                 user_color="white",
@@ -1847,18 +1850,18 @@ class TestComputeTimePressureChart:
         total_user = sum(p.game_count for p in row.user_series)
         assert total_user == 9
 
-    def test_game_without_time_control_seconds_excluded(self):
-        """Test 4: Game without time_control_seconds is excluded from chart series."""
+    def test_game_without_base_time_seconds_excluded(self):
+        """Test 4: Game without base_time_seconds is excluded from chart series."""
         rows = []
         for i in range(10):
-            # time_control_seconds=None -> excluded from bucket computation
+            # base_time_seconds=None -> excluded from bucket computation (no denominator)
             rows.append(
                 _make_clock_row(
                     i + 1, "blitz", None, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
                 )
             )
         result = _compute_time_pressure_chart(rows)
-        # 10 games with valid TC bucket -> row appears; but no time_control_seconds -> series empty
+        # 10 games with valid TC bucket -> row appears; but no base_time_seconds -> series empty
         assert len(result.rows) == 1
         row = result.rows[0]
         for p in row.user_series:
@@ -1989,3 +1992,191 @@ class TestComputeTimePressureChart:
         assert len(result.rows) == 1
         row = result.rows[0]
         assert row.total_endgame_games == 10
+
+
+# ---------------------------------------------------------------------------
+# quick-260414-smt: per-game base_time_seconds denominator + >2x clamp tests
+# ---------------------------------------------------------------------------
+
+
+class TestClockPressurePerGameDenominator:
+    """Tests verifying that _compute_clock_pressure uses per-game base_time_seconds.
+
+    Before quick-260414-smt, the denominator was the first-seen time_control_seconds
+    for the bucket (base + inc*40). This caused a 1800+0 game's 1500s clock to be
+    divided by 600 (=250%), since a 600+0 game happened to be processed first.
+
+    After quick-260414-smt, each game divides by its own base_time_seconds.
+    """
+
+    def test_per_game_denominator_two_rapid_games_different_base(self):
+        """Two rapid games with different base clocks produce user_avg_pct = per-game mean.
+
+        Game 1: base=600, user_clock=300 -> 50%
+        Game 2: base=1800, user_clock=900 -> 50%
+        Expected user_avg_pct = 50% (not 300/1800*100=16.7% as bucket-first-seen would give)
+        """
+        rows = [
+            _make_clock_row(1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]),
+            _make_clock_row(2, "rapid", 1800, "checkmate", "1-0", "white", [0, 1], [900.0, 600.0]),
+        ]
+        # Pad to hit MIN_GAMES_FOR_CLOCK_STATS threshold — 8 more rapid games at 600 base, 50%
+        for i in range(3, 11):
+            rows.append(
+                _make_clock_row(
+                    i, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]
+                )
+            )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # All 10 games: 9 at 50%, 1 at 50% -> avg = 50%
+        assert row.user_avg_pct == pytest.approx(50.0, abs=0.1)
+
+    def test_per_game_denominator_asymmetric_bases(self):
+        """One 600-base game at 300s clock (50%) and one 1800-base game at 1500s clock (83.3%).
+
+        Expected avg_pct = (9*50% + 83.33%) / 10 = 53.33%
+        With old bucket-first-seen at base=600, second game would give 1500/600*100=250% (absurd).
+        """
+        rows = [
+            _make_clock_row(1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]),
+            _make_clock_row(2, "rapid", 1800, "checkmate", "1-0", "white", [0, 1], [1500.0, 600.0]),
+        ]
+        # Pad to threshold
+        for i in range(3, 11):
+            rows.append(
+                _make_clock_row(
+                    i, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]
+                )
+            )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # Game 1: 300/600=50%; Games 3-10: 300/600=50% each; Game 2: 1500/1800=83.33%
+        # avg = (9*50 + 83.33) / 10 = 533.33 / 10 = 53.33%
+        assert row.user_avg_pct == pytest.approx((9 * 50.0 + 1500.0 / 1800.0 * 100) / 10, abs=0.1)
+
+    def test_clamp_excludes_game_with_3x_base_clock(self):
+        """Game where user_clock = 3 * base_time_seconds is excluded from all clock aggregation.
+
+        The game still counts in total_endgame_games (it reached an endgame), but contributes
+        nothing to clock_games, user_avg_pct, user_avg_seconds, or any other clock metric.
+        """
+        # 9 normal games + 1 clamped game (clock = 3x base = bogus reading)
+        rows = []
+        for i in range(9):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        # Game 10: user_clock = 3 * 180 = 540 -> >2x -> clamped, excluded from clock accumulation
+        rows.append(
+            _make_clock_row(10, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [540.0, 60.0])
+        )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # total_endgame_games counts all 10 (game reached endgame)
+        assert row.total_endgame_games == 10
+        # clock_games counts only 9 (clamped game excluded)
+        assert row.clock_games == 9
+        # Pct based only on the 9 normal games (90/180=50%)
+        assert row.user_avg_pct == pytest.approx(50.0, abs=0.1)
+        # Seconds also only from 9 games
+        assert row.user_avg_seconds == pytest.approx(90.0, abs=0.1)
+
+    def test_clamp_excludes_game_with_high_opp_clock(self):
+        """Game where opp_clock > 2x base is also excluded entirely."""
+        rows = []
+        for i in range(9):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]
+                )
+            )
+        # Opp clock = 3 * 600 = 1800 -> >2x -> whole game excluded
+        rows.append(
+            _make_clock_row(10, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 1800.0])
+        )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.total_endgame_games == 10
+        assert row.clock_games == 9
+
+    def test_clamp_does_not_affect_timeout_accounting(self):
+        """Timeout tracking is independent of clock accumulation — clamped games still count.
+
+        The clamp only affects clock_games / pct / seconds aggregation.
+        Timeout wins/losses are tracked per game_id regardless.
+        """
+        # Game 1: timeout win with bogus clock (3x base) -> still counts as timeout win
+        rows = [_make_clock_row(1, "blitz", 180, "timeout", "1-0", "white", [0, 1], [540.0, 60.0])]
+        for i in range(9):
+            rows.append(
+                _make_clock_row(
+                    i + 2, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        result = _compute_clock_pressure(rows)
+        row = result.rows[0]
+        # 1 timeout win / 10 total games = 10% net timeout rate
+        assert row.net_timeout_rate == pytest.approx(10.0)
+        # clock_games = 9 (game 1 clamped from clock accumulation)
+        assert row.clock_games == 9
+
+
+class TestTimePressureChartPerGameDenominator:
+    """Tests verifying _compute_time_pressure_chart uses per-game base_time_seconds + clamp."""
+
+    def test_per_game_denominator_bucket_assignment(self):
+        """Two rapid games with different base clocks bucket independently by their own %.
+
+        Game 1: base=600, user_clock=300 -> 50% -> bucket 5
+        Game 2: base=1800, user_clock=1800 -> 100% -> bucket 9 (clamped to last)
+        Both at rapid, both wins.
+        """
+        rows = [
+            _make_clock_row(1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]),
+            _make_clock_row(2, "rapid", 1800, "checkmate", "1-0", "white", [0, 1], [1800.0, 600.0]),
+        ]
+        # Pad to threshold
+        for i in range(3, 11):
+            rows.append(
+                _make_clock_row(
+                    i, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]
+                )
+            )
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # 9 games at 50% (bucket 5) + 1 game at 100% (bucket 9)
+        assert row.user_series[5].game_count == 9
+        assert row.user_series[9].game_count == 1
+
+    def test_chart_clamp_excludes_bogus_game(self):
+        """Game with user_clock > 2x base is excluded from chart series.
+
+        10 normal games + 1 clamped game. The clamped game counts in total_endgame_games
+        but not in any bucket.
+        """
+        rows = []
+        for i in range(10):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        # Game 11: user_clock = 3 * 180 = 540 -> >2x -> clamped
+        rows.append(
+            _make_clock_row(11, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [540.0, 60.0])
+        )
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # total_endgame_games = 11 (all games with valid TC bucket)
+        assert row.total_endgame_games == 11
+        # Only 10 games contribute to series (clamped game excluded)
+        assert sum(p.game_count for p in row.user_series) == 10
