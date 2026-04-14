@@ -49,8 +49,9 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
               side="top"
             >
               <p>Shows your clock situation when entering endgames, broken down by time control.</p>
-              <p className="mt-1"><strong>My avg time:</strong> your average remaining clock at endgame entry (% of total time + absolute seconds).</p>
+              <p className="mt-1"><strong>My avg time:</strong> your average remaining clock at endgame entry (% of base clock time + absolute seconds, pre-increment).</p>
               <p className="mt-1"><strong>Opp avg time:</strong> opponent&apos;s average remaining clock.</p>
+              <p className="mt-1"><strong>% of base time</strong> = remaining clock divided by the starting clock for that game (e.g. 600 for a 600+0 game, 900 for a 900+10 game). Values above 100% are possible when increment banks past the starting clock; bad-data readings above 200% of base are excluded.</p>
               <p className="mt-1"><strong>Avg clock diff:</strong> average difference (your clock minus opponent&apos;s clock) in seconds. Positive means you had more time.</p>
               <p className="mt-1"><strong>Net timeout rate:</strong> (timeout wins minus timeout losses) divided by total endgame games. Negative means you get flagged more than you flag.</p>
               <p className="mt-1">Includes every game that reached an endgame phase (total of at least 3 full moves / 6 half-moves spent in the endgame, summed across all endgame types). The entry clocks are measured at the first endgame position reached in the game.</p>
@@ -58,7 +59,7 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          How much clock you have entering endgames, and how often you flag vs your opponents.
+          How much clock (as % of base time) you have entering endgames, and how often you flag vs your opponents.
         </p>
       </div>
 
