@@ -185,7 +185,7 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
               <p><strong>Blue line (My score):</strong> your average score when <em>you</em> had this much time remaining at endgame entry.</p>
               <p><strong>Red line (Opponent&apos;s score):</strong> average score of your opponents when <em>they</em> had this much time remaining.</p>
               <p>Where the lines diverge reveals who handles time pressure better. If your line drops faster as time decreases, you crack under pressure more than your opponents.</p>
-              <p>Only endgames that span at least 6 plies (3 moves) are included.</p>
+              <p>Only endgames that span at least 3 full moves (6 half-moves) are included.</p>
               <p className="text-xs text-muted-foreground">Dimmed dots indicate fewer than 10 games in that bucket.</p>
             </div>
           </InfoPopover>
