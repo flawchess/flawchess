@@ -4,7 +4,7 @@ milestone: v1.10
 milestone_name: Advanced Analytics
 status: executing
 last_updated: "2026-04-14T03:49:35.785Z"
-last_activity: 2026-04-14 -- Completed quick task 260414-83b
+last_activity: 2026-04-14 -- Completed quick task 260414-ae4
 progress:
   total_phases: 13
   completed_phases: 5
@@ -80,9 +80,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 | 260413-qg0 | Apply Openings Stats responsive layout (desktop row / mobile stacked) to endgame WDL sections | 2026-04-13 | b399ac9 | [260413-qg0-apply-same-desktop-mobile-layout-from-op](./quick/260413-qg0-apply-same-desktop-mobile-layout-from-op/) |
 | 260413-qq0 | Move Endgame Score Difference into Games with vs without Endgame as bullet chart and rename labels | 2026-04-13 | e4e2768 | [260413-qq0-move-endgame-score-difference-into-games](./quick/260413-qq0-move-endgame-score-difference-into-games/) |
 | 260414-83b | Fix endgame tab code review: dedup timeline subquery, validate _INT_TO_CLASS lookup, replace row-index brittleness | 2026-04-14 | d4f975c | [260414-83b-fix-endgame-tab-code-review-dedup-timeli](./quick/260414-83b-fix-endgame-tab-code-review-dedup-timeli/) |
+| 260414-ae4 | Apply 6-ply (3-move) endgame threshold uniformly across endgames tab; update info popovers and concepts section | 2026-04-14 | 0b50fe1 | [260414-ae4-for-all-analyses-on-the-endgames-tab-con](./quick/260414-ae4-for-all-analyses-on-the-endgames-tab-con/) |
 
 ---
-Last activity: 2026-04-14 - Completed quick task 260414-83b: Fix endgame tab code review: dedup timeline subquery, validate _INT_TO_CLASS lookup, replace row-index brittleness
+Last activity: 2026-04-14 - Completed quick task 260414-ae4: Apply 6-ply endgame threshold uniformly across endgames tab
 | 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
 | 2026-04-10 | ship | Phase 51 shipped — PR #42 merged into main | done |
 | 2026-04-11 | fast | Preserve Openings board position across main tab navigation | ✅ |
