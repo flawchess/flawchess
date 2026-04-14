@@ -373,8 +373,8 @@ async def get_endgame_stats(
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
-    # Count games that reached an endgame phase (any endgame_class IS NOT NULL position).
-    # No ply threshold — simpler definition than per-type classification.
+    # Count games that reached an endgame phase per the uniform ENDGAME_PLY_THRESHOLD rule
+    # (quick-260414-ae4): a game qualifies if its total endgame plies meet the threshold.
     endgame_games = await count_endgame_games(
         session,
         user_id=user_id,
@@ -528,11 +528,13 @@ def _compute_score_gap_material(
         entry_rows: One row per endgame game from query_endgame_bucket_rows.
             Each row: (game_id, endgame_class_int, result, user_color,
                        user_material_imbalance, user_material_imbalance_after).
-            Expected to contain exactly one row per game in endgame_wdl; the
-            function still dedupes by game_id defensively. For any game where
+            Both endgame_wdl and entry_rows are produced with the uniform
+            ENDGAME_PLY_THRESHOLD HAVING (quick-260414-ae4), so they count the
+            same population of games — `sum(material_rows.games) ==
+            endgame_wdl.total` holds by construction. The function still
+            dedupes by game_id defensively. For any game where
             `user_material_imbalance_after` is NULL (endgame didn't persist
-            for 4 plies), the game routes to the "even" bucket. This keeps
-            `sum(material_rows.games) == endgame_wdl.total`.
+            for 4 plies), the game routes to the "even" bucket.
 
     Returns:
         ScoreGapMaterialResponse with score gap and 3-row material breakdown.
@@ -1243,8 +1245,8 @@ async def get_endgame_overview(
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
-    # Count games that reached an endgame phase (any endgame_class IS NOT NULL position).
-    # No ply threshold — matches the "reached an endgame phase" wording in the UI.
+    # Count games that reached an endgame phase per the uniform ENDGAME_PLY_THRESHOLD rule
+    # (quick-260414-ae4): a game qualifies if its total endgame plies meet the threshold.
     endgame_games = await count_endgame_games(
         session,
         user_id=user_id,
@@ -1276,11 +1278,11 @@ async def get_endgame_overview(
     )
     performance = _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, entry_rows)
 
-    # Score gap & material breakdown — use game-level bucket_rows (one row per endgame game,
-    # no per-class split, no 6-ply HAVING) to preserve the invariant
-    # sum(material_rows.games) == endgame_wdl.total. The entry_rows query filters out
-    # ~11% of endgame games whose class spans are all < 6 plies; those short-endgame games
-    # now route to "even" via the NULL persistence rule in _compute_score_gap_material.
+    # Score gap & material breakdown — use game-level bucket_rows (one row per endgame
+    # game, no per-class split). Post quick-260414-ae4 the bucket query applies the
+    # same ENDGAME_PLY_THRESHOLD HAVING as `_any_endgame_ply_subquery`, so the invariant
+    # sum(material_rows.games) == endgame_wdl.total is preserved by construction: both
+    # sides of the split now exclude the same short-endgame games.
     bucket_rows = await query_endgame_bucket_rows(
         session,
         user_id=user_id,

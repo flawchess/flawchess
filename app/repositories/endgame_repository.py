@@ -41,12 +41,18 @@ ENDGAME_PLY_THRESHOLD = 6
 
 
 def _any_endgame_ply_subquery(user_id: int) -> Any:
-    """Subquery returning game_ids that have at least one endgame position.
+    """Subquery returning game_ids that spent >= ENDGAME_PLY_THRESHOLD plies in any endgame class.
 
-    Used for the binary "reached an endgame phase" split (performance bars,
-    timeline overall series, summary line).  No ply threshold — any game with
-    endgame_class IS NOT NULL qualifies.  The per-type stats use
-    ENDGAME_PLY_THRESHOLD separately for meaningful classification.
+    Single source of truth for "game reached an endgame phase" across the entire endgame
+    tab. A game qualifies if its TOTAL endgame plies (summed across all classes — e.g.
+    3 plies in KP_KP plus 3 plies in KR_KR = 6) meet the threshold. This keeps the
+    binary "has endgame" split consistent with the per-class stats: a game can no longer
+    appear in the binary split without also being eligible for at least one per-class
+    aggregate (possibly after splitting its plies across classes).
+
+    Used by `count_endgame_games`, `query_endgame_performance_rows`, and indirectly by
+    `query_endgame_bucket_rows` (which re-applies the same HAVING on its own subquery).
+    Per quick-260414-ae4.
     """
     return (
         select(GamePosition.game_id)
@@ -55,6 +61,7 @@ def _any_endgame_ply_subquery(user_id: int) -> Any:
             GamePosition.endgame_class.isnot(None),
         )
         .group_by(GamePosition.game_id)
+        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
         .subquery("any_endgame_game_ids")
     )
 
@@ -99,10 +106,11 @@ async def count_endgame_games(
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
     elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> int:
-    """Count games that reached an endgame phase (any endgame_class IS NOT NULL position).
+    """Count games that reached an endgame phase per the uniform ENDGAME_PLY_THRESHOLD rule.
 
-    No ply threshold — any game that entered an endgame phase counts.
-    Used for the summary line "X of Y games reached an endgame phase".
+    Delegates to `_any_endgame_ply_subquery`, so only games with at least
+    ENDGAME_PLY_THRESHOLD total endgame plies are counted. Used for the summary line
+    "X of Y games reached an endgame phase".
     """
     endgame_subq = _any_endgame_ply_subquery(user_id)
     stmt = (
@@ -250,14 +258,11 @@ async def query_endgame_bucket_rows(
 ) -> list[Row[Any]]:
     """Return exactly one row per endgame game for conv/even/recov bucketing.
 
-    Phase 59 gap-closure: the per-game bucket accounting path (feeding
-    `_compute_score_gap_material`) must cover every game counted in
-    `endgame_wdl.total` — i.e. every game with at least one position where
-    `endgame_class IS NOT NULL`, regardless of how many plies the game spent
-    in any given endgame class. The per-class 6-ply threshold used by
-    `query_endgame_entry_rows` (per-type stats) drops ~11% of endgame games
-    here, breaking the `sum(material_rows.games) == endgame_wdl.total`
-    invariant.
+    Applies the uniform ENDGAME_PLY_THRESHOLD HAVING (per quick-260414-ae4) so the row
+    set stays aligned with `_any_endgame_ply_subquery` — both the binary
+    "has endgame" split and this per-game bucket query count the same population,
+    preserving the invariant `sum(material_rows.games) == endgame_wdl.total` by
+    construction.
 
     Returns rows of: (game_id, endgame_class, result, user_color,
     user_material_imbalance, user_material_imbalance_after)
@@ -265,11 +270,11 @@ async def query_endgame_bucket_rows(
     Tuple shape matches `query_endgame_entry_rows` so callers of
     `_compute_score_gap_material` can swap queries without change. The
     `endgame_class` column here is the class of the FIRST endgame position
-    for the game (purely informational — bucketing is now game-level and no
+    for the game (purely informational — bucketing is game-level and no
     longer tiebreaks on it).
 
     Semantics:
-    - One row per endgame game (no per-class split, no ply HAVING).
+    - One row per endgame game (no per-class split).
     - `user_material_imbalance` = material_imbalance at the game's first
       endgame position, sign-flipped for black so positive = user ahead.
     - `user_material_imbalance_after` = material_imbalance 4 plies later in
@@ -279,7 +284,8 @@ async def query_endgame_bucket_rows(
       "even" bucket via the NULL-handling rule in
       `_compute_score_gap_material`.
     """
-    # Per-game first endgame ply
+    # Per-game first endgame ply — HAVING enforces the uniform 6-ply rule so this
+    # query returns exactly the same games as `_any_endgame_ply_subquery`.
     entry_subq = (
         select(
             GamePosition.game_id.label("game_id"),
@@ -290,6 +296,7 @@ async def query_endgame_bucket_rows(
             GamePosition.endgame_class.isnot(None),
         )
         .group_by(GamePosition.game_id)
+        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
         .subquery("first_endgame")
     )
 
@@ -432,11 +439,14 @@ async def query_endgame_performance_rows(
 ) -> tuple[list[Row[Any]], list[Row[Any]]]:
     """Return endgame and non-endgame game rows for performance comparison.
 
-    Endgame games: any game with at least one position where
-    endgame_class IS NOT NULL (i.e. the game reached an endgame phase).
-    No ply threshold — the threshold is only for per-type classification.
+    Endgame games: games that meet the uniform ENDGAME_PLY_THRESHOLD rule — i.e. spent
+    at least that many plies in any endgame class. Both endgame_rows AND non_endgame_rows
+    derive from `_any_endgame_ply_subquery`, so the split is consistent by construction:
+    every game is in exactly one side of the split (per quick-260414-ae4).
 
-    Non-endgame games: all other games that never reached an endgame phase.
+    Non-endgame games: all other games (including games that briefly touched an endgame
+    class for fewer than ENDGAME_PLY_THRESHOLD plies — they are treated as "no endgame"
+    for this split).
 
     Returns: (endgame_rows, non_endgame_rows) where each row is
     (played_at, result, user_color).
