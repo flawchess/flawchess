@@ -45,15 +45,6 @@ function EndgameCategoryRow({ cat, maxTotal, onCategorySelect }: {
       <WDLChartRow
         data={cat}
         label={cat.label}
-        infoPopover={
-          <InfoPopover
-            ariaLabel={`${cat.label} endgame type info`}
-            testId={`endgame-type-info-${cat.slug}`}
-            side="top"
-          >
-            {ENDGAME_TYPE_DESCRIPTIONS[cat.endgame_class]}
-          </InfoPopover>
-        }
         gamesLink="/endgames/games"
         onGamesLinkClick={() => onCategorySelect(cat.endgame_class)}
         gamesLinkTestId={`endgame-games-link-${cat.slug}`}
@@ -78,19 +69,12 @@ function EndgameCategoryRowDesktop({ cat, maxTotal, onCategorySelect, isEvenRow 
 
   return (
     <div
-      className={`grid grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-3 items-center rounded px-2 py-1.5 ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
+      className={`grid grid-cols-[minmax(0,1fr)_auto_minmax(360px,600px)] gap-3 items-center rounded px-2 py-1.5 ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
       data-testid={`endgame-category-${cat.slug}-row`}
     >
-      {/* Column 1: label + info popover */}
+      {/* Column 1: label */}
       <span className="inline-flex items-center gap-1 min-w-0">
         <span className="text-sm font-medium truncate">{cat.label}</span>
-        <InfoPopover
-          ariaLabel={`${cat.label} endgame type info`}
-          testId={`endgame-type-info-${cat.slug}`}
-          side="top"
-        >
-          {ENDGAME_TYPE_DESCRIPTIONS[cat.endgame_class]}
-        </InfoPopover>
       </span>
 
       {/* Column 2: games link */}
@@ -153,11 +137,14 @@ export function EndgameWDLChart({
               <div className="space-y-2">
                 <p>
                   Shows your win, draw, and loss percentages for each endgame type, based on games
-              that included the endgame type. Note that a game can include more than one type of endgame.
+                  that included the endgame type. Note that a game can include more than one type of endgame.
                 </p>
-                <p>
-                  Click the link icon to view matching games.
-                </p>
+                <p><strong>Rook:</strong> {ENDGAME_TYPE_DESCRIPTIONS.rook}</p>
+                <p><strong>Minor Piece:</strong> {ENDGAME_TYPE_DESCRIPTIONS.minor_piece}</p>
+                <p><strong>Pawn:</strong> {ENDGAME_TYPE_DESCRIPTIONS.pawn}</p>
+                <p><strong>Queen:</strong> {ENDGAME_TYPE_DESCRIPTIONS.queen}</p>
+                <p><strong>Mixed:</strong> {ENDGAME_TYPE_DESCRIPTIONS.mixed}</p>
+                <p><strong>Pawnless:</strong> {ENDGAME_TYPE_DESCRIPTIONS.pawnless}</p>
               </div>
             </InfoPopover>
           </span>
