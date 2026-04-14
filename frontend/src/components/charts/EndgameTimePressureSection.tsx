@@ -139,7 +139,7 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
                 <p><strong>Red line (Opponent&apos;s score):</strong> average score of your opponents when <em>they</em> had this much time remaining.</p>
                 <p>Where the lines diverge reveals who handles time pressure better. If your line is below your opponents' line on the left side, you crack under pressure more than your opponents.</p>
                 <p>Includes every game that reached an endgame phase (total of at least 3 full moves / 6 half-moves spent in the endgame), aggregated across all time controls. Each game contributes one data point based on the clocks at the first endgame position reached. Use the filter panel to narrow by time control.</p>
-                <p className="text-xs text-muted-foreground">Datapoints with fewer than 10 games are omitted.</p>
+                <p>Datapoints with fewer than 10 games are omitted.</p>
               </div>
             </InfoPopover>
           </span>
