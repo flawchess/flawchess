@@ -208,7 +208,9 @@ export function EndgamesPage() {
                     <p>
                       <strong>Endgame phase:</strong> positions where the total count of major and minor pieces
                       (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
-                      counted. This follows the Lichess definition.
+                      counted. This follows the Lichess definition. A game is only counted as having an endgame
+                      phase if it spans at least 3 full moves (6 half-moves) in the endgame — shorter tactical
+                      transitions through endgame-like material are treated as no endgame.
                     </p>
                     <p>
                       <strong>Endgame types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
