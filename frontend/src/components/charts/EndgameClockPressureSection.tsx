@@ -53,6 +53,7 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
               <p className="mt-1"><strong>Opp avg time:</strong> opponent&apos;s average remaining clock.</p>
               <p className="mt-1"><strong>Avg clock diff:</strong> average difference (your clock minus opponent&apos;s clock) in seconds. Positive means you had more time.</p>
               <p className="mt-1"><strong>Net timeout rate:</strong> (timeout wins minus timeout losses) divided by total endgame games. Negative means you get flagged more than you flag.</p>
+              <p className="mt-1">Includes every game that reached an endgame phase (total of at least 3 full moves / 6 half-moves spent in the endgame, summed across all endgame types). The entry clocks are measured at the first endgame position reached in the game.</p>
             </InfoPopover>
           </span>
         </h3>
