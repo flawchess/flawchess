@@ -11,18 +11,22 @@ Exposes:
 - get_endgame_timeline: orchestrator for GET /api/endgames/timeline
 """
 
+import statistics
 from collections import defaultdict
 from collections.abc import Sequence
 from enum import IntEnum
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
+import sentry_sdk
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
 from app.repositories.endgame_repository import (
+    count_endgame_games,
     count_filtered_games,
-    query_conv_recov_timeline_rows,
+    query_clock_stats_rows,
+    query_endgame_bucket_rows,
     query_endgame_entry_rows,
     query_endgame_games as _query_endgame_games,
     query_endgame_performance_rows,
@@ -30,8 +34,8 @@ from app.repositories.endgame_repository import (
 )
 from app.schemas.openings import GameRecord
 from app.schemas.endgames import (
-    ConvRecovTimelinePoint,
-    ConvRecovTimelineResponse,
+    ClockPressureResponse,
+    ClockStatsRow,
     ConversionRecoveryStats,
     EndgameClass,
     EndgameCategoryStats,
@@ -44,8 +48,15 @@ from app.schemas.endgames import (
     EndgameTimelinePoint,
     EndgameTimelineResponse,
     EndgameWDLSummary,
+    MaterialBucket,
+    MaterialRow,
+    ScoreGapMaterialResponse,
+    TimePressureBucketPoint,
+    TimePressureChartResponse,
+    TimePressureChartRow,
 )
 from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
+
 
 class EndgameClassInt(IntEnum):
     """Integer encoding for endgame_class column (SmallInteger, 2 bytes per row).
@@ -144,8 +155,15 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
 # from piece trades, allowing a lower threshold for a larger meaningful dataset.
 _MATERIAL_ADVANTAGE_THRESHOLD = 100
 
+# Phase 60: minimum opponent sample size required to display the opponent
+# baseline in the Conversion/Even/Recovery bullet chart. Matches the WDL-bar
+# mute threshold used elsewhere (e.g. Opening Explorer moves list).
+_MIN_OPPONENT_SAMPLE = 10
 
-def _aggregate_endgame_stats(rows: Sequence[Row[Any] | tuple[Any, ...]]) -> list[EndgameCategoryStats]:
+
+def _aggregate_endgame_stats(
+    rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> list[EndgameCategoryStats]:
     """Aggregate raw per-(game, class) endgame rows into EndgameCategoryStats list.
 
     Each row is: (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after)
@@ -176,8 +194,27 @@ def _aggregate_endgame_stats(rows: Sequence[Row[Any] | tuple[Any, ...]]) -> list
         lambda: {"games": 0, "wins": 0, "draws": 0}
     )
 
-    for _game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after in rows:
-        endgame_class = _INT_TO_CLASS[endgame_class_int]
+    for (
+        _game_id,
+        endgame_class_int,
+        result,
+        user_color,
+        user_material_imbalance,
+        user_material_imbalance_after,
+    ) in rows:
+        endgame_class = _INT_TO_CLASS.get(endgame_class_int)
+        if endgame_class is None:
+            # Unexpected class integer from DB — surface to Sentry and skip the
+            # row rather than 500 the endpoint. Per CLAUDE.md Sentry rules,
+            # variables go through set_context; exception message is static so
+            # Sentry groups these together instead of per-class_int.
+            sentry_sdk.set_context(
+                "invalid_endgame_class",
+                {"class_int": endgame_class_int},
+            )
+            sentry_sdk.set_tag("source", "endgame_aggregate")
+            sentry_sdk.capture_exception(ValueError("Unknown endgame_class integer from DB"))
+            continue
         outcome = derive_user_result(result, user_color)
 
         # W/D/L counts
@@ -240,9 +277,7 @@ def _aggregate_endgame_stats(rows: Sequence[Row[Any] | tuple[Any, ...]]) -> list
         conversion_draws = conv_data["draws"]
         conversion_losses = conversion_games - conversion_wins - conversion_draws
         conversion_pct = (
-            round(conversion_wins / conversion_games * 100, 1)
-            if conversion_games > 0
-            else 0.0
+            round(conversion_wins / conversion_games * 100, 1) if conversion_games > 0 else 0.0
         )
 
         recovery_games = recov_data["games"]
@@ -250,9 +285,7 @@ def _aggregate_endgame_stats(rows: Sequence[Row[Any] | tuple[Any, ...]]) -> list
         recovery_draws = recov_data["draws"]
         recovery_saves = recovery_wins + recovery_draws  # derived, kept for backward compat
         recovery_pct = (
-            round(recovery_saves / recovery_games * 100, 1)
-            if recovery_games > 0
-            else 0.0
+            round(recovery_saves / recovery_games * 100, 1) if recovery_games > 0 else 0.0
         )
 
         conversion_stats = ConversionRecoveryStats(
@@ -338,9 +371,19 @@ async def get_endgame_stats(
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
-    # Count unique games that reached an endgame phase (not game×class combinations,
-    # since a game can appear in multiple endgame classes).
-    endgame_games = len({row[0] for row in rows})  # row[0] = game_id
+    # Count games that reached an endgame phase per the uniform ENDGAME_PLY_THRESHOLD rule
+    # (quick-260414-ae4): a game qualifies if its total endgame plies meet the threshold.
+    endgame_games = await count_endgame_games(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
 
     return EndgameStatsResponse(
         categories=categories,
@@ -420,11 +463,6 @@ async def get_endgame_games(
 
 # --- Performance chart service functions (Phase 32) ---
 
-# Weights for endgame_skill score. Conversion (winning when up) weighted 70/30
-# over recovery (drawing/winning when down) per D-06 (updated from 60/40).
-_ENDGAME_SKILL_CONVERSION_WEIGHT = 0.7
-_ENDGAME_SKILL_RECOVERY_WEIGHT = 0.3
-
 
 def _build_wdl_summary(rows: list[Row[Any]]) -> EndgameWDLSummary:
     """Build EndgameWDLSummary from a list of (played_at, result, user_color) rows."""
@@ -453,6 +491,535 @@ def _build_wdl_summary(rows: list[Row[Any]]) -> EndgameWDLSummary:
         draw_pct=draw_pct,
         loss_pct=loss_pct,
     )
+
+
+def _wdl_to_score(wdl: EndgameWDLSummary) -> float:
+    """Convert WDL summary to score in range 0.0-1.0.
+
+    Score formula: (Win% + Draw%/2) / 100.
+    Returns 0.0 for empty WDL (total == 0).
+    """
+    if wdl.total == 0:
+        return 0.0
+    return (wdl.win_pct + wdl.draw_pct / 2) / 100
+
+
+# Display labels for material buckets (section 2 of endgame-analysis-v2.md).
+# Unicode: \u2265 = >=, \u2264 = <=, \u2212 = minus sign
+_MATERIAL_BUCKET_LABELS: dict[MaterialBucket, str] = {
+    "conversion": "Conversion (\u2265 +1)",
+    "even": "Even",
+    "recovery": "Recovery (\u2264 \u22121)",
+}
+
+
+def _compute_score_gap_material(
+    endgame_wdl: EndgameWDLSummary,
+    non_endgame_wdl: EndgameWDLSummary,
+    entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> ScoreGapMaterialResponse:
+    """Compute endgame score gap and material-stratified WDL table.
+
+    Args:
+        endgame_wdl: WDL summary for games that reached an endgame.
+        non_endgame_wdl: WDL summary for games that never reached an endgame.
+        entry_rows: One row per endgame game from query_endgame_bucket_rows.
+            Each row: (game_id, endgame_class_int, result, user_color,
+                       user_material_imbalance, user_material_imbalance_after).
+            Both endgame_wdl and entry_rows are produced with the uniform
+            ENDGAME_PLY_THRESHOLD HAVING (quick-260414-ae4), so they count the
+            same population of games — `sum(material_rows.games) ==
+            endgame_wdl.total` holds by construction. The function still
+            dedupes by game_id defensively. For any game where
+            `user_material_imbalance_after` is NULL (endgame didn't persist
+            for 4 plies), the game routes to the "even" bucket.
+
+    Returns:
+        ScoreGapMaterialResponse with score gap and 3-row material breakdown.
+    """
+    endgame_score = _wdl_to_score(endgame_wdl)
+    non_endgame_score = _wdl_to_score(non_endgame_wdl)
+    score_difference = endgame_score - non_endgame_score
+
+    bucket_wins: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
+    bucket_draws: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
+    bucket_losses: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
+    bucket_games: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
+
+    # Phase 59: group rows by game_id, then pick one span per game.
+    # Priority within a game's rows:
+    #   1) any row satisfying CONVERSION persistence (imbalance >= +threshold AND imbalance_after >= +threshold)
+    #   2) else any row satisfying RECOVERY persistence (imbalance <= -threshold AND imbalance_after <= -threshold)
+    #   3) else fall back to the row with the LOWEST endgame_class_int for determinism; bucket as "even".
+    #
+    # Conversion-over-recovery tiebreak (priority 1 > priority 2): when a game has BOTH a
+    # conversion-qualifying span AND a recovery-qualifying span, we bucket as "conversion".
+    # Rationale: reaching a winning position is the earlier causal event in the game — the
+    # user first had an advantage, then (possibly after trades) a disadvantage. Inverting this
+    # would systematically double-penalize conversion failures. Do NOT change this without
+    # updating the invariant test (see tests/test_endgame_service.py::TestScoreGapMaterialInvariant).
+    #
+    # NULL imbalance rows (user_material_imbalance is None OR user_material_imbalance_after
+    # is None) cannot satisfy priorities 1 or 2, so they fall through to priority 3 and the
+    # game is bucketed as "even". This replaces the Phase 53 `continue` that silently
+    # dropped such games and broke sum(material_rows.games) == endgame_wdl.total.
+
+    # rows carry labeled columns in prod (see query_endgame_bucket_rows /
+    # query_endgame_entry_rows) and a matching NamedTuple stand-in in tests,
+    # so attribute access is valid in both cases even though the declared
+    # parameter type unions in plain tuple for backward-compat.
+    rows_by_game: dict[int, list[Row[Any]]] = defaultdict(list)
+    for row in entry_rows:
+        rows_by_game[row.game_id].append(row)  # ty: ignore[unresolved-attribute, invalid-argument-type] — labeled Row / NamedTuple row
+
+    for game_id, game_rows in rows_by_game.items():
+        chosen_row: Row[Any] | None = None
+        chosen_bucket: MaterialBucket = "even"
+
+        # Pass 1: look for a CONVERSION-qualifying span.
+        for r in game_rows:
+            imb = r.user_material_imbalance
+            imb_after = r.user_material_imbalance_after
+            if (
+                imb is not None
+                and imb_after is not None
+                and imb >= _MATERIAL_ADVANTAGE_THRESHOLD
+                and imb_after >= _MATERIAL_ADVANTAGE_THRESHOLD
+            ):
+                chosen_row = r
+                chosen_bucket = "conversion"
+                break
+
+        # Pass 2: look for a RECOVERY-qualifying span (only if no conversion match).
+        if chosen_row is None:
+            for r in game_rows:
+                imb = r.user_material_imbalance
+                imb_after = r.user_material_imbalance_after
+                if (
+                    imb is not None
+                    and imb_after is not None
+                    and imb <= -_MATERIAL_ADVANTAGE_THRESHOLD
+                    and imb_after <= -_MATERIAL_ADVANTAGE_THRESHOLD
+                ):
+                    chosen_row = r
+                    chosen_bucket = "recovery"
+                    break
+
+        # Pass 3: fallback to "even". Pick the row with the lowest endgame_class_int for
+        # deterministic output regardless of SQL row order.
+        if chosen_row is None:
+            chosen_row = min(game_rows, key=lambda r: r.endgame_class)
+            chosen_bucket = "even"
+
+        result_str: str = chosen_row.result
+        user_color: str = chosen_row.user_color
+        outcome = derive_user_result(result_str, user_color)
+
+        bucket_games[chosen_bucket] += 1
+        if outcome == "win":
+            bucket_wins[chosen_bucket] += 1
+        elif outcome == "draw":
+            bucket_draws[chosen_bucket] += 1
+        else:
+            bucket_losses[chosen_bucket] += 1
+
+    # First pass: compute per-bucket user score (needed before opponent lookup).
+    bucket_score: dict[MaterialBucket, float] = {"conversion": 0.0, "even": 0.0, "recovery": 0.0}
+    bucket_pct: dict[
+        MaterialBucket, tuple[float, float, float]
+    ] = {}  # (win_pct, draw_pct, loss_pct)
+    for bucket_key in ("conversion", "even", "recovery"):
+        b: MaterialBucket = bucket_key
+        games = bucket_games[b]
+        if games > 0:
+            win_pct = round(bucket_wins[b] / games * 100, 1)
+            draw_pct = round(bucket_draws[b] / games * 100, 1)
+            loss_pct = round(bucket_losses[b] / games * 100, 1)
+            bucket_score[b] = (win_pct + draw_pct / 2) / 100
+        else:
+            win_pct = draw_pct = loss_pct = 0.0
+            bucket_score[b] = 0.0
+        bucket_pct[b] = (win_pct, draw_pct, loss_pct)
+
+    # Phase 60: opponent baseline via same-game symmetry. The opponent's
+    # score in any game set is 1 - user_score (arithmetic identity from
+    # user_wins + draws/2 + opp_wins + draws/2 = games). Mirror buckets:
+    # user Conversion <-> opponent Recovery, Even <-> Even.
+    swap: dict[MaterialBucket, MaterialBucket] = {
+        "conversion": "recovery",
+        "even": "even",
+        "recovery": "conversion",
+    }
+
+    material_rows: list[MaterialRow] = []
+    for bucket_key in ("conversion", "even", "recovery"):
+        b2: MaterialBucket = bucket_key
+        swap_bucket = swap[b2]
+        swap_games = bucket_games[swap_bucket]
+        if swap_games >= _MIN_OPPONENT_SAMPLE:
+            opponent_score: float | None = 1.0 - bucket_score[swap_bucket]
+        else:
+            opponent_score = None
+        win_pct, draw_pct, loss_pct = bucket_pct[b2]
+        material_rows.append(
+            MaterialRow(
+                bucket=b2,
+                label=_MATERIAL_BUCKET_LABELS[b2],
+                games=bucket_games[b2],
+                win_pct=win_pct,
+                draw_pct=draw_pct,
+                loss_pct=loss_pct,
+                score=bucket_score[b2],
+                opponent_score=opponent_score,
+                opponent_games=swap_games,
+            )
+        )
+
+    return ScoreGapMaterialResponse(
+        endgame_score=endgame_score,
+        non_endgame_score=non_endgame_score,
+        score_difference=score_difference,
+        material_rows=material_rows,
+    )
+
+
+# Minimum endgame games per time control to include a row in the clock stats table.
+# Rows below this threshold are too sparse for meaningful averages.
+MIN_GAMES_FOR_CLOCK_STATS = 10
+
+# Number of time-remaining buckets for the pressure-performance chart (Phase 55).
+NUM_BUCKETS = 10
+BUCKET_WIDTH_PCT = 10  # each bucket spans 10 percentage points
+
+# Clamp: games where either clock at endgame entry exceeds this multiple of
+# base_time_seconds are treated as bad data (bogus clock readings, e.g. from
+# adjudicated or disconnected games). 2x handles legitimate banked increment
+# (p99 in prod is 109%), but >200% is noise (saw max 2047% in prod).
+MAX_CLOCK_PCT_OF_BASE = 2.0
+
+# Display labels for time control buckets.
+_TIME_CONTROL_LABELS: dict[str, str] = {
+    "bullet": "Bullet",
+    "blitz": "Blitz",
+    "rapid": "Rapid",
+    "classical": "Classical",
+}
+
+# Fixed display order for time control rows (fastest to slowest).
+_TIME_CONTROL_ORDER: list[str] = ["bullet", "blitz", "rapid", "classical"]
+
+
+def _extract_entry_clocks(
+    plies: list[int],
+    clocks: list[float | None],
+    user_color: str,
+) -> tuple[float | None, float | None]:
+    """Return (user_entry_clock, opp_entry_clock) at endgame entry.
+
+    user_color determines ply parity: white=even plies (0,2,4,...), black=odd plies (1,3,...).
+    Scans the ply/clock arrays and returns the first non-None clock for each parity.
+    Returns (None, None) if the expected entry plies have no clock data.
+    """
+    user_parity = 0 if user_color == "white" else 1
+    user_clock: float | None = None
+    opp_clock: float | None = None
+    for ply, clock in zip(plies, clocks):
+        if ply % 2 == user_parity and user_clock is None:
+            user_clock = clock
+        elif ply % 2 != user_parity and opp_clock is None:
+            opp_clock = clock
+        if user_clock is not None and opp_clock is not None:
+            break
+    return user_clock, opp_clock
+
+
+def _compute_clock_pressure(
+    clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> ClockPressureResponse:
+    """Compute time pressure stats at endgame entry, grouped by time control.
+
+    Each row from query_clock_stats_rows has the shape:
+    (game_id, time_control_bucket, base_time_seconds, termination, result,
+     user_color, ply_array, clock_array)
+
+    query_clock_stats_rows returns one row per qualifying game (whole-game 6-ply
+    rule via _any_endgame_ply_subquery, per quick-260414-pv4), so no Python-side
+    deduplication is needed — rows can be iterated directly.
+
+    Percentage is computed per-game as user_clock / base_time_seconds * 100,
+    where base_time_seconds is the actual starting clock for that game (e.g. 600
+    for a 600+0 game, 900 for a 900+10 game). This avoids the old bucket-first-seen
+    bug where time_control_seconds (base + inc*40) mixed different starting clocks
+    within a bucket (quick-260414-smt).
+
+    Games where either clock exceeds MAX_CLOCK_PCT_OF_BASE * base_time_seconds are
+    excluded entirely from clock accumulation as bad data.
+
+    Returns ClockPressureResponse with:
+    - rows: one ClockStatsRow per time control with >= MIN_GAMES_FOR_CLOCK_STATS games
+    - total_clock_games: total endgame games with both entry clocks present
+    - total_endgame_games: total distinct endgame games (all time controls, pre-filter)
+    """
+    # Previously collapsed multi-span rows to the earliest span per game; SQL now
+    # delivers one row per game (whole-game rule, quick-260414-pv4), so we iterate directly.
+
+    # Accumulators per time control bucket.
+    # Using plain dicts to avoid ty complaints with mutable defaults in TypedDict.
+    tc_game_ids: dict[str, set[int]] = defaultdict(set)
+    tc_timeout_win_ids: dict[str, set[int]] = defaultdict(set)
+    tc_timeout_loss_ids: dict[str, set[int]] = defaultdict(set)
+    tc_user_clocks: dict[str, list[float]] = defaultdict(list)
+    tc_opp_clocks: dict[str, list[float]] = defaultdict(list)
+    tc_clock_diffs: dict[str, list[float]] = defaultdict(list)
+    tc_user_pcts: dict[str, list[float]] = defaultdict(list)
+    tc_opp_pcts: dict[str, list[float]] = defaultdict(list)
+
+    for row in clock_rows:
+        game_id: int = row[0]
+        time_control_bucket: str | None = row[1]
+        base_time_seconds: int | None = row[2]
+        termination: str | None = row[3]
+        result: str = row[4]
+        user_color: str = row[5]
+        ply_array: list[int] = row[6]
+        clock_array: list[float | None] = row[7]
+
+        # Skip rows without a time control bucket
+        if time_control_bucket is None:
+            continue
+
+        tc = time_control_bucket
+        # Set-based dedup retained as a defensive guard; under the post-pv4 SQL
+        # contract, game_ids are already unique (one row per game).
+        tc_game_ids[tc].add(game_id)
+
+        # Extract entry clocks using ply parity
+        user_clock, opp_clock = _extract_entry_clocks(ply_array, clock_array, user_color)
+
+        # Only accumulate clock stats when BOTH clocks are available
+        if user_clock is not None and opp_clock is not None:
+            # Clamp: when base_time_seconds is known, exclude games where either clock
+            # exceeds 2x base time — bogus readings (e.g. adjudicated/disconnected games).
+            # Banked increment can push clocks over 100% legitimately (p99 ~109%), but
+            # >200% is noise. Skip the whole game from ALL clock accumulation when clamped —
+            # don't pollute absolute seconds either, since the reading is unreliable.
+            if (
+                base_time_seconds is not None
+                and base_time_seconds > 0
+                and (
+                    user_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+                    or opp_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+                )
+            ):
+                pass  # Skip entire game — bogus clock reading
+            else:
+                tc_user_clocks[tc].append(user_clock)
+                tc_opp_clocks[tc].append(opp_clock)
+                tc_clock_diffs[tc].append(user_clock - opp_clock)
+                # Only compute pct when base_time_seconds is valid (> 0)
+                if base_time_seconds is not None and base_time_seconds > 0:
+                    tc_user_pcts[tc].append(user_clock / base_time_seconds * 100)
+                    tc_opp_pcts[tc].append(opp_clock / base_time_seconds * 100)
+
+        # Track timeouts — deduplicated by game_id per bucket
+        if termination == "timeout":
+            outcome = derive_user_result(result, user_color)
+            if outcome == "win":
+                tc_timeout_win_ids[tc].add(game_id)
+            elif outcome == "loss":
+                tc_timeout_loss_ids[tc].add(game_id)
+
+    # Build response rows in fixed order; collect pre-filter totals
+    grand_endgame_game_ids: set[int] = set()
+    grand_clock_game_count = 0
+    for game_ids in tc_game_ids.values():
+        grand_endgame_game_ids.update(game_ids)
+    for user_clocks in tc_user_clocks.values():
+        grand_clock_game_count += len(user_clocks)
+
+    rows: list[ClockStatsRow] = []
+    for tc in _TIME_CONTROL_ORDER:
+        game_ids = tc_game_ids.get(tc, set())
+        total_endgame_games = len(game_ids)
+
+        # Filter rows below the minimum games threshold
+        if total_endgame_games < MIN_GAMES_FOR_CLOCK_STATS:
+            continue
+
+        user_clocks = tc_user_clocks.get(tc, [])
+        opp_clocks = tc_opp_clocks.get(tc, [])
+        clock_diffs = tc_clock_diffs.get(tc, [])
+        user_pcts = tc_user_pcts.get(tc, [])
+        opp_pcts = tc_opp_pcts.get(tc, [])
+
+        clock_games = len(user_clocks)
+        user_avg_seconds = statistics.mean(user_clocks) if user_clocks else None
+        opp_avg_seconds = statistics.mean(opp_clocks) if opp_clocks else None
+        avg_clock_diff_seconds = statistics.mean(clock_diffs) if clock_diffs else None
+        user_avg_pct = statistics.mean(user_pcts) if user_pcts else None
+        opp_avg_pct = statistics.mean(opp_pcts) if opp_pcts else None
+
+        timeout_wins = len(tc_timeout_win_ids.get(tc, set()))
+        timeout_losses = len(tc_timeout_loss_ids.get(tc, set()))
+        net_timeout_rate = (timeout_wins - timeout_losses) / total_endgame_games * 100
+
+        label = _TIME_CONTROL_LABELS.get(tc, tc.capitalize())
+
+        rows.append(
+            ClockStatsRow(
+                time_control=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
+                label=label,
+                total_endgame_games=total_endgame_games,
+                clock_games=clock_games,
+                user_avg_pct=user_avg_pct,
+                user_avg_seconds=user_avg_seconds,
+                opp_avg_pct=opp_avg_pct,
+                opp_avg_seconds=opp_avg_seconds,
+                avg_clock_diff_seconds=avg_clock_diff_seconds,
+                net_timeout_rate=net_timeout_rate,
+            )
+        )
+
+    return ClockPressureResponse(
+        rows=rows,
+        total_clock_games=grand_clock_game_count,
+        total_endgame_games=len(grand_endgame_game_ids),
+    )
+
+
+def _build_bucket_series(
+    buckets: list[list[float]],
+) -> list[TimePressureBucketPoint]:
+    """Build 10-point series from accumulated [score_sum, game_count] pairs.
+
+    Each element of buckets is [score_sum, game_count] for one bucket index.
+    Returns a list of TimePressureBucketPoint with score=None when game_count==0.
+    """
+    points: list[TimePressureBucketPoint] = []
+    for i, bucket in enumerate(buckets):
+        score_sum = bucket[0]
+        count = bucket[1]
+        lo = i * BUCKET_WIDTH_PCT
+        hi = (i + 1) * BUCKET_WIDTH_PCT
+        label = f"{lo}-{hi}%"
+        score = (score_sum / count) if count > 0 else None
+        points.append(
+            TimePressureBucketPoint(
+                bucket_index=i,
+                bucket_label=label,
+                score=score,
+                game_count=int(count),
+            )
+        )
+    return points
+
+
+def _compute_time_pressure_chart(
+    clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> TimePressureChartResponse:
+    """Compute time-pressure performance chart data from clock_rows.
+
+    Reuses the same clock_rows already fetched by query_clock_stats_rows in
+    get_endgame_overview -- no additional DB query needed.
+
+    query_clock_stats_rows returns one row per qualifying game (whole-game 6-ply
+    rule via _any_endgame_ply_subquery, per quick-260414-pv4), so iterating rows
+    directly produces one data point per game with no risk of double-counting
+    games that cycle through multiple endgame classes.
+
+    For each game with both clocks and valid time_control_seconds:
+    - Bucket user's time% -> accumulate user_score into user_series
+    - Bucket opp's time% -> accumulate (1 - user_score) into opp_series
+
+    Returns rows for time controls with >= MIN_GAMES_FOR_CLOCK_STATS games.
+    Each row contains exactly NUM_BUCKETS (10) points per series.
+    """
+    # Accumulators: [score_sum, game_count] per bucket per time control.
+    tc_user_buckets: dict[str, list[list[float]]] = defaultdict(
+        lambda: [[0.0, 0] for _ in range(NUM_BUCKETS)]
+    )
+    tc_opp_buckets: dict[str, list[list[float]]] = defaultdict(
+        lambda: [[0.0, 0] for _ in range(NUM_BUCKETS)]
+    )
+    # Count games with valid time_control_bucket (regardless of clock data).
+    tc_game_count: dict[str, int] = defaultdict(int)
+
+    for row in clock_rows:
+        # game_id (row[0]) and termination (row[3]) are unused in this consumer —
+        # _compute_clock_pressure handles the timeout accounting.
+        time_control_bucket: str | None = row[1]
+        base_time_seconds: int | None = row[2]
+        result: str = row[4]
+        user_color: str = row[5]
+        ply_array: list[int] = row[6]
+        clock_array: list[float | None] = row[7]
+
+        # Skip rows without a time control bucket
+        if time_control_bucket is None:
+            continue
+
+        tc = time_control_bucket
+        # One row per game after quick-260414-pv4 rewrite of query_clock_stats_rows, so
+        # this increment cannot double-count games with multiple endgame-class spans.
+        tc_game_count[tc] += 1
+
+        # Extract entry clocks via ply parity — same as _compute_clock_pressure
+        user_clock, opp_clock = _extract_entry_clocks(ply_array, clock_array, user_color)
+
+        # Skip if either clock is missing — can't bucket without both
+        if user_clock is None or opp_clock is None:
+            continue
+
+        # Skip if base_time_seconds is absent or zero — can't compute per-game percentage
+        # (quick-260414-smt: switched from bucket-first-seen time_control_seconds to
+        # per-game base_time_seconds for apples-to-apples % within each bucket)
+        if base_time_seconds is None or base_time_seconds <= 0:
+            continue
+
+        # Clamp: skip games where either clock exceeds 2x base time — bogus readings
+        if (
+            user_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+            or opp_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+        ):
+            continue
+
+        user_pct = user_clock / base_time_seconds * 100
+        opp_pct = opp_clock / base_time_seconds * 100
+
+        # Clamp to [0, NUM_BUCKETS-1] — 100% maps to bucket 9, not 10
+        user_bucket = min(int(user_pct / BUCKET_WIDTH_PCT), NUM_BUCKETS - 1)
+        opp_bucket = min(int(opp_pct / BUCKET_WIDTH_PCT), NUM_BUCKETS - 1)
+
+        user_score = {"win": 1.0, "draw": 0.5, "loss": 0.0}[derive_user_result(result, user_color)]
+
+        # Accumulate: initialise defaultdict entry if needed, then update
+        tc_user_buckets[tc][user_bucket][0] += user_score
+        tc_user_buckets[tc][user_bucket][1] += 1
+        tc_opp_buckets[tc][opp_bucket][0] += 1.0 - user_score
+        tc_opp_buckets[tc][opp_bucket][1] += 1
+
+    # Build rows in fixed time control order, filtering below minimum threshold
+    rows: list[TimePressureChartRow] = []
+    for tc in _TIME_CONTROL_ORDER:
+        total_games = tc_game_count.get(tc, 0)
+        if total_games < MIN_GAMES_FOR_CLOCK_STATS:
+            continue
+
+        label = _TIME_CONTROL_LABELS.get(tc, tc.capitalize())
+        user_series = _build_bucket_series(tc_user_buckets[tc])
+        opp_series = _build_bucket_series(tc_opp_buckets[tc])
+
+        rows.append(
+            TimePressureChartRow(
+                time_control=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
+                label=label,
+                total_endgame_games=total_games,
+                user_series=user_series,
+                opp_series=opp_series,
+            )
+        )
+
+    return TimePressureChartResponse(rows=rows)
 
 
 def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:
@@ -493,6 +1060,29 @@ def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:
     return [pt for pt in data_by_date.values() if pt["game_count"] >= MIN_GAMES_FOR_TIMELINE]
 
 
+def _get_endgame_performance_from_rows(
+    endgame_rows: list[Row[Any]],
+    non_endgame_rows: list[Row[Any]],
+    entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> EndgamePerformanceResponse:
+    """Compute EndgamePerformanceResponse from pre-fetched rows.
+
+    Phase 59 removed the aggregate conversion/recovery/skill fields this function
+    previously computed; it now returns only the WDL comparison and endgame_win_rate.
+    The `entry_rows` parameter is retained for call-site compatibility with
+    get_endgame_overview (which passes the same entry_rows to _compute_score_gap_material
+    and _aggregate_endgame_stats) but is no longer consumed here.
+    """
+    del entry_rows  # kept for signature compat; aggregates moved out in Phase 59
+    endgame_wdl = _build_wdl_summary(endgame_rows)
+    non_endgame_wdl = _build_wdl_summary(non_endgame_rows)
+    return EndgamePerformanceResponse(
+        endgame_wdl=endgame_wdl,
+        non_endgame_wdl=non_endgame_wdl,
+        endgame_win_rate=endgame_wdl.win_pct,
+    )
+
+
 async def get_endgame_performance(
     session: AsyncSession,
     user_id: int,
@@ -508,15 +1098,12 @@ async def get_endgame_performance(
 
     Steps:
     1. Convert recency to cutoff datetime.
-    2. Fetch WDL comparison rows and entry rows concurrently.
-    3. Aggregate entry rows inline for conversion/recovery stats.
-    4. Build WDL summaries and compute gauge values.
-    5. Return EndgamePerformanceResponse.
+    2. Fetch WDL comparison rows and entry rows sequentially.
+    3. Delegate aggregation to _get_endgame_performance_from_rows.
+    4. Return EndgamePerformanceResponse.
     """
     cutoff = recency_cutoff(recency)
 
-    # Fetch entry rows directly (not via get_endgame_stats) to avoid redundant
-    # count_filtered_games query.
     # Execute sequentially — AsyncSession is not safe for concurrent use from
     # multiple coroutines, and shares a single DB connection anyway.
     endgame_rows, non_endgame_rows = await query_endgame_performance_rows(
@@ -542,61 +1129,7 @@ async def get_endgame_performance(
         elo_threshold=elo_threshold,
     )
 
-    # Build WDL summaries for each group
-    endgame_wdl = _build_wdl_summary(endgame_rows)
-    non_endgame_wdl = _build_wdl_summary(non_endgame_rows)
-
-    # Gauge: overall win rate across all games
-    total_wins = endgame_wdl.wins + non_endgame_wdl.wins
-    total_games = endgame_wdl.total + non_endgame_wdl.total
-    overall_win_rate = total_wins / total_games * 100 if total_games > 0 else 0.0
-    endgame_win_rate = endgame_wdl.win_pct  # already computed as wins/total*100
-
-    # Relative strength: endgame win rate normalized by overall win rate (D-05)
-    # Returns 0 when overall_win_rate is 0 to avoid division by zero
-    relative_strength = (
-        endgame_win_rate / overall_win_rate * 100 if overall_win_rate > 0 else 0.0
-    )
-
-    # Aggregate conversion/recovery: use sum-of-raw (not mean of percentages) per D-07.
-    # Compute inline from entry_rows — avoids redundant get_endgame_stats + count_filtered_games calls.
-    categories = _aggregate_endgame_stats(entry_rows)
-    total_conversion_wins = sum(c.conversion.conversion_wins for c in categories)
-    total_conversion_games = sum(c.conversion.conversion_games for c in categories)
-    total_recovery_saves = sum(c.conversion.recovery_saves for c in categories)
-    total_recovery_games = sum(c.conversion.recovery_games for c in categories)
-
-    aggregate_conversion_pct = (
-        total_conversion_wins / total_conversion_games * 100
-        if total_conversion_games > 0
-        else 0.0
-    )
-    aggregate_recovery_pct = (
-        total_recovery_saves / total_recovery_games * 100
-        if total_recovery_games > 0
-        else 0.0
-    )
-
-    # Endgame skill: weighted combination of conversion and recovery rates (D-06)
-    endgame_skill = (
-        _ENDGAME_SKILL_CONVERSION_WEIGHT * aggregate_conversion_pct
-        + _ENDGAME_SKILL_RECOVERY_WEIGHT * aggregate_recovery_pct
-    )
-
-    return EndgamePerformanceResponse(
-        endgame_wdl=endgame_wdl,
-        non_endgame_wdl=non_endgame_wdl,
-        overall_win_rate=round(overall_win_rate, 1),
-        endgame_win_rate=endgame_win_rate,
-        aggregate_conversion_pct=round(aggregate_conversion_pct, 1),
-        aggregate_conversion_wins=total_conversion_wins,
-        aggregate_conversion_games=total_conversion_games,
-        aggregate_recovery_pct=round(aggregate_recovery_pct, 1),
-        aggregate_recovery_saves=total_recovery_saves,
-        aggregate_recovery_games=total_recovery_games,
-        relative_strength=round(relative_strength, 1),
-        endgame_skill=round(endgame_skill, 1),
-    )
+    return _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, entry_rows)
 
 
 async def get_endgame_timeline(
@@ -674,9 +1207,13 @@ async def get_endgame_timeline(
             EndgameOverallPoint(
                 date=date,
                 endgame_win_rate=last_endgame_pt["win_rate"] if last_endgame_pt else None,
-                non_endgame_win_rate=last_non_endgame_pt["win_rate"] if last_non_endgame_pt else None,
+                non_endgame_win_rate=last_non_endgame_pt["win_rate"]
+                if last_non_endgame_pt
+                else None,
                 endgame_game_count=last_endgame_pt["game_count"] if last_endgame_pt else 0,
-                non_endgame_game_count=last_non_endgame_pt["game_count"] if last_non_endgame_pt else 0,
+                non_endgame_game_count=last_non_endgame_pt["game_count"]
+                if last_non_endgame_pt
+                else 0,
                 window_size=window,
             )
         )
@@ -684,6 +1221,9 @@ async def get_endgame_timeline(
     # Compute per-type rolling series and map class int -> EndgameClass string
     per_type: dict[str, list[EndgameTimelinePoint]] = {}
     for class_int, rows in per_type_rows.items():
+        # Safe bracket access: class_int keys come from per_type_rows, which is
+        # seeded from _ENDGAME_CLASS_INTS (the authoritative 1..6 set) in the
+        # repository layer. No defensive .get() needed here.
         class_name = _INT_TO_CLASS[class_int]
         series = _compute_rolling_series(rows, window)
         per_type[class_name] = [
@@ -700,124 +1240,6 @@ async def get_endgame_timeline(
     return EndgameTimelineResponse(overall=overall, per_type=per_type, window=window)
 
 
-def _compute_conv_recov_rolling_series(
-    rows: list[Row[Any]],
-    window: int,
-    rate_fn,
-) -> list[ConvRecovTimelinePoint]:
-    """Compute a rolling-window timeline series from chronologically sorted rows.
-
-    Args:
-        rows: list of (played_at, result, user_color, ...) tuples, sorted by played_at asc.
-        window: rolling window size (number of trailing games).
-        rate_fn: function taking a list of outcome strings ("win"/"draw"/"loss")
-                 and returning a float rate (0.0-1.0).
-
-    Partial windows (fewer games than `window`) are included from the start.
-    Returns one point per date (last game of the day), not per game.
-    """
-    if not rows:
-        return []
-
-    outcomes: list[Literal["win", "draw", "loss"]] = []
-    points_by_date: dict[str, ConvRecovTimelinePoint] = {}
-
-    for played_at, result, user_color, *_rest in rows:
-        outcome = derive_user_result(result, user_color)
-        outcomes.append(outcome)
-        date = played_at.strftime("%Y-%m-%d") if hasattr(played_at, "strftime") else str(played_at)
-
-        # Rolling window: trailing `window` results (partial windows included)
-        trailing = outcomes[-window:]
-        rate = rate_fn(trailing)
-        points_by_date[date] = ConvRecovTimelinePoint(
-            date=date,
-            rate=round(rate, 4),
-            game_count=len(trailing),
-            window_size=window,
-        )
-
-    # Drop early points with too few games in the rolling window
-    return [pt for pt in points_by_date.values() if pt.game_count >= MIN_GAMES_FOR_TIMELINE]
-
-
-async def get_conv_recov_timeline(
-    session: AsyncSession,
-    user_id: int,
-    time_control: list[str] | None,
-    platform: list[str] | None,
-    rated: bool | None,
-    opponent_type: str,
-    recency: str | None,
-    window: int = 50,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
-) -> ConvRecovTimelineResponse:
-    """Compute conversion and recovery rolling-window timelines.
-
-    Conversion: win rate over trailing `window` games where user entered endgame
-    with >= _MATERIAL_ADVANTAGE_THRESHOLD cp advantage.
-    Recovery: save rate (win+draw) over trailing `window` games where user entered
-    endgame with >= _MATERIAL_ADVANTAGE_THRESHOLD cp disadvantage.
-
-    Fetches all games (no recency filter) so the rolling window is pre-filled
-    with games before the cutoff. Output points are filtered to recency window.
-    """
-    cutoff = recency_cutoff(recency)
-    cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
-
-    # Fetch all games (no recency filter) so rolling windows are pre-filled
-    rows = await query_conv_recov_timeline_rows(
-        session,
-        user_id=user_id,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        recency_cutoff=None,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
-    )
-
-    # Split by material advantage direction — require persistence at entry AND 4 plies later.
-    # r[3] = user_material_imbalance (at entry), r[4] = user_material_imbalance_after (4 plies later)
-    conversion_rows = [
-        r for r in rows
-        if r[3] is not None and r[3] >= _MATERIAL_ADVANTAGE_THRESHOLD
-        and r[4] is not None and r[4] >= _MATERIAL_ADVANTAGE_THRESHOLD
-    ]
-    recovery_rows = [
-        r for r in rows
-        if r[3] is not None and r[3] <= -_MATERIAL_ADVANTAGE_THRESHOLD
-        and r[4] is not None and r[4] <= -_MATERIAL_ADVANTAGE_THRESHOLD
-    ]
-
-    # Conversion rate: wins / total in window
-    conversion_series = _compute_conv_recov_rolling_series(
-        conversion_rows,
-        window,
-        lambda outcomes: outcomes.count("win") / len(outcomes),
-    )
-
-    # Recovery rate: (wins + draws) / total in window
-    recovery_series = _compute_conv_recov_rolling_series(
-        recovery_rows,
-        window,
-        lambda outcomes: (outcomes.count("win") + outcomes.count("draw")) / len(outcomes),
-    )
-
-    # Filter output to recency window
-    if cutoff_str:
-        conversion_series = [pt for pt in conversion_series if pt.date >= cutoff_str]
-        recovery_series = [pt for pt in recovery_series if pt.date >= cutoff_str]
-
-    return ConvRecovTimelineResponse(
-        conversion=conversion_series,
-        recovery=recovery_series,
-        window=window,
-    )
-
-
 async def get_endgame_overview(
     session: AsyncSession,
     user_id: int,
@@ -830,39 +1252,98 @@ async def get_endgame_overview(
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
     elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> EndgameOverviewResponse:
-    """Compose all four endgame dashboard payloads into a single response.
+    """Compose all five endgame dashboard payloads into a single response.
 
-    Delegates to the four individual service functions sequentially, all awaited
-    in turn on the same AsyncSession — no asyncio.gather.
-    # sequential on one AsyncSession — see endgame_repository.py:423-428
+    Fetches entry_rows and performance rows once, then threads them to both
+    the stats/performance builders and _compute_score_gap_material — eliminating
+    redundant DB queries that the previous implementation issued separately in
+    get_endgame_stats and get_endgame_performance (Phase 53).
 
-    This reduces the Endgames tab from 4 parallel HTTP requests (each on its own
-    DB session) down to a single request running its queries sequentially on one
-    connection (Phase 52).
+    All queries run sequentially on one AsyncSession — no asyncio.gather.
+    See endgame_repository.py for AsyncSession concurrency notes.
     """
-    # sequential on one AsyncSession — see endgame_repository.py:423-428
-    stats = await get_endgame_stats(
+    cutoff = recency_cutoff(recency)
+
+    # Fetch entry_rows once — shared by stats, performance, and score_gap_material.
+    # Previously fetched redundantly by both get_endgame_stats and get_endgame_performance.
+    entry_rows = await query_endgame_entry_rows(
         session,
         user_id=user_id,
         time_control=time_control,
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency=recency,
+        recency_cutoff=cutoff,
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
-    performance = await get_endgame_performance(
+
+    # Stats: aggregate per-category W/D/L + conversion/recovery from entry_rows
+    categories = _aggregate_endgame_stats(entry_rows)
+    total_games = await count_filtered_games(
         session,
         user_id=user_id,
         time_control=time_control,
         platform=platform,
-        recency=recency,
         rated=rated,
         opponent_type=opponent_type,
+        recency_cutoff=cutoff,
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
+    # Count games that reached an endgame phase per the uniform ENDGAME_PLY_THRESHOLD rule
+    # (quick-260414-ae4): a game qualifies if its total endgame plies meet the threshold.
+    endgame_games = await count_endgame_games(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+    stats = EndgameStatsResponse(
+        categories=categories,
+        total_games=total_games,
+        endgame_games=endgame_games,
+    )
+
+    # Performance: fetch WDL comparison rows, then use shared entry_rows
+    endgame_rows, non_endgame_rows = await query_endgame_performance_rows(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+    performance = _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, entry_rows)
+
+    # Score gap & material breakdown — use game-level bucket_rows (one row per endgame
+    # game, no per-class split). Post quick-260414-ae4 the bucket query applies the
+    # same ENDGAME_PLY_THRESHOLD HAVING as `_any_endgame_ply_subquery`, so the invariant
+    # sum(material_rows.games) == endgame_wdl.total is preserved by construction: both
+    # sides of the split now exclude the same short-endgame games.
+    bucket_rows = await query_endgame_bucket_rows(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+    score_gap_material = _compute_score_gap_material(
+        performance.endgame_wdl, performance.non_endgame_wdl, bucket_rows
+    )
+
     timeline = await get_endgame_timeline(
         session,
         user_id=user_id,
@@ -875,22 +1356,26 @@ async def get_endgame_overview(
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
-    conv_recov_timeline = await get_conv_recov_timeline(
+    # Clock pressure: fetch per-span arrays, then compute stats in service layer
+    clock_rows = await query_clock_stats_rows(
         session,
         user_id=user_id,
         time_control=time_control,
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency=recency,
-        window=window,
+        recency_cutoff=cutoff,
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
+    clock_pressure = _compute_clock_pressure(clock_rows)
+    time_pressure_chart = _compute_time_pressure_chart(clock_rows)
 
     return EndgameOverviewResponse(
         stats=stats,
         performance=performance,
         timeline=timeline,
-        conv_recov_timeline=conv_recov_timeline,
+        score_gap_material=score_gap_material,
+        clock_pressure=clock_pressure,
+        time_pressure_chart=time_pressure_chart,
     )

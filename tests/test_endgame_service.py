@@ -6,17 +6,27 @@ Tests cover:
 - get_endgame_stats / get_endgame_games: smoke tests to catch wiring bugs (typos, import errors)
 - get_endgame_performance: WDL comparison + gauge values
 - get_endgame_timeline: rolling-window time series
+- _extract_entry_clocks: ply-parity clock extraction (Phase 54)
+- _compute_clock_pressure: time pressure aggregation by time control (Phase 54)
 """
 
 import datetime
+from typing import Any, NamedTuple
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.schemas.endgames import EndgameWDLSummary
 from app.services.endgame_service import (
     _aggregate_endgame_stats,
+    _build_bucket_series,
+    _compute_clock_pressure,
     _compute_rolling_series,
+    _compute_score_gap_material,
+    _compute_time_pressure_chart,
+    _extract_entry_clocks,
+    _wdl_to_score,
     classify_endgame_class,
     get_endgame_games,
     get_endgame_overview,
@@ -24,6 +34,23 @@ from app.services.endgame_service import (
     get_endgame_stats,
     get_endgame_timeline,
 )
+
+
+class _FakeRow(NamedTuple):
+    """Lightweight stand-in for a SQLAlchemy Row used by endgame service tests.
+
+    Mirrors the labeled columns produced by query_endgame_entry_rows and
+    query_endgame_bucket_rows so _compute_score_gap_material can access
+    .game_id / .endgame_class / .result / .user_color / .user_material_imbalance
+    / .user_material_imbalance_after directly.
+    """
+
+    game_id: int
+    endgame_class: int
+    result: str
+    user_color: str
+    user_material_imbalance: Any
+    user_material_imbalance_after: Any
 
 
 class TestClassifyEndgameClass:
@@ -121,9 +148,9 @@ class TestAggregateEndgameStats:
     def test_win_draw_loss_percentages(self):
         """Percentages computed correctly for 1W/1D/1L split."""
         rows = [
-            (1, 1, "1-0", "white", 0, 0),       # rook win (endgame_class_int=1)
-            (2, 1, "1/2-1/2", "white", 0, 0),   # rook draw
-            (3, 1, "0-1", "white", 0, 0),        # rook loss
+            (1, 1, "1-0", "white", 0, 0),  # rook win (endgame_class_int=1)
+            (2, 1, "1/2-1/2", "white", 0, 0),  # rook draw
+            (3, 1, "0-1", "white", 0, 0),  # rook loss
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -136,11 +163,25 @@ class TestAggregateEndgameStats:
     def test_conversion_pct_per_category(self):
         """D-08: Conversion = win rate when user entered endgame with >= 100cp material advantage (persisted)."""
         rows = [
-            (1, 1, "1-0", "white", 500, 500),     # rook, up 500cp, persisted, won → converted
-            (2, 1, "0-1", "white", 350, 350),      # rook, up 350cp, persisted, lost → failed conversion
-            (3, 1, "1/2-1/2", "white", 100, 100),  # rook, up 100cp (threshold), persisted, draw → draw conversion
-            (4, 1, "1-0", "white", 200, 50),        # rook, up 200cp at entry but only 50cp after → NOT conversion (didn't persist)
-            (5, 1, "1-0", "white", -400, -400),     # rook, down, won → not a conversion game
+            (1, 1, "1-0", "white", 500, 500),  # rook, up 500cp, persisted, won → converted
+            (2, 1, "0-1", "white", 350, 350),  # rook, up 350cp, persisted, lost → failed conversion
+            (
+                3,
+                1,
+                "1/2-1/2",
+                "white",
+                100,
+                100,
+            ),  # rook, up 100cp (threshold), persisted, draw → draw conversion
+            (
+                4,
+                1,
+                "1-0",
+                "white",
+                200,
+                50,
+            ),  # rook, up 200cp at entry but only 50cp after → NOT conversion (didn't persist)
+            (5, 1, "1-0", "white", -400, -400),  # rook, down, won → not a conversion game
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -154,10 +195,31 @@ class TestAggregateEndgameStats:
     def test_recovery_pct_per_category(self):
         """D-09: Recovery = draw+win rate when user entered endgame with <= -100cp material deficit (persisted)."""
         rows = [
-            (1, 1, "1-0", "white", -400, -400),    # rook, down 400cp, persisted, won → recovery win
-            (2, 1, "1/2-1/2", "white", -500, -500), # rook, down 500cp, persisted, draw → recovery draw
-            (3, 1, "0-1", "white", -100, -100),      # rook, down 100cp (threshold), persisted, lost → not recovered
-            (4, 1, "0-1", "white", -200, -50),       # rook, down 200cp but only -50cp after → NOT recovery (didn't persist)
+            (1, 1, "1-0", "white", -400, -400),  # rook, down 400cp, persisted, won → recovery win
+            (
+                2,
+                1,
+                "1/2-1/2",
+                "white",
+                -500,
+                -500,
+            ),  # rook, down 500cp, persisted, draw → recovery draw
+            (
+                3,
+                1,
+                "0-1",
+                "white",
+                -100,
+                -100,
+            ),  # rook, down 100cp (threshold), persisted, lost → not recovered
+            (
+                4,
+                1,
+                "0-1",
+                "white",
+                -200,
+                -50,
+            ),  # rook, down 200cp but only -50cp after → NOT recovery (didn't persist)
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -185,9 +247,9 @@ class TestAggregateEndgameStats:
     def test_multiple_categories_aggregated_correctly(self):
         """Multiple categories are computed independently, not mixed together."""
         rows = [
-            (1, 1, "1-0", "white", 0, 0),     # rook win (endgame_class_int=1)
-            (2, 1, "0-1", "white", 0, 0),      # rook loss
-            (3, 4, "1-0", "white", 0, 0),      # queen win (endgame_class_int=4)
+            (1, 1, "1-0", "white", 0, 0),  # rook win (endgame_class_int=1)
+            (2, 1, "0-1", "white", 0, 0),  # rook loss
+            (3, 4, "1-0", "white", 0, 0),  # queen win (endgame_class_int=4)
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -201,8 +263,8 @@ class TestAggregateEndgameStats:
     def test_zero_conversion_games_returns_zero_pct(self):
         """When no games have material advantage, conversion_pct should be 0 (not a divide-by-zero error)."""
         rows = [
-            (1, 1, "1-0", "white", -100, -100),   # rook, down, won → recovery only
-            (2, 1, "0-1", "white", 0, 0),          # rook, equal, lost → neither
+            (1, 1, "1-0", "white", -100, -100),  # rook, down, won → recovery only
+            (2, 1, "0-1", "white", 0, 0),  # rook, equal, lost → neither
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -212,8 +274,8 @@ class TestAggregateEndgameStats:
     def test_zero_recovery_games_returns_zero_pct(self):
         """When no games have material disadvantage, recovery_pct should be 0."""
         rows = [
-            (1, 1, "1-0", "white", 200, 200),    # rook, up, won → conversion only
-            (2, 1, "0-1", "white", 0, 0),         # rook, equal, lost → neither
+            (1, 1, "1-0", "white", 200, 200),  # rook, up, won → conversion only
+            (2, 1, "0-1", "white", 0, 0),  # rook, equal, lost → neither
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -224,8 +286,8 @@ class TestAggregateEndgameStats:
         """A game_id appearing with two different endgame_class_int values contributes to both classes."""
         rows = [
             # Same game (game_id=1) in two classes: rook (1) and pawn (3)
-            (1, 1, "1-0", "white", 100, 100),   # rook class for game 1
-            (1, 3, "1-0", "white", 50, 50),      # pawn class for game 1
+            (1, 1, "1-0", "white", 100, 100),  # rook class for game 1
+            (1, 3, "1-0", "white", 50, 50),  # pawn class for game 1
             # Another game in rook only
             (2, 1, "0-1", "white", 0, 0),
         ]
@@ -278,21 +340,37 @@ class TestGetEndgameStatsSmoke:
     """Smoke tests for service entry points — catch wiring bugs like typos and broken imports."""
 
     @pytest.mark.asyncio
-    async def test_get_endgame_stats_returns_empty_for_nonexistent_user(self, db_session: AsyncSession):
+    async def test_get_endgame_stats_returns_empty_for_nonexistent_user(
+        self, db_session: AsyncSession
+    ):
         """Calling get_endgame_stats with a user that has no games should return empty categories."""
         result = await get_endgame_stats(
-            db_session, user_id=999999, time_control=None, platform=None,
-            rated=None, opponent_type="human", recency=None,
+            db_session,
+            user_id=999999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="human",
+            recency=None,
         )
         assert result.categories == []
 
     @pytest.mark.asyncio
-    async def test_get_endgame_games_returns_empty_for_nonexistent_user(self, db_session: AsyncSession):
+    async def test_get_endgame_games_returns_empty_for_nonexistent_user(
+        self, db_session: AsyncSession
+    ):
         """Calling get_endgame_games with a user that has no games should return empty."""
         result = await get_endgame_games(
-            db_session, user_id=999999, endgame_class="rook",
-            time_control=None, platform=None, rated=None,
-            opponent_type="human", recency=None, offset=0, limit=20,
+            db_session,
+            user_id=999999,
+            endgame_class="rook",
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="human",
+            recency=None,
+            offset=0,
+            limit=20,
         )
         assert result.games == []
         assert result.matched_count == 0
@@ -300,9 +378,12 @@ class TestGetEndgameStatsSmoke:
 
 # --- Helpers ---
 
+
 def _dt(days_offset: int) -> datetime.datetime:
     """Return a UTC datetime N days from epoch for use in test rows."""
-    return datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc) + datetime.timedelta(days=days_offset)
+    return datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc) + datetime.timedelta(
+        days=days_offset
+    )
 
 
 def _row(result: str, user_color: str, days: int = 0):
@@ -329,6 +410,7 @@ class TestComputeRollingSeries:
     def test_threshold_game_emits_first_point(self):
         """Exactly MIN_GAMES_FOR_TIMELINE games produce one data point."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         rows = [_row("1-0", "white", i) for i in range(n)]
         result = _compute_rolling_series(rows, window=50)
@@ -339,6 +421,7 @@ class TestComputeRollingSeries:
     def test_rolling_drops_old_games(self):
         """Window fills up and oldest games drop off, changing win rate."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         # n wins followed by n losses = 2n games with window=n
         # At game n: window is all wins → 100%
@@ -356,16 +439,20 @@ class TestComputeRollingSeries:
     def test_date_formatting(self):
         """Date field is formatted as YYYY-MM-DD string."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         rows = [_row("1-0", "white", i) for i in range(n)]
         result = _compute_rolling_series(rows, window=50)
         # Last date: 2024-01-01 + (n-1) days
-        expected = (datetime.datetime(2024, 1, 1) + datetime.timedelta(days=n - 1)).strftime("%Y-%m-%d")
+        expected = (datetime.datetime(2024, 1, 1) + datetime.timedelta(days=n - 1)).strftime(
+            "%Y-%m-%d"
+        )
         assert result[-1]["date"] == expected
 
     def test_draw_does_not_count_as_win(self):
         """Draw games do not count toward win_rate."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         rows = [_row("1/2-1/2", "white", i) for i in range(n)]
         result = _compute_rolling_series(rows, window=50)
@@ -374,6 +461,7 @@ class TestComputeRollingSeries:
     def test_black_win_counted_correctly(self):
         """Black player winning (0-1) should be a win for black."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         # Alternating black wins and losses
         rows = []
@@ -406,25 +494,30 @@ class TestGetEndgamePerformance:
     async def test_zero_games_returns_all_zeros(self):
         """With no games, all fields should be 0.0 without ZeroDivisionError."""
         with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
+            patch(
+                "app.services.endgame_service.query_endgame_performance_rows",
+                new_callable=AsyncMock,
+            ) as mock_perf,
+            patch(
+                "app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock
+            ) as mock_entry,
         ):
             mock_perf.return_value = ([], [])
             mock_entry.return_value = []
 
             result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
             )
 
         assert result.endgame_wdl.total == 0
         assert result.non_endgame_wdl.total == 0
-        assert result.overall_win_rate == 0.0
         assert result.endgame_win_rate == 0.0
-        assert result.relative_strength == 0.0
-        assert result.aggregate_conversion_pct == 0.0
-        assert result.aggregate_recovery_pct == 0.0
-        assert result.endgame_skill == 0.0
 
     @pytest.mark.asyncio
     async def test_wdl_counts_and_percentages(self):
@@ -433,15 +526,25 @@ class TestGetEndgamePerformance:
         non_endgame_rows = self._make_wdl_rows(wins=2, draws=3, losses=5)
 
         with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
+            patch(
+                "app.services.endgame_service.query_endgame_performance_rows",
+                new_callable=AsyncMock,
+            ) as mock_perf,
+            patch(
+                "app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock
+            ) as mock_entry,
         ):
             mock_perf.return_value = (endgame_rows, non_endgame_rows)
             mock_entry.return_value = []
 
             result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
             )
 
         # Endgame WDL
@@ -457,159 +560,6 @@ class TestGetEndgamePerformance:
         assert result.non_endgame_wdl.losses == 5
         assert result.non_endgame_wdl.total == 10
 
-    @pytest.mark.asyncio
-    async def test_overall_win_rate_across_all_games(self):
-        """overall_win_rate = total wins / total games (endgame + non-endgame)."""
-        # 3 endgame wins out of 5 + 0 non-endgame wins out of 5 = 3/10 = 30%
-        endgame_rows = self._make_wdl_rows(wins=3, draws=1, losses=1)
-        non_endgame_rows = self._make_wdl_rows(wins=0, draws=2, losses=3)
-
-        with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-        ):
-            mock_perf.return_value = (endgame_rows, non_endgame_rows)
-            mock_entry.return_value = []
-
-            result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
-            )
-
-        assert abs(result.overall_win_rate - 30.0) < 0.2
-
-    @pytest.mark.asyncio
-    async def test_relative_strength_above_100_possible(self):
-        """relative_strength can exceed 100 when endgame_win_rate > overall_win_rate."""
-        # endgame: 4W/0D/0L = 100% win rate; non-endgame: 0W/0D/4L = 0% win rate
-        # overall = 4/8 = 50%, endgame = 4/4 = 100% → relative_strength = 200
-        endgame_rows = self._make_wdl_rows(wins=4, draws=0, losses=0)
-        non_endgame_rows = self._make_wdl_rows(wins=0, draws=0, losses=4)
-
-        with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-        ):
-            mock_perf.return_value = (endgame_rows, non_endgame_rows)
-            mock_entry.return_value = []
-
-            result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
-            )
-
-        assert abs(result.relative_strength - 200.0) < 0.2
-
-    @pytest.mark.asyncio
-    async def test_relative_strength_zero_when_overall_win_rate_zero(self):
-        """relative_strength should be 0.0 when overall_win_rate is 0 (guard div by zero)."""
-        endgame_rows = self._make_wdl_rows(wins=0, draws=0, losses=2)
-        non_endgame_rows = self._make_wdl_rows(wins=0, draws=0, losses=2)
-
-        with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-        ):
-            mock_perf.return_value = (endgame_rows, non_endgame_rows)
-            mock_entry.return_value = []
-
-            result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
-            )
-
-        assert result.relative_strength == 0.0
-
-
-class TestEndgameGaugeCalculations:
-    """Unit tests for gauge value formulas: aggregate conversion/recovery and endgame_skill."""
-
-    def _entry_row(self, game_id: int, endgame_class_int: int, result: str, user_color: str, imbalance: int):
-        """Build a (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after) entry row.
-
-        Sets imbalance_after equal to imbalance so the persistence check always passes in these gauge tests.
-        """
-        return (game_id, endgame_class_int, result, user_color, imbalance, imbalance)
-
-    @pytest.mark.asyncio
-    async def test_aggregate_conversion_uses_sum_of_raw_not_mean_of_percentages(self):
-        """Aggregate conversion_pct = sum(conv_wins) / sum(conv_games) * 100 (not mean of pcts)."""
-        # Category A (rook=1): 2 games up material, 1 win → 50%
-        # Category B (minor=2): 4 games up material, 3 wins → 75%
-        # Mean of percentages: (50 + 75) / 2 = 62.5%
-        # Sum of raw: 4 wins / 6 games = 66.67%
-        entry_rows = [
-            # Category A: rook (1), positive imbalance — 1 win, 1 loss
-            self._entry_row(1, 1, "1-0", "white", 500),
-            self._entry_row(2, 1, "0-1", "white", 500),
-            # Category B: minor_piece (2), positive imbalance — 3 wins, 1 loss
-            self._entry_row(3, 2, "1-0", "white", 500),
-            self._entry_row(4, 2, "1-0", "white", 500),
-            self._entry_row(5, 2, "1-0", "white", 500),
-            self._entry_row(6, 2, "0-1", "white", 500),
-        ]
-
-        with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-        ):
-            mock_perf.return_value = ([], [])
-            mock_entry.return_value = entry_rows
-
-            result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
-            )
-
-        # Should be 4/6 * 100 = 66.67, not (50+75)/2 = 62.5
-        assert abs(result.aggregate_conversion_pct - 66.7) < 0.2
-
-    @pytest.mark.asyncio
-    async def test_endgame_skill_formula(self):
-        """endgame_skill = 0.7 * conversion_pct + 0.3 * recovery_pct."""
-        # conversion: 8 wins / 10 games up material = 80%
-        # recovery: 6 saves / 10 games down material = 60% → skill = 0.7*80 + 0.3*60 = 74
-        entry_rows = (
-            # 10 games with positive imbalance (rook=1): 8 wins, 2 losses
-            [self._entry_row(i, 1, "1-0", "white", 500) for i in range(1, 9)]
-            + [self._entry_row(i, 1, "0-1", "white", 500) for i in range(9, 11)]
-            # 10 games with negative imbalance (rook=1): 4 wins, 2 draws, 4 losses (6 saves)
-            + [self._entry_row(i, 1, "1-0", "white", -500) for i in range(11, 15)]
-            + [self._entry_row(i, 1, "1/2-1/2", "white", -500) for i in range(15, 17)]
-            + [self._entry_row(i, 1, "0-1", "white", -500) for i in range(17, 21)]
-        )
-
-        with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-        ):
-            mock_perf.return_value = ([], [])
-            mock_entry.return_value = entry_rows
-
-            result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
-            )
-
-        assert abs(result.endgame_skill - 74.0) < 0.2
-
-    @pytest.mark.asyncio
-    async def test_endgame_skill_zero_with_no_conversion_recovery_data(self):
-        """endgame_skill should be 0.0 when no conversion/recovery games exist."""
-        with (
-            patch("app.services.endgame_service.query_endgame_performance_rows", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock) as mock_entry,
-        ):
-            mock_perf.return_value = ([], [])
-            mock_entry.return_value = []
-
-            result = await get_endgame_performance(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human",
-            )
-
-        assert result.endgame_skill == 0.0
-
 
 class TestGetEndgameTimeline:
     """Tests for get_endgame_timeline service function."""
@@ -617,12 +567,20 @@ class TestGetEndgameTimeline:
     @pytest.mark.asyncio
     async def test_empty_rows_returns_empty_series(self):
         """With no games, overall and per_type should be empty."""
-        with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
+        with patch(
+            "app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock
+        ) as mock_timeline:
             mock_timeline.return_value = ([], [], {1: [], 2: [], 3: [], 4: [], 5: [], 6: []})
 
             result = await get_endgame_timeline(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human", window=50,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
+                window=50,
             )
 
         assert result.overall == []
@@ -636,18 +594,31 @@ class TestGetEndgameTimeline:
     async def test_rolling_window_with_known_sequence(self):
         """With window=n and 2n games (n wins then n losses), rolling window drops old games."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         # n wins followed by n losses
         endgame_rows = [_row("1-0", "white", i) for i in range(n)]
         endgame_rows += [_row("0-1", "white", n + i) for i in range(n)]
         non_endgame_rows = [_row("1-0", "white", i) for i in range(n)]
 
-        with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
-            mock_timeline.return_value = (endgame_rows, non_endgame_rows, {1: [], 2: [], 3: [], 4: [], 5: [], 6: []})
+        with patch(
+            "app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock
+        ) as mock_timeline:
+            mock_timeline.return_value = (
+                endgame_rows,
+                non_endgame_rows,
+                {1: [], 2: [], 3: [], 4: [], 5: [], 6: []},
+            )
 
             result = await get_endgame_timeline(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human", window=n,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
+                window=n,
             )
 
         # Find the last endgame point in overall that has endgame data
@@ -663,12 +634,24 @@ class TestGetEndgameTimeline:
         """Partial windows below MIN_GAMES_FOR_TIMELINE produce no data points."""
         endgame_rows = [_row("1-0", "white", 0), _row("1-0", "white", 1)]
 
-        with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
-            mock_timeline.return_value = (endgame_rows, [], {1: [], 2: [], 3: [], 4: [], 5: [], 6: []})
+        with patch(
+            "app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock
+        ) as mock_timeline:
+            mock_timeline.return_value = (
+                endgame_rows,
+                [],
+                {1: [], 2: [], 3: [], 4: [], 5: [], 6: []},
+            )
 
             result = await get_endgame_timeline(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human", window=50,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
+                window=50,
             )
 
         # 2 games < MIN_GAMES_FOR_TIMELINE → no data points emitted
@@ -678,17 +661,30 @@ class TestGetEndgameTimeline:
     async def test_date_merge_both_series_present(self):
         """Overall series merges dates from both endgame and non-endgame rows."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         # Seed n endgame games and n non-endgame games on distinct date ranges
         endgame_rows = [_row("1-0", "white", i) for i in range(n)]
         non_endgame_rows = [_row("0-1", "white", n + i) for i in range(n)]
 
-        with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
-            mock_timeline.return_value = (endgame_rows, non_endgame_rows, {1: [], 2: [], 3: [], 4: [], 5: [], 6: []})
+        with patch(
+            "app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock
+        ) as mock_timeline:
+            mock_timeline.return_value = (
+                endgame_rows,
+                non_endgame_rows,
+                {1: [], 2: [], 3: [], 4: [], 5: [], 6: []},
+            )
 
             result = await get_endgame_timeline(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human", window=50,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
+                window=50,
             )
 
         # Both series emit points starting at game n
@@ -706,15 +702,24 @@ class TestGetEndgameTimeline:
     async def test_per_type_keys_are_endgame_class_strings(self):
         """per_type keys should be EndgameClass strings (rook, minor_piece, etc.), not integers."""
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
         n = MIN_GAMES_FOR_TIMELINE
         rook_rows = [_row("1-0", "white", i) for i in range(n)]
 
-        with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
+        with patch(
+            "app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock
+        ) as mock_timeline:
             mock_timeline.return_value = ([], [], {1: rook_rows, 2: [], 3: [], 4: [], 5: [], 6: []})
 
             result = await get_endgame_timeline(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human", window=50,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
+                window=50,
             )
 
         assert "rook" in result.per_type
@@ -730,12 +735,20 @@ class TestGetEndgameTimeline:
     @pytest.mark.asyncio
     async def test_window_parameter_reflected_in_response(self):
         """window field in response matches the requested window parameter."""
-        with patch("app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock) as mock_timeline:
+        with patch(
+            "app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock
+        ) as mock_timeline:
             mock_timeline.return_value = ([], [], {1: [], 2: [], 3: [], 4: [], 5: [], 6: []})
 
             result = await get_endgame_timeline(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                recency=None, rated=None, opponent_type="human", window=25,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                recency=None,
+                rated=None,
+                opponent_type="human",
+                window=25,
             )
 
         assert result.window == 25
@@ -745,141 +758,1425 @@ class TestGetEndgamePerformanceSmoke:
     """Smoke tests for performance/timeline service entry points with real DB."""
 
     @pytest.mark.asyncio
-    async def test_get_endgame_performance_returns_zeros_for_nonexistent_user(self, db_session: AsyncSession):
+    async def test_get_endgame_performance_returns_zeros_for_nonexistent_user(
+        self, db_session: AsyncSession
+    ):
         """Calling get_endgame_performance with no data should return all-zero response."""
         result = await get_endgame_performance(
-            db_session, user_id=999999, time_control=None, platform=None,
-            recency=None, rated=None, opponent_type="human",
+            db_session,
+            user_id=999999,
+            time_control=None,
+            platform=None,
+            recency=None,
+            rated=None,
+            opponent_type="human",
         )
         assert result.endgame_wdl.total == 0
         assert result.non_endgame_wdl.total == 0
-        assert result.overall_win_rate == 0.0
-        assert result.relative_strength == 0.0
 
     @pytest.mark.asyncio
-    async def test_get_endgame_timeline_returns_empty_for_nonexistent_user(self, db_session: AsyncSession):
+    async def test_get_endgame_timeline_returns_empty_for_nonexistent_user(
+        self, db_session: AsyncSession
+    ):
         """Calling get_endgame_timeline with no data should return empty series."""
         result = await get_endgame_timeline(
-            db_session, user_id=999999, time_control=None, platform=None,
-            recency=None, rated=None, opponent_type="human",
+            db_session,
+            user_id=999999,
+            time_control=None,
+            platform=None,
+            recency=None,
+            rated=None,
+            opponent_type="human",
         )
         assert result.overall == []
         assert result.window == 50
 
 
 class TestGetEndgameOverview:
-    """Tests for get_endgame_overview service function."""
+    """Tests for get_endgame_overview service function.
+
+    get_endgame_overview was refactored in Phase 53 to fetch entry_rows once and
+    call repository functions directly (query_endgame_entry_rows, query_endgame_performance_rows,
+    count_filtered_games) instead of delegating to get_endgame_stats and get_endgame_performance.
+    The timeline functions are still called as before.
+    """
 
     @pytest.mark.asyncio
-    async def test_overview_composes_all_four_payloads(self):
-        """get_endgame_overview calls all four sub-functions and assembles the response."""
-        with (
-            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
-            patch("app.services.endgame_service.get_endgame_performance", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock) as mock_timeline,
-            patch("app.services.endgame_service.get_conv_recov_timeline", new_callable=AsyncMock) as mock_conv,
-        ):
-            from app.schemas.endgames import (
-                ConvRecovTimelineResponse,
-                EndgamePerformanceResponse,
-                EndgameStatsResponse,
-                EndgameTimelineResponse,
-                EndgameWDLSummary,
-            )
+    async def test_overview_composes_all_five_payloads(self):
+        """get_endgame_overview assembles stats, performance, timeline, score_gap_material, clock_pressure."""
+        from app.schemas.endgames import EndgameTimelineResponse
 
-            mock_stats.return_value = EndgameStatsResponse(
-                categories=[], total_games=0, endgame_games=0
-            )
-            mock_perf.return_value = EndgamePerformanceResponse(
-                endgame_wdl=EndgameWDLSummary(wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0),
-                non_endgame_wdl=EndgameWDLSummary(wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0),
-                overall_win_rate=0.0,
-                endgame_win_rate=0.0,
-                aggregate_conversion_pct=0.0,
-                aggregate_conversion_wins=0,
-                aggregate_conversion_games=0,
-                aggregate_recovery_pct=0.0,
-                aggregate_recovery_saves=0,
-                aggregate_recovery_games=0,
-                relative_strength=0.0,
-                endgame_skill=0.0,
-            )
+        with (
+            patch(
+                "app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock
+            ) as mock_entry,
+            patch(
+                "app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock
+            ) as mock_bucket,
+            patch(
+                "app.services.endgame_service.query_endgame_performance_rows",
+                new_callable=AsyncMock,
+            ) as mock_perf_rows,
+            patch(
+                "app.services.endgame_service.count_filtered_games", new_callable=AsyncMock
+            ) as mock_count,
+            patch(
+                "app.services.endgame_service.count_endgame_games", new_callable=AsyncMock
+            ) as mock_eg_count,
+            patch(
+                "app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock
+            ) as mock_timeline,
+            patch(
+                "app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock
+            ) as mock_clock,
+        ):
+            mock_entry.return_value = []
+            mock_bucket.return_value = []
+            mock_perf_rows.return_value = ([], [])
+            mock_count.return_value = 0
+            mock_eg_count.return_value = 0
             mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=50)
-            mock_conv.return_value = ConvRecovTimelineResponse(conversion=[], recovery=[], window=50)
+            mock_clock.return_value = []
 
             result = await get_endgame_overview(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                rated=None, opponent_type="human", recency=None, window=50,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                rated=None,
+                opponent_type="human",
+                recency=None,
+                window=50,
             )
 
-        # All four sub-functions must be called exactly once
-        mock_stats.assert_called_once()
-        mock_perf.assert_called_once()
+        # Repository functions called once each
+        mock_entry.assert_called_once()
+        mock_bucket.assert_called_once()
+        mock_perf_rows.assert_called_once()
+        mock_count.assert_called_once()
+        mock_eg_count.assert_called_once()
         mock_timeline.assert_called_once()
-        mock_conv.assert_called_once()
+        mock_clock.assert_called_once()
 
-        # Response must contain all four sub-payloads
+        # All sub-payloads must be present
         assert result.stats is not None
         assert result.performance is not None
         assert result.timeline is not None
-        assert result.conv_recov_timeline is not None
+        assert result.score_gap_material is not None
+        assert result.clock_pressure is not None
+        assert result.clock_pressure.rows == []
 
     @pytest.mark.asyncio
-    async def test_overview_passes_window_to_both_timelines(self):
-        """The window parameter must be forwarded to both get_endgame_timeline and get_conv_recov_timeline."""
-        with (
-            patch("app.services.endgame_service.get_endgame_stats", new_callable=AsyncMock) as mock_stats,
-            patch("app.services.endgame_service.get_endgame_performance", new_callable=AsyncMock) as mock_perf,
-            patch("app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock) as mock_timeline,
-            patch("app.services.endgame_service.get_conv_recov_timeline", new_callable=AsyncMock) as mock_conv,
-        ):
-            from app.schemas.endgames import (
-                ConvRecovTimelineResponse,
-                EndgamePerformanceResponse,
-                EndgameStatsResponse,
-                EndgameTimelineResponse,
-                EndgameWDLSummary,
-            )
+    async def test_overview_passes_window_to_timeline(self):
+        """The window parameter must be forwarded to get_endgame_timeline."""
+        from app.schemas.endgames import EndgameTimelineResponse
 
-            mock_stats.return_value = EndgameStatsResponse(categories=[], total_games=0, endgame_games=0)
-            mock_perf.return_value = EndgamePerformanceResponse(
-                endgame_wdl=EndgameWDLSummary(wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0),
-                non_endgame_wdl=EndgameWDLSummary(wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0),
-                overall_win_rate=0.0,
-                endgame_win_rate=0.0,
-                aggregate_conversion_pct=0.0,
-                aggregate_conversion_wins=0,
-                aggregate_conversion_games=0,
-                aggregate_recovery_pct=0.0,
-                aggregate_recovery_saves=0,
-                aggregate_recovery_games=0,
-                relative_strength=0.0,
-                endgame_skill=0.0,
-            )
+        with (
+            patch(
+                "app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock
+            ) as mock_entry,
+            patch(
+                "app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock
+            ) as mock_bucket,
+            patch(
+                "app.services.endgame_service.query_endgame_performance_rows",
+                new_callable=AsyncMock,
+            ) as mock_perf_rows,
+            patch(
+                "app.services.endgame_service.count_filtered_games", new_callable=AsyncMock
+            ) as mock_count,
+            patch("app.services.endgame_service.count_endgame_games", new_callable=AsyncMock),
+            patch(
+                "app.services.endgame_service.get_endgame_timeline", new_callable=AsyncMock
+            ) as mock_timeline,
+            patch(
+                "app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock
+            ) as mock_clock,
+        ):
+            mock_entry.return_value = []
+            mock_bucket.return_value = []
+            mock_perf_rows.return_value = ([], [])
+            mock_count.return_value = 0
             mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=75)
-            mock_conv.return_value = ConvRecovTimelineResponse(conversion=[], recovery=[], window=75)
+            mock_clock.return_value = []
 
             await get_endgame_overview(
-                AsyncMock(), user_id=1, time_control=None, platform=None,
-                rated=None, opponent_type="human", recency=None, window=75,
+                AsyncMock(),
+                user_id=1,
+                time_control=None,
+                platform=None,
+                rated=None,
+                opponent_type="human",
+                recency=None,
+                window=75,
             )
 
-        # Both timeline functions must receive window=75
+        # Timeline function must receive window=75
         _, timeline_kwargs = mock_timeline.call_args
-        _, conv_kwargs = mock_conv.call_args
         assert timeline_kwargs.get("window") == 75 or mock_timeline.call_args[0][4] == 75  # type: ignore[index]
-        assert conv_kwargs.get("window") == 75 or mock_conv.call_args[0][4] == 75  # type: ignore[index]
 
     @pytest.mark.asyncio
     async def test_overview_returns_empty_for_nonexistent_user(self, db_session: AsyncSession):
         """get_endgame_overview with a user that has no games returns all empty/zero payloads."""
         result = await get_endgame_overview(
-            db_session, user_id=999999, time_control=None, platform=None,
-            rated=None, opponent_type="human", recency=None, window=50,
+            db_session,
+            user_id=999999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="human",
+            recency=None,
+            window=50,
         )
-        # All four sub-payloads must be present
+        # All sub-payloads must be present
         assert result.stats.categories == []
         assert result.performance.endgame_wdl.total == 0
         assert result.timeline.overall == []
-        assert result.conv_recov_timeline.conversion == []
-        assert result.conv_recov_timeline.recovery == []
+        assert result.score_gap_material is not None
+
+
+class TestScoreGapMaterial:
+    """Unit tests for _wdl_to_score and _compute_score_gap_material."""
+
+    def _make_wdl(self, wins: int, draws: int, losses: int) -> EndgameWDLSummary:
+        total = wins + draws + losses
+        if total > 0:
+            win_pct = round(wins / total * 100, 1)
+            draw_pct = round(draws / total * 100, 1)
+            loss_pct = round(losses / total * 100, 1)
+        else:
+            win_pct = draw_pct = loss_pct = 0.0
+        return EndgameWDLSummary(
+            wins=wins,
+            draws=draws,
+            losses=losses,
+            total=total,
+            win_pct=win_pct,
+            draw_pct=draw_pct,
+            loss_pct=loss_pct,
+        )
+
+    def _make_wdl_pct(
+        self, win_pct: float, draw_pct: float, loss_pct: float, total: int = 100
+    ) -> EndgameWDLSummary:
+        wins = round(win_pct * total / 100)
+        draws = round(draw_pct * total / 100)
+        losses = total - wins - draws
+        return EndgameWDLSummary(
+            wins=wins,
+            draws=draws,
+            losses=losses,
+            total=total,
+            win_pct=win_pct,
+            draw_pct=draw_pct,
+            loss_pct=loss_pct,
+        )
+
+    # --- _wdl_to_score tests ---
+
+    def test_wdl_to_score_standard_case(self):
+        """Score for 45/10/45 WDL (100 total) should be 0.5."""
+        wdl = self._make_wdl(45, 10, 45)
+        assert _wdl_to_score(wdl) == 0.5
+
+    def test_wdl_to_score_zero_total(self):
+        """Score for 0-total WDL should be 0.0."""
+        wdl = self._make_wdl(0, 0, 0)
+        assert _wdl_to_score(wdl) == 0.0
+
+    def test_wdl_to_score_all_wins(self):
+        """Score for 100 wins / 0 draws / 0 losses should be 1.0."""
+        wdl = self._make_wdl(100, 0, 0)
+        assert _wdl_to_score(wdl) == 1.0
+
+    # --- _compute_score_gap_material tests ---
+
+    def test_score_gap_material_conversion_bucket(self):
+        """Entry row with imbalance=150 preserved goes into 'conversion' bucket."""
+        # entry_rows: (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after)
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, 150)]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        conversion = result.material_rows[0]
+        assert conversion.bucket == "conversion"
+        assert conversion.games == 1
+        assert conversion.win_pct == 100.0
+
+    def test_score_gap_material_even_bucket(self):
+        """Entry row with imbalance=50 goes into 'even' bucket."""
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 50, 50)]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        even = result.material_rows[1]
+        assert even.bucket == "even"
+        assert even.games == 1
+
+    def test_score_gap_material_recovery_bucket(self):
+        """Entry row with imbalance=-200 preserved goes into 'recovery' bucket."""
+        entry_rows = [_FakeRow(1, 1, "0-1", "white", -200, -200)]
+        endgame_wdl = self._make_wdl(0, 0, 1)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        recovery = result.material_rows[2]
+        assert recovery.bucket == "recovery"
+        assert recovery.games == 1
+        assert recovery.loss_pct == 100.0
+
+    def test_score_gap_material_deduplication(self):
+        """Two rows with same game_id but different endgame_class -> only 1 game in material table."""
+        entry_rows = [
+            _FakeRow(1, 1, "1-0", "white", 150, 150),  # game_id=1, class rook
+            _FakeRow(1, 3, "1-0", "white", 150, 150),  # game_id=1, class pawn — duplicate
+        ]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        conversion = result.material_rows[0]
+        assert conversion.bucket == "conversion"
+        assert conversion.games == 1  # not 2
+
+    def test_score_gap_material_none_imbalance_bucketed_as_even(self):
+        """Entry row with user_material_imbalance=None goes into the 'even' bucket (Phase 59)."""
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", None, None)]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert result.material_rows[0].games == 0  # conversion
+        assert result.material_rows[1].bucket == "even"
+        assert result.material_rows[1].games == 1  # even — NULL rows now land here
+        assert result.material_rows[2].games == 0  # recovery
+
+    def test_score_gap_material_empty_rows(self):
+        """Empty entry_rows -> 3 material_rows all with games=0, score_difference=0.0."""
+        endgame_wdl = self._make_wdl(0, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert len(result.material_rows) == 3
+        assert all(row.games == 0 for row in result.material_rows)
+        assert result.score_difference == 0.0
+
+    def test_score_gap_material_score_difference_negative(self):
+        """score_difference = endgame_score - non_endgame_score (signed, can be negative)."""
+        # endgame score: win_pct=40, draw_pct=10 -> (40 + 5) / 100 = 0.45
+        endgame_wdl = self._make_wdl_pct(40.0, 10.0, 50.0, total=100)
+        # non_endgame score: win_pct=55, draw_pct=10 -> (55 + 5) / 100 = 0.60
+        non_endgame_wdl = self._make_wdl_pct(55.0, 10.0, 35.0, total=100)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert result.score_difference == pytest.approx(-0.15, abs=1e-9)
+
+    def test_score_gap_material_persistence_required_for_conversion(self):
+        """Material bucket applies 4-ply persistence rule matching conversion/recovery.
+
+        A row with imbalance=150 (advantage threshold) but imbalance_after=-50
+        falls into the 'even' bucket because the advantage did not persist.
+        This filters transient imbalances from trades at the endgame boundary.
+        """
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, -50)]  # imbalance_after negative
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert result.material_rows[0].games == 0  # conversion: not counted
+        assert result.material_rows[1].games == 1  # even: counted here
+        assert result.material_rows[1].bucket == "even"
+
+    def test_score_gap_material_persistence_required_for_recovery(self):
+        """Transient deficit that does not persist falls into 'even' bucket."""
+        entry_rows = [_FakeRow(1, 1, "0-1", "white", -150, 50)]  # imbalance_after positive
+        endgame_wdl = self._make_wdl(0, 0, 1)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert result.material_rows[2].games == 0  # recovery: not counted
+        assert result.material_rows[1].games == 1  # even: counted here
+        assert result.material_rows[1].bucket == "even"
+
+    def test_score_gap_material_persistence_none_after_falls_to_even(self):
+        """imbalance_after=None means persistence cannot be verified -> 'even' bucket."""
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, None)]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert result.material_rows[0].games == 0  # conversion: not counted
+        assert result.material_rows[1].games == 1  # even: counted here
+
+    def test_score_gap_material_all_three_rows_always_present(self):
+        """All three material_rows (conversion, even, recovery) present even when games=0."""
+        endgame_wdl = self._make_wdl(0, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        buckets = [r.bucket for r in result.material_rows]
+        assert buckets == ["conversion", "even", "recovery"]
+
+    def test_score_gap_material_boundary_conversion(self):
+        """Imbalance exactly == 100 (preserved) -> 'conversion' bucket (>= 100)."""
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 100, 100)]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert result.material_rows[0].bucket == "conversion"
+        assert result.material_rows[0].games == 1
+
+    def test_score_gap_material_boundary_recovery(self):
+        """Imbalance exactly == -100 (preserved) -> 'recovery' bucket (<= -100)."""
+        entry_rows = [_FakeRow(1, 1, "0-1", "white", -100, -100)]
+        endgame_wdl = self._make_wdl(0, 0, 1)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert result.material_rows[2].bucket == "recovery"
+        assert result.material_rows[2].games == 1
+
+
+class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
+    """Phase 59 (Decision 4): assert sum(material_rows[i].games) == endgame_wdl.total.
+
+    Inherits _make_wdl and _make_wdl_pct helpers from TestScoreGapMaterial.
+    """
+
+    def test_invariant_single_span_each_bucket(self):
+        entry_rows = [
+            _FakeRow(1, 1, "1-0", "white", 150, 150),  # conversion
+            _FakeRow(2, 1, "0-1", "white", -150, -150),  # recovery
+            _FakeRow(3, 1, "1/2-1/2", "white", 50, 50),  # even
+        ]
+        endgame_wdl = self._make_wdl(1, 1, 1)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        total = sum(row.games for row in result.material_rows)
+        assert total == endgame_wdl.total == 3
+        assert result.material_rows[0].games == 1  # conversion
+        assert result.material_rows[1].games == 1  # even
+        assert result.material_rows[2].games == 1  # recovery
+
+    def test_invariant_multi_span_conversion_over_recovery(self):
+        """Decision 2 tiebreak: when a game has both conversion and recovery spans, pick conversion."""
+        entry_rows = [
+            _FakeRow(1, 1, "1-0", "white", 150, 150),  # conversion span (rook)
+            _FakeRow(1, 3, "1-0", "white", -150, -150),  # recovery span (pawn) — same game
+        ]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 1
+        assert result.material_rows[0].bucket == "conversion"
+        assert result.material_rows[0].games == 1
+
+    def test_invariant_multi_span_null_then_qualifying(self):
+        """Decision 1+2: first-seen NULL row must not drop the game if another span qualifies."""
+        entry_rows = [
+            _FakeRow(
+                1, 1, "1-0", "white", None, None
+            ),  # NULL first (would have been dropped pre-Phase 59)
+            _FakeRow(1, 3, "1-0", "white", 150, 150),  # qualifying conversion span
+        ]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 1
+        assert result.material_rows[0].bucket == "conversion"
+        assert result.material_rows[0].games == 1
+
+    def test_invariant_null_imbalance_lands_in_even(self):
+        """Decision 1: NULL imbalance -> 'even' bucket (not dropped)."""
+        entry_rows = [_FakeRow(1, 1, "1/2-1/2", "white", None, None)]
+        endgame_wdl = self._make_wdl(0, 1, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 1
+        assert result.material_rows[1].games == 1  # even
+        assert result.material_rows[1].draw_pct == 100.0
+
+    def test_invariant_null_after_lands_in_even(self):
+        """Decision 1: NULL user_material_imbalance_after (non-contiguous span) -> 'even'."""
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, None)]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 1
+        assert result.material_rows[1].games == 1  # even
+
+    def test_invariant_empty_input_no_divide_by_zero(self):
+        endgame_wdl = self._make_wdl(0, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 0
+        for row in result.material_rows:
+            assert row.win_pct == 0.0
+            assert row.draw_pct == 0.0
+            assert row.loss_pct == 0.0
+            assert row.score == 0.0
+
+    def test_invariant_mixed_10_games(self):
+        """10 distinct games across all decision cases; sum must equal endgame_wdl.total=10."""
+        entry_rows = [
+            # 3 pure conversion
+            _FakeRow(1, 1, "1-0", "white", 150, 150),
+            _FakeRow(2, 1, "1-0", "white", 200, 200),
+            _FakeRow(3, 1, "0-1", "white", 150, 150),
+            # 2 pure recovery
+            _FakeRow(4, 1, "1/2-1/2", "white", -150, -150),
+            _FakeRow(5, 1, "0-1", "white", -200, -200),
+            # 2 pure even (below threshold)
+            _FakeRow(6, 1, "1-0", "white", 50, 50),
+            _FakeRow(7, 1, "0-1", "white", -50, -50),
+            # 1 multi-span conversion-over-recovery
+            _FakeRow(8, 1, "1-0", "white", 150, 150),
+            _FakeRow(8, 3, "1-0", "white", -150, -150),
+            # 1 NULL-first but conversion-qualifying second
+            _FakeRow(9, 1, "1-0", "white", None, None),
+            _FakeRow(9, 3, "1-0", "white", 150, 150),
+            # 1 all-NULL (lands in even)
+            _FakeRow(10, 1, "1/2-1/2", "white", None, None),
+        ]
+        endgame_wdl = self._make_wdl(6, 2, 2)  # total=10
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 10
+
+    def test_invariant_deterministic_ordering(self):
+        """Decision 2: within the 'even' fallback, lowest endgame_class_int wins for reproducibility."""
+        rows_order_a = [
+            _FakeRow(1, 1, "1-0", "white", 50, 50),
+            _FakeRow(1, 3, "0-1", "white", 40, 40),
+        ]
+        rows_order_b = [
+            _FakeRow(1, 3, "0-1", "white", 40, 40),
+            _FakeRow(1, 1, "1-0", "white", 50, 50),
+        ]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result_a = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, rows_order_a)
+        result_b = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, rows_order_b)
+        # Lowest endgame_class_int = 1 (result "1-0") should win — outcome is "win"
+        assert result_a.material_rows[1].games == 1
+        assert result_a.material_rows[1].win_pct == 100.0
+        # Same across both orderings
+        for i in range(3):
+            assert result_a.material_rows[i].bucket == result_b.material_rows[i].bucket
+            assert result_a.material_rows[i].games == result_b.material_rows[i].games
+            assert result_a.material_rows[i].win_pct == result_b.material_rows[i].win_pct
+            assert result_a.material_rows[i].draw_pct == result_b.material_rows[i].draw_pct
+            assert result_a.material_rows[i].loss_pct == result_b.material_rows[i].loss_pct
+
+
+class TestScoreGapMaterialOpponentBaseline(TestScoreGapMaterial):
+    """Phase 60: opponent baseline via same-game symmetry.
+
+    Per CONTEXT decision #1, opponent_score on a user-perspective row is
+    `1 - user_score[swap_bucket]` where swap = {conversion: recovery,
+    even: even, recovery: conversion}. Below the 10-game threshold on the
+    swap bucket, opponent_score is None but opponent_games still reports
+    the actual swap-bucket count.
+    """
+
+    @staticmethod
+    def _conversion_row(game_id: int, result: str) -> _FakeRow:
+        # imbalance >= +100 AND imbalance_after >= +100 -> conversion
+        return _FakeRow(game_id, 1, result, "white", 150, 150)
+
+    @staticmethod
+    def _recovery_row(game_id: int, result: str) -> _FakeRow:
+        # imbalance <= -100 AND imbalance_after <= -100 -> recovery
+        return _FakeRow(game_id, 1, result, "white", -150, -150)
+
+    @staticmethod
+    def _even_row(game_id: int, result: str) -> _FakeRow:
+        return _FakeRow(game_id, 1, result, "white", 0, 0)
+
+    def test_opponent_baseline_symmetric_60_40(self):
+        """User Conv 60% over 100 games and User Recov 40% over 100 games:
+        Conv row's opponent_score == 1 - 0.40 = 0.60 (mirror of Recov),
+        Recov row's opponent_score == 1 - 0.60 = 0.40 (mirror of Conv)."""
+        # Conversion: 100 games, score 0.60 -> 60 wins, 0 draws, 40 losses
+        conv_rows = [self._conversion_row(i, "1-0") for i in range(60)] + [
+            self._conversion_row(i + 60, "0-1") for i in range(40)
+        ]
+        # Recovery: 100 games, score 0.40 -> 40 wins, 0 draws, 60 losses
+        rec_rows = [self._recovery_row(i + 100, "1-0") for i in range(40)] + [
+            self._recovery_row(i + 140, "0-1") for i in range(60)
+        ]
+        entry_rows = conv_rows + rec_rows
+        endgame_wdl = self._make_wdl(100, 0, 100)  # 60+40 wins, 40+60 losses
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        conv = result.material_rows[0]
+        rec = result.material_rows[2]
+        assert conv.bucket == "conversion"
+        assert conv.games == 100
+        assert conv.score == pytest.approx(0.60, abs=1e-9)
+        assert conv.opponent_score == pytest.approx(0.60, abs=1e-9)  # 1 - rec.score (1 - 0.40)
+        assert conv.opponent_games == 100
+        assert rec.bucket == "recovery"
+        assert rec.games == 100
+        assert rec.score == pytest.approx(0.40, abs=1e-9)
+        assert rec.opponent_score == pytest.approx(0.40, abs=1e-9)  # 1 - conv.score (1 - 0.60)
+        assert rec.opponent_games == 100
+
+    def test_opponent_baseline_empty_swap_bucket(self):
+        """User Conversion has games, user Recovery has zero -> Conversion
+        row's opponent_score is None, opponent_games == 0."""
+        entry_rows = [self._conversion_row(1, "1-0")]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        conv = result.material_rows[0]
+        assert conv.games == 1
+        assert conv.opponent_score is None
+        assert conv.opponent_games == 0
+
+    def test_opponent_baseline_below_threshold_9_games(self):
+        """Swap bucket has 9 games (< 10) -> opponent_score is None,
+        opponent_games == 9."""
+        conv_rows = [self._conversion_row(1, "1-0")]
+        # 9 recovery games -> swap bucket count for Conversion row is 9
+        rec_rows = [self._recovery_row(i + 2, "0-1") for i in range(9)]
+        entry_rows = conv_rows + rec_rows
+        endgame_wdl = self._make_wdl(1, 0, 9)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        conv = result.material_rows[0]
+        assert conv.opponent_score is None
+        assert conv.opponent_games == 9
+
+    def test_opponent_baseline_at_threshold_10_games(self):
+        """Swap bucket has exactly 10 games (>= 10) -> opponent_score is
+        computed (non-None), opponent_games == 10."""
+        conv_rows = [self._conversion_row(1, "1-0")]
+        rec_rows = [self._recovery_row(i + 2, "0-1") for i in range(10)]
+        entry_rows = conv_rows + rec_rows
+        endgame_wdl = self._make_wdl(1, 0, 10)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        conv = result.material_rows[0]
+        assert conv.opponent_score is not None
+        assert conv.opponent_score == pytest.approx(
+            1.0 - 0.0, abs=1e-9
+        )  # rec score is 0.0 (10 losses)
+        assert conv.opponent_games == 10
+
+    def test_opponent_baseline_even_self_mirror(self):
+        """Even bucket mirrors itself: opponent_score == 1 - even.score
+        with opponent_games == even.games. Threshold still applies."""
+        # 10 even games, 50% score
+        entry_rows = [self._even_row(i, "1-0") for i in range(5)] + [
+            self._even_row(i + 5, "0-1") for i in range(5)
+        ]
+        endgame_wdl = self._make_wdl(5, 0, 5)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        even = result.material_rows[1]
+        assert even.bucket == "even"
+        assert even.games == 10
+        assert even.score == pytest.approx(0.5, abs=1e-9)
+        assert even.opponent_score == pytest.approx(0.5, abs=1e-9)
+        assert even.opponent_games == 10
+
+    def test_opponent_baseline_even_below_threshold(self):
+        """Even bucket with < 10 games -> opponent_score is None even though
+        it mirrors itself."""
+        entry_rows = [self._even_row(1, "1-0")]
+        endgame_wdl = self._make_wdl(1, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
+        even = result.material_rows[1]
+        assert even.games == 1
+        assert even.opponent_score is None
+        assert even.opponent_games == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 54: _extract_entry_clocks and _compute_clock_pressure tests
+# ---------------------------------------------------------------------------
+
+
+def _make_clock_row(
+    game_id: int,
+    time_control_bucket: str | None,
+    base_time_seconds: int | None,
+    termination: str | None,
+    result: str,
+    user_color: str,
+    ply_array: list[int],
+    clock_array: list[float | None],
+) -> tuple:
+    """Build a tuple matching the query_clock_stats_rows output shape.
+
+    Shape: (game_id, time_control_bucket, base_time_seconds, termination,
+            result, user_color, ply_array, clock_array)
+
+    base_time_seconds is the per-game starting clock (e.g. 600 for 600+0, 900
+    for 900+10). Used as the denominator for % computation (quick-260414-smt).
+
+    Since quick-260414-pv4, query_clock_stats_rows emits one row per qualifying
+    game (whole-game 6-ply rule), so test rows should use distinct game_ids
+    unless the test is specifically guarding against duplicate handling.
+    """
+    return (
+        game_id,
+        time_control_bucket,
+        base_time_seconds,
+        termination,
+        result,
+        user_color,
+        ply_array,
+        clock_array,
+    )
+
+
+class TestExtractEntryClocks:
+    """Unit tests for _extract_entry_clocks helper (Phase 54).
+
+    Verifies ply-parity logic: white player's clocks are at even plies (0,2,4,...),
+    black player's clocks are at odd plies (1,3,5,...).
+    """
+
+    def test_white_user_even_plies(self):
+        """White user: first even-ply clock is user clock, first odd-ply clock is opp clock."""
+        result = _extract_entry_clocks([0, 1, 2, 3], [10.0, 8.0, 9.0, 7.0], "white")
+        assert result == (10.0, 8.0)
+
+    def test_black_user_odd_plies(self):
+        """Black user: first odd-ply clock is user clock, first even-ply clock is opp clock."""
+        result = _extract_entry_clocks([0, 1, 2, 3], [10.0, 8.0, 9.0, 7.0], "black")
+        assert result == (8.0, 10.0)
+
+    def test_all_none_clocks(self):
+        """All None clocks return (None, None)."""
+        result = _extract_entry_clocks([0, 1, 2, 3], [None, None, None, None], "white")
+        assert result == (None, None)
+
+    def test_user_clock_only(self):
+        """User clock present, opp clock None -> (value, None)."""
+        result = _extract_entry_clocks([0, 1], [10.0, None], "white")
+        assert result == (10.0, None)
+
+    def test_opp_clock_only(self):
+        """Opp clock present, user clock None -> (None, value)."""
+        result = _extract_entry_clocks([0, 1], [None, 8.0], "white")
+        assert result == (None, 8.0)
+
+    def test_skips_none_finds_later(self):
+        """Skips None entries; finds first non-None for each parity.
+
+        plies=[0,1,2,3], clocks=[None,8.0,9.0,7.0], user=white:
+        - first user ply (even): ply 0 -> None; next even ply 2 -> 9.0
+        - first opp ply (odd): ply 1 -> 8.0
+        -> (9.0, 8.0)
+        """
+        result = _extract_entry_clocks([0, 1, 2, 3], [None, 8.0, 9.0, 7.0], "white")
+        assert result == (9.0, 8.0)
+
+    def test_empty_plies(self):
+        """Empty ply array returns (None, None)."""
+        result = _extract_entry_clocks([], [], "white")
+        assert result == (None, None)
+
+    def test_single_ply_user_parity(self):
+        """Single ply matching user parity -> (value, None)."""
+        result = _extract_entry_clocks([0], [5.0], "white")
+        assert result == (5.0, None)
+
+    def test_single_ply_opp_parity(self):
+        """Single ply matching opp parity -> (None, value)."""
+        result = _extract_entry_clocks([1], [5.0], "white")
+        assert result == (None, 5.0)
+
+
+class TestComputeClockPressure:
+    """Unit tests for _compute_clock_pressure (Phase 54).
+
+    Verifies grouping by time control, deduplication, row filtering, and net timeout rate.
+    """
+
+    def _make_blitz_rows(
+        self,
+        count: int,
+        user_clock: float = 50.0,
+        opp_clock: float = 60.0,
+        base_time_seconds: int | None = 180,
+        termination: str = "checkmate",
+        result: str = "1-0",
+        user_color: str = "white",
+        start_id: int = 1,
+    ) -> list[tuple]:
+        """Build `count` blitz rows, each with a distinct game_id."""
+        rows = []
+        for i in range(count):
+            game_id = start_id + i
+            # White even ply 0 = user_clock, odd ply 1 = opp_clock
+            rows.append(
+                _make_clock_row(
+                    game_id=game_id,
+                    time_control_bucket="blitz",
+                    base_time_seconds=base_time_seconds,
+                    termination=termination,
+                    result=result,
+                    user_color=user_color,
+                    ply_array=[0, 1],
+                    clock_array=[user_clock, opp_clock],
+                )
+            )
+        return rows
+
+    def test_basic_single_bucket(self):
+        """12 blitz games with clock data produce one ClockStatsRow for blitz with correct averages."""
+        rows = self._make_blitz_rows(12, user_clock=50.0, opp_clock=60.0, base_time_seconds=180)
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.time_control == "blitz"
+        assert row.label == "Blitz"
+        assert row.total_endgame_games == 12
+        assert row.clock_games == 12
+        assert row.user_avg_seconds == pytest.approx(50.0)
+        assert row.opp_avg_seconds == pytest.approx(60.0)
+        assert row.avg_clock_diff_seconds == pytest.approx(-10.0)
+        # Pct: 50/180*100 and 60/180*100
+        assert row.user_avg_pct == pytest.approx(50.0 / 180 * 100, abs=0.01)
+        assert row.opp_avg_pct == pytest.approx(60.0 / 180 * 100, abs=0.01)
+
+    def test_hides_below_threshold(self):
+        """5 games for bullet -> bullet row not in output (below MIN_GAMES_FOR_CLOCK_STATS=10)."""
+        rows = []
+        for i in range(5):
+            rows.append(
+                _make_clock_row(
+                    game_id=i + 1,
+                    time_control_bucket="bullet",
+                    base_time_seconds=60,
+                    termination="checkmate",
+                    result="1-0",
+                    user_color="white",
+                    ply_array=[0, 1],
+                    clock_array=[5.0, 4.0],
+                )
+            )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 0
+
+    def test_net_timeout_rate_single_row_per_game(self):
+        """One row per game (post-pv4 SQL contract) -> timeout rate computed over unique games.
+
+        Under the whole-game rule (_any_endgame_ply_subquery), query_clock_stats_rows
+        emits one row per qualifying game. 10 rows -> 10 unique games. One timeout win
+        gives net_timeout_rate = 1/10 * 100 = 10.0.
+
+        Regression guard (quick-260414-pv4): even if a future change accidentally
+        reintroduced duplicate game_ids, the set-based dedup in _compute_clock_pressure
+        still prevents double-counting.
+        """
+        # 10 distinct games; game_id=1 is the single timeout win.
+        rows = [_make_clock_row(1, "blitz", 180, "timeout", "1-0", "white", [0, 1], [5.0, 3.0])]
+        for i in range(2, 11):
+            rows.append(
+                _make_clock_row(i, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [5.0, 3.0])
+            )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.total_endgame_games == 10
+        assert row.net_timeout_rate == pytest.approx(10.0)
+
+    def test_split_class_game_included_via_whole_game_rule(self):
+        """Service trusts repo contract: a row representing a split-class game is accepted.
+
+        Regression guard for quick-260414-pv4: under the whole-game rule the repo
+        passes through games whose endgame plies were split across multiple classes
+        (e.g. 3 in KP_KP + 3 in KR_KR). The service must treat such a row exactly
+        like any other row — no per-class logic remains at the service layer.
+        """
+        # Game 1 is the split-class game; its ply_array represents plies pooled across
+        # multiple endgame classes. The service does not know or care about class.
+        rows = [
+            _make_clock_row(
+                1,
+                "blitz",
+                180,
+                "checkmate",
+                "1-0",
+                "white",
+                [0, 1, 2, 3, 4, 5],
+                [90.0, 60.0, 85.0, 55.0, 80.0, 50.0],
+            ),
+        ]
+        # Filler rows to clear MIN_GAMES_FOR_CLOCK_STATS
+        for i in range(2, 11):
+            rows.append(
+                _make_clock_row(i, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0])
+            )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        assert result.rows[0].total_endgame_games == 10
+
+    def test_net_timeout_rate_computation(self):
+        """20 games, 3 timeout wins, 1 timeout loss -> rate = (3-1)/20*100 = 10.0."""
+        rows = []
+        for i in range(3):
+            rows.append(
+                _make_clock_row(i + 1, "blitz", 180, "timeout", "1-0", "white", [0, 1], [3.0, 10.0])
+            )
+        rows.append(
+            _make_clock_row(4, "blitz", 180, "timeout", "0-1", "white", [0, 1], [3.0, 10.0])
+        )
+        for i in range(16):
+            rows.append(
+                _make_clock_row(
+                    i + 5, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [50.0, 60.0]
+                )
+            )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        assert result.rows[0].net_timeout_rate == pytest.approx(10.0)
+
+    def test_base_time_seconds_none_pct_is_none(self):
+        """Games with base_time_seconds=None -> pct fields are None, seconds fields computed."""
+        rows = self._make_blitz_rows(10, user_clock=50.0, opp_clock=60.0, base_time_seconds=None)
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.user_avg_pct is None
+        assert row.opp_avg_pct is None
+        # Seconds should still be computed
+        assert row.user_avg_seconds == pytest.approx(50.0)
+        assert row.opp_avg_seconds == pytest.approx(60.0)
+
+    def test_both_clocks_none_excluded_from_clock_games(self):
+        """Spans where both user and opp clocks are None -> clock_games=0, averages=None."""
+        rows = []
+        for i in range(10):
+            rows.append(
+                _make_clock_row(
+                    game_id=i + 1,
+                    time_control_bucket="rapid",
+                    base_time_seconds=600,
+                    termination="checkmate",
+                    result="1-0",
+                    user_color="white",
+                    ply_array=[0, 1],
+                    clock_array=[None, None],
+                )
+            )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.clock_games == 0
+        assert row.user_avg_seconds is None
+        assert row.opp_avg_seconds is None
+        assert row.avg_clock_diff_seconds is None
+
+    def test_fixed_row_order(self):
+        """Rows returned in bullet, blitz, rapid, classical order."""
+        rows = []
+        for tc, tc_secs in [("rapid", 600), ("bullet", 60), ("classical", 1800), ("blitz", 180)]:
+            for i in range(10):
+                rows.append(
+                    _make_clock_row(
+                        game_id=len(rows) + 1,
+                        time_control_bucket=tc,
+                        base_time_seconds=tc_secs,
+                        termination="checkmate",
+                        result="1-0",
+                        user_color="white",
+                        ply_array=[0, 1],
+                        clock_array=[20.0, 25.0],
+                    )
+                )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 4
+        assert [r.time_control for r in result.rows] == ["bullet", "blitz", "rapid", "classical"]
+
+    def test_response_totals_include_hidden_rows(self):
+        """total_clock_games and total_endgame_games include all time controls, even hidden rows."""
+        # 5 bullet games (hidden — below threshold) + 10 blitz games (visible)
+        rows = []
+        for i in range(5):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "bullet", 60, "checkmate", "1-0", "white", [0, 1], [5.0, 4.0]
+                )
+            )
+        for i in range(10):
+            rows.append(
+                _make_clock_row(
+                    i + 6, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [50.0, 60.0]
+                )
+            )
+        result = _compute_clock_pressure(rows)
+        # Only blitz row visible
+        assert len(result.rows) == 1
+        # But totals include bullet games too
+        assert result.total_endgame_games == 15
+        assert result.total_clock_games == 15
+
+    def test_none_time_control_bucket_skipped(self):
+        """Rows with time_control_bucket=None are skipped entirely."""
+        rows = []
+        for i in range(10):
+            rows.append(
+                _make_clock_row(i + 1, None, None, "checkmate", "1-0", "white", [0, 1], [5.0, 4.0])
+            )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 0
+        assert result.total_endgame_games == 0
+
+
+class TestComputeTimePressureChart:
+    """Unit tests for _compute_time_pressure_chart (Phase 55).
+
+    Verifies bucket assignment, score averaging, exclusion rules,
+    and the minimum games threshold.
+    """
+
+    def test_no_double_count_when_repo_returns_one_row_per_game(self):
+        """Regression guard for quick-260414-pv4: no double counting at the chart layer.
+
+        query_clock_stats_rows now emits exactly one row per qualifying game under
+        the whole-game rule. With 10 distinct game_ids, total_endgame_games must be
+        10 (not 20, as the previous per-span SQL could produce for games that
+        cycled through two endgame classes). Bucket game_counts must also sum to
+        the number of unique games, not spans.
+        """
+        rows = [
+            _make_clock_row(i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0])
+            for i in range(10)
+        ]
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.total_endgame_games == 10
+        # User bucket sum equals unique games (not spans).
+        assert sum(p.game_count for p in row.user_series) == 10
+        assert sum(p.game_count for p in row.opp_series) == 10
+
+    def test_split_class_game_included_via_whole_game_rule(self):
+        """Chart accepts a row whose ply_array reflects plies pooled across classes.
+
+        Regression guard for quick-260414-pv4: the service does not inspect
+        endgame_class, so a split-class qualifying game (passed through by the repo
+        under the whole-game rule) is counted the same as any other row.
+        """
+        rows = [
+            _make_clock_row(
+                1,
+                "blitz",
+                180,
+                "checkmate",
+                "1-0",
+                "white",
+                [0, 1, 2, 3, 4, 5],
+                [90.0, 60.0, 85.0, 55.0, 80.0, 50.0],
+            ),
+        ]
+        for i in range(2, 11):
+            rows.append(
+                _make_clock_row(i, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0])
+            )
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        assert result.rows[0].total_endgame_games == 10
+
+    def test_single_game_win_user_bucket_populated(self):
+        """Test 1: 10 bullet wins, user 50% time -> user_score=1.0 -> user bucket 5 (50-60%) populated."""
+        # base_time_seconds=60, user_clock=30 -> 50% -> bucket index 5
+        # opp_clock=20 -> 33% -> bucket index 3
+        rows = [
+            _make_clock_row(
+                game_id=i + 1,
+                time_control_bucket="bullet",
+                base_time_seconds=60,
+                termination="checkmate",
+                result="1-0",
+                user_color="white",
+                ply_array=[0, 1],
+                clock_array=[30.0, 20.0],
+            )
+            for i in range(10)
+        ]
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.time_control == "bullet"
+        assert len(row.user_series) == 10
+        assert len(row.opp_series) == 10
+        # User bucket 5 (50-60%) should have score 1.0
+        user_bucket5 = row.user_series[5]
+        assert user_bucket5.bucket_index == 5
+        assert user_bucket5.game_count == 10
+        assert user_bucket5.score == pytest.approx(1.0)
+        # Opp bucket 3 (30-40%) should have score 0.0 (1 - 1.0)
+        opp_bucket3 = row.opp_series[3]
+        assert opp_bucket3.game_count == 10
+        assert opp_bucket3.score == pytest.approx(0.0)
+
+    def test_two_games_same_bucket_scores_averaged(self):
+        """Test 2: Two games, same user bucket -> scores averaged correctly."""
+        # game 1: win -> score=1.0; game 2: loss -> score=0.0; both at 50% -> bucket 5
+        # Add 8 draws at same bucket to reach MIN_GAMES threshold
+        rows = [
+            _make_clock_row(1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]),
+            _make_clock_row(2, "blitz", 180, "checkmate", "0-1", "white", [0, 1], [90.0, 60.0]),
+        ]
+        for i in range(3, 11):
+            rows.append(
+                _make_clock_row(
+                    i, "blitz", 180, "checkmate", "1/2-1/2", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        result = _compute_time_pressure_chart(rows)
+        row = result.rows[0]
+        # All games in user bucket 5 (90/180=50%) -> average of 1.0 + 0.0 + 8*0.5 = 5.0 / 10 = 0.5
+        user_bucket5 = row.user_series[5]
+        assert user_bucket5.game_count == 10
+        assert user_bucket5.score == pytest.approx(0.5)
+
+    def test_game_without_both_clocks_excluded(self):
+        """Test 3: Game without both clocks is excluded from both series."""
+        rows = []
+        # 9 games with clocks (ply=[0,1] clock=[90,60])
+        for i in range(9):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        # This game has only user ply/clock (no opp) -> opp_clock=None -> excluded from series
+        rows.append(_make_clock_row(10, "blitz", 180, "checkmate", "1-0", "white", [0], [90.0]))
+        # Total = 10 games -> row appears; only 9 contribute to series
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.total_endgame_games == 10
+        # Only 9 games with both clocks contribute to series
+        total_user = sum(p.game_count for p in row.user_series)
+        assert total_user == 9
+
+    def test_game_without_base_time_seconds_excluded(self):
+        """Test 4: Game without base_time_seconds is excluded from chart series."""
+        rows = []
+        for i in range(10):
+            # base_time_seconds=None -> excluded from bucket computation (no denominator)
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", None, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        result = _compute_time_pressure_chart(rows)
+        # 10 games with valid TC bucket -> row appears; but no base_time_seconds -> series empty
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        for p in row.user_series:
+            assert p.game_count == 0
+            assert p.score is None
+
+    def test_time_control_below_min_games_excluded(self):
+        """Test 5: Time control with fewer than MIN_GAMES_FOR_CLOCK_STATS=10 games excluded."""
+        rows = [
+            _make_clock_row(
+                i + 1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]
+            )
+            for i in range(9)
+        ]
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 0
+
+    def test_bucket_clamping_100_percent_time(self):
+        """Test 6: 100% time remaining -> clamped to bucket index 9 (not 10)."""
+        rows = [
+            _make_clock_row(
+                i + 1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [600.0, 300.0]
+            )
+            for i in range(10)
+        ]
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # 100% time -> int(100/10)=10, clamped to 9
+        user_bucket9 = row.user_series[9]
+        assert user_bucket9.bucket_index == 9
+        assert user_bucket9.bucket_label == "90-100%"
+        assert user_bucket9.game_count == 10
+
+    def test_empty_clock_rows_returns_empty_response(self):
+        """Test 7: Empty clock_rows produces response with no rows."""
+        result = _compute_time_pressure_chart([])
+        assert result.rows == []
+
+    def test_multiple_time_controls_separate_rows(self):
+        """Test 8: Multiple time controls produce separate rows in correct order."""
+        rows = []
+        for i in range(10):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        for i in range(10):
+            rows.append(
+                _make_clock_row(
+                    i + 11, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]
+                )
+            )
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 2
+        # blitz before rapid in _TIME_CONTROL_ORDER
+        assert result.rows[0].time_control == "blitz"
+        assert result.rows[1].time_control == "rapid"
+
+    def test_user_score_derivation_win_draw_loss(self):
+        """Test 9: win=1.0, draw=0.5, loss=0.0 for user_score; opp gets 1-user_score."""
+        # 10 games: 4 wins, 3 draws, 3 losses — all at same bucket (50%) so we check the average
+        # user_score avg = (4*1.0 + 3*0.5 + 3*0.0) / 10 = 5.5/10 = 0.55
+        # opp_score avg = 1 - 0.55 = 0.45
+        rows = []
+        for i in range(4):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        for i in range(3):
+            rows.append(
+                _make_clock_row(
+                    i + 5, "blitz", 180, "checkmate", "1/2-1/2", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        for i in range(3):
+            rows.append(
+                _make_clock_row(
+                    i + 8, "blitz", 180, "checkmate", "0-1", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # 90/180 = 50% -> bucket index 5
+        user_bucket5 = row.user_series[5]
+        assert user_bucket5.game_count == 10
+        assert user_bucket5.score == pytest.approx(0.55)
+        # opp: 60/180 = 33% -> bucket index 3
+        opp_bucket3 = row.opp_series[3]
+        assert opp_bucket3.game_count == 10
+        assert opp_bucket3.score == pytest.approx(0.45)
+
+    def test_bucket_labels_correct(self):
+        """Bucket labels are formatted as '0-10%', '10-20%', ..., '90-100%'."""
+        buckets: list[list[float]] = [[0.0, 0] for _ in range(10)]
+        series = _build_bucket_series(buckets)
+        assert len(series) == 10
+        assert series[0].bucket_label == "0-10%"
+        assert series[4].bucket_label == "40-50%"
+        assert series[9].bucket_label == "90-100%"
+
+    def test_bucket_score_none_when_no_games(self):
+        """Buckets with no games have score=None (not 0.0)."""
+        buckets: list[list[float]] = [[0.0, 0] for _ in range(10)]
+        series = _build_bucket_series(buckets)
+        for point in series:
+            assert point.score is None
+            assert point.game_count == 0
+
+    def test_total_endgame_games_counts_all_with_valid_tc(self):
+        """total_endgame_games = games with valid time_control_bucket (regardless of clock data)."""
+        rows = []
+        # 5 games with clocks
+        for i in range(5):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        # 5 games without clock data (empty arrays) but valid TC bucket
+        for i in range(5):
+            rows.append(_make_clock_row(i + 6, "blitz", 180, "checkmate", "1-0", "white", [], []))
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.total_endgame_games == 10
+
+
+# ---------------------------------------------------------------------------
+# quick-260414-smt: per-game base_time_seconds denominator + >2x clamp tests
+# ---------------------------------------------------------------------------
+
+
+class TestClockPressurePerGameDenominator:
+    """Tests verifying that _compute_clock_pressure uses per-game base_time_seconds.
+
+    Before quick-260414-smt, the denominator was the first-seen time_control_seconds
+    for the bucket (base + inc*40). This caused a 1800+0 game's 1500s clock to be
+    divided by 600 (=250%), since a 600+0 game happened to be processed first.
+
+    After quick-260414-smt, each game divides by its own base_time_seconds.
+    """
+
+    def test_per_game_denominator_two_rapid_games_different_base(self):
+        """Two rapid games with different base clocks produce user_avg_pct = per-game mean.
+
+        Game 1: base=600, user_clock=300 -> 50%
+        Game 2: base=1800, user_clock=900 -> 50%
+        Expected user_avg_pct = 50% (not 300/1800*100=16.7% as bucket-first-seen would give)
+        """
+        rows = [
+            _make_clock_row(1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]),
+            _make_clock_row(2, "rapid", 1800, "checkmate", "1-0", "white", [0, 1], [900.0, 600.0]),
+        ]
+        # Pad to hit MIN_GAMES_FOR_CLOCK_STATS threshold — 8 more rapid games at 600 base, 50%
+        for i in range(3, 11):
+            rows.append(
+                _make_clock_row(
+                    i, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]
+                )
+            )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # All 10 games: 9 at 50%, 1 at 50% -> avg = 50%
+        assert row.user_avg_pct == pytest.approx(50.0, abs=0.1)
+
+    def test_per_game_denominator_asymmetric_bases(self):
+        """One 600-base game at 300s clock (50%) and one 1800-base game at 1500s clock (83.3%).
+
+        Expected avg_pct = (9*50% + 83.33%) / 10 = 53.33%
+        With old bucket-first-seen at base=600, second game would give 1500/600*100=250% (absurd).
+        """
+        rows = [
+            _make_clock_row(1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]),
+            _make_clock_row(2, "rapid", 1800, "checkmate", "1-0", "white", [0, 1], [1500.0, 600.0]),
+        ]
+        # Pad to threshold
+        for i in range(3, 11):
+            rows.append(
+                _make_clock_row(
+                    i, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]
+                )
+            )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # Game 1: 300/600=50%; Games 3-10: 300/600=50% each; Game 2: 1500/1800=83.33%
+        # avg = (9*50 + 83.33) / 10 = 533.33 / 10 = 53.33%
+        assert row.user_avg_pct == pytest.approx((9 * 50.0 + 1500.0 / 1800.0 * 100) / 10, abs=0.1)
+
+    def test_clamp_excludes_game_with_3x_base_clock(self):
+        """Game where user_clock = 3 * base_time_seconds is excluded from all clock aggregation.
+
+        The game still counts in total_endgame_games (it reached an endgame), but contributes
+        nothing to clock_games, user_avg_pct, user_avg_seconds, or any other clock metric.
+        """
+        # 9 normal games + 1 clamped game (clock = 3x base = bogus reading)
+        rows = []
+        for i in range(9):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        # Game 10: user_clock = 3 * 180 = 540 -> >2x -> clamped, excluded from clock accumulation
+        rows.append(
+            _make_clock_row(10, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [540.0, 60.0])
+        )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # total_endgame_games counts all 10 (game reached endgame)
+        assert row.total_endgame_games == 10
+        # clock_games counts only 9 (clamped game excluded)
+        assert row.clock_games == 9
+        # Pct based only on the 9 normal games (90/180=50%)
+        assert row.user_avg_pct == pytest.approx(50.0, abs=0.1)
+        # Seconds also only from 9 games
+        assert row.user_avg_seconds == pytest.approx(90.0, abs=0.1)
+
+    def test_clamp_excludes_game_with_high_opp_clock(self):
+        """Game where opp_clock > 2x base is also excluded entirely."""
+        rows = []
+        for i in range(9):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]
+                )
+            )
+        # Opp clock = 3 * 600 = 1800 -> >2x -> whole game excluded
+        rows.append(
+            _make_clock_row(10, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 1800.0])
+        )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.total_endgame_games == 10
+        assert row.clock_games == 9
+
+    def test_clamp_does_not_affect_timeout_accounting(self):
+        """Timeout tracking is independent of clock accumulation — clamped games still count.
+
+        The clamp only affects clock_games / pct / seconds aggregation.
+        Timeout wins/losses are tracked per game_id regardless.
+        """
+        # Game 1: timeout win with bogus clock (3x base) -> still counts as timeout win
+        rows = [_make_clock_row(1, "blitz", 180, "timeout", "1-0", "white", [0, 1], [540.0, 60.0])]
+        for i in range(9):
+            rows.append(
+                _make_clock_row(
+                    i + 2, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        result = _compute_clock_pressure(rows)
+        row = result.rows[0]
+        # 1 timeout win / 10 total games = 10% net timeout rate
+        assert row.net_timeout_rate == pytest.approx(10.0)
+        # clock_games = 9 (game 1 clamped from clock accumulation)
+        assert row.clock_games == 9
+
+
+class TestTimePressureChartPerGameDenominator:
+    """Tests verifying _compute_time_pressure_chart uses per-game base_time_seconds + clamp."""
+
+    def test_per_game_denominator_bucket_assignment(self):
+        """Two rapid games with different base clocks bucket independently by their own %.
+
+        Game 1: base=600, user_clock=300 -> 50% -> bucket 5
+        Game 2: base=1800, user_clock=1800 -> 100% -> bucket 9 (clamped to last)
+        Both at rapid, both wins.
+        """
+        rows = [
+            _make_clock_row(1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]),
+            _make_clock_row(2, "rapid", 1800, "checkmate", "1-0", "white", [0, 1], [1800.0, 600.0]),
+        ]
+        # Pad to threshold
+        for i in range(3, 11):
+            rows.append(
+                _make_clock_row(
+                    i, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]
+                )
+            )
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # 9 games at 50% (bucket 5) + 1 game at 100% (bucket 9)
+        assert row.user_series[5].game_count == 9
+        assert row.user_series[9].game_count == 1
+
+    def test_chart_clamp_excludes_bogus_game(self):
+        """Game with user_clock > 2x base is excluded from chart series.
+
+        10 normal games + 1 clamped game. The clamped game counts in total_endgame_games
+        but not in any bucket.
+        """
+        rows = []
+        for i in range(10):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0]
+                )
+            )
+        # Game 11: user_clock = 3 * 180 = 540 -> >2x -> clamped
+        rows.append(
+            _make_clock_row(11, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [540.0, 60.0])
+        )
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        # total_endgame_games = 11 (all games with valid TC bucket)
+        assert row.total_endgame_games == 11
+        # Only 10 games contribute to series (clamped game excluded)
+        assert sum(p.game_count for p in row.user_series) == 10

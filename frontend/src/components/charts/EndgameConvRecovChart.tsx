@@ -7,13 +7,13 @@ import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/charts/EndgamePerformanceSection';
-import { GAUGE_SUCCESS } from '@/lib/theme';
+import { ZONE_SUCCESS } from '@/lib/theme';
 import type { EndgameCategoryStats } from '@/types/endgames';
 import type { ChartConfig } from '@/components/ui/chart';
 
 const chartConfig: ChartConfig = {
-  // Conversion uses the success (green) gauge color from theme
-  conversion_pct: { label: 'Conversion', color: GAUGE_SUCCESS },
+  // Conversion uses the success (green) zone color from theme
+  conversion_pct: { label: 'Conversion', color: ZONE_SUCCESS },
   // Recovery uses a blue that is intentionally distinct from WDL_DRAW (grey-blue) — it represents a positive "saved" outcome
   recovery_pct: { label: 'Recovery', color: 'oklch(0.55 0.18 260)' },
 };
@@ -43,21 +43,26 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
 
   return (
     <div data-testid="conv-recov-chart">
-      <h3 className="text-base font-semibold mb-3">
-        <span className="inline-flex items-center gap-1">
-          Conversion &amp; Recovery by Endgame Type
-          <InfoPopover ariaLabel="Conversion and Recovery info" testId="conv-recov-chart-info" side="top">
-            <div className="space-y-2">
-              <p>
-                <strong>Conversion</strong>: percentage of endgame sequences per type with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at least {PERSISTENCE_MOVES} moves) where you went on to win the game.
-              </p>
-              <p>
-                <strong>Recovery</strong>: percentage of endgame sequences per type with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game.
-              </p>
-            </div>
-          </InfoPopover>
-        </span>
-      </h3>
+      <div className="mb-3">
+        <h3 className="text-base font-semibold">
+          <span className="inline-flex items-center gap-1">
+            Conversion &amp; Recovery by Endgame Type
+            <InfoPopover ariaLabel="Conversion and Recovery info" testId="conv-recov-chart-info" side="top">
+              <div className="space-y-2">
+                <p>
+                  <strong>Conversion</strong>: percentage of endgame sequences per type with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at least {PERSISTENCE_MOVES} moves) where you went on to win the game.
+                </p>
+                <p>
+                  <strong>Recovery</strong>: percentage of endgame sequences per type with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game.
+                </p>
+              </div>
+            </InfoPopover>
+          </span>
+        </h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Which endgame types you convert best and which you defend best.
+        </p>
+      </div>
 
       {chartData.length === 0 ? (
         <p className="text-sm text-muted-foreground py-4">

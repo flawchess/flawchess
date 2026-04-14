@@ -12,7 +12,7 @@
 - ✅ **v1.7 Consolidation, Tooling & Refactoring** — Phases 40-43 (shipped 2026-04-03)
 - ✅ **v1.8 Guest Access** — Phases 44-47 (shipped 2026-04-06)
 - ✅ **v1.9 UI/UX Restructuring** — Phases 49-51 (shipped 2026-04-10) — see [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md)
-- ○ **v1.10 Advanced Analytics** — Phases 48, 52-55 (planned)
+- ○ **v1.10 Advanced Analytics** — Phases 48, 52-58 (planned)
 
 ## Phases
 
@@ -129,13 +129,16 @@ See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
 
 </details>
 
-### v1.10 Advanced Analytics (Phases 48, 52-55)
+### v1.10 Advanced Analytics (Phases 48, 52-58)
 
 - [x] **Phase 48: Conversion & Recovery Persistence Filter** - Reduce noise in endgame conv/recov metrics by requiring material imbalance to persist 4 plies after endgame entry, lower threshold from 300cp to 100cp (completed 2026-04-07)
 - [x] **Phase 52: Endgame Tab Performance** - Collapse timeline fan-out, consolidate endgame endpoints on a single session, and defer desktop filter apply until the filter sidebar closes (completed 2026-04-11)
-- [ ] **Phase 53: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
-- [ ] **Phase 54: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
-- [ ] **Phase 55: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
+- [x] **Phase 53: Endgame Score Gap & Material Breakdown** - Endgame score difference metric + material-stratified WDL table by material balance at endgame entry (completed 2026-04-12)
+- [x] **Phase 54: Time Pressure — Clock Stats Table** - Per-time-control summary table of clock state at endgame entry with avg time, clock diff, and net timeout rate (completed 2026-04-12)
+- [x] **Phase 55: Time Pressure — Performance Chart** - Two-line comparison chart (user vs opponents) showing score by time pressure bucket, tabbed by time control (completed 2026-04-12)
+- [ ] **Phase 56: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
+- [ ] **Phase 57: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
+- [ ] **Phase 58: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
 
 ## Phase Details
 
@@ -173,7 +176,61 @@ Plans:
 **Plans**: ~3 plans (backend consolidation, frontend deferred filters, prod verification)
 **UI hint**: no (no new UI, only behavior change)
 
-### Phase 53: Endgame ELO — Backend + Breakdown Table
+### Phase 53: Endgame Score Gap & Material Breakdown
+**Goal**: Users see an endgame score difference metric (endgame score minus non-endgame score) and a material-stratified WDL table showing performance when ahead, equal, or behind at endgame entry — directly answering "how much worse do I score in endgames?" and "does my material situation at entry predict my result?"
+**Depends on**: Phase 52
+**Requirements**: N/A (new endgame analytics feature, spec in `docs/endgame-analysis-v2.md` sections 1-2)
+**Success Criteria** (what must be TRUE):
+  1. Endgame Score Difference is displayed as a signed number (green �� 0, red < 0) showing the gap between endgame score and non-endgame score, where Score = (Win% + Draw%/2) / 100
+  2. Material-stratified WDL table shows 3 rows (Ahead ≥ +100cp, Equal, Behind ≤ −100cp) with Games, Win%, Draw%, Loss%, Score, and Verdict columns
+  3. Material balance is read from `material_imbalance` at the first ply of each endgame span (same entry logic as conversion/recovery)
+  4. Verdict calibration: score ≥ user's overall score → Good, within −0.05 → OK, below −0.05 → Bad
+  5. Both metrics appear in a new "Endgame Score Gap & Material Breakdown" container on the Stats tab, positioned after existing sections
+  6. All existing sidebar filters apply correctly to the new metrics
+**Plans**: 2 plans
+
+Plans:
+- [x] 53-01-PLAN.md — Backend: schemas, service logic, refactored overview, and tests
+- [x] 53-02-PLAN.md — Frontend: TypeScript types, EndgameScoreGapSection component, wired into Endgames page
+**UI hint**: yes
+
+### Phase 54: Time Pressure — Clock Stats Table
+**Goal**: Users see a per-time-control summary table of clock state when entering endgames, answering "how much time do I have when endgames start?" with columns for avg time remaining (% + absolute seconds), opponent avg time, clock diff, and net timeout rate
+**Depends on**: Phase 53
+**Requirements**: N/A (new endgame analytics feature, spec in `docs/endgame-analysis-v2.md` section 3.1)
+**Success Criteria** (what must be TRUE):
+  1. Table shows one row per time control (bullet/blitz/rapid/classical) with columns: Games, My avg time (% + seconds), Opp avg time (% + seconds), Avg clock diff (seconds), Net timeout rate (%)
+  2. User clock = clock_seconds at first user-ply in endgame span; opponent clock = first opponent-ply; time % = clock_seconds / time_control_seconds * 100
+  3. Net timeout rate = (endgame timeout wins − endgame timeout losses) / total endgame games * 100
+  4. Games without clock_seconds are excluded from time/clock columns; net timeout uses all endgame games; a note shows "Based on X of Y endgame games (Z% have clock data)"
+  5. Time control filter behavior: no filter → all rows (hide < 10 games), one selected → single row, multiple → selected rows only
+  6. Section appears in a new "Time Pressure at Endgame Entry" container after the Score Gap section
+**Plans**: 2 plans
+
+Plans:
+- [x] 54-01-PLAN.md — Backend: schemas, repository query, service logic (clock extraction, pressure computation), unit tests
+- [x] 54-02-PLAN.md — Frontend: TypeScript types, EndgameClockPressureSection component, Endgames page wiring
+**UI hint**: yes
+
+### Phase 55: Time Pressure — Performance Chart
+**Goal**: Users see a two-line comparison chart showing their score vs opponents' score across time pressure buckets at endgame entry, answering "do I crack under time pressure more than my opponents?" — tabbed by time control
+**Depends on**: Phase 54
+**Requirements**: N/A (new endgame analytics feature, spec in `docs/endgame-analysis-v2.md` section 3.2)
+**Success Criteria** (what must be TRUE):
+  1. Line chart with X-axis = time remaining % (10 equal-width buckets: 0-10%, 10-20%, ..., 90-100%), Y-axis = score (0.0 to 1.0)
+  2. Blue "My score" line = AVG(user_score) grouped by user's time bucket; Red "Opponent's score" line = AVG(1 - user_score) grouped by opponent's time bucket
+  3. Chart is tabbed by time control; respects sidebar time control filter (single selection = no tabs, multiple = selected tabs only)
+  4. Individual data points backed by fewer than 10 games are dimmed (reduced opacity); tabs with < 10 total endgame games are hidden
+  5. Games without clock_seconds are excluded
+  6. Section appears in a new "Time Pressure vs Performance" container after the Clock Stats section
+**Plans**: 2 plans
+
+Plans:
+- [x] 55-01-PLAN.md — Backend: Pydantic schemas, _compute_time_pressure_chart service function, wiring into overview, unit tests
+- [x] 55-02-PLAN.md — Frontend: TypeScript types, theme colors, EndgameTimePressureSection component, Endgames page wiring
+**UI hint**: yes
+
+### Phase 56: Endgame ELO — Backend + Breakdown Table
 **Goal**: Users can see their Endgame ELO per platform/time-control combination and understand how their endgame skill compares to their actual rating
 **Depends on**: Phase 48
 **Requirements**: ELO-01, ELO-02, ELO-03, ELO-04, ELO-06
@@ -185,9 +242,9 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 54: Endgame ELO — Timeline Chart
+### Phase 57: Endgame ELO — Timeline Chart
 **Goal**: Users can track their Endgame ELO over time per combination and visually see where it diverges from their actual rating
-**Depends on**: Phase 53
+**Depends on**: Phase 56
 **Requirements**: ELO-05
 **Success Criteria** (what must be TRUE):
   1. User sees a timeline chart with paired lines per (platform, time-control) combination — one bright line for Endgame ELO and one dark line for Actual ELO
@@ -196,7 +253,7 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 55: Opening Risk & Drawishness
+### Phase 58: Opening Risk & Drawishness
 **Goal**: Users can see risk and drawishness signals per candidate move in the move explorer to inform opening selection
 **Depends on**: Phase 47
 **Requirements**: OPN-01, OPN-02
@@ -206,6 +263,40 @@ Plans:
   3. Drawishness display is muted (visually de-emphasized) when the sample size is too small to be reliable
   4. User can read an info popover noting that drawishness is more relevant for higher-rated players
 **Plans**: TBD
+**UI hint**: yes
+
+### Phase 59: Fix Endgame Conv/Even/Recov per-game stats
+**Goal**: The "Endgame Conversion & Recovery" section counts each endgame game exactly once across Conv/Even/Recov buckets so the sum equals the "Games with Endgame" total; obsolete admin-gated gauges + timeline are removed.
+**Depends on**: Phase 53
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+  1. `sum(material_rows.games)` equals `performance.endgame_wdl.total` for any filter combination
+  2. "Results by Endgame Type" table is unchanged (stays sequence-based with the 6-ply threshold)
+  3. Admin-gated "Conversion and Recovery" section (gauges + timeline) is removed along with its backend query, schemas, and frontend components
+  4. Backend unit test asserts the Conv+Even+Recov == Games-with-Endgame invariant
+**Plans**: 3 plans
+Plans:
+- [x] 59-01-PLAN.md — Fix _compute_score_gap_material bucket accounting (NULL->even, group-then-pick dedupe) + add invariant test
+- [x] 59-02-PLAN.md — Delete admin-gated Conversion & Recovery UI (gauges + timeline chart) from frontend
+- [x] 59-03-PLAN.md — Remove orphaned backend schemas/service/repo + sync frontend types
+**UI hint**: yes
+
+### Phase 60: Opponent-based baseline for Endgame Conversion & Recovery
+**Goal**: Replace the global-average baseline in the "Endgame Conversion & Recovery" section with a self-calibrating opponent-based baseline — compute the opponent's conversion/even/recovery rates against the user (with the user's active filters applied) and use those in the comparison bullet charts, matching the philosophy of the existing self-calibrating time-pressure metrics.
+**Depends on**: Phase 59
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+  1. For the three Endgame Conv/Even/Recov bullet charts, the comparison baseline is the opponent's rate against the user (not a global average), computed from the same filtered game set
+  2. Opponent baseline respects the user's active filters (color, time control, platform, rated, opponent strength, recency) via shared `apply_game_filters()` utility
+  3. Baseline is hidden or visually muted when the opponent-winning sample size is below 10 games (matches the WDL-bar mute threshold in the Opening Explorer moves list)
+  4. Scope is limited to the "Endgame Conversion & Recovery" aggregate section — per-endgame-type breakdowns (pawn, rook, etc.) are untouched
+  5. Labels, tooltip/popover copy, and info-icon explanations are updated from "average" framing to peer/opponent framing
+  6. Backend stats test asserts opponent baseline math and sample-size muting behavior
+**Plans**: 2 plans
+
+Plans:
+- [ ] 60-01-PLAN.md — Backend: opponent baseline computation in _compute_score_gap_material, schema additions (opponent_score/opponent_games), drop overall_score, tests
+- [ ] 60-02-PLAN.md — Frontend: TS type mirror, EndgameScoreGapSection rewrite (desktop + mobile, single neutral zone, muted state, peer-framing copy)
 **UI hint**: yes
 
 ## Progress
@@ -265,9 +356,14 @@ Plans:
 | 50. Mobile Layout Restructuring | v1.9 | 2/2 | Complete | 2026-04-10 |
 | 51. Stats Subtab, Homepage & Global Stats | v1.9 | 4/4 | Complete | 2026-04-10 |
 | 52. Endgame Tab Performance | v1.10 | 3/3 | Complete    | 2026-04-11 |
-| 53. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
-| 54. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
-| 55. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
+| 53. Endgame Score Gap & Material Breakdown | v1.10 | 2/2 | Complete    | 2026-04-12 |
+| 54. Time Pressure — Clock Stats Table | v1.10 | 2/2 | Complete    | 2026-04-12 |
+| 55. Time Pressure — Performance Chart | v1.10 | 2/2 | Complete    | 2026-04-12 |
+| 56. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
+| 57. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
+| 58. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
+| 59. Fix Endgame Conv/Even/Recov per-game stats | v1.10 | 3/3 | Complete    | 2026-04-13 |
+| 60. Opponent-based baseline for Endgame Conv/Even/Recov | v1.10 | 0/? | Not started | - |
 
 ## Backlog
 
@@ -297,3 +393,4 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
+

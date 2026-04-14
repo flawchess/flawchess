@@ -105,14 +105,19 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
 
   return (
     <div>
-      <h3 className="text-base font-semibold mb-3">
-        <span className="inline-flex items-center gap-1">
-          Win Rate by Endgame Type
-          <InfoPopover ariaLabel="Win Rate by Endgame Type info" testId="timeline-per-type-info" side="top">
-            Rolling-window win rate over time for each endgame type. Only data points with at least 10 games are shown to avoid noisy early values. Click legend items to toggle individual series.
-          </InfoPopover>
-        </span>
-      </h3>
+      <div className="mb-3">
+        <h3 className="text-base font-semibold">
+          <span className="inline-flex items-center gap-1">
+            Win Rate by Endgame Type
+            <InfoPopover ariaLabel="Win Rate by Endgame Type info" testId="timeline-per-type-info" side="top">
+              Rolling-window win rate over time for each endgame type. Only data points with at least 10 games are shown to avoid noisy early values. Click legend items to toggle individual series.
+            </InfoPopover>
+          </span>
+        </h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Win rate trend over time, per endgame type.
+        </p>
+      </div>
       <ChartContainer
         config={perTypeChartConfig}
         className="w-full h-72"

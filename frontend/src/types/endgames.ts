@@ -58,16 +58,7 @@ export interface EndgameWDLSummary {
 export interface EndgamePerformanceResponse {
   endgame_wdl: EndgameWDLSummary;
   non_endgame_wdl: EndgameWDLSummary;
-  overall_win_rate: number;
   endgame_win_rate: number;
-  aggregate_conversion_pct: number;
-  aggregate_conversion_wins: number;
-  aggregate_conversion_games: number;
-  aggregate_recovery_pct: number;
-  aggregate_recovery_saves: number;
-  aggregate_recovery_games: number;
-  relative_strength: number;
-  endgame_skill: number;
 }
 
 export interface EndgameTimelinePoint {
@@ -92,22 +83,72 @@ export interface EndgameTimelineResponse {
   window: number;
 }
 
-export interface ConvRecovTimelinePoint {
-  date: string;
-  rate: number; // 0.0-1.0 fraction
-  game_count: number; // games in rolling window at this point
-  window_size: number;
+export type MaterialBucket = 'conversion' | 'even' | 'recovery';
+
+export interface MaterialRow {
+  bucket: MaterialBucket;
+  label: string;
+  games: number;
+  win_pct: number;
+  draw_pct: number;
+  loss_pct: number;
+  score: number;
+  // Phase 60: opponent's score in the mirror bucket; null when opponent_games < 10
+  opponent_score: number | null;
+  // Phase 60: opponent's sample size (== swap-bucket game count)
+  opponent_games: number;
 }
 
-export interface ConvRecovTimelineResponse {
-  conversion: ConvRecovTimelinePoint[];
-  recovery: ConvRecovTimelinePoint[];
-  window: number;
+export interface ScoreGapMaterialResponse {
+  endgame_score: number;
+  non_endgame_score: number;
+  score_difference: number;
+  material_rows: MaterialRow[];
+}
+
+export interface ClockStatsRow {
+  time_control: string;       // "bullet" | "blitz" | "rapid" | "classical"
+  label: string;              // "Bullet" | "Blitz" | "Rapid" | "Classical"
+  total_endgame_games: number;
+  clock_games: number;
+  user_avg_pct: number | null;
+  user_avg_seconds: number | null;
+  opp_avg_pct: number | null;
+  opp_avg_seconds: number | null;
+  avg_clock_diff_seconds: number | null;
+  net_timeout_rate: number;
+}
+
+export interface ClockPressureResponse {
+  rows: ClockStatsRow[];
+  total_clock_games: number;
+  total_endgame_games: number;
+}
+
+export interface TimePressureBucketPoint {
+  bucket_index: number;      // 0-9
+  bucket_label: string;      // "0-10%" etc.
+  score: number | null;      // null when game_count == 0
+  game_count: number;
+}
+
+export interface TimePressureChartRow {
+  time_control: string;      // "bullet" | "blitz" | "rapid" | "classical"
+  label: string;             // "Bullet" etc.
+  total_endgame_games: number;
+  user_series: TimePressureBucketPoint[];   // always 10 elements
+  opp_series: TimePressureBucketPoint[];    // always 10 elements
+}
+
+export interface TimePressureChartResponse {
+  rows: TimePressureChartRow[];
 }
 
 export interface EndgameOverviewResponse {
   stats: EndgameStatsResponse;
   performance: EndgamePerformanceResponse;
   timeline: EndgameTimelineResponse;
-  conv_recov_timeline: ConvRecovTimelineResponse;
+  score_gap_material: ScoreGapMaterialResponse;  // Phase 53
+  clock_pressure: ClockPressureResponse;         // Phase 54
+  time_pressure_chart: TimePressureChartResponse; // Phase 55
 }

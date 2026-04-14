@@ -146,7 +146,9 @@ class TestOverviewEmptyUser:
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_overview_empty_user_has_all_sub_payloads(self, auth_headers: dict[str, str]) -> None:
+    async def test_overview_empty_user_has_all_sub_payloads(
+        self, auth_headers: dict[str, str]
+    ) -> None:
         """Response contains all four required top-level keys."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -157,7 +159,6 @@ class TestOverviewEmptyUser:
         assert "stats" in data
         assert "performance" in data
         assert "timeline" in data
-        assert "conv_recov_timeline" in data
 
     @pytest.mark.asyncio
     async def test_overview_empty_user_stats_shape(self, auth_headers: dict[str, str]) -> None:
@@ -191,7 +192,7 @@ class TestOverviewEmptyUser:
 
     @pytest.mark.asyncio
     async def test_overview_default_window_is_50(self, auth_headers: dict[str, str]) -> None:
-        """timeline.window and conv_recov_timeline.window default to 50."""
+        """timeline.window defaults to 50."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -199,7 +200,6 @@ class TestOverviewEmptyUser:
 
         data = resp.json()
         assert data["timeline"]["window"] == 50
-        assert data["conv_recov_timeline"]["window"] == 50
 
 
 class TestOverviewComposesAllPayloads:
@@ -218,12 +218,10 @@ class TestOverviewComposesAllPayloads:
         # Seed classes 1 (rook), 3 (pawn), 4 (queen)
         await _seed_game_with_endgame(db_session, user_id, endgame_class_int=1, played_at=base_dt)
         await _seed_game_with_endgame(
-            db_session, user_id, endgame_class_int=3,
-            played_at=base_dt + datetime.timedelta(days=1)
+            db_session, user_id, endgame_class_int=3, played_at=base_dt + datetime.timedelta(days=1)
         )
         await _seed_game_with_endgame(
-            db_session, user_id, endgame_class_int=4,
-            played_at=base_dt + datetime.timedelta(days=2)
+            db_session, user_id, endgame_class_int=4, played_at=base_dt + datetime.timedelta(days=2)
         )
         await db_session.commit()
 
@@ -250,16 +248,50 @@ class TestOverviewComposesAllPayloads:
 
         assert resp.status_code == 200
         data = resp.json()
-        # All four sub-payloads present
+        # All sub-payloads present
         assert "stats" in data
         assert "performance" in data
         assert "timeline" in data
-        assert "conv_recov_timeline" in data
         # per_type is a dict (may be empty for fresh user with no games, but must be a dict)
         assert isinstance(data["timeline"]["per_type"], dict)
-        # conv_recov_timeline has conversion and recovery lists
-        assert isinstance(data["conv_recov_timeline"]["conversion"], list)
-        assert isinstance(data["conv_recov_timeline"]["recovery"], list)
+
+
+class TestOverviewScoreGapMaterial:
+    """GET /api/endgames/overview response contains score_gap_material field (Phase 53)."""
+
+    @pytest.mark.asyncio
+    async def test_overview_has_score_gap_material_field(
+        self, auth_headers: dict[str, str]
+    ) -> None:
+        """Response JSON has 'score_gap_material' key with correct shape."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/endgames/overview", headers=auth_headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "score_gap_material" in data
+        sgm = data["score_gap_material"]
+        assert "endgame_score" in sgm
+        assert "non_endgame_score" in sgm
+        assert "score_difference" in sgm
+        assert "overall_score" not in sgm  # Phase 60: dropped from response
+        assert "material_rows" in sgm
+        assert isinstance(sgm["material_rows"], list)
+        assert len(sgm["material_rows"]) == 3
+        buckets = [row["bucket"] for row in sgm["material_rows"]]
+        assert buckets == ["conversion", "even", "recovery"]
+        # Phase 60: each row carries opponent baseline fields
+        for row in sgm["material_rows"]:
+            assert "opponent_score" in row
+            assert "opponent_games" in row
+            assert isinstance(row["opponent_games"], int)
+            assert row["opponent_games"] >= 0
+            assert row["opponent_score"] is None or (
+                isinstance(row["opponent_score"], (int, float))
+                and 0.0 <= row["opponent_score"] <= 1.0
+            )
 
 
 class TestLegacyEndpointsRemoved:
@@ -333,9 +365,7 @@ class TestGamesEndpointStillWorks:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get(
-                "/api/endgames/games", params={"endgame_class": "rook"}
-            )
+            resp = await client.get("/api/endgames/games", params={"endgame_class": "rook"})
 
         assert resp.status_code == 401
 
@@ -354,4 +384,3 @@ class TestGamesEndpointStillWorks:
         assert resp.status_code == 200
         data = resp.json()
         assert data["timeline"]["window"] == 25
-        assert data["conv_recov_timeline"]["window"] == 25

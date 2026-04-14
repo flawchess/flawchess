@@ -3,24 +3,24 @@ gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Advanced Analytics
 status: executing
-last_updated: "2026-04-11T08:17:32.708Z"
-last_activity: 2026-04-11
+last_updated: "2026-04-14T19:50:00.000Z"
+last_activity: 2026-04-14 -- Completed quick task 260414-u88
 progress:
-  total_phases: 8
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_phases: 13
+  completed_phases: 5
+  total_plans: 14
+  completed_plans: 12
+  percent: 86
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.5
-Plan: Not started
-Status: Executing Phase 52
-Last activity: 2026-04-11
+Phase: 60 (Opponent-based baseline for Endgame Conversion & Recovery) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 60
+Last activity: 2026-04-13 -- Phase 60 execution started
 
 Progress: [██████████] 100% (4/4 v1.9 phases complete)
 
@@ -39,6 +39,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 - Deployment: Docker Compose on Hetzner CX32 (4 vCPUs, 7.6 GB RAM + 2 GB swap)
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 59 added: Fix Endgame Conv/Even/Recov per-game stats so Conv+Even+Recov game counts sum to Games-with-Endgame total; drop obsolete admin-gated gauges + timeline
 
 ### Decisions
 
@@ -72,9 +76,17 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 | 260411-ni2 | Global Reset (except color), uniform modified-dot via FILTER_DOT_FIELDS, secondary button, Openings mobile drawer cleanup | 2026-04-11 | 595bd3b | [260411-ni2-global-reset-filters-matchside-exempt-fr](./quick/260411-ni2-global-reset-filters-matchside-exempt-fr/) |
 | 260411-p1c | Prototype Option A mobile layout for Opening Explorer (settings column + slim control row + underline tabs) | 2026-04-11 | b5b0c31 | [260411-p1c-prototype-option-a-mobile-layout-for-ope](./quick/260411-p1c-prototype-option-a-mobile-layout-for-ope/) |
 | 260412-fis | Implement last_login defaults and last_activity tracking | 2026-04-12 | 2beabd3 | [260412-fis-implement-last-login-defaults-and-last-a](./quick/260412-fis-implement-last-login-defaults-and-last-a/) |
+| 260413-pwv | Rename material buckets ahead/equal/behind → conversion/even/recovery + apply 4-ply preservation | 2026-04-13 | 9f24d5c | [260413-pwv-implement-conversion-even-recovery-label](./quick/260413-pwv-implement-conversion-even-recovery-label/) |
+| 260413-qg0 | Apply Openings Stats responsive layout (desktop row / mobile stacked) to endgame WDL sections | 2026-04-13 | b399ac9 | [260413-qg0-apply-same-desktop-mobile-layout-from-op](./quick/260413-qg0-apply-same-desktop-mobile-layout-from-op/) |
+| 260413-qq0 | Move Endgame Score Difference into Games with vs without Endgame as bullet chart and rename labels | 2026-04-13 | e4e2768 | [260413-qq0-move-endgame-score-difference-into-games](./quick/260413-qq0-move-endgame-score-difference-into-games/) |
+| 260414-83b | Fix endgame tab code review: dedup timeline subquery, validate _INT_TO_CLASS lookup, replace row-index brittleness | 2026-04-14 | d4f975c | [260414-83b-fix-endgame-tab-code-review-dedup-timeli](./quick/260414-83b-fix-endgame-tab-code-review-dedup-timeli/) |
+| 260414-ae4 | Apply 6-ply (3-move) endgame threshold uniformly across endgames tab; update info popovers and concepts section | 2026-04-14 | 0b50fe1 | [260414-ae4-for-all-analyses-on-the-endgames-tab-con](./quick/260414-ae4-for-all-analyses-on-the-endgames-tab-con/) |
+| 260414-pv4 | Fix time pressure queries to use whole-game endgame rule (not per-class spans) + update endgame concepts docs | 2026-04-14 | f5dfee4 | [260414-pv4-fix-time-pressure-queries-to-use-whole-g](./quick/260414-pv4-fix-time-pressure-queries-to-use-whole-g/) |
+| 260414-smt | Split time_control into base_time_seconds + increment_seconds; fix time pressure denominator to per-game base time; switch primary metric to % of base time with >2x clamp | 2026-04-14 | bc8b372 | [260414-smt-split-time-control-into-base-time-second](./quick/260414-smt-split-time-control-into-base-time-second/) |
+| 260414-u88 | Aggregate time controls in Time Pressure vs Performance chart (drop tabs), relabel axes, clamp y-axis to 0.2–0.8 | 2026-04-14 | 08d86b1 | [260414-u88-aggregate-time-controls-in-time-pressure](./quick/260414-u88-aggregate-time-controls-in-time-pressure/) |
 
 ---
-Last activity: 2026-04-12 - Completed quick task 260412-fis: Implement last_login defaults and last_activity tracking
+Last activity: 2026-04-14 - Completed quick task 260414-u88: Aggregate time controls in Time Pressure vs Performance chart (drop tabs), relabel axes, clamp y-axis
 | 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
 | 2026-04-10 | ship | Phase 51 shipped — PR #42 merged into main | done |
 | 2026-04-11 | fast | Preserve Openings board position across main tab navigation | ✅ |
