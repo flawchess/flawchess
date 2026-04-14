@@ -29,7 +29,6 @@ from app.models.game_position import GamePosition
 from app.repositories.endgame_repository import (
     ENDGAME_PIECE_COUNT_THRESHOLD,
     ENDGAME_PLY_THRESHOLD,
-    PERSISTENCE_PLIES,
     query_endgame_bucket_rows,
     query_endgame_entry_rows,
     query_endgame_games,

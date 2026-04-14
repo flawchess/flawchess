@@ -1164,7 +1164,9 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
     def test_invariant_multi_span_null_then_qualifying(self):
         """Decision 1+2: first-seen NULL row must not drop the game if another span qualifies."""
         entry_rows = [
-            _FakeRow(1, 1, "1-0", "white", None, None),  # NULL first (would have been dropped pre-Phase 59)
+            _FakeRow(
+                1, 1, "1-0", "white", None, None
+            ),  # NULL first (would have been dropped pre-Phase 59)
             _FakeRow(1, 3, "1-0", "white", 150, 150),  # qualifying conversion span
         ]
         endgame_wdl = self._make_wdl(1, 0, 0)
@@ -1401,6 +1403,10 @@ def _make_clock_row(
 
     Shape: (game_id, time_control_bucket, time_control_seconds, termination,
             result, user_color, ply_array, clock_array)
+
+    Since quick-260414-pv4, query_clock_stats_rows emits one row per qualifying
+    game (whole-game 6-ply rule), so test rows should use distinct game_ids
+    unless the test is specifically guarding against duplicate handling.
     """
     return (
         game_id,
@@ -1545,14 +1551,19 @@ class TestComputeClockPressure:
         result = _compute_clock_pressure(rows)
         assert len(result.rows) == 0
 
-    def test_net_timeout_rate_deduplication(self):
-        """Same game_id in two spans (different endgame_class), both timeout wins -> counted once."""
-        # game_id=1 appears twice (two endgame spans), timeout win
-        rows = [
-            _make_clock_row(1, "blitz", 180, "timeout", "1-0", "white", [0, 1], [5.0, 3.0]),
-            _make_clock_row(1, "blitz", 180, "timeout", "1-0", "white", [0, 1], [5.0, 3.0]),
-        ]
-        # Add 9 more games (total 10 unique) so the row passes the threshold
+    def test_net_timeout_rate_single_row_per_game(self):
+        """One row per game (post-pv4 SQL contract) -> timeout rate computed over unique games.
+
+        Under the whole-game rule (_any_endgame_ply_subquery), query_clock_stats_rows
+        emits one row per qualifying game. 10 rows -> 10 unique games. One timeout win
+        gives net_timeout_rate = 1/10 * 100 = 10.0.
+
+        Regression guard (quick-260414-pv4): even if a future change accidentally
+        reintroduced duplicate game_ids, the set-based dedup in _compute_clock_pressure
+        still prevents double-counting.
+        """
+        # 10 distinct games; game_id=1 is the single timeout win.
+        rows = [_make_clock_row(1, "blitz", 180, "timeout", "1-0", "white", [0, 1], [5.0, 3.0])]
         for i in range(2, 11):
             rows.append(
                 _make_clock_row(i, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [5.0, 3.0])
@@ -1560,9 +1571,39 @@ class TestComputeClockPressure:
         result = _compute_clock_pressure(rows)
         assert len(result.rows) == 1
         row = result.rows[0]
-        # 10 unique games, 1 timeout win, 0 timeout losses -> rate = 1/10 * 100 = 10.0
         assert row.total_endgame_games == 10
         assert row.net_timeout_rate == pytest.approx(10.0)
+
+    def test_split_class_game_included_via_whole_game_rule(self):
+        """Service trusts repo contract: a row representing a split-class game is accepted.
+
+        Regression guard for quick-260414-pv4: under the whole-game rule the repo
+        passes through games whose endgame plies were split across multiple classes
+        (e.g. 3 in KP_KP + 3 in KR_KR). The service must treat such a row exactly
+        like any other row — no per-class logic remains at the service layer.
+        """
+        # Game 1 is the split-class game; its ply_array represents plies pooled across
+        # multiple endgame classes. The service does not know or care about class.
+        rows = [
+            _make_clock_row(
+                1,
+                "blitz",
+                180,
+                "checkmate",
+                "1-0",
+                "white",
+                [0, 1, 2, 3, 4, 5],
+                [90.0, 60.0, 85.0, 55.0, 80.0, 50.0],
+            ),
+        ]
+        # Filler rows to clear MIN_GAMES_FOR_CLOCK_STATS
+        for i in range(2, 11):
+            rows.append(
+                _make_clock_row(i, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0])
+            )
+        result = _compute_clock_pressure(rows)
+        assert len(result.rows) == 1
+        assert result.rows[0].total_endgame_games == 10
 
     def test_net_timeout_rate_computation(self):
         """20 games, 3 timeout wins, 1 timeout loss -> rate = (3-1)/20*100 = 10.0."""
@@ -1682,6 +1723,54 @@ class TestComputeTimePressureChart:
     Verifies bucket assignment, score averaging, exclusion rules,
     and the minimum games threshold.
     """
+
+    def test_no_double_count_when_repo_returns_one_row_per_game(self):
+        """Regression guard for quick-260414-pv4: no double counting at the chart layer.
+
+        query_clock_stats_rows now emits exactly one row per qualifying game under
+        the whole-game rule. With 10 distinct game_ids, total_endgame_games must be
+        10 (not 20, as the previous per-span SQL could produce for games that
+        cycled through two endgame classes). Bucket game_counts must also sum to
+        the number of unique games, not spans.
+        """
+        rows = [
+            _make_clock_row(i + 1, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0])
+            for i in range(10)
+        ]
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.total_endgame_games == 10
+        # User bucket sum equals unique games (not spans).
+        assert sum(p.game_count for p in row.user_series) == 10
+        assert sum(p.game_count for p in row.opp_series) == 10
+
+    def test_split_class_game_included_via_whole_game_rule(self):
+        """Chart accepts a row whose ply_array reflects plies pooled across classes.
+
+        Regression guard for quick-260414-pv4: the service does not inspect
+        endgame_class, so a split-class qualifying game (passed through by the repo
+        under the whole-game rule) is counted the same as any other row.
+        """
+        rows = [
+            _make_clock_row(
+                1,
+                "blitz",
+                180,
+                "checkmate",
+                "1-0",
+                "white",
+                [0, 1, 2, 3, 4, 5],
+                [90.0, 60.0, 85.0, 55.0, 80.0, 50.0],
+            ),
+        ]
+        for i in range(2, 11):
+            rows.append(
+                _make_clock_row(i, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0])
+            )
+        result = _compute_time_pressure_chart(rows)
+        assert len(result.rows) == 1
+        assert result.rows[0].total_endgame_games == 10
 
     def test_single_game_win_user_bucket_populated(self):
         """Test 1: 10 bullet wins, user 50% time -> user_score=1.0 -> user bucket 5 (50-60%) populated."""

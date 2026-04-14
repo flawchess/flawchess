@@ -213,9 +213,7 @@ def _aggregate_endgame_stats(
                 {"class_int": endgame_class_int},
             )
             sentry_sdk.set_tag("source", "endgame_aggregate")
-            sentry_sdk.capture_exception(
-                ValueError("Unknown endgame_class integer from DB")
-            )
+            sentry_sdk.capture_exception(ValueError("Unknown endgame_class integer from DB"))
             continue
         outcome = derive_user_result(result, user_color)
 
@@ -738,30 +736,17 @@ def _compute_clock_pressure(
     (game_id, time_control_bucket, time_control_seconds, termination, result,
      user_color, ply_array, clock_array)
 
-    query_clock_stats_rows returns one row per (game_id, endgame_class) span
-    meeting the 6-ply threshold, so a game that cycles through multiple
-    endgame classes produces multiple rows. For this section we want one
-    data point per *endgame* (i.e. per game that reached any endgame), using
-    the earliest qualifying span as the single entry point.
+    query_clock_stats_rows returns one row per qualifying game (whole-game 6-ply
+    rule via _any_endgame_ply_subquery, per quick-260414-pv4), so no Python-side
+    deduplication is needed — rows can be iterated directly.
 
     Returns ClockPressureResponse with:
     - rows: one ClockStatsRow per time control with >= MIN_GAMES_FOR_CLOCK_STATS games
     - total_clock_games: total endgame games with both entry clocks present
     - total_endgame_games: total distinct endgame games (all time controls, pre-filter)
     """
-    # Collapse multi-span rows down to one per game: keep the span that
-    # starts earliest (smallest ply_array[0]) so we measure time pressure at
-    # the moment the game first reached an endgame, not at each class change.
-    earliest_by_game: dict[int, Row[Any] | tuple[Any, ...]] = {}
-    for row in clock_rows:
-        game_id_raw: int = row[0]
-        ply_array_raw: list[int] = row[6]
-        if not ply_array_raw:
-            continue
-        entry_ply = ply_array_raw[0]
-        existing = earliest_by_game.get(game_id_raw)
-        if existing is None or entry_ply < existing[6][0]:
-            earliest_by_game[game_id_raw] = row
+    # Previously collapsed multi-span rows to the earliest span per game; SQL now
+    # delivers one row per game (whole-game rule, quick-260414-pv4), so we iterate directly.
 
     # Accumulators per time control bucket.
     # Using plain dicts to avoid ty complaints with mutable defaults in TypedDict.
@@ -776,7 +761,7 @@ def _compute_clock_pressure(
     # time_control_seconds per bucket (consistent within bucket; store first seen)
     tc_seconds: dict[str, int | None] = {}
 
-    for row in earliest_by_game.values():
+    for row in clock_rows:
         game_id: int = row[0]
         time_control_bucket: str | None = row[1]
         time_control_seconds: int | None = row[2]
@@ -791,6 +776,8 @@ def _compute_clock_pressure(
             continue
 
         tc = time_control_bucket
+        # Set-based dedup retained as a defensive guard; under the post-pv4 SQL
+        # contract, game_ids are already unique (one row per game).
         tc_game_ids[tc].add(game_id)
 
         # Store time_control_seconds for pct computation (first seen per bucket)
@@ -912,6 +899,11 @@ def _compute_time_pressure_chart(
     Reuses the same clock_rows already fetched by query_clock_stats_rows in
     get_endgame_overview -- no additional DB query needed.
 
+    query_clock_stats_rows returns one row per qualifying game (whole-game 6-ply
+    rule via _any_endgame_ply_subquery, per quick-260414-pv4), so iterating rows
+    directly produces one data point per game with no risk of double-counting
+    games that cycle through multiple endgame classes.
+
     For each game with both clocks and valid time_control_seconds:
     - Bucket user's time% -> accumulate user_score into user_series
     - Bucket opp's time% -> accumulate (1 - user_score) into opp_series
@@ -930,10 +922,10 @@ def _compute_time_pressure_chart(
     tc_game_count: dict[str, int] = defaultdict(int)
 
     for row in clock_rows:
-        game_id: int = row[0]
+        # game_id (row[0]) and termination (row[3]) are unused in this consumer —
+        # _compute_clock_pressure handles the timeout accounting.
         time_control_bucket: str | None = row[1]
         time_control_seconds: int | None = row[2]
-        termination: str | None = row[3]
         result: str = row[4]
         user_color: str = row[5]
         ply_array: list[int] = row[6]
@@ -944,6 +936,8 @@ def _compute_time_pressure_chart(
             continue
 
         tc = time_control_bucket
+        # One row per game after quick-260414-pv4 rewrite of query_clock_stats_rows, so
+        # this increment cannot double-count games with multiple endgame-class spans.
         tc_game_count[tc] += 1
 
         # Extract entry clocks via ply parity — same as _compute_clock_pressure
