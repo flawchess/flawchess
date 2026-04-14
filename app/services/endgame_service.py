@@ -738,11 +738,31 @@ def _compute_clock_pressure(
     (game_id, time_control_bucket, time_control_seconds, termination, result,
      user_color, ply_array, clock_array)
 
+    query_clock_stats_rows returns one row per (game_id, endgame_class) span
+    meeting the 6-ply threshold, so a game that cycles through multiple
+    endgame classes produces multiple rows. For this section we want one
+    data point per *endgame* (i.e. per game that reached any endgame), using
+    the earliest qualifying span as the single entry point.
+
     Returns ClockPressureResponse with:
     - rows: one ClockStatsRow per time control with >= MIN_GAMES_FOR_CLOCK_STATS games
-    - total_clock_games: total games with both clocks present (all time controls, pre-filter)
+    - total_clock_games: total endgame games with both entry clocks present
     - total_endgame_games: total distinct endgame games (all time controls, pre-filter)
     """
+    # Collapse multi-span rows down to one per game: keep the span that
+    # starts earliest (smallest ply_array[0]) so we measure time pressure at
+    # the moment the game first reached an endgame, not at each class change.
+    earliest_by_game: dict[int, Row[Any] | tuple[Any, ...]] = {}
+    for row in clock_rows:
+        game_id_raw: int = row[0]
+        ply_array_raw: list[int] = row[6]
+        if not ply_array_raw:
+            continue
+        entry_ply = ply_array_raw[0]
+        existing = earliest_by_game.get(game_id_raw)
+        if existing is None or entry_ply < existing[6][0]:
+            earliest_by_game[game_id_raw] = row
+
     # Accumulators per time control bucket.
     # Using plain dicts to avoid ty complaints with mutable defaults in TypedDict.
     tc_game_ids: dict[str, set[int]] = defaultdict(set)
@@ -756,7 +776,7 @@ def _compute_clock_pressure(
     # time_control_seconds per bucket (consistent within bucket; store first seen)
     tc_seconds: dict[str, int | None] = {}
 
-    for row in clock_rows:
+    for row in earliest_by_game.values():
         game_id: int = row[0]
         time_control_bucket: str | None = row[1]
         time_control_seconds: int | None = row[2]

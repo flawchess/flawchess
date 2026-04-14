@@ -36,11 +36,6 @@ function formatNetTimeoutRate(rate: number): string {
 }
 
 export function EndgameClockPressureSection({ data }: EndgameClockPressureSectionProps) {
-  const coveragePct =
-    data.total_endgame_games > 0
-      ? Math.round((data.total_clock_games / data.total_endgame_games) * 100)
-      : 0;
-
   return (
     <div className="space-y-4" data-testid="clock-pressure-section">
       {/* Section header */}
@@ -130,9 +125,7 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
 
       {/* Coverage note */}
       <p className="text-xs text-muted-foreground mt-2">
-        Based on {data.total_clock_games.toLocaleString()} of{' '}
-        {data.total_endgame_games.toLocaleString()} endgame games (
-        {coveragePct}% have clock data).
+        Games without time control are excluded.
       </p>
     </div>
   );
