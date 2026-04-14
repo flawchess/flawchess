@@ -5,7 +5,7 @@
  * Answers: "Do I crack under time pressure more than my opponents?"
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -19,9 +19,32 @@ const chartConfig = {
 
 const Y_AXIS_DOMAIN: [number, number] = [0.2, 0.8];
 const Y_AXIS_TICKS = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+const X_AXIS_DOMAIN: [number, number] = [0, 100];
+const X_AXIS_TICKS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+const BUCKET_WIDTH = 10;
+const MOBILE_BREAKPOINT_PX = 768;
+
+// Axis labels reuse the tick-label color. `--muted-foreground` is defined as a full
+// oklch() value (not HSL numbers), so it must be used as `var(...)` directly — wrapping
+// it in `hsl()` breaks the fill and falls back to black.
+const AXIS_LABEL_FILL = 'var(--muted-foreground)';
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
+    const update = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isMobile;
+}
 
 interface ChartDataPoint {
-  bucket_label: string;
+  x: number; // bucket center on the 0-100 axis (5, 15, ..., 95)
+  bucket_label: string; // "0-10%" ... "90-100%" for tooltip
   my_score: number | undefined;
   opp_score: number | undefined;
   my_game_count: number;
@@ -66,7 +89,11 @@ function buildChartData(data: TimePressureChartResponse): ChartDataPoint[] {
   const oppAgg = aggregateSeries(data.rows.map((r) => r.opp_series));
   return userAgg.map((userPt, i) => {
     const oppPt = oppAgg[i];
+    // Place each data point at the center of its bucket on the 0-100 axis, so
+    // ticks (0%, 10%, ..., 100%) sit at bucket boundaries and points fall between.
+    const x = i * BUCKET_WIDTH + BUCKET_WIDTH / 2;
     return {
+      x,
       bucket_label: userPt.bucket_label,
       my_score: userPt.score,
       opp_score: oppPt?.score,
@@ -82,6 +109,7 @@ interface EndgameTimePressureSectionProps {
 
 export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionProps) {
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
+  const isMobile = useIsMobile();
 
   const handleLegendClick = useCallback((dataKey: string) => {
     setHiddenKeys((prev) => {
@@ -122,34 +150,54 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
         </p>
       </div>
       <ChartContainer config={chartConfig} className="w-full h-72" data-testid="time-pressure-chart">
-        <LineChart data={chartData} margin={{ top: 5, right: 10, left: 10, bottom: 20 }}>
-          <CartesianGrid vertical={false} />
+        <LineChart
+          data={chartData}
+          margin={{
+            top: 5,
+            right: 10,
+            left: isMobile ? 0 : 10,
+            bottom: 40,
+          }}
+        >
+          <CartesianGrid vertical={false} horizontal={true} syncWithTicks={true} />
           <XAxis
-            dataKey="bucket_label"
+            dataKey="x"
+            type="number"
+            domain={X_AXIS_DOMAIN}
+            ticks={X_AXIS_TICKS}
+            tickFormatter={(v: number) => `${v}%`}
             label={{
               value: '% of base time remaining at endgame entry',
               position: 'insideBottom',
-              offset: -10,
-              style: { fontSize: 12, fill: 'hsl(var(--muted-foreground))' },
+              offset: -20,
+              style: { fontSize: 12, fill: AXIS_LABEL_FILL },
             }}
           />
           <YAxis
             domain={Y_AXIS_DOMAIN}
             ticks={Y_AXIS_TICKS}
             tickFormatter={(v: number) => v.toFixed(1)}
-            label={{
-              value: 'Avg Score',
-              angle: -90,
-              position: 'insideLeft',
-              style: { fontSize: 12, fill: 'hsl(var(--muted-foreground))', textAnchor: 'middle' },
-            }}
+            width={isMobile ? 32 : undefined}
+            label={
+              isMobile
+                ? undefined
+                : {
+                    value: 'Avg Score',
+                    angle: -90,
+                    position: 'insideLeft',
+                    style: { fontSize: 12, fill: AXIS_LABEL_FILL, textAnchor: 'middle' },
+                  }
+            }
           />
           <ChartTooltip
-            content={({ active, payload, label }) => {
+            content={({ active, payload }) => {
               if (!active || !payload?.length) return null;
+              // Use the bucket_label from the row payload rather than Recharts' numeric `label`,
+              // since the x-axis is now numeric (0-100) but we still want "0-10%"..."90-100%" in the tooltip.
+              const bucketLabel = (payload[0]?.payload as ChartDataPoint | undefined)?.bucket_label ?? '';
               return (
                 <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
-                  <div className="font-medium">{label as string}</div>
+                  <div className="font-medium">{bucketLabel}</div>
                   {payload
                     .filter((item) => item.value !== undefined)
                     .map((item) => {
