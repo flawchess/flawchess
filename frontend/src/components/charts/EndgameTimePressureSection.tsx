@@ -24,11 +24,6 @@ const X_AXIS_TICKS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 const BUCKET_WIDTH = 10;
 const MOBILE_BREAKPOINT_PX = 768;
 
-// Axis labels reuse the tick-label color. `--muted-foreground` is defined as a full
-// oklch() value (not HSL numbers), so it must be used as `var(...)` directly — wrapping
-// it in `hsl()` breaks the fill and falls back to black.
-const AXIS_LABEL_FILL = 'var(--muted-foreground)';
-
 function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
@@ -151,48 +146,38 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
           Can you handle time pressure better or worse than your opponents?
         </p>
       </div>
-      <ChartContainer config={chartConfig} className="w-full h-72" data-testid="time-pressure-chart">
-        <LineChart
-          data={chartData}
-          margin={{
-            top: 5,
-            right: 10,
-            left: isMobile ? 0 : 10,
-            bottom: 40,
-          }}
-        >
-          <CartesianGrid vertical={false} horizontal={true} />
-          <XAxis
-            dataKey="bucket_center"
-            type="number"
-            scale="linear"
-            domain={X_AXIS_DOMAIN}
-            ticks={X_AXIS_TICKS}
-            tickFormatter={(v: number) => `${v}%`}
-            allowDecimals={false}
-            label={{
-              value: '% of base time remaining at endgame entry',
-              position: 'insideBottom',
-              offset: -20,
-              style: { fontSize: 12, fill: AXIS_LABEL_FILL },
-            }}
-          />
-          <YAxis
-            domain={Y_AXIS_DOMAIN}
-            ticks={Y_AXIS_TICKS}
-            tickFormatter={(v: number) => v.toFixed(1)}
-            width={isMobile ? 32 : undefined}
-            label={
-              isMobile
-                ? undefined
-                : {
-                    value: 'Avg Score',
-                    angle: -90,
-                    position: 'insideLeft',
-                    style: { fontSize: 12, fill: AXIS_LABEL_FILL, textAnchor: 'middle' },
-                  }
-            }
-          />
+      <div className={isMobile ? '' : 'flex items-stretch gap-2'}>
+        {/* Desktop: vertical Y-axis label rendered as plain HTML (SVG `label` with
+            position='insideLeft' + angle produced NaN plot-area rects and chart width 0). */}
+        {!isMobile && (
+          <div
+            className="flex items-center text-xs text-muted-foreground shrink-0"
+            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+          >
+            Avg Score
+          </div>
+        )}
+        <ChartContainer config={chartConfig} className="w-full h-72" data-testid="time-pressure-chart">
+          <LineChart
+            data={chartData}
+            margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
+          >
+            <CartesianGrid vertical={false} horizontal={true} />
+            <XAxis
+              dataKey="bucket_center"
+              type="number"
+              scale="linear"
+              domain={X_AXIS_DOMAIN}
+              ticks={X_AXIS_TICKS}
+              tickFormatter={(v: number) => `${v}%`}
+              allowDecimals={false}
+            />
+            <YAxis
+              domain={Y_AXIS_DOMAIN}
+              ticks={Y_AXIS_TICKS}
+              tickFormatter={(v: number) => v.toFixed(1)}
+              width={isMobile ? 32 : 40}
+            />
           <ChartTooltip
             content={({ active, payload }) => {
               if (!active || !payload?.length) return null;
@@ -241,7 +226,10 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
             hide={hiddenKeys.has('my_score')}
             dot={(props: { cx?: number; cy?: number; payload?: Record<string, unknown> }) => {
               const { cx, cy, payload } = props;
-              if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) return <></>;
+              if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) {
+                // Return a group with the key Recharts expects on every child of Line.
+                return <g key={`nodot-${String(payload?.bucket_label ?? cx)}`} />;
+              }
               const gameCount = (payload.my_game_count as number) ?? 0;
               const isDim = gameCount < MIN_GAMES_FOR_RELIABLE_STATS;
               return (
@@ -265,7 +253,10 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
             hide={hiddenKeys.has('opp_score')}
             dot={(props: { cx?: number; cy?: number; payload?: Record<string, unknown> }) => {
               const { cx, cy, payload } = props;
-              if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) return <></>;
+              if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) {
+                // Return a group with the key Recharts expects on every child of Line.
+                return <g key={`nodot-${String(payload?.bucket_label ?? cx)}`} />;
+              }
               const gameCount = (payload.opp_game_count as number) ?? 0;
               const isDim = gameCount < MIN_GAMES_FOR_RELIABLE_STATS;
               return (
@@ -280,8 +271,12 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
               );
             }}
           />
-        </LineChart>
-      </ChartContainer>
+          </LineChart>
+        </ChartContainer>
+      </div>
+      <p className="text-xs text-muted-foreground text-center mt-2">
+        % of base time remaining at endgame entry
+      </p>
     </div>
   );
 }

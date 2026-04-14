@@ -59,7 +59,7 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          How much clock (as % of base time) you have entering endgames, and how often you flag vs your opponents.
+          How much clock (as % of base time) you have entering endgames, and how often you flag compared to your opponents.
         </p>
       </div>
 
