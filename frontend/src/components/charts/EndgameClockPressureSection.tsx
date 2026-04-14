@@ -81,80 +81,134 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
         </p>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table
-          className="w-full min-w-[480px] text-sm"
-          data-testid="clock-pressure-table"
-        >
-          <thead>
-            <tr className="text-left text-xs text-muted-foreground border-b border-border">
-              <th className="py-1 pr-3 font-medium">Time Control</th>
-              <th className="py-1 px-2 font-medium text-right">Games</th>
-              <th className="py-1 px-2 font-medium text-right">My avg time</th>
-              <th className="py-1 px-2 font-medium text-right">Opp avg time</th>
-              <th className="py-1 px-2 font-medium text-right">Avg clock diff</th>
-              <th className="py-1 pl-2 font-medium text-right">Net timeout rate</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.rows.map((row) => {
-              const diff = row.avg_clock_diff_seconds;
-              const pctDiff =
-                row.user_avg_pct !== null && row.opp_avg_pct !== null
-                  ? row.user_avg_pct - row.opp_avg_pct
-                  : null;
-              const diffColor =
-                pctDiff === null
-                  ? undefined
-                  : pctDiff > NEUTRAL_PCT_THRESHOLD
-                    ? ZONE_SUCCESS
-                    : pctDiff < -NEUTRAL_PCT_THRESHOLD
-                      ? ZONE_DANGER
-                      : ZONE_NEUTRAL;
+      {/* Per-row computed display values (shared between desktop table and mobile cards) */}
+      {(() => {
+        const computedRows = data.rows.map((row) => {
+          const pctDiff =
+            row.user_avg_pct !== null && row.opp_avg_pct !== null
+              ? row.user_avg_pct - row.opp_avg_pct
+              : null;
+          const diffColor =
+            pctDiff === null
+              ? undefined
+              : pctDiff > NEUTRAL_PCT_THRESHOLD
+                ? ZONE_SUCCESS
+                : pctDiff < -NEUTRAL_PCT_THRESHOLD
+                  ? ZONE_DANGER
+                  : ZONE_NEUTRAL;
 
-              const timeoutRate = row.net_timeout_rate;
-              const timeoutColor =
-                timeoutRate > NEUTRAL_TIMEOUT_THRESHOLD
-                  ? ZONE_SUCCESS
-                  : timeoutRate < -NEUTRAL_TIMEOUT_THRESHOLD
-                    ? ZONE_DANGER
-                    : ZONE_NEUTRAL;
+          const timeoutRate = row.net_timeout_rate;
+          const timeoutColor =
+            timeoutRate > NEUTRAL_TIMEOUT_THRESHOLD
+              ? ZONE_SUCCESS
+              : timeoutRate < -NEUTRAL_TIMEOUT_THRESHOLD
+                ? ZONE_DANGER
+                : ZONE_NEUTRAL;
 
-              return (
-                <tr
+          return { row, diffColor, timeoutColor };
+        });
+
+        return (
+          <>
+            {/* Desktop: table layout */}
+            <div className="hidden lg:block overflow-x-auto">
+              <table
+                className="w-full min-w-[480px] text-sm"
+                data-testid="clock-pressure-table"
+              >
+                <thead>
+                  <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                    <th className="py-1 pr-3 font-medium">Time Control</th>
+                    <th className="py-1 px-2 font-medium text-right">Games</th>
+                    <th className="py-1 px-2 font-medium text-right">My avg time</th>
+                    <th className="py-1 px-2 font-medium text-right">Opp avg time</th>
+                    <th className="py-1 px-2 font-medium text-right">Avg clock diff</th>
+                    <th className="py-1 pl-2 font-medium text-right">Net timeout rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {computedRows.map(({ row, diffColor, timeoutColor }) => (
+                    <tr
+                      key={row.time_control}
+                      data-testid={`clock-pressure-row-${row.time_control}`}
+                    >
+                      <td className="py-1.5 pr-3 text-sm">{row.label}</td>
+                      <td className="py-1.5 px-2 text-right text-sm tabular-nums">
+                        {row.total_endgame_games.toLocaleString()}
+                      </td>
+                      <td className="py-1.5 px-2 text-right text-sm tabular-nums">
+                        {formatClockCell(row.user_avg_pct, row.user_avg_seconds)}
+                      </td>
+                      <td className="py-1.5 px-2 text-right text-sm tabular-nums">
+                        {formatClockCell(row.opp_avg_pct, row.opp_avg_seconds)}
+                      </td>
+                      <td
+                        className="py-1.5 px-2 text-right text-sm tabular-nums"
+                        style={diffColor ? { color: diffColor } : undefined}
+                      >
+                        {formatSignedPct(row.user_avg_pct, row.opp_avg_pct)}
+                        <span className="text-muted-foreground ml-1">({formatSignedSeconds(row.avg_clock_diff_seconds)})</span>
+                      </td>
+                      <td
+                        className="py-1.5 pl-2 text-right text-sm tabular-nums"
+                        style={{ color: timeoutColor }}
+                      >
+                        {formatNetTimeoutRate(row.net_timeout_rate)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile: stacked cards */}
+            <div className="lg:hidden space-y-3" data-testid="clock-pressure-cards">
+              {computedRows.map(({ row, diffColor, timeoutColor }) => (
+                <div
                   key={row.time_control}
-                  data-testid={`clock-pressure-row-${row.time_control}`}
+                  className="rounded border border-border p-3 space-y-2"
+                  data-testid={`clock-pressure-card-${row.time_control}`}
                 >
-                  <td className="py-1.5 pr-3 text-sm">{row.label}</td>
-                  <td className="py-1.5 px-2 text-right text-sm tabular-nums">
-                    {row.total_endgame_games.toLocaleString()}
-                  </td>
-                  <td className="py-1.5 px-2 text-right text-sm tabular-nums">
-                    {formatClockCell(row.user_avg_pct, row.user_avg_seconds)}
-                  </td>
-                  <td className="py-1.5 px-2 text-right text-sm tabular-nums">
-                    {formatClockCell(row.opp_avg_pct, row.opp_avg_seconds)}
-                  </td>
-                  <td
-                    className="py-1.5 px-2 text-right text-sm tabular-nums"
-                    style={diffColor ? { color: diffColor } : undefined}
-                  >
-                    {formatSignedPct(row.user_avg_pct, row.opp_avg_pct)}
-                    <span className="text-muted-foreground ml-1">({formatSignedSeconds(diff)})</span>
-                  </td>
-                  <td
-                    className="py-1.5 pl-2 text-right text-sm tabular-nums"
-                    style={{ color: timeoutColor }}
-                  >
-                    {formatNetTimeoutRate(timeoutRate)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                  <div className="flex items-baseline justify-between">
+                    <div className="text-sm font-medium">{row.label}</div>
+                    <div className="text-xs tabular-nums text-muted-foreground">
+                      {row.total_endgame_games.toLocaleString()} games
+                    </div>
+                  </div>
+                  <div className="flex items-baseline justify-between text-xs">
+                    <span className="text-muted-foreground">My avg time</span>
+                    <span className="tabular-nums">
+                      {formatClockCell(row.user_avg_pct, row.user_avg_seconds)}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between text-xs">
+                    <span className="text-muted-foreground">Opp avg time</span>
+                    <span className="tabular-nums">
+                      {formatClockCell(row.opp_avg_pct, row.opp_avg_seconds)}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between text-xs">
+                    <span className="text-muted-foreground">Avg clock diff</span>
+                    <span
+                      className="tabular-nums"
+                      style={diffColor ? { color: diffColor } : undefined}
+                    >
+                      {formatSignedPct(row.user_avg_pct, row.opp_avg_pct)}
+                      <span className="text-muted-foreground ml-1">({formatSignedSeconds(row.avg_clock_diff_seconds)})</span>
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between text-xs">
+                    <span className="text-muted-foreground">Net timeout rate</span>
+                    <span className="tabular-nums" style={{ color: timeoutColor }}>
+                      {formatNetTimeoutRate(row.net_timeout_rate)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        );
+      })()}
 
       {/* Coverage note */}
       <p className="text-xs text-muted-foreground mt-2">
