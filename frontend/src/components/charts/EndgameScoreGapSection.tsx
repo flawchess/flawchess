@@ -62,32 +62,37 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
             >
               <div className="space-y-2">
                 <p>
-                  The baseline for your Conversion bucket is your opponents'
-                  Conversion score <em>against you</em> — i.e. your Recovery games,
-                  flipped to their perspective. Because opponents are rating-matched
-                  by the platform, this baseline is self-calibrating: it adapts as
-                  you climb.
+                  Games are split by the material balance on entering the endgame:
+                  <strong> Conversion</strong> (you lead by ≥ +1),
+                  <strong> Even</strong> (roughly balanced), or
+                  <strong> Recovery</strong> (you trail by ≤ −1). The imbalance must
+                  persist 4 half-moves into the endgame, so transient trades don't
+                  distort the split.
                 </p>
                 <p>
-                  Bars near the neutral zone mean you're converting (or recovering)
-                  about as well as equally-rated players in the same situation;
-                  to the right, you outperform them; to the left, you underperform.
-                  Baselines are hidden when the opponent sample is smaller than 10
-                  games.
+                  Your baseline is how your opponents performed in the mirror
+                  bucket <em>against you</em> — e.g. your Conversion score is
+                  compared to your opponents' Conversion score when playing you
+                  (your Recovery games, flipped). Because the platform rating-matches
+                  you, this baseline self-calibrates as you improve.
                 </p>
                 <p>
-                  For an even tighter comparison, set the Opponent Strength filter to
-                  "Similar" — this restricts the baseline to opponents within ±50 ELO
-                  of your rating.
+                  Bars near the neutral zone mean you perform like an equally-rated
+                  player in the same situation; to the right you outperform, to the
+                  left you underperform. Baselines are hidden when the opponent
+                  sample is smaller than 10 games.
+                </p>
+                <p>
+                  Tip: set the Opponent Strength filter to "Similar" to restrict
+                  the baseline to opponents within ±50 ELO of your rating.
                 </p>
               </div>
             </InfoPopover>
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Your vs. your opponents' performance <em>against you</em> when
-          entering the endgame with a material advantage (Conversion, ≥ +1),
-          roughly even (Even), or a deficit (Recovery, ≤ −1).
+          How well do you convert a material advantage into a win and defend
+          when you're down material?
         </p>
       </div>
 
