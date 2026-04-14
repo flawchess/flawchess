@@ -17,6 +17,7 @@ from collections.abc import Sequence
 from enum import IntEnum
 from typing import Any, Literal, cast
 
+import sentry_sdk
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -201,7 +202,21 @@ def _aggregate_endgame_stats(
         user_material_imbalance,
         user_material_imbalance_after,
     ) in rows:
-        endgame_class = _INT_TO_CLASS[endgame_class_int]
+        endgame_class = _INT_TO_CLASS.get(endgame_class_int)
+        if endgame_class is None:
+            # Unexpected class integer from DB — surface to Sentry and skip the
+            # row rather than 500 the endpoint. Per CLAUDE.md Sentry rules,
+            # variables go through set_context; exception message is static so
+            # Sentry groups these together instead of per-class_int.
+            sentry_sdk.set_context(
+                "invalid_endgame_class",
+                {"class_int": endgame_class_int},
+            )
+            sentry_sdk.set_tag("source", "endgame_aggregate")
+            sentry_sdk.capture_exception(
+                ValueError("Unknown endgame_class integer from DB")
+            )
+            continue
         outcome = derive_user_result(result, user_color)
 
         # W/D/L counts
@@ -1154,6 +1169,9 @@ async def get_endgame_timeline(
     # Compute per-type rolling series and map class int -> EndgameClass string
     per_type: dict[str, list[EndgameTimelinePoint]] = {}
     for class_int, rows in per_type_rows.items():
+        # Safe bracket access: class_int keys come from per_type_rows, which is
+        # seeded from _ENDGAME_CLASS_INTS (the authoritative 1..6 set) in the
+        # repository layer. No defensive .get() needed here.
         class_name = _INT_TO_CLASS[class_int]
         series = _compute_rolling_series(rows, window)
         per_type[class_name] = [
