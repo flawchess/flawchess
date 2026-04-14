@@ -45,8 +45,10 @@ function useIsMobile(): boolean {
 interface ChartDataPoint {
   bucket_center: number; // bucket center on the 0-100 axis (5, 15, ..., 95)
   bucket_label: string; // "0-10%" ... "90-100%" for tooltip
-  my_score: number | undefined;
-  opp_score: number | undefined;
+  // Recharts with type="number" XAxis computes NaN scales when series values are
+  // `undefined`; null renders cleanly with connectNulls=true.
+  my_score: number | null;
+  opp_score: number | null;
   my_game_count: number;
   opp_game_count: number;
 }
@@ -95,8 +97,8 @@ function buildChartData(data: TimePressureChartResponse): ChartDataPoint[] {
     return {
       bucket_center,
       bucket_label: userPt.bucket_label,
-      my_score: userPt.score,
-      opp_score: oppPt?.score,
+      my_score: userPt.score ?? null,
+      opp_score: oppPt?.score ?? null,
       my_game_count: userPt.game_count,
       opp_game_count: oppPt?.game_count ?? 0,
     };
@@ -146,7 +148,7 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Does your score drop faster than your opponent&apos;s as the clock winds down?
+          Can you handle time pressure better or worse than your opponents?
         </p>
       </div>
       <ChartContainer config={chartConfig} className="w-full h-72" data-testid="time-pressure-chart">
@@ -159,13 +161,15 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
             bottom: 40,
           }}
         >
-          <CartesianGrid vertical={false} horizontal={true} syncWithTicks={true} />
+          <CartesianGrid vertical={false} horizontal={true} />
           <XAxis
             dataKey="bucket_center"
             type="number"
+            scale="linear"
             domain={X_AXIS_DOMAIN}
             ticks={X_AXIS_TICKS}
             tickFormatter={(v: number) => `${v}%`}
+            allowDecimals={false}
             label={{
               value: '% of base time remaining at endgame entry',
               position: 'insideBottom',
@@ -237,7 +241,7 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
             hide={hiddenKeys.has('my_score')}
             dot={(props: { cx?: number; cy?: number; payload?: Record<string, unknown> }) => {
               const { cx, cy, payload } = props;
-              if (cx === undefined || cy === undefined || !payload) return <></>;
+              if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) return <></>;
               const gameCount = (payload.my_game_count as number) ?? 0;
               const isDim = gameCount < MIN_GAMES_FOR_RELIABLE_STATS;
               return (
@@ -261,7 +265,7 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
             hide={hiddenKeys.has('opp_score')}
             dot={(props: { cx?: number; cy?: number; payload?: Record<string, unknown> }) => {
               const { cx, cy, payload } = props;
-              if (cx === undefined || cy === undefined || !payload) return <></>;
+              if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) return <></>;
               const gameCount = (payload.opp_game_count as number) ?? 0;
               const isDim = gameCount < MIN_GAMES_FOR_RELIABLE_STATS;
               return (
