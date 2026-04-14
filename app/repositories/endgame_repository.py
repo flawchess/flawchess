@@ -629,22 +629,39 @@ async def query_clock_stats_rows(
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
     elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> list[Row[Any]]:
-    """Return rows for time pressure at endgame entry (Phase 54).
+    """Return rows for Time Pressure at Endgame Entry and Time Pressure vs Performance.
 
-    One row per (game, endgame_class) span meeting the ply threshold, including
-    full ply and clock_seconds arrays for the service layer to extract entry clocks.
+    One row per GAME that reached an endgame phase under the whole-game rule:
+    total endgame plies (across all classes combined) >= ENDGAME_PLY_THRESHOLD.
+
+    This matches the definition used by count_endgame_games and
+    query_endgame_performance_rows, so the Time Pressure sections include every game
+    that the rest of the endgame tab counts as an endgame — even games whose plies
+    are split across multiple classes (e.g. 4 in KP_KP plus 4 in KR_KR, neither of
+    which hits the threshold alone).
 
     Returns rows of: (game_id, time_control_bucket, time_control_seconds, termination,
                       result, user_color, ply_array, clock_array)
 
-    ply_array: array_agg(ply ORDER BY ply) — all plies in the span (ARRAY of SmallInteger)
-    clock_array: array_agg(clock_seconds ORDER BY ply) — clock at each ply (ARRAY of Float)
+    ply_array: array_agg(ply ORDER BY ply) — all endgame plies in the game
+    clock_array: array_agg(clock_seconds ORDER BY ply) — clock at each endgame ply
 
-    Full arrays (not indexed with [1]) are needed so the service can find the first
-    user-ply and first opp-ply by parity rather than always using the first element.
+    Ordering by ply ensures _extract_entry_clocks finds the earliest user-parity and
+    opp-parity clocks (the moment the game first reached an endgame phase, regardless
+    of which endgame class came first).
 
     NO color filter is applied — stats cover both white and black games.
+
+    Bug fix (quick-260414-pv4): previously this query grouped by (game_id,
+    endgame_class) with a per-class HAVING count >= 6, which (1) excluded games whose
+    endgame plies were split across classes and (2) returned multiple rows per game,
+    leading to double-counting in _compute_time_pressure_chart and requiring a
+    fragile Python-side collapse in _compute_clock_pressure. The whole-game rule via
+    _any_endgame_ply_subquery matches the rest of the endgame tab and makes both
+    consumers straight-through aggregations.
     """
+    any_endgame_subq = _any_endgame_ply_subquery(user_id)
+
     # Aggregate full ply and clock arrays ordered by ply ascending.
     # Using type_coerce with ARRAY types so SQLAlchemy returns Python lists.
     ply_array_agg = type_coerce(
@@ -661,20 +678,21 @@ async def query_clock_stats_rows(
         ARRAY(FloatType()),
     )
 
-    span_subq = (
+    # One row per game: aggregate all endgame plies (across all classes), then
+    # restrict to games that pass the whole-game ENDGAME_PLY_THRESHOLD filter.
+    per_game_subq = (
         select(
             GamePosition.game_id.label("game_id"),
-            GamePosition.endgame_class.label("endgame_class"),
             ply_array_agg.label("ply_array"),
             clock_array_agg.label("clock_array"),
         )
         .where(
             GamePosition.user_id == user_id,
             GamePosition.endgame_class.isnot(None),
+            GamePosition.game_id.in_(select(any_endgame_subq.c.game_id)),
         )
-        .group_by(GamePosition.game_id, GamePosition.endgame_class)
-        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
-        .subquery("clock_span")
+        .group_by(GamePosition.game_id)
+        .subquery("clock_per_game")
     )
 
     stmt = (
@@ -685,10 +703,10 @@ async def query_clock_stats_rows(
             Game.termination,
             Game.result,
             Game.user_color,
-            span_subq.c.ply_array,
-            span_subq.c.clock_array,
+            per_game_subq.c.ply_array,
+            per_game_subq.c.clock_array,
         )
-        .join(span_subq, Game.id == span_subq.c.game_id)
+        .join(per_game_subq, Game.id == per_game_subq.c.game_id)
         .where(Game.user_id == user_id)
     )
 
