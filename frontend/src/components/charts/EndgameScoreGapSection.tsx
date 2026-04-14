@@ -22,6 +22,11 @@ import type { MaterialBucket, ScoreGapMaterialResponse } from '@/types/endgames'
 const NEUTRAL_ZONE_MIN = -0.03;
 const NEUTRAL_ZONE_MAX = 0.03;
 
+// Narrow bullet domain for opponent-calibrated diffs. Equally-rated
+// players cluster near zero, so ±0.20 covers realistic diffs without
+// making typical values look tiny.
+const BULLET_DOMAIN = 0.20;
+
 // Hide the bullet bar when the opponent's mirror-bucket sample is too
 // small. Mirrors backend `_MIN_OPPONENT_SAMPLE = 10` and the WDL-bar
 // mute threshold used in the Opening Explorer moves list.
@@ -54,17 +59,16 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               testId="material-breakdown-section-info"
               side="top"
             >
-              The table shows how your score in each material situation compares to
-              how your opponents perform against you in the mirror situation. When
-              you enter an endgame with a material advantage (Conversion), your
-              baseline is your opponents' performance when they enter endgames with
-              an advantage (i.e. games where you were down material). This is
-              self-calibrating — your opponents are rating-matched by the platform,
-              so the baseline automatically adapts as you climb. Bars near the
-              neutral zone mean you're performing about the same as equally-rated
-              players in the same situation; to the right, you outperform; to the
-              left, you underperform. Baselines are hidden when the opponent sample
-              is smaller than 10 games.
+              A comparison of how you perform with how your opponents perform
+              against you in the mirror situation. When you enter an endgame with
+              a material advantage (Conversion), your baseline is your opponents'
+              score when they have the advantage against you (i.e. games where you
+              were down material). Because your opponents are rating-matched by the
+              platform, this baseline is self-calibrating — it automatically adapts
+              as you climb. Bars near the neutral zone mean you're performing about
+              the same as equally-rated players in the same situation; to the right,
+              you outperform them; to the left, you underperform. Baselines are
+              hidden when the opponent sample is smaller than 10 games.
             </InfoPopover>
           </span>
         </h3>
@@ -142,6 +146,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                         value={diff}
                         neutralMin={NEUTRAL_ZONE_MIN}
                         neutralMax={NEUTRAL_ZONE_MAX}
+                        domain={BULLET_DOMAIN}
                         ariaLabel={`${BUCKET_DISPLAY_LABELS[row.bucket]}: ${diffLabel} vs opponent`}
                       />
                     ) : (

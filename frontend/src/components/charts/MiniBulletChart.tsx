@@ -12,9 +12,12 @@
 
 import { GAUGE_DANGER, GAUGE_NEUTRAL, GAUGE_SUCCESS } from '@/lib/theme';
 
-// Bar domain: values beyond +/- DOMAIN are clamped to the edge.
+// Default bar domain: values beyond +/- DEFAULT_DOMAIN are clamped to the edge.
 // 0.40 covers realistic score-diff ranges without making typical values look tiny.
-const DOMAIN = 0.40;
+// Callers can narrow the domain via the `domain` prop when the expected diff
+// range is smaller (e.g. opponent-calibrated baselines where equally-rated
+// players cluster near zero).
+const DEFAULT_DOMAIN = 0.40;
 
 // Default neutral zone: -0.10 to 0 (slight underperformance vs overall).
 const DEFAULT_NEUTRAL_MIN = -0.10;
@@ -28,12 +31,14 @@ const ZONE_OPACITY = 0.35;
 const BOUNDARY_EPSILON = 1e-6;
 
 interface MiniBulletChartProps {
-  /** Signed difference to visualize (e.g. row_score - overall_score). */
+  /** Signed difference to visualize (e.g. row_score - opponent_score). */
   value: number;
   /** Lower bound of the neutral zone. Default -0.10. */
   neutralMin?: number;
   /** Upper bound of the neutral zone. Default 0. */
   neutralMax?: number;
+  /** Bar domain half-width (values beyond ±domain are clamped). Default 0.40. */
+  domain?: number;
   /** Accessible label. Falls back to the signed numeric value. */
   ariaLabel?: string;
   /** Height class for the zone background, default h-5 (matches MiniWDLBar). */
@@ -51,17 +56,18 @@ export function MiniBulletChart({
   value,
   neutralMin = DEFAULT_NEUTRAL_MIN,
   neutralMax = DEFAULT_NEUTRAL_MAX,
+  domain = DEFAULT_DOMAIN,
   ariaLabel,
   heightClass = 'h-5',
   valueHeightClass = 'h-2',
 }: MiniBulletChartProps) {
-  const clamped = Math.max(-DOMAIN, Math.min(DOMAIN, value));
+  const clamped = Math.max(-domain, Math.min(domain, value));
 
   // Map domain value to percent position (0% = left edge, 100% = right edge).
-  const toPct = (v: number): number => ((v + DOMAIN) / (2 * DOMAIN)) * 100;
+  const toPct = (v: number): number => ((v + domain) / (2 * domain)) * 100;
   const zeroPct = toPct(0);
-  const neutralMinPct = toPct(Math.max(-DOMAIN, neutralMin));
-  const neutralMaxPct = toPct(Math.min(DOMAIN, neutralMax));
+  const neutralMinPct = toPct(Math.max(-domain, neutralMin));
+  const neutralMaxPct = toPct(Math.min(domain, neutralMax));
   const markerPct = toPct(clamped);
 
   // Fill color follows the zone the raw (unclamped) value falls into.
