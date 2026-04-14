@@ -11,6 +11,7 @@ Tests cover:
 """
 
 import datetime
+from typing import Any, NamedTuple
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -33,6 +34,23 @@ from app.services.endgame_service import (
     get_endgame_stats,
     get_endgame_timeline,
 )
+
+
+class _FakeRow(NamedTuple):
+    """Lightweight stand-in for a SQLAlchemy Row used by endgame service tests.
+
+    Mirrors the labeled columns produced by query_endgame_entry_rows and
+    query_endgame_bucket_rows so _compute_score_gap_material can access
+    .game_id / .endgame_class / .result / .user_color / .user_material_imbalance
+    / .user_material_imbalance_after directly.
+    """
+
+    game_id: int
+    endgame_class: int
+    result: str
+    user_color: str
+    user_material_imbalance: Any
+    user_material_imbalance_after: Any
 
 
 class TestClassifyEndgameClass:
@@ -976,7 +994,7 @@ class TestScoreGapMaterial:
     def test_score_gap_material_conversion_bucket(self):
         """Entry row with imbalance=150 preserved goes into 'conversion' bucket."""
         # entry_rows: (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after)
-        entry_rows = [(1, 1, "1-0", "white", 150, 150)]
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, 150)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -987,7 +1005,7 @@ class TestScoreGapMaterial:
 
     def test_score_gap_material_even_bucket(self):
         """Entry row with imbalance=50 goes into 'even' bucket."""
-        entry_rows = [(1, 1, "1-0", "white", 50, 50)]
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 50, 50)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -997,7 +1015,7 @@ class TestScoreGapMaterial:
 
     def test_score_gap_material_recovery_bucket(self):
         """Entry row with imbalance=-200 preserved goes into 'recovery' bucket."""
-        entry_rows = [(1, 1, "0-1", "white", -200, -200)]
+        entry_rows = [_FakeRow(1, 1, "0-1", "white", -200, -200)]
         endgame_wdl = self._make_wdl(0, 0, 1)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1009,8 +1027,8 @@ class TestScoreGapMaterial:
     def test_score_gap_material_deduplication(self):
         """Two rows with same game_id but different endgame_class -> only 1 game in material table."""
         entry_rows = [
-            (1, 1, "1-0", "white", 150, 150),  # game_id=1, class rook
-            (1, 3, "1-0", "white", 150, 150),  # game_id=1, class pawn — duplicate
+            _FakeRow(1, 1, "1-0", "white", 150, 150),  # game_id=1, class rook
+            _FakeRow(1, 3, "1-0", "white", 150, 150),  # game_id=1, class pawn — duplicate
         ]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1021,7 +1039,7 @@ class TestScoreGapMaterial:
 
     def test_score_gap_material_none_imbalance_bucketed_as_even(self):
         """Entry row with user_material_imbalance=None goes into the 'even' bucket (Phase 59)."""
-        entry_rows = [(1, 1, "1-0", "white", None, None)]
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", None, None)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1055,7 +1073,7 @@ class TestScoreGapMaterial:
         falls into the 'even' bucket because the advantage did not persist.
         This filters transient imbalances from trades at the endgame boundary.
         """
-        entry_rows = [(1, 1, "1-0", "white", 150, -50)]  # imbalance_after negative
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, -50)]  # imbalance_after negative
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1065,7 +1083,7 @@ class TestScoreGapMaterial:
 
     def test_score_gap_material_persistence_required_for_recovery(self):
         """Transient deficit that does not persist falls into 'even' bucket."""
-        entry_rows = [(1, 1, "0-1", "white", -150, 50)]  # imbalance_after positive
+        entry_rows = [_FakeRow(1, 1, "0-1", "white", -150, 50)]  # imbalance_after positive
         endgame_wdl = self._make_wdl(0, 0, 1)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1075,7 +1093,7 @@ class TestScoreGapMaterial:
 
     def test_score_gap_material_persistence_none_after_falls_to_even(self):
         """imbalance_after=None means persistence cannot be verified -> 'even' bucket."""
-        entry_rows = [(1, 1, "1-0", "white", 150, None)]
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, None)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1092,7 +1110,7 @@ class TestScoreGapMaterial:
 
     def test_score_gap_material_boundary_conversion(self):
         """Imbalance exactly == 100 (preserved) -> 'conversion' bucket (>= 100)."""
-        entry_rows = [(1, 1, "1-0", "white", 100, 100)]
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 100, 100)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1101,7 +1119,7 @@ class TestScoreGapMaterial:
 
     def test_score_gap_material_boundary_recovery(self):
         """Imbalance exactly == -100 (preserved) -> 'recovery' bucket (<= -100)."""
-        entry_rows = [(1, 1, "0-1", "white", -100, -100)]
+        entry_rows = [_FakeRow(1, 1, "0-1", "white", -100, -100)]
         endgame_wdl = self._make_wdl(0, 0, 1)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1117,9 +1135,9 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
 
     def test_invariant_single_span_each_bucket(self):
         entry_rows = [
-            (1, 1, "1-0", "white", 150, 150),  # conversion
-            (2, 1, "0-1", "white", -150, -150),  # recovery
-            (3, 1, "1/2-1/2", "white", 50, 50),  # even
+            _FakeRow(1, 1, "1-0", "white", 150, 150),  # conversion
+            _FakeRow(2, 1, "0-1", "white", -150, -150),  # recovery
+            _FakeRow(3, 1, "1/2-1/2", "white", 50, 50),  # even
         ]
         endgame_wdl = self._make_wdl(1, 1, 1)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1133,8 +1151,8 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
     def test_invariant_multi_span_conversion_over_recovery(self):
         """Decision 2 tiebreak: when a game has both conversion and recovery spans, pick conversion."""
         entry_rows = [
-            (1, 1, "1-0", "white", 150, 150),  # conversion span (rook)
-            (1, 3, "1-0", "white", -150, -150),  # recovery span (pawn) — same game
+            _FakeRow(1, 1, "1-0", "white", 150, 150),  # conversion span (rook)
+            _FakeRow(1, 3, "1-0", "white", -150, -150),  # recovery span (pawn) — same game
         ]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1146,8 +1164,8 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
     def test_invariant_multi_span_null_then_qualifying(self):
         """Decision 1+2: first-seen NULL row must not drop the game if another span qualifies."""
         entry_rows = [
-            (1, 1, "1-0", "white", None, None),  # NULL first (would have been dropped pre-Phase 59)
-            (1, 3, "1-0", "white", 150, 150),  # qualifying conversion span
+            _FakeRow(1, 1, "1-0", "white", None, None),  # NULL first (would have been dropped pre-Phase 59)
+            _FakeRow(1, 3, "1-0", "white", 150, 150),  # qualifying conversion span
         ]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1158,7 +1176,7 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
 
     def test_invariant_null_imbalance_lands_in_even(self):
         """Decision 1: NULL imbalance -> 'even' bucket (not dropped)."""
-        entry_rows = [(1, 1, "1/2-1/2", "white", None, None)]
+        entry_rows = [_FakeRow(1, 1, "1/2-1/2", "white", None, None)]
         endgame_wdl = self._make_wdl(0, 1, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1168,7 +1186,7 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
 
     def test_invariant_null_after_lands_in_even(self):
         """Decision 1: NULL user_material_imbalance_after (non-contiguous span) -> 'even'."""
-        entry_rows = [(1, 1, "1-0", "white", 150, None)]
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, None)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1190,23 +1208,23 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
         """10 distinct games across all decision cases; sum must equal endgame_wdl.total=10."""
         entry_rows = [
             # 3 pure conversion
-            (1, 1, "1-0", "white", 150, 150),
-            (2, 1, "1-0", "white", 200, 200),
-            (3, 1, "0-1", "white", 150, 150),
+            _FakeRow(1, 1, "1-0", "white", 150, 150),
+            _FakeRow(2, 1, "1-0", "white", 200, 200),
+            _FakeRow(3, 1, "0-1", "white", 150, 150),
             # 2 pure recovery
-            (4, 1, "1/2-1/2", "white", -150, -150),
-            (5, 1, "0-1", "white", -200, -200),
+            _FakeRow(4, 1, "1/2-1/2", "white", -150, -150),
+            _FakeRow(5, 1, "0-1", "white", -200, -200),
             # 2 pure even (below threshold)
-            (6, 1, "1-0", "white", 50, 50),
-            (7, 1, "0-1", "white", -50, -50),
+            _FakeRow(6, 1, "1-0", "white", 50, 50),
+            _FakeRow(7, 1, "0-1", "white", -50, -50),
             # 1 multi-span conversion-over-recovery
-            (8, 1, "1-0", "white", 150, 150),
-            (8, 3, "1-0", "white", -150, -150),
+            _FakeRow(8, 1, "1-0", "white", 150, 150),
+            _FakeRow(8, 3, "1-0", "white", -150, -150),
             # 1 NULL-first but conversion-qualifying second
-            (9, 1, "1-0", "white", None, None),
-            (9, 3, "1-0", "white", 150, 150),
+            _FakeRow(9, 1, "1-0", "white", None, None),
+            _FakeRow(9, 3, "1-0", "white", 150, 150),
             # 1 all-NULL (lands in even)
-            (10, 1, "1/2-1/2", "white", None, None),
+            _FakeRow(10, 1, "1/2-1/2", "white", None, None),
         ]
         endgame_wdl = self._make_wdl(6, 2, 2)  # total=10
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1216,12 +1234,12 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
     def test_invariant_deterministic_ordering(self):
         """Decision 2: within the 'even' fallback, lowest endgame_class_int wins for reproducibility."""
         rows_order_a = [
-            (1, 1, "1-0", "white", 50, 50),
-            (1, 3, "0-1", "white", 40, 40),
+            _FakeRow(1, 1, "1-0", "white", 50, 50),
+            _FakeRow(1, 3, "0-1", "white", 40, 40),
         ]
         rows_order_b = [
-            (1, 3, "0-1", "white", 40, 40),
-            (1, 1, "1-0", "white", 50, 50),
+            _FakeRow(1, 3, "0-1", "white", 40, 40),
+            _FakeRow(1, 1, "1-0", "white", 50, 50),
         ]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1250,18 +1268,18 @@ class TestScoreGapMaterialOpponentBaseline(TestScoreGapMaterial):
     """
 
     @staticmethod
-    def _conversion_row(game_id: int, result: str) -> tuple:
+    def _conversion_row(game_id: int, result: str) -> _FakeRow:
         # imbalance >= +100 AND imbalance_after >= +100 -> conversion
-        return (game_id, 1, result, "white", 150, 150)
+        return _FakeRow(game_id, 1, result, "white", 150, 150)
 
     @staticmethod
-    def _recovery_row(game_id: int, result: str) -> tuple:
+    def _recovery_row(game_id: int, result: str) -> _FakeRow:
         # imbalance <= -100 AND imbalance_after <= -100 -> recovery
-        return (game_id, 1, result, "white", -150, -150)
+        return _FakeRow(game_id, 1, result, "white", -150, -150)
 
     @staticmethod
-    def _even_row(game_id: int, result: str) -> tuple:
-        return (game_id, 1, result, "white", 0, 0)
+    def _even_row(game_id: int, result: str) -> _FakeRow:
+        return _FakeRow(game_id, 1, result, "white", 0, 0)
 
     def test_opponent_baseline_symmetric_60_40(self):
         """User Conv 60% over 100 games and User Recov 40% over 100 games:

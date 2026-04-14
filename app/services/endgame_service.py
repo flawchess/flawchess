@@ -564,18 +564,22 @@ def _compute_score_gap_material(
     # game is bucketed as "even". This replaces the Phase 53 `continue` that silently
     # dropped such games and broke sum(material_rows.games) == endgame_wdl.total.
 
-    rows_by_game: dict[int, list[Sequence[Any]]] = defaultdict(list)
+    # rows carry labeled columns in prod (see query_endgame_bucket_rows /
+    # query_endgame_entry_rows) and a matching NamedTuple stand-in in tests,
+    # so attribute access is valid in both cases even though the declared
+    # parameter type unions in plain tuple for backward-compat.
+    rows_by_game: dict[int, list[Row[Any]]] = defaultdict(list)
     for row in entry_rows:
-        rows_by_game[row[0]].append(row)
+        rows_by_game[row.game_id].append(row)  # ty: ignore[unresolved-attribute, invalid-argument-type] — labeled Row / NamedTuple row
 
     for game_id, game_rows in rows_by_game.items():
-        chosen_row: Sequence[Any] | None = None
+        chosen_row: Row[Any] | None = None
         chosen_bucket: MaterialBucket = "even"
 
         # Pass 1: look for a CONVERSION-qualifying span.
         for r in game_rows:
-            imb = r[4]
-            imb_after = r[5]
+            imb = r.user_material_imbalance
+            imb_after = r.user_material_imbalance_after
             if (
                 imb is not None
                 and imb_after is not None
@@ -589,8 +593,8 @@ def _compute_score_gap_material(
         # Pass 2: look for a RECOVERY-qualifying span (only if no conversion match).
         if chosen_row is None:
             for r in game_rows:
-                imb = r[4]
-                imb_after = r[5]
+                imb = r.user_material_imbalance
+                imb_after = r.user_material_imbalance_after
                 if (
                     imb is not None
                     and imb_after is not None
@@ -604,11 +608,11 @@ def _compute_score_gap_material(
         # Pass 3: fallback to "even". Pick the row with the lowest endgame_class_int for
         # deterministic output regardless of SQL row order.
         if chosen_row is None:
-            chosen_row = min(game_rows, key=lambda r: r[1])
+            chosen_row = min(game_rows, key=lambda r: r.endgame_class)
             chosen_bucket = "even"
 
-        result_str: str = chosen_row[2]
-        user_color: str = chosen_row[3]
+        result_str: str = chosen_row.result
+        user_color: str = chosen_row.user_color
         outcome = derive_user_result(result_str, user_color)
 
         bucket_games[chosen_bucket] += 1
