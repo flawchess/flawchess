@@ -9,7 +9,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY, MY_SCORE_COLOR, OPP_SCORE_COLOR } from '@/lib/theme';
+import { MIN_GAMES_FOR_RELIABLE_STATS, MY_SCORE_COLOR, OPP_SCORE_COLOR } from '@/lib/theme';
 import type { TimePressureChartResponse, TimePressureBucketPoint } from '@/types/endgames';
 
 const chartConfig = {
@@ -89,13 +89,15 @@ function buildChartData(data: TimePressureChartResponse): ChartDataPoint[] {
     // Place each data point at the center of its bucket on the 0-100 axis, so
     // ticks (0%, 10%, ..., 100%) sit at bucket boundaries and points fall between.
     const bucket_center = i * BUCKET_WIDTH + BUCKET_WIDTH / 2;
+    const myCount = userPt.game_count;
+    const oppCount = oppPt?.game_count ?? 0;
     return {
       bucket_center,
       bucket_label: userPt.bucket_label,
-      my_score: userPt.score ?? null,
-      opp_score: oppPt?.score ?? null,
-      my_game_count: userPt.game_count,
-      opp_game_count: oppPt?.game_count ?? 0,
+      my_score: myCount >= MIN_GAMES_FOR_RELIABLE_STATS ? userPt.score ?? null : null,
+      opp_score: oppCount >= MIN_GAMES_FOR_RELIABLE_STATS ? oppPt?.score ?? null : null,
+      my_game_count: myCount,
+      opp_game_count: oppCount,
     };
   });
 }
@@ -135,9 +137,9 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
                 <p>Compares how you perform under time pressure vs how your opponents perform.</p>
                 <p><strong>Blue line (My score):</strong> your average score when <em>you</em> had this much time remaining at endgame entry.</p>
                 <p><strong>Red line (Opponent&apos;s score):</strong> average score of your opponents when <em>they</em> had this much time remaining.</p>
-                <p>Where the lines diverge reveals who handles time pressure better. If your line drops faster as time decreases, you crack under pressure more than your opponents.</p>
-                <p>Includes every game that reached an endgame phase (total of at least 3 full moves / 6 half-moves spent in the endgame, summed across all endgame types), aggregated across all time controls. Each game contributes one data point based on the clocks at the first endgame position reached. Use the filter panel to narrow by time control.</p>
-                <p className="text-xs text-muted-foreground">Dimmed dots indicate fewer than 10 games in that bucket.</p>
+                <p>Where the lines diverge reveals who handles time pressure better. If your line is below your opponents' line on the left side, you crack under pressure more than your opponents.</p>
+                <p>Includes every game that reached an endgame phase (total of at least 3 full moves / 6 half-moves spent in the endgame), aggregated across all time controls. Each game contributes one data point based on the clocks at the first endgame position reached. Use the filter panel to narrow by time control.</p>
+                <p className="text-xs text-muted-foreground">Datapoints with fewer than 10 games are omitted.</p>
               </div>
             </InfoPopover>
           </span>
@@ -224,11 +226,8 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
             dot={(props: { cx?: number; cy?: number; payload?: Record<string, unknown> }) => {
               const { cx, cy, payload } = props;
               if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) {
-                // Return a group with the key Recharts expects on every child of Line.
                 return <g key={`nodot-${String(payload?.bucket_label ?? cx)}`} />;
               }
-              const gameCount = (payload.my_game_count as number) ?? 0;
-              const isDim = gameCount < MIN_GAMES_FOR_RELIABLE_STATS;
               return (
                 <circle
                   key={`my-dot-${payload.bucket_label as string}`}
@@ -236,7 +235,6 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
                   cy={cy}
                   r={4}
                   fill={MY_SCORE_COLOR}
-                  opacity={isDim ? UNRELIABLE_OPACITY : 1}
                 />
               );
             }}
@@ -251,11 +249,8 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
             dot={(props: { cx?: number; cy?: number; payload?: Record<string, unknown> }) => {
               const { cx, cy, payload } = props;
               if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) {
-                // Return a group with the key Recharts expects on every child of Line.
                 return <g key={`nodot-${String(payload?.bucket_label ?? cx)}`} />;
               }
-              const gameCount = (payload.opp_game_count as number) ?? 0;
-              const isDim = gameCount < MIN_GAMES_FOR_RELIABLE_STATS;
               return (
                 <circle
                   key={`opp-dot-${payload.bucket_label as string}`}
@@ -263,7 +258,6 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
                   cy={cy}
                   r={4}
                   fill={OPP_SCORE_COLOR}
-                  opacity={isDim ? UNRELIABLE_OPACITY : 1}
                 />
               );
             }}
