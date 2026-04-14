@@ -12,7 +12,7 @@
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
-import { GAUGE_DANGER, GAUGE_NEUTRAL, GAUGE_SUCCESS } from '@/lib/theme';
+import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import type { MaterialBucket, ScoreGapMaterialResponse } from '@/types/endgames';
 
 // Phase 60: opponent baseline — single symmetric neutral zone for all
@@ -124,10 +124,10 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               const diffLabel = (diff >= 0 ? '+' : '') + diff.toFixed(2);
               const diffColor =
                 diff >= NEUTRAL_ZONE_MAX
-                  ? GAUGE_SUCCESS
+                  ? ZONE_SUCCESS
                   : diff >= NEUTRAL_ZONE_MIN
-                    ? GAUGE_NEUTRAL
-                    : GAUGE_DANGER;
+                    ? ZONE_NEUTRAL
+                    : ZONE_DANGER;
               const pct =
                 totalMaterialGames > 0
                   ? ((row.games / totalMaterialGames) * 100).toFixed(1)
@@ -200,10 +200,10 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
             : null;
           const diffColor =
             diff >= NEUTRAL_ZONE_MAX
-              ? GAUGE_SUCCESS
+              ? ZONE_SUCCESS
               : diff >= NEUTRAL_ZONE_MIN
-                ? GAUGE_NEUTRAL
-                : GAUGE_DANGER;
+                ? ZONE_NEUTRAL
+                : ZONE_DANGER;
           const pct =
             totalMaterialGames > 0
               ? ((row.games / totalMaterialGames) * 100).toFixed(1)

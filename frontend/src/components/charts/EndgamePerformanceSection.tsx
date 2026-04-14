@@ -9,6 +9,7 @@
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
+import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import type {
   EndgamePerformanceResponse,
   ScoreGapMaterialResponse,
@@ -39,6 +40,13 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
   const diffFormatted = scoreGap
     ? (diffPositive ? '+' : '') + scoreGap.score_difference.toFixed(2)
     : '';
+  const diffColor = scoreGap
+    ? scoreGap.score_difference >= SCORE_DIFF_NEUTRAL_MAX
+      ? ZONE_SUCCESS
+      : scoreGap.score_difference >= SCORE_DIFF_NEUTRAL_MIN
+        ? ZONE_NEUTRAL
+        : ZONE_DANGER
+    : ZONE_NEUTRAL;
 
   const rows = [
     {
@@ -69,7 +77,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Do you perform better when games reach an endgame, or when they end earlier?
+          Do you perform better or worse when games reach an endgame?
         </p>
       </div>
 
@@ -116,39 +124,29 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
                 <td className="py-1.5 px-2 text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap">
                   {row.score !== undefined ? row.score.toFixed(2) : '—'}
                 </td>
-                {i === 0 && scoreGap && (
-                  <td
-                    rowSpan={2}
-                    className="relative px-2 align-top"
-                    data-testid="score-gap-difference"
-                  >
-                    {/* Calc text sits at row 1 baseline via py-1.5 padding */}
-                    <div className="py-1.5 text-xs tabular-nums text-muted-foreground whitespace-nowrap text-center">
+                {scoreGap ? (
+                  i === 0 ? (
+                    <td
+                      className="py-1.5 px-2 text-left text-xs tabular-nums text-muted-foreground whitespace-nowrap"
+                      data-testid="score-gap-difference"
+                    >
                       {scoreGap.endgame_score.toFixed(2)} −{' '}
                       {scoreGap.non_endgame_score.toFixed(2)} ={' '}
-                      <span
-                        className={
-                          (diffPositive ? 'text-green-500' : 'text-red-500') +
-                          ' font-semibold'
-                        }
-                      >
-                        {diffFormatted}
-                      </span>
-                    </div>
-                    {/* Bullet chart absolutely centered across both rows */}
-                    <div className="absolute inset-0 flex items-center px-2 pointer-events-none">
-                      <div className="w-full pointer-events-auto">
-                        <MiniBulletChart
-                          value={scoreGap.score_difference}
-                          neutralMin={SCORE_DIFF_NEUTRAL_MIN}
-                          neutralMax={SCORE_DIFF_NEUTRAL_MAX}
-                          ariaLabel={`Endgame score difference: ${diffFormatted}`}
-                        />
-                      </div>
-                    </div>
-                  </td>
+                      <span style={{ color: diffColor }}>{diffFormatted}</span>
+                    </td>
+                  ) : (
+                    <td className="py-1.5 px-2 text-left">
+                      <MiniBulletChart
+                        value={scoreGap.score_difference}
+                        neutralMin={SCORE_DIFF_NEUTRAL_MIN}
+                        neutralMax={SCORE_DIFF_NEUTRAL_MAX}
+                        ariaLabel={`Endgame score difference: ${diffFormatted}`}
+                      />
+                    </td>
+                  )
+                ) : (
+                  <td className="py-1.5 px-2" />
                 )}
-                {i === 0 && !scoreGap && <td rowSpan={2} className="py-1.5 px-2" />}
               </tr>
             ))}
           </tbody>
@@ -199,14 +197,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
               <div className="text-xs tabular-nums text-muted-foreground">
                 {scoreGap.endgame_score.toFixed(2)} −{' '}
                 {scoreGap.non_endgame_score.toFixed(2)} ={' '}
-                <span
-                  className={
-                    (diffPositive ? 'text-green-500' : 'text-red-500') +
-                    ' font-semibold'
-                  }
-                >
-                  {diffFormatted}
-                </span>
+                <span style={{ color: diffColor }}>{diffFormatted}</span>
               </div>
             </div>
             <MiniBulletChart

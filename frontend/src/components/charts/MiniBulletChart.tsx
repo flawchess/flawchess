@@ -10,7 +10,7 @@
  * material, the neutral band sits higher than when recovering).
  */
 
-import { GAUGE_DANGER, GAUGE_NEUTRAL, GAUGE_SUCCESS } from '@/lib/theme';
+import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 
 // Default bar domain: values beyond +/- DEFAULT_DOMAIN are clamped to the edge.
 // 0.40 covers realistic score-diff ranges without making typical values look tiny.
@@ -73,11 +73,11 @@ export function MiniBulletChart({
   // Fill color follows the zone the raw (unclamped) value falls into.
   let fillColor: string;
   if (value >= neutralMax) {
-    fillColor = GAUGE_SUCCESS;
+    fillColor = ZONE_SUCCESS;
   } else if (value >= neutralMin) {
-    fillColor = GAUGE_NEUTRAL;
+    fillColor = ZONE_NEUTRAL;
   } else {
-    fillColor = GAUGE_DANGER;
+    fillColor = ZONE_DANGER;
   }
 
   // Overlay bar spans from zero to the clamped value.
@@ -102,7 +102,7 @@ export function MiniBulletChart({
           className="h-full"
           style={{
             width: `${neutralMinPct}%`,
-            backgroundColor: GAUGE_DANGER,
+            backgroundColor: ZONE_DANGER,
             opacity: ZONE_OPACITY,
           }}
         />
@@ -110,7 +110,7 @@ export function MiniBulletChart({
           className="h-full"
           style={{
             width: `${neutralMaxPct - neutralMinPct}%`,
-            backgroundColor: GAUGE_NEUTRAL,
+            backgroundColor: ZONE_NEUTRAL,
             opacity: ZONE_OPACITY,
           }}
         />
@@ -118,7 +118,7 @@ export function MiniBulletChart({
           className="h-full"
           style={{
             width: `${100 - neutralMaxPct}%`,
-            backgroundColor: GAUGE_SUCCESS,
+            backgroundColor: ZONE_SUCCESS,
             opacity: ZONE_OPACITY,
           }}
         />
