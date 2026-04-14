@@ -1,22 +1,24 @@
 /**
  * Time Pressure vs Performance section:
  * Two-line Recharts LineChart comparing user's score (blue) vs opponents' score (red)
- * across 10 time-pressure buckets (0-10% through 90-100%), tabbed by time control.
+ * across 10 time-pressure buckets (0-10% through 90-100%), aggregated across all time controls.
  * Answers: "Do I crack under time pressure more than my opponents?"
  */
 
 import { useState, useCallback } from 'react';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY, MY_SCORE_COLOR, OPP_SCORE_COLOR } from '@/lib/theme';
-import type { TimePressureChartResponse, TimePressureChartRow } from '@/types/endgames';
+import type { TimePressureChartResponse, TimePressureBucketPoint } from '@/types/endgames';
 
 const chartConfig = {
   my_score: { label: 'My score', color: MY_SCORE_COLOR },
   opp_score: { label: "Opponent's score", color: OPP_SCORE_COLOR },
 };
+
+const Y_AXIS_DOMAIN: [number, number] = [0.2, 0.8];
+const Y_AXIS_TICKS = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
 
 interface ChartDataPoint {
   bucket_label: string;
@@ -26,128 +28,52 @@ interface ChartDataPoint {
   opp_game_count: number;
 }
 
-function buildChartData(row: TimePressureChartRow): ChartDataPoint[] {
-  return row.user_series.map((userPt, i) => {
-    const oppPt = row.opp_series[i];
+/**
+ * Aggregate per-time-control series into a single weighted-average series per bucket.
+ * Weighted by game_count so buckets with more data dominate, consistent with what a
+ * pooled backend query would return.
+ */
+function aggregateSeries(
+  rowsSeries: TimePressureBucketPoint[][],
+): { score: number | undefined; game_count: number; bucket_label: string }[] {
+  const firstSeries = rowsSeries[0];
+  if (!firstSeries) return [];
+  return firstSeries.map((_, bucketIdx) => {
+    let scoreSum = 0;
+    let countSum = 0;
+    let scoredCount = 0;
+    let bucketLabel = '';
+    for (const series of rowsSeries) {
+      const pt = series[bucketIdx];
+      if (!pt) continue;
+      bucketLabel = pt.bucket_label;
+      countSum += pt.game_count;
+      if (pt.score !== null && pt.game_count > 0) {
+        scoreSum += pt.score * pt.game_count;
+        scoredCount += pt.game_count;
+      }
+    }
     return {
-      bucket_label: userPt.bucket_label,
-      my_score: userPt.score ?? undefined,
-      opp_score: oppPt?.score ?? undefined,
-      my_game_count: userPt.game_count,
-      opp_game_count: oppPt?.game_count ?? 0,
+      bucket_label: bucketLabel,
+      score: scoredCount > 0 ? scoreSum / scoredCount : undefined,
+      game_count: countSum,
     };
   });
 }
 
-interface ChartForRowProps {
-  row: TimePressureChartRow;
-  hiddenKeys: Set<string>;
-  handleLegendClick: (dataKey: string) => void;
-}
-
-function ChartForRow({ row, hiddenKeys, handleLegendClick }: ChartForRowProps) {
-  const chartData = buildChartData(row);
-
-  return (
-    <ChartContainer config={chartConfig} className="w-full h-72" data-testid="time-pressure-chart">
-      <LineChart data={chartData}>
-        <CartesianGrid vertical={false} />
-        <XAxis
-          dataKey="bucket_label"
-          tickFormatter={(v: string) => v.split('-')[0] ?? v}
-        />
-        <YAxis
-          domain={[0, 1]}
-          ticks={[0, 0.2, 0.4, 0.6, 0.8, 1.0]}
-          tickFormatter={(v: number) => v.toFixed(1)}
-        />
-        <ChartTooltip
-          content={({ active, payload, label }) => {
-            if (!active || !payload?.length) return null;
-            return (
-              <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
-                <div className="font-medium">{label as string}</div>
-                {payload
-                  .filter((item) => item.value !== undefined)
-                  .map((item) => {
-                    const cfg = chartConfig[item.dataKey as keyof typeof chartConfig];
-                    const isMyScore = item.dataKey === 'my_score';
-                    const gameCount = isMyScore
-                      ? (item.payload as ChartDataPoint).my_game_count
-                      : (item.payload as ChartDataPoint).opp_game_count;
-                    return (
-                      <div key={item.dataKey} className="flex items-center gap-1.5">
-                        <div
-                          className="h-2 w-2 shrink-0 rounded-[2px]"
-                          style={{ backgroundColor: item.color }}
-                        />
-                        <span>
-                          {cfg?.label ?? item.dataKey}: {(item.value as number).toFixed(2)}
-                          <span className="text-muted-foreground ml-1">
-                            ({gameCount} games)
-                          </span>
-                        </span>
-                      </div>
-                    );
-                  })}
-              </div>
-            );
-          }}
-        />
-        <ChartLegend
-          content={<ChartLegendContent hiddenKeys={hiddenKeys} onClickItem={handleLegendClick} />}
-        />
-        <Line
-          type="monotone"
-          dataKey="my_score"
-          stroke="var(--color-my_score)"
-          strokeWidth={2}
-          connectNulls={true}
-          hide={hiddenKeys.has('my_score')}
-          dot={(props: { cx?: number; cy?: number; payload?: Record<string, unknown> }) => {
-            const { cx, cy, payload } = props;
-            if (cx === undefined || cy === undefined || !payload) return <></>;
-            const gameCount = (payload.my_game_count as number) ?? 0;
-            const isDim = gameCount < MIN_GAMES_FOR_RELIABLE_STATS;
-            return (
-              <circle
-                key={`my-dot-${payload.bucket_label as string}`}
-                cx={cx}
-                cy={cy}
-                r={4}
-                fill={MY_SCORE_COLOR}
-                opacity={isDim ? UNRELIABLE_OPACITY : 1}
-              />
-            );
-          }}
-        />
-        <Line
-          type="monotone"
-          dataKey="opp_score"
-          stroke="var(--color-opp_score)"
-          strokeWidth={2}
-          connectNulls={true}
-          hide={hiddenKeys.has('opp_score')}
-          dot={(props: { cx?: number; cy?: number; payload?: Record<string, unknown> }) => {
-            const { cx, cy, payload } = props;
-            if (cx === undefined || cy === undefined || !payload) return <></>;
-            const gameCount = (payload.opp_game_count as number) ?? 0;
-            const isDim = gameCount < MIN_GAMES_FOR_RELIABLE_STATS;
-            return (
-              <circle
-                key={`opp-dot-${payload.bucket_label as string}`}
-                cx={cx}
-                cy={cy}
-                r={4}
-                fill={OPP_SCORE_COLOR}
-                opacity={isDim ? UNRELIABLE_OPACITY : 1}
-              />
-            );
-          }}
-        />
-      </LineChart>
-    </ChartContainer>
-  );
+function buildChartData(data: TimePressureChartResponse): ChartDataPoint[] {
+  const userAgg = aggregateSeries(data.rows.map((r) => r.user_series));
+  const oppAgg = aggregateSeries(data.rows.map((r) => r.opp_series));
+  return userAgg.map((userPt, i) => {
+    const oppPt = oppAgg[i];
+    return {
+      bucket_label: userPt.bucket_label,
+      my_score: userPt.score,
+      opp_score: oppPt?.score,
+      my_game_count: userPt.game_count,
+      opp_game_count: oppPt?.game_count ?? 0,
+    };
+  });
 }
 
 interface EndgameTimePressureSectionProps {
@@ -155,9 +81,6 @@ interface EndgameTimePressureSectionProps {
 }
 
 export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionProps) {
-  const [activeTab, setActiveTab] = useState<string>(
-    data.rows[0]?.time_control ?? 'bullet',
-  );
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
 
   const handleLegendClick = useCallback((dataKey: string) => {
@@ -174,62 +97,139 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
 
   if (data.rows.length === 0) return null;
 
-  const sectionHeader = (
-    <div className="mb-3">
-      <h3 className="text-base font-semibold">
-        <span className="inline-flex items-center gap-1">
-          Time Pressure vs Performance
-          <InfoPopover ariaLabel="Time pressure chart info" testId="time-pressure-chart-info" side="top">
-            <div className="space-y-2">
-              <p>Compares how you perform under time pressure vs how your opponents perform.</p>
-              <p><strong>Blue line (My score):</strong> your average score when <em>you</em> had this much time remaining at endgame entry.</p>
-              <p><strong>Red line (Opponent&apos;s score):</strong> average score of your opponents when <em>they</em> had this much time remaining.</p>
-              <p>Where the lines diverge reveals who handles time pressure better. If your line drops faster as time decreases, you crack under pressure more than your opponents.</p>
-              <p>Includes every game that reached an endgame phase (total of at least 3 full moves / 6 half-moves spent in the endgame, summed across all endgame types). Each game contributes one data point based on the clocks at the first endgame position reached.</p>
-              <p className="text-xs text-muted-foreground">Dimmed dots indicate fewer than 10 games in that bucket.</p>
-            </div>
-          </InfoPopover>
-        </span>
-      </h3>
-      <p className="text-sm text-muted-foreground mt-1">
-        Does your score drop faster than your opponent&apos;s as the clock winds down?
-      </p>
-    </div>
-  );
+  const chartData = buildChartData(data);
 
-  // Single time control — render chart directly without tabs
-  if (data.rows.length === 1) {
-    const row = data.rows[0]!;
-    return (
-      <div data-testid="time-pressure-section">
-        {sectionHeader}
-        <ChartForRow row={row} hiddenKeys={hiddenKeys} handleLegendClick={handleLegendClick} />
-      </div>
-    );
-  }
-
-  // Multiple time controls — render with tabs
   return (
     <div data-testid="time-pressure-section">
-      {sectionHeader}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList variant="default" data-testid="time-pressure-tabs">
-          {data.rows.map((row) => (
-            <TabsTrigger
-              key={row.time_control}
-              value={row.time_control}
-              data-testid={`tab-time-pressure-${row.time_control}`}
-            >
-              {row.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        {data.rows.map((row) => (
-          <TabsContent key={row.time_control} value={row.time_control}>
-            <ChartForRow row={row} hiddenKeys={hiddenKeys} handleLegendClick={handleLegendClick} />
-          </TabsContent>
-        ))}
-      </Tabs>
+      <div className="mb-3">
+        <h3 className="text-base font-semibold">
+          <span className="inline-flex items-center gap-1">
+            Time Pressure vs Performance
+            <InfoPopover ariaLabel="Time pressure chart info" testId="time-pressure-chart-info" side="top">
+              <div className="space-y-2">
+                <p>Compares how you perform under time pressure vs how your opponents perform.</p>
+                <p><strong>Blue line (My score):</strong> your average score when <em>you</em> had this much time remaining at endgame entry.</p>
+                <p><strong>Red line (Opponent&apos;s score):</strong> average score of your opponents when <em>they</em> had this much time remaining.</p>
+                <p>Where the lines diverge reveals who handles time pressure better. If your line drops faster as time decreases, you crack under pressure more than your opponents.</p>
+                <p>Includes every game that reached an endgame phase (total of at least 3 full moves / 6 half-moves spent in the endgame, summed across all endgame types), aggregated across all time controls. Each game contributes one data point based on the clocks at the first endgame position reached. Use the filter panel to narrow by time control.</p>
+                <p className="text-xs text-muted-foreground">Dimmed dots indicate fewer than 10 games in that bucket.</p>
+              </div>
+            </InfoPopover>
+          </span>
+        </h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Does your score drop faster than your opponent&apos;s as the clock winds down?
+        </p>
+      </div>
+      <ChartContainer config={chartConfig} className="w-full h-72" data-testid="time-pressure-chart">
+        <LineChart data={chartData} margin={{ top: 5, right: 10, left: 10, bottom: 20 }}>
+          <CartesianGrid vertical={false} />
+          <XAxis
+            dataKey="bucket_label"
+            label={{
+              value: '% of base time remaining at endgame entry',
+              position: 'insideBottom',
+              offset: -10,
+              style: { fontSize: 12, fill: 'hsl(var(--muted-foreground))' },
+            }}
+          />
+          <YAxis
+            domain={Y_AXIS_DOMAIN}
+            ticks={Y_AXIS_TICKS}
+            tickFormatter={(v: number) => v.toFixed(1)}
+            label={{
+              value: 'Avg Score',
+              angle: -90,
+              position: 'insideLeft',
+              style: { fontSize: 12, fill: 'hsl(var(--muted-foreground))', textAnchor: 'middle' },
+            }}
+          />
+          <ChartTooltip
+            content={({ active, payload, label }) => {
+              if (!active || !payload?.length) return null;
+              return (
+                <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
+                  <div className="font-medium">{label as string}</div>
+                  {payload
+                    .filter((item) => item.value !== undefined)
+                    .map((item) => {
+                      const cfg = chartConfig[item.dataKey as keyof typeof chartConfig];
+                      const isMyScore = item.dataKey === 'my_score';
+                      const gameCount = isMyScore
+                        ? (item.payload as ChartDataPoint).my_game_count
+                        : (item.payload as ChartDataPoint).opp_game_count;
+                      return (
+                        <div key={item.dataKey} className="flex items-center gap-1.5">
+                          <div
+                            className="h-2 w-2 shrink-0 rounded-[2px]"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          <span>
+                            {cfg?.label ?? item.dataKey}: {(item.value as number).toFixed(2)}
+                            <span className="text-muted-foreground ml-1">
+                              ({gameCount} games)
+                            </span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+              );
+            }}
+          />
+          <ChartLegend
+            content={<ChartLegendContent hiddenKeys={hiddenKeys} onClickItem={handleLegendClick} />}
+          />
+          <Line
+            type="monotone"
+            dataKey="my_score"
+            stroke="var(--color-my_score)"
+            strokeWidth={2}
+            connectNulls={true}
+            hide={hiddenKeys.has('my_score')}
+            dot={(props: { cx?: number; cy?: number; payload?: Record<string, unknown> }) => {
+              const { cx, cy, payload } = props;
+              if (cx === undefined || cy === undefined || !payload) return <></>;
+              const gameCount = (payload.my_game_count as number) ?? 0;
+              const isDim = gameCount < MIN_GAMES_FOR_RELIABLE_STATS;
+              return (
+                <circle
+                  key={`my-dot-${payload.bucket_label as string}`}
+                  cx={cx}
+                  cy={cy}
+                  r={4}
+                  fill={MY_SCORE_COLOR}
+                  opacity={isDim ? UNRELIABLE_OPACITY : 1}
+                />
+              );
+            }}
+          />
+          <Line
+            type="monotone"
+            dataKey="opp_score"
+            stroke="var(--color-opp_score)"
+            strokeWidth={2}
+            connectNulls={true}
+            hide={hiddenKeys.has('opp_score')}
+            dot={(props: { cx?: number; cy?: number; payload?: Record<string, unknown> }) => {
+              const { cx, cy, payload } = props;
+              if (cx === undefined || cy === undefined || !payload) return <></>;
+              const gameCount = (payload.opp_game_count as number) ?? 0;
+              const isDim = gameCount < MIN_GAMES_FOR_RELIABLE_STATS;
+              return (
+                <circle
+                  key={`opp-dot-${payload.bucket_label as string}`}
+                  cx={cx}
+                  cy={cy}
+                  r={4}
+                  fill={OPP_SCORE_COLOR}
+                  opacity={isDim ? UNRELIABLE_OPACITY : 1}
+                />
+              );
+            }}
+          />
+        </LineChart>
+      </ChartContainer>
     </div>
   );
 }

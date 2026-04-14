@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Advanced Analytics
 status: executing
-last_updated: "2026-04-14T18:52:00.000Z"
-last_activity: 2026-04-14 -- Completed quick task 260414-smt
+last_updated: "2026-04-14T19:50:00.000Z"
+last_activity: 2026-04-14 -- Completed quick task 260414-u88
 progress:
   total_phases: 13
   completed_phases: 5
@@ -83,9 +83,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 | 260414-ae4 | Apply 6-ply (3-move) endgame threshold uniformly across endgames tab; update info popovers and concepts section | 2026-04-14 | 0b50fe1 | [260414-ae4-for-all-analyses-on-the-endgames-tab-con](./quick/260414-ae4-for-all-analyses-on-the-endgames-tab-con/) |
 | 260414-pv4 | Fix time pressure queries to use whole-game endgame rule (not per-class spans) + update endgame concepts docs | 2026-04-14 | f5dfee4 | [260414-pv4-fix-time-pressure-queries-to-use-whole-g](./quick/260414-pv4-fix-time-pressure-queries-to-use-whole-g/) |
 | 260414-smt | Split time_control into base_time_seconds + increment_seconds; fix time pressure denominator to per-game base time; switch primary metric to % of base time with >2x clamp | 2026-04-14 | bc8b372 | [260414-smt-split-time-control-into-base-time-second](./quick/260414-smt-split-time-control-into-base-time-second/) |
+| 260414-u88 | Aggregate time controls in Time Pressure vs Performance chart (drop tabs), relabel axes, clamp y-axis to 0.2–0.8 | 2026-04-14 | PENDING | [260414-u88-aggregate-time-controls-in-time-pressure](./quick/260414-u88-aggregate-time-controls-in-time-pressure/) |
 
 ---
-Last activity: 2026-04-14 - Completed quick task 260414-smt: Split time_control into base_time_seconds + increment_seconds; fix time pressure denominator
+Last activity: 2026-04-14 - Completed quick task 260414-u88: Aggregate time controls in Time Pressure vs Performance chart (drop tabs), relabel axes, clamp y-axis
 | 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
 | 2026-04-10 | ship | Phase 51 shipped — PR #42 merged into main | done |
 | 2026-04-11 | fast | Preserve Openings board position across main tab navigation | ✅ |
