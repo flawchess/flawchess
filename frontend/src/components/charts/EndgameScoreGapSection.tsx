@@ -61,16 +61,18 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
             >
               <div className="space-y-2">
                 <p>
-                  When you enter an endgame with a material advantage (Conversion),
-                  your baseline is your opponents' score when they have the advantage
-                  against you — the mirror situation. Because opponents are rating-matched
-                  by the platform, this baseline is self-calibrating: it adapts as you climb.
+                  The baseline for your Conversion bucket is your opponents'
+                  Conversion score <em>against you</em> — i.e. your Recovery games,
+                  flipped to their perspective. Because opponents are rating-matched
+                  by the platform, this baseline is self-calibrating: it adapts as
+                  you climb.
                 </p>
                 <p>
-                  Bars near the neutral zone mean you're performing about the same as
-                  equally-rated players in the same situation; to the right, you outperform
-                  them; to the left, you underperform. Baselines are hidden when the
-                  opponent sample is smaller than 10 games.
+                  Bars near the neutral zone mean you're converting (or recovering)
+                  about as well as equally-rated players in the same situation;
+                  to the right, you outperform them; to the left, you underperform.
+                  Baselines are hidden when the opponent sample is smaller than 10
+                  games.
                 </p>
                 <p>
                   For an even tighter comparison, set the Opponent Strength filter to
