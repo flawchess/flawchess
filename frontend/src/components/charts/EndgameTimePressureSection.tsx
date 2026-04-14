@@ -43,7 +43,7 @@ function useIsMobile(): boolean {
 }
 
 interface ChartDataPoint {
-  x: number; // bucket center on the 0-100 axis (5, 15, ..., 95)
+  bucket_center: number; // bucket center on the 0-100 axis (5, 15, ..., 95)
   bucket_label: string; // "0-10%" ... "90-100%" for tooltip
   my_score: number | undefined;
   opp_score: number | undefined;
@@ -91,9 +91,9 @@ function buildChartData(data: TimePressureChartResponse): ChartDataPoint[] {
     const oppPt = oppAgg[i];
     // Place each data point at the center of its bucket on the 0-100 axis, so
     // ticks (0%, 10%, ..., 100%) sit at bucket boundaries and points fall between.
-    const x = i * BUCKET_WIDTH + BUCKET_WIDTH / 2;
+    const bucket_center = i * BUCKET_WIDTH + BUCKET_WIDTH / 2;
     return {
-      x,
+      bucket_center,
       bucket_label: userPt.bucket_label,
       my_score: userPt.score,
       opp_score: oppPt?.score,
@@ -161,7 +161,7 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
         >
           <CartesianGrid vertical={false} horizontal={true} syncWithTicks={true} />
           <XAxis
-            dataKey="x"
+            dataKey="bucket_center"
             type="number"
             domain={X_AXIS_DOMAIN}
             ticks={X_AXIS_TICKS}
