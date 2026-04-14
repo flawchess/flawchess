@@ -1262,13 +1262,13 @@ class TestParseBaseAndIncrement:
         assert base == 900
         assert inc == 10
 
-    def test_fractional_increment_rounds_to_zero(self):
-        """'10+0.1' -> (10, 0): fractional inc < 0.5 rounds to 0 (SmallInteger column)."""
+    def test_fractional_increment_preserved(self):
+        """'10+0.1' -> (10, 0.1): fractional increment preserved as float."""
         from app.services.normalization import parse_base_and_increment
 
         base, inc = parse_base_and_increment("10+0.1")
         assert base == 10
-        assert inc == 0
+        assert inc == 0.1
 
     def test_daily_format_returns_none(self):
         """'1/259200' (daily) -> (None, None): no fixed base clock."""

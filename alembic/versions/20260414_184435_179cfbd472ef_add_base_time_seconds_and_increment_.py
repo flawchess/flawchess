@@ -19,17 +19,17 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-def _parse_base_inc(tc_str: str) -> tuple[int | None, int | None]:
+def _parse_base_inc(tc_str: str) -> tuple[int | None, float | None]:
     """Self-contained parser for time control string -> (base_seconds, increment_seconds).
 
     Inline copy of app.services.normalization.parse_base_and_increment so the migration
     stays self-contained against future code renames.
 
     Rules:
-        '600'      -> (600, 0)
-        '600+0'    -> (600, 0)
-        '600+5'    -> (600, 5)
-        '10+0.1'   -> (10, 0)   # fractional inc rounded to int
+        '600'      -> (600, 0.0)
+        '600+0'    -> (600, 0.0)
+        '600+5'    -> (600, 5.0)
+        '10+0.1'   -> (10, 0.1)   # chess.com fractional increment preserved
         '1/259200' -> (None, None)  # daily format
         ''         -> (None, None)
         '-'        -> (None, None)
@@ -51,13 +51,15 @@ def _parse_base_inc(tc_str: str) -> tuple[int | None, int | None]:
     except (ValueError, AttributeError):
         return None, None
 
-    return int(round(base)), int(round(increment))
+    return int(round(base)), increment
 
 
 def upgrade() -> None:
     """Add base_time_seconds and increment_seconds columns, backfill from time_control_str."""
     op.add_column("games", sa.Column("base_time_seconds", sa.SmallInteger(), nullable=True))
-    op.add_column("games", sa.Column("increment_seconds", sa.SmallInteger(), nullable=True))
+    # Float: chess.com emits fractional increments like "10+0.1" (0.1s bonus).
+    # SmallInteger would silently round these to 0.
+    op.add_column("games", sa.Column("increment_seconds", sa.Float(), nullable=True))
 
     # Backfill from time_control_str using the inline _parse_base_inc helper.
     # Processes in batches of 500 to avoid large single transactions.
@@ -76,7 +78,7 @@ def upgrade() -> None:
         base, inc = _parse_base_inc(tc)
         if base is None:
             continue
-        updates.append({"id": row.id, "b": base, "i": inc or 0})
+        updates.append({"id": row.id, "b": base, "i": inc if inc is not None else 0.0})
         if len(updates) >= BATCH:
             conn.execute(
                 sa.text(

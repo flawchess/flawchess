@@ -48,7 +48,7 @@ class NormalizedGame(BaseModel):
     played_at: datetime.datetime | None
     # per-game base clock fields (optional, default None)
     base_time_seconds: int | None = None
-    increment_seconds: int | None = None
+    increment_seconds: float | None = None
     # lichess-only analysis fields (optional, default None)
     white_acpl: int | None = None
     black_acpl: int | None = None

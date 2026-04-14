@@ -75,18 +75,20 @@ def parse_time_control(tc_str: str) -> tuple[TimeControlBucket | None, int | Non
         return "classical", estimated
 
 
-def parse_base_and_increment(tc_str: str) -> tuple[int | None, int | None]:
+def parse_base_and_increment(tc_str: str) -> tuple[int | None, float | None]:
     """Parse a time control string into (base_time_seconds, increment_seconds).
 
-    Returns the actual starting clock and per-move increment as integers.
+    Returns the actual starting clock (int seconds) and per-move increment (float).
     Unlike parse_time_control, this does NOT multiply increment by 40.
 
+    Increment is a float because chess.com emits fractional increments like "10+0.1".
+
     Examples:
-        '600'      -> (600, 0)
-        '600+0'    -> (600, 0)
-        '600+5'    -> (600, 5)
-        '900+10'   -> (900, 10)
-        '10+0.1'   -> (10, 0)   # fractional inc rounded to int (SmallInteger column)
+        '600'      -> (600, 0.0)
+        '600+0'    -> (600, 0.0)
+        '600+5'    -> (600, 5.0)
+        '900+10'   -> (900, 10.0)
+        '10+0.1'   -> (10, 0.1)
         '1/259200' -> (None, None)  # daily format — no fixed starting clock
         ''         -> (None, None)
         '-'        -> (None, None)
@@ -108,7 +110,7 @@ def parse_base_and_increment(tc_str: str) -> tuple[int | None, int | None]:
     except (ValueError, AttributeError):
         return None, None
 
-    return int(round(base)), int(round(increment))
+    return int(round(base)), increment
 
 
 # chess.com termination string mapping (losing player's result -> normalized termination)
@@ -356,7 +358,7 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
     clock = game.get("clock")
     tc_bucket: TimeControlBucket | None
     base_time_seconds: int | None
-    increment_seconds: int | None
+    increment_seconds: float | None
     if clock:
         clock_initial = clock.get("initial", 0)
         clock_increment = clock.get("increment", 0)

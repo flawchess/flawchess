@@ -78,9 +78,9 @@ class Game(Base):
     base_time_seconds: Mapped[int | None] = mapped_column(
         SmallInteger, nullable=True
     )  # starting clock in seconds
-    increment_seconds: Mapped[int | None] = mapped_column(
-        SmallInteger, nullable=True
-    )  # increment per move in seconds
+    increment_seconds: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )  # increment per move in seconds (Float: chess.com emits fractional values like 0.1s)
 
     # Flags
     rated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
