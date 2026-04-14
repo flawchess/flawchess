@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
+import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY, MY_SCORE_COLOR, OPP_SCORE_COLOR } from '@/lib/theme';
@@ -146,12 +146,12 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
           Can you handle time pressure better or worse than your opponents?
         </p>
       </div>
-      <div className={isMobile ? '' : 'flex items-stretch gap-2'}>
+      <div className={isMobile ? '' : 'flex items-stretch'}>
         {/* Desktop: vertical Y-axis label rendered as plain HTML (SVG `label` with
             position='insideLeft' + angle produced NaN plot-area rects and chart width 0). */}
         {!isMobile && (
           <div
-            className="flex items-center text-xs text-muted-foreground shrink-0"
+            className="flex items-center text-xs text-muted-foreground shrink-0 pt-30 -mr-1"
             style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
           >
             Avg Score
@@ -214,9 +214,6 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
               );
             }}
           />
-          <ChartLegend
-            content={<ChartLegendContent hiddenKeys={hiddenKeys} onClickItem={handleLegendClick} />}
-          />
           <Line
             type="monotone"
             dataKey="my_score"
@@ -274,9 +271,31 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
           </LineChart>
         </ChartContainer>
       </div>
-      <p className="text-xs text-muted-foreground text-center mt-2">
+      <p className="text-xs text-muted-foreground text-center -mt-2">
         % of base time remaining at endgame entry
       </p>
+      <div className="flex items-center justify-center gap-4 pt-2 text-xs">
+        {(Object.keys(chartConfig) as (keyof typeof chartConfig)[]).map((key) => {
+          const cfg = chartConfig[key];
+          const isHidden = hiddenKeys.has(key);
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => handleLegendClick(key)}
+              data-testid={`time-pressure-legend-${key}`}
+              className="flex items-center gap-1.5 cursor-pointer"
+              style={{ opacity: isHidden ? 0.4 : 1 }}
+            >
+              <span
+                className="h-2 w-2 shrink-0 rounded-[2px]"
+                style={{ backgroundColor: cfg.color }}
+              />
+              <span className="text-muted-foreground">{cfg.label}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
