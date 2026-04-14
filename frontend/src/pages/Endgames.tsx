@@ -224,29 +224,23 @@ export function EndgamesPage() {
                       under more than one type.
                     </p>
                     <p>
-                      <strong>Time Pressure</strong> stats apply the 6 half-move threshold to the
-                      whole endgame phase of a game rather than to individual sequences. A game with
-                      4 half-moves in a rook endgame followed by 4 in a pawn endgame (8 total) still
-                      qualifies, and contributes exactly one data point at the first endgame ply.
-                    </p>
-                    <p>
-                      <strong>Conversion:</strong> percentage of endgame games where you had a
+                      <strong>Conversion:</strong> percentage of games where you entered the endgame with a
                       material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted
-                      for at least {PERSISTENCE_MOVES} moves) and went on to win. Counted per game,
-                      not per sequence — a game with a qualifying advantage in any sequence is
-                      bucketed once. Measures how well you close out winning endgames.
+                      for at least {PERSISTENCE_MOVES} full moves) and went on to win.
+                      Measures how well you close out winning endgames.
                     </p>
                     <p>
-                      <strong>Recovery:</strong> percentage of endgame games where you faced a
+                      <strong>Recovery:</strong> percentage of games where you entered the endgame with a
                       material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for
-                      at least {PERSISTENCE_MOVES} moves) and drew or won. Counted per game, not per
-                      sequence. If a game qualifies for both conversion and recovery, it is bucketed
-                      as conversion. Measures how well you defend losing endgames.
+                      at least {PERSISTENCE_MOVES} full moves) and drew or won. Measures how well you defend losing
+                      endgames.
                     </p>
                     <p>
-                      These rates reflect your performance against opponents at your current rating level.
-                      As your rating changes, you face stronger or weaker opponents, so trends may not
-                      directly indicate improvement or stagnation in absolute terms.
+                      Conversion and Recovery rates usually reflect your performance against opponents at your rating
+                      level. As your rating changes, you face stronger or weaker opponents, so trends may not
+                      directly indicate improvement or stagnation in absolute terms. If you often play against
+                      stronger or weaker opponents, set the Opponent Strength filter to "Similar" to adjust your
+                      analysis.
                     </p>
                   </AccordionContent>
                 </AccordionItem>
