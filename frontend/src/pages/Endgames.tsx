@@ -220,20 +220,28 @@ export function EndgamesPage() {
                       <strong>Endgame sequence:</strong> a continuous stretch of at least 3 full moves (6 half-moves)
                       spent in a single endgame type. A single game can produce multiple sequences — for example,
                       a rook endgame where the rooks get traded becomes a pawn endgame, giving that game one rook
-                      sequence and one pawn sequence. Each sequence is counted independently for conversion and
-                      recovery statistics.
+                      sequence and one pawn sequence. Sequences drive the Endgame Type Breakdown — a game can appear
+                      under more than one type.
                     </p>
                     <p>
-                      <strong>Conversion:</strong> percentage of endgame sequences with a material
-                      advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at
-                      least {PERSISTENCE_MOVES} moves) where you went on to win the game. Measures
-                      how well you close out winning endgames.
+                      <strong>Time Pressure</strong> stats apply the 6 half-move threshold to the
+                      whole endgame phase of a game rather than to individual sequences. A game with
+                      4 half-moves in a rook endgame followed by 4 in a pawn endgame (8 total) still
+                      qualifies, and contributes exactly one data point at the first endgame ply.
                     </p>
                     <p>
-                      <strong>Recovery:</strong> percentage of endgame sequences with a material
-                      deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at
-                      least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game.
-                      Measures how well you defend losing endgames.
+                      <strong>Conversion:</strong> percentage of endgame games where you had a
+                      material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted
+                      for at least {PERSISTENCE_MOVES} moves) and went on to win. Counted per game,
+                      not per sequence — a game with a qualifying advantage in any sequence is
+                      bucketed once. Measures how well you close out winning endgames.
+                    </p>
+                    <p>
+                      <strong>Recovery:</strong> percentage of endgame games where you faced a
+                      material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for
+                      at least {PERSISTENCE_MOVES} moves) and drew or won. Counted per game, not per
+                      sequence. If a game qualifies for both conversion and recovery, it is bucketed
+                      as conversion. Measures how well you defend losing endgames.
                     </p>
                     <p>
                       These rates reflect your performance against opponents at your current rating level.
