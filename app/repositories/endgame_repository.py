@@ -502,7 +502,9 @@ async def query_endgame_timeline_rows(
     The overall endgame series is derived from these rows by deduplicating per game_id.
 
     Query B: non-endgame games (games never reaching any qualifying endgame span),
-    derived via NOT IN on the game_ids from Query A.
+    derived via NOT IN on the game_ids projected from the SAME (game_id, endgame_class)
+    subquery used by Query A — one shared scan, one consistent definition of
+    "qualified for any endgame class".
 
     Returns: (endgame_rows, non_endgame_rows, per_type_rows)
     where per_type_rows is dict[class_int, list[(played_at, result, user_color)]].
@@ -582,24 +584,17 @@ async def query_endgame_timeline_rows(
     )
 
     # --- Query B: non-endgame games (games never reaching any qualifying span) ---
-    endgame_game_ids_subq = (
-        select(GamePosition.game_id)
-        .where(
-            GamePosition.user_id == user_id,
-            GamePosition.endgame_class.isnot(None),
-        )
-        .group_by(GamePosition.game_id)
-        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
-        .subquery("endgame_game_ids")
-    )
-
+    # Reuse per_class_subq from Query A — its game_id column yields duplicates
+    # across classes, but Game.id.notin_(...) handles that correctly. This
+    # guarantees identical semantics (same HAVING, same class filter) with a
+    # single GamePosition scan shared between the two branches.
     game_cols = select(Game.played_at, Game.result, Game.user_color).where(
         Game.user_id == user_id,
         Game.played_at.isnot(None),
     )
 
     non_endgame_stmt = (
-        game_cols.where(Game.id.notin_(select(endgame_game_ids_subq.c.game_id)))
+        game_cols.where(Game.id.notin_(select(per_class_subq.c.game_id)))
         .order_by(Game.played_at.asc())
     )
     non_endgame_stmt = apply_game_filters(
