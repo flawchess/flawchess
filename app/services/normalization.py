@@ -75,6 +75,42 @@ def parse_time_control(tc_str: str) -> tuple[TimeControlBucket | None, int | Non
         return "classical", estimated
 
 
+def parse_base_and_increment(tc_str: str) -> tuple[int | None, int | None]:
+    """Parse a time control string into (base_time_seconds, increment_seconds).
+
+    Returns the actual starting clock and per-move increment as integers.
+    Unlike parse_time_control, this does NOT multiply increment by 40.
+
+    Examples:
+        '600'      -> (600, 0)
+        '600+0'    -> (600, 0)
+        '600+5'    -> (600, 5)
+        '900+10'   -> (900, 10)
+        '10+0.1'   -> (10, 0)   # fractional inc rounded to int (SmallInteger column)
+        '1/259200' -> (None, None)  # daily format — no fixed starting clock
+        ''         -> (None, None)
+        '-'        -> (None, None)
+    """
+    if not tc_str or tc_str == "-":
+        return None, None
+
+    try:
+        if "+" in tc_str:
+            base_str, increment_str = tc_str.split("+", 1)
+            base = float(base_str)
+            increment = float(increment_str)
+        elif "/" in tc_str:
+            # Daily format like "1/259200" — no fixed base clock
+            return None, None
+        else:
+            base = float(tc_str)
+            increment = 0.0
+    except (ValueError, AttributeError):
+        return None, None
+
+    return int(round(base)), int(round(increment))
+
+
 # chess.com termination string mapping (losing player's result -> normalized termination)
 _CHESSCOM_TERMINATION_MAP: dict[str, Termination] = {
     "checkmated": "checkmate",
@@ -202,6 +238,7 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> Normaliz
     # Time control
     tc_str = game.get("time_control", "")
     tc_bucket, tc_seconds = parse_time_control(tc_str)
+    base_time_seconds, increment_seconds = parse_base_and_increment(tc_str)
 
     # Timestamps
     end_time = game.get("end_time")
@@ -230,6 +267,8 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> Normaliz
         time_control_str=_normalize_tc_str(tc_str),
         time_control_bucket=tc_bucket,
         time_control_seconds=tc_seconds,
+        base_time_seconds=base_time_seconds,
+        increment_seconds=increment_seconds,
         rated=bool(game.get("rated", True)),
         is_computer_game=is_computer_game,
         white_username=white_username,
@@ -316,12 +355,15 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
     # Time control from clock
     clock = game.get("clock")
     tc_bucket: TimeControlBucket | None
+    base_time_seconds: int | None
+    increment_seconds: int | None
     if clock:
         clock_initial = clock.get("initial", 0)
         clock_increment = clock.get("increment", 0)
         tc_str_raw = f"{clock_initial}+{clock_increment}"
         tc_bucket, tc_seconds = parse_time_control(tc_str_raw)
         tc_str = _normalize_tc_str(tc_str_raw)
+        base_time_seconds, increment_seconds = parse_base_and_increment(tc_str_raw)
     elif game.get("speed") == "correspondence":
         # Correspondence games have no clock field — lichess uses daysPerTurn instead.
         # Normalize to chess.com's PGN daily format (1/{seconds_per_move}) so both platforms
@@ -330,10 +372,14 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
         tc_str = f"1/{days_per_turn * 86400}" if days_per_turn else None
         tc_bucket = "classical"
         tc_seconds = None
+        base_time_seconds = None
+        increment_seconds = None
     else:
         tc_str = None
         tc_bucket = None
         tc_seconds = None
+        base_time_seconds = None
+        increment_seconds = None
 
     # Timestamp: createdAt is in milliseconds
     created_at_ms = game.get("createdAt")
@@ -367,6 +413,8 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
         time_control_str=tc_str,
         time_control_bucket=tc_bucket,
         time_control_seconds=tc_seconds,
+        base_time_seconds=base_time_seconds,
+        increment_seconds=increment_seconds,
         rated=bool(game.get("rated", True)),
         is_computer_game=is_computer_game,
         white_username=white_username,

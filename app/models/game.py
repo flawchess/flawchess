@@ -1,6 +1,15 @@
 import datetime
 
-from sqlalchemy import Boolean, Enum as SAEnum, Float, ForeignKey, SmallInteger, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Enum as SAEnum,
+    Float,
+    ForeignKey,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -10,19 +19,31 @@ from app.models.base import Base
 game_result_enum = SAEnum("1-0", "0-1", "1/2-1/2", name="gameresult", create_type=False)
 color_enum = SAEnum("white", "black", name="color", create_type=False)
 termination_enum = SAEnum(
-    "checkmate", "resignation", "timeout", "draw", "abandoned", "unknown",
-    name="termination", create_type=False,
+    "checkmate",
+    "resignation",
+    "timeout",
+    "draw",
+    "abandoned",
+    "unknown",
+    name="termination",
+    create_type=False,
 )
 time_control_bucket_enum = SAEnum(
-    "bullet", "blitz", "rapid", "classical",
-    name="timecontrolbucket", create_type=False,
+    "bullet",
+    "blitz",
+    "rapid",
+    "classical",
+    name="timecontrolbucket",
+    create_type=False,
 )
 
 
 class Game(Base):
     __tablename__ = "games"
     __table_args__ = (
-        UniqueConstraint("user_id", "platform", "platform_game_id", name="uq_games_user_platform_game_id"),
+        UniqueConstraint(
+            "user_id", "platform", "platform_game_id", name="uq_games_user_platform_game_id"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -39,15 +60,27 @@ class Game(Base):
     pgn: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Result — PostgreSQL ENUM types enforce valid values at the DB level
-    result: Mapped[str] = mapped_column(game_result_enum, nullable=False)   # "1-0" | "0-1" | "1/2-1/2"
-    user_color: Mapped[str] = mapped_column(color_enum, nullable=False)      # "white" | "black"
-    termination_raw: Mapped[str | None] = mapped_column(String(50))          # platform's original string
-    termination: Mapped[str | None] = mapped_column(termination_enum)        # normalized: checkmate|resignation|timeout|draw|abandoned|unknown
+    result: Mapped[str] = mapped_column(
+        game_result_enum, nullable=False
+    )  # "1-0" | "0-1" | "1/2-1/2"
+    user_color: Mapped[str] = mapped_column(color_enum, nullable=False)  # "white" | "black"
+    termination_raw: Mapped[str | None] = mapped_column(String(50))  # platform's original string
+    termination: Mapped[str | None] = mapped_column(
+        termination_enum
+    )  # normalized: checkmate|resignation|timeout|draw|abandoned|unknown
 
     # Time control
-    time_control_str: Mapped[str | None] = mapped_column(String(50))   # raw string e.g. "600+0"
-    time_control_bucket: Mapped[str | None] = mapped_column(time_control_bucket_enum)  # "bullet"|"blitz"|"rapid"|"classical"
-    time_control_seconds: Mapped[int | None]                             # estimated duration in seconds
+    time_control_str: Mapped[str | None] = mapped_column(String(50))  # raw string e.g. "600+0"
+    time_control_bucket: Mapped[str | None] = mapped_column(
+        time_control_bucket_enum
+    )  # "bullet"|"blitz"|"rapid"|"classical"
+    time_control_seconds: Mapped[int | None]  # estimated duration in seconds (base + inc*40)
+    base_time_seconds: Mapped[int | None] = mapped_column(
+        SmallInteger, nullable=True
+    )  # starting clock in seconds
+    increment_seconds: Mapped[int | None] = mapped_column(
+        SmallInteger, nullable=True
+    )  # increment per move in seconds
 
     # Flags
     rated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
