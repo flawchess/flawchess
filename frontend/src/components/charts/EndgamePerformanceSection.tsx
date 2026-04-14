@@ -64,7 +64,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
           <span className="inline-flex items-center gap-1">
             Games with vs without Endgame
             <InfoPopover ariaLabel="Games with vs without Endgame info" testId="perf-section-info" side="top">
-              Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not. The Score Difference column shows the signed gap between your endgame score and non-endgame score (green = endgame stronger, red = endgame weaker, narrow grey band = near parity).
+              Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not. Only endgames that span at least 6 plies (3 moves) are counted — shorter tactical endgame transitions are treated as &quot;no endgame&quot;. The Score Difference column shows the signed gap between your endgame score and non-endgame score (green = endgame stronger, red = endgame weaker, narrow grey band = near parity).
             </InfoPopover>
           </span>
         </h3>
