@@ -59,23 +59,32 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               testId="material-breakdown-section-info"
               side="top"
             >
-              A comparison of how you perform with how your opponents perform
-              against you in the mirror situation. When you enter an endgame with
-              a material advantage (Conversion), your baseline is your opponents'
-              score when they have the advantage against you (i.e. games where you
-              were down material). Because your opponents are rating-matched by the
-              platform, this baseline is self-calibrating — it automatically adapts
-              as you climb. Bars near the neutral zone mean you're performing about
-              the same as equally-rated players in the same situation; to the right,
-              you outperform them; to the left, you underperform. Baselines are
-              hidden when the opponent sample is smaller than 10 games.
+              <div className="space-y-2">
+                <p>
+                  When you enter an endgame with a material advantage (Conversion),
+                  your baseline is your opponents' score when they have the advantage
+                  against you — the mirror situation. Because opponents are rating-matched
+                  by the platform, this baseline is self-calibrating: it adapts as you climb.
+                </p>
+                <p>
+                  Bars near the neutral zone mean you're performing about the same as
+                  equally-rated players in the same situation; to the right, you outperform
+                  them; to the left, you underperform. Baselines are hidden when the
+                  opponent sample is smaller than 10 games.
+                </p>
+                <p>
+                  For an even tighter comparison, set the Opponent Strength filter to
+                  "Similar" — this restricts the baseline to opponents within ±50 ELO
+                  of your rating.
+                </p>
+              </div>
             </InfoPopover>
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          How you perform entering endgames with a material advantage
-          (Conversion, ≥ +1 point), roughly even material (Even), or a
-          material deficit (Recovery, ≤ −1 point).
+          Your vs. your opponents' performance <em>against you</em> when
+          entering the endgame with a material advantage (Conversion, ≥ +1),
+          roughly even (Even), or a deficit (Recovery, ≤ −1).
         </p>
       </div>
 
