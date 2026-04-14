@@ -12,6 +12,7 @@
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
+import { GAUGE_DANGER, GAUGE_NEUTRAL, GAUGE_SUCCESS } from '@/lib/theme';
 import type { MaterialBucket, ScoreGapMaterialResponse } from '@/types/endgames';
 
 // Phase 60: opponent baseline — single symmetric neutral zone for all
@@ -108,11 +109,9 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               <th className="py-1 pr-3 font-medium" aria-label="Material bucket" />
               <th className="py-1 px-2 font-medium text-right">Games</th>
               <th className="py-1 px-2 font-medium">Win / Draw / Loss</th>
-              <th className="py-1 px-2 font-medium text-right">
-                Score (Diff)
-              </th>
+              <th className="py-1 px-2 font-medium text-right"></th>
               <th className="py-1 px-2 font-medium">
-                Score vs Opponent
+                Your vs Opponents' Score
               </th>
             </tr>
           </thead>
@@ -123,6 +122,12 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                 row.opponent_games >= MIN_OPPONENT_BASELINE_GAMES;
               const diff = hasOpponent ? row.score - (row.opponent_score as number) : 0;
               const diffLabel = (diff >= 0 ? '+' : '') + diff.toFixed(2);
+              const diffColor =
+                diff >= NEUTRAL_ZONE_MAX
+                  ? GAUGE_SUCCESS
+                  : diff >= NEUTRAL_ZONE_MIN
+                    ? GAUGE_NEUTRAL
+                    : GAUGE_DANGER;
               const pct =
                 totalMaterialGames > 0
                   ? ((row.games / totalMaterialGames) * 100).toFixed(1)
@@ -147,9 +152,15 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                     />
                   </td>
                   <td className="py-1.5 px-2 text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap">
-                    {hasOpponent
-                      ? `${row.score.toFixed(2)} vs ${(row.opponent_score as number).toFixed(2)} (${diffLabel})`
-                      : row.score.toFixed(2)}
+                    {hasOpponent ? (
+                      <>
+                        {row.score.toFixed(2)} −{' '}
+                        {(row.opponent_score as number).toFixed(2)} ={' '}
+                        <span style={{ color: diffColor }}>{diffLabel}</span>
+                      </>
+                    ) : (
+                      row.score.toFixed(2)
+                    )}
                   </td>
                   <td className="py-1.5 px-2">
                     {hasOpponent ? (
@@ -187,6 +198,12 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
           const opponentFormatted = hasOpponent
             ? (row.opponent_score as number).toFixed(2)
             : null;
+          const diffColor =
+            diff >= NEUTRAL_ZONE_MAX
+              ? GAUGE_SUCCESS
+              : diff >= NEUTRAL_ZONE_MIN
+                ? GAUGE_NEUTRAL
+                : GAUGE_DANGER;
           const pct =
             totalMaterialGames > 0
               ? ((row.games / totalMaterialGames) * 100).toFixed(1)
@@ -219,17 +236,16 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                 />
               </div>
               <div>
-                <div className="flex items-baseline justify-between text-xs mb-1">
-                  <span className="text-muted-foreground">
-                    {opponentFormatted !== null
-                      ? `Score vs Opponent (${opponentFormatted})`
-                      : 'Score vs Opponent'}
-                  </span>
-                  <span className="tabular-nums text-muted-foreground">
-                    {hasOpponent
-                      ? `${row.score.toFixed(2)} (${diffLabel})`
-                      : row.score.toFixed(2)}
-                  </span>
+                <div className="text-xs text-muted-foreground mb-1 tabular-nums">
+                  {opponentFormatted !== null ? (
+                    <>
+                      Your vs Opponents' Score: {row.score.toFixed(2)} -
+                      {opponentFormatted} ={' '}
+                      <span style={{ color: diffColor }}>{diffLabel}</span>
+                    </>
+                  ) : (
+                    <>Your Score ({row.score.toFixed(2)})</>
+                  )}
                 </div>
                 {hasOpponent ? (
                   <MiniBulletChart
