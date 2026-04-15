@@ -28,9 +28,13 @@ export const ZONE_WARNING = 'oklch(0.50 0.14 80)';      // amber zone (L/C match
 export const ZONE_NEUTRAL = 'oklch(0.50 0.14 260)';     // blue zone (L/C match WDL)
 export const ZONE_SUCCESS = WDL_WIN;                    // green zone (same as win)
 
-// Endgame gauge zone constants (Phase 60 / R98)
-// Peer-calibrated gauges use blue (peer match), red (underperform), green (outperform).
-// Fallback default zones are used when peer baseline is unavailable.
+// Endgame gauge zone colors — fixed per-bucket thresholds.
+// Blue marks the "typical skill-cohort range" for each bucket; red below,
+// green above. The Diff column + bullet chart in the same section still
+// carry the peer-relative verdict against the user's actual opponents.
+// The two signals can disagree when the opponent pool is unusual (e.g.
+// filtered by opponent strength) — that disagreement is informative,
+// not a bug.
 export const GAUGE_DANGER = WDL_LOSS;                   // red zone
 export const GAUGE_SUCCESS = WDL_WIN;                   // green zone
 export const GAUGE_PEER = 'oklch(0.55 0.18 260)';       // blue peer-match zone (matches MY_SCORE_COLOR / Recovery line)
@@ -41,12 +45,12 @@ export interface GaugeZone {
   color: string; // CSS color
 }
 
-// Fallback zones when no peer baseline is available — fixed thresholds.
-// red 0..0.6, amber 0.6..0.8, green 0.8..1.0.
+// Fallback used only when a caller omits the `zones` prop on EndgameGauge.
+// All current callers pass explicit bucket-specific zones.
 export const DEFAULT_GAUGE_ZONES: GaugeZone[] = [
-  { from: 0, to: 0.6, color: GAUGE_DANGER },
-  { from: 0.6, to: 0.8, color: ZONE_WARNING },
-  { from: 0.8, to: 1.0, color: GAUGE_SUCCESS },
+  { from: 0, to: 0.4, color: GAUGE_DANGER },
+  { from: 0.4, to: 0.6, color: GAUGE_PEER },
+  { from: 0.6, to: 1.0, color: GAUGE_SUCCESS },
 ];
 
 // Minimum games required for reliable stats — rows/charts below this threshold are dimmed

@@ -1,16 +1,23 @@
 /**
  * Endgame Score Gap & Material Breakdown section:
- * - Signed score difference (endgame score vs non-endgame score), green >= 0, red < 0
- * - Material-stratified WDL table: Conversion / Parity / Recovery, with a mini
- *   bullet chart comparing each bucket's score to the opponent's score in the
- *   mirror bucket (self-calibrating peer baseline — Phase 60).
- *   Conversion/Recovery require the material imbalance to persist 4 plies into
- *   the endgame to filter out transient trade noise — games that don't persist
- *   fall into the Parity bucket.
+ * - Gauge strip (Conversion / Parity / Recovery) showing the absolute rate
+ *   against a fixed per-bucket blue target band (skill-cohort expectation).
+ *   The targets are intentionally stable — they do NOT shift with filters
+ *   or opponent pool, unlike the peer-relative Diff column.
+ * - Material-stratified WDL table: Conversion / Parity / Recovery with
+ *   You / Peers / Diff columns and a bullet chart visualizing the signed
+ *   diff against a self-calibrating peer baseline (the user's opponents
+ *   in the mirror bucket). Conversion/Recovery require the material
+ *   imbalance to persist 4 plies into the endgame to filter out transient
+ *   trade noise — games that don't persist fall into the Parity bucket.
+ *
+ * The two signals (gauge color vs Diff color) can disagree when the
+ * opponent pool is unusual — that disagreement is informative.
  */
 
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
+import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import {
   ZONE_DANGER,
@@ -19,7 +26,6 @@ import {
   GAUGE_DANGER,
   GAUGE_PEER,
   GAUGE_SUCCESS,
-  DEFAULT_GAUGE_ZONES,
   type GaugeZone,
 } from '@/lib/theme';
 import type {
@@ -28,17 +34,17 @@ import type {
   ScoreGapMaterialResponse,
 } from '@/types/endgames';
 
-// Phase 60: opponent baseline — single symmetric neutral zone for all
-// buckets. Equally-rated players should score equally in mirrored
-// situations, so the expected diff is zero everywhere. ±0.03 (3pp)
-// reads as "essentially matched" — kept for the table Diff color thresholds.
+// Opponent baseline: single symmetric neutral zone for all buckets.
+// Equally-rated players should score equally in mirrored situations,
+// so the expected diff is zero everywhere. ±0.05 (5pp) reads as
+// "essentially matched" for the Diff color and bullet-chart neutral band.
 const NEUTRAL_ZONE_MIN = -0.05;
 const NEUTRAL_ZONE_MAX = 0.05;
 
-// Peer-calibrated gauge tolerance — width of the blue peer-match band
-// on either side of the opponent's rate. Same 5pp value as the Diff
-// neutral zone, keeping the two visualisations conceptually aligned.
-const PEER_ZONE_TOLERANCE = 0.05;
+// Bullet domain half-width for opponent-calibrated diffs. Equally-rated
+// players cluster near zero, so ±0.20 covers realistic diffs without
+// making typical values look tiny.
+const BULLET_DOMAIN = 0.20;
 
 // Hide the bullet bar when the opponent's mirror-bucket sample is too
 // small. Mirrors backend `_MIN_OPPONENT_SAMPLE = 10` and the WDL-bar
@@ -53,15 +59,44 @@ const BUCKET_DISPLAY_LABELS: Record<MaterialBucket, string> = {
   recovery: 'Recovery',
 };
 
+// Fixed per-bucket gauge zones. The blue band marks the typical
+// skill-cohort range for each bucket; red below, green above. Boundaries
+// are deliberately stable across users, filters, and opponent pools —
+// this is the "fixed target" the peer-calibrated design couldn't offer.
+// Bands calibrated from FlawChess prod data (users ±50 ELO vs opponents,
+// 0-2499 ELO brackets): conversion and recovery stay within ~4pp across
+// rating ranges, so a single rating-agnostic band is used for each bucket.
+const FIXED_GAUGE_ZONES: Record<MaterialBucket, GaugeZone[]> = {
+  conversion: [
+    { from: 0, to: 0.65, color: GAUGE_DANGER },
+    { from: 0.65, to: 0.75, color: GAUGE_PEER },
+    { from: 0.75, to: 1.0, color: GAUGE_SUCCESS },
+  ],
+  parity: [
+    { from: 0, to: 0.45, color: GAUGE_DANGER },
+    { from: 0.45, to: 0.55, color: GAUGE_PEER },
+    { from: 0.55, to: 1.0, color: GAUGE_SUCCESS },
+  ],
+  recovery: [
+    { from: 0, to: 0.30, color: GAUGE_DANGER },
+    { from: 0.30, to: 0.40, color: GAUGE_PEER },
+    { from: 0.40, to: 1.0, color: GAUGE_SUCCESS },
+  ],
+};
+
 /** Format a 0.0-1.0 rate as an integer percent string, e.g. 0.684 -> "68%". */
 function formatScorePct(score: number): string {
   return `${Math.round(score * 100)}%`;
 }
 
-/** Format a signed diff (in 0.0-1.0 rate units) as an integer percent
- * with an explicit sign, e.g. -0.08 -> "-8%", 0.03 -> "+3%", 0 -> "+0%". */
-function formatDiffPct(diff: number): string {
-  const pct = Math.round(diff * 100);
+/** Format the visible diff as an integer percent with explicit sign, e.g. "-2%".
+ *
+ * Computed from the already-rounded You/Peers percentages so the Diff always
+ * equals (displayed You) − (displayed Peers). Rounding the raw rate diff
+ * independently can disagree with the displayed values by 1pp (e.g. You 69% /
+ * Peers 71% showing Diff −1% instead of −2%). */
+function formatDiffPct(userR: number, oppR: number): string {
+  const pct = Math.round(userR * 100) - Math.round(oppR * 100);
   return `${pct >= 0 ? '+' : ''}${pct}%`;
 }
 
@@ -100,19 +135,6 @@ function opponentRate(row: MaterialRow, mirror: MaterialRow | undefined): number
   if (row.bucket === 'conversion') return mirror.loss_pct / 100;
   if (row.bucket === 'recovery') return (mirror.loss_pct + mirror.draw_pct) / 100;
   return 1 - row.score;
-}
-
-/** Build peer-calibrated gauge zones around the opponent's rate.
- * Returns red below [peerRate − tol], blue inside [peerRate ± tol], green above.
- * Edge zones are dropped if they would be empty (peerRate at 0 or 1). */
-function peerCalibratedZones(peerRate: number, tolerance = PEER_ZONE_TOLERANCE): GaugeZone[] {
-  const lo = Math.max(0, peerRate - tolerance);
-  const hi = Math.min(1, peerRate + tolerance);
-  const zones: GaugeZone[] = [];
-  if (lo > 0) zones.push({ from: 0, to: lo, color: GAUGE_DANGER });
-  if (hi > lo) zones.push({ from: lo, to: hi, color: GAUGE_PEER });
-  if (hi < 1) zones.push({ from: hi, to: 1, color: GAUGE_SUCCESS });
-  return zones;
 }
 
 interface EndgameScoreGapSectionProps {
@@ -172,7 +194,9 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
         </p>
       </div>
 
-      {/* Peer-calibrated gauge strip — Conversion / Parity / Recovery */}
+      {/* Gauge strip — Conversion / Parity / Recovery with fixed
+          per-bucket blue target bands. The Diff column below carries
+          the peer-relative verdict against the user's actual opponents. */}
       <div
         className="grid grid-cols-1 sm:grid-cols-3 gap-3"
         data-testid="endgame-gauge-strip"
@@ -185,9 +209,6 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
           const oppR = opponentRate(row, mirror);
           const hasPeer =
             oppR !== null && row.opponent_games >= MIN_OPPONENT_BASELINE_GAMES;
-          const zones = hasPeer
-            ? peerCalibratedZones(oppR as number)
-            : DEFAULT_GAUGE_ZONES;
           return (
             <div
               key={bucket}
@@ -200,10 +221,10 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               <EndgameGauge
                 value={userR * 100}
                 label={BUCKET_DISPLAY_LABELS[bucket]}
-                zones={zones}
+                zones={FIXED_GAUGE_ZONES[bucket]}
               />
               <div className="text-xs text-muted-foreground tabular-nums">
-                {hasPeer ? `Peer: ${formatScorePct(oppR as number)}` : '—'}
+                {hasPeer ? `Peers: ${formatScorePct(oppR as number)}` : '—'}
               </div>
             </div>
           );
@@ -217,12 +238,13 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
           data-testid="material-table"
         >
           <colgroup>
+            <col style={{ width: '110px' }} />
             <col style={{ width: '120px' }} />
-            <col style={{ width: '130px' }} />
-            <col style={{ width: '160px' }} />
-            <col style={{ width: '110px' }} />
-            <col style={{ width: '110px' }} />
+            <col style={{ width: '150px' }} />
+            <col style={{ width: '90px' }} />
+            <col style={{ width: '100px' }} />
             <col style={{ width: '70px' }} />
+            <col style={{ width: '160px' }} />
           </colgroup>
           <thead>
             <tr className="text-left text-xs text-muted-foreground border-b border-border">
@@ -232,6 +254,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               <th className="py-1 px-2 font-medium text-right">You vs Peers</th>
               <th className="py-1 px-2 font-medium text-right">Peers vs You</th>
               <th className="py-1 px-2 font-medium text-right">Diff</th>
+              <th className="py-1 px-2 font-medium">You − Peers</th>
             </tr>
           </thead>
           <tbody>
@@ -288,9 +311,27 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                     data-testid={`material-row-${row.bucket}-diff`}
                   >
                     {hasOpponent ? (
-                      <span style={{ color: diffColor }}>{formatDiffPct(diff)}</span>
+                      <span style={{ color: diffColor }}>{formatDiffPct(userR, oppR as number)}</span>
                     ) : (
                       ''
+                    )}
+                  </td>
+                  <td className="py-1.5 px-2">
+                    {hasOpponent ? (
+                      <MiniBulletChart
+                        value={diff}
+                        neutralMin={NEUTRAL_ZONE_MIN}
+                        neutralMax={NEUTRAL_ZONE_MAX}
+                        domain={BULLET_DOMAIN}
+                        ariaLabel={`${BUCKET_DISPLAY_LABELS[row.bucket]}: ${formatDiffPct(userR, oppR as number)} vs peers`}
+                      />
+                    ) : (
+                      <span
+                        className="text-xs text-muted-foreground"
+                        data-testid={`material-row-${row.bucket}-muted`}
+                      >
+                        n &lt; {MIN_OPPONENT_BASELINE_GAMES} — baseline unavailable
+                      </span>
                     )}
                   </td>
                 </tr>
@@ -375,12 +416,28 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                           style={{ color: diffColor }}
                           data-testid={`material-card-${row.bucket}-diff`}
                         >
-                          {formatDiffPct(diff)}
+                          {formatDiffPct(userR, oppR as number)}
                         </div>
                       </div>
                     </>
                   )}
                 </div>
+                {hasOpponent ? (
+                  <MiniBulletChart
+                    value={diff}
+                    neutralMin={NEUTRAL_ZONE_MIN}
+                    neutralMax={NEUTRAL_ZONE_MAX}
+                    domain={BULLET_DOMAIN}
+                    ariaLabel={`${BUCKET_DISPLAY_LABELS[row.bucket]}: ${formatDiffPct(userR, oppR as number)} vs peers`}
+                  />
+                ) : (
+                  <span
+                    className="text-xs text-muted-foreground block"
+                    data-testid={`material-card-${row.bucket}-muted`}
+                  >
+                    n &lt; {MIN_OPPONENT_BASELINE_GAMES} — baseline unavailable
+                  </span>
+                )}
               </div>
             </div>
           );
