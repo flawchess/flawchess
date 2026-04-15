@@ -3,10 +3,10 @@
  * - Gauge strip (Conversion / Parity / Recovery) showing the absolute rate
  *   against a fixed per-bucket blue target band (skill-cohort expectation).
  *   The targets are intentionally stable — they do NOT shift with filters
- *   or opponent pool, unlike the peer-relative Diff column.
+ *   or opponent pool, unlike the opponent-relative Diff column.
  * - Material-stratified WDL table: Conversion / Parity / Recovery with
- *   You / Peers / Diff columns and a bullet chart visualizing the signed
- *   diff against a self-calibrating peer baseline (the user's opponents
+ *   You / Opp / Diff columns and a bullet chart visualizing the signed
+ *   diff against a self-calibrating opponent baseline (the user's opponents
  *   in the mirror bucket). Conversion/Recovery require the material
  *   imbalance to persist 4 plies into the endgame to filter out transient
  *   trade noise — games that don't persist fall into the Parity bucket.
@@ -24,7 +24,7 @@ import {
   ZONE_NEUTRAL,
   ZONE_SUCCESS,
   GAUGE_DANGER,
-  GAUGE_PEER,
+  GAUGE_NEUTRAL,
   GAUGE_SUCCESS,
   type GaugeZone,
 } from '@/lib/theme';
@@ -62,24 +62,24 @@ const BUCKET_DISPLAY_LABELS: Record<MaterialBucket, string> = {
 // Fixed per-bucket gauge zones. The blue band marks the typical
 // skill-cohort range for each bucket; red below, green above. Boundaries
 // are deliberately stable across users, filters, and opponent pools —
-// this is the "fixed target" the peer-calibrated design couldn't offer.
+// this is the "fixed target" the opponent-calibrated design couldn't offer.
 // Bands calibrated from FlawChess prod data (users ±50 ELO vs opponents,
 // 0-2499 ELO brackets): conversion and recovery stay within ~4pp across
 // rating ranges, so a single rating-agnostic band is used for each bucket.
 const FIXED_GAUGE_ZONES: Record<MaterialBucket, GaugeZone[]> = {
   conversion: [
     { from: 0, to: 0.65, color: GAUGE_DANGER },
-    { from: 0.65, to: 0.75, color: GAUGE_PEER },
+    { from: 0.65, to: 0.75, color: GAUGE_NEUTRAL },
     { from: 0.75, to: 1.0, color: GAUGE_SUCCESS },
   ],
   parity: [
     { from: 0, to: 0.45, color: GAUGE_DANGER },
-    { from: 0.45, to: 0.55, color: GAUGE_PEER },
+    { from: 0.45, to: 0.55, color: GAUGE_NEUTRAL },
     { from: 0.55, to: 1.0, color: GAUGE_SUCCESS },
   ],
   recovery: [
     { from: 0, to: 0.30, color: GAUGE_DANGER },
-    { from: 0.30, to: 0.40, color: GAUGE_PEER },
+    { from: 0.30, to: 0.40, color: GAUGE_NEUTRAL },
     { from: 0.40, to: 1.0, color: GAUGE_SUCCESS },
   ],
 };
@@ -91,10 +91,10 @@ function formatScorePct(score: number): string {
 
 /** Format the visible diff as an integer percent with explicit sign, e.g. "-2%".
  *
- * Computed from the already-rounded You/Peers percentages so the Diff always
- * equals (displayed You) − (displayed Peers). Rounding the raw rate diff
+ * Computed from the already-rounded You/Opp percentages so the Diff always
+ * equals (displayed You) − (displayed Opp). Rounding the raw rate diff
  * independently can disagree with the displayed values by 1pp (e.g. You 69% /
- * Peers 71% showing Diff −1% instead of −2%). */
+ * Opp 71% showing Diff −1% instead of −2%). */
 function formatDiffPct(userR: number, oppR: number): string {
   const pct = Math.round(userR * 100) - Math.round(oppR * 100);
   return `${pct >= 0 ? '+' : ''}${pct}%`;
@@ -162,27 +162,41 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                 <p>
                   Games are split by the material balance on entering the endgame:
                   <strong> Conversion</strong> (you lead by ≥ +1),
-                  <strong> Parity</strong> (roughly balanced), or
-                  <strong> Recovery</strong> (you trail by ≤ −1). The imbalance must
-                  persist 4 half-moves into the endgame, so transient trades don't
-                  distort the split.
+                  <strong> Parity</strong> (balanced), or
+                  <strong> Recovery</strong> (you trail by ≤ −1). The imbalance
+                  must persist 4 half-moves into the endgame, so transient trades
+                  don't distort the split.
                 </p>
                 <p>
-                  Your baseline is how your opponents performed in the mirror
-                  bucket <em>against you</em> — e.g. your Conversion score is
-                  compared to your opponents' Conversion score when playing you
-                  (your Recovery games, flipped). Because the platform rating-matches
-                  you, this baseline self-calibrates as you improve.
+                  Each bucket tracks a different percentage:
+                  <strong> Conversion</strong> = win rate (W/G),
+                  <strong> Recovery</strong> = save rate ((W+D)/G), and
+                  <strong> Parity</strong> = chess-score percentage ((W+D/2)/G,
+                  draws count as half).
                 </p>
                 <p>
-                  Bars near the neutral zone mean you perform like an equally-rated
-                  player in the same situation; to the right you outperform, to the
-                  left you underperform. Baselines are hidden when the opponent
-                  sample is smaller than 10 games.
+                  The <strong>gauges</strong> plot that percentage against a
+                  fixed skill-cohort target band (blue = typical, red = below,
+                  green = above). Bands are calibrated from FlawChess data and
+                  don't shift with filters — a stable target you can chase as
+                  you improve.
+                </p>
+                <p>
+                  The <strong>table</strong> compares your rate to your actual
+                  opponents' rate in the mirror bucket (e.g. your Conversion vs
+                  their Conversion when playing you — your Recovery games,
+                  flipped). This baseline is self-calibrating and shifts with
+                  filters like Opponent Strength. Hidden when the opponent sample
+                  is smaller than 10 games.
+                </p>
+                <p>
+                  Gauge and Diff can disagree — that's informative. Outperforming
+                  the fixed target while underperforming your current opponents
+                  means you face a tougher-than-average pool, and vice versa.
                 </p>
                 <p>
                   Tip: set the Opponent Strength filter to "Similar" to restrict
-                  the baseline to opponents within ±50 ELO of your rating.
+                  the opponent baseline to players within ±50 ELO of your rating.
                 </p>
               </div>
             </InfoPopover>
@@ -196,7 +210,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
 
       {/* Gauge strip — Conversion / Parity / Recovery with fixed
           per-bucket blue target bands. The Diff column below carries
-          the peer-relative verdict against the user's actual opponents. */}
+          the opponent-relative verdict against the user's actual opponents. */}
       <div
         className="hidden lg:grid grid-cols-3 gap-3"
         data-testid="endgame-gauge-strip"
@@ -244,10 +258,10 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               <th className="py-1 pr-3 font-medium" aria-label="Material bucket" />
               <th className="py-1 px-2 font-medium text-right">Games</th>
               <th className="py-1 px-2 font-medium">Win / Draw / Loss</th>
-              <th className="py-1 px-2 font-medium text-right">You vs Peers</th>
-              <th className="py-1 px-2 font-medium text-right">Peers vs You</th>
+              <th className="py-1 px-2 font-medium text-right">You vs Opp</th>
+              <th className="py-1 px-2 font-medium text-right">Opp vs You</th>
               <th className="py-1 px-2 font-medium text-right">Diff</th>
-              <th className="py-1 px-2 font-medium">You − Peers</th>
+              <th className="py-1 px-2 font-medium">You − Opp</th>
             </tr>
           </thead>
           <tbody>
@@ -316,7 +330,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                         neutralMin={NEUTRAL_ZONE_MIN}
                         neutralMax={NEUTRAL_ZONE_MAX}
                         domain={BULLET_DOMAIN}
-                        ariaLabel={`${BUCKET_DISPLAY_LABELS[row.bucket]}: ${formatDiffPct(userR, oppR as number)} vs peers`}
+                        ariaLabel={`${BUCKET_DISPLAY_LABELS[row.bucket]}: ${formatDiffPct(userR, oppR as number)} vs opponents`}
                       />
                     ) : (
                       <span
@@ -390,7 +404,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               <div>
                 <div className="flex gap-4 text-xs tabular-nums mb-1">
                   <div>
-                    <div className="text-muted-foreground">You vs Peers</div>
+                    <div className="text-muted-foreground">You vs Opp</div>
                     <div
                       className="font-medium"
                       data-testid={`material-card-${row.bucket}-you`}
@@ -401,7 +415,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   {hasOpponent && (
                     <>
                       <div>
-                        <div className="text-muted-foreground">Peers vs You</div>
+                        <div className="text-muted-foreground">Opp vs You</div>
                         <div
                           className="font-medium"
                           data-testid={`material-card-${row.bucket}-opp`}
@@ -428,7 +442,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                     neutralMin={NEUTRAL_ZONE_MIN}
                     neutralMax={NEUTRAL_ZONE_MAX}
                     domain={BULLET_DOMAIN}
-                    ariaLabel={`${BUCKET_DISPLAY_LABELS[row.bucket]}: ${formatDiffPct(userR, oppR as number)} vs peers`}
+                    ariaLabel={`${BUCKET_DISPLAY_LABELS[row.bucket]}: ${formatDiffPct(userR, oppR as number)} vs opponents`}
                   />
                 ) : (
                   <span

@@ -31,13 +31,13 @@ export const ZONE_SUCCESS = WDL_WIN;                    // green zone (same as w
 // Endgame gauge zone colors — fixed per-bucket thresholds.
 // Blue marks the "typical skill-cohort range" for each bucket; red below,
 // green above. The Diff column + bullet chart in the same section still
-// carry the peer-relative verdict against the user's actual opponents.
+// carry the opponent-relative verdict against the user's actual opponents.
 // The two signals can disagree when the opponent pool is unusual (e.g.
 // filtered by opponent strength) — that disagreement is informative,
 // not a bug.
 export const GAUGE_DANGER = WDL_LOSS;                   // red zone
 export const GAUGE_SUCCESS = WDL_WIN;                   // green zone
-export const GAUGE_PEER = 'oklch(0.55 0.18 260)';       // blue peer-match zone (matches MY_SCORE_COLOR / Recovery line)
+export const GAUGE_NEUTRAL = 'oklch(0.55 0.18 260)';        // blue skill-cohort / neutral zone (matches MY_SCORE_COLOR / Recovery line)
 
 export interface GaugeZone {
   from: number;  // 0..1
@@ -49,7 +49,7 @@ export interface GaugeZone {
 // All current callers pass explicit bucket-specific zones.
 export const DEFAULT_GAUGE_ZONES: GaugeZone[] = [
   { from: 0, to: 0.4, color: GAUGE_DANGER },
-  { from: 0.4, to: 0.6, color: GAUGE_PEER },
+  { from: 0.4, to: 0.6, color: GAUGE_NEUTRAL },
   { from: 0.6, to: 1.0, color: GAUGE_SUCCESS },
 ];
 
