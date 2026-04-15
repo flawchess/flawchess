@@ -318,7 +318,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                     data-testid={`material-row-${row.bucket}-diff`}
                   >
                     {hasOpponent ? (
-                      <span style={{ color: diffColor }}>{formatDiffPct(userR, oppR as number)}</span>
+                      <span className="font-semibold" style={{ color: diffColor }}>{formatDiffPct(userR, oppR as number)}</span>
                     ) : (
                       ''
                     )}
@@ -426,7 +426,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                       <div>
                         <div className="text-muted-foreground">Diff</div>
                         <div
-                          className="font-medium"
+                          className="font-semibold"
                           style={{ color: diffColor }}
                           data-testid={`material-card-${row.bucket}-diff`}
                         >

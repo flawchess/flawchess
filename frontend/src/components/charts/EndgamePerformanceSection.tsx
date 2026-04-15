@@ -130,12 +130,10 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
                 {scoreGap ? (
                   i === 0 ? (
                     <td
-                      className="py-1.5 px-2 text-left text-xs tabular-nums text-muted-foreground whitespace-nowrap"
+                      className="py-1.5 px-2 text-left text-sm tabular-nums whitespace-nowrap"
                       data-testid="score-gap-difference"
                     >
-                      {scoreGap.endgame_score.toFixed(2)} −{' '}
-                      {scoreGap.non_endgame_score.toFixed(2)} ={' '}
-                      <span style={{ color: diffColor }}>{diffFormatted}</span>
+                      <span className="font-semibold" style={{ color: diffColor }}>{diffFormatted}</span>
                     </td>
                   ) : (
                     <td className="py-1.5 px-2 text-left">
@@ -198,9 +196,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
             <div className="flex items-baseline justify-between">
               <div className="text-sm font-medium">Score Difference</div>
               <div className="text-xs tabular-nums text-muted-foreground">
-                {scoreGap.endgame_score.toFixed(2)} −{' '}
-                {scoreGap.non_endgame_score.toFixed(2)} ={' '}
-                <span style={{ color: diffColor }}>{diffFormatted}</span>
+                <span className="font-semibold" style={{ color: diffColor }}>{diffFormatted}</span>
               </div>
             </div>
             <MiniBulletChart
