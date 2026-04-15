@@ -204,18 +204,14 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
         {(['conversion', 'parity', 'recovery'] as const).map((bucket) => {
           const row = rowByBucket[bucket];
           if (!row) return null;
-          const mirror = rowByBucket[MIRROR_BUCKET[bucket]];
           const userR = userRate(row);
-          const oppR = opponentRate(row, mirror);
-          const hasPeer =
-            oppR !== null && row.opponent_games >= MIN_OPPONENT_BASELINE_GAMES;
           return (
             <div
               key={bucket}
               className="flex flex-col items-center"
               data-testid={`endgame-gauge-${bucket}`}
             >
-              <div className="text-xs text-muted-foreground mb-1">
+              <div className="text-sm mb-1">
                 {BUCKET_DISPLAY_LABELS[bucket]}
               </div>
               <EndgameGauge
@@ -223,9 +219,6 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                 label={BUCKET_DISPLAY_LABELS[bucket]}
                 zones={FIXED_GAUGE_ZONES[bucket]}
               />
-              <div className="text-xs text-muted-foreground tabular-nums">
-                {hasPeer ? `Peers: ${formatScorePct(oppR as number)}` : '—'}
-              </div>
             </div>
           );
         })}
