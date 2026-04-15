@@ -198,7 +198,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
           per-bucket blue target bands. The Diff column below carries
           the peer-relative verdict against the user's actual opponents. */}
       <div
-        className="grid grid-cols-1 sm:grid-cols-3 gap-3"
+        className="hidden lg:grid grid-cols-3 gap-3"
         data-testid="endgame-gauge-strip"
       >
         {(['conversion', 'parity', 'recovery'] as const).map((bucket) => {
@@ -369,6 +369,13 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                 <div className="text-xs tabular-nums text-muted-foreground">
                   {pct}% ({row.games.toLocaleString()} games)
                 </div>
+              </div>
+              <div className="flex justify-center">
+                <EndgameGauge
+                  value={userR * 100}
+                  label={BUCKET_DISPLAY_LABELS[row.bucket]}
+                  zones={FIXED_GAUGE_ZONES[row.bucket]}
+                />
               </div>
               <div>
                 <div className="text-xs text-muted-foreground mb-1">
