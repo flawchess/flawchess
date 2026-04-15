@@ -508,7 +508,7 @@ def _wdl_to_score(wdl: EndgameWDLSummary) -> float:
 # Unicode: \u2265 = >=, \u2264 = <=, \u2212 = minus sign
 _MATERIAL_BUCKET_LABELS: dict[MaterialBucket, str] = {
     "conversion": "Conversion (\u2265 +1)",
-    "even": "Even",
+    "parity": "Parity",
     "recovery": "Recovery (\u2264 \u22121)",
 }
 
@@ -532,7 +532,7 @@ def _compute_score_gap_material(
             endgame_wdl.total` holds by construction. The function still
             dedupes by game_id defensively. For any game where
             `user_material_imbalance_after` is NULL (endgame didn't persist
-            for 4 plies), the game routes to the "even" bucket.
+            for 4 plies), the game routes to the "parity" bucket.
 
     Returns:
         ScoreGapMaterialResponse with score gap and 3-row material breakdown.
@@ -541,16 +541,16 @@ def _compute_score_gap_material(
     non_endgame_score = _wdl_to_score(non_endgame_wdl)
     score_difference = endgame_score - non_endgame_score
 
-    bucket_wins: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
-    bucket_draws: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
-    bucket_losses: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
-    bucket_games: dict[MaterialBucket, int] = {"conversion": 0, "even": 0, "recovery": 0}
+    bucket_wins: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
+    bucket_draws: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
+    bucket_losses: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
+    bucket_games: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
 
     # Phase 59: group rows by game_id, then pick one span per game.
     # Priority within a game's rows:
     #   1) any row satisfying CONVERSION persistence (imbalance >= +threshold AND imbalance_after >= +threshold)
     #   2) else any row satisfying RECOVERY persistence (imbalance <= -threshold AND imbalance_after <= -threshold)
-    #   3) else fall back to the row with the LOWEST endgame_class_int for determinism; bucket as "even".
+    #   3) else fall back to the row with the LOWEST endgame_class_int for determinism; bucket as "parity".
     #
     # Conversion-over-recovery tiebreak (priority 1 > priority 2): when a game has BOTH a
     # conversion-qualifying span AND a recovery-qualifying span, we bucket as "conversion".
@@ -561,7 +561,7 @@ def _compute_score_gap_material(
     #
     # NULL imbalance rows (user_material_imbalance is None OR user_material_imbalance_after
     # is None) cannot satisfy priorities 1 or 2, so they fall through to priority 3 and the
-    # game is bucketed as "even". This replaces the Phase 53 `continue` that silently
+    # game is bucketed as "parity". This replaces the Phase 53 `continue` that silently
     # dropped such games and broke sum(material_rows.games) == endgame_wdl.total.
 
     # rows carry labeled columns in prod (see query_endgame_bucket_rows /
@@ -574,7 +574,7 @@ def _compute_score_gap_material(
 
     for game_id, game_rows in rows_by_game.items():
         chosen_row: Row[Any] | None = None
-        chosen_bucket: MaterialBucket = "even"
+        chosen_bucket: MaterialBucket = "parity"
 
         # Pass 1: look for a CONVERSION-qualifying span.
         for r in game_rows:
@@ -605,11 +605,11 @@ def _compute_score_gap_material(
                     chosen_bucket = "recovery"
                     break
 
-        # Pass 3: fallback to "even". Pick the row with the lowest endgame_class_int for
+        # Pass 3: fallback to "parity". Pick the row with the lowest endgame_class_int for
         # deterministic output regardless of SQL row order.
         if chosen_row is None:
             chosen_row = min(game_rows, key=lambda r: r.endgame_class)
-            chosen_bucket = "even"
+            chosen_bucket = "parity"
 
         result_str: str = chosen_row.result
         user_color: str = chosen_row.user_color
@@ -624,11 +624,11 @@ def _compute_score_gap_material(
             bucket_losses[chosen_bucket] += 1
 
     # First pass: compute per-bucket user score (needed before opponent lookup).
-    bucket_score: dict[MaterialBucket, float] = {"conversion": 0.0, "even": 0.0, "recovery": 0.0}
+    bucket_score: dict[MaterialBucket, float] = {"conversion": 0.0, "parity": 0.0, "recovery": 0.0}
     bucket_pct: dict[
         MaterialBucket, tuple[float, float, float]
     ] = {}  # (win_pct, draw_pct, loss_pct)
-    for bucket_key in ("conversion", "even", "recovery"):
+    for bucket_key in ("conversion", "parity", "recovery"):
         b: MaterialBucket = bucket_key
         games = bucket_games[b]
         if games > 0:
@@ -647,12 +647,12 @@ def _compute_score_gap_material(
     # user Conversion <-> opponent Recovery, Even <-> Even.
     swap: dict[MaterialBucket, MaterialBucket] = {
         "conversion": "recovery",
-        "even": "even",
+        "parity": "parity",
         "recovery": "conversion",
     }
 
     material_rows: list[MaterialRow] = []
-    for bucket_key in ("conversion", "even", "recovery"):
+    for bucket_key in ("conversion", "parity", "recovery"):
         b2: MaterialBucket = bucket_key
         swap_bucket = swap[b2]
         swap_games = bucket_games[swap_bucket]

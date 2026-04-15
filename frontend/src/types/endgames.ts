@@ -83,7 +83,7 @@ export interface EndgameTimelineResponse {
   window: number;
 }
 
-export type MaterialBucket = 'conversion' | 'even' | 'recovery';
+export type MaterialBucket = 'conversion' | 'parity' | 'recovery';
 
 export interface MaterialRow {
   bucket: MaterialBucket;

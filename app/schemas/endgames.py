@@ -157,7 +157,7 @@ class EndgameTimelineResponse(BaseModel):
     window: int
 
 
-MaterialBucket = Literal["conversion", "even", "recovery"]
+MaterialBucket = Literal["conversion", "parity", "recovery"]
 
 
 class MaterialRow(BaseModel):
@@ -165,13 +165,13 @@ class MaterialRow(BaseModel):
 
     Represents the user's performance when entering endgames with a specific
     material imbalance that persists 4 plies into the endgame:
-    conversion (>= +1 pawn preserved), even, or recovery (<= -1 pawn preserved).
-    Games where the imbalance does not persist fall into the "even" bucket to
+    conversion (>= +1 pawn preserved), parity, or recovery (<= -1 pawn preserved).
+    Games where the imbalance does not persist fall into the "parity" bucket to
     filter out transient noise from piece trades at the endgame boundary.
     """
 
     bucket: MaterialBucket
-    label: str  # "Conversion (\u2265 +1)" | "Even" | "Recovery (\u2264 \u22121)"
+    label: str  # "Conversion (\u2265 +1)" | "Parity" | "Recovery (\u2264 \u22121)"
     games: int
     win_pct: float  # 0-100
     draw_pct: float  # 0-100
@@ -189,7 +189,7 @@ class ScoreGapMaterialResponse(BaseModel):
     endgame_score: user's score (0.0-1.0) in games that reached an endgame.
     non_endgame_score: user's score in games that never reached an endgame.
     score_difference: endgame_score - non_endgame_score (signed, can be negative).
-    material_rows: 3-row table — conversion / even / recovery — always present.
+    material_rows: 3-row table — conversion / parity / recovery — always present.
 
     Phase 60: each MaterialRow carries an opponent_score (1 - user_score[swap_bucket])
     and opponent_games. overall_score was removed; it was only consumed by the old
@@ -199,7 +199,7 @@ class ScoreGapMaterialResponse(BaseModel):
     endgame_score: float  # 0.0-1.0
     non_endgame_score: float  # 0.0-1.0
     score_difference: float  # endgame_score - non_endgame_score (signed)
-    material_rows: list[MaterialRow]  # 3 rows: conversion / even / recovery
+    material_rows: list[MaterialRow]  # 3 rows: conversion / parity / recovery
 
 
 class ClockStatsRow(BaseModel):

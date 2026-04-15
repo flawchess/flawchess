@@ -281,7 +281,7 @@ class TestOverviewScoreGapMaterial:
         assert isinstance(sgm["material_rows"], list)
         assert len(sgm["material_rows"]) == 3
         buckets = [row["bucket"] for row in sgm["material_rows"]]
-        assert buckets == ["conversion", "even", "recovery"]
+        assert buckets == ["conversion", "parity", "recovery"]
         # Phase 60: each row carries opponent baseline fields
         for row in sgm["material_rows"]:
             assert "opponent_score" in row

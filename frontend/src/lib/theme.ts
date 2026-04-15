@@ -28,6 +28,27 @@ export const ZONE_WARNING = 'oklch(0.50 0.14 80)';      // amber zone (L/C match
 export const ZONE_NEUTRAL = 'oklch(0.50 0.14 260)';     // blue zone (L/C match WDL)
 export const ZONE_SUCCESS = WDL_WIN;                    // green zone (same as win)
 
+// Endgame gauge zone constants (Phase 60 / R98)
+// Peer-calibrated gauges use blue (peer match), red (underperform), green (outperform).
+// Fallback default zones are used when peer baseline is unavailable.
+export const GAUGE_DANGER = WDL_LOSS;                   // red zone
+export const GAUGE_SUCCESS = WDL_WIN;                   // green zone
+export const GAUGE_PEER = 'oklch(0.55 0.18 260)';       // blue peer-match zone (matches MY_SCORE_COLOR / Recovery line)
+
+export interface GaugeZone {
+  from: number;  // 0..1
+  to: number;    // 0..1
+  color: string; // CSS color
+}
+
+// Fallback zones when no peer baseline is available — fixed thresholds.
+// red 0..0.6, amber 0.6..0.8, green 0.8..1.0.
+export const DEFAULT_GAUGE_ZONES: GaugeZone[] = [
+  { from: 0, to: 0.6, color: GAUGE_DANGER },
+  { from: 0.6, to: 0.8, color: ZONE_WARNING },
+  { from: 0.8, to: 1.0, color: GAUGE_SUCCESS },
+];
+
 // Minimum games required for reliable stats — rows/charts below this threshold are dimmed
 export const MIN_GAMES_FOR_RELIABLE_STATS = 10;
 

@@ -294,7 +294,7 @@ async def query_endgame_bucket_rows(
       the SAME game, but only if that position ALSO has
       `endgame_class IS NOT NULL`. If the endgame ended (or the game
       ended) within 4 plies, this is NULL and the game routes to the
-      "even" bucket via the NULL-handling rule in
+      "parity" bucket via the NULL-handling rule in
       `_compute_score_gap_material`.
     """
     # Per-game first endgame ply — HAVING enforces the uniform 6-ply rule so this

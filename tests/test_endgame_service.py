@@ -1004,13 +1004,13 @@ class TestScoreGapMaterial:
         assert conversion.win_pct == 100.0
 
     def test_score_gap_material_even_bucket(self):
-        """Entry row with imbalance=50 goes into 'even' bucket."""
+        """Entry row with imbalance=50 goes into 'parity' bucket."""
         entry_rows = [_FakeRow(1, 1, "1-0", "white", 50, 50)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
         even = result.material_rows[1]
-        assert even.bucket == "even"
+        assert even.bucket == "parity"
         assert even.games == 1
 
     def test_score_gap_material_recovery_bucket(self):
@@ -1038,13 +1038,13 @@ class TestScoreGapMaterial:
         assert conversion.games == 1  # not 2
 
     def test_score_gap_material_none_imbalance_bucketed_as_even(self):
-        """Entry row with user_material_imbalance=None goes into the 'even' bucket (Phase 59)."""
+        """Entry row with user_material_imbalance=None goes into the 'parity' bucket (Phase 59)."""
         entry_rows = [_FakeRow(1, 1, "1-0", "white", None, None)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
         assert result.material_rows[0].games == 0  # conversion
-        assert result.material_rows[1].bucket == "even"
+        assert result.material_rows[1].bucket == "parity"
         assert result.material_rows[1].games == 1  # even — NULL rows now land here
         assert result.material_rows[2].games == 0  # recovery
 
@@ -1070,7 +1070,7 @@ class TestScoreGapMaterial:
         """Material bucket applies 4-ply persistence rule matching conversion/recovery.
 
         A row with imbalance=150 (advantage threshold) but imbalance_after=-50
-        falls into the 'even' bucket because the advantage did not persist.
+        falls into the 'parity' bucket because the advantage did not persist.
         This filters transient imbalances from trades at the endgame boundary.
         """
         entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, -50)]  # imbalance_after negative
@@ -1079,20 +1079,20 @@ class TestScoreGapMaterial:
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
         assert result.material_rows[0].games == 0  # conversion: not counted
         assert result.material_rows[1].games == 1  # even: counted here
-        assert result.material_rows[1].bucket == "even"
+        assert result.material_rows[1].bucket == "parity"
 
     def test_score_gap_material_persistence_required_for_recovery(self):
-        """Transient deficit that does not persist falls into 'even' bucket."""
+        """Transient deficit that does not persist falls into 'parity' bucket."""
         entry_rows = [_FakeRow(1, 1, "0-1", "white", -150, 50)]  # imbalance_after positive
         endgame_wdl = self._make_wdl(0, 0, 1)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
         assert result.material_rows[2].games == 0  # recovery: not counted
         assert result.material_rows[1].games == 1  # even: counted here
-        assert result.material_rows[1].bucket == "even"
+        assert result.material_rows[1].bucket == "parity"
 
     def test_score_gap_material_persistence_none_after_falls_to_even(self):
-        """imbalance_after=None means persistence cannot be verified -> 'even' bucket."""
+        """imbalance_after=None means persistence cannot be verified -> 'parity' bucket."""
         entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, None)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1106,7 +1106,7 @@ class TestScoreGapMaterial:
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
         buckets = [r.bucket for r in result.material_rows]
-        assert buckets == ["conversion", "even", "recovery"]
+        assert buckets == ["conversion", "parity", "recovery"]
 
     def test_score_gap_material_boundary_conversion(self):
         """Imbalance exactly == 100 (preserved) -> 'conversion' bucket (>= 100)."""
@@ -1177,7 +1177,7 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
         assert result.material_rows[0].games == 1
 
     def test_invariant_null_imbalance_lands_in_even(self):
-        """Decision 1: NULL imbalance -> 'even' bucket (not dropped)."""
+        """Decision 1: NULL imbalance -> 'parity' bucket (not dropped)."""
         entry_rows = [_FakeRow(1, 1, "1/2-1/2", "white", None, None)]
         endgame_wdl = self._make_wdl(0, 1, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1187,7 +1187,7 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
         assert result.material_rows[1].draw_pct == 100.0
 
     def test_invariant_null_after_lands_in_even(self):
-        """Decision 1: NULL user_material_imbalance_after (non-contiguous span) -> 'even'."""
+        """Decision 1: NULL user_material_imbalance_after (non-contiguous span) -> 'parity'."""
         entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, None)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1234,7 +1234,7 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
         assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 10
 
     def test_invariant_deterministic_ordering(self):
-        """Decision 2: within the 'even' fallback, lowest endgame_class_int wins for reproducibility."""
+        """Decision 2: within the 'parity' fallback, lowest endgame_class_int wins for reproducibility."""
         rows_order_a = [
             _FakeRow(1, 1, "1-0", "white", 50, 50),
             _FakeRow(1, 3, "0-1", "white", 40, 40),
@@ -1365,7 +1365,7 @@ class TestScoreGapMaterialOpponentBaseline(TestScoreGapMaterial):
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
         even = result.material_rows[1]
-        assert even.bucket == "even"
+        assert even.bucket == "parity"
         assert even.games == 10
         assert even.score == pytest.approx(0.5, abs=1e-9)
         assert even.opponent_score == pytest.approx(0.5, abs=1e-9)
