@@ -402,36 +402,36 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                 />
               </div>
               <div>
-                <div className="flex gap-4 text-xs tabular-nums mb-1">
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums mb-1">
                   <div>
-                    <div className="text-muted-foreground">You vs Opp</div>
-                    <div
+                    <span className="text-muted-foreground">You vs Opp: </span>
+                    <span
                       className="font-medium"
                       data-testid={`material-card-${row.bucket}-you`}
                     >
                       {formatScorePct(userR)}
-                    </div>
+                    </span>
                   </div>
                   {hasOpponent && (
                     <>
                       <div>
-                        <div className="text-muted-foreground">Opp vs You</div>
-                        <div
+                        <span className="text-muted-foreground">Opp vs You: </span>
+                        <span
                           className="font-medium"
                           data-testid={`material-card-${row.bucket}-opp`}
                         >
                           {formatScorePct(oppR as number)}
-                        </div>
+                        </span>
                       </div>
                       <div>
-                        <div className="text-muted-foreground">Diff</div>
-                        <div
+                        <span className="text-muted-foreground">Diff: </span>
+                        <span
                           className="font-semibold"
                           style={{ color: diffColor }}
                           data-testid={`material-card-${row.bucket}-diff`}
                         >
                           {formatDiffPct(userR, oppR as number)}
-                        </div>
+                        </span>
                       </div>
                     </>
                   )}

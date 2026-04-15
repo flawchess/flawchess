@@ -216,34 +216,34 @@ function EndgameCategoryCardMobile({
       </div>
       {!isEmpty && (
         <div style={isUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}>
-          <div className="flex gap-4 text-xs tabular-nums mb-1">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums mb-1">
             <div>
-              <div className="text-muted-foreground">You vs Opp</div>
-              <div
+              <span className="text-muted-foreground">You vs Opp: </span>
+              <span
                 className="font-medium"
                 data-testid={`endgame-category-card-${cat.slug}-you`}
               >
                 {formatScorePct(userR)}
-              </div>
+              </span>
             </div>
             <div>
-              <div className="text-muted-foreground">Opp vs You</div>
-              <div
+              <span className="text-muted-foreground">Opp vs You: </span>
+              <span
                 className="font-medium"
                 data-testid={`endgame-category-card-${cat.slug}-opp`}
               >
                 {formatScorePct(oppR)}
-              </div>
+              </span>
             </div>
             <div>
-              <div className="text-muted-foreground">Diff</div>
-              <div
+              <span className="text-muted-foreground">Diff: </span>
+              <span
                 className="font-semibold"
                 style={{ color: diffColor(diff) }}
                 data-testid={`endgame-category-card-${cat.slug}-diff`}
               >
                 {formatDiffPct(userR, oppR)}
-              </div>
+              </span>
             </div>
           </div>
           <MiniBulletChart
