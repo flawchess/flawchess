@@ -40,6 +40,16 @@ const ENDGAME_CLASS_LABELS: Record<EndgameClass, string> = {
   pawnless: 'Pawnless',
 };
 
+// Pawnless endgames are rare (~0.5% of positions, ~0.7% of qualifying game spans
+// in prod) and sample sizes per user are almost always too small to be meaningful.
+// Hide from the Endgames tab UI; classification remains in the DB so it can be
+// re-enabled without a reimport.
+const HIDDEN_ENDGAME_CLASSES: ReadonlySet<EndgameClass> = new Set(['pawnless']);
+
+const VISIBLE_ENDGAME_CLASS_ENTRIES = (
+  Object.entries(ENDGAME_CLASS_LABELS) as [EndgameClass, string][]
+).filter(([value]) => !HIDDEN_ENDGAME_CLASSES.has(value));
+
 const DEFAULT_ENDGAME_CLASS: EndgameClass = 'mixed';
 
 export function EndgamesPage() {
@@ -128,9 +138,27 @@ export function EndgamesPage() {
     isError: overviewError,
   } = useEndgameOverview(appliedFilters);
 
-  const statsData = overviewData?.stats;
+  const rawStatsData = overviewData?.stats;
+  const statsData = useMemo(() => {
+    if (!rawStatsData) return rawStatsData;
+    return {
+      ...rawStatsData,
+      categories: rawStatsData.categories.filter(
+        (c) => !HIDDEN_ENDGAME_CLASSES.has(c.endgame_class),
+      ),
+    };
+  }, [rawStatsData]);
   const perfData = overviewData?.performance;
-  const timelineData = overviewData?.timeline;
+  const rawTimelineData = overviewData?.timeline;
+  const timelineData = useMemo(() => {
+    if (!rawTimelineData) return rawTimelineData;
+    const per_type = Object.fromEntries(
+      Object.entries(rawTimelineData.per_type).filter(
+        ([key]) => !HIDDEN_ENDGAME_CLASSES.has(key as EndgameClass),
+      ),
+    );
+    return { ...rawTimelineData, per_type };
+  }, [rawTimelineData]);
   const scoreGapData = overviewData?.score_gap_material;
   const clockPressureData = overviewData?.clock_pressure;
   const timePressureChartData = overviewData?.time_pressure_chart;
@@ -214,7 +242,7 @@ export function EndgamesPage() {
                     </p>
                     <p>
                       <strong>Endgame types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
-                      Queen, Mixed (two or more piece types), and Pawnless (no pawns on board).
+                      Queen, and Mixed (two or more piece types).
                     </p>
                     <p>
                       <strong>Endgame sequence:</strong> a continuous stretch of at least 3 full moves (6 half-moves)
@@ -338,7 +366,7 @@ export function EndgamesPage() {
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {(Object.entries(ENDGAME_CLASS_LABELS) as [EndgameClass, string][]).map(([value, label]) => (
+          {VISIBLE_ENDGAME_CLASS_ENTRIES.map(([value, label]) => (
             <SelectItem key={value} value={value}>{label}</SelectItem>
           ))}
         </SelectContent>

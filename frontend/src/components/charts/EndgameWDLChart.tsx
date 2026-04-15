@@ -293,7 +293,6 @@ export function EndgameWDLChart({
                 <p><strong>Pawn:</strong> {ENDGAME_TYPE_DESCRIPTIONS.pawn}</p>
                 <p><strong>Queen:</strong> {ENDGAME_TYPE_DESCRIPTIONS.queen}</p>
                 <p><strong>Mixed:</strong> {ENDGAME_TYPE_DESCRIPTIONS.mixed}</p>
-                <p><strong>Pawnless:</strong> {ENDGAME_TYPE_DESCRIPTIONS.pawnless}</p>
               </div>
             </InfoPopover>
           </span>
