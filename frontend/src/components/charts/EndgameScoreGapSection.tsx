@@ -216,7 +216,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          How well do you convert a material advantage into a win and recovery
+          How well do you convert a material advantage into a win, and recover
           when you're down material?
         </p>
       </div>
