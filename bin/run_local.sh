@@ -36,6 +36,13 @@ uv sync
 echo "Running migrations..."
 uv run alembic upgrade head
 
+# Seed openings if table is empty (first-time setup only — skips instantly otherwise)
+OPENINGS_COUNT=$(PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d flawchess -tAc "SELECT COUNT(*) FROM openings" 2>/dev/null || echo "0")
+if [ "$OPENINGS_COUNT" -eq 0 ]; then
+  echo "Seeding openings table..."
+  uv run python -m scripts.seed_openings
+fi
+
 # Start backend
 echo "Starting backend..."
 uv run uvicorn app.main:app --reload --port 8000 &

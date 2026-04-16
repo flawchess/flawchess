@@ -66,7 +66,7 @@ cp .env.example .env  # Edit with your settings
 bin/run_local.sh
 ```
 
-The script starts PostgreSQL (Docker), installs dependencies, runs migrations, and launches both backend and frontend. The API is at `http://localhost:8000` (docs at `/docs`), frontend at `http://localhost:5173`.
+The script starts PostgreSQL (Docker), installs dependencies, runs migrations, seeds the openings reference table, and launches both backend and frontend. The API is at `http://localhost:8000` (docs at `/docs`), frontend at `http://localhost:5173`.
 
 > **Note:** Google OAuth and Sentry are optional — the app works with email/password auth and without error monitoring. Leave those `.env` values empty to skip them.
 

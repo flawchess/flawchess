@@ -20,4 +20,7 @@ done
 echo "Running Alembic migrations..."
 uv run alembic upgrade head
 
+echo "Seeding openings table..."
+uv run python -m scripts.seed_openings
+
 echo "Done. Dev database has been reset."
