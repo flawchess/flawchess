@@ -23,6 +23,16 @@ const X_AXIS_DOMAIN: [number, number] = [0, 100];
 const X_AXIS_TICKS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 const BUCKET_WIDTH = 10;
 const MOBILE_BREAKPOINT_PX = 768;
+const DOT_MIN_RADIUS = 2;
+const DOT_MAX_RADIUS = 7;
+
+// Area-proportional scaling: r = MIN + (MAX - MIN) * sqrt(count / maxCount).
+// Keeps small counts visible while letting peak buckets stand out.
+function dotRadius(count: number, maxCount: number): number {
+  if (maxCount <= 0) return DOT_MIN_RADIUS;
+  const scale = Math.sqrt(Math.max(0, count) / maxCount);
+  return DOT_MIN_RADIUS + (DOT_MAX_RADIUS - DOT_MIN_RADIUS) * scale;
+}
 
 function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(() =>
@@ -95,6 +105,11 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
   if (data.total_endgame_games === 0) return null;
 
   const chartData = buildChartData(data);
+  const maxGameCount = chartData.reduce((max, pt) => {
+    const myCount = pt.my_score !== null ? pt.my_game_count : 0;
+    const oppCount = pt.opp_score !== null ? pt.opp_game_count : 0;
+    return Math.max(max, myCount, oppCount);
+  }, 0);
 
   return (
     <div data-testid="time-pressure-section">
@@ -198,12 +213,13 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
               if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) {
                 return <g key={`nodot-${String(payload?.bucket_label ?? cx)}`} />;
               }
+              const count = (payload.my_game_count as number) ?? 0;
               return (
                 <circle
                   key={`my-dot-${payload.bucket_label as string}`}
                   cx={cx}
                   cy={cy}
-                  r={4}
+                  r={dotRadius(count, maxGameCount)}
                   fill={MY_SCORE_COLOR}
                 />
               );
@@ -221,12 +237,13 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
               if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) {
                 return <g key={`nodot-${String(payload?.bucket_label ?? cx)}`} />;
               }
+              const count = (payload.opp_game_count as number) ?? 0;
               return (
                 <circle
                   key={`opp-dot-${payload.bucket_label as string}`}
                   cx={cx}
                   cy={cy}
-                  r={4}
+                  r={dotRadius(count, maxGameCount)}
                   fill={OPP_SCORE_COLOR}
                 />
               );
