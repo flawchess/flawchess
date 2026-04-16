@@ -104,7 +104,7 @@ function EndgameCategoryRowDesktop({
       <td className="py-1.5 pr-3 text-sm">
         <span className="font-medium">{cat.label}</span>
       </td>
-      <td className="py-1.5 px-2 text-right text-xs tabular-nums whitespace-nowrap">
+      <td className="py-1.5 px-2 text-right text-sm tabular-nums whitespace-nowrap">
         <Tooltip content={`View ${cat.label} endgame games`}>
           <Link
             to="/endgames/games"
@@ -128,21 +128,21 @@ function EndgameCategoryRowDesktop({
         )}
       </td>
       <td
-        className="py-1.5 px-2 text-right text-xs tabular-nums whitespace-nowrap"
+        className="py-1.5 px-2 text-right text-sm tabular-nums whitespace-nowrap"
         style={rowOpacity}
         data-testid={`endgame-category-${cat.slug}-you`}
       >
         {isEmpty ? '' : formatScorePct(userR)}
       </td>
       <td
-        className="py-1.5 px-2 text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap"
+        className="py-1.5 px-2 text-right text-sm tabular-nums text-muted-foreground whitespace-nowrap"
         style={rowOpacity}
         data-testid={`endgame-category-${cat.slug}-opp`}
       >
         {isEmpty ? '' : formatScorePct(oppR)}
       </td>
       <td
-        className="py-1.5 px-2 text-right text-xs tabular-nums whitespace-nowrap"
+        className="py-1.5 px-2 text-right text-sm tabular-nums whitespace-nowrap"
         style={rowOpacity}
         data-testid={`endgame-category-${cat.slug}-diff`}
       >
@@ -216,7 +216,7 @@ function EndgameCategoryCardMobile({
       </div>
       {!isEmpty && (
         <div style={isUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums mb-1">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm tabular-nums mb-1">
             <div>
               <span className="text-muted-foreground">You: </span>
               <span

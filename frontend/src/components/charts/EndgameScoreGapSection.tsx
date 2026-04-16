@@ -315,19 +315,19 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                     />
                   </td>
                   <td
-                    className="py-1.5 px-2 text-right text-xs tabular-nums whitespace-nowrap"
+                    className="py-1.5 px-2 text-right text-sm tabular-nums whitespace-nowrap"
                     data-testid={`material-row-${row.bucket}-you`}
                   >
                     {formatScorePct(userR)}
                   </td>
                   <td
-                    className="py-1.5 px-2 text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap"
+                    className="py-1.5 px-2 text-right text-sm tabular-nums text-muted-foreground whitespace-nowrap"
                     data-testid={`material-row-${row.bucket}-opp`}
                   >
                     {hasOpponent ? formatScorePct(oppR as number) : ''}
                   </td>
                   <td
-                    className="py-1.5 px-2 text-right text-xs tabular-nums whitespace-nowrap"
+                    className="py-1.5 px-2 text-right text-sm tabular-nums whitespace-nowrap"
                     data-testid={`material-row-${row.bucket}-diff`}
                   >
                     {hasOpponent ? (
@@ -415,7 +415,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                 />
               </div>
               <div>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums mb-1">
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm tabular-nums mb-1">
                   <div>
                     <span className="text-muted-foreground">You: </span>
                     <span

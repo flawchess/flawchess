@@ -124,7 +124,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
                     />
                   )}
                 </td>
-                <td className="py-1.5 px-2 text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                <td className="py-1.5 px-2 text-right text-sm tabular-nums text-muted-foreground whitespace-nowrap">
                   {row.score !== undefined ? `${Math.round(row.score * 100)}%` : '—'}
                 </td>
                 {scoreGap ? (
@@ -180,7 +180,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
                 />
               )}
             </div>
-            <div className="flex items-baseline justify-between text-xs">
+            <div className="flex items-baseline justify-between text-sm">
               <span className="text-muted-foreground">Score %</span>
               <span className="tabular-nums text-muted-foreground">
                 {row.score !== undefined ? `${Math.round(row.score * 100)}%` : '—'}
@@ -195,7 +195,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
           >
             <div className="flex items-baseline justify-between">
               <div className="text-sm font-medium">Score % Diff</div>
-              <div className="text-xs tabular-nums text-muted-foreground">
+              <div className="text-sm tabular-nums">
                 <span className="font-semibold" style={{ color: diffColor }}>{diffFormatted}</span>
               </div>
             </div>

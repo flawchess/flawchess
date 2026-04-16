@@ -175,19 +175,19 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
                       {row.total_endgame_games.toLocaleString()} games
                     </div>
                   </div>
-                  <div className="flex items-baseline justify-between text-xs">
+                  <div className="flex items-baseline justify-between text-sm">
                     <span className="text-muted-foreground">My avg time</span>
                     <span className="tabular-nums">
                       {formatClockCell(row.user_avg_pct, row.user_avg_seconds)}
                     </span>
                   </div>
-                  <div className="flex items-baseline justify-between text-xs">
+                  <div className="flex items-baseline justify-between text-sm">
                     <span className="text-muted-foreground">Opp avg time</span>
                     <span className="tabular-nums">
                       {formatClockCell(row.opp_avg_pct, row.opp_avg_seconds)}
                     </span>
                   </div>
-                  <div className="flex items-baseline justify-between text-xs">
+                  <div className="flex items-baseline justify-between text-sm">
                     <span className="text-muted-foreground">Avg clock diff</span>
                     <span
                       className="tabular-nums"
@@ -197,7 +197,7 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
                       <span className="text-muted-foreground ml-1">({formatSignedSeconds(row.avg_clock_diff_seconds)})</span>
                     </span>
                   </div>
-                  <div className="flex items-baseline justify-between text-xs">
+                  <div className="flex items-baseline justify-between text-sm">
                     <span className="text-muted-foreground">Net timeout rate</span>
                     <span className="tabular-nums" style={{ color: timeoutColor }}>
                       {formatNetTimeoutRate(row.net_timeout_rate)}
