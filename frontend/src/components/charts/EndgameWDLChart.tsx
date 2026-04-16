@@ -282,9 +282,9 @@ export function EndgameWDLChart({
                   that included the endgame type. Note that a game can include more than one type of endgame.
                 </p>
                 <p>
-                  <strong>You</strong> is your chess score in these games
-                  (1 per win, ½ per draw, divided by games). <strong>Opp</strong>{' '}
-                  is the complement — your opponents' score in the same games. <strong>Diff</strong>{' '}
+                  <strong>You</strong> is your Score % in these games
+                  (100% per win, 50% per draw, averaged over games). <strong>Opp</strong>{' '}
+                  is the complement — your opponents' Score % in the same games. <strong>Diff</strong>{' '}
                   and the bullet chart visualize the signed gap, with a ±5pp neutral band
                   around 50/50.
                 </p>

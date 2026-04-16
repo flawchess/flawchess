@@ -38,7 +38,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
 
   const diffPositive = scoreGap ? scoreGap.score_difference >= 0 : false;
   const diffFormatted = scoreGap
-    ? (diffPositive ? '+' : '') + scoreGap.score_difference.toFixed(2)
+    ? (diffPositive ? '+' : '') + `${Math.round(scoreGap.score_difference * 100)}%`
     : '';
   const diffColor = scoreGap
     ? scoreGap.score_difference >= SCORE_DIFF_NEUTRAL_MAX
@@ -74,7 +74,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
             <InfoPopover ariaLabel="Games with vs without Endgame info" testId="perf-section-info" side="top">
               <div className="space-y-2">
                 <p>Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not. Only endgames that span at least 3 full moves (6 half-moves) are counted — shorter tactical transitions from middlegame into a checkmate are treated as &quot;no endgame&quot;.</p>
-                <p>The Score Difference column shows the signed gap between your endgame score and non-endgame score (green = endgame stronger, red = endgame weaker, blue = near parity).</p>
+                <p>The Score % Diff column shows the signed gap between your endgame Score % and non-endgame Score % (green = endgame stronger, red = endgame weaker, blue = near parity).</p>
               </div>
             </InfoPopover>
           </span>
@@ -102,8 +102,8 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
               <th className="py-1 pr-3 font-medium">Endgame</th>
               <th className="py-1 px-2 font-medium text-right">Games</th>
               <th className="py-1 px-2 font-medium">Win / Draw / Loss</th>
-              <th className="py-1 px-2 font-medium text-right">Score</th>
-              <th className="py-1 px-2 font-medium">Score Difference</th>
+              <th className="py-1 px-2 font-medium text-right">Score %</th>
+              <th className="py-1 px-2 font-medium">Score % Diff</th>
             </tr>
           </thead>
           <tbody>
@@ -125,7 +125,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
                   )}
                 </td>
                 <td className="py-1.5 px-2 text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap">
-                  {row.score !== undefined ? row.score.toFixed(2) : '—'}
+                  {row.score !== undefined ? `${Math.round(row.score * 100)}%` : '—'}
                 </td>
                 {scoreGap ? (
                   i === 0 ? (
@@ -181,9 +181,9 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
               )}
             </div>
             <div className="flex items-baseline justify-between text-xs">
-              <span className="text-muted-foreground">Score</span>
+              <span className="text-muted-foreground">Score %</span>
               <span className="tabular-nums text-muted-foreground">
-                {row.score !== undefined ? row.score.toFixed(2) : '—'}
+                {row.score !== undefined ? `${Math.round(row.score * 100)}%` : '—'}
               </span>
             </div>
           </div>
@@ -194,7 +194,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
             data-testid="score-gap-difference-mobile"
           >
             <div className="flex items-baseline justify-between">
-              <div className="text-sm font-medium">Score Difference</div>
+              <div className="text-sm font-medium">Score % Diff</div>
               <div className="text-xs tabular-nums text-muted-foreground">
                 <span className="font-semibold" style={{ color: diffColor }}>{diffFormatted}</span>
               </div>
