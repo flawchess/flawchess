@@ -258,8 +258,8 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               <th className="py-1 pr-3 font-medium" aria-label="Material bucket" />
               <th className="py-1 px-2 font-medium text-right">Games</th>
               <th className="py-1 px-2 font-medium">Win / Draw / Loss</th>
-              <th className="py-1 px-2 font-medium text-right">You vs Opp</th>
-              <th className="py-1 px-2 font-medium text-right">Opp vs You</th>
+              <th className="py-1 px-2 font-medium text-right">You</th>
+              <th className="py-1 px-2 font-medium text-right">Opp</th>
               <th className="py-1 px-2 font-medium text-right">Diff</th>
               <th className="py-1 px-2 font-medium">You − Opp</th>
             </tr>
@@ -404,7 +404,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               <div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums mb-1">
                   <div>
-                    <span className="text-muted-foreground">You vs Opp: </span>
+                    <span className="text-muted-foreground">You: </span>
                     <span
                       className="font-medium"
                       data-testid={`material-card-${row.bucket}-you`}
@@ -415,7 +415,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   {hasOpponent && (
                     <>
                       <div>
-                        <span className="text-muted-foreground">Opp vs You: </span>
+                        <span className="text-muted-foreground">Opp: </span>
                         <span
                           className="font-medium"
                           data-testid={`material-card-${row.bucket}-opp`}

@@ -218,7 +218,7 @@ function EndgameCategoryCardMobile({
         <div style={isUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums mb-1">
             <div>
-              <span className="text-muted-foreground">You vs Opp: </span>
+              <span className="text-muted-foreground">You: </span>
               <span
                 className="font-medium"
                 data-testid={`endgame-category-card-${cat.slug}-you`}
@@ -227,7 +227,7 @@ function EndgameCategoryCardMobile({
               </span>
             </div>
             <div>
-              <span className="text-muted-foreground">Opp vs You: </span>
+              <span className="text-muted-foreground">Opp: </span>
               <span
                 className="font-medium"
                 data-testid={`endgame-category-card-${cat.slug}-opp`}
@@ -282,8 +282,8 @@ export function EndgameWDLChart({
                   that included the endgame type. Note that a game can include more than one type of endgame.
                 </p>
                 <p>
-                  <strong>You vs Opp</strong> is your chess score in these games
-                  (1 per win, ½ per draw, divided by games). <strong>Opp vs You</strong>{' '}
+                  <strong>You</strong> is your chess score in these games
+                  (1 per win, ½ per draw, divided by games). <strong>Opp</strong>{' '}
                   is the complement — your opponents' score in the same games. <strong>Diff</strong>{' '}
                   and the bullet chart visualize the signed gap, with a ±5pp neutral band
                   around 50/50.
@@ -322,8 +322,8 @@ export function EndgameWDLChart({
               <th className="py-1 pr-3 font-medium" aria-label="Endgame type" />
               <th className="py-1 px-2 font-medium text-right">Games</th>
               <th className="py-1 px-2 font-medium">Win / Draw / Loss</th>
-              <th className="py-1 px-2 font-medium text-right">You vs Opp</th>
-              <th className="py-1 px-2 font-medium text-right">Opp vs You</th>
+              <th className="py-1 px-2 font-medium text-right">You</th>
+              <th className="py-1 px-2 font-medium text-right">Opp</th>
               <th className="py-1 px-2 font-medium text-right">Diff</th>
               <th className="py-1 px-2 font-medium">You − Opp</th>
             </tr>
