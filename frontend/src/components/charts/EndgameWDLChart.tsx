@@ -285,8 +285,7 @@ export function EndgameWDLChart({
                   <strong>You</strong> is your Score % in these games
                   (100% per win, 50% per draw, averaged over games). <strong>Opp</strong>{' '}
                   is the complement: your opponents' Score % in the same games. <strong>Diff</strong>{' '}
-                  and the bullet chart visualize the signed gap, with a ±5pp neutral band
-                  around 50/50.
+                  and the bullet chart visualize the gap, with a ±5% neutral band.
                 </p>
                 <p><strong>Rook:</strong> {ENDGAME_TYPE_DESCRIPTIONS.rook}</p>
                 <p><strong>Minor Piece:</strong> {ENDGAME_TYPE_DESCRIPTIONS.minor_piece}</p>
