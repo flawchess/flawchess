@@ -682,7 +682,7 @@ async def query_clock_stats_rows(
     which hits the threshold alone).
 
     Returns rows of: (game_id, time_control_bucket, base_time_seconds, termination,
-                      result, user_color, ply_array, clock_array)
+                      result, user_color, ply_array, clock_array, played_at)
 
     base_time_seconds: the actual starting clock for that game (e.g. 600 for 600+0,
     900 for 900+10). Used as the per-game denominator for % computations in
@@ -690,6 +690,9 @@ async def query_clock_stats_rows(
 
     ply_array: array_agg(ply ORDER BY ply) — all endgame plies in the game
     clock_array: array_agg(clock_seconds ORDER BY ply) — clock at each endgame ply
+    played_at: game start timestamp — consumed by _compute_clock_pressure_timeline
+        to build a weekly rolling-window series (quick-260416-w3q). Unused by the
+        existing table/chart consumers, which ignore trailing columns.
 
     Ordering by ply ensures _extract_entry_clocks finds the earliest user-parity and
     opp-parity clocks (the moment the game first reached an endgame phase, regardless
@@ -751,6 +754,7 @@ async def query_clock_stats_rows(
             Game.user_color,
             per_game_subq.c.ply_array,
             per_game_subq.c.clock_array,
+            Game.played_at,
         )
         .join(per_game_subq, Game.id == per_game_subq.c.game_id)
         .where(Game.user_id == user_id)

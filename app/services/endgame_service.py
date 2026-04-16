@@ -36,6 +36,7 @@ from app.repositories.endgame_repository import (
 from app.schemas.openings import GameRecord
 from app.schemas.endgames import (
     ClockPressureResponse,
+    ClockPressureTimelinePoint,
     ClockStatsRow,
     ConversionRecoveryStats,
     EndgameClass,
@@ -708,6 +709,10 @@ _TIME_CONTROL_LABELS: dict[str, str] = {
 # Fixed display order for time control rows (fastest to slowest).
 _TIME_CONTROL_ORDER: list[str] = ["bullet", "blitz", "rapid", "classical"]
 
+# Rolling window size for the clock-diff timeline chart (quick-260416-w3q).
+# Mirrors the 100-game window the frontend uses for the Win Rate by Endgame Type chart.
+CLOCK_PRESSURE_TIMELINE_WINDOW = 100
+
 
 def _extract_entry_clocks(
     plies: list[int],
@@ -886,11 +891,92 @@ def _compute_clock_pressure(
             )
         )
 
+    timeline = _compute_clock_pressure_timeline(
+        clock_rows, CLOCK_PRESSURE_TIMELINE_WINDOW
+    )
+
     return ClockPressureResponse(
         rows=rows,
         total_clock_games=grand_clock_game_count,
         total_endgame_games=len(grand_endgame_game_ids),
+        timeline=timeline,
+        timeline_window=CLOCK_PRESSURE_TIMELINE_WINDOW,
     )
+
+
+def _compute_clock_pressure_timeline(
+    clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    window: int,
+) -> list[ClockPressureTimelinePoint]:
+    """Weekly rolling-window series of average clock-diff % at endgame entry.
+
+    Single series collapsed across all time controls — users filter TCs via the
+    sidebar. Each emitted point sits on the Monday of an ISO week and reflects
+    the mean of (user_clock - opp_clock) / base_time_seconds * 100 over the
+    trailing `window` games, using the window state after that week's last game
+    (mirrors `_compute_weekly_rolling_series`).
+
+    Filters applied per game (mirrors `_compute_clock_pressure` inclusion rules):
+    - time_control_bucket must be present
+    - base_time_seconds must be > 0
+    - both entry clocks must be available
+    - neither clock may exceed MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+    - played_at must be non-null (needed for ISO-week bucketing)
+
+    Points with fewer than MIN_GAMES_FOR_TIMELINE games in the window are dropped,
+    matching the same cold-start handling used by the Win Rate by Endgame Type chart.
+    """
+    game_data: list[tuple[Any, float]] = []
+    for row in clock_rows:
+        time_control_bucket: str | None = row[1]
+        base_time_seconds: int | None = row[2]
+        user_color: str = row[5]
+        ply_array: list[int] = row[6]
+        clock_array: list[float | None] = row[7]
+        played_at: Any = row[8]
+
+        if time_control_bucket is None:
+            continue
+        if base_time_seconds is None or base_time_seconds <= 0:
+            continue
+        if played_at is None:
+            continue
+
+        user_clock, opp_clock = _extract_entry_clocks(ply_array, clock_array, user_color)
+        if user_clock is None or opp_clock is None:
+            continue
+        if (
+            user_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+            or opp_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+        ):
+            continue
+
+        diff_pct = (user_clock - opp_clock) / base_time_seconds * 100
+        game_data.append((played_at, diff_pct))
+
+    game_data.sort(key=lambda x: x[0])
+
+    diffs_so_far: list[float] = []
+    data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
+
+    for played_at, diff_pct in game_data:
+        diffs_so_far.append(diff_pct)
+        window_slice = diffs_so_far[-window:]
+        avg = statistics.mean(window_slice)
+
+        iso_year, iso_week, iso_weekday = played_at.isocalendar()
+        monday = (played_at - timedelta(days=iso_weekday - 1)).date()
+        data_by_week[(iso_year, iso_week)] = {
+            "date": monday.isoformat(),
+            "avg_clock_diff_pct": round(avg, 4),
+            "game_count": len(window_slice),
+        }
+
+    return [
+        ClockPressureTimelinePoint(**data_by_week[key])
+        for key in sorted(data_by_week.keys())
+        if data_by_week[key]["game_count"] >= MIN_GAMES_FOR_TIMELINE
+    ]
 
 
 def _build_bucket_series(

@@ -230,6 +230,21 @@ class ClockStatsRow(BaseModel):
     net_timeout_rate: float  # (timeout wins - timeout losses) / total_endgame_games * 100
 
 
+class ClockPressureTimelinePoint(BaseModel):
+    """One point in the clock-diff timeline (quick-260416-w3q).
+
+    date: Monday of the ISO week, YYYY-MM-DD.
+    avg_clock_diff_pct: mean of (user_clock - opp_clock) / base_time_seconds * 100
+        over the trailing `timeline_window` games (see ClockPressureResponse).
+        Positive means the user entered the endgame with more clock than the opponent.
+    game_count: games represented in the window (<= timeline_window).
+    """
+
+    date: str
+    avg_clock_diff_pct: float
+    game_count: int
+
+
 class ClockPressureResponse(BaseModel):
     """Time Pressure at Endgame Entry — table broken down by time control (Phase 54).
 
@@ -237,11 +252,18 @@ class ClockPressureResponse(BaseModel):
     total_clock_games: total games (across all time controls) with both clocks present.
     total_endgame_games: total distinct endgame games across all time controls.
     Both totals include all time controls (even hidden rows) for "Based on X of Y" note.
+
+    timeline: weekly rolling-window series of average clock-diff % across all time
+        controls (quick-260416-w3q). Collapsed to a single series — filter by time
+        control via the sidebar filter.
+    timeline_window: rolling window size used for each timeline point.
     """
 
     rows: list[ClockStatsRow]
     total_clock_games: int
     total_endgame_games: int
+    timeline: list[ClockPressureTimelinePoint]
+    timeline_window: int
 
 
 class TimePressureBucketPoint(BaseModel):

@@ -19,9 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.endgames import EndgameWDLSummary
 from app.services.endgame_service import (
+    CLOCK_PRESSURE_TIMELINE_WINDOW,
     _aggregate_endgame_stats,
     _build_bucket_series,
     _compute_clock_pressure,
+    _compute_clock_pressure_timeline,
     _compute_rolling_series,
     _compute_score_gap_material,
     _compute_time_pressure_chart,
@@ -1505,14 +1507,19 @@ def _make_clock_row(
     user_color: str,
     ply_array: list[int],
     clock_array: list[float | None],
+    played_at: Any = None,
 ) -> tuple:
     """Build a tuple matching the query_clock_stats_rows output shape.
 
     Shape: (game_id, time_control_bucket, base_time_seconds, termination,
-            result, user_color, ply_array, clock_array)
+            result, user_color, ply_array, clock_array, played_at)
 
     base_time_seconds is the per-game starting clock (e.g. 600 for 600+0, 900
     for 900+10). Used as the denominator for % computation (quick-260414-smt).
+
+    played_at was appended in quick-260416-w3q so the clock-diff timeline can
+    bucket games by ISO week. Legacy tests that only exercise the table/chart
+    consumers leave it as None — those consumers ignore the trailing column.
 
     Since quick-260414-pv4, query_clock_stats_rows emits one row per qualifying
     game (whole-game 6-ply rule), so test rows should use distinct game_ids
@@ -1527,6 +1534,7 @@ def _make_clock_row(
         user_color,
         ply_array,
         clock_array,
+        played_at,
     )
 
 
@@ -2348,3 +2356,152 @@ class TestTimePressureChartPerGameDenominator:
         assert result.total_endgame_games == 11
         # Only 10 games contribute to series (clamped game excluded)
         assert sum(p.game_count for p in result.user_series) == 10
+
+
+# ---------------------------------------------------------------------------
+# quick-260416-w3q: _compute_clock_pressure_timeline tests
+# ---------------------------------------------------------------------------
+
+
+class TestComputeClockPressureTimeline:
+    """Unit tests for _compute_clock_pressure_timeline (quick-260416-w3q)."""
+
+    def test_empty_input_returns_empty(self):
+        assert _compute_clock_pressure_timeline([], 100) == []
+
+    def test_drops_early_points_below_min_games(self):
+        """With fewer than MIN_GAMES_FOR_TIMELINE (=10) games total, no weekly points emit."""
+        base = datetime.datetime(2026, 1, 5, 12, 0, 0)  # Monday
+        rows = [
+            _make_clock_row(
+                i + 1, "blitz", 180, "checkmate", "1-0", "white",
+                [0, 1], [50.0, 60.0],
+                played_at=base + datetime.timedelta(days=i),
+            )
+            for i in range(5)
+        ]
+        assert _compute_clock_pressure_timeline(rows, 100) == []
+
+    def test_emits_one_point_per_iso_week_using_rolling_mean(self):
+        """Games across two ISO weeks -> two weekly points with running mean diff %.
+
+        Games in week 1: 10 games with diff = -10/180 (user_clock=50, opp_clock=60, base=180).
+        Games in week 2: 10 games with diff = +20/180 (user_clock=80, opp_clock=60, base=180).
+        Week-2 point uses mean of all 20 games (trailing window of 100 pre-fills).
+        """
+        wk1_monday = datetime.datetime(2026, 1, 5, 12, 0, 0)  # ISO week 2
+        wk2_monday = datetime.datetime(2026, 1, 12, 12, 0, 0)  # ISO week 3
+        rows = []
+        for i in range(10):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white",
+                    [0, 1], [50.0, 60.0],
+                    played_at=wk1_monday + datetime.timedelta(hours=i),
+                )
+            )
+        for i in range(10):
+            rows.append(
+                _make_clock_row(
+                    i + 11, "blitz", 180, "checkmate", "1-0", "white",
+                    [0, 1], [80.0, 60.0],
+                    played_at=wk2_monday + datetime.timedelta(hours=i),
+                )
+            )
+        series = _compute_clock_pressure_timeline(rows, 100)
+        assert len(series) == 2
+        # Week 1: mean of 10 games at -10/180*100 ≈ -5.556
+        assert series[0].date == "2026-01-05"
+        assert series[0].avg_clock_diff_pct == pytest.approx(-10 / 180 * 100, abs=0.01)
+        assert series[0].game_count == 10
+        # Week 2: mean of all 20 games = ((10 * -10) + (10 * 20)) / 20 / 180 * 100
+        assert series[1].date == "2026-01-12"
+        expected = ((10 * -10) + (10 * 20)) / 20 / 180 * 100
+        assert series[1].avg_clock_diff_pct == pytest.approx(expected, abs=0.01)
+        assert series[1].game_count == 20
+
+    def test_rolling_window_caps_at_window_size(self):
+        """Window cap: later weeks' point mean reflects only the trailing window games.
+
+        20 games across two weeks (10 each) with window=10: week 2's mean reflects
+        only its own 10 games (week 1 scrolls out of the window).
+        """
+        wk1 = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)
+        rows = []
+        for i in range(10):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white",
+                    [0, 1], [50.0, 60.0],  # diff = -10/180
+                    played_at=wk1 + datetime.timedelta(hours=i),
+                )
+            )
+        for i in range(10):
+            rows.append(
+                _make_clock_row(
+                    i + 11, "blitz", 180, "checkmate", "1-0", "white",
+                    [0, 1], [80.0, 60.0],  # diff = +20/180
+                    played_at=wk2 + datetime.timedelta(hours=i),
+                )
+            )
+        series = _compute_clock_pressure_timeline(rows, 10)
+        assert len(series) == 2
+        # Week 1: 10-game window filled with week-1 games only
+        assert series[0].avg_clock_diff_pct == pytest.approx(-10 / 180 * 100, abs=0.01)
+        assert series[0].game_count == 10
+        # Week 2: window capped to 10 -> only week-2 games contribute
+        assert series[1].avg_clock_diff_pct == pytest.approx(20 / 180 * 100, abs=0.01)
+        assert series[1].game_count == 10
+
+    def test_skips_rows_without_played_at_or_base_time(self):
+        """Rows missing played_at, base_time_seconds, or clocks are excluded."""
+        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        rows = [
+            # Valid rows
+            *[
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white",
+                    [0, 1], [50.0, 60.0],
+                    played_at=monday + datetime.timedelta(hours=i),
+                )
+                for i in range(10)
+            ],
+            # Invalid: no played_at
+            _make_clock_row(100, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [50.0, 60.0]),
+            # Invalid: no base_time_seconds
+            _make_clock_row(
+                101, "blitz", None, "checkmate", "1-0", "white", [0, 1], [50.0, 60.0],
+                played_at=monday,
+            ),
+            # Invalid: no clocks
+            _make_clock_row(
+                102, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [None, None],
+                played_at=monday,
+            ),
+            # Invalid: clock > 2x base time (bogus)
+            _make_clock_row(
+                103, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [540.0, 60.0],
+                played_at=monday,
+            ),
+        ]
+        series = _compute_clock_pressure_timeline(rows, 100)
+        assert len(series) == 1
+        assert series[0].game_count == 10
+
+    def test_compute_clock_pressure_exposes_timeline(self):
+        """_compute_clock_pressure returns the timeline + window fields."""
+        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        rows = [
+            _make_clock_row(
+                i + 1, "blitz", 180, "checkmate", "1-0", "white",
+                [0, 1], [50.0, 60.0],
+                played_at=monday + datetime.timedelta(hours=i),
+            )
+            for i in range(12)
+        ]
+        result = _compute_clock_pressure(rows)
+        assert result.timeline_window == CLOCK_PRESSURE_TIMELINE_WINDOW
+        assert len(result.timeline) == 1
+        assert result.timeline[0].date == "2026-01-05"
+        assert result.timeline[0].game_count == 12
