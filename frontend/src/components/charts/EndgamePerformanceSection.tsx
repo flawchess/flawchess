@@ -31,6 +31,11 @@ interface EndgamePerformanceSectionProps {
 const SCORE_DIFF_NEUTRAL_MIN = -0.05;
 const SCORE_DIFF_NEUTRAL_MAX = 0.05;
 
+// Bullet domain half-width for this metric. Population p05/p95 spans ~±0.16
+// (see reports/benchmarks-2026-04-16.md §1), so ±0.20 covers the observed
+// range without making typical values look tiny against the default ±0.40.
+const SCORE_DIFF_DOMAIN = 0.20;
+
 export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformanceSectionProps) {
   const totalGames = data.endgame_wdl.total + data.non_endgame_wdl.total;
   const endgamePct = totalGames > 0 ? (data.endgame_wdl.total / totalGames * 100).toFixed(1) : '0.0';
@@ -141,6 +146,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
                         value={scoreGap.score_difference}
                         neutralMin={SCORE_DIFF_NEUTRAL_MIN}
                         neutralMax={SCORE_DIFF_NEUTRAL_MAX}
+                        domain={SCORE_DIFF_DOMAIN}
                         ariaLabel={`Endgame score difference: ${diffFormatted}`}
                       />
                     </td>
@@ -203,6 +209,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
               value={scoreGap.score_difference}
               neutralMin={SCORE_DIFF_NEUTRAL_MIN}
               neutralMax={SCORE_DIFF_NEUTRAL_MAX}
+              domain={SCORE_DIFF_DOMAIN}
               ariaLabel={`Endgame score difference: ${diffFormatted}`}
             />
           </div>
