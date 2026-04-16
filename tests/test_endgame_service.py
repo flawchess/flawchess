@@ -1741,12 +1741,13 @@ class TestComputeTimePressureChart:
             for i in range(10)
         ]
         result = _compute_time_pressure_chart(rows)
-        assert len(result.rows) == 1
-        row = result.rows[0]
-        assert row.total_endgame_games == 10
+        assert result.total_endgame_games == 10
+        # User/opp series are now pooled across all qualifying time controls.
+        assert len(result.user_series) == 10
+        assert len(result.opp_series) == 10
         # User bucket sum equals unique games (not spans).
-        assert sum(p.game_count for p in row.user_series) == 10
-        assert sum(p.game_count for p in row.opp_series) == 10
+        assert sum(p.game_count for p in result.user_series) == 10
+        assert sum(p.game_count for p in result.opp_series) == 10
 
     def test_split_class_game_included_via_whole_game_rule(self):
         """Chart accepts a row whose ply_array reflects plies pooled across classes.
@@ -1772,8 +1773,7 @@ class TestComputeTimePressureChart:
                 _make_clock_row(i, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [90.0, 60.0])
             )
         result = _compute_time_pressure_chart(rows)
-        assert len(result.rows) == 1
-        assert result.rows[0].total_endgame_games == 10
+        assert result.total_endgame_games == 10
 
     def test_single_game_win_user_bucket_populated(self):
         """Test 1: 10 bullet wins, user 50% time -> user_score=1.0 -> user bucket 5 (50-60%) populated."""
@@ -1793,18 +1793,16 @@ class TestComputeTimePressureChart:
             for i in range(10)
         ]
         result = _compute_time_pressure_chart(rows)
-        assert len(result.rows) == 1
-        row = result.rows[0]
-        assert row.time_control == "bullet"
-        assert len(row.user_series) == 10
-        assert len(row.opp_series) == 10
+        assert result.total_endgame_games == 10
+        assert len(result.user_series) == 10
+        assert len(result.opp_series) == 10
         # User bucket 5 (50-60%) should have score 1.0
-        user_bucket5 = row.user_series[5]
+        user_bucket5 = result.user_series[5]
         assert user_bucket5.bucket_index == 5
         assert user_bucket5.game_count == 10
         assert user_bucket5.score == pytest.approx(1.0)
         # Opp bucket 3 (30-40%) should have score 0.0 (1 - 1.0)
-        opp_bucket3 = row.opp_series[3]
+        opp_bucket3 = result.opp_series[3]
         assert opp_bucket3.game_count == 10
         assert opp_bucket3.score == pytest.approx(0.0)
 
@@ -1823,9 +1821,8 @@ class TestComputeTimePressureChart:
                 )
             )
         result = _compute_time_pressure_chart(rows)
-        row = result.rows[0]
         # All games in user bucket 5 (90/180=50%) -> average of 1.0 + 0.0 + 8*0.5 = 5.0 / 10 = 0.5
-        user_bucket5 = row.user_series[5]
+        user_bucket5 = result.user_series[5]
         assert user_bucket5.game_count == 10
         assert user_bucket5.score == pytest.approx(0.5)
 
@@ -1841,13 +1838,11 @@ class TestComputeTimePressureChart:
             )
         # This game has only user ply/clock (no opp) -> opp_clock=None -> excluded from series
         rows.append(_make_clock_row(10, "blitz", 180, "checkmate", "1-0", "white", [0], [90.0]))
-        # Total = 10 games -> row appears; only 9 contribute to series
+        # Total = 10 games -> threshold met; only 9 contribute to series
         result = _compute_time_pressure_chart(rows)
-        assert len(result.rows) == 1
-        row = result.rows[0]
-        assert row.total_endgame_games == 10
+        assert result.total_endgame_games == 10
         # Only 9 games with both clocks contribute to series
-        total_user = sum(p.game_count for p in row.user_series)
+        total_user = sum(p.game_count for p in result.user_series)
         assert total_user == 9
 
     def test_game_without_base_time_seconds_excluded(self):
@@ -1861,15 +1856,22 @@ class TestComputeTimePressureChart:
                 )
             )
         result = _compute_time_pressure_chart(rows)
-        # 10 games with valid TC bucket -> row appears; but no base_time_seconds -> series empty
-        assert len(result.rows) == 1
-        row = result.rows[0]
-        for p in row.user_series:
+        # 10 games with valid TC bucket -> TC passes threshold; but no base_time_seconds
+        # means no game contributes to any bucket, so all counts are 0.
+        assert result.total_endgame_games == 10
+        for p in result.user_series:
+            assert p.game_count == 0
+            assert p.score is None
+        for p in result.opp_series:
             assert p.game_count == 0
             assert p.score is None
 
     def test_time_control_below_min_games_excluded(self):
-        """Test 5: Time control with fewer than MIN_GAMES_FOR_CLOCK_STATS=10 games excluded."""
+        """Test 5: Time control with fewer than MIN_GAMES_FOR_CLOCK_STATS=10 games excluded.
+
+        The only TC (rapid, 9 games) fails the threshold and is dropped from the pool.
+        With no TC contributing, total_endgame_games is 0 and all buckets are empty.
+        """
         rows = [
             _make_clock_row(
                 i + 1, "rapid", 600, "checkmate", "1-0", "white", [0, 1], [300.0, 200.0]
@@ -1877,7 +1879,13 @@ class TestComputeTimePressureChart:
             for i in range(9)
         ]
         result = _compute_time_pressure_chart(rows)
-        assert len(result.rows) == 0
+        assert result.total_endgame_games == 0
+        for p in result.user_series:
+            assert p.game_count == 0
+            assert p.score is None
+        for p in result.opp_series:
+            assert p.game_count == 0
+            assert p.score is None
 
     def test_bucket_clamping_100_percent_time(self):
         """Test 6: 100% time remaining -> clamped to bucket index 9 (not 10)."""
@@ -1888,21 +1896,32 @@ class TestComputeTimePressureChart:
             for i in range(10)
         ]
         result = _compute_time_pressure_chart(rows)
-        assert len(result.rows) == 1
-        row = result.rows[0]
+        assert result.total_endgame_games == 10
         # 100% time -> int(100/10)=10, clamped to 9
-        user_bucket9 = row.user_series[9]
+        user_bucket9 = result.user_series[9]
         assert user_bucket9.bucket_index == 9
         assert user_bucket9.bucket_label == "90-100%"
         assert user_bucket9.game_count == 10
 
     def test_empty_clock_rows_returns_empty_response(self):
-        """Test 7: Empty clock_rows produces response with no rows."""
+        """Test 7: Empty clock_rows produces a response with 10 empty bucket points per series."""
         result = _compute_time_pressure_chart([])
-        assert result.rows == []
+        assert result.total_endgame_games == 0
+        assert len(result.user_series) == 10
+        assert len(result.opp_series) == 10
+        for p in result.user_series:
+            assert p.game_count == 0
+            assert p.score is None
+        for p in result.opp_series:
+            assert p.game_count == 0
+            assert p.score is None
 
-    def test_multiple_time_controls_separate_rows(self):
-        """Test 8: Multiple time controls produce separate rows in correct order."""
+    def test_multiple_time_controls_pool_into_single_series(self):
+        """Test 8: Multiple time controls pool into a single user/opp series (no per-TC rows).
+
+        10 blitz games (90/180=50% -> user bucket 5) + 10 rapid games (300/600=50% -> user bucket 5)
+        land in the same pooled bucket, summing to 20 games at bucket 5.
+        """
         rows = []
         for i in range(10):
             rows.append(
@@ -1917,10 +1936,13 @@ class TestComputeTimePressureChart:
                 )
             )
         result = _compute_time_pressure_chart(rows)
-        assert len(result.rows) == 2
-        # blitz before rapid in _TIME_CONTROL_ORDER
-        assert result.rows[0].time_control == "blitz"
-        assert result.rows[1].time_control == "rapid"
+        # Both TCs passed the threshold (10 games each) -> pooled total = 20
+        assert result.total_endgame_games == 20
+        # Pooled bucket game counts sum to 20 as well
+        assert sum(p.game_count for p in result.user_series) == 20
+        assert sum(p.game_count for p in result.opp_series) == 20
+        # All 20 games sit at user bucket 5 (50%)
+        assert result.user_series[5].game_count == 20
 
     def test_user_score_derivation_win_draw_loss(self):
         """Test 9: win=1.0, draw=0.5, loss=0.0 for user_score; opp gets 1-user_score."""
@@ -1947,14 +1969,12 @@ class TestComputeTimePressureChart:
                 )
             )
         result = _compute_time_pressure_chart(rows)
-        assert len(result.rows) == 1
-        row = result.rows[0]
         # 90/180 = 50% -> bucket index 5
-        user_bucket5 = row.user_series[5]
+        user_bucket5 = result.user_series[5]
         assert user_bucket5.game_count == 10
         assert user_bucket5.score == pytest.approx(0.55)
         # opp: 60/180 = 33% -> bucket index 3
-        opp_bucket3 = row.opp_series[3]
+        opp_bucket3 = result.opp_series[3]
         assert opp_bucket3.game_count == 10
         assert opp_bucket3.score == pytest.approx(0.45)
 
@@ -1989,9 +2009,50 @@ class TestComputeTimePressureChart:
         for i in range(5):
             rows.append(_make_clock_row(i + 6, "blitz", 180, "checkmate", "1-0", "white", [], []))
         result = _compute_time_pressure_chart(rows)
-        assert len(result.rows) == 1
-        row = result.rows[0]
-        assert row.total_endgame_games == 10
+        assert result.total_endgame_games == 10
+
+    def test_user_and_opp_game_count_totals_are_equal(self):
+        """Same-game symmetry: every endgame contributes one user point AND one opp point,
+        so summed game_counts across the user series and opp series must be equal.
+
+        Spans multiple time controls (bullet + rapid) to exercise pooled aggregation.
+        """
+        rows: list[tuple] = []
+        # Bullet: 10 games, varied clocks and results so user/opp land in different buckets
+        for i in range(10):
+            rows.append(
+                _make_clock_row(
+                    i + 1,
+                    "bullet",
+                    60,
+                    "checkmate",
+                    ["1-0", "0-1", "1/2-1/2"][i % 3],
+                    "white" if i % 2 == 0 else "black",
+                    [0, 1],
+                    [float(10 + i * 4), float(5 + i * 3)],
+                )
+            )
+        # Rapid: 12 games, different clock distribution
+        for i in range(12):
+            rows.append(
+                _make_clock_row(
+                    100 + i,
+                    "rapid",
+                    600,
+                    "checkmate",
+                    ["1-0", "0-1", "1/2-1/2"][i % 3],
+                    "white" if i % 2 == 0 else "black",
+                    [0, 1],
+                    [float(100 + i * 40), float(80 + i * 35)],
+                )
+            )
+        result = _compute_time_pressure_chart(rows)
+        total_user = sum(p.game_count for p in result.user_series)
+        total_opp = sum(p.game_count for p in result.opp_series)
+        assert total_user == total_opp
+        # Sanity: both totals match the number of qualifying games (both clocks present, within clamp).
+        # All 22 games have both clocks and stay within the 2x clamp, so all contribute.
+        assert total_user == 22
 
 
 # ---------------------------------------------------------------------------
@@ -2150,11 +2211,10 @@ class TestTimePressureChartPerGameDenominator:
                 )
             )
         result = _compute_time_pressure_chart(rows)
-        assert len(result.rows) == 1
-        row = result.rows[0]
+        assert result.total_endgame_games == 10
         # 9 games at 50% (bucket 5) + 1 game at 100% (bucket 9)
-        assert row.user_series[5].game_count == 9
-        assert row.user_series[9].game_count == 1
+        assert result.user_series[5].game_count == 9
+        assert result.user_series[9].game_count == 1
 
     def test_chart_clamp_excludes_bogus_game(self):
         """Game with user_clock > 2x base is excluded from chart series.
@@ -2174,9 +2234,7 @@ class TestTimePressureChartPerGameDenominator:
             _make_clock_row(11, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [540.0, 60.0])
         )
         result = _compute_time_pressure_chart(rows)
-        assert len(result.rows) == 1
-        row = result.rows[0]
         # total_endgame_games = 11 (all games with valid TC bucket)
-        assert row.total_endgame_games == 11
+        assert result.total_endgame_games == 11
         # Only 10 games contribute to series (clamped game excluded)
-        assert sum(p.game_count for p in row.user_series) == 10
+        assert sum(p.game_count for p in result.user_series) == 10
