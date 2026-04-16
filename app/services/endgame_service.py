@@ -53,7 +53,6 @@ from app.schemas.endgames import (
     ScoreGapMaterialResponse,
     TimePressureBucketPoint,
     TimePressureChartResponse,
-    TimePressureChartRow,
 )
 from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
 
@@ -931,17 +930,26 @@ def _compute_time_pressure_chart(
     - Bucket user's time% -> accumulate user_score into user_series
     - Bucket opp's time% -> accumulate (1 - user_score) into opp_series
 
-    Returns rows for time controls with >= MIN_GAMES_FOR_CLOCK_STATS games.
-    Each row contains exactly NUM_BUCKETS (10) points per series.
+    quick-260416-pkx: rows are now pooled across all time controls that pass
+    MIN_GAMES_FOR_CLOCK_STATS into a single user_series + opp_series (10 buckets
+    each). Per-time-control rows were dropped — the frontend previously
+    re-aggregated them into a single weighted-average series, so the math now
+    lives here (closer to the data). The per-TC threshold still applies: games
+    belonging to a time control with fewer than MIN_GAMES_FOR_CLOCK_STATS
+    endgame games are excluded from the pool.
     """
-    # Accumulators: [score_sum, game_count] per bucket per time control.
+    # Per-time-control accumulators: [score_sum, game_count] per bucket per time control.
+    # Kept at per-TC granularity so the MIN_GAMES_FOR_CLOCK_STATS threshold can drop
+    # entire TCs before pooling — same behaviour the frontend had when it filtered
+    # the backend's per-TC rows before aggregating.
     tc_user_buckets: dict[str, list[list[float]]] = defaultdict(
         lambda: [[0.0, 0] for _ in range(NUM_BUCKETS)]
     )
     tc_opp_buckets: dict[str, list[list[float]]] = defaultdict(
         lambda: [[0.0, 0] for _ in range(NUM_BUCKETS)]
     )
-    # Count games with valid time_control_bucket (regardless of clock data).
+    # Count games with valid time_control_bucket (regardless of clock data) — used
+    # for the MIN_GAMES_FOR_CLOCK_STATS gate and for the pooled total_endgame_games.
     tc_game_count: dict[str, int] = defaultdict(int)
 
     for row in clock_rows:
@@ -998,28 +1006,29 @@ def _compute_time_pressure_chart(
         tc_opp_buckets[tc][opp_bucket][0] += 1.0 - user_score
         tc_opp_buckets[tc][opp_bucket][1] += 1
 
-    # Build rows in fixed time control order, filtering below minimum threshold
-    rows: list[TimePressureChartRow] = []
+    # Pool per-TC accumulators into a single series pair. TCs below the threshold
+    # are dropped entirely — same behaviour as the previous per-TC filter that the
+    # frontend then re-aggregated.
+    pooled_user_buckets: list[list[float]] = [[0.0, 0] for _ in range(NUM_BUCKETS)]
+    pooled_opp_buckets: list[list[float]] = [[0.0, 0] for _ in range(NUM_BUCKETS)]
+    total_endgame_games = 0
     for tc in _TIME_CONTROL_ORDER:
-        total_games = tc_game_count.get(tc, 0)
-        if total_games < MIN_GAMES_FOR_CLOCK_STATS:
+        if tc_game_count.get(tc, 0) < MIN_GAMES_FOR_CLOCK_STATS:
             continue
+        total_endgame_games += tc_game_count[tc]
+        tc_user = tc_user_buckets[tc]
+        tc_opp = tc_opp_buckets[tc]
+        for i in range(NUM_BUCKETS):
+            pooled_user_buckets[i][0] += tc_user[i][0]
+            pooled_user_buckets[i][1] += tc_user[i][1]
+            pooled_opp_buckets[i][0] += tc_opp[i][0]
+            pooled_opp_buckets[i][1] += tc_opp[i][1]
 
-        label = _TIME_CONTROL_LABELS.get(tc, tc.capitalize())
-        user_series = _build_bucket_series(tc_user_buckets[tc])
-        opp_series = _build_bucket_series(tc_opp_buckets[tc])
-
-        rows.append(
-            TimePressureChartRow(
-                time_control=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
-                label=label,
-                total_endgame_games=total_games,
-                user_series=user_series,
-                opp_series=opp_series,
-            )
-        )
-
-    return TimePressureChartResponse(rows=rows)
+    return TimePressureChartResponse(
+        user_series=_build_bucket_series(pooled_user_buckets),
+        opp_series=_build_bucket_series(pooled_opp_buckets),
+        total_endgame_games=total_endgame_games,
+    )
 
 
 def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:

@@ -256,30 +256,25 @@ class TimePressureBucketPoint(BaseModel):
     game_count: int
 
 
-class TimePressureChartRow(BaseModel):
-    """Per-time-control data for the time-pressure chart (Phase 55).
+class TimePressureChartResponse(BaseModel):
+    """Time Pressure vs Performance chart data (Phase 55, quick-260416-pkx pooled shape).
 
-    time_control: one of bullet/blitz/rapid/classical
-    label: "Bullet" etc.
-    total_endgame_games: total endgame games for this time control (with or without clock data)
-    user_series: 10 points -- user's score by user's time bucket
-    opp_series: 10 points -- opponent's score by opponent's time bucket
+    user_series: 10 bucket points, pre-aggregated across all time controls that
+        passed MIN_GAMES_FOR_CLOCK_STATS. Each point is the weighted average
+        (score_sum / game_count) of user scores by user's time-remaining bucket.
+    opp_series: 10 bucket points, same aggregation but by opponent's bucket
+        and using 1 - user_score per game.
+    total_endgame_games: total endgame games across all contributing time controls
+        (used by the frontend for empty-state detection and the "Based on X" note).
+
+    Per-time-control rows were dropped in quick-260416-pkx — the frontend previously
+    re-aggregated them into a single series anyway, so the math now lives in the
+    service layer (closer to the data).
     """
 
-    time_control: Literal["bullet", "blitz", "rapid", "classical"]
-    label: str
-    total_endgame_games: int
     user_series: list[TimePressureBucketPoint]
     opp_series: list[TimePressureBucketPoint]
-
-
-class TimePressureChartResponse(BaseModel):
-    """Time Pressure vs Performance chart data (Phase 55).
-
-    rows: per-time-control data; only rows with >= MIN_GAMES_FOR_CLOCK_STATS games included.
-    """
-
-    rows: list[TimePressureChartRow]
+    total_endgame_games: int
 
 
 class EndgameOverviewResponse(BaseModel):
