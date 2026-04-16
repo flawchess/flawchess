@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Advanced Analytics
 status: executing
-last_updated: "2026-04-15T20:10:00.000Z"
-last_activity: 2026-04-15 -- Completed quick task 260415-uq9
+last_updated: "2026-04-16T23:20:00.000Z"
+last_activity: 2026-04-16 -- Completed quick task 260416-w3q
 progress:
   total_phases: 13
   completed_phases: 5
@@ -88,9 +88,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 | 260416-pkx | Aggregate time pressure chart data in backend (pool across TCs); drop frontend aggregateSeries; add game-count symmetry test | 2026-04-16 | aa1bc56 | [260416-pkx-aggregate-time-pressure-data-in-backend-](./quick/260416-pkx-aggregate-time-pressure-data-in-backend-/) |
 | 260416-r3n | Change Score to Score % consistently across endgame tab copy and info popovers | 2026-04-16 | 0b022b1 | [260416-r3n-change-score-to-score-consistently-acros](./quick/260416-r3n-change-score-to-score-consistently-acros/) |
 | 260416-vcx | Switch per-type "Win Rate by Endgame Type" chart to weekly buckets (avg win rate per ISO week) to cut backend compute | 2026-04-16 | b208b31 | [260416-vcx-use-weekly-datapoints-with-median-win-ra](./quick/260416-vcx-use-weekly-datapoints-with-median-win-ra/) |
+| 260416-w3q | Add weekly rolling-100 clock-diff timeline chart below Time Pressure at Endgame Entry table | 2026-04-16 | 6729143 | [260416-w3q-clock-diff-timeline-chart](./quick/260416-w3q-clock-diff-timeline-chart/) |
 
 ---
-Last activity: 2026-04-16 - Completed quick task 260416-vcx: Weekly datapoints for Win Rate by Endgame Type chart
+Last activity: 2026-04-16 - Completed quick task 260416-w3q: Clock-diff timeline chart in Time Pressure at Endgame Entry section
 | 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
 | 2026-04-10 | ship | Phase 51 shipped — PR #42 merged into main | done |
 | 2026-04-11 | fast | Preserve Openings board position across main tab navigation | ✅ |
