@@ -125,6 +125,7 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
                 <p>Where the lines diverge reveals who handles time pressure better. If your line is below your opponents' line on the left side, you crack under pressure more than your opponents.</p>
                 <p>Includes every game that reached an endgame phase (total of at least 3 full moves / 6 half-moves spent in the endgame), aggregated across all time controls. Use the filter panel to narrow by time control.</p>
                 <p>Datapoints with fewer than 10 games are omitted.</p>
+                <p><strong>Dot size:</strong> scales with the number of games in that bucket relative to the largest bucket — bigger dots mean more games (and a more reliable score).</p>
               </div>
             </InfoPopover>
           </span>
