@@ -9,11 +9,11 @@
 | # | Criterion | Status | Evidence |
 |---|-----------|--------|----------|
 | 1 | `tests/conftest.py` truncates all non-reference tables at session start, keeping `alembic_version` and `openings` intact | VERIFIED | `conftest.py:27-61` — `_TRUNCATE_EXCLUDE = {'alembic_version', 'openings'}` + `_truncate_all_tables` creates a throwaway async engine via `asyncio.run`, runs `SELECT tablename FROM pg_tables WHERE schemaname='public'` and issues `TRUNCATE TABLE ... RESTART IDENTITY CASCADE`. Manually verified: after a pytest run, `openings` retains 3641 rows, `alembic_version` retains 1, all other user-owned tables reset to 0. |
-| 2 | Shared module-scoped `seeded_user` fixture in `tests/seed_fixtures.py` | VERIFIED | `seed_fixtures.py` defines `SeededUser` dataclass, `_GAMES_SPEC` (15 games), `EXPECTED` aggregate dict, registers/logins via API, commits portfolio through the patched `async_session_maker`. Registered as a pytest plugin in `conftest.py:21-24`. |
+| 2 | Shared module-scoped `seeded_user` fixture in `tests/seed_fixtures.py` | VERIFIED | `seed_fixtures.py` defines `SeededUser` dataclass, `_GAMES_SPEC` (25 games — expanded from 15 in follow-up commit `3a648a0`), `EXPECTED` aggregate dict with a `_verify_expected_matches_spec()` self-check at import time to prevent spec/expected drift, registers/logins via API, commits portfolio through the patched `async_session_maker`. Registered as a pytest plugin in `conftest.py:21-24`. |
 | 3 | `tests/test_aggregation_sanity.py` covers 7 audit gaps | VERIFIED | 12 tests across 6 classes all passing: WDL-black-perspective (4), rolling-window-boundaries (3), filter intersection (1), recency boundary (2), position dedup (1), endgame class transition (1). |
 | 4 | `tests/test_material_tally.py` verifies material pure functions | VERIFIED | 10 tests across 3 classes — starting material = 7800 cp, capture reduces count by 100 cp, signed imbalance (+100 white-up-pawn / -500 black-up-rook / 0 starting / 0 both-missing-queen), signature format `KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP`. All passing. |
-| 5 | `tests/test_integration_routers.py` hits real routers with exact-integer assertions | VERIFIED | 11 tests across 3 classes: global stats totals + time-control buckets + by-color perspective + platform filters (6 tests), endgame overview distinct total + per-type rook/pawn counts + Phase 59 material-rows invariant (4 tests), openings next-moves 15-game starting-position count (1 test). All passing. |
-| 6 | `uv run pytest` remains green; `uv run ty check app/ tests/` is zero-errors; `uv run ruff check .` is zero-errors | VERIFIED | Full suite: **755 passed, 1 skipped** (was 722 before Phase 61 — net +33 tests). `ty`: all checks passed. `ruff check`: all checks passed. `ruff format --check` on all 5 Phase-61 files: clean. |
+| 5 | `tests/test_integration_routers.py` hits real routers with exact-integer assertions | VERIFIED | 18 tests across 5 classes: global stats totals + time-control buckets + by-color perspective + platform filters (6 tests), endgame overview distinct total + per-type rook/pawn counts + Phase 59 material-rows invariant + all-six-endgame-classes coverage (5 tests), clock-pressure router only-blitz + row-shape + net_timeout_rate math (3 tests), time-pressure chart 10-bucket series + totals-match + per-bucket sums (3 tests), openings next-moves 25-game starting-position count (1 test). All passing. |
+| 6 | `uv run pytest` remains green; `uv run ty check app/ tests/` is zero-errors; `uv run ruff check .` is zero-errors | VERIFIED | Full suite: **762 passed, 1 skipped** (was 722 before Phase 61 — net +40 tests, incl. the follow-up time-pressure expansion). `ty`: all checks passed. `ruff check`: all checks passed. `ruff format --check` on all Phase-61 files: clean. |
 | 7 | No production code (`app/`) modified | VERIFIED | `git diff main -- app/` is empty. Only `tests/`, `.planning/`, and `.planning/phases/61-test-hardening/` were touched. |
 
 ## Test count delta
@@ -22,12 +22,14 @@
 |------|------------:|--------|
 | `tests/test_aggregation_sanity.py` | 12 | all passing |
 | `tests/test_material_tally.py` | 10 | all passing |
-| `tests/test_integration_routers.py` | 11 | all passing |
-| **Total** | **33** | **all passing** |
+| `tests/test_integration_routers.py` | 18 | all passing |
+| **Total** | **40** | **all passing** |
 
 ## Commits
 
 ```
+3a648a0 test(phase-61): expand seeded portfolio to 25 games + add time-pressure router tests
+94a66cf docs(phase-61): verification + mark phase complete in ROADMAP
 cf2101e test(phase-61-03): router integration tests + fixture plugin registration
 a71b02f test(phase-61-02): aggregation sanity + material tally tests
 2b60de2 test(phase-61-01): truncate flawchess_test at session start + seeded_user fixture
@@ -38,5 +40,6 @@ a71b02f test(phase-61-02): aggregation sanity + material tally tests
 
 - Zero production code (`app/`) changes — this phase purely added test coverage and test infrastructure. No audit-gap turned out to be a real bug; every new assertion passes against current behavior.
 - The `seeded_user` fixture is registered once at module scope per consumer (currently just `test_integration_routers.py`). Register+seed cost is ~200 ms once per that module.
+- Follow-up commit `3a648a0` expanded the seed to 25 games (originally 15) to unlock time-pressure router coverage: 11 blitz endgame games with `clock_seconds` populated (crossing `MIN_GAMES_FOR_CLOCK_STATS=10`), all 6 endgame classes represented, and 3 timeout terminations (2 user wins, 1 loss) for a non-zero `net_timeout_rate`. Added `_verify_expected_matches_spec()` self-check at module import to crash pytest collection if `EXPECTED` drifts from `_GAMES_SPEC`.
 - The in-codebase warning about HMAC key length (<32 bytes) already existed and is unrelated to Phase 61.
 - `tests/seed_fixtures.py` is intentionally kept as a vanilla test helper module (not under `app/`) so it doesn't ship in the production image.
