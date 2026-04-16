@@ -139,7 +139,7 @@ See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
 - [ ] **Phase 56: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
 - [ ] **Phase 57: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
 - [ ] **Phase 58: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
-- [ ] **Phase 61: Test Suite Hardening & DB Reset** - Truncate `flawchess_test` at pytest session start and add meaningful aggregation sanity tests closing gaps identified in the 2026-04-16 audit (WDL perspective, material tally, rolling windows, filter intersections, recency boundary, position dedup, endgame transitions, router known-numbers integration)
+- [x] **Phase 61: Test Suite Hardening & DB Reset** - Truncate `flawchess_test` at pytest session start and add meaningful aggregation sanity tests closing gaps identified in the 2026-04-16 audit (WDL perspective, material tally, rolling windows, filter intersections, recency boundary, position dedup, endgame transitions, router known-numbers integration) (completed 2026-04-16)
 
 ## Phase Details
 
@@ -315,9 +315,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 61-01-PLAN.md — Truncate fixture in `tests/conftest.py` + shared `seeded_user` module fixture in `tests/seed_fixtures.py`
-- [ ] 61-02-PLAN.md — Aggregation sanity tests (`tests/test_aggregation_sanity.py`) + material tally tests (`tests/test_material_tally.py`)
-- [ ] 61-03-PLAN.md — Router integration tests (`tests/test_integration_routers.py`) — known seed → known numbers via the shared fixture
+- [x] 61-01-PLAN.md — Truncate fixture in `tests/conftest.py` + shared `seeded_user` module fixture in `tests/seed_fixtures.py`
+- [x] 61-02-PLAN.md — Aggregation sanity tests (`tests/test_aggregation_sanity.py`) + material tally tests (`tests/test_material_tally.py`)
+- [x] 61-03-PLAN.md — Router integration tests (`tests/test_integration_routers.py`) — known seed → known numbers via the shared fixture
 **UI hint**: no
 
 ## Progress
@@ -385,7 +385,7 @@ Plans:
 | 58. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
 | 59. Fix Endgame Conv/Even/Recov per-game stats | v1.10 | 3/3 | Complete    | 2026-04-13 |
 | 60. Opponent-based baseline for Endgame Conv/Even/Recov | v1.10 | 0/? | Not started | - |
-| 61. Test Suite Hardening & DB Reset | v1.10 | 0/3 | In progress | - |
+| 61. Test Suite Hardening & DB Reset | v1.10 | 3/3 | Complete    | 2026-04-16 |
 
 ## Backlog
 
