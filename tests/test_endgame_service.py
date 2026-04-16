@@ -19,14 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.endgames import EndgameWDLSummary
 from app.services.endgame_service import (
-    MIN_GAMES_PER_WEEK,
     _aggregate_endgame_stats,
     _build_bucket_series,
     _compute_clock_pressure,
     _compute_rolling_series,
     _compute_score_gap_material,
     _compute_time_pressure_chart,
-    _compute_weekly_series,
+    _compute_weekly_rolling_series,
     _extract_entry_clocks,
     _wdl_to_score,
     classify_endgame_class,
@@ -483,68 +482,92 @@ def _weekly_row(played_at: datetime.datetime, result: str, user_color: str):
     return (played_at, result, user_color)
 
 
-class TestComputeWeeklySeries:
-    """Unit tests for _compute_weekly_series helper (per-type weekly timeline)."""
+class TestComputeWeeklyRollingSeries:
+    """Unit tests for _compute_weekly_rolling_series (rolling window sampled weekly)."""
 
     def test_empty_rows_returns_empty(self):
-        assert _compute_weekly_series([], min_games=MIN_GAMES_PER_WEEK) == []
+        assert _compute_weekly_rolling_series([], window=50) == []
 
-    def test_single_week_meeting_min_games_emits_one_point(self):
-        # Monday 2026-04-13 through Sunday 2026-04-19 is one ISO week.
-        # 3 games on Mon/Wed/Fri — all same week, all wins.
+    def test_below_min_games_for_timeline_returns_empty(self):
+        # Fewer games than MIN_GAMES_FOR_TIMELINE (10) -> no points emitted
+        # even though each week's final window has game_count == len(rows).
+        from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+
+        rows = [
+            _weekly_row(datetime.datetime(2026, 4, 13) + datetime.timedelta(days=i), "1-0", "white")
+            for i in range(MIN_GAMES_FOR_TIMELINE - 1)
+        ]
+        assert _compute_weekly_rolling_series(rows, window=50) == []
+
+    def test_one_point_per_iso_week_dated_to_monday(self):
+        # 15 games across 3 ISO weeks (5 per week). Week 1 only has 5 cumulative
+        # games (< MIN_GAMES_FOR_TIMELINE=10) and is dropped. Week 2 reaches 10
+        # cumulative, week 3 reaches 15.
+        rows = []
+        for week_start in (
+            datetime.datetime(2026, 4, 6),
+            datetime.datetime(2026, 4, 13),
+            datetime.datetime(2026, 4, 20),
+        ):
+            for day in range(5):  # Mon..Fri
+                rows.append(_weekly_row(week_start + datetime.timedelta(days=day), "1-0", "white"))
+
+        result = _compute_weekly_rolling_series(rows, window=50)
+        assert [pt["date"] for pt in result] == ["2026-04-13", "2026-04-20"]
+        assert [pt["game_count"] for pt in result] == [10, 15]
+
+    def test_window_caps_game_count(self):
+        # 60 wins spread one-per-day across ~9 ISO weeks; window=50 caps the
+        # game_count at 50 once the window fills.
+        rows = [
+            _weekly_row(datetime.datetime(2026, 3, 2) + datetime.timedelta(days=i), "1-0", "white")
+            for i in range(60)
+        ]
+        result = _compute_weekly_rolling_series(rows, window=50)
+        # Last few weeks should report a full window.
+        assert result[-1]["game_count"] == 50
+        assert result[-1]["win_rate"] == 1.0
+
+    def test_smoothing_across_sparse_weeks(self):
+        # This is the regression: a week with 1 loss in isolation should NOT
+        # snap win_rate to 0. With a rolling 50-game window, the 49 prior wins
+        # keep the rate high even if the current week had only one game.
+        rows = [
+            _weekly_row(datetime.datetime(2026, 2, 2) + datetime.timedelta(days=i), "1-0", "white")
+            for i in range(49)
+        ]
+        # One isolated loss in a later, otherwise-empty ISO week.
+        rows.append(_weekly_row(datetime.datetime(2026, 4, 13), "0-1", "white"))
+
+        result = _compute_weekly_rolling_series(rows, window=50)
+        last = result[-1]
+        assert last["date"] == "2026-04-13"
+        # 49 wins + 1 loss in window -> 0.98, not 0.0.
+        assert last["win_rate"] == 0.98
+        assert last["game_count"] == 50
+
+    def test_multiple_games_same_week_keep_final_state(self):
+        # Week with multiple games only emits the window state after its
+        # last game.
         rows = [
             _weekly_row(datetime.datetime(2026, 4, 13), "1-0", "white"),  # win
-            _weekly_row(datetime.datetime(2026, 4, 15), "1-0", "white"),  # win
-            _weekly_row(datetime.datetime(2026, 4, 17), "0-1", "black"),  # win (black wins)
-        ]
-        result = _compute_weekly_series(rows, min_games=3)
-        assert len(result) == 1
-        assert result[0]["date"] == "2026-04-13"  # Monday of that ISO week
-        assert result[0]["game_count"] == 3
-        assert result[0]["win_rate"] == 1.0
-
-    def test_week_below_min_games_dropped(self):
-        # 2 games in a week, min_games=3 -> no output.
-        rows = [
-            _weekly_row(datetime.datetime(2026, 4, 13), "1-0", "white"),
             _weekly_row(datetime.datetime(2026, 4, 14), "0-1", "white"),  # loss
+            _weekly_row(datetime.datetime(2026, 4, 15), "1-0", "white"),  # win
         ]
-        assert _compute_weekly_series(rows, min_games=3) == []
-
-    def test_multi_week_chronological_monday_dates(self):
-        # Week 1 (Mon 2026-04-06 - Sun 2026-04-12): 3 wins
-        # Week 2 (Mon 2026-04-13 - Sun 2026-04-19): 3 losses
-        # Week 3 (Mon 2026-04-20 - Sun 2026-04-26): 3 draws
-        rows = [
-            _weekly_row(datetime.datetime(2026, 4, 6), "1-0", "white"),
-            _weekly_row(datetime.datetime(2026, 4, 8), "1-0", "white"),
-            _weekly_row(datetime.datetime(2026, 4, 12), "1-0", "white"),  # Sunday still week 1
-            _weekly_row(datetime.datetime(2026, 4, 13), "0-1", "white"),  # loss
-            _weekly_row(datetime.datetime(2026, 4, 15), "0-1", "white"),
-            _weekly_row(datetime.datetime(2026, 4, 17), "0-1", "white"),
-            _weekly_row(datetime.datetime(2026, 4, 20), "1/2-1/2", "white"),  # draw
-            _weekly_row(datetime.datetime(2026, 4, 22), "1/2-1/2", "white"),
-            _weekly_row(datetime.datetime(2026, 4, 24), "1/2-1/2", "white"),
+        # Below MIN_GAMES_FOR_TIMELINE, so no point actually emitted; verify
+        # with a lower window that the logic keeps per-week final state via
+        # direct inspection at the higher level is not possible here. Instead
+        # pad with enough prior wins to clear the threshold.
+        prior = [
+            _weekly_row(datetime.datetime(2026, 3, 2) + datetime.timedelta(days=i), "1-0", "white")
+            for i in range(10)
         ]
-        result = _compute_weekly_series(rows, min_games=3)
-        assert [pt["date"] for pt in result] == ["2026-04-06", "2026-04-13", "2026-04-20"]
-        assert result[0]["win_rate"] == 1.0
-        assert result[1]["win_rate"] == 0.0
-        assert result[2]["win_rate"] == 0.0
-        assert all(pt["game_count"] == 3 for pt in result)
-
-    def test_win_rate_is_average_of_wins_over_games(self):
-        # Week with 4 games: 1 win, 2 draws, 1 loss -> win_rate = 0.25
-        rows = [
-            _weekly_row(datetime.datetime(2026, 4, 13), "1-0", "white"),  # win
-            _weekly_row(datetime.datetime(2026, 4, 14), "1/2-1/2", "white"),  # draw
-            _weekly_row(datetime.datetime(2026, 4, 15), "1/2-1/2", "white"),  # draw
-            _weekly_row(datetime.datetime(2026, 4, 16), "0-1", "white"),  # loss
-        ]
-        result = _compute_weekly_series(rows, min_games=3)
-        assert len(result) == 1
-        assert result[0]["win_rate"] == 0.25
-        assert result[0]["game_count"] == 4
+        result = _compute_weekly_rolling_series(prior + rows, window=50)
+        # Final week entry = after the Wed win -> 12 wins + 1 loss in window.
+        last = result[-1]
+        assert last["date"] == "2026-04-13"
+        assert last["game_count"] == 13
+        assert last["win_rate"] == round(12 / 13, 4)
 
 
 class TestGetEndgamePerformance:
@@ -776,12 +799,16 @@ class TestGetEndgameTimeline:
     @pytest.mark.asyncio
     async def test_per_type_keys_are_endgame_class_strings(self):
         """per_type keys should be EndgameClass strings (rook, minor_piece, etc.), not integers."""
-        # Weekly aggregation: need MIN_GAMES_PER_WEEK (3) games in a single ISO week
-        # to emit a point. Mon/Wed/Fri of 2026-04-13 week, all wins.
+        # Rolling-window-sampled-weekly per-type: need MIN_GAMES_FOR_TIMELINE (10)
+        # games in the rolling window before a weekly point is emitted. 10 rook
+        # wins in a single ISO week (Mon 2026-04-13) clears the threshold.
         rook_rows = [
-            (datetime.datetime(2026, 4, 13, tzinfo=datetime.timezone.utc), "1-0", "white"),
-            (datetime.datetime(2026, 4, 15, tzinfo=datetime.timezone.utc), "1-0", "white"),
-            (datetime.datetime(2026, 4, 17, tzinfo=datetime.timezone.utc), "1-0", "white"),
+            (
+                datetime.datetime(2026, 4, 13, hour=h, tzinfo=datetime.timezone.utc),
+                "1-0",
+                "white",
+            )
+            for h in range(10)
         ]
 
         with patch(
@@ -806,10 +833,11 @@ class TestGetEndgameTimeline:
         assert "queen" in result.per_type
         assert "mixed" in result.per_type
         assert "pawnless" in result.per_type
-        # Rook series should have one weekly point (3 games meet MIN_GAMES_PER_WEEK)
+        # Rook series should have one weekly point (10 games clear MIN_GAMES_FOR_TIMELINE).
         assert len(result.per_type["rook"]) == 1
         assert result.per_type["rook"][0].win_rate == 1.0
         assert result.per_type["rook"][0].date == "2026-04-13"  # Monday of the ISO week
+        assert result.per_type["rook"][0].game_count == 10
 
     @pytest.mark.asyncio
     async def test_window_parameter_reflected_in_response(self):

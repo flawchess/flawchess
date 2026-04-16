@@ -109,7 +109,7 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
           <span className="inline-flex items-center gap-1">
             Win Rate by Endgame Type
             <InfoPopover ariaLabel="Win Rate by Endgame Type info" testId="timeline-per-type-info" side="top">
-              Win rate per week for each endgame type. Only weeks with at least 3 games are shown. Click legend items to toggle individual series.
+              Rolling win rate over the last 50 games for each endgame type, sampled once per week. Early weeks with fewer than 10 games in the window are hidden. Click legend items to toggle individual series.
             </InfoPopover>
           </span>
         </h3>
@@ -146,7 +146,7 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
                           <span>
                             {cfg?.label ?? item.dataKey}: {Math.round((item.value as number) * 100)}%
                             {gameCount !== undefined && (
-                              <span className="text-muted-foreground ml-1">({gameCount} games this week)</span>
+                              <span className="text-muted-foreground ml-1">(past {gameCount} games)</span>
                             )}
                           </span>
                         </div>
