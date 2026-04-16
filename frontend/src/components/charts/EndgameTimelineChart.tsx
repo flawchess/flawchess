@@ -81,7 +81,6 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
       if (found) {
         point[key] = found.win_rate;
         point[`${key}_game_count`] = found.game_count;
-        point[`${key}_window_size`] = found.window_size;
       }
       // undefined produces a gap bridged by connectNulls
     }
@@ -110,7 +109,7 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
           <span className="inline-flex items-center gap-1">
             Win Rate by Endgame Type
             <InfoPopover ariaLabel="Win Rate by Endgame Type info" testId="timeline-per-type-info" side="top">
-              Rolling-window win rate over time for each endgame type. Only data points with at least 10 games are shown to avoid noisy early values. Click legend items to toggle individual series.
+              Win rate per week for each endgame type. Only weeks with at least 3 games are shown. Click legend items to toggle individual series.
             </InfoPopover>
           </span>
         </h3>
@@ -147,7 +146,7 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
                           <span>
                             {cfg?.label ?? item.dataKey}: {Math.round((item.value as number) * 100)}%
                             {gameCount !== undefined && (
-                              <span className="text-muted-foreground ml-1">(past {gameCount} games)</span>
+                              <span className="text-muted-foreground ml-1">({gameCount} games this week)</span>
                             )}
                           </span>
                         </div>

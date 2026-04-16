@@ -19,12 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.endgames import EndgameWDLSummary
 from app.services.endgame_service import (
+    MIN_GAMES_PER_WEEK,
     _aggregate_endgame_stats,
     _build_bucket_series,
     _compute_clock_pressure,
     _compute_rolling_series,
     _compute_score_gap_material,
     _compute_time_pressure_chart,
+    _compute_weekly_series,
     _extract_entry_clocks,
     _wdl_to_score,
     classify_endgame_class,
@@ -472,6 +474,79 @@ class TestComputeRollingSeries:
         assert abs(result[-1]["win_rate"] - 0.5) < 1e-4
 
 
+def _weekly_row(played_at: datetime.datetime, result: str, user_color: str):
+    """Build a (played_at, result, user_color) row for weekly-series tests.
+
+    Unannotated return mirrors `_row()` so ty treats the tuple as a structural
+    match for `list[Row[Any]]` in the helper signature.
+    """
+    return (played_at, result, user_color)
+
+
+class TestComputeWeeklySeries:
+    """Unit tests for _compute_weekly_series helper (per-type weekly timeline)."""
+
+    def test_empty_rows_returns_empty(self):
+        assert _compute_weekly_series([], min_games=MIN_GAMES_PER_WEEK) == []
+
+    def test_single_week_meeting_min_games_emits_one_point(self):
+        # Monday 2026-04-13 through Sunday 2026-04-19 is one ISO week.
+        # 3 games on Mon/Wed/Fri — all same week, all wins.
+        rows = [
+            _weekly_row(datetime.datetime(2026, 4, 13), "1-0", "white"),  # win
+            _weekly_row(datetime.datetime(2026, 4, 15), "1-0", "white"),  # win
+            _weekly_row(datetime.datetime(2026, 4, 17), "0-1", "black"),  # win (black wins)
+        ]
+        result = _compute_weekly_series(rows, min_games=3)
+        assert len(result) == 1
+        assert result[0]["date"] == "2026-04-13"  # Monday of that ISO week
+        assert result[0]["game_count"] == 3
+        assert result[0]["win_rate"] == 1.0
+
+    def test_week_below_min_games_dropped(self):
+        # 2 games in a week, min_games=3 -> no output.
+        rows = [
+            _weekly_row(datetime.datetime(2026, 4, 13), "1-0", "white"),
+            _weekly_row(datetime.datetime(2026, 4, 14), "0-1", "white"),  # loss
+        ]
+        assert _compute_weekly_series(rows, min_games=3) == []
+
+    def test_multi_week_chronological_monday_dates(self):
+        # Week 1 (Mon 2026-04-06 - Sun 2026-04-12): 3 wins
+        # Week 2 (Mon 2026-04-13 - Sun 2026-04-19): 3 losses
+        # Week 3 (Mon 2026-04-20 - Sun 2026-04-26): 3 draws
+        rows = [
+            _weekly_row(datetime.datetime(2026, 4, 6), "1-0", "white"),
+            _weekly_row(datetime.datetime(2026, 4, 8), "1-0", "white"),
+            _weekly_row(datetime.datetime(2026, 4, 12), "1-0", "white"),  # Sunday still week 1
+            _weekly_row(datetime.datetime(2026, 4, 13), "0-1", "white"),  # loss
+            _weekly_row(datetime.datetime(2026, 4, 15), "0-1", "white"),
+            _weekly_row(datetime.datetime(2026, 4, 17), "0-1", "white"),
+            _weekly_row(datetime.datetime(2026, 4, 20), "1/2-1/2", "white"),  # draw
+            _weekly_row(datetime.datetime(2026, 4, 22), "1/2-1/2", "white"),
+            _weekly_row(datetime.datetime(2026, 4, 24), "1/2-1/2", "white"),
+        ]
+        result = _compute_weekly_series(rows, min_games=3)
+        assert [pt["date"] for pt in result] == ["2026-04-06", "2026-04-13", "2026-04-20"]
+        assert result[0]["win_rate"] == 1.0
+        assert result[1]["win_rate"] == 0.0
+        assert result[2]["win_rate"] == 0.0
+        assert all(pt["game_count"] == 3 for pt in result)
+
+    def test_win_rate_is_average_of_wins_over_games(self):
+        # Week with 4 games: 1 win, 2 draws, 1 loss -> win_rate = 0.25
+        rows = [
+            _weekly_row(datetime.datetime(2026, 4, 13), "1-0", "white"),  # win
+            _weekly_row(datetime.datetime(2026, 4, 14), "1/2-1/2", "white"),  # draw
+            _weekly_row(datetime.datetime(2026, 4, 15), "1/2-1/2", "white"),  # draw
+            _weekly_row(datetime.datetime(2026, 4, 16), "0-1", "white"),  # loss
+        ]
+        result = _compute_weekly_series(rows, min_games=3)
+        assert len(result) == 1
+        assert result[0]["win_rate"] == 0.25
+        assert result[0]["game_count"] == 4
+
+
 class TestGetEndgamePerformance:
     """Tests for get_endgame_performance service function."""
 
@@ -701,10 +776,13 @@ class TestGetEndgameTimeline:
     @pytest.mark.asyncio
     async def test_per_type_keys_are_endgame_class_strings(self):
         """per_type keys should be EndgameClass strings (rook, minor_piece, etc.), not integers."""
-        from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
-
-        n = MIN_GAMES_FOR_TIMELINE
-        rook_rows = [_row("1-0", "white", i) for i in range(n)]
+        # Weekly aggregation: need MIN_GAMES_PER_WEEK (3) games in a single ISO week
+        # to emit a point. Mon/Wed/Fri of 2026-04-13 week, all wins.
+        rook_rows = [
+            (datetime.datetime(2026, 4, 13, tzinfo=datetime.timezone.utc), "1-0", "white"),
+            (datetime.datetime(2026, 4, 15, tzinfo=datetime.timezone.utc), "1-0", "white"),
+            (datetime.datetime(2026, 4, 17, tzinfo=datetime.timezone.utc), "1-0", "white"),
+        ]
 
         with patch(
             "app.services.endgame_service.query_endgame_timeline_rows", new_callable=AsyncMock
@@ -728,9 +806,10 @@ class TestGetEndgameTimeline:
         assert "queen" in result.per_type
         assert "mixed" in result.per_type
         assert "pawnless" in result.per_type
-        # Rook series should have one point (game n passes threshold)
+        # Rook series should have one weekly point (3 games meet MIN_GAMES_PER_WEEK)
         assert len(result.per_type["rook"]) == 1
         assert result.per_type["rook"][0].win_rate == 1.0
+        assert result.per_type["rook"][0].date == "2026-04-13"  # Monday of the ISO week
 
     @pytest.mark.asyncio
     async def test_window_parameter_reflected_in_response(self):
