@@ -31,10 +31,10 @@ const CLASS_TO_SLUG: Record<EndgameClass, string> = {
 const ENDGAME_TYPE_DESCRIPTIONS: Record<EndgameClass, string> = {
   rook: 'Endgames with rooks as the only non-king, non-pawn pieces. The most common endgame type besides Mixed.',
   minor_piece: 'Endgames with bishops and/or knights as the only non-king, non-pawn pieces.',
-  pawn: 'King and pawn endgames only — no other pieces remain on the board.',
+  pawn: 'King and pawn endgames only. No other pieces remain on the board.',
   queen: 'Endgames where queens are the only non-king, non-pawn pieces.',
-  mixed: 'Endgames with pieces from two or more piece types — rooks, minor pieces (bishops/knights), and queens (e.g. queen + rook, rook + knight).',
-  pawnless: 'Endgames with no pawns on the board — only kings and pieces.',
+  mixed: 'Endgames with pieces from two or more piece types: rooks, minor pieces (bishops/knights), and queens (e.g. queen + rook, rook + knight).',
+  pawnless: 'Endgames with no pawns on the board, only kings and pieces.',
 };
 
 // Matches Endgame Conversion & Recovery: ±5pp neutral zone reads as
@@ -284,7 +284,7 @@ export function EndgameWDLChart({
                 <p>
                   <strong>You</strong> is your Score % in these games
                   (100% per win, 50% per draw, averaged over games). <strong>Opp</strong>{' '}
-                  is the complement — your opponents' Score % in the same games. <strong>Diff</strong>{' '}
+                  is the complement: your opponents' Score % in the same games. <strong>Diff</strong>{' '}
                   and the bullet chart visualize the signed gap, with a ±5pp neutral band
                   around 50/50.
                 </p>
@@ -298,7 +298,7 @@ export function EndgameWDLChart({
           </span>
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Win/draw/loss rate for each endgame type — a game can count toward multiple types.
+          Win/draw/loss rate for each endgame type. A game can count toward multiple types.
         </p>
       </div>
 

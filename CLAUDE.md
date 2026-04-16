@@ -198,6 +198,7 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
 - **Flag over-engineering and scope creep** — push back when a request adds unnecessary complexity or drifts from the goal.
 - **Be honest about uncertainty** — say "I'm not sure" or "this might not work because…" rather than presenting guesses as facts.
 - **Disagree and commit** — after raising concerns, respect the user's final call and execute fully.
+- **Use em-dashes sparingly** — they've become a tell for AI-generated text. Prefer commas, periods, parentheses, or colons in prose, chat replies, commit messages, PR descriptions, and user-facing UI copy (tooltips, info popovers, empty states). A single em-dash per paragraph is plenty; two in one sentence is too many. This is a style preference for human-readable text, not a hard rule for code comments or existing files.
 
 ## Coding Guidelines
 

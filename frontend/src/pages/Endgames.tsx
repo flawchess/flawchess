@@ -237,7 +237,7 @@ export function EndgamesPage() {
                       <strong>Endgame phase:</strong> positions where the total count of major and minor pieces
                       (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
                       counted. This follows the Lichess definition. A game is only counted as having an endgame
-                      phase if it spans at least 3 full moves (6 half-moves) in the endgame — shorter tactical
+                      phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical
                       transitions through endgame-like material are treated as no endgame.
                     </p>
                     <p>
@@ -246,9 +246,9 @@ export function EndgamesPage() {
                     </p>
                     <p>
                       <strong>Endgame sequence:</strong> a continuous stretch of at least 3 full moves (6 half-moves)
-                      spent in a single endgame type. A single game can produce multiple sequences — for example,
+                      spent in a single endgame type. A single game can produce multiple sequences. For example,
                       a rook endgame where the rooks get traded becomes a pawn endgame, giving that game one rook
-                      sequence and one pawn sequence. Sequences drive the Endgame Type Breakdown — a game can appear
+                      sequence and one pawn sequence. Sequences drive the Endgame Type Breakdown, so a game can appear
                       under more than one type.
                     </p>
                     <p>

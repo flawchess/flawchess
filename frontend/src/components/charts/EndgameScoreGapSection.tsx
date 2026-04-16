@@ -59,6 +59,16 @@ const BUCKET_DISPLAY_LABELS: Record<MaterialBucket, string> = {
   recovery: 'Recovery',
 };
 
+// User-facing labels that also name the per-bucket metric, so readers can
+// tell the percent column isn't the generic Score % used elsewhere on the
+// page. Used in the gauge strip, desktop table, and mobile cards; aria
+// labels and gauge testIds keep the short form above.
+const BUCKET_DISPLAY_LABELS_WITH_METRIC: Record<MaterialBucket, string> = {
+  conversion: 'Conversion (Win %)',
+  parity: 'Parity (Score %)',
+  recovery: 'Recovery (Save %)',
+};
+
 // Fixed per-bucket gauge zones. The blue band marks the typical
 // skill-cohort range for each bucket; red below, green above. Boundaries
 // are deliberately stable across users, filters, and opponent pools —
@@ -168,35 +178,38 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   don't distort the split.
                 </p>
                 <p>
-                  Each bucket tracks a different percentage:
-                  <strong> Conversion</strong> = win rate (W/G),
-                  <strong> Recovery</strong> = save rate ((W+D)/G), and
-                  <strong> Parity</strong> = chess-score percentage ((W+D/2)/G,
-                  draws count as half).
+                  Each bucket uses its own rate, shown in the gauge and the
+                  You / Opp / Diff columns, and named on the bucket label:
+                </p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>
+                    <strong>Conversion (Win %)</strong>: only wins count
+                  </li>
+                  <li>
+                    <strong>Parity (Score %)</strong>: draws count as half
+                  </li>
+                  <li>
+                    <strong>Recovery (Save %)</strong>: draws count as a save
+                  </li>
+                </ul>
+                <p>
+                  These rates are not the same as the generic Score % used
+                  elsewhere on the page.
                 </p>
                 <p>
-                  The <strong>gauges</strong> plot that percentage against a
-                  fixed skill-cohort target band (blue = typical, red = below,
+                  The <strong>gauges</strong> plot that rate against a fixed
+                  skill-cohort target band (blue = typical, red = below,
                   green = above). Bands are calibrated from FlawChess data and
-                  don't shift with filters — a stable target you can chase as
+                  don't shift with filters, giving you a stable target you can chase as
                   you improve.
                 </p>
                 <p>
                   The <strong>table</strong> compares your rate to your actual
                   opponents' rate in the mirror bucket (e.g. your Conversion vs
-                  their Conversion when playing you — your Recovery games,
+                  their Conversion when playing you, which is your Recovery games,
                   flipped). This baseline is self-calibrating and shifts with
                   filters like Opponent Strength. Hidden when the opponent sample
                   is smaller than 10 games.
-                </p>
-                <p>
-                  Gauge and Diff can disagree — that's informative. Outperforming
-                  the fixed target while underperforming your current opponents
-                  means you face a tougher-than-average pool, and vice versa.
-                </p>
-                <p>
-                  Tip: set the Opponent Strength filter to "Similar" to restrict
-                  the opponent baseline to players within ±50 ELO of your rating.
                 </p>
               </div>
             </InfoPopover>
@@ -226,7 +239,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
               data-testid={`endgame-gauge-${bucket}`}
             >
               <div className="text-sm mb-1">
-                {BUCKET_DISPLAY_LABELS[bucket]}
+                {BUCKET_DISPLAY_LABELS_WITH_METRIC[bucket]}
               </div>
               <EndgameGauge
                 value={userR * 100}
@@ -241,11 +254,11 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
       {/* Desktop: table layout */}
       <div className="hidden lg:block overflow-x-auto">
         <table
-          className="w-full min-w-[600px] text-sm sm:text-base table-fixed"
+          className="w-full min-w-[640px] text-sm sm:text-base table-fixed"
           data-testid="material-table"
         >
           <colgroup>
-            <col style={{ width: '110px' }} />
+            <col style={{ width: '150px' }} />
             <col style={{ width: '120px' }} />
             <col style={{ width: '150px' }} />
             <col style={{ width: '90px' }} />
@@ -288,8 +301,8 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   className={row.games === 0 ? 'opacity-50' : undefined}
                   data-testid={`material-row-${row.bucket}`}
                 >
-                  <td className="py-1.5 pr-3 text-sm">
-                    {BUCKET_DISPLAY_LABELS[row.bucket]}
+                  <td className="py-1.5 pr-3 text-sm whitespace-nowrap">
+                    {BUCKET_DISPLAY_LABELS_WITH_METRIC[row.bucket]}
                   </td>
                   <td className="py-1.5 px-2 text-right text-sm tabular-nums whitespace-nowrap">
                     {pct}% ({row.games.toLocaleString()})
@@ -337,7 +350,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                         className="text-xs text-muted-foreground"
                         data-testid={`material-row-${row.bucket}-muted`}
                       >
-                        n &lt; {MIN_OPPONENT_BASELINE_GAMES} — baseline unavailable
+                        n &lt; {MIN_OPPONENT_BASELINE_GAMES}, baseline unavailable
                       </span>
                     )}
                   </td>
@@ -378,7 +391,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
             >
               <div className="flex items-baseline justify-between">
                 <div className="text-sm font-medium">
-                  {BUCKET_DISPLAY_LABELS[row.bucket]}
+                  {BUCKET_DISPLAY_LABELS_WITH_METRIC[row.bucket]}
                 </div>
                 <div className="text-xs tabular-nums text-muted-foreground">
                   {pct}% ({row.games.toLocaleString()} games)
@@ -449,7 +462,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                     className="text-xs text-muted-foreground block"
                     data-testid={`material-card-${row.bucket}-muted`}
                   >
-                    n &lt; {MIN_OPPONENT_BASELINE_GAMES} — baseline unavailable
+                    n &lt; {MIN_OPPONENT_BASELINE_GAMES}, baseline unavailable
                   </span>
                 )}
               </div>

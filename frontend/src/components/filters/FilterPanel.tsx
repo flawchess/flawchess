@@ -245,10 +245,15 @@ export function FilterPanel({
             <span className="inline-flex items-center gap-1">
               Opponent Strength
               <InfoPopover ariaLabel="Opponent strength filter info" testId="filter-opponent-strength-info" side="bottom">
-                <div className="space-y-1">
-                  <p><strong>Stronger:</strong> Rated 50+ ELO above you</p>
-                  <p><strong>Similar:</strong> Within &plusmn;50 ELO</p>
-                  <p><strong>Weaker:</strong> Rated 50+ ELO below you</p>
+                <div className="space-y-2">
+                  <div className="space-y-1">
+                    <p><strong>Stronger:</strong> Rated 50+ ELO above you</p>
+                    <p><strong>Similar:</strong> Within &plusmn;50 ELO</p>
+                    <p><strong>Weaker:</strong> Rated 50+ ELO below you</p>
+                  </div>
+                  <p>
+                    Useful when your games aren&apos;t always rating-matched (casual play, tournaments, arenas), or when you want to isolate how you perform against stronger, similar, or weaker opponents.
+                  </p>
                 </div>
               </InfoPopover>
             </span>
