@@ -61,11 +61,13 @@ export interface EndgamePerformanceResponse {
   endgame_win_rate: number;
 }
 
+/** Single data point in the per-type weekly win-rate time series.
+ *  `date` is the Monday of an ISO week (YYYY-MM-DD). `win_rate` is wins / games
+ *  in that week. Only weeks with at least 3 games are emitted. */
 export interface EndgameTimelinePoint {
   date: string;
   win_rate: number;
   game_count: number;
-  window_size: number;
 }
 
 export interface EndgameOverallPoint {
