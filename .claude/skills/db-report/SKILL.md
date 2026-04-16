@@ -1,6 +1,6 @@
 ---
 name: db-report
-description: Generate a database storage and performance report for FlawChess. Use this skill when the user asks about database size, storage usage, table sizes, index sizes, game counts, position counts, slow queries, query performance, cache hit ratio, sequential scans, index usage, dead tuples, or wants a DB health/status overview. Trigger on phrases like "db report", "database report", "how big is the database", "storage usage", "index sizes", "table sizes", "slow queries", "query performance", "db performance", "db health", or any question about DB metrics. Supports both production and local dev databases.
+description: Generate a database storage and performance report for FlawChess. Use this skill when the user asks about database size, storage usage, table sizes, index sizes, game counts, position counts, slow queries, query performance, cache hit ratio, sequential scans, index usage, dead tuples, or wants a DB health/status overview. Trigger on phrases like "db report", "database report", "how big is the database", "storage usage", "index sizes", "table sizes", "slow queries", "query performance", "db performance", "db health", or any question about DB metrics. Supports both production and local dev databases. Writes a timestamped markdown report to reports/db-report-{env}-YYYY-MM-DD.md.
 ---
 
 # DB Report
@@ -24,7 +24,11 @@ Both accept a single `sql` parameter. Run one SQL statement per call (no semicol
 
 ## Report scope
 
-The report has three sections. By default, run **all** sections. If the user only asks for storage/sizes, run Section 1 only. If the user only asks for performance/slow queries, run Section 2 only.
+The report has three sections. By default, run **all** sections and write the output to `reports/db-report-{env}-YYYY-MM-DD.md` (UTC date, where `{env}` is `prod` or `local`). If the user only asks for storage/sizes, run Section 1 only. If the user only asks for performance/slow queries, run Section 2 only — in that case, append to today's report rather than overwriting prior sections.
+
+When writing the report, always include at the top:
+- Target DB (prod/local) and snapshot timestamp (ISO UTC)
+- Which sections were run
 
 ---
 
@@ -155,3 +159,39 @@ End with actionable recommendations, categorized as:
 - **Consider** — optional optimizations with trade-offs noted
 
 If pg_stat_statements has never been reset (check `stats_reset` from `pg_stat_database`), mention that cumulative stats may not reflect current performance and offer to reset them.
+
+---
+
+## Report file layout
+
+Write to `reports/db-report-{env}-YYYY-MM-DD.md` using today's UTC date, where `{env}` is `prod` or `local`. Separate files per environment so a local snapshot never clobbers a prod snapshot taken the same day. Layout:
+
+```markdown
+# FlawChess DB Report — <DATE>
+
+- **DB**: prod / local
+- **Snapshot taken**: <ISO UTC timestamp>
+- **Sections run**: users / storage / performance
+
+## 0. Users Overview
+...
+
+## 1. Storage Report
+...
+
+## 2. Performance Analysis
+...
+
+## Summary
+<brief top-line findings: DB size, largest tables, cache hit ratio, notable slow queries, anything that warrants action>
+```
+
+The `Summary` section at the bottom is the main deliverable — a short paragraph or bulleted list of the top findings and any recommended actions. Don't just restate the tables; call out what's surprising or actionable.
+
+After writing the file, output a one-line summary in chat with the absolute path to the report (e.g. `Wrote reports/db-report-prod-2026-04-16.md`) so the user knows where to find it.
+
+## Re-running & append mode
+
+If `reports/db-report-{env}-YYYY-MM-DD.md` already exists for today, check which sections are present. If the user asked for a subset (e.g. "just rerun section 2" or "refresh the perf numbers"), replace only that section — do not clobber the others. Always preserve the header and rebuild the bottom Summary from whichever sections are present in the file.
+
+If the user explicitly asks for a fresh snapshot, overwrite the file. Never mutate older-dated reports.
