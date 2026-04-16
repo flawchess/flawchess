@@ -109,7 +109,7 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
           <span className="inline-flex items-center gap-1">
             Win Rate by Endgame Type
             <InfoPopover ariaLabel="Win Rate by Endgame Type info" testId="timeline-per-type-info" side="top">
-              Rolling win rate over the last 50 games for each endgame type, sampled once per week. Early weeks with fewer than 10 games in the window are hidden. Click legend items to toggle individual series.
+              Rolling win rate over the last 100 games for each endgame type, sampled once per week. Early weeks with fewer than 10 games in the window are hidden. Click legend items to toggle individual series.
             </InfoPopover>
           </span>
         </h3>
