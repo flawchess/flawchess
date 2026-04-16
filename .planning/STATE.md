@@ -85,9 +85,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 | 260414-smt | Split time_control into base_time_seconds + increment_seconds; fix time pressure denominator to per-game base time; switch primary metric to % of base time with >2x clamp | 2026-04-14 | bc8b372 | [260414-smt-split-time-control-into-base-time-second](./quick/260414-smt-split-time-control-into-base-time-second/) |
 | 260414-u88 | Aggregate time controls in Time Pressure vs Performance chart (drop tabs), relabel axes, clamp y-axis to 0.2–0.8 | 2026-04-14 | 08d86b1 | [260414-u88-aggregate-time-controls-in-time-pressure](./quick/260414-u88-aggregate-time-controls-in-time-pressure/) |
 | 260415-uq9 | Add You vs Opp / Opp vs You / Diff / bullet-chart columns to Results by Endgame Type (desktop table + mobile cards) | 2026-04-15 | (uncommitted) | [260415-uq9-endgame-type-score-columns](./quick/260415-uq9-endgame-type-score-columns/) |
+| 260416-pkx | Aggregate time pressure chart data in backend (pool across TCs); drop frontend aggregateSeries; add game-count symmetry test | 2026-04-16 | aa1bc56 | [260416-pkx-aggregate-time-pressure-data-in-backend-](./quick/260416-pkx-aggregate-time-pressure-data-in-backend-/) |
 
 ---
-Last activity: 2026-04-15 - Completed quick task 260415-uq9: Add You/Opp/Diff/bullet columns to Results by Endgame Type table
+Last activity: 2026-04-16 - Completed quick task 260416-pkx: Aggregate time pressure data in backend
 | 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
 | 2026-04-10 | ship | Phase 51 shipped — PR #42 merged into main | done |
 | 2026-04-11 | fast | Preserve Openings board position across main tab navigation | ✅ |
