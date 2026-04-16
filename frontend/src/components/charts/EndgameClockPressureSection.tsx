@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { CartesianGrid, Line, LineChart, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
@@ -26,6 +26,11 @@ const NEUTRAL_TIMEOUT_THRESHOLD = 5;
 const TIMELINE_Y_DOMAIN: [number, number] = [-30, 30];
 const TIMELINE_Y_TICKS = [-30, -20, -10, 0, 10, 20, 30];
 const MOBILE_BREAKPOINT_PX = 768;
+
+// Muted zone backgrounds on the timeline (match MiniBulletChart zone hues).
+// Lower than the bullet chart's 0.35 because the timeline spans the full chart
+// area — 0.35 would dominate the line.
+const TIMELINE_ZONE_OPACITY = 0.15;
 
 function zoneColor(diff: number): string {
   if (diff > NEUTRAL_PCT_THRESHOLD) return ZONE_SUCCESS;
@@ -266,6 +271,18 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
   const dates = timeline.map((p) => p.date);
   const formatDateTick = createDateTickFormatter(dates);
 
+  // Extend the Y domain symmetrically when data exceeds the default ±30 band,
+  // then pin the red/green zone bounds to that same domain so the zone
+  // backgrounds match the plot area exactly (no uncolored overflow, no rect
+  // spilling outside the chart). Recharts uses a fixed numeric domain when
+  // we pass one explicitly — no auto-extend magic, no padding.
+  const values = timeline.map((p) => p.avg_clock_diff_pct);
+  const dataMax = values.length > 0 ? Math.max(...values) : TIMELINE_Y_DOMAIN[1];
+  const dataMin = values.length > 0 ? Math.min(...values) : TIMELINE_Y_DOMAIN[0];
+  const yMax = Math.max(TIMELINE_Y_DOMAIN[1], Math.ceil(dataMax));
+  const yMin = Math.min(TIMELINE_Y_DOMAIN[0], Math.floor(dataMin));
+  const yDomain: [number, number] = [yMin, yMax];
+
   return (
     <div className="mt-6" data-testid="clock-pressure-timeline-section">
       <div className="mb-3">
@@ -318,10 +335,29 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
             margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
           >
             <CartesianGrid vertical={false} />
+            <ReferenceArea
+              y1={yDomain[0]}
+              y2={-NEUTRAL_PCT_THRESHOLD}
+              fill={ZONE_DANGER}
+              fillOpacity={TIMELINE_ZONE_OPACITY}
+            />
+            <ReferenceArea
+              y1={-NEUTRAL_PCT_THRESHOLD}
+              y2={NEUTRAL_PCT_THRESHOLD}
+              fill={ZONE_NEUTRAL}
+              fillOpacity={TIMELINE_ZONE_OPACITY}
+            />
+            <ReferenceArea
+              y1={NEUTRAL_PCT_THRESHOLD}
+              y2={yDomain[1]}
+              fill={ZONE_SUCCESS}
+              fillOpacity={TIMELINE_ZONE_OPACITY}
+            />
             <XAxis dataKey="date" tickFormatter={formatDateTick} />
             <YAxis
-              domain={TIMELINE_Y_DOMAIN}
+              domain={yDomain}
               ticks={TIMELINE_Y_TICKS}
+              allowDataOverflow={false}
               tickFormatter={(v: number) =>
                 v > 0 ? `+${v}%` : `${v}%`
               }
