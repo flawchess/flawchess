@@ -121,10 +121,18 @@ export interface ClockStatsRow {
   net_timeout_rate: number;
 }
 
+export interface ClockPressureTimelinePoint {
+  date: string;                 // Monday of ISO week, YYYY-MM-DD
+  avg_clock_diff_pct: number;   // mean (user_clock - opp_clock) / base_time * 100 over trailing window
+  game_count: number;           // games in the rolling window (<= timeline_window)
+}
+
 export interface ClockPressureResponse {
   rows: ClockStatsRow[];
   total_clock_games: number;
   total_endgame_games: number;
+  timeline: ClockPressureTimelinePoint[];
+  timeline_window: number;
 }
 
 export interface TimePressureBucketPoint {

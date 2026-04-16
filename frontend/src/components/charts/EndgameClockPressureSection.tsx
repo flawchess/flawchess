@@ -4,9 +4,13 @@
  * Columns: Time Control | Games | My avg time | Opp avg time | Avg clock diff | Net timeout rate
  */
 
+import { useState, useEffect } from 'react';
+import { CartesianGrid, Line, LineChart, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
-import type { ClockPressureResponse } from '@/types/endgames';
+import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
+import type { ClockPressureResponse, ClockPressureTimelinePoint } from '@/types/endgames';
 
 // Threshold (in % of base clock time) within which a clock-diff is considered
 // neutral and shown in the bullet-chart's blue zone color. Beyond this band,
@@ -17,6 +21,31 @@ const NEUTRAL_PCT_THRESHOLD = 10;
 // considered neutral. Beyond this band, red (flagged more) or green (flagged
 // opponent more).
 const NEUTRAL_TIMEOUT_THRESHOLD = 5;
+
+// Clock-diff timeline chart (quick-260416-w3q): fixed ±30% Y-axis centered on 0.
+const TIMELINE_Y_DOMAIN: [number, number] = [-30, 30];
+const TIMELINE_Y_TICKS = [-30, -20, -10, 0, 10, 20, 30];
+const MOBILE_BREAKPOINT_PX = 768;
+
+function zoneColor(diff: number): string {
+  if (diff > NEUTRAL_PCT_THRESHOLD) return ZONE_SUCCESS;
+  if (diff < -NEUTRAL_PCT_THRESHOLD) return ZONE_DANGER;
+  return ZONE_NEUTRAL;
+}
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
+    const update = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isMobile;
+}
 
 interface EndgameClockPressureSectionProps {
   data: ClockPressureResponse;
@@ -213,6 +242,155 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
       {/* Coverage note */}
       <p className="text-xs text-muted-foreground mt-2">
         Games without time control are excluded.
+      </p>
+
+      {/* Clock-diff timeline (quick-260416-w3q): weekly rolling-100 mean, ±20% axis. */}
+      <ClockDiffTimelineChart
+        timeline={data.timeline}
+        window={data.timeline_window}
+      />
+    </div>
+  );
+}
+
+interface ClockDiffTimelineChartProps {
+  timeline: ClockPressureTimelinePoint[];
+  window: number;
+}
+
+function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProps) {
+  const isMobile = useIsMobile();
+
+  if (timeline.length === 0) return null;
+
+  const dates = timeline.map((p) => p.date);
+  const formatDateTick = createDateTickFormatter(dates);
+
+  return (
+    <div className="mt-6" data-testid="clock-pressure-timeline-section">
+      <div className="mb-3">
+        <h3 className="text-base font-semibold">
+          <span className="inline-flex items-center gap-1">
+            Average Clock Difference over Time
+            <InfoPopover
+              ariaLabel="Clock diff timeline info"
+              testId="clock-pressure-timeline-info"
+              side="top"
+            >
+              <p>
+                Average clock difference (your remaining clock minus your opponent&apos;s,
+                as % of base time) at endgame entry over the last {window} games,
+                sampled once per week. Collapsed across all time controls — use the
+                filter panel to narrow by time control.
+              </p>
+              <p className="mt-1">
+                Dots are colored by zone: green when your lead exceeds
+                +{NEUTRAL_PCT_THRESHOLD}%, red when you&apos;re down more than
+                -{NEUTRAL_PCT_THRESHOLD}%, blue in between.
+              </p>
+              <p className="mt-1">
+                Early weeks with fewer than 10 games in the window are hidden.
+              </p>
+            </InfoPopover>
+          </span>
+        </h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          How your clock at endgame entry compares to your opponent&apos;s, rolling
+          over the last {window} games.
+        </p>
+      </div>
+      <div className={isMobile ? '' : 'flex items-stretch'}>
+        {!isMobile && (
+          <div
+            className="flex items-center text-xs text-muted-foreground shrink-0 pt-30 -mr-1"
+            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+          >
+            Clock diff %
+          </div>
+        )}
+        <ChartContainer
+          config={{}}
+          className="w-full h-72"
+          data-testid="clock-pressure-timeline-chart"
+        >
+          <LineChart
+            data={timeline}
+            margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
+          >
+            <CartesianGrid vertical={false} />
+            <XAxis dataKey="date" tickFormatter={formatDateTick} />
+            <YAxis
+              domain={TIMELINE_Y_DOMAIN}
+              ticks={TIMELINE_Y_TICKS}
+              tickFormatter={(v: number) =>
+                v > 0 ? `+${v}%` : `${v}%`
+              }
+              width={isMobile ? 36 : 44}
+            />
+            <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
+            <ChartTooltip
+              content={({ active, payload, label }) => {
+                if (!active || !payload?.length) return null;
+                const point = payload[0]?.payload as
+                  | ClockPressureTimelinePoint
+                  | undefined;
+                if (!point) return null;
+                const diff = point.avg_clock_diff_pct;
+                const sign = diff > 0 ? '+' : '';
+                return (
+                  <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
+                    <div className="font-medium">
+                      Week of {formatDateWithYear(label as string)}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div
+                        className="h-2 w-2 shrink-0 rounded-[2px]"
+                        style={{ backgroundColor: zoneColor(diff) }}
+                      />
+                      <span>
+                        Avg clock diff: {sign}
+                        {diff.toFixed(1)}%
+                        <span className="text-muted-foreground ml-1">
+                          (past {point.game_count} games)
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                );
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey="avg_clock_diff_pct"
+              stroke="var(--muted-foreground)"
+              strokeWidth={2}
+              connectNulls={true}
+              dot={(props: {
+                cx?: number;
+                cy?: number;
+                payload?: Record<string, unknown>;
+              }) => {
+                const { cx, cy, payload } = props;
+                if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) {
+                  return <g key={`nodot-${String(payload?.date ?? cx)}`} />;
+                }
+                const diff = (payload.avg_clock_diff_pct as number) ?? 0;
+                return (
+                  <circle
+                    key={`clock-diff-dot-${payload.date as string}`}
+                    cx={cx}
+                    cy={cy}
+                    r={4}
+                    fill={zoneColor(diff)}
+                  />
+                );
+              }}
+            />
+          </LineChart>
+        </ChartContainer>
+      </div>
+      <p className="text-xs text-muted-foreground text-center -mt-2">
+        Week (rolling average of the last {window} games)
       </p>
     </div>
   );
