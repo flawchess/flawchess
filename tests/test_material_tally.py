@@ -54,9 +54,7 @@ class TestMaterialImbalance:
 
     def test_both_sides_missing_queen_is_zero_imbalance(self) -> None:
         """FEN with no queens on either side → imbalance == 0 (equal material)."""
-        board = chess.Board(
-            "rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB1KBNR w KQkq - 0 1"
-        )
+        board = chess.Board("rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB1KBNR w KQkq - 0 1")
         assert _compute_material_imbalance(board) == 0
 
 

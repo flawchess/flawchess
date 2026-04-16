@@ -18,6 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.config import settings
 from app.models.user import User
 
+# Phase 61: expose the seeded_user fixture without requiring test modules to
+# import it by name (import + parameter-name pytest fixture use triggers
+# ruff F811 "redefined unused import" otherwise).
+pytest_plugins = ["tests.seed_fixtures"]
+
 # Tables NEVER to truncate during test-session reset:
 # - alembic_version: Alembic migration state. Truncating forces a re-migration
 #   on next startup and breaks `alembic current`.
@@ -50,7 +55,7 @@ async def _truncate_all_tables(db_url: str) -> None:
             tables = [r[0] for r in rows if r[0] not in _TRUNCATE_EXCLUDE]
             if tables:
                 await conn.execute(
-                    text(f'TRUNCATE TABLE {", ".join(tables)} RESTART IDENTITY CASCADE')
+                    text(f"TRUNCATE TABLE {', '.join(tables)} RESTART IDENTITY CASCADE")
                 )
     finally:
         await truncate_engine.dispose()
@@ -128,7 +133,6 @@ def override_get_async_session(test_engine):
     activity_module.async_session_maker = original_activity_session_maker
 
 
-
 @pytest.fixture
 def starting_board() -> chess.Board:
     """Return a fresh starting-position chess board."""
@@ -150,7 +154,9 @@ async def ensure_test_user(session: AsyncSession, user_id: int) -> None:
     """
     existing = (await session.execute(select(User).where(User.id == user_id))).unique()
     if existing.scalar_one_or_none() is None:
-        session.add(User(id=user_id, email=f"test-{user_id}@example.com", hashed_password="fakehash"))
+        session.add(
+            User(id=user_id, email=f"test-{user_id}@example.com", hashed_password="fakehash")
+        )
         await session.flush()
 
 
