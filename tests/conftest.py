@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 # Disable Sentry before any app imports — must precede app.core.config which
@@ -11,11 +12,53 @@ import pytest_asyncio
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from collections.abc import AsyncGenerator
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
 from app.models.user import User
+
+# Phase 61: expose the seeded_user fixture without requiring test modules to
+# import it by name (import + parameter-name pytest fixture use triggers
+# ruff F811 "redefined unused import" otherwise).
+pytest_plugins = ["tests.seed_fixtures"]
+
+# Tables NEVER to truncate during test-session reset:
+# - alembic_version: Alembic migration state. Truncating forces a re-migration
+#   on next startup and breaks `alembic current`.
+# - openings: reference data populated by scripts/seed_openings.py. Currently
+#   empty in flawchess_test but excluded defensively so a future contributor
+#   who seeds it for opening-classification tests does not see their seed
+#   silently wiped on each pytest run.
+_TRUNCATE_EXCLUDE = frozenset({"alembic_version", "openings"})
+
+
+async def _truncate_all_tables(db_url: str) -> None:
+    """Truncate every public-schema table except reference tables.
+
+    Called ONCE per pytest session, after alembic migrations run and before
+    the first test executes. Restarts identity columns so primary keys are
+    deterministic within a run. Data from the *previous* session is wiped;
+    data from the current session remains after teardown for inspection.
+
+    Creates and disposes its own throwaway async engine inside the asyncio
+    event loop spawned by asyncio.run() in the caller. This is required
+    because asyncpg's connection pool is event-loop-bound — sharing the
+    test session's engine here would attach it to a dead loop.
+    """
+    truncate_engine = create_async_engine(db_url, echo=False)
+    try:
+        async with truncate_engine.begin() as conn:
+            rows = await conn.execute(
+                text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+            )
+            tables = [r[0] for r in rows if r[0] not in _TRUNCATE_EXCLUDE]
+            if tables:
+                await conn.execute(
+                    text(f"TRUNCATE TABLE {', '.join(tables)} RESTART IDENTITY CASCADE")
+                )
+    finally:
+        await truncate_engine.dispose()
 
 
 @pytest.fixture(scope="session")
@@ -35,6 +78,13 @@ def test_engine():
     alembic_cfg = AlembicConfig("alembic.ini")
     alembic_cfg.set_main_option("sqlalchemy.url", settings.TEST_DATABASE_URL)
     alembic_command.upgrade(alembic_cfg, "head")
+
+    # Phase 61: wipe residue from previous pytest runs before any test executes.
+    # Preserves alembic_version + openings; everything else is truncated.
+    # Runs in a throwaway event loop via asyncio.run(); the truncate helper
+    # creates and disposes its own engine inside that loop because asyncpg
+    # pools are event-loop-bound — reusing an engine across loops corrupts it.
+    asyncio.run(_truncate_all_tables(settings.TEST_DATABASE_URL))
 
     # Create the async engine for the rest of the test session
     engine = create_async_engine(settings.TEST_DATABASE_URL, echo=False)
@@ -83,7 +133,6 @@ def override_get_async_session(test_engine):
     activity_module.async_session_maker = original_activity_session_maker
 
 
-
 @pytest.fixture
 def starting_board() -> chess.Board:
     """Return a fresh starting-position chess board."""
@@ -105,7 +154,9 @@ async def ensure_test_user(session: AsyncSession, user_id: int) -> None:
     """
     existing = (await session.execute(select(User).where(User.id == user_id))).unique()
     if existing.scalar_one_or_none() is None:
-        session.add(User(id=user_id, email=f"test-{user_id}@example.com", hashed_password="fakehash"))
+        session.add(
+            User(id=user_id, email=f"test-{user_id}@example.com", hashed_password="fakehash")
+        )
         await session.flush()
 
 

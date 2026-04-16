@@ -139,6 +139,7 @@ See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
 - [ ] **Phase 56: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
 - [ ] **Phase 57: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
 - [ ] **Phase 58: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
+- [x] **Phase 61: Test Suite Hardening & DB Reset** - Truncate `flawchess_test` at pytest session start and add meaningful aggregation sanity tests closing gaps identified in the 2026-04-16 audit (WDL perspective, material tally, rolling windows, filter intersections, recency boundary, position dedup, endgame transitions, router known-numbers integration) (completed 2026-04-16)
 
 ## Phase Details
 
@@ -299,6 +300,26 @@ Plans:
 - [ ] 60-02-PLAN.md — Frontend: TS type mirror, EndgameScoreGapSection rewrite (desktop + mobile, single neutral zone, muted state, peer-framing copy)
 **UI hint**: yes
 
+### Phase 61: Test Suite Hardening & DB Reset
+**Goal**: Running `uv run pytest` (a) starts from an empty `flawchess_test` so HTTP-path test data no longer accumulates across runs, and (b) covers the aggregation correctness gaps identified in the 2026-04-16 audit — WDL from the user's perspective (black), material tally direction on captures, rolling-window boundaries, platform × time-control filter intersection, recency cutoff boundary, within-game position dedup, endgame-class transitions, and router-layer "known seed → known numbers" integration coverage.
+**Depends on**: N/A (test-only, no coupling to feature phases)
+**Requirements**: N/A (improvement to existing testing infrastructure)
+**Success Criteria** (what must be TRUE):
+  1. `tests/conftest.py` truncates all non-reference public-schema tables in `flawchess_test` before any test runs, leaving `alembic_version` and `openings` intact. Data from the previous pytest run is wiped; data from the just-finished run remains for manual inspection.
+  2. A shared `seeded_user` module-scoped fixture (new file `tests/seed_fixtures.py`) registers an HTTP user, commits a deterministic ~15-game portfolio across white/black/chess.com/lichess/bullet/blitz/rapid/classical/wins/draws/losses with known endgame spans and shared opening hashes, and returns `{id, auth_headers, expected}`.
+  3. `tests/test_aggregation_sanity.py` exists and covers: WDL perspective when user plays black, material tally direction on capture, rolling window with fewer games than window size, platform × time-control filter intersection, recency cutoff boundary behavior (pinned), within-game position dedup, endgame-class transition counted in both classes.
+  4. `tests/test_material_tally.py` verifies `_compute_material_count` / `_compute_material_imbalance` / `_compute_material_signature` from `app/services/position_classifier.py` against `python-chess` boards (starting position, after captures).
+  5. `tests/test_integration_routers.py` uses the `seeded_user` fixture to hit `/api/stats/global`, `/api/endgames/overview`, and `/api/openings/next-moves` with auth and asserts exact integer counts (not just response shape).
+  6. Full `uv run pytest` remains green end-to-end, `uv run ty check app/ tests/` is zero-errors, `uv run ruff check .` is zero-errors, `uv run ruff format --check .` is clean.
+  7. No production code (under `app/`) is modified in this phase — only `tests/` and `.planning/`. If a new test reveals a genuine bug, the finding is documented in the PR description; the fix belongs to a follow-up phase.
+**Plans**: 3 plans
+
+Plans:
+- [x] 61-01-PLAN.md — Truncate fixture in `tests/conftest.py` + shared `seeded_user` module fixture in `tests/seed_fixtures.py`
+- [x] 61-02-PLAN.md — Aggregation sanity tests (`tests/test_aggregation_sanity.py`) + material tally tests (`tests/test_material_tally.py`)
+- [x] 61-03-PLAN.md — Router integration tests (`tests/test_integration_routers.py`) — known seed → known numbers via the shared fixture
+**UI hint**: no
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -364,6 +385,7 @@ Plans:
 | 58. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
 | 59. Fix Endgame Conv/Even/Recov per-game stats | v1.10 | 3/3 | Complete    | 2026-04-13 |
 | 60. Opponent-based baseline for Endgame Conv/Even/Recov | v1.10 | 0/? | Not started | - |
+| 61. Test Suite Hardening & DB Reset | v1.10 | 3/3 | Complete    | 2026-04-16 |
 
 ## Backlog
 
