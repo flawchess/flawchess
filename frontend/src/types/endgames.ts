@@ -132,16 +132,10 @@ export interface TimePressureBucketPoint {
   game_count: number;
 }
 
-export interface TimePressureChartRow {
-  time_control: string;      // "bullet" | "blitz" | "rapid" | "classical"
-  label: string;             // "Bullet" etc.
-  total_endgame_games: number;
-  user_series: TimePressureBucketPoint[];   // always 10 elements
-  opp_series: TimePressureBucketPoint[];    // always 10 elements
-}
-
 export interface TimePressureChartResponse {
-  rows: TimePressureChartRow[];
+  user_series: TimePressureBucketPoint[];  // 10 points, pre-aggregated across time controls
+  opp_series: TimePressureBucketPoint[];   // 10 points, pre-aggregated across time controls
+  total_endgame_games: number;
 }
 
 export interface EndgameOverviewResponse {

@@ -10,7 +10,7 @@ import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MIN_GAMES_FOR_RELIABLE_STATS, MY_SCORE_COLOR, OPP_SCORE_COLOR } from '@/lib/theme';
-import type { TimePressureChartResponse, TimePressureBucketPoint } from '@/types/endgames';
+import type { TimePressureChartResponse } from '@/types/endgames';
 
 const chartConfig = {
   my_score: { label: 'My score', color: MY_SCORE_COLOR },
@@ -48,44 +48,14 @@ interface ChartDataPoint {
   opp_game_count: number;
 }
 
-/**
- * Aggregate per-time-control series into a single weighted-average series per bucket.
- * Weighted by game_count so buckets with more data dominate, consistent with what a
- * pooled backend query would return.
- */
-function aggregateSeries(
-  rowsSeries: TimePressureBucketPoint[][],
-): { score: number | undefined; game_count: number; bucket_label: string }[] {
-  const firstSeries = rowsSeries[0];
-  if (!firstSeries) return [];
-  return firstSeries.map((_, bucketIdx) => {
-    let scoreSum = 0;
-    let countSum = 0;
-    let scoredCount = 0;
-    let bucketLabel = '';
-    for (const series of rowsSeries) {
-      const pt = series[bucketIdx];
-      if (!pt) continue;
-      bucketLabel = pt.bucket_label;
-      countSum += pt.game_count;
-      if (pt.score !== null && pt.game_count > 0) {
-        scoreSum += pt.score * pt.game_count;
-        scoredCount += pt.game_count;
-      }
-    }
-    return {
-      bucket_label: bucketLabel,
-      score: scoredCount > 0 ? scoreSum / scoredCount : undefined,
-      game_count: countSum,
-    };
-  });
-}
-
 function buildChartData(data: TimePressureChartResponse): ChartDataPoint[] {
-  const userAgg = aggregateSeries(data.rows.map((r) => r.user_series));
-  const oppAgg = aggregateSeries(data.rows.map((r) => r.opp_series));
-  return userAgg.map((userPt, i) => {
-    const oppPt = oppAgg[i];
+  // Backend (quick-260416-pkx) returns a single pre-aggregated pair of 10-bucket
+  // series pooled across all time controls. We just index-align the two arrays here.
+  // MIN_GAMES_FOR_RELIABLE_STATS still gates render at this layer — intentional, so
+  // the chart can apply visual suppression without the backend having to know about
+  // render thresholds.
+  return data.user_series.map((userPt, i) => {
+    const oppPt = data.opp_series[i];
     // Place each data point at the center of its bucket on the 0-100 axis, so
     // ticks (0%, 10%, ..., 100%) sit at bucket boundaries and points fall between.
     const bucket_center = i * BUCKET_WIDTH + BUCKET_WIDTH / 2;
@@ -95,7 +65,7 @@ function buildChartData(data: TimePressureChartResponse): ChartDataPoint[] {
       bucket_center,
       bucket_label: userPt.bucket_label,
       my_score: myCount >= MIN_GAMES_FOR_RELIABLE_STATS ? userPt.score ?? null : null,
-      opp_score: oppCount >= MIN_GAMES_FOR_RELIABLE_STATS ? oppPt?.score ?? null : null,
+      opp_score: oppCount >= MIN_GAMES_FOR_RELIABLE_STATS ? (oppPt?.score ?? null) : null,
       my_game_count: myCount,
       opp_game_count: oppCount,
     };
@@ -122,7 +92,7 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
     });
   }, []);
 
-  if (data.rows.length === 0) return null;
+  if (data.total_endgame_games === 0) return null;
 
   const chartData = buildChartData(data);
 

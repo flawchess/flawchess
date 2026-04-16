@@ -211,7 +211,7 @@ export function EndgamesPage() {
   // Summary line + collapsible explaining endgame concepts and metric limitations
   const showPerfSection = !!(perfData && perfData.endgame_wdl.total > 0);
   const showClockPressure = !!(clockPressureData && clockPressureData.rows.length > 0);
-  const showTimePressureChart = !!(timePressureChartData && timePressureChartData.rows.length > 0);
+  const showTimePressureChart = !!(timePressureChartData && timePressureChartData.total_endgame_games > 0);
   const showTimeline = !!(timelineData && timelineData.overall.length > 0);
 
   const statisticsContent = (
