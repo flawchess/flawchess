@@ -174,6 +174,151 @@ class TestEndgamesOverviewRouter:
         rows_sum = sum(r["games"] for r in data["score_gap_material"]["material_rows"])
         assert rows_sum == data["performance"]["endgame_wdl"]["total"]
 
+    @pytest.mark.asyncio
+    async def test_all_six_endgame_classes_present(self, seeded_user: SeededUser) -> None:
+        """stats.categories includes every class from EXPECTED with the right totals."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as client:
+            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
+        data = resp.json()
+        by_class = {c["endgame_class"]: c["total"] for c in data["stats"]["categories"]}
+        expected_by_class = seeded_user.expected["endgame_by_class"]
+        for klass, expected_total in expected_by_class.items():
+            assert by_class.get(klass) == expected_total, (
+                f"class {klass!r}: got {by_class.get(klass)} expected {expected_total} "
+                f"(full stats.categories={by_class})"
+            )
+
+
+# -----------------------------------------------------------------------------
+# TestClockPressureRouter — Phase 54 time-pressure table
+# -----------------------------------------------------------------------------
+
+
+class TestClockPressureRouter:
+    """GET /api/endgames/overview → clock_pressure sub-payload.
+
+    Only the `blitz` bucket meets MIN_GAMES_FOR_CLOCK_STATS=10 in the seeded
+    portfolio (11 blitz endgame games carry clock_seconds; rapid has 3,
+    classical has 1, bullet has 0). So `rows` must have length 1.
+    """
+
+    @pytest.mark.asyncio
+    async def test_only_blitz_bucket_qualifies(self, seeded_user: SeededUser) -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as client:
+            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
+        data = resp.json()
+        rows = data["clock_pressure"]["rows"]
+        buckets = sorted(r["time_control"] for r in rows)
+        assert buckets == seeded_user.expected["clock_pressure_qualifying_buckets"], (
+            f"clock_pressure buckets={buckets} "
+            f"expected={seeded_user.expected['clock_pressure_qualifying_buckets']}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_blitz_row_shape_and_counts(self, seeded_user: SeededUser) -> None:
+        """The single blitz row carries the expected game counts and a
+        well-formed average clock (between 0 and base_time_seconds=600).
+        """
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as client:
+            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
+        data = resp.json()
+        rows = data["clock_pressure"]["rows"]
+        blitz = next((r for r in rows if r["time_control"] == "blitz"), None)
+        assert blitz is not None, f"no blitz row in {rows}"
+        assert blitz["label"] == "Blitz"
+        assert blitz["total_endgame_games"] == seeded_user.expected["clock_pressure_blitz_games"]
+        assert blitz["clock_games"] == seeded_user.expected["clock_pressure_blitz_games"]
+        # Averages must be present (clocks are fully populated) and within
+        # reasonable bounds — the 11 user/opp clocks all sit in [50, 400].
+        assert blitz["user_avg_seconds"] is not None
+        assert 0 < blitz["user_avg_seconds"] < 600
+        assert blitz["opp_avg_seconds"] is not None
+        assert 0 < blitz["opp_avg_seconds"] < 600
+        assert blitz["user_avg_pct"] is not None
+        assert 0 < blitz["user_avg_pct"] < 100
+
+    @pytest.mark.asyncio
+    async def test_net_timeout_rate_reflects_seeded_terminations(
+        self, seeded_user: SeededUser
+    ) -> None:
+        """Seed has 2 timeout wins + 1 timeout loss in blitz → net rate = +1/11 ≈ 9.09%."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as client:
+            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
+        data = resp.json()
+        blitz = next(r for r in data["clock_pressure"]["rows"] if r["time_control"] == "blitz")
+        wins = seeded_user.expected["clock_pressure_blitz_timeout_wins"]
+        losses = seeded_user.expected["clock_pressure_blitz_timeout_losses"]
+        games = seeded_user.expected["clock_pressure_blitz_games"]
+        expected_rate = (wins - losses) / games * 100
+        assert abs(blitz["net_timeout_rate"] - expected_rate) < 0.01, (
+            f"net_timeout_rate={blitz['net_timeout_rate']} expected≈{expected_rate}"
+        )
+
+
+# -----------------------------------------------------------------------------
+# TestTimePressureChartRouter — Phase 55 time-pressure performance chart
+# -----------------------------------------------------------------------------
+
+
+class TestTimePressureChartRouter:
+    """GET /api/endgames/overview → time_pressure_chart sub-payload.
+
+    Pooled across all time controls that passed MIN_GAMES_FOR_CLOCK_STATS —
+    in the seed that is just blitz (11 games). Each of user_series and
+    opp_series has 10 bucket points (0-10%, 10-20%, ..., 90-100%).
+    """
+
+    @pytest.mark.asyncio
+    async def test_series_have_10_buckets(self, seeded_user: SeededUser) -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as client:
+            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
+        data = resp.json()
+        chart = data["time_pressure_chart"]
+        assert len(chart["user_series"]) == 10
+        assert len(chart["opp_series"]) == 10
+
+    @pytest.mark.asyncio
+    async def test_total_endgame_games_matches_blitz_clock_games(
+        self, seeded_user: SeededUser
+    ) -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as client:
+            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
+        data = resp.json()
+        chart = data["time_pressure_chart"]
+        # Only blitz qualifies → the chart pools just those 11 games.
+        assert chart["total_endgame_games"] == (seeded_user.expected["clock_pressure_blitz_games"])
+
+    @pytest.mark.asyncio
+    async def test_chart_game_counts_sum_to_total(self, seeded_user: SeededUser) -> None:
+        """Sum of user_series bucket game_counts == total_endgame_games.
+
+        Each qualifying game contributes exactly one data point to user_series
+        (keyed by user's clock-remaining bucket) and one to opp_series (keyed
+        by opponent's bucket).
+        """
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as client:
+            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
+        data = resp.json()
+        chart = data["time_pressure_chart"]
+        user_sum = sum(pt["game_count"] for pt in chart["user_series"])
+        opp_sum = sum(pt["game_count"] for pt in chart["opp_series"])
+        assert user_sum == chart["total_endgame_games"]
+        assert opp_sum == chart["total_endgame_games"]
+
 
 # -----------------------------------------------------------------------------
 # TestOpeningsNextMovesRouter
