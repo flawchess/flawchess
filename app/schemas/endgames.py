@@ -115,15 +115,16 @@ class EndgamePerformanceResponse(BaseModel):
 
 
 class EndgameTimelinePoint(BaseModel):
-    """Single data point in a per-type rolling-window time series.
+    """Single data point in the per-type weekly win-rate time series.
 
-    Represents win rate over the trailing `window_size` games (or fewer if early in the series).
+    Represents the average win rate (wins / games) for one endgame type over one
+    ISO week. `date` is the Monday of that week as `YYYY-MM-DD`. A point is only
+    emitted for weeks with at least MIN_GAMES_PER_WEEK games (see endgame_service).
     """
 
-    date: str  # ISO date string "YYYY-MM-DD" of the game
-    win_rate: float  # fraction (0.0–1.0) wins in the rolling window
-    game_count: int  # number of games in the rolling window (may be < window_size early on)
-    window_size: int  # configured window size
+    date: str  # Monday of the ISO week, "YYYY-MM-DD"
+    win_rate: float  # wins / games in the week (0.0-1.0)
+    game_count: int  # number of games in the week
 
 
 class EndgameOverallPoint(BaseModel):
@@ -153,6 +154,7 @@ class EndgameTimelineResponse(BaseModel):
     """
 
     overall: list[EndgameOverallPoint]
+    # per_type: per-endgame-class weekly win-rate series (keys are EndgameClass strings).
     per_type: dict[str, list[EndgameTimelinePoint]]
     window: int
 

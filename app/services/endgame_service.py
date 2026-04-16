@@ -14,6 +14,7 @@ Exposes:
 import statistics
 from collections import defaultdict
 from collections.abc import Sequence
+from datetime import timedelta
 from enum import IntEnum
 from typing import Any, Literal, cast
 
@@ -158,6 +159,12 @@ _MATERIAL_ADVANTAGE_THRESHOLD = 100
 # baseline in the Conversion/Even/Recovery bullet chart. Matches the WDL-bar
 # mute threshold used elsewhere (e.g. Opening Explorer moves list).
 _MIN_OPPONENT_SAMPLE = 10
+
+# Minimum games per ISO week to emit a point in the per-type weekly timeline.
+# Lower than MIN_GAMES_FOR_TIMELINE (10) because weekly buckets are naturally
+# smaller than rolling windows. Three games is enough for a meaningful average
+# while still suppressing noise from single-game weeks.
+MIN_GAMES_PER_WEEK = 3
 
 
 def _aggregate_endgame_stats(
@@ -1075,6 +1082,56 @@ def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:
     return [pt for pt in data_by_date.values() if pt["game_count"] >= MIN_GAMES_FOR_TIMELINE]
 
 
+def _compute_weekly_series(
+    rows: list[Row[Any]],
+    min_games: int,
+) -> list[dict]:
+    """Compute a per-ISO-week average win-rate series from chronological game rows.
+
+    Groups games by ISO week (Monday start, via `played_at.isocalendar()`).
+    Emits one point per week where `games >= min_games`, dated to that week's
+    Monday in `YYYY-MM-DD` form. Win rate = wins / games in the week.
+
+    Args:
+        rows: list of (played_at, result, user_color), ordered by played_at ASC
+            (order doesn't affect correctness — week is derived from played_at).
+        min_games: drop weeks with fewer than this many games.
+
+    Returns:
+        list of dicts with keys: date, win_rate, game_count.
+        Sorted chronologically by date.
+    """
+    # Accumulate per (iso_year, iso_week): [wins, games, monday_date_str]
+    # Using defaultdict keyed by (year, week) avoids recomputing Monday each game.
+    buckets: dict[tuple[int, int], dict[str, Any]] = {}
+    for played_at, result, user_color in rows:
+        iso_year, iso_week, iso_weekday = played_at.isocalendar()
+        key = (iso_year, iso_week)
+        if key not in buckets:
+            # Monday of this ISO week = played_at shifted back (iso_weekday - 1) days.
+            monday = (played_at - timedelta(days=iso_weekday - 1)).date()
+            buckets[key] = {"wins": 0, "games": 0, "date": monday.isoformat()}
+        outcome = derive_user_result(result, user_color)
+        buckets[key]["games"] += 1
+        if outcome == "win":
+            buckets[key]["wins"] += 1
+
+    out: list[dict] = []
+    for key in sorted(buckets.keys()):
+        b = buckets[key]
+        games = b["games"]
+        if games < min_games:
+            continue
+        out.append(
+            {
+                "date": b["date"],
+                "win_rate": round(b["wins"] / games, 4),
+                "game_count": games,
+            }
+        )
+    return out
+
+
 def _get_endgame_performance_from_rows(
     endgame_rows: list[Row[Any]],
     non_endgame_rows: list[Row[Any]],
@@ -1233,20 +1290,21 @@ async def get_endgame_timeline(
             )
         )
 
-    # Compute per-type rolling series and map class int -> EndgameClass string
+    # Compute per-type weekly series and map class int -> EndgameClass string.
+    # Per-type uses weekly buckets (not rolling windows) — dramatically fewer points
+    # and cheaper aggregation. The overall series above still uses rolling windows.
     per_type: dict[str, list[EndgameTimelinePoint]] = {}
     for class_int, rows in per_type_rows.items():
         # Safe bracket access: class_int keys come from per_type_rows, which is
         # seeded from _ENDGAME_CLASS_INTS (the authoritative 1..6 set) in the
         # repository layer. No defensive .get() needed here.
         class_name = _INT_TO_CLASS[class_int]
-        series = _compute_rolling_series(rows, window)
+        series = _compute_weekly_series(rows, MIN_GAMES_PER_WEEK)
         per_type[class_name] = [
             EndgameTimelinePoint(
                 date=pt["date"],
                 win_rate=pt["win_rate"],
                 game_count=pt["game_count"],
-                window_size=pt["window_size"],
             )
             for pt in series
             if not cutoff_str or pt["date"] >= cutoff_str
