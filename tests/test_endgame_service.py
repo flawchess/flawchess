@@ -1628,17 +1628,21 @@ class TestComputeClockPressure:
         assert len(result.rows) == 1
         assert result.rows[0].net_timeout_rate == pytest.approx(10.0)
 
-    def test_base_time_seconds_none_pct_is_none(self):
-        """Games with base_time_seconds=None -> pct fields are None, seconds fields computed."""
+    def test_base_time_seconds_none_row_hidden(self):
+        """Buckets where every game has base_time_seconds=None -> row hidden entirely.
+
+        Without a base clock we can't compute pct or apply the 2x clamp, so these
+        games (daily/correspondence) are excluded from every clock accumulator.
+        The row-inclusion gate is on clock_games (not total_endgame_games), so a
+        bucket with zero usable clock data is dropped from the table instead of
+        showing a row full of "—" placeholders.
+        """
         rows = self._make_blitz_rows(10, user_clock=50.0, opp_clock=60.0, base_time_seconds=None)
         result = _compute_clock_pressure(rows)
-        assert len(result.rows) == 1
-        row = result.rows[0]
-        assert row.user_avg_pct is None
-        assert row.opp_avg_pct is None
-        # Seconds should still be computed
-        assert row.user_avg_seconds == pytest.approx(50.0)
-        assert row.opp_avg_seconds == pytest.approx(60.0)
+        assert result.rows == []
+        # Pre-filter total is still tracked for the section-level total
+        assert result.total_endgame_games == 10
+        assert result.total_clock_games == 0
 
     def test_both_clocks_none_excluded_from_clock_games(self):
         """Spans where both user and opp clocks are None -> clock_games=0, averages=None."""
@@ -1657,12 +1661,11 @@ class TestComputeClockPressure:
                 )
             )
         result = _compute_clock_pressure(rows)
-        assert len(result.rows) == 1
-        row = result.rows[0]
-        assert row.clock_games == 0
-        assert row.user_avg_seconds is None
-        assert row.opp_avg_seconds is None
-        assert row.avg_clock_diff_seconds is None
+        # Row-inclusion gate is on clock_games (post-fix); bucket with zero
+        # usable clock data is hidden from the table entirely.
+        assert result.rows == []
+        assert result.total_endgame_games == 10
+        assert result.total_clock_games == 0
 
     def test_fixed_row_order(self):
         """Rows returned in bullet, blitz, rapid, classical order."""

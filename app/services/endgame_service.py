@@ -795,30 +795,31 @@ def _compute_clock_pressure(
         # Extract entry clocks using ply parity
         user_clock, opp_clock = _extract_entry_clocks(ply_array, clock_array, user_color)
 
-        # Only accumulate clock stats when BOTH clocks are available
-        if user_clock is not None and opp_clock is not None:
-            # Clamp: when base_time_seconds is known, exclude games where either clock
-            # exceeds 2x base time — bogus readings (e.g. adjudicated/disconnected games).
-            # Banked increment can push clocks over 100% legitimately (p99 ~109%), but
-            # >200% is noise. Skip the whole game from ALL clock accumulation when clamped —
-            # don't pollute absolute seconds either, since the reading is unreliable.
+        # Only accumulate clock stats when BOTH clocks are available AND
+        # base_time_seconds is valid. Without a base clock we can't compute pct
+        # or apply the 2x clamp, so the reading is unreliable — drop the whole
+        # game from every accumulator (seconds, diff, pct) to keep the row
+        # internally consistent.
+        if (
+            user_clock is not None
+            and opp_clock is not None
+            and base_time_seconds is not None
+            and base_time_seconds > 0
+        ):
+            # Clamp: exclude games where either clock exceeds 2x base time — bogus
+            # readings (e.g. adjudicated/disconnected games). Banked increment can
+            # push clocks over 100% legitimately (p99 ~109%), but >200% is noise.
             if (
-                base_time_seconds is not None
-                and base_time_seconds > 0
-                and (
-                    user_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
-                    or opp_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
-                )
+                user_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+                or opp_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
             ):
                 pass  # Skip entire game — bogus clock reading
             else:
                 tc_user_clocks[tc].append(user_clock)
                 tc_opp_clocks[tc].append(opp_clock)
                 tc_clock_diffs[tc].append(user_clock - opp_clock)
-                # Only compute pct when base_time_seconds is valid (> 0)
-                if base_time_seconds is not None and base_time_seconds > 0:
-                    tc_user_pcts[tc].append(user_clock / base_time_seconds * 100)
-                    tc_opp_pcts[tc].append(opp_clock / base_time_seconds * 100)
+                tc_user_pcts[tc].append(user_clock / base_time_seconds * 100)
+                tc_opp_pcts[tc].append(opp_clock / base_time_seconds * 100)
 
         # Track timeouts — deduplicated by game_id per bucket
         if termination == "timeout":
@@ -841,10 +842,6 @@ def _compute_clock_pressure(
         game_ids = tc_game_ids.get(tc, set())
         total_endgame_games = len(game_ids)
 
-        # Filter rows below the minimum games threshold
-        if total_endgame_games < MIN_GAMES_FOR_CLOCK_STATS:
-            continue
-
         user_clocks = tc_user_clocks.get(tc, [])
         opp_clocks = tc_opp_clocks.get(tc, [])
         clock_diffs = tc_clock_diffs.get(tc, [])
@@ -852,6 +849,15 @@ def _compute_clock_pressure(
         opp_pcts = tc_opp_pcts.get(tc, [])
 
         clock_games = len(user_clocks)
+
+        # Two gates:
+        # 1. total_endgame_games floor — not enough endgame games overall to bother.
+        # 2. clock_games > 0 — no usable clock data at all (e.g. bucket is entirely
+        #    daily/correspondence games with no base_time_seconds). Without this
+        #    the table would show a row full of "—" under "Time Pressure at
+        #    Endgame Entry".
+        if total_endgame_games < MIN_GAMES_FOR_CLOCK_STATS or clock_games == 0:
+            continue
         user_avg_seconds = statistics.mean(user_clocks) if user_clocks else None
         opp_avg_seconds = statistics.mean(opp_clocks) if opp_clocks else None
         avg_clock_diff_seconds = statistics.mean(clock_diffs) if clock_diffs else None
