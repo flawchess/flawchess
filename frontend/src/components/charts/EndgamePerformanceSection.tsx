@@ -6,13 +6,18 @@
  * the associated EndgameGaugesSection and its gauge-zone constants were deleted.
  */
 
+import { useEffect, useState } from 'react';
+import { CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
+import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import type {
   EndgamePerformanceResponse,
   ScoreGapMaterialResponse,
+  ScoreGapTimelinePoint,
 } from '@/types/endgames';
 
 // Material advantage/deficit threshold in pawn points (backend uses 100 centipawns)
@@ -35,6 +40,34 @@ const SCORE_DIFF_NEUTRAL_MAX = 0.05;
 // (see reports/benchmarks-2026-04-16.md §1), so ±0.20 covers the observed
 // range without making typical values look tiny against the default ±0.40.
 const SCORE_DIFF_DOMAIN = 0.20;
+
+// Score-diff timeline (quick-260417-o2l): plot in percentage points (0.05 -> 5).
+// Zone band ±5 pp matches the table bullet chart's parity neutral threshold.
+const SCORE_DIFF_TIMELINE_NEUTRAL_PCT = 5;
+const SCORE_DIFF_TIMELINE_Y_DOMAIN: [number, number] = [-20, 20];
+const SCORE_DIFF_TIMELINE_Y_TICKS = [-20, -10, 0, 10, 20];
+const SCORE_DIFF_TIMELINE_ZONE_OPACITY = 0.15;
+const MOBILE_BREAKPOINT_PX = 768;
+
+function scoreDiffZoneColor(diffPct: number): string {
+  if (diffPct > SCORE_DIFF_TIMELINE_NEUTRAL_PCT) return ZONE_SUCCESS;
+  if (diffPct < -SCORE_DIFF_TIMELINE_NEUTRAL_PCT) return ZONE_DANGER;
+  return ZONE_NEUTRAL;
+}
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
+    const update = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isMobile;
+}
 
 export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformanceSectionProps) {
   const totalGames = data.endgame_wdl.total + data.non_endgame_wdl.total;
@@ -215,6 +248,199 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
           </div>
         )}
       </div>
+
+      {/* Score-diff timeline (quick-260417-o2l): weekly rolling-100 mean diff in pp. */}
+      {scoreGap && (
+        <ScoreDiffTimelineChart
+          timeline={scoreGap.timeline}
+          window={scoreGap.timeline_window}
+        />
+      )}
+    </div>
+  );
+}
+
+interface ScoreDiffTimelineChartProps {
+  timeline: ScoreGapTimelinePoint[];
+  window: number;
+}
+
+interface ScoreDiffChartPoint {
+  date: string;
+  diff_pct: number;
+  endgame_game_count: number;
+  non_endgame_game_count: number;
+}
+
+function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProps) {
+  const isMobile = useIsMobile();
+
+  if (timeline.length === 0) return null;
+
+  const data: ScoreDiffChartPoint[] = timeline.map((p) => ({
+    date: p.date,
+    // Convert 0-1 score to percentage points for plotting (0.05 -> 5).
+    diff_pct: p.score_difference * 100,
+    endgame_game_count: p.endgame_game_count,
+    non_endgame_game_count: p.non_endgame_game_count,
+  }));
+
+  const dates = data.map((p) => p.date);
+  const formatDateTick = createDateTickFormatter(dates);
+
+  // Extend the Y domain symmetrically when data exceeds the default ±20 band,
+  // so dots never overflow the plot area.
+  const values = data.map((p) => p.diff_pct);
+  const dataMax = values.length > 0 ? Math.max(...values) : SCORE_DIFF_TIMELINE_Y_DOMAIN[1];
+  const dataMin = values.length > 0 ? Math.min(...values) : SCORE_DIFF_TIMELINE_Y_DOMAIN[0];
+  const yMax = Math.max(SCORE_DIFF_TIMELINE_Y_DOMAIN[1], Math.ceil(dataMax));
+  const yMin = Math.min(SCORE_DIFF_TIMELINE_Y_DOMAIN[0], Math.floor(dataMin));
+  const yDomain: [number, number] = [yMin, yMax];
+
+  return (
+    <div className="mt-6" data-testid="score-diff-timeline-section">
+      <div className="mb-3">
+        <h3 className="text-base font-semibold">
+          <span className="inline-flex items-center gap-1">
+            Score % Difference over Time
+            <InfoPopover
+              ariaLabel="Score difference timeline info"
+              testId="score-diff-timeline-info"
+              side="top"
+            >
+              <p>
+                Difference between your endgame Score % and non-endgame Score %
+                over the trailing {window} games per side, sampled once per week.
+                Endgame and non-endgame games each carry their own
+                {' '}{window}-game window, so weeks with sparse activity on one
+                side still reflect the broader history of that side.
+              </p>
+              <p className="mt-1">
+                Dots are colored by zone: green when the gap exceeds
+                +{SCORE_DIFF_TIMELINE_NEUTRAL_PCT}%, red when it&apos;s below
+                -{SCORE_DIFF_TIMELINE_NEUTRAL_PCT}%, blue in between.
+              </p>
+              <p className="mt-1">
+                Early weeks where either side has fewer than 10 games in the
+                window are hidden.
+              </p>
+            </InfoPopover>
+          </span>
+        </h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Has your endgame edge versus your non-endgame play improved over time?
+        </p>
+      </div>
+      <div className={isMobile ? '' : 'flex items-stretch'}>
+        {!isMobile && (
+          <div
+            className="flex items-center text-xs text-muted-foreground shrink-0 pt-30 -mr-1"
+            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+          >
+            Score diff %
+          </div>
+        )}
+        <ChartContainer
+          config={{}}
+          className="w-full h-72"
+          data-testid="score-diff-timeline-chart"
+        >
+          <LineChart
+            data={data}
+            margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
+          >
+            <CartesianGrid vertical={false} />
+            <ReferenceArea
+              y1={yDomain[0]}
+              y2={-SCORE_DIFF_TIMELINE_NEUTRAL_PCT}
+              fill={ZONE_DANGER}
+              fillOpacity={SCORE_DIFF_TIMELINE_ZONE_OPACITY}
+            />
+            <ReferenceArea
+              y1={-SCORE_DIFF_TIMELINE_NEUTRAL_PCT}
+              y2={SCORE_DIFF_TIMELINE_NEUTRAL_PCT}
+              fill={ZONE_NEUTRAL}
+              fillOpacity={SCORE_DIFF_TIMELINE_ZONE_OPACITY}
+            />
+            <ReferenceArea
+              y1={SCORE_DIFF_TIMELINE_NEUTRAL_PCT}
+              y2={yDomain[1]}
+              fill={ZONE_SUCCESS}
+              fillOpacity={SCORE_DIFF_TIMELINE_ZONE_OPACITY}
+            />
+            <XAxis dataKey="date" tickFormatter={formatDateTick} />
+            <YAxis
+              domain={yDomain}
+              ticks={SCORE_DIFF_TIMELINE_Y_TICKS}
+              allowDataOverflow={false}
+              tickFormatter={(v: number) =>
+                v > 0 ? `+${v}%` : `${v}%`
+              }
+              width={isMobile ? 36 : 44}
+            />
+            <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
+            <ChartTooltip
+              content={({ active, payload, label }) => {
+                if (!active || !payload?.length) return null;
+                const point = payload[0]?.payload as ScoreDiffChartPoint | undefined;
+                if (!point) return null;
+                const diff = point.diff_pct;
+                const sign = diff > 0 ? '+' : '';
+                return (
+                  <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
+                    <div className="font-medium">
+                      Week of {formatDateWithYear(label as string)}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div
+                        className="h-2 w-2 shrink-0 rounded-[2px]"
+                        style={{ backgroundColor: scoreDiffZoneColor(diff) }}
+                      />
+                      <span>
+                        Score % diff: {sign}
+                        {diff.toFixed(1)}%
+                        <span className="text-muted-foreground ml-1">
+                          (endgame {point.endgame_game_count} games, non-endgame {point.non_endgame_game_count} games)
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                );
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey="diff_pct"
+              stroke="var(--muted-foreground)"
+              strokeWidth={2}
+              connectNulls={true}
+              dot={(props: {
+                cx?: number;
+                cy?: number;
+                payload?: Record<string, unknown>;
+              }) => {
+                const { cx, cy, payload } = props;
+                if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) {
+                  return <g key={`nodot-${String(payload?.date ?? cx)}`} />;
+                }
+                const diff = (payload.diff_pct as number) ?? 0;
+                return (
+                  <circle
+                    key={`score-diff-dot-${payload.date as string}`}
+                    cx={cx}
+                    cy={cy}
+                    r={4}
+                    fill={scoreDiffZoneColor(diff)}
+                  />
+                );
+              }}
+            />
+          </LineChart>
+        </ChartContainer>
+      </div>
+      <p className="text-xs text-muted-foreground text-center -mt-2">
+        Week (rolling average of the last {window} games per side)
+      </p>
     </div>
   );
 }

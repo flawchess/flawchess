@@ -20,12 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.endgames import EndgameWDLSummary
 from app.services.endgame_service import (
     CLOCK_PRESSURE_TIMELINE_WINDOW,
+    SCORE_GAP_TIMELINE_WINDOW,
     _aggregate_endgame_stats,
     _build_bucket_series,
     _compute_clock_pressure,
     _compute_clock_pressure_timeline,
     _compute_rolling_series,
     _compute_score_gap_material,
+    _compute_score_gap_timeline,
     _compute_time_pressure_chart,
     _compute_weekly_rolling_series,
     _extract_entry_clocks,
@@ -2505,3 +2507,157 @@ class TestComputeClockPressureTimeline:
         assert len(result.timeline) == 1
         assert result.timeline[0].date == "2026-01-05"
         assert result.timeline[0].game_count == 12
+
+
+# ---------------------------------------------------------------------------
+# quick-260417-o2l: _compute_score_gap_timeline tests
+# ---------------------------------------------------------------------------
+
+
+def _perf_row(played_at: Any, result: str, user_color: str) -> tuple:
+    """Build a row matching query_endgame_performance_rows output shape.
+
+    Shape: (played_at, result, user_color). Used for the score-gap timeline
+    where derive_user_result(result, user_color) yields the per-game outcome.
+    """
+    return (played_at, result, user_color)
+
+
+class TestComputeScoreGapTimeline:
+    """Unit tests for _compute_score_gap_timeline (quick-260417-o2l)."""
+
+    def test_empty_inputs_returns_empty(self):
+        assert _compute_score_gap_timeline([], [], 100) == []
+
+    def test_drops_weeks_with_either_side_below_min_games(self):
+        """10 endgame games + 5 non-endgame games -> no points (non_endgame < 10)."""
+        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        endgame_rows = [
+            _perf_row(monday + datetime.timedelta(hours=i), "1-0", "white")
+            for i in range(10)
+        ]
+        non_endgame_rows = [
+            _perf_row(monday + datetime.timedelta(hours=i), "1-0", "white")
+            for i in range(5)
+        ]
+        assert _compute_score_gap_timeline(endgame_rows, non_endgame_rows, 100) == []
+
+    def test_emits_one_point_per_iso_week_using_rolling_diff(self):
+        """Two ISO weeks; verify diff and counts evolve via the trailing window.
+
+        Week 1: 10 endgame WINS (score=1.0) + 10 non-endgame LOSSES (score=0.0)
+        Week 2: 10 endgame DRAWS (score=0.5) + 10 non-endgame WINS (score=1.0)
+        Week 1 diff = 1.0 - 0.0 = +1.0.
+        Week 2 windows hold all 20 games per side:
+          endgame mean = (10*1 + 10*0.5) / 20 = 0.75
+          non_endgame mean = (10*0 + 10*1) / 20 = 0.5
+          diff = 0.75 - 0.5 = +0.25.
+        """
+        wk1 = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)
+        endgame_rows = [
+            _perf_row(wk1 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
+        ] + [
+            _perf_row(wk2 + datetime.timedelta(hours=i), "1/2-1/2", "white")
+            for i in range(10)
+        ]
+        non_endgame_rows = [
+            _perf_row(wk1 + datetime.timedelta(hours=i), "0-1", "white") for i in range(10)
+        ] + [
+            _perf_row(wk2 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
+        ]
+        series = _compute_score_gap_timeline(endgame_rows, non_endgame_rows, 100)
+        assert len(series) == 2
+        assert series[0].date == "2026-01-05"
+        assert series[0].score_difference == pytest.approx(1.0)
+        assert series[0].endgame_game_count == 10
+        assert series[0].non_endgame_game_count == 10
+        assert series[1].date == "2026-01-12"
+        assert series[1].score_difference == pytest.approx(0.25)
+        assert series[1].endgame_game_count == 20
+        assert series[1].non_endgame_game_count == 20
+
+    def test_rolling_window_caps_at_window_size(self):
+        """window=10: week 2's diff reflects only week-2 games per side."""
+        wk1 = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)
+        endgame_rows = [
+            _perf_row(wk1 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
+        ] + [
+            _perf_row(wk2 + datetime.timedelta(hours=i), "1/2-1/2", "white")
+            for i in range(10)
+        ]
+        non_endgame_rows = [
+            _perf_row(wk1 + datetime.timedelta(hours=i), "0-1", "white") for i in range(10)
+        ] + [
+            _perf_row(wk2 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
+        ]
+        series = _compute_score_gap_timeline(endgame_rows, non_endgame_rows, 10)
+        assert len(series) == 2
+        # Week 1: full window of week-1 only -> +1.0
+        assert series[0].score_difference == pytest.approx(1.0)
+        assert series[0].endgame_game_count == 10
+        # Week 2: window cap drops week-1; endgame=0.5, non_endgame=1.0 -> -0.5
+        assert series[1].score_difference == pytest.approx(-0.5)
+        assert series[1].endgame_game_count == 10
+        assert series[1].non_endgame_game_count == 10
+
+    def test_skips_rows_without_played_at(self):
+        """Rows with played_at=None are excluded from the timeline."""
+        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        endgame_rows = [
+            _perf_row(monday + datetime.timedelta(hours=i), "1-0", "white")
+            for i in range(10)
+        ] + [_perf_row(None, "1-0", "white")]
+        non_endgame_rows = [
+            _perf_row(monday + datetime.timedelta(hours=i), "0-1", "white")
+            for i in range(10)
+        ]
+        series = _compute_score_gap_timeline(endgame_rows, non_endgame_rows, 100)
+        assert len(series) == 1
+        assert series[0].endgame_game_count == 10
+
+    def test_compute_score_gap_material_exposes_timeline(self):
+        """_compute_score_gap_material returns timeline + timeline_window when rows passed."""
+        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        endgame_rows = [
+            _perf_row(monday + datetime.timedelta(hours=i), "1-0", "white")
+            for i in range(10)
+        ]
+        non_endgame_rows = [
+            _perf_row(monday + datetime.timedelta(hours=i), "0-1", "white")
+            for i in range(10)
+        ]
+        endgame_wdl = EndgameWDLSummary(
+            wins=10, draws=0, losses=0, total=10,
+            win_pct=100.0, draw_pct=0.0, loss_pct=0.0,
+        )
+        non_endgame_wdl = EndgameWDLSummary(
+            wins=0, draws=0, losses=10, total=10,
+            win_pct=0.0, draw_pct=0.0, loss_pct=100.0,
+        )
+        result = _compute_score_gap_material(
+            endgame_wdl,
+            non_endgame_wdl,
+            entry_rows=[],
+            endgame_rows=endgame_rows,
+            non_endgame_rows=non_endgame_rows,
+        )
+        assert result.timeline_window == SCORE_GAP_TIMELINE_WINDOW
+        assert len(result.timeline) == 1
+        assert result.timeline[0].date == "2026-01-05"
+        assert result.timeline[0].score_difference == pytest.approx(1.0)
+
+    def test_compute_score_gap_material_omits_timeline_when_rows_absent(self):
+        """Backward compat: omitting endgame_rows/non_endgame_rows yields an empty timeline."""
+        endgame_wdl = EndgameWDLSummary(
+            wins=1, draws=0, losses=0, total=1,
+            win_pct=100.0, draw_pct=0.0, loss_pct=0.0,
+        )
+        non_endgame_wdl = EndgameWDLSummary(
+            wins=0, draws=0, losses=1, total=1,
+            win_pct=0.0, draw_pct=0.0, loss_pct=100.0,
+        )
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows=[])
+        assert result.timeline == []
+        assert result.timeline_window == SCORE_GAP_TIMELINE_WINDOW

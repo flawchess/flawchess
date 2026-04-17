@@ -101,11 +101,23 @@ export interface MaterialRow {
   opponent_games: number;
 }
 
+/** Single point in the score-difference rolling-window time series.
+ *  `date` is the Monday of an ISO week (YYYY-MM-DD).
+ *  `score_difference` is endgame_score - non_endgame_score on a 0-1 scale (signed). */
+export interface ScoreGapTimelinePoint {
+  date: string;
+  score_difference: number;
+  endgame_game_count: number;
+  non_endgame_game_count: number;
+}
+
 export interface ScoreGapMaterialResponse {
   endgame_score: number;
   non_endgame_score: number;
   score_difference: number;
   material_rows: MaterialRow[];
+  timeline: ScoreGapTimelinePoint[];
+  timeline_window: number;
 }
 
 export interface ClockStatsRow {

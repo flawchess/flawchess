@@ -186,6 +186,26 @@ class MaterialRow(BaseModel):
     opponent_games: int
 
 
+class ScoreGapTimelinePoint(BaseModel):
+    """One point in the score-difference timeline (quick-260417-o2l).
+
+    date: Monday of the ISO week, YYYY-MM-DD.
+    score_difference: endgame_score - non_endgame_score on a 0.0-1.0 scale,
+        signed (e.g. 0.05 = endgame 5 percentage points stronger). Each side
+        is the trailing-window mean of per-game scores (1.0 win / 0.5 draw /
+        0.0 loss). Endgame and non-endgame games each carry their own
+        trailing window of `timeline_window` games.
+    endgame_game_count: games in the trailing endgame window (<= timeline_window).
+    non_endgame_game_count: games in the trailing non-endgame window
+        (<= timeline_window).
+    """
+
+    date: str
+    score_difference: float
+    endgame_game_count: int
+    non_endgame_game_count: int
+
+
 class ScoreGapMaterialResponse(BaseModel):
     """Endgame score difference + material-stratified WDL table (Phase 53).
 
@@ -197,12 +217,19 @@ class ScoreGapMaterialResponse(BaseModel):
     Phase 60: each MaterialRow carries an opponent_score (1 - user_score[swap_bucket])
     and opponent_games. overall_score was removed; it was only consumed by the old
     global-average baseline display.
+
+    quick-260417-o2l: `timeline` is a weekly rolling-window series of the score
+    difference between endgame and non-endgame games. Each side keeps its own
+    trailing `timeline_window`-game window so weeks with sparse activity on one
+    side still reflect the broader history of that side.
     """
 
     endgame_score: float  # 0.0-1.0
     non_endgame_score: float  # 0.0-1.0
     score_difference: float  # endgame_score - non_endgame_score (signed)
     material_rows: list[MaterialRow]  # 3 rows: conversion / parity / recovery
+    timeline: list[ScoreGapTimelinePoint]
+    timeline_window: int
 
 
 class ClockStatsRow(BaseModel):

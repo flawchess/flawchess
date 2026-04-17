@@ -53,6 +53,7 @@ from app.schemas.endgames import (
     MaterialBucket,
     MaterialRow,
     ScoreGapMaterialResponse,
+    ScoreGapTimelinePoint,
     TimePressureBucketPoint,
     TimePressureChartResponse,
 )
@@ -160,6 +161,10 @@ _MATERIAL_ADVANTAGE_THRESHOLD = 100
 # baseline in the Conversion/Even/Recovery bullet chart. Matches the WDL-bar
 # mute threshold used elsewhere (e.g. Opening Explorer moves list).
 _MIN_OPPONENT_SAMPLE = 10
+
+# Rolling window size for the score-difference timeline chart (quick-260417-o2l).
+# Mirrors the 100-game window used by the clock-diff timeline.
+SCORE_GAP_TIMELINE_WINDOW = 100
 
 
 def _aggregate_endgame_stats(
@@ -514,10 +519,101 @@ _MATERIAL_BUCKET_LABELS: dict[MaterialBucket, str] = {
 }
 
 
+def _compute_score_gap_timeline(
+    endgame_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    non_endgame_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    window: int,
+) -> list[ScoreGapTimelinePoint]:
+    """Weekly rolling-window series of (endgame_score - non_endgame_score).
+
+    Each side maintains its own trailing `window`-game window so weeks with
+    sparse activity on one side still reflect the broader history of that
+    side — analogous to the per-type series in `get_endgame_timeline`.
+    Within the window, score = mean of per-game outcome scores
+    (1.0 win / 0.5 draw / 0.0 loss).
+
+    Both inputs carry rows shaped (played_at, result, user_color), already
+    sorted ASC by played_at as produced by `query_endgame_performance_rows`.
+    Rows missing `played_at` are skipped — they cannot be bucketed by ISO week.
+
+    Output points sit on the Monday of an ISO week and reflect the window
+    state after that week's last contributing game on either side. Weeks
+    where either trailing window holds fewer than MIN_GAMES_FOR_TIMELINE
+    games are dropped — matches the cold-start handling used elsewhere.
+    """
+
+    def _score_for(row: Row[Any] | tuple[Any, ...]) -> float | None:
+        played_at = row[0]
+        if played_at is None:
+            return None
+        outcome = derive_user_result(row[1], row[2])
+        return {"win": 1.0, "draw": 0.5, "loss": 0.0}[outcome]
+
+    # Tag each game with its side ("endgame"/"non_endgame") and merge into a
+    # single chronological event stream. We can't just walk both lists in
+    # lockstep — events must interleave by played_at to keep the rolling
+    # windows in sync with real history.
+    events: list[tuple[Any, Literal["endgame", "non_endgame"], float]] = []
+    for row in endgame_rows:
+        score = _score_for(row)
+        if score is None:
+            continue
+        events.append((row[0], "endgame", score))
+    for row in non_endgame_rows:
+        score = _score_for(row)
+        if score is None:
+            continue
+        events.append((row[0], "non_endgame", score))
+
+    events.sort(key=lambda e: e[0])
+
+    endgame_window: list[float] = []
+    non_endgame_window: list[float] = []
+    data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
+
+    for played_at, side, score in events:
+        if side == "endgame":
+            endgame_window.append(score)
+            endgame_window = endgame_window[-window:]
+        else:
+            non_endgame_window.append(score)
+            non_endgame_window = non_endgame_window[-window:]
+
+        eg_count = len(endgame_window)
+        neg_count = len(non_endgame_window)
+        if eg_count == 0 or neg_count == 0:
+            # Can't compute a difference until both sides have at least one
+            # game; defer emission. The MIN_GAMES_FOR_TIMELINE filter below
+            # also drops anything still too thin once both sides start.
+            continue
+
+        endgame_mean = statistics.mean(endgame_window)
+        non_endgame_mean = statistics.mean(non_endgame_window)
+        diff = endgame_mean - non_endgame_mean
+
+        iso_year, iso_week, iso_weekday = played_at.isocalendar()
+        monday = (played_at - timedelta(days=iso_weekday - 1)).date()
+        data_by_week[(iso_year, iso_week)] = {
+            "date": monday.isoformat(),
+            "score_difference": round(diff, 4),
+            "endgame_game_count": eg_count,
+            "non_endgame_game_count": neg_count,
+        }
+
+    return [
+        ScoreGapTimelinePoint(**data_by_week[key])
+        for key in sorted(data_by_week.keys())
+        if data_by_week[key]["endgame_game_count"] >= MIN_GAMES_FOR_TIMELINE
+        and data_by_week[key]["non_endgame_game_count"] >= MIN_GAMES_FOR_TIMELINE
+    ]
+
+
 def _compute_score_gap_material(
     endgame_wdl: EndgameWDLSummary,
     non_endgame_wdl: EndgameWDLSummary,
     entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    endgame_rows: Sequence[Row[Any] | tuple[Any, ...]] | None = None,
+    non_endgame_rows: Sequence[Row[Any] | tuple[Any, ...]] | None = None,
 ) -> ScoreGapMaterialResponse:
     """Compute endgame score gap and material-stratified WDL table.
 
@@ -676,11 +772,21 @@ def _compute_score_gap_material(
             )
         )
 
+    timeline = (
+        _compute_score_gap_timeline(
+            endgame_rows, non_endgame_rows, SCORE_GAP_TIMELINE_WINDOW
+        )
+        if endgame_rows is not None and non_endgame_rows is not None
+        else []
+    )
+
     return ScoreGapMaterialResponse(
         endgame_score=endgame_score,
         non_endgame_score=non_endgame_score,
         score_difference=score_difference,
         material_rows=material_rows,
+        timeline=timeline,
+        timeline_window=SCORE_GAP_TIMELINE_WINDOW,
     )
 
 
@@ -1494,7 +1600,11 @@ async def get_endgame_overview(
         elo_threshold=elo_threshold,
     )
     score_gap_material = _compute_score_gap_material(
-        performance.endgame_wdl, performance.non_endgame_wdl, bucket_rows
+        performance.endgame_wdl,
+        performance.non_endgame_wdl,
+        bucket_rows,
+        endgame_rows=endgame_rows,
+        non_endgame_rows=non_endgame_rows,
     )
 
     timeline = await get_endgame_timeline(
