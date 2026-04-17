@@ -2508,6 +2508,39 @@ class TestComputeClockPressureTimeline:
         assert result.timeline[0].date == "2026-01-05"
         assert result.timeline[0].game_count == 12
 
+    def test_clock_pressure_timeline_cutoff_filters_output_but_pre_fills_window(self):
+        """Cutoff drops pre-cutoff output points but the rolling window still uses them.
+
+        10 games in week 1 (pre-cutoff) with diff -10/180. 10 games in week 2
+        (post-cutoff) with diff +20/180. Window=100. Cutoff at start of week 2.
+        Week 2's mean must reflect all 20 games (pre-fill), not just week-2's 10.
+        """
+        wk1 = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)
+        rows = []
+        for i in range(10):
+            rows.append(
+                _make_clock_row(
+                    i + 1, "blitz", 180, "checkmate", "1-0", "white",
+                    [0, 1], [50.0, 60.0],
+                    played_at=wk1 + datetime.timedelta(hours=i),
+                )
+            )
+        for i in range(10):
+            rows.append(
+                _make_clock_row(
+                    i + 11, "blitz", 180, "checkmate", "1-0", "white",
+                    [0, 1], [80.0, 60.0],
+                    played_at=wk2 + datetime.timedelta(hours=i),
+                )
+            )
+        series = _compute_clock_pressure_timeline(rows, 100, cutoff_str="2026-01-12")
+        assert len(series) == 1
+        assert series[0].date == "2026-01-12"
+        expected = ((10 * -10) + (10 * 20)) / 20 / 180 * 100
+        assert series[0].avg_clock_diff_pct == pytest.approx(expected, abs=0.01)
+        assert series[0].game_count == 20
+
 
 # ---------------------------------------------------------------------------
 # quick-260417-o2l: _compute_score_gap_timeline tests
@@ -2617,8 +2650,8 @@ class TestComputeScoreGapTimeline:
         assert len(series) == 1
         assert series[0].endgame_game_count == 10
 
-    def test_compute_score_gap_material_exposes_timeline(self):
-        """_compute_score_gap_material returns timeline + timeline_window when rows passed."""
+    def test_compute_score_gap_material_passes_timeline_through(self):
+        """_compute_score_gap_material returns the pre-computed timeline as-is."""
         monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
         endgame_rows = [
             _perf_row(monday + datetime.timedelta(hours=i), "1-0", "white")
@@ -2628,6 +2661,9 @@ class TestComputeScoreGapTimeline:
             _perf_row(monday + datetime.timedelta(hours=i), "0-1", "white")
             for i in range(10)
         ]
+        timeline = _compute_score_gap_timeline(
+            endgame_rows, non_endgame_rows, SCORE_GAP_TIMELINE_WINDOW
+        )
         endgame_wdl = EndgameWDLSummary(
             wins=10, draws=0, losses=0, total=10,
             win_pct=100.0, draw_pct=0.0, loss_pct=0.0,
@@ -2640,16 +2676,16 @@ class TestComputeScoreGapTimeline:
             endgame_wdl,
             non_endgame_wdl,
             entry_rows=[],
-            endgame_rows=endgame_rows,
-            non_endgame_rows=non_endgame_rows,
+            timeline=timeline,
+            timeline_window=SCORE_GAP_TIMELINE_WINDOW,
         )
         assert result.timeline_window == SCORE_GAP_TIMELINE_WINDOW
         assert len(result.timeline) == 1
         assert result.timeline[0].date == "2026-01-05"
         assert result.timeline[0].score_difference == pytest.approx(1.0)
 
-    def test_compute_score_gap_material_omits_timeline_when_rows_absent(self):
-        """Backward compat: omitting endgame_rows/non_endgame_rows yields an empty timeline."""
+    def test_compute_score_gap_material_omits_timeline_when_absent(self):
+        """Backward compat: omitting `timeline` yields an empty timeline."""
         endgame_wdl = EndgameWDLSummary(
             wins=1, draws=0, losses=0, total=1,
             win_pct=100.0, draw_pct=0.0, loss_pct=0.0,
@@ -2661,3 +2697,38 @@ class TestComputeScoreGapTimeline:
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows=[])
         assert result.timeline == []
         assert result.timeline_window == SCORE_GAP_TIMELINE_WINDOW
+
+    def test_score_gap_timeline_cutoff_filters_output_but_keeps_pre_cutoff_in_window(self):
+        """Cutoff drops pre-cutoff output points but the rolling window still uses them.
+
+        Setup: 10 endgame WINS in week 1 (pre-cutoff), 10 non-endgame LOSSES
+        in week 1 (pre-cutoff), 10 endgame DRAWS in week 2 (post-cutoff),
+        10 non-endgame WINS in week 2 (post-cutoff). Cutoff between weeks.
+        Without cutoff filtering on the window, week-2 reflects all 20 games
+        per side: endgame mean 0.75, non-endgame mean 0.5, diff = +0.25.
+        Without pre-fill, week-2 would only have 10 games per side and report
+        endgame 0.5, non-endgame 1.0, diff = -0.5.
+        """
+        wk1 = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)
+        endgame_rows = [
+            _perf_row(wk1 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
+        ] + [
+            _perf_row(wk2 + datetime.timedelta(hours=i), "1/2-1/2", "white")
+            for i in range(10)
+        ]
+        non_endgame_rows = [
+            _perf_row(wk1 + datetime.timedelta(hours=i), "0-1", "white") for i in range(10)
+        ] + [
+            _perf_row(wk2 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
+        ]
+        # Cutoff sits at the start of week 2.
+        series = _compute_score_gap_timeline(
+            endgame_rows, non_endgame_rows, 100, cutoff_str="2026-01-12"
+        )
+        assert len(series) == 1
+        assert series[0].date == "2026-01-12"
+        # Verifies the window pre-fill: +0.25, NOT -0.5.
+        assert series[0].score_difference == pytest.approx(0.25)
+        assert series[0].endgame_game_count == 20
+        assert series[0].non_endgame_game_count == 20

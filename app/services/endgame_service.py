@@ -523,6 +523,7 @@ def _compute_score_gap_timeline(
     endgame_rows: Sequence[Row[Any] | tuple[Any, ...]],
     non_endgame_rows: Sequence[Row[Any] | tuple[Any, ...]],
     window: int,
+    cutoff_str: str | None = None,
 ) -> list[ScoreGapTimelinePoint]:
     """Weekly rolling-window series of (endgame_score - non_endgame_score).
 
@@ -540,6 +541,11 @@ def _compute_score_gap_timeline(
     state after that week's last contributing game on either side. Weeks
     where either trailing window holds fewer than MIN_GAMES_FOR_TIMELINE
     games are dropped — matches the cold-start handling used elsewhere.
+
+    `cutoff_str` (YYYY-MM-DD) drops emitted points dated before the cutoff
+    but lets earlier games pre-fill the rolling windows — mirrors
+    `get_endgame_timeline` so the recency filter does not starve the window
+    when the user picks a short window like "past 3 months".
     """
 
     def _score_for(row: Row[Any] | tuple[Any, ...]) -> float | None:
@@ -605,6 +611,7 @@ def _compute_score_gap_timeline(
         for key in sorted(data_by_week.keys())
         if data_by_week[key]["endgame_game_count"] >= MIN_GAMES_FOR_TIMELINE
         and data_by_week[key]["non_endgame_game_count"] >= MIN_GAMES_FOR_TIMELINE
+        and (cutoff_str is None or data_by_week[key]["date"] >= cutoff_str)
     ]
 
 
@@ -612,8 +619,9 @@ def _compute_score_gap_material(
     endgame_wdl: EndgameWDLSummary,
     non_endgame_wdl: EndgameWDLSummary,
     entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
-    endgame_rows: Sequence[Row[Any] | tuple[Any, ...]] | None = None,
-    non_endgame_rows: Sequence[Row[Any] | tuple[Any, ...]] | None = None,
+    *,
+    timeline: list[ScoreGapTimelinePoint] | None = None,
+    timeline_window: int = SCORE_GAP_TIMELINE_WINDOW,
 ) -> ScoreGapMaterialResponse:
     """Compute endgame score gap and material-stratified WDL table.
 
@@ -630,6 +638,12 @@ def _compute_score_gap_material(
             dedupes by game_id defensively. For any game where
             `user_material_imbalance_after` is NULL (endgame didn't persist
             for 4 plies), the game routes to the "parity" bucket.
+        timeline: Pre-computed score-gap timeline. The orchestrator builds
+            this from the unfiltered-by-recency performance rows (so the
+            rolling window is pre-filled with games before the cutoff) and
+            then filters output points to the cutoff. None -> empty timeline.
+        timeline_window: Window size carried on the response for the chart's
+            tooltip/info copy.
 
     Returns:
         ScoreGapMaterialResponse with score gap and 3-row material breakdown.
@@ -772,21 +786,13 @@ def _compute_score_gap_material(
             )
         )
 
-    timeline = (
-        _compute_score_gap_timeline(
-            endgame_rows, non_endgame_rows, SCORE_GAP_TIMELINE_WINDOW
-        )
-        if endgame_rows is not None and non_endgame_rows is not None
-        else []
-    )
-
     return ScoreGapMaterialResponse(
         endgame_score=endgame_score,
         non_endgame_score=non_endgame_score,
         score_difference=score_difference,
         material_rows=material_rows,
-        timeline=timeline,
-        timeline_window=SCORE_GAP_TIMELINE_WINDOW,
+        timeline=timeline if timeline is not None else [],
+        timeline_window=timeline_window,
     )
 
 
@@ -846,6 +852,9 @@ def _extract_entry_clocks(
 
 def _compute_clock_pressure(
     clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    *,
+    timeline: list[ClockPressureTimelinePoint] | None = None,
+    timeline_window: int = CLOCK_PRESSURE_TIMELINE_WINDOW,
 ) -> ClockPressureResponse:
     """Compute time pressure stats at endgame entry, grouped by time control.
 
@@ -997,22 +1006,26 @@ def _compute_clock_pressure(
             )
         )
 
-    timeline = _compute_clock_pressure_timeline(
-        clock_rows, CLOCK_PRESSURE_TIMELINE_WINDOW
-    )
+    # Caller (the orchestrator) passes a pre-computed timeline built from
+    # rows unfiltered by recency, so the rolling window can pre-fill from
+    # games before the cutoff. Fall back to computing from `clock_rows` for
+    # standalone use (tests, ad-hoc calls).
+    if timeline is None:
+        timeline = _compute_clock_pressure_timeline(clock_rows, timeline_window)
 
     return ClockPressureResponse(
         rows=rows,
         total_clock_games=grand_clock_game_count,
         total_endgame_games=len(grand_endgame_game_ids),
         timeline=timeline,
-        timeline_window=CLOCK_PRESSURE_TIMELINE_WINDOW,
+        timeline_window=timeline_window,
     )
 
 
 def _compute_clock_pressure_timeline(
     clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
     window: int,
+    cutoff_str: str | None = None,
 ) -> list[ClockPressureTimelinePoint]:
     """Weekly rolling-window series of average clock-diff % at endgame entry.
 
@@ -1031,6 +1044,11 @@ def _compute_clock_pressure_timeline(
 
     Points with fewer than MIN_GAMES_FOR_TIMELINE games in the window are dropped,
     matching the same cold-start handling used by the Win Rate by Endgame Type chart.
+
+    `cutoff_str` (YYYY-MM-DD) drops emitted points dated before the cutoff but
+    lets earlier games pre-fill the rolling window — mirrors
+    `get_endgame_timeline` so the recency filter does not starve the window
+    when the user picks a short window like "past 3 months".
     """
     game_data: list[tuple[Any, float]] = []
     for row in clock_rows:
@@ -1082,6 +1100,7 @@ def _compute_clock_pressure_timeline(
         ClockPressureTimelinePoint(**data_by_week[key])
         for key in sorted(data_by_week.keys())
         if data_by_week[key]["game_count"] >= MIN_GAMES_FOR_TIMELINE
+        and (cutoff_str is None or data_by_week[key]["date"] >= cutoff_str)
     ]
 
 
@@ -1522,6 +1541,7 @@ async def get_endgame_overview(
     See endgame_repository.py for AsyncSession concurrency notes.
     """
     cutoff = recency_cutoff(recency)
+    cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
 
     # Fetch entry_rows once — shared by stats, performance, and score_gap_material.
     # Previously fetched redundantly by both get_endgame_stats and get_endgame_performance.
@@ -1569,18 +1589,30 @@ async def get_endgame_overview(
         endgame_games=endgame_games,
     )
 
-    # Performance: fetch WDL comparison rows, then use shared entry_rows
-    endgame_rows, non_endgame_rows = await query_endgame_performance_rows(
+    # Performance: fetch WDL comparison rows WITHOUT recency cutoff so the
+    # score-diff timeline rolling window can pre-fill from games before the
+    # cutoff. Filter in Python for the table-side WDL math (cheap — these
+    # rows are just (played_at, result, user_color)). Mirrors the pattern in
+    # `get_endgame_timeline`.
+    endgame_rows_all, non_endgame_rows_all = await query_endgame_performance_rows(
         session,
         user_id=user_id,
         time_control=time_control,
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        recency_cutoff=None,
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
+    if cutoff is not None:
+        endgame_rows = [r for r in endgame_rows_all if r[0] is not None and r[0] >= cutoff]
+        non_endgame_rows = [
+            r for r in non_endgame_rows_all if r[0] is not None and r[0] >= cutoff
+        ]
+    else:
+        endgame_rows = list(endgame_rows_all)
+        non_endgame_rows = list(non_endgame_rows_all)
     performance = _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, entry_rows)
 
     # Score gap & material breakdown — use game-level bucket_rows (one row per endgame
@@ -1599,12 +1631,21 @@ async def get_endgame_overview(
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
+    # Build score-gap timeline from unfiltered rows so the rolling 100-game
+    # window per side is pre-filled with games before the cutoff; then drop
+    # output points dated before the cutoff via cutoff_str.
+    score_gap_timeline = _compute_score_gap_timeline(
+        endgame_rows_all,
+        non_endgame_rows_all,
+        SCORE_GAP_TIMELINE_WINDOW,
+        cutoff_str=cutoff_str,
+    )
     score_gap_material = _compute_score_gap_material(
         performance.endgame_wdl,
         performance.non_endgame_wdl,
         bucket_rows,
-        endgame_rows=endgame_rows,
-        non_endgame_rows=non_endgame_rows,
+        timeline=score_gap_timeline,
+        timeline_window=SCORE_GAP_TIMELINE_WINDOW,
     )
 
     timeline = await get_endgame_timeline(
@@ -1619,19 +1660,35 @@ async def get_endgame_overview(
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
-    # Clock pressure: fetch per-span arrays, then compute stats in service layer
-    clock_rows = await query_clock_stats_rows(
+    # Clock pressure: fetch per-span arrays WITHOUT recency cutoff so the
+    # clock-diff timeline can pre-fill from games before the cutoff. Filter in
+    # Python (by played_at at row index 8) for the table + time-pressure chart
+    # consumers, which only want games inside the recency window.
+    clock_rows_all = await query_clock_stats_rows(
         session,
         user_id=user_id,
         time_control=time_control,
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        recency_cutoff=None,
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
-    clock_pressure = _compute_clock_pressure(clock_rows)
+    if cutoff is not None:
+        clock_rows = [r for r in clock_rows_all if r[8] is not None and r[8] >= cutoff]
+    else:
+        clock_rows = list(clock_rows_all)
+    clock_diff_timeline = _compute_clock_pressure_timeline(
+        clock_rows_all,
+        CLOCK_PRESSURE_TIMELINE_WINDOW,
+        cutoff_str=cutoff_str,
+    )
+    clock_pressure = _compute_clock_pressure(
+        clock_rows,
+        timeline=clock_diff_timeline,
+        timeline_window=CLOCK_PRESSURE_TIMELINE_WINDOW,
+    )
     time_pressure_chart = _compute_time_pressure_chart(clock_rows)
 
     return EndgameOverviewResponse(
