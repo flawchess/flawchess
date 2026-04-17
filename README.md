@@ -77,6 +77,22 @@ uv run pytest        # Run all tests
 uv run pytest -x     # Stop on first failure
 ```
 
+### Test Coverage
+
+Backend uses `pytest-cov` (already in dev dependencies):
+
+```bash
+uv run pytest --cov=app --cov-report=term-missing   # Terminal report with missing lines
+uv run pytest --cov=app --cov-report=html           # HTML report at htmlcov/index.html
+```
+
+Frontend uses Vitest's coverage (v8 provider):
+
+```bash
+cd frontend
+npx vitest run --coverage                           # Terminal + HTML at coverage/index.html
+```
+
 ### Linting & Type Checking
 
 ```bash
