@@ -12,7 +12,7 @@
 - ✅ **v1.7 Consolidation, Tooling & Refactoring** — Phases 40-43 (shipped 2026-04-03)
 - ✅ **v1.8 Guest Access** — Phases 44-47 (shipped 2026-04-06)
 - ✅ **v1.9 UI/UX Restructuring** — Phases 49-51 (shipped 2026-04-10) — see [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md)
-- ○ **v1.10 Advanced Analytics** — Phases 48, 52-58 (planned)
+- ○ **v1.10 Advanced Analytics** — Phases 48, 52-61 (in progress)
 
 ## Phases
 
@@ -129,7 +129,7 @@ See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
 
 </details>
 
-### v1.10 Advanced Analytics (Phases 48, 52-58)
+### v1.10 Advanced Analytics (Phases 48, 52-61)
 
 - [x] **Phase 48: Conversion & Recovery Persistence Filter** - Reduce noise in endgame conv/recov metrics by requiring material imbalance to persist 4 plies after endgame entry, lower threshold from 300cp to 100cp (completed 2026-04-07)
 - [x] **Phase 52: Endgame Tab Performance** - Collapse timeline fan-out, consolidate endgame endpoints on a single session, and defer desktop filter apply until the filter sidebar closes (completed 2026-04-11)
@@ -139,6 +139,8 @@ See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
 - [ ] **Phase 56: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
 - [ ] **Phase 57: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
 - [ ] **Phase 58: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
+- [x] **Phase 59: Fix Endgame Conv/Even/Recov per-game stats** - Ensure Conv+Even+Recov buckets sum to total endgame games; remove obsolete admin-gated gauges + timeline (completed 2026-04-13)
+- [x] **Phase 60: Opponent-based baseline for Endgame Conversion & Recovery** - Replace global-average baseline with self-calibrating opponent baseline computed via same-game symmetry; mute when opponent sample < 10 games (completed 2026-04-14)
 - [x] **Phase 61: Test Suite Hardening & DB Reset** - Truncate `flawchess_test` at pytest session start and add meaningful aggregation sanity tests closing gaps identified in the 2026-04-16 audit (WDL perspective, material tally, rolling windows, filter intersections, recency boundary, position dedup, endgame transitions, router known-numbers integration) (completed 2026-04-16)
 
 ## Phase Details
@@ -296,8 +298,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 60-01-PLAN.md — Backend: opponent baseline computation in _compute_score_gap_material, schema additions (opponent_score/opponent_games), drop overall_score, tests
-- [ ] 60-02-PLAN.md — Frontend: TS type mirror, EndgameScoreGapSection rewrite (desktop + mobile, single neutral zone, muted state, peer-framing copy)
+- [x] 60-01-PLAN.md — Backend: opponent baseline computation in _compute_score_gap_material, schema additions (opponent_score/opponent_games), drop overall_score, tests
+- [x] 60-02-PLAN.md — Frontend: TS type mirror, EndgameScoreGapSection rewrite (desktop + mobile, single neutral zone, muted state, peer-framing copy)
 **UI hint**: yes
 
 ### Phase 61: Test Suite Hardening & DB Reset
@@ -384,7 +386,7 @@ Plans:
 | 57. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
 | 58. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
 | 59. Fix Endgame Conv/Even/Recov per-game stats | v1.10 | 3/3 | Complete    | 2026-04-13 |
-| 60. Opponent-based baseline for Endgame Conv/Even/Recov | v1.10 | 0/? | Not started | - |
+| 60. Opponent-based baseline for Endgame Conv/Even/Recov | v1.10 | 2/2 | Complete    | 2026-04-14 |
 | 61. Test Suite Hardening & DB Reset | v1.10 | 3/3 | Complete    | 2026-04-16 |
 
 ## Backlog
