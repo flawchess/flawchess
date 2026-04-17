@@ -18,6 +18,8 @@ import {
 import { apiClient } from '@/api/client';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
+import { ImpersonationPill } from '@/components/admin/ImpersonationPill';
+import { isImpersonating } from '@/lib/impersonation';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { AuthPage } from '@/pages/Auth';
 import { HomePage } from '@/pages/Home';
@@ -139,9 +141,14 @@ function NavHeader() {
               Guest
             </Badge>
           )}
-          <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
-            Logout
-          </Button>
+          {profile?.impersonation && (
+            <ImpersonationPill impersonation={profile.impersonation} />
+          )}
+          {!isImpersonating(profile) && (
+            <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
+              Logout
+            </Button>
+          )}
         </div>
       </div>
     </header>
@@ -152,6 +159,7 @@ function NavHeader() {
 
 function MobileHeader() {
   const location = useLocation();
+  const { data: profile } = useUserProfile();
   const pageTitle = Object.entries(ROUTE_TITLES).find(
     ([path]) => location.pathname.startsWith(path),
   )?.[1] ?? '';
@@ -169,12 +177,20 @@ function MobileHeader() {
         <img src="/icons/logo-128.png" alt="" className="h-11 w-11 self-end -mb-1" aria-hidden="true" />
         FlawChess
       </Link>
-      <span
-        data-testid="mobile-header-page-title"
-        className="text-sm text-muted-foreground"
-      >
-        {pageTitle}
-      </span>
+      <div className="flex items-center gap-2 min-w-0">
+        {profile?.impersonation && (
+          <ImpersonationPill
+            impersonation={profile.impersonation}
+            emailMaxWidthClass="max-w-[8rem]"
+          />
+        )}
+        <span
+          data-testid="mobile-header-page-title"
+          className="text-sm text-muted-foreground"
+        >
+          {pageTitle}
+        </span>
+      </div>
     </header>
   );
 }
@@ -262,17 +278,21 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
               </DrawerClose>
             ))}
           </nav>
-          <div className="my-2 border-t border-border" />
-          <DrawerClose asChild>
-            <button
-              onClick={logout}
-              data-testid="drawer-logout"
-              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-base text-destructive"
-            >
-              <LogOutIcon className="h-4 w-4" />
-              Logout
-            </button>
-          </DrawerClose>
+          {!isImpersonating(profile) && (
+            <>
+              <div className="my-2 border-t border-border" />
+              <DrawerClose asChild>
+                <button
+                  onClick={logout}
+                  data-testid="drawer-logout"
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-base text-destructive"
+                >
+                  <LogOutIcon className="h-4 w-4" />
+                  Logout
+                </button>
+              </DrawerClose>
+            </>
+          )}
         </div>
       </DrawerContent>
     </Drawer>
