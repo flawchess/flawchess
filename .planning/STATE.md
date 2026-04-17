@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Advanced Analytics
 status: executing
-last_updated: "2026-04-17T17:17:35.912Z"
+last_updated: "2026-04-17T18:00:03.577Z"
 last_activity: 2026-04-17
 progress:
   total_phases: 15
   completed_phases: 5
   total_plans: 22
-  completed_plans: 14
-  percent: 64
+  completed_plans: 17
+  percent: 77
 ---
 
 # Project State: FlawChess
@@ -56,6 +56,8 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 - [Phase 62]: Single auth_backend + ClaimAwareJWTStrategy wrapper — keeps every Depends(current_active_user) call site unchanged
 - [Phase 62]: D-04 nested-impersonation rejection enforced indirectly via current_superuser dep (impersonation token resolves to non-superuser target)
 - [Phase 62]: D-06 last_login freeze satisfied by construction — manual strategy.write_impersonation_token bypasses UserManager.on_after_login
+- [Phase 62-admin-user-impersonation]: shouldFilter=false on cmdk Command is mandatory — disables client-side fuzzy filter so server search results are shown verbatim (T-62-13)
+- [Phase 62-admin-user-impersonation]: knip.json ignores shadcn UI component files (command.tsx, popover.tsx, input-group.tsx) — shadcn ships full library surfaces; project-authored code still fully analyzed
 
 ### Pending Todos
 
