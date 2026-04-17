@@ -10,7 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen } from 'lucide-react';
+import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
@@ -18,6 +18,7 @@ import {
 import { apiClient } from '@/api/client';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
+import { ImpersonationPill } from '@/components/admin/ImpersonationPill';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { AuthPage } from '@/pages/Auth';
 import { HomePage } from '@/pages/Home';
@@ -26,6 +27,7 @@ import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
 import { OpeningsPage } from '@/pages/Openings';
 import { EndgamesPage } from '@/pages/Endgames';
 import { GlobalStatsPage } from '@/pages/GlobalStats';
+import { AdminPage } from '@/pages/Admin';
 import { PrivacyPage } from '@/pages/Privacy';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
 
@@ -59,11 +61,18 @@ const BOTTOM_NAV_ITEMS = [
   { to: '/global-stats', label: 'Global Stats', Icon: BarChart3Icon },
 ] as const;
 
+// D-16: Admin nav item appended at render time when profile.is_superuser === true.
+// Kept out of the `as const` NAV_ITEMS tuple so the conditional spread below does
+// not widen the type; declared here so both NavHeader and MobileMoreDrawer share
+// the same object literal and icon.
+const ADMIN_NAV_ITEM = { to: '/admin', label: 'Admin', Icon: Shield } as const;
+
 const ROUTE_TITLES: Record<string, string> = {
   '/import': 'Import',
   '/openings': 'Openings',
   '/endgames': 'Endgames',
   '/global-stats': 'Global Stats',
+  '/admin': 'Admin',
 };
 
 // ─── Active route helper ───────────────────────────────────────────────────────
@@ -81,6 +90,8 @@ function NavHeader() {
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
   const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
+  // D-16: Admin tab rightmost for superusers, absent otherwise.
+  const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
   return (
     <header className="hidden sm:block bg-background border-b border-border px-6 overflow-hidden">
@@ -91,7 +102,7 @@ function NavHeader() {
             <span className="text-lg tracking-tight text-foreground font-brand">FlawChess</span>
           </Link>
           <nav aria-label="Main navigation" className="flex items-stretch h-full">
-            {NAV_ITEMS.map(({ to, label, Icon }) => (
+            {navItems.map(({ to, label, Icon }) => (
               <Link
                 key={to}
                 to={to}
@@ -129,6 +140,9 @@ function NavHeader() {
               Guest
             </Badge>
           )}
+          {profile?.impersonation && (
+            <ImpersonationPill impersonation={profile.impersonation} />
+          )}
           <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
             Logout
           </Button>
@@ -142,6 +156,7 @@ function NavHeader() {
 
 function MobileHeader() {
   const location = useLocation();
+  const { data: profile } = useUserProfile();
   const pageTitle = Object.entries(ROUTE_TITLES).find(
     ([path]) => location.pathname.startsWith(path),
   )?.[1] ?? '';
@@ -159,12 +174,20 @@ function MobileHeader() {
         <img src="/icons/logo-128.png" alt="" className="h-11 w-11 self-end -mb-1" aria-hidden="true" />
         FlawChess
       </Link>
-      <span
-        data-testid="mobile-header-page-title"
-        className="text-sm text-muted-foreground"
-      >
-        {pageTitle}
-      </span>
+      <div className="flex items-center gap-2 min-w-0">
+        {profile?.impersonation && (
+          <ImpersonationPill
+            impersonation={profile.impersonation}
+            emailMaxWidthClass="max-w-[8rem]"
+          />
+        )}
+        <span
+          data-testid="mobile-header-page-title"
+          className="text-sm text-muted-foreground"
+        >
+          {pageTitle}
+        </span>
+      </div>
     </header>
   );
 }
@@ -224,6 +247,8 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
   const location = useLocation();
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
+  // D-17: Admin entry surfaced in the More drawer (not the bottom bar) for superusers.
+  const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange} direction="bottom">
@@ -235,7 +260,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
         </DrawerHeader>
         <div className="px-4 pb-4">
           <nav className="flex flex-col gap-1">
-            {NAV_ITEMS.map(({ to, label }) => (
+            {navItems.map(({ to, label }) => (
               <DrawerClose key={to} asChild>
                 <Link
                   to={to}
@@ -321,6 +346,24 @@ function ProtectedLayout() {
   );
 }
 
+// ─── Superuser route guard ────────────────────────────────────────────────────
+
+/**
+ * Redirects non-superusers to /openings (D-18). Profile query loading flicker
+ * falls through to an explicit loading state so we do not briefly show /admin
+ * to someone whose profile has not resolved yet.
+ */
+function SuperuserRoute({ children }: { children: React.ReactNode }) {
+  const { data: profile, isLoading } = useUserProfile();
+  if (isLoading) {
+    return <div className="p-6 text-muted-foreground" data-testid="superuser-route-loading">Loading...</div>;
+  }
+  if (!profile?.is_superuser) {
+    return <Navigate to="/openings" replace />;
+  }
+  return <>{children}</>;
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 function AppRoutes() {
@@ -337,6 +380,10 @@ function AppRoutes() {
   if (restoredForTokenRef.current !== token) {
     restoredForTokenRef.current = token; // eslint-disable-line react-hooks/refs
     hasRestoredRef.current = false; // eslint-disable-line react-hooks/refs
+    // Phase 62: an admin who impersonates swaps their token — their in-flight job
+    // ids belong to the admin, not the target. Drop them so we do not poll 404s.
+    setActiveJobIds([]);
+    setCompletedJobIds(new Set());
   }
 
   const activeJobsQuery = useActiveJobs(!!token);
@@ -399,6 +446,7 @@ function AppRoutes() {
           <Route path="/endgames/*" element={<EndgamesPage />} />
           <Route path="/rating" element={<Navigate to="/global-stats" replace />} />
           <Route path="/global-stats" element={<GlobalStatsPage />} />
+          <Route path="/admin" element={<SuperuserRoute><AdminPage /></SuperuserRoute>} />
         </Route>
         {/* Catch-all redirects to homepage */}
         <Route path="*" element={<Navigate to="/" replace />} />

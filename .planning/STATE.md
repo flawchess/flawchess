@@ -3,24 +3,24 @@ gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Advanced Analytics
 status: executing
-last_updated: "2026-04-16T23:20:00.000Z"
-last_activity: 2026-04-16 -- Completed quick task 260416-w3q
+last_updated: "2026-04-17T18:49:21.722Z"
+last_activity: 2026-04-17
 progress:
-  total_phases: 13
-  completed_phases: 5
-  total_plans: 14
-  completed_plans: 12
-  percent: 86
+  total_phases: 15
+  completed_phases: 6
+  total_plans: 22
+  completed_plans: 18
+  percent: 82
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 60 (Opponent-based baseline for Endgame Conversion & Recovery) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 60
-Last activity: 2026-04-13 -- Phase 60 execution started
+Phase: 999.1
+Plan: Not started
+Status: Ready to execute
+Last activity: 2026-04-17
 
 Progress: [██████████] 100% (4/4 v1.9 phases complete)
 
@@ -43,6 +43,7 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 ### Roadmap Evolution
 
 - Phase 59 added: Fix Endgame Conv/Even/Recov per-game stats so Conv+Even+Recov game counts sum to Games-with-Endgame total; drop obsolete admin-gated gauges + timeline
+- Phase 62 added: Admin user impersonation — superusers can log in as any user, see stats from their perspective, perform any action, with impersonation session ending on logout (no last_login/last_activity updates). New Admin tab hosts impersonation selector and the existing Sentry Error Test section.
 
 ### Decisions
 
@@ -52,6 +53,12 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 - v1.8: Conversion optimization (CONV-01/02/03) deferred to post-launch Future Requirements
 - v1.9 roadmap: Old v1.9 Advanced Analytics phases (49-51) renumbered to 52-54 under v1.10; new v1.9 phases start at 49
 - v1.9 roadmap: Phase 50 (mobile subtab relocation) depends on Phase 49 — subtab placement TBD, needs discussion before planning
+- [Phase 62]: Single auth_backend + ClaimAwareJWTStrategy wrapper — keeps every Depends(current_active_user) call site unchanged
+- [Phase 62]: D-04 nested-impersonation rejection enforced indirectly via current_superuser dep (impersonation token resolves to non-superuser target)
+- [Phase 62]: D-06 last_login freeze satisfied by construction — manual strategy.write_impersonation_token bypasses UserManager.on_after_login
+- [Phase 62-admin-user-impersonation]: shouldFilter=false on cmdk Command is mandatory — disables client-side fuzzy filter so server search results are shown verbatim (T-62-13)
+- [Phase 62-admin-user-impersonation]: knip.json ignores shadcn UI component files (command.tsx, popover.tsx, input-group.tsx) — shadcn ships full library surfaces; project-authored code still fully analyzed
+- [Phase 62-admin-user-impersonation]: Logout button hidden during impersonation (not kept alongside pill) — pill × is sole logout control per D-20; hiding eliminates two-path confusion
 
 ### Pending Todos
 

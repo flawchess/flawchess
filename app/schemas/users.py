@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.schemas.admin import ImpersonationContext
+
 
 class UserProfileResponse(BaseModel):
     """Response for GET/PUT /users/me/profile."""
@@ -17,6 +19,9 @@ class UserProfileResponse(BaseModel):
     last_login: datetime | None
     chess_com_game_count: int
     lichess_game_count: int
+    # D-22: populated when the request's JWT has is_impersonation=true.
+    # Frontend uses this to render the header pill (phase 62).
+    impersonation: ImpersonationContext | None = None
 
 
 class UserProfileUpdate(BaseModel):

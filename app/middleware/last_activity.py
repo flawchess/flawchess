@@ -46,9 +46,9 @@ class LastActivityMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Extract user_id from JWT before processing the request.
+        # Extract user_id + impersonation flag from JWT before processing.
         request = Request(scope)
-        user_id = _extract_user_id(request)
+        user_id, is_impersonation = _extract_user_id_and_impersonation(request)
 
         # Capture the response status code from the response-start message.
         status_code: int | None = None
@@ -63,9 +63,20 @@ class LastActivityMiddleware:
         # (including body) is sent and DI dependency cleanup has completed.
         await self.app(scope, receive, send_wrapper)  # ty: ignore[invalid-argument-type] — send_wrapper matches the ASGI Send protocol
 
+        # D-07: skip last_activity writes for impersonated requests. Without
+        # this, an admin's long impersonation session would silently keep
+        # bumping the target user's activity counter — exposing impersonation
+        # via "active now" spikes and corrupting admin dashboards. CONTEXT.md
+        # D-08 ("last_activity isn't written yet") was stale; commit 2beabd3
+        # wired the writes, and phase 62 adds the impersonation skip here.
         # Now safe to UPDATE the same User row — the route handler's
         # transaction has already committed and released its row lock.
-        if status_code is None or status_code >= 400 or user_id is None:
+        if (
+            status_code is None
+            or status_code >= 400
+            or user_id is None
+            or is_impersonation
+        ):
             return
 
         try:
@@ -88,17 +99,32 @@ class LastActivityMiddleware:
             logger.debug("Failed to update last_activity for user %s", user_id, exc_info=True)
 
 
-def _extract_user_id(request: Request) -> int | None:
-    """Decode JWT from Authorization header and return user_id, or None."""
+def _extract_user_id_and_impersonation(request: Request) -> tuple[int | None, bool]:
+    """Decode JWT from Authorization header and return (user_id, is_impersonation).
+
+    Returns (None, False) for missing/invalid tokens. The is_impersonation flag
+    lets the caller short-circuit D-07: neither the target's nor the admin's
+    last_activity is updated when the request carries an impersonation token.
+    """
     auth_header = request.headers.get("authorization", "")
     if not auth_header.lower().startswith("bearer "):
-        return None
+        return None, False
     token = auth_header[7:]
     try:
         payload = decode_jwt(token, settings.SECRET_KEY, _JWT_AUDIENCE)
         user_id_raw = payload.get("sub")
+        is_imp = bool(payload.get("is_impersonation", False))
         if user_id_raw is not None:
-            return int(user_id_raw)
+            return int(user_id_raw), is_imp
     except Exception:
         pass
-    return None
+    return None, False
+
+
+def _extract_user_id(request: Request) -> int | None:
+    """Decode JWT from Authorization header and return user_id, or None.
+
+    Thin wrapper preserved for existing unit tests in TestExtractUserId.
+    """
+    user_id, _ = _extract_user_id_and_impersonation(request)
+    return user_id
