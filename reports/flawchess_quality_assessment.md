@@ -54,7 +54,7 @@ The data flow is worth stating because it frames the "why" of several design dec
 
 The CLAUDE.md convention "routers do HTTP, services do logic, repositories do SQL" is followed without exceptions in the spot-checks performed.
 
-- **Single shared filter implementation.** `app/repositories/query_utils.py` (78 lines) is the only place that knows how to translate `time_control_bucket=['blitz','rapid'] + rated=true + platform='lichess' + recency='90d'` into `WHERE` clauses. All six repositories (`game`, `endgame`, `openings`, `position_bookmark`, `stats`, `import_job`) import from here. This is exactly the abstraction that the robots-nauman codebase lacks.
+- **Single shared filter implementation.** `app/repositories/query_utils.py` (78 lines) is the only place that knows how to translate `time_control_bucket=['blitz','rapid'] + rated=true + platform='lichess' + recency='90d'` into `WHERE` clauses. All six repositories (`game`, `endgame`, `openings`, `position_bookmark`, `stats`, `import_job`) import from here.
 - **Router prefix discipline.** Every router is declared `APIRouter(prefix="/resource", tags=["resource"])`, with relative paths in the decorators. No accidental `/openings/openings/...` URLs.
 - **Pure-function domain logic.** `services/position_classifier.py` and the endgame classifier in `services/endgame_service.py` (`classify_endgame_class` + `_INT_TO_CLASS` / `_CLASS_TO_INT` enums at lines ≈50-71) are deterministic, side-effect-free, and unit-testable in isolation — `tests/test_position_classifier.py` (496 lines) and `tests/test_endgame_service.py` (885 lines) lean on this.
 
@@ -62,7 +62,7 @@ The CLAUDE.md convention "routers do HTTP, services do logic, repositories do SQ
 
 CLAUDE.md sets a clear rule (lines 228-240): every non-trivial `except` in `app/services/` and `app/routers/` must call `sentry_sdk.capture_exception()`, never embed variables in error messages, use `set_context()` / `set_tag()` for variable data, and capture only on the last retry attempt. The codebase mostly follows this — but coverage is thin.
 
-- **Bare `except:` is zero.** Verified — no bare excepts anywhere in `app/` or `tests/`. Compare this to robots-nauman where it was the dominant idiom.
+- **Bare `except:` is zero.** Verified — no bare excepts anywhere in `app/` or `tests/`.
 - **Only 11 explicit `capture_exception()` sites** across 8.6 k LOC of `app/`:
   ```
   app/routers/auth.py:136,319,391
@@ -78,12 +78,12 @@ CLAUDE.md sets a clear rule (lines 228-240): every non-trivial `except` in `app/
 
 ### 3.3 Secrets and configuration
 
-This is the dimension where the contrast with robots-nauman is starkest — there is nothing to rotate.
+There is nothing to rotate.
 
 - `app/core/config.py:8` sets `SECRET_KEY: str = "change-me-in-production"` as the default. The literal is obviously a placeholder, not a real key, and the production value is loaded from `/opt/flawchess/.env` (CLAUDE.md line 169). No `.env` file is checked in.
 - Google OAuth client ID/secret, database URL, and Sentry DSN all come from environment variables; no fallback contains a live value.
 - `Dockerfile` is a plain multi-stage build with no `ARG`-baked credentials; `deploy/entrypoint.sh` runs `alembic upgrade head` then starts Uvicorn with `--proxy-headers --forwarded-allow-ips='*'` (correct for Caddy reverse-proxying).
-- No 2Captcha-style API keys, no Slack webhooks, no shared user passwords anywhere in the tree.
+- No third-party API keys, no Slack webhooks, no shared user passwords anywhere in the tree.
 
 ### 3.4 Code smells (or lack thereof)
 
@@ -161,7 +161,7 @@ These are concrete improvements, not blockers — there is nothing in this codeb
 
 ## 5. What's Notably Good
 
-The reference robots-nauman report had nothing positive to say. This codebase deserves the opposite treatment, because several of the patterns here are worth keeping — and worth copying into other projects:
+Several of the patterns here are worth keeping — and worth copying into other projects:
 
 - **Zobrist-hash position matching** as the central architectural bet is the right call: it converts an open-ended position-comparison problem into an indexed BIGINT equality lookup, and the schema, indexes, and import pipeline are all built around making that bet pay off.
 - **`apply_game_filters()` as the single filter source of truth** prevents exactly the kind of drift that bites every multi-repository codebase eventually.
@@ -197,4 +197,4 @@ The reference robots-nauman report had nothing positive to say. This codebase de
 
 ## 7. Bottom Line
 
-FlawChess is the inverse of robots-nauman: a codebase a reviewer can read top-to-bottom in a morning and walk away from with confidence. The architectural bets (Zobrist hashing, async FastAPI + asyncpg, FastAPI-Users for auth) are sensible; the engineering discipline (real-DB tests, `ty` + `knip` in CI, FK-mandatory schema, no checked-in secrets, OAuth CVE patched) is at the level you'd expect from a production team rather than a single maintainer. There is no rewrite hiding in here, no class of issues that require an emergency response, and no design decision that visibly needs to be reversed. The remaining work is **observability polish + a handful of missing tests** — the kind of "make a good thing better" backlog that most projects would be lucky to be left with.
+FlawChess is a codebase a reviewer can read top-to-bottom in a morning and walk away from with confidence. The architectural bets (Zobrist hashing, async FastAPI + asyncpg, FastAPI-Users for auth) are sensible; the engineering discipline (real-DB tests, `ty` + `knip` in CI, FK-mandatory schema, no checked-in secrets, OAuth CVE patched) is at the level you'd expect from a production team rather than a single maintainer. There is no rewrite hiding in here, no class of issues that require an emergency response, and no design decision that visibly needs to be reversed. The remaining work is **observability polish + a handful of missing tests** — the kind of "make a good thing better" backlog that most projects would be lucky to be left with.
