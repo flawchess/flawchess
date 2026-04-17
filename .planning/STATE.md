@@ -57,6 +57,13 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
+- **Flesh out Section 1 Milestones in generative AI** (docs) — narrative throughline for BA workshop agentic-engineering doc
+- **Flesh out Section 3 FlawChess demo codebase** (docs) — add LOC/table/test counts + screenshot for 8-min workshop slot
+- **Flesh out GSD sections 5.1 and 5.2** (docs) — expand why-structure and pick a specific phase for artifact walk-through
+- **Fix Section 4 time budget math mismatch** (docs) — subsections sum to 32 min but TOC says 35
+- **Resolve Karpathy agentic engineering attribution** (docs) — find primary source or soften the claim before presenting
+- **Add visual direction for slide generation** (docs) — screenshots/diagrams/terminal recordings per section
+- **Mark slide breaks and separate speaker notes** (docs) — split SLIDE vs SPEAKER NOTES for deterministic deck gen
 
 ### Blockers/Concerns
 
