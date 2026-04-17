@@ -3,24 +3,24 @@ gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Advanced Analytics
 status: executing
-last_updated: "2026-04-17T17:08:06.761Z"
-last_activity: 2026-04-17 -- Phase 62 planning complete
+last_updated: "2026-04-17T17:17:35.912Z"
+last_activity: 2026-04-17
 progress:
   total_phases: 15
   completed_phases: 5
   total_plans: 22
-  completed_plans: 13
-  percent: 59
+  completed_plans: 14
+  percent: 64
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 60 (Opponent-based baseline for Endgame Conversion & Recovery) — EXECUTING
-Plan: 1 of 2
+Phase: 62 (admin-user-impersonation) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-04-17 -- Phase 62 planning complete
+Last activity: 2026-04-17
 
 Progress: [██████████] 100% (4/4 v1.9 phases complete)
 
@@ -53,6 +53,9 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 - v1.8: Conversion optimization (CONV-01/02/03) deferred to post-launch Future Requirements
 - v1.9 roadmap: Old v1.9 Advanced Analytics phases (49-51) renumbered to 52-54 under v1.10; new v1.9 phases start at 49
 - v1.9 roadmap: Phase 50 (mobile subtab relocation) depends on Phase 49 — subtab placement TBD, needs discussion before planning
+- [Phase 62]: Single auth_backend + ClaimAwareJWTStrategy wrapper — keeps every Depends(current_active_user) call site unchanged
+- [Phase 62]: D-04 nested-impersonation rejection enforced indirectly via current_superuser dep (impersonation token resolves to non-superuser target)
+- [Phase 62]: D-06 last_login freeze satisfied by construction — manual strategy.write_impersonation_token bypasses UserManager.on_after_login
 
 ### Pending Todos
 

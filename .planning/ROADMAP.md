@@ -425,10 +425,10 @@ Plans:
 
 **Requirements**: D-01..D-23 (see .planning/phases/62-admin-user-impersonation/62-CONTEXT.md)
 **Depends on:** Phase 61
-**Plans:** 5 plans
+**Plans:** 1/5 plans executed
 
 Plans:
-- [ ] 62-01-PLAN.md — Backend: ClaimAwareJWTStrategy + ImpersonationJWTStrategy + POST /admin/impersonate + guards (D-01..D-06, D-23)
+- [x] 62-01-PLAN.md — Backend: ClaimAwareJWTStrategy + ImpersonationJWTStrategy + POST /admin/impersonate + guards (D-01..D-06, D-23)
 - [ ] 62-02-PLAN.md — Backend: GET /admin/users/search + last_activity skip + /users/me/profile impersonation field (D-07, D-12, D-13, D-22)
 - [ ] 62-03-PLAN.md — Frontend: shadcn Command+Popover install + theme tokens + UserProfile types + useAuth.impersonate + isImpersonating helper (D-09, D-22)
 - [ ] 62-04-PLAN.md — Frontend: Admin page + ImpersonationSelector + SentryTestButtons relocation + /admin route + superuser-gated nav (D-12..D-14, D-16..D-19)
