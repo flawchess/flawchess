@@ -1,9 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
-import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { apiClient } from '@/api/client';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Tooltip } from '@/components/ui/tooltip';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -12,77 +10,7 @@ import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
 import { RatingChart } from '@/components/stats/RatingChart';
-import { useUserProfile } from '@/hooks/useUserProfile';
 import type { FilterState } from '@/components/filters/FilterPanel';
-
-// ── Admin-only: Sentry error path test ───────────────────────────────────────
-// Tests three error paths: event handler, TanStack Query, and React render.
-function SentryTestButtons() {
-  const [shouldCrash, setShouldCrash] = useState(false);
-  const [tqEnabled, setTqEnabled] = useState(false);
-
-  // TanStack Query error — fires only when enabled
-  useQuery({
-    queryKey: ['sentry-test-tq-error'],
-    queryFn: async () => { throw new Error('[Sentry Test] TanStack Query error'); },
-    enabled: tqEnabled,
-    retry: false,
-  });
-
-  // React render error — triggers ErrorBoundary + Sentry
-  if (shouldCrash) {
-    throw new Error('[Sentry Test] React render error');
-  }
-
-  return (
-    <div className="charcoal-texture rounded-md p-4 space-y-2">
-      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-        Sentry Error Test (temporary)
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="destructive"
-          data-testid="btn-sentry-test-event"
-          onClick={() => { throw new Error('[Sentry Test] Event handler error'); }}
-        >
-          Event handler error
-        </Button>
-        <Button
-          size="sm"
-          variant="destructive"
-          data-testid="btn-sentry-test-tq"
-          onClick={() => setTqEnabled(true)}
-        >
-          TanStack Query error
-        </Button>
-        <Button
-          size="sm"
-          variant="destructive"
-          data-testid="btn-sentry-test-render"
-          onClick={() => setShouldCrash(true)}
-        >
-          React render error
-        </Button>
-        <Button
-          size="sm"
-          variant="destructive"
-          data-testid="btn-sentry-test-backend"
-          onClick={() => apiClient.post('/users/sentry-test-error')}
-        >
-          Backend error
-        </Button>
-      </div>
-    </div>
-  );
-}
-// ── END Sentry test ──────────────────────────────────────────────────────────
-
-function AdminTools() {
-  const { data: profile } = useUserProfile();
-  if (!profile?.is_superuser) return null;
-  return <SentryTestButtons />;
-}
 
 export function GlobalStatsPage() {
   // Filter state shared across pages — GlobalStats only uses recency + platforms
@@ -166,8 +94,6 @@ export function GlobalStatsPage() {
           byColor={globalStats?.by_color ?? []}
         />
       </div>
-
-      <AdminTools />
     </div>
   );
 
