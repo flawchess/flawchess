@@ -10,5 +10,11 @@
     "tailwindcss-safe-area",
     "tw-animate-css"
   ],
+  "ignoreExportsUsedInFile": true,
+  "ignore": [
+    "src/components/ui/command.tsx",
+    "src/components/ui/popover.tsx",
+    "src/components/ui/input-group.tsx"
+  ],
   "ignoreBinaries": ["cloudflared"]
 }
