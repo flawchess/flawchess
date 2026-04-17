@@ -312,8 +312,7 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          How your clock at endgame entry compares to your opponent&apos;s, rolling
-          over the last {window} games.
+          Has your time management improved, or are you still falling behind on the clock by the endgame?
         </p>
       </div>
       <div className={isMobile ? '' : 'flex items-stretch'}>
