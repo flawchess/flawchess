@@ -36,7 +36,7 @@ Out of scope (tracked below as deferred):
 
 ### last_login / last_activity suppression
 - **D-06:** `UserManager.on_after_login` must **not** update `last_login` when the login flow originates from impersonation. Since impersonation does not go through the standard login endpoint but through `/admin/impersonate`, the simplest implementation is: do NOT call `on_after_login` from the impersonation path, and only write `last_login` inside the existing login + OAuth flows.
-- **D-07:** Any future `last_activity` tracking must read `is_impersonation` from the JWT and skip the write when true. Add a helper (e.g. `is_impersonation_request(user, request)`) and document it so later phases don't regress this.
+- **D-07:** `last_activity` IS already tracked today via `LastActivityMiddleware` at `app/middleware/last_activity.py` (commit 2beabd3, 2026-04-12) — flagged by research after CONTEXT.md was first drafted. The middleware must be modified in THIS phase to skip the write when the request's JWT has `is_impersonation=true`. One-line change in `_extract_user_id` or equivalent. Not deferrable.
 - **D-08:** We do NOT track the admin's own `last_activity` during impersonation in this phase. Deferred.
 
 ### Session lifecycle
