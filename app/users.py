@@ -1,11 +1,29 @@
-"""FastAPI-Users configuration: UserManager, auth backend, and dependencies."""
+"""FastAPI-Users configuration: UserManager, auth backend, and dependencies.
 
+Phase 62 adds two JWT strategies on top of the default:
+
+- `ImpersonationJWTStrategy` — issues + validates 1h tokens carrying
+  `act_as` / `admin_id` / `is_impersonation` claims. `read_token` re-validates
+  on every request that the admin is still a superuser and the target is still
+  a non-superuser.
+- `ClaimAwareJWTStrategy` — single wrapper strategy wired into `auth_backend`.
+  Peeks at the `is_impersonation` claim and dispatches to the impersonation
+  strategy; otherwise falls back to the default 7-day JWT. This keeps every
+  downstream `Depends(current_active_user)` signature unchanged: the returned
+  User is the impersonated target when an impersonation token is presented.
+"""
+
+import base64
+import json
 from collections.abc import AsyncGenerator
+from typing import Any
 
+import jwt as pyjwt
 from fastapi import Depends, Request, Response
 from fastapi_users import BaseUserManager, FastAPIUsers, IntegerIDMixin
 from fastapi_users.authentication import AuthenticationBackend, BearerTransport, JWTStrategy
 from fastapi_users.db import SQLAlchemyUserDatabase
+from fastapi_users.jwt import decode_jwt, generate_jwt
 from httpx_oauth.clients.google import GoogleOAuth2
 from sqlalchemy import func, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -96,10 +114,134 @@ def get_guest_jwt_strategy() -> JWTStrategy:
     return JWTStrategy(secret=settings.SECRET_KEY, lifetime_seconds=_GUEST_JWT_LIFETIME_SECONDS)
 
 
+# D-03: 1 hour — deliberately short to minimize blast radius of a leaked
+# impersonation token. No server-side revocation, TTL is the bound.
+_IMPERSONATION_JWT_LIFETIME_SECONDS = 3600
+
+
+class ImpersonationJWTStrategy(JWTStrategy[User, int]):
+    """Issues + validates impersonation JWTs.
+
+    Additional claims on top of the default `sub` and `aud`:
+      - `act_as` — the impersonated user id (mirrors `sub` for clarity)
+      - `admin_id` — the superuser who initiated the impersonation
+      - `is_impersonation` — dispatch flag, must be `True` on every issued token
+
+    `read_token` re-validates on every request that:
+      - admin is still active and `is_superuser=True` (D-02)
+      - target is still active and `is_superuser=False` (D-05 re-enforced)
+    """
+
+    async def write_impersonation_token(self, admin: User, target: User) -> str:
+        """Issue a new impersonation JWT for `admin` to act as `target`.
+
+        Does NOT call UserManager.on_after_login — bypasses `last_login` writes
+        on both users by construction (D-06).
+        """
+        data: dict[str, Any] = {
+            "sub": str(target.id),
+            "aud": self.token_audience,
+            "act_as": target.id,
+            "admin_id": admin.id,
+            "is_impersonation": True,
+        }
+        return generate_jwt(
+            data, self.encode_key, self.lifetime_seconds, algorithm=self.algorithm
+        )
+
+    async def read_token(
+        self,
+        token: str | None,
+        user_manager: BaseUserManager[User, int],
+    ) -> User | None:
+        if token is None:
+            return None
+        try:
+            data = decode_jwt(
+                token, self.decode_key, self.token_audience, algorithms=[self.algorithm]
+            )
+        except pyjwt.PyJWTError:
+            return None
+        if not data.get("is_impersonation"):
+            # Defense in depth: should never reach here via ClaimAwareJWTStrategy,
+            # but fall through to the default behavior if somehow a non-impersonation
+            # token reaches this strategy directly.
+            return await super().read_token(token, user_manager)
+
+        admin_id = data.get("admin_id")
+        act_as = data.get("act_as")
+        if admin_id is None or act_as is None:
+            return None
+
+        # D-02: re-validate admin is still a superuser on EVERY request.
+        # user_db.get returns Optional[User] for missing/deleted users.
+        admin = await user_manager.user_db.get(int(admin_id))
+        if admin is None or not admin.is_active or not admin.is_superuser:
+            return None
+
+        # D-05 re-enforced: target must still exist, be active, and NOT be a superuser.
+        target = await user_manager.user_db.get(int(act_as))
+        if target is None or not target.is_active or target.is_superuser:
+            return None
+
+        return target
+
+
+def get_impersonation_jwt_strategy() -> ImpersonationJWTStrategy:
+    return ImpersonationJWTStrategy(
+        secret=settings.SECRET_KEY,
+        lifetime_seconds=_IMPERSONATION_JWT_LIFETIME_SECONDS,
+    )
+
+
+def _peek_is_impersonation(token: str | None) -> bool:
+    """Unverified peek at a JWT payload to choose a strategy.
+
+    Signature validation still happens inside the chosen strategy's read_token —
+    this peek is only used for claim-based dispatch. A token tampered to set
+    `is_impersonation=True` without a valid signature fails later validation.
+    """
+    if not token:
+        return False
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return False
+        payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+        return bool(payload.get("is_impersonation"))
+    except Exception:
+        return False
+
+
+class ClaimAwareJWTStrategy(JWTStrategy[User, int]):
+    """Single strategy that routes per-token to ImpersonationJWTStrategy when
+    the `is_impersonation` claim is present. Keeps every downstream
+    `Depends(current_active_user)` unchanged — returns the impersonated target
+    user transparently for impersonation tokens, and the authenticated user
+    otherwise.
+    """
+
+    _impersonation = get_impersonation_jwt_strategy()
+
+    async def read_token(
+        self,
+        token: str | None,
+        user_manager: BaseUserManager[User, int],
+    ) -> User | None:
+        if _peek_is_impersonation(token):
+            return await self._impersonation.read_token(token, user_manager)
+        return await super().read_token(token, user_manager)
+
+
+def get_claim_aware_jwt_strategy() -> ClaimAwareJWTStrategy:
+    return ClaimAwareJWTStrategy(secret=settings.SECRET_KEY, lifetime_seconds=604800)
+
+
 auth_backend = AuthenticationBackend(
     name="jwt",
     transport=bearer_transport,
-    get_strategy=get_jwt_strategy,
+    get_strategy=get_claim_aware_jwt_strategy,
 )
 
 # ---------------------------------------------------------------------------
@@ -109,7 +251,14 @@ auth_backend = AuthenticationBackend(
 fastapi_users = FastAPIUsers[User, int](get_user_manager, [auth_backend])
 
 # ---------------------------------------------------------------------------
-# Current user dependency
+# Current user dependencies
 # ---------------------------------------------------------------------------
 
 current_active_user = fastapi_users.current_user(active=True)
+
+# Used by /admin/* endpoints (D-04/D-05 auth gate).
+# Note: when the caller holds an impersonation token, ClaimAwareJWTStrategy
+# returns the TARGET (non-superuser) user. The `superuser=True` dep then 403s,
+# which naturally enforces D-04 (nested impersonation rejected) without any
+# extra raw-token inspection in the endpoint.
+current_superuser = fastapi_users.current_user(active=True, superuser=True)
