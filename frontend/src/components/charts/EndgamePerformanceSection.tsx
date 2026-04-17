@@ -32,18 +32,18 @@ interface EndgamePerformanceSectionProps {
 }
 
 // Neutral zone around zero for the endgame-vs-non-endgame score difference
-// bullet chart: ±0.05 marks near-parity between the two splits.
-const SCORE_DIFF_NEUTRAL_MIN = -0.05;
-const SCORE_DIFF_NEUTRAL_MAX = 0.05;
+// bullet chart: ±0.10 marks near-parity between the two splits.
+const SCORE_DIFF_NEUTRAL_MIN = -0.10;
+const SCORE_DIFF_NEUTRAL_MAX = 0.10;
 
 // Bullet domain half-width for this metric. Population p05/p95 spans ~±0.16
 // (see reports/benchmarks-2026-04-16.md §1), so ±0.20 covers the observed
 // range without making typical values look tiny against the default ±0.40.
 const SCORE_DIFF_DOMAIN = 0.20;
 
-// Score-diff timeline (quick-260417-o2l): plot in percentage points (0.05 -> 5).
-// Zone band ±5 pp matches the table bullet chart's parity neutral threshold.
-const SCORE_DIFF_TIMELINE_NEUTRAL_PCT = 5;
+// Score-diff timeline (quick-260417-o2l): plot in percentage points (0.10 -> 10).
+// Zone band ±10 pp matches the table bullet chart's parity neutral threshold.
+const SCORE_DIFF_TIMELINE_NEUTRAL_PCT = 10;
 const SCORE_DIFF_TIMELINE_Y_DOMAIN: [number, number] = [-20, 20];
 const SCORE_DIFF_TIMELINE_Y_TICKS = [-20, -10, 0, 10, 20];
 const SCORE_DIFF_TIMELINE_ZONE_OPACITY = 0.15;
