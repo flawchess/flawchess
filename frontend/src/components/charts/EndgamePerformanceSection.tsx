@@ -44,8 +44,8 @@ const SCORE_DIFF_DOMAIN = 0.20;
 // Score-diff timeline (quick-260417-o2l): plot in percentage points (0.10 -> 10).
 // Zone band ±10 pp matches the table bullet chart's parity neutral threshold.
 const SCORE_DIFF_TIMELINE_NEUTRAL_PCT = 10;
-const SCORE_DIFF_TIMELINE_Y_DOMAIN: [number, number] = [-20, 20];
-const SCORE_DIFF_TIMELINE_Y_TICKS = [-20, -10, 0, 10, 20];
+const SCORE_DIFF_TIMELINE_Y_DOMAIN: [number, number] = [-30, 30];
+const SCORE_DIFF_TIMELINE_Y_TICKS = [-30, -20, -10, 0, 10, 20, 30];
 const SCORE_DIFF_TIMELINE_ZONE_OPACITY = 0.15;
 const MOBILE_BREAKPOINT_PX = 768;
 
