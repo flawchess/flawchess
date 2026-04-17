@@ -70,3 +70,10 @@ export const FILTER_MODIFIED_DOT = 'oklch(0.55 0.08 55)'; // brand brown mid
 export const MY_SCORE_COLOR = 'oklch(0.55 0.18 260)';
 // Red for opponent's score line — same as WDL_LOSS
 export const OPP_SCORE_COLOR = WDL_LOSS;
+
+// Phase 62 — Impersonation pill.
+// Orange (hue ~40) — distinct from amber Guest badge (hue ~80) and WDL_LOSS (hue ~25).
+// Semantic: "elevated state, admin attention"; must read legibly on dark surface.
+export const IMPERSONATION_PILL_BG = 'oklch(0.50 0.18 40)';
+export const IMPERSONATION_PILL_FG = 'oklch(0.95 0.02 40)';
+export const IMPERSONATION_PILL_BORDER = 'oklch(0.60 0.18 40)';
