@@ -79,7 +79,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
             <InfoPopover ariaLabel="Games with vs without Endgame info" testId="perf-section-info" side="top">
               <div className="space-y-2">
                 <p>Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not. Only endgames that span at least 3 full moves (6 half-moves) are counted. Shorter tactical transitions from middlegame into a checkmate are treated as &quot;no endgame&quot;.</p>
-                <p>The Score % Diff column shows the signed gap between your endgame Score % and non-endgame Score % (green = endgame stronger, red = endgame weaker, blue = near parity).</p>
+                <p>The <strong>Score % Difference</strong> column shows the signed gap between your endgame Score % and non-endgame Score % (green = endgame stronger, red = endgame weaker, blue = near parity).</p>
               </div>
             </InfoPopover>
           </span>
@@ -108,7 +108,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
               <th className="py-1 px-2 font-medium text-right">Games</th>
               <th className="py-1 px-2 font-medium">Win / Draw / Loss</th>
               <th className="py-1 px-2 font-medium text-right">Score %</th>
-              <th className="py-1 px-2 font-medium">Score % Diff</th>
+              <th className="py-1 px-2 font-medium">Score % Difference</th>
             </tr>
           </thead>
           <tbody>
@@ -200,7 +200,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
             data-testid="score-gap-difference-mobile"
           >
             <div className="flex items-baseline justify-between">
-              <div className="text-sm font-medium">Score % Diff</div>
+              <div className="text-sm font-medium">Score % Difference</div>
               <div className="text-sm tabular-nums">
                 <span className="font-semibold" style={{ color: diffColor }}>{diffFormatted}</span>
               </div>
