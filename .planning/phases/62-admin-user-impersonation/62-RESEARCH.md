@@ -888,22 +888,26 @@ No new DB columns, no index changes.
 | A5 | shadcn `Command` with `shouldFilter={false}` disables built-in filtering | Searchable combobox | [CITED: cmdk docs via shadcn] — low risk |
 | A6 | `request.state` is writable by a strategy during `read_token` to pass impersonation context to downstream handlers | Frontend auth swap | [ASSUMED] — alternative is re-decoding token in the `/users/me/profile` handler directly, which is simpler but duplicates parsing. Plan should pick one. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **How should `profile.impersonation` be populated?**
    - Option A: Add a tiny FastAPI dependency `get_impersonation_context(request)` that re-decodes the raw token and returns the context; inject it into `/users/me/profile`. Simplest.
    - Option B: Have `ClaimAwareJWTStrategy.read_token` set `request.state.impersonation = {...}` when applicable; `/users/me/profile` reads from state. Avoids double decode but couples strategy to Request.
    - **Recommendation:** Option A. Decode cost is negligible; code is easier to read.
+   - **RESOLVED:** Option A — implemented in Plan 02 Task 4 (`get_impersonation_context` dep in `app/routers/users.py`).
 
 2. **Where exactly to hide the desktop Logout button during impersonation?**
    - Per D-20 the pill × is the logout control. If we keep a second Logout button, users have two ways to end the session, which is fine but slightly noisy.
    - **Recommendation:** Hide `<Button variant="ghost" onClick={logout}>Logout</Button>` in `NavHeader` when `profile?.impersonation` is truthy. Mobile More drawer's Logout item should stay hidden too.
+   - **RESOLVED:** Hide both — desktop Logout button AND mobile More drawer Logout item are hidden when `profile.impersonation` is non-null. Implemented in Plan 05.
 
 3. **Should the Admin tab have an icon?**
    - CONTEXT.md D-16 does not specify. Existing desktop nav uses an icon per tab (`DownloadIcon`, `BookOpenIcon`, etc.). Pick `ShieldIcon` from `lucide-react` for consistency.
+   - **RESOLVED:** Use `ShieldIcon` from `lucide-react`. Implemented in Plan 04 Task 4.
 
 4. **`ty` compliance for the `or_(..., User.id == int(q) if q.isdigit() else False)` pattern**
    - Mixing ColumnElement with a bare `False` will make `ty` grumble. Use `sa.false()` or wrap the numeric branch behind a runtime `if` building a different `or_` clause.
+   - **RESOLVED:** Build the `or_` clause list conditionally — `sa.false()` with `sa.func` when needed. Implemented in Plan 02 Task 2 (`admin_service.search_users`).
 
 ## Environment Availability
 
@@ -1000,11 +1004,11 @@ Nothing blocks execution.
 | Testing | HIGH | Existing pytest + vitest wiring; no new framework |
 | Security | HIGH | All controls map to existing fastapi-users primitives; no hand-rolled crypto |
 
-### Open Questions (surfaced for the planner)
-1. `profile.impersonation` source: FastAPI dep re-decode vs. `request.state` set by strategy. Recommendation: dep re-decode (Option A).
-2. Hide desktop Logout button during impersonation? Recommendation: yes, pill × is the sole logout.
-3. Admin tab icon: `ShieldIcon` from lucide-react for consistency.
-4. `ty` complaint on `or_(..., User.id == int(q) if q.isdigit() else False)` — use `sa.false()` or conditional clause building.
+### Open Questions (RESOLVED — surfaced for the planner)
+1. `profile.impersonation` source: FastAPI dep re-decode vs. `request.state` set by strategy. Recommendation: dep re-decode (Option A). — RESOLVED: Option A, Plan 02 Task 4.
+2. Hide desktop Logout button during impersonation? Recommendation: yes, pill × is the sole logout. — RESOLVED: yes, hide on desktop AND mobile More drawer, Plan 05.
+3. Admin tab icon: `ShieldIcon` from lucide-react for consistency. — RESOLVED: `ShieldIcon`, Plan 04 Task 4.
+4. `ty` complaint on `or_(..., User.id == int(q) if q.isdigit() else False)` — use `sa.false()` or conditional clause building. — RESOLVED: conditional clause list with `sa.false()`, Plan 02 Task 2.
 
 ### Ready for Planning
 Research complete. One important flag: CONTEXT.md D-08 contains a stale claim about `last_activity` not being written yet. Planner should include `app/middleware/last_activity.py` modifications in this phase's scope, not defer.
