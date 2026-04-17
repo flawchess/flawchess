@@ -125,12 +125,13 @@ class TestOAuthCSRFCallback:
         state = make_state_jwt("token_a")
 
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            cookies={_CSRF_COOKIE: "token_b"},
         ) as client:
             resp = await client.get(
                 "/api/auth/google/callback",
                 params={"code": "fakecode", "state": state},
-                cookies={_CSRF_COOKIE: "token_b"},
             )
 
         assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
@@ -145,12 +146,13 @@ class TestOAuthCSRFCallback:
         CSRF validation is not reached — the JWT decode fails first.
         """
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            cookies={_CSRF_COOKIE: "any_cookie_value"},
         ) as client:
             resp = await client.get(
                 "/api/auth/google/callback",
                 params={"code": "fakecode", "state": "this.is.garbage"},
-                cookies={_CSRF_COOKIE: "any_cookie_value"},
             )
 
         assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
@@ -169,12 +171,13 @@ class TestOAuthCSRFCallback:
         state = make_state_jwt("expired_token", lifetime_seconds=-1)
 
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            cookies={_CSRF_COOKIE: "expired_token"},
         ) as client:
             resp = await client.get(
                 "/api/auth/google/callback",
                 params={"code": "fakecode", "state": state},
-                cookies={_CSRF_COOKIE: "expired_token"},
             )
 
         assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"

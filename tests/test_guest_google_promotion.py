@@ -340,7 +340,9 @@ class TestCallbackPromote:
         account_email = unique_email("cbpromoted")
 
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            cookies={_CSRF_COOKIE: csrf_token},
         ) as client:
             # Create a guest user
             guest_resp = await client.post("/api/auth/guest/create")
@@ -362,7 +364,6 @@ class TestCallbackPromote:
                 resp = await client.get(
                     "/api/auth/google/callback-promote",
                     params={"code": "fake_code", "state": state},
-                    cookies={_CSRF_COOKIE: csrf_token},
                     follow_redirects=False,
                 )
 
@@ -397,7 +398,9 @@ class TestCallbackPromote:
         existing_email = unique_email("collision_target")
 
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            cookies={_CSRF_COOKIE: csrf_token},
         ) as client:
             # Register the email on a different account first
             await register_user(client, existing_email, "password123")
@@ -421,7 +424,6 @@ class TestCallbackPromote:
                 resp = await client.get(
                     "/api/auth/google/callback-promote",
                     params={"code": "fake_code", "state": state},
-                    cookies={_CSRF_COOKIE: csrf_token},
                     follow_redirects=False,
                 )
 
@@ -438,7 +440,9 @@ class TestCallbackPromote:
         csrf_in_cookie = "csrf_different_value"
 
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            cookies={_CSRF_COOKIE: csrf_in_cookie},
         ) as client:
             # Create a guest user for a valid guest_user_id
             guest_resp = await client.post("/api/auth/guest/create")
@@ -451,7 +455,6 @@ class TestCallbackPromote:
             resp = await client.get(
                 "/api/auth/google/callback-promote",
                 params={"code": "fake_code", "state": state},
-                cookies={_CSRF_COOKIE: csrf_in_cookie},
                 follow_redirects=False,
             )
 
@@ -468,7 +471,9 @@ class TestCallbackPromote:
         csrf_token = "csrf_wrong_audience"
 
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            cookies={_CSRF_COOKIE: csrf_token},
         ) as client:
             guest_resp = await client.post("/api/auth/guest/create")
             guest_token = guest_resp.json()["access_token"]
@@ -487,7 +492,6 @@ class TestCallbackPromote:
             resp = await client.get(
                 "/api/auth/google/callback-promote",
                 params={"code": "fake_code", "state": wrong_state},
-                cookies={_CSRF_COOKIE: csrf_token},
                 follow_redirects=False,
             )
 

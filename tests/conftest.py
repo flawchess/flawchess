@@ -6,6 +6,11 @@ import os
 # (e.g. mocked ValueError in import tests) leak to the real Sentry project.
 os.environ["SENTRY_DSN"] = ""
 
+# Use a full-length (32-byte) SECRET_KEY for tests so PyJWT does not emit
+# InsecureKeyLengthWarning on every encode/decode. The production default
+# "change-me-in-production" is 23 bytes, below RFC 7518 §3.2 minimum for HS256.
+os.environ["SECRET_KEY"] = "test-secret-key-32-bytes-exactly-ok-for-hs256-tests"
+
 import chess
 import pytest
 import pytest_asyncio
