@@ -24,5 +24,16 @@
   "statusLine": {
     "type": "command",
     "command": "node ~/.claude/hooks/gsd-statusline.js"
+  },
+  "extraKnownMarketplaces": {
+    "aimfeld": {
+      "source": {
+        "source": "github",
+        "repo": "aimfeld/claude-plugins"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "codebase-audit@aimfeld": true
   }
 }
