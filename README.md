@@ -104,6 +104,18 @@ cd frontend && npm run lint   # Frontend lint
 
 The CI pipeline runs these in order: ruff (lint) → [ty](https://github.com/astral-sh/ty) (type check) → pytest (tests). All three must pass.
 
+## Backups & Recovery
+
+The production VM is backed up by Hetzner's **automatic daily whole-server backup** feature with a 7-day rolling retention. Snapshots are managed by Hetzner and stored off the VM — a full disk loss can be recovered from the previous day's snapshot via the Hetzner Cloud Console.
+
+- **Frequency:** daily, managed by Hetzner
+- **Retention:** 7 days (rolling)
+- **Scope:** full server image (PostgreSQL data volume included)
+- **RPO:** up to 24 hours
+- **PITR:** not enabled (point-in-time recovery would require WAL archiving in addition to the daily snapshot)
+
+For deeper data-corruption scenarios that slip past 7 days (e.g. a silent bug that corrupts rows across weeks), a logical `pg_dump` retained separately would be a useful second layer but is not currently configured.
+
 ## Contributing
 
 Contributions are welcome. Please open an issue to discuss a feature or bug before submitting a pull request — this keeps effort aligned and avoids duplicate work.
