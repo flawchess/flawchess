@@ -16,10 +16,10 @@ interface Props {
 
 /**
  * Header pill shown when the authenticated request is an impersonation session.
- * The × is the SOLE logout control during impersonation (D-20): clicking it
- * calls useAuth().logout which clears the token and redirects to the login
- * screen. Per D-21, this pill is the only visual indicator — no banner, no
- * sticky-layout displacement, no tab title change.
+ * The × ends the impersonation session (calls useAuth().logout which clears the
+ * token and redirects to the login screen). Shown alongside the regular Logout
+ * button so the user always has a way to sign out — the pill is not always
+ * visible on mobile (title takes precedence when space is tight).
  */
 export function ImpersonationPill({ impersonation, emailMaxWidthClass = 'max-w-[12rem]' }: Props) {
   const { logout } = useAuth();
@@ -29,6 +29,7 @@ export function ImpersonationPill({ impersonation, emailMaxWidthClass = 'max-w-[
       role="status"
       aria-live="polite"
       data-testid="impersonation-pill"
+      aria-label={`Impersonating ${impersonation.target_email}`}
       className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium"
       style={{
         backgroundColor: IMPERSONATION_PILL_BG,
@@ -37,7 +38,7 @@ export function ImpersonationPill({ impersonation, emailMaxWidthClass = 'max-w-[
       }}
     >
       <span className={`truncate ${emailMaxWidthClass}`}>
-        Impersonating {impersonation.target_email}
+        {impersonation.target_email}
       </span>
       <button
         type="button"

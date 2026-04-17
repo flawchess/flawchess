@@ -19,7 +19,6 @@ import { apiClient } from '@/api/client';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
 import { ImpersonationPill } from '@/components/admin/ImpersonationPill';
-import { isImpersonating } from '@/lib/impersonation';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { AuthPage } from '@/pages/Auth';
 import { HomePage } from '@/pages/Home';
@@ -144,11 +143,9 @@ function NavHeader() {
           {profile?.impersonation && (
             <ImpersonationPill impersonation={profile.impersonation} />
           )}
-          {!isImpersonating(profile) && (
-            <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
-              Logout
-            </Button>
-          )}
+          <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
+            Logout
+          </Button>
         </div>
       </div>
     </header>
@@ -278,21 +275,17 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
               </DrawerClose>
             ))}
           </nav>
-          {!isImpersonating(profile) && (
-            <>
-              <div className="my-2 border-t border-border" />
-              <DrawerClose asChild>
-                <button
-                  onClick={logout}
-                  data-testid="drawer-logout"
-                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-base text-destructive"
-                >
-                  <LogOutIcon className="h-4 w-4" />
-                  Logout
-                </button>
-              </DrawerClose>
-            </>
-          )}
+          <div className="my-2 border-t border-border" />
+          <DrawerClose asChild>
+            <button
+              onClick={logout}
+              data-testid="drawer-logout"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-base text-destructive"
+            >
+              <LogOutIcon className="h-4 w-4" />
+              Logout
+            </button>
+          </DrawerClose>
         </div>
       </DrawerContent>
     </Drawer>
