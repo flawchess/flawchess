@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/react';
 import { queryClient } from '@/lib/queryClient';
 import { apiClient } from '@/api/client';
 import type { GuestCreateResponse, LoginResponse, UserResponse } from '@/types/api';
+import type { ImpersonateResponse } from '@/types/admin';
 
 const GUEST_TOKEN_KEY = 'guest_token';
 
@@ -18,6 +19,14 @@ interface AuthState {
   refreshAuthToken: (token: string) => void;
   loginAsGuest: () => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
+  /**
+   * Start an impersonation session as a superuser.
+   * Calls POST /api/admin/impersonate/{userId}, swaps the stored token, clears
+   * TanStack Query cache so no admin-scoped data leaks, and updates context
+   * state. Token ordering mirrors `login` — store FIRST, clear AFTER, set state
+   * LAST (see login bug-fix comment).
+   */
+  impersonate: (userId: number) => Promise<void>;
   logout: () => void;
   /** Clear auth state without redirect — used when a guest navigates to the register page. */
   logoutForPromotion: () => void;
@@ -80,6 +89,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshAuthToken = useCallback((externalToken: string): void => {
     localStorage.setItem('auth_token', externalToken);
     setToken(externalToken);
+  }, []);
+
+  const impersonate = useCallback(async (userId: number): Promise<void> => {
+    setIsLoading(true);
+    try {
+      const response = await apiClient.post<ImpersonateResponse>(
+        `/admin/impersonate/${userId}`,
+      );
+      const { access_token } = response.data;
+      localStorage.setItem('auth_token', access_token);
+      // Clear AFTER storing new token — same ordering as login. A refetch
+      // triggered by .clear() must use the new token, not the previous user's.
+      queryClient.clear();
+      setToken(access_token);
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   const register = async (email: string, password: string): Promise<void> => {
@@ -146,7 +173,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // guest_token is preserved so RegisterForm can promote the guest account.
   }, []);
 
-  const value: AuthState = { user, token, isLoading, login, loginWithToken, refreshAuthToken, loginAsGuest, register, logout, logoutForPromotion };
+  const value: AuthState = { user, token, isLoading, login, loginWithToken, refreshAuthToken, loginAsGuest, register, impersonate, logout, logoutForPromotion };
 
   return React.createElement(AuthContext.Provider, { value }, children);
 }
