@@ -12,10 +12,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.models.user import User
-from app.schemas.admin import ImpersonateResponse
+from app.schemas.admin import ImpersonateResponse, UserSearchResult
+from app.services import admin_service
 from app.users import current_superuser, get_impersonation_jwt_strategy
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@router.get("/users/search", response_model=list[UserSearchResult])
+async def search_users(
+    q: str,
+    _admin: Annotated[User, Depends(current_superuser)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> list[UserSearchResult]:
+    """Return ≤20 non-superuser users matching ILIKE on email / chess_com_username /
+    lichess_username, or exact numeric id. Superuser-only (D-13).
+
+    Short queries (<2 chars) return an empty list (D-12). Superusers are excluded
+    from results — they cannot be impersonated (D-05) and leaking the admin roster
+    to a compromised session is unnecessary.
+    """
+    rows = await admin_service.search_users(session, q)
+    return [
+        UserSearchResult(
+            id=u.id,
+            email=u.email,
+            chess_com_username=u.chess_com_username,
+            lichess_username=u.lichess_username,
+            is_guest=u.is_guest,
+            last_login=u.last_login,
+        )
+        for u in rows
+    ]
 
 
 @router.post("/impersonate/{user_id}", response_model=ImpersonateResponse)
