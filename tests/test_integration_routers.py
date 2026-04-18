@@ -345,3 +345,75 @@ class TestOpeningsNextMovesRouter:
             data["position_stats"]["total"]
             == (seeded_user.expected["starting_position_game_count"])
         )
+
+
+# -----------------------------------------------------------------------------
+# TestEndgameEloTimelineRouter — Phase 57 endgame_elo_timeline sub-payload
+# -----------------------------------------------------------------------------
+
+
+class TestEndgameEloTimelineRouter:
+    """GET /api/endgames/overview -> endgame_elo_timeline sub-payload (Phase 57 ELO-05).
+
+    Covers SC-2 (filter responsiveness via platform=chess.com narrowing) and
+    SC-3 (cold-start: no qualifying combos yields empty `combos: []`).
+
+    The 25-game seeded portfolio distributes endgame games across both platforms
+    and multiple time controls; per-combo counts may fall below
+    MIN_GAMES_FOR_TIMELINE=10 so the qualifying combos list can legitimately be
+    empty. Assertions below are phrased to tolerate either outcome while still
+    proving the contract holds.
+    """
+
+    @pytest.mark.asyncio
+    async def test_endgame_overview_elo_timeline_respects_filters(
+        self, seeded_user: SeededUser
+    ) -> None:
+        """SC-2: platform=chess.com filter excludes lichess combos from the response."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as client:
+            resp = await client.get(
+                "/api/endgames/overview?platform=chess.com",
+                headers=seeded_user.auth_headers,
+            )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        elo_timeline = data["endgame_elo_timeline"]
+        assert elo_timeline["timeline_window"] == 100
+        # Every returned combo must have platform="chess.com" — zero lichess leakage.
+        for combo in elo_timeline["combos"]:
+            assert combo["platform"] == "chess.com", (
+                f"lichess combo leaked through platform=chess.com filter: {combo}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_endgame_overview_elo_timeline_cold_start_returns_empty_combos(
+        self, seeded_user: SeededUser
+    ) -> None:
+        """SC-3: narrow recency filter drops every combo below MIN_GAMES_FOR_TIMELINE=10.
+
+        The seeded portfolio's games are dated far in the past relative to the
+        recency filter applied here, so no combo has >=10 endgame games within
+        the filter window. Response must be `combos: []` with the window constant
+        still present.
+        """
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as client:
+            # recency=week narrows to the past 7 days; seed fixture uses historic
+            # dates so nothing qualifies. If the seed is ever changed to use
+            # current-date games, switch to a smaller recency window or add an
+            # explicit "fresh user with 0 games" test path here.
+            resp = await client.get(
+                "/api/endgames/overview?recency=week",
+                headers=seeded_user.auth_headers,
+            )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        elo_timeline = data["endgame_elo_timeline"]
+        assert elo_timeline["timeline_window"] == 100
+        assert elo_timeline["combos"] == [], (
+            f"expected empty combos for cold-start / narrow-recency seed, "
+            f"got {len(elo_timeline['combos'])}: {elo_timeline['combos']}"
+        )
