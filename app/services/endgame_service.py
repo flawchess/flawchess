@@ -9,8 +9,10 @@ Exposes:
 - get_endgame_games: orchestrator for GET /api/endgames/games
 - get_endgame_performance: orchestrator for GET /api/endgames/performance
 - get_endgame_timeline: orchestrator for GET /api/endgames/timeline
+- get_endgame_elo_timeline: per-combo weekly Endgame ELO + Actual ELO rolling series (Phase 57 ELO-05)
 """
 
+import math
 import statistics
 from collections import defaultdict
 from collections.abc import Sequence
@@ -28,6 +30,7 @@ from app.repositories.endgame_repository import (
     count_filtered_games,
     query_clock_stats_rows,
     query_endgame_bucket_rows,
+    query_endgame_elo_timeline_rows,
     query_endgame_entry_rows,
     query_endgame_games as _query_endgame_games,
     query_endgame_performance_rows,
@@ -41,6 +44,9 @@ from app.schemas.endgames import (
     ConversionRecoveryStats,
     EndgameClass,
     EndgameCategoryStats,
+    EndgameEloTimelineCombo,
+    EndgameEloTimelinePoint,
+    EndgameEloTimelineResponse,
     EndgameGamesResponse,
     EndgameLabel,
     EndgameOverallPoint,
@@ -825,6 +831,221 @@ _TIME_CONTROL_ORDER: list[str] = ["bullet", "blitz", "rapid", "classical"]
 # Mirrors the 100-game window the frontend uses for the Win Rate by Endgame Type chart.
 CLOCK_PRESSURE_TIMELINE_WINDOW = 100
 
+# Rolling window size for the Endgame ELO timeline chart (Phase 57 ELO-05).
+# Matches SCORE_GAP_TIMELINE_WINDOW and CLOCK_PRESSURE_TIMELINE_WINDOW per D-05.
+ENDGAME_ELO_TIMELINE_WINDOW = 100
+
+# Clamp bounds for the Endgame ELO formula (Phase 57 D-01). Skill outside this
+# range would blow up log10(skill / (1 - skill)); clamping caps contribution at
+# roughly +-510 Elo above/below opponent average, which is well beyond realistic
+# performance-rating territory for any plausible sample size.
+_ENDGAME_ELO_SKILL_CLAMP_LO = 0.05
+_ENDGAME_ELO_SKILL_CLAMP_HI = 0.95
+
+# Ordered combo list: chess.com first then lichess, per-platform follows
+# _TIME_CONTROL_ORDER. Used for stable response ordering (Phase 57 D-09).
+_ENDGAME_ELO_COMBO_ORDER: list[tuple[str, str]] = [
+    (platform_name, tc)
+    for platform_name in ("chess.com", "lichess")
+    for tc in _TIME_CONTROL_ORDER
+]
+
+
+def _endgame_elo_from_skill(skill: float, avg_opp_rating: float) -> int:
+    """Performance rating from skill composite + opponent average (Phase 57 D-01).
+
+    endgame_elo = round(avg_opp + 400 * log10(s / (1 - s))) where s is skill
+    clamped to [_ENDGAME_ELO_SKILL_CLAMP_LO, _ENDGAME_ELO_SKILL_CLAMP_HI].
+
+    Pure function. Safe for skill=0.0 and skill=1.0 by construction (clamp is
+    applied unconditionally before the log10 / division).
+    """
+    s = max(_ENDGAME_ELO_SKILL_CLAMP_LO, min(_ENDGAME_ELO_SKILL_CLAMP_HI, skill))
+    return round(avg_opp_rating + 400 * math.log10(s / (1 - s)))
+
+
+def _endgame_skill_from_bucket_rows(
+    rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> float | None:
+    """Composite Endgame Skill rate from per-game bucket rows.
+
+    Ports the frontend `endgameSkill()` helper in
+    `frontend/src/components/charts/EndgameScoreGapSection.tsx` (lines 167-177).
+    TODO (Phase 56): deduplicate with the backend endgame_skill() port introduced
+    by Phase 56 when that phase lands.
+
+    Row tuple shape (matches query_endgame_elo_timeline_rows bucket output):
+        (played_at, platform, time_control_bucket, user_color,
+         white_rating, black_rating, user_material_imbalance,
+         user_material_imbalance_after, result).
+
+    Bucketing (matches _compute_score_gap_material):
+    - conversion: user_material_imbalance_after is not None AND >= 100
+        (user stayed up material across the 4-ply persistence window)
+        -> per-row rate = 1 if user won else 0 (Conv Win %)
+    - recovery: user_material_imbalance_after is not None AND <= -100
+        (user stayed down material across the 4-ply persistence window)
+        -> per-row rate = 1 if user won or drew else 0 (Recov Save %)
+    - parity: everything else (NULL imbalance_after routes here per the
+        NULL-handling rule plus any abs(imbalance) < 100 at persistence ply)
+        -> per-row rate = user chess score (1 for win, 0.5 for draw, 0 for loss;
+        Parity Score %)
+
+    Returns mean-across-non-empty-buckets of per-bucket mean rates. Returns
+    None when all three buckets are empty (<=0 games total).
+    """
+    conv_count = 0
+    conv_wins = 0
+    recov_count = 0
+    recov_saves = 0  # wins + draws
+    par_count = 0
+    par_score_sum = 0.0
+
+    for row in rows:
+        # Tuple unpacking per Pitfall 5 (avoid ty row-attribute errors).
+        (
+            _played_at,
+            _platform,
+            _tc,
+            user_color,
+            _white_rating,
+            _black_rating,
+            _imbalance_entry,
+            imbalance_after,
+            result,
+        ) = row
+
+        outcome = derive_user_result(result, user_color)  # "win"/"draw"/"loss"
+
+        if imbalance_after is not None and imbalance_after >= 100:
+            conv_count += 1
+            if outcome == "win":
+                conv_wins += 1
+        elif imbalance_after is not None and imbalance_after <= -100:
+            recov_count += 1
+            if outcome in ("win", "draw"):
+                recov_saves += 1
+        else:
+            par_count += 1
+            par_score_sum += {"win": 1.0, "draw": 0.5, "loss": 0.0}[outcome]
+
+    rates: list[float] = []
+    if conv_count > 0:
+        rates.append(conv_wins / conv_count)
+    if recov_count > 0:
+        rates.append(recov_saves / recov_count)
+    if par_count > 0:
+        rates.append(par_score_sum / par_count)
+
+    if not rates:
+        return None
+    return sum(rates) / len(rates)
+
+
+def _compute_endgame_elo_weekly_series(
+    bucket_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    all_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    window: int,
+    cutoff_str: str | None = None,
+) -> list[EndgameEloTimelinePoint]:
+    """Co-compute weekly Endgame ELO + Actual ELO rolling series for one combo.
+
+    Walks a merged chronological event stream of endgame bucket rows + all-games
+    rows, maintaining two independent trailing windows. At each ISO-week
+    boundary, emits one point with:
+    - endgame_elo = _endgame_elo_from_skill(
+        skill_from_endgame_window, avg_opp_rating_in_endgame_window)
+    - actual_elo = round(mean(user_rating in all_games_window))
+    - endgame_games_in_window = len(endgame_window)
+
+    Per-point emission requires endgame_window_count >= MIN_GAMES_FOR_TIMELINE
+    (D-06, three-tier hide tier 1). `cutoff_str` filters output points to
+    >= cutoff while letting earlier games pre-fill the windows (Pitfall 2).
+
+    bucket_rows tuple shape matches query_endgame_elo_timeline_rows bucket output:
+      (played_at, platform, tc, user_color, white_rating, black_rating,
+       imbalance_entry, imbalance_after, result)
+    all_rows tuple shape:
+      (played_at, platform, tc, user_color, white_rating, black_rating)
+    """
+    # Merge into single chronological stream. Tag each event with its side.
+    # Event value = the row tuple itself (we need all columns later).
+    events: list[tuple[Any, Literal["endgame", "all"], tuple[Any, ...]]] = []
+    for row in bucket_rows:
+        if row[0] is None:  # played_at
+            continue
+        events.append((row[0], "endgame", tuple(row)))
+    for row in all_rows:
+        if row[0] is None:
+            continue
+        events.append((row[0], "all", tuple(row)))
+
+    # Stable chronological sort. Ties broken by side tag so deterministic.
+    events.sort(key=lambda e: (e[0], e[1]))
+
+    endgame_window: list[tuple[Any, ...]] = []  # bucket rows for skill + opp-avg
+    all_user_ratings: list[float] = []  # user_rating floats from all-games
+    data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
+
+    for played_at, side, row in events:
+        if side == "endgame":
+            endgame_window.append(row)
+            endgame_window = endgame_window[-window:]
+        else:
+            # Compute user_rating from white/black rating + user_color.
+            user_color = row[3]
+            white_rating = row[4]
+            black_rating = row[5]
+            if white_rating is None or black_rating is None:
+                # Defensive — the repo query filters NULLs, but guard anyway.
+                continue
+            user_rating = white_rating if user_color == "white" else black_rating
+            all_user_ratings.append(float(user_rating))
+            all_user_ratings = all_user_ratings[-window:]
+
+        # Require both windows non-empty AND endgame window >= threshold for emission.
+        if len(endgame_window) < MIN_GAMES_FOR_TIMELINE or not all_user_ratings:
+            continue
+
+        # Compute skill + avg_opp_rating over the endgame window.
+        skill = _endgame_skill_from_bucket_rows(endgame_window)
+        if skill is None:
+            continue
+
+        # avg_opp_rating from endgame window rows (opposite of user_color).
+        opp_rating_sum = 0.0
+        opp_rating_count = 0
+        for er in endgame_window:
+            er_user_color = er[3]
+            er_white = er[4]
+            er_black = er[5]
+            if er_white is None or er_black is None:
+                continue
+            opp = er_black if er_user_color == "white" else er_white
+            opp_rating_sum += float(opp)
+            opp_rating_count += 1
+        if opp_rating_count == 0:
+            continue
+        avg_opp = opp_rating_sum / opp_rating_count
+
+        endgame_elo = _endgame_elo_from_skill(skill, avg_opp)
+        actual_elo = round(statistics.mean(all_user_ratings))
+
+        iso_year, iso_week, iso_weekday = played_at.isocalendar()
+        monday = (played_at - timedelta(days=iso_weekday - 1)).date()
+        data_by_week[(iso_year, iso_week)] = {
+            "date": monday.isoformat(),
+            "endgame_elo": endgame_elo,
+            "actual_elo": actual_elo,
+            "endgame_games_in_window": len(endgame_window),
+        }
+
+    return [
+        EndgameEloTimelinePoint(**data_by_week[key])
+        for key in sorted(data_by_week.keys())
+        if cutoff_str is None or data_by_week[key]["date"] >= cutoff_str
+    ]
+
 
 def _extract_entry_clocks(
     plies: list[int],
@@ -1518,6 +1739,83 @@ async def get_endgame_timeline(
     return EndgameTimelineResponse(overall=overall, per_type=per_type, window=window)
 
 
+async def get_endgame_elo_timeline(
+    session: AsyncSession,
+    user_id: int,
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency: str | None,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+) -> EndgameEloTimelineResponse:
+    """Orchestrate the Endgame ELO timeline query (Phase 57 ELO-05).
+
+    Fetches rows WITHOUT the recency cutoff so the 100-game rolling windows
+    pre-fill from games before the cutoff (Pitfall 2). Partitions both row
+    streams in Python by (platform, time_control_bucket), invokes the weekly
+    helper per combo, drops combos with zero qualifying points (D-10 tier 2),
+    and returns combos ordered per _ENDGAME_ELO_COMBO_ORDER.
+    """
+    cutoff = recency_cutoff(recency)
+    cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
+
+    bucket_rows_all, all_rows_all = await query_endgame_elo_timeline_rows(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency_cutoff=None,  # pre-fill windows; filter output via cutoff_str
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+
+    # Partition by (platform, time_control_bucket).
+    # Row positions: played_at=0, platform=1, time_control_bucket=2
+    bucket_by_combo: dict[tuple[str, str], list[tuple[Any, ...]]] = {}
+    for row in bucket_rows_all:
+        key = (row[1], row[2])
+        bucket_by_combo.setdefault(key, []).append(tuple(row))
+
+    all_by_combo: dict[tuple[str, str], list[tuple[Any, ...]]] = {}
+    for row in all_rows_all:
+        key = (row[1], row[2])
+        all_by_combo.setdefault(key, []).append(tuple(row))
+
+    combos: list[EndgameEloTimelineCombo] = []
+    for platform_name, tc in _ENDGAME_ELO_COMBO_ORDER:
+        key = (platform_name, tc)
+        points = _compute_endgame_elo_weekly_series(
+            bucket_by_combo.get(key, []),
+            all_by_combo.get(key, []),
+            ENDGAME_ELO_TIMELINE_WINDOW,
+            cutoff_str=cutoff_str,
+        )
+        if not points:
+            # D-10 tier 2: drop combo entirely when no qualifying points.
+            continue
+        combo_key = f"{platform_name.replace('.', '_')}_{tc}"
+        # Narrow platform/tc to the Literal types the schema expects. Both come
+        # from Game.platform / Game.time_control_bucket which are constrained
+        # upstream; a mismatch here would indicate a data anomaly.
+        combos.append(
+            EndgameEloTimelineCombo(
+                combo_key=combo_key,
+                platform=cast(Literal["chess.com", "lichess"], platform_name),
+                time_control=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
+                points=points,
+            )
+        )
+
+    return EndgameEloTimelineResponse(
+        combos=combos,
+        timeline_window=ENDGAME_ELO_TIMELINE_WINDOW,
+    )
+
+
 async def get_endgame_overview(
     session: AsyncSession,
     user_id: int,
@@ -1691,6 +1989,23 @@ async def get_endgame_overview(
     )
     time_pressure_chart = _compute_time_pressure_chart(clock_rows)
 
+    # Phase 57 ELO-05: paired Endgame ELO + Actual ELO timeline per (platform, TC) combo.
+    # Uses its own repo query (query_endgame_elo_timeline_rows) because the row shape
+    # differs from existing queries (adds white_rating/black_rating for Elo math and
+    # requires the all-games stream for the Actual ELO line per D-04). The orchestrator
+    # runs this sequentially — no asyncio.gather on AsyncSession per CLAUDE.md.
+    endgame_elo_timeline = await get_endgame_elo_timeline(
+        session,
+        user_id=user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        recency=recency,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+
     return EndgameOverviewResponse(
         stats=stats,
         performance=performance,
@@ -1698,4 +2013,5 @@ async def get_endgame_overview(
         score_gap_material=score_gap_material,
         clock_pressure=clock_pressure,
         time_pressure_chart=time_pressure_chart,
+        endgame_elo_timeline=endgame_elo_timeline,
     )

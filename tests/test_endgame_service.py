@@ -17,19 +17,23 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.endgames import EndgameWDLSummary
+from app.schemas.endgames import EndgameEloTimelinePoint, EndgameWDLSummary
 from app.services.endgame_service import (
     CLOCK_PRESSURE_TIMELINE_WINDOW,
+    ENDGAME_ELO_TIMELINE_WINDOW,
     SCORE_GAP_TIMELINE_WINDOW,
     _aggregate_endgame_stats,
     _build_bucket_series,
     _compute_clock_pressure,
     _compute_clock_pressure_timeline,
+    _compute_endgame_elo_weekly_series,
     _compute_rolling_series,
     _compute_score_gap_material,
     _compute_score_gap_timeline,
     _compute_time_pressure_chart,
     _compute_weekly_rolling_series,
+    _endgame_elo_from_skill,
+    _endgame_skill_from_bucket_rows,
     _extract_entry_clocks,
     _wdl_to_score,
     classify_endgame_class,
@@ -915,7 +919,7 @@ class TestGetEndgameOverview:
     @pytest.mark.asyncio
     async def test_overview_composes_all_five_payloads(self):
         """get_endgame_overview assembles stats, performance, timeline, score_gap_material, clock_pressure."""
-        from app.schemas.endgames import EndgameTimelineResponse
+        from app.schemas.endgames import EndgameEloTimelineResponse, EndgameTimelineResponse
 
         with (
             patch(
@@ -940,6 +944,9 @@ class TestGetEndgameOverview:
             patch(
                 "app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock
             ) as mock_clock,
+            patch(
+                "app.services.endgame_service.get_endgame_elo_timeline", new_callable=AsyncMock
+            ) as mock_elo_timeline,
         ):
             mock_entry.return_value = []
             mock_bucket.return_value = []
@@ -948,6 +955,9 @@ class TestGetEndgameOverview:
             mock_eg_count.return_value = 0
             mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=50)
             mock_clock.return_value = []
+            mock_elo_timeline.return_value = EndgameEloTimelineResponse(
+                combos=[], timeline_window=100
+            )
 
             result = await get_endgame_overview(
                 AsyncMock(),
@@ -968,6 +978,7 @@ class TestGetEndgameOverview:
         mock_eg_count.assert_called_once()
         mock_timeline.assert_called_once()
         mock_clock.assert_called_once()
+        mock_elo_timeline.assert_called_once()
 
         # All sub-payloads must be present
         assert result.stats is not None
@@ -976,11 +987,14 @@ class TestGetEndgameOverview:
         assert result.score_gap_material is not None
         assert result.clock_pressure is not None
         assert result.clock_pressure.rows == []
+        assert result.endgame_elo_timeline is not None
+        assert result.endgame_elo_timeline.combos == []
+        assert result.endgame_elo_timeline.timeline_window == 100
 
     @pytest.mark.asyncio
     async def test_overview_passes_window_to_timeline(self):
         """The window parameter must be forwarded to get_endgame_timeline."""
-        from app.schemas.endgames import EndgameTimelineResponse
+        from app.schemas.endgames import EndgameEloTimelineResponse, EndgameTimelineResponse
 
         with (
             patch(
@@ -1003,6 +1017,9 @@ class TestGetEndgameOverview:
             patch(
                 "app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock
             ) as mock_clock,
+            patch(
+                "app.services.endgame_service.get_endgame_elo_timeline", new_callable=AsyncMock
+            ) as mock_elo_timeline,
         ):
             mock_entry.return_value = []
             mock_bucket.return_value = []
@@ -1010,6 +1027,9 @@ class TestGetEndgameOverview:
             mock_count.return_value = 0
             mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=75)
             mock_clock.return_value = []
+            mock_elo_timeline.return_value = EndgameEloTimelineResponse(
+                combos=[], timeline_window=100
+            )
 
             await get_endgame_overview(
                 AsyncMock(),
@@ -2732,3 +2752,393 @@ class TestComputeScoreGapTimeline:
         assert series[0].score_difference == pytest.approx(0.25)
         assert series[0].endgame_game_count == 20
         assert series[0].non_endgame_game_count == 20
+
+
+# -----------------------------------------------------------------------------
+# Phase 57 ELO-05 — Endgame ELO formula + timeline helpers
+# -----------------------------------------------------------------------------
+
+
+class TestEndgameElo:
+    """Unit tests for the Endgame ELO formula (Phase 57 D-01).
+
+    Formula: round(avg_opp + 400 * log10(clamp(skill, 0.05, 0.95) /
+             (1 - clamp(skill)))).
+    """
+
+    def test_formula_mid_range(self):
+        # skill=0.5 -> log10(0.5/0.5) = 0 -> returns round(avg_opp).
+        assert _endgame_elo_from_skill(0.5, 1500.0) == 1500
+        assert _endgame_elo_from_skill(0.5, 1847.0) == 1847
+
+    def test_clamp_boundaries_skill_zero_does_not_raise(self):
+        # skill=0.0 -> clamped to 0.05 -> log10(0.05/0.95) ~ -1.279
+        # -> 1500 + 400*-1.279 ~ 988
+        result = _endgame_elo_from_skill(0.0, 1500.0)
+        assert isinstance(result, int)
+        assert result < 1500
+        # Clamp at 0.05 yields approximately -510 Elo delta at the extreme.
+        assert result > 900  # not <= 0, not -inf
+
+    def test_clamp_boundaries_skill_one_does_not_raise(self):
+        # skill=1.0 -> clamped to 0.95 -> log10(0.95/0.05) ~ +1.279
+        # -> 1500 + 400*1.279 ~ 2012
+        result = _endgame_elo_from_skill(1.0, 1500.0)
+        assert isinstance(result, int)
+        assert result > 1500
+        assert result < 2100  # well below numeric-overflow territory
+
+    def test_formula_above_parity_raises_elo(self):
+        # skill=0.7 > 0.5 -> Elo above opponent average.
+        assert _endgame_elo_from_skill(0.7, 1500.0) > 1500
+
+    def test_formula_below_parity_lowers_elo(self):
+        # skill=0.3 < 0.5 -> Elo below opponent average.
+        assert _endgame_elo_from_skill(0.3, 1500.0) < 1500
+
+
+# Helper for the timeline tests — mirrors the repo output tuple shape.
+def _elo_bucket_row(
+    played_at: Any,
+    platform: str,
+    tc: str,
+    user_color: str,
+    white_rating: int,
+    black_rating: int,
+    imbalance_entry: int | None,
+    imbalance_after: int | None,
+    result: str,
+) -> tuple:
+    """Row matching query_endgame_elo_timeline_rows bucket output (9 columns)."""
+    return (
+        played_at,
+        platform,
+        tc,
+        user_color,
+        white_rating,
+        black_rating,
+        imbalance_entry,
+        imbalance_after,
+        result,
+    )
+
+
+def _elo_all_row(
+    played_at: Any,
+    platform: str,
+    tc: str,
+    user_color: str,
+    white_rating: int,
+    black_rating: int,
+) -> tuple:
+    """Row matching query_endgame_elo_timeline_rows all_rows output (6 columns)."""
+    return (played_at, platform, tc, user_color, white_rating, black_rating)
+
+
+class TestEndgameSkillFromBucketRows:
+    """Unit tests for _endgame_skill_from_bucket_rows — ported from frontend endgameSkill."""
+
+    def test_empty_rows_returns_none(self):
+        assert _endgame_skill_from_bucket_rows([]) is None
+
+    def test_only_parity_rows_uses_chess_score(self):
+        # 2 wins + 2 draws + 0 losses, all parity (abs imbalance < 100 after).
+        # Score = (2*1 + 2*0.5) / 4 = 0.75
+        rows = [
+            _elo_bucket_row(
+                datetime.datetime(2026, 1, 1), "chess.com", "blitz", "white", 1500, 1500, 0, 0, "1-0"
+            ),
+            _elo_bucket_row(
+                datetime.datetime(2026, 1, 2), "chess.com", "blitz", "white", 1500, 1500, 0, 0, "1-0"
+            ),
+            _elo_bucket_row(
+                datetime.datetime(2026, 1, 3),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            ),
+            _elo_bucket_row(
+                datetime.datetime(2026, 1, 4),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            ),
+        ]
+        result = _endgame_skill_from_bucket_rows(rows)
+        assert result == pytest.approx(0.75)
+
+    def test_only_conversion_rows_uses_win_pct(self):
+        # 3 conv wins, 1 conv loss. Conv Win % = 0.75.
+        rows = [
+            _elo_bucket_row(
+                datetime.datetime(2026, 1, 1), "chess.com", "blitz", "white", 1500, 1500, 200, 200, "1-0"
+            ),
+            _elo_bucket_row(
+                datetime.datetime(2026, 1, 2), "chess.com", "blitz", "white", 1500, 1500, 200, 200, "1-0"
+            ),
+            _elo_bucket_row(
+                datetime.datetime(2026, 1, 3), "chess.com", "blitz", "white", 1500, 1500, 200, 200, "1-0"
+            ),
+            _elo_bucket_row(
+                datetime.datetime(2026, 1, 4), "chess.com", "blitz", "white", 1500, 1500, 200, 200, "0-1"
+            ),
+        ]
+        result = _endgame_skill_from_bucket_rows(rows)
+        assert result == pytest.approx(0.75)
+
+    def test_null_imbalance_after_routes_to_parity(self):
+        # imbalance_after=None => parity bucket (NULL-handling rule).
+        rows = [
+            _elo_bucket_row(
+                datetime.datetime(2026, 1, 1), "chess.com", "blitz", "white", 1500, 1500, 200, None, "1-0"
+            ),
+        ]
+        # 1 parity win -> score = 1.0, mean of one bucket = 1.0
+        assert _endgame_skill_from_bucket_rows(rows) == pytest.approx(1.0)
+
+    def test_mixed_buckets_averages_per_bucket_rates(self):
+        # 2 conv: 1 win, 1 loss -> conv rate = 0.5
+        # 2 parity: 2 wins -> parity rate = 1.0
+        # No recovery rows.
+        # Mean of two bucket rates = (0.5 + 1.0) / 2 = 0.75
+        rows = [
+            _elo_bucket_row(
+                datetime.datetime(2026, 1, 1), "chess.com", "blitz", "white", 1500, 1500, 200, 200, "1-0"
+            ),
+            _elo_bucket_row(
+                datetime.datetime(2026, 1, 2), "chess.com", "blitz", "white", 1500, 1500, 200, 200, "0-1"
+            ),
+            _elo_bucket_row(
+                datetime.datetime(2026, 1, 3), "chess.com", "blitz", "white", 1500, 1500, 0, 0, "1-0"
+            ),
+            _elo_bucket_row(
+                datetime.datetime(2026, 1, 4), "chess.com", "blitz", "white", 1500, 1500, 0, 0, "1-0"
+            ),
+        ]
+        result = _endgame_skill_from_bucket_rows(rows)
+        assert result == pytest.approx(0.75)
+
+
+class TestEndgameEloTimeline:
+    """Unit tests for _compute_endgame_elo_weekly_series (Phase 57)."""
+
+    def test_empty_inputs_returns_empty(self):
+        assert _compute_endgame_elo_weekly_series([], [], 100) == []
+
+    def test_below_min_games_dropped(self):
+        """Endgame window with 9 games -> no point emitted (D-06 threshold = 10)."""
+        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        bucket_rows = [
+            _elo_bucket_row(
+                monday + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1-0",
+            )
+            for i in range(9)
+        ]
+        all_rows = [
+            _elo_all_row(
+                monday + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+            )
+            for i in range(50)
+        ]
+        result = _compute_endgame_elo_weekly_series(bucket_rows, all_rows, 100)
+        assert result == []
+
+    def test_min_games_emits_point(self):
+        """Endgame window with exactly 10 games at parity -> one point, ~1500 Elo."""
+        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        bucket_rows = [
+            _elo_bucket_row(
+                monday + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            )
+            for i in range(10)
+        ]
+        all_rows = [
+            _elo_all_row(
+                monday + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+            )
+            for i in range(10)
+        ]
+        result = _compute_endgame_elo_weekly_series(bucket_rows, all_rows, 100)
+        assert len(result) == 1
+        assert result[0].date == "2026-01-05"
+        # skill=0.5 (all draws => parity score=0.5), avg_opp=1500 -> elo ~= 1500
+        assert result[0].endgame_elo == 1500
+        assert result[0].actual_elo == 1500
+        assert result[0].endgame_games_in_window == 10
+
+    def test_actual_elo_reflects_all_games_window_not_endgame_only(self):
+        """Actual ELO mean uses ALL games, not just endgame games (D-04).
+
+        All-games window has a DIFFERENT user_rating distribution than the
+        endgame window so the two mean values must be distinguishable.
+        """
+        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        # 10 endgame games at rating 1400 (would drive endgame mean to 1400)
+        bucket_rows = [
+            _elo_bucket_row(
+                monday + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1400,
+                1400,
+                0,
+                0,
+                "1/2-1/2",
+            )
+            for i in range(10)
+        ]
+        # 50 all-games (includes the endgame games) at rating 1800
+        all_rows = [
+            _elo_all_row(
+                monday + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1800,
+                1800,
+            )
+            for i in range(50)
+        ]
+        result = _compute_endgame_elo_weekly_series(bucket_rows, all_rows, 100)
+        assert len(result) == 1
+        # Actual ELO uses ALL-games window, which is at 1800. Endgame ELO uses
+        # the endgame-window opp_avg (1400). If the two came from the same pool
+        # they would match.
+        assert result[0].actual_elo == 1800
+        assert result[0].endgame_elo == 1400  # skill=0.5 -> returns avg_opp (1400)
+
+    def test_cutoff_str_does_not_starve_window(self):
+        """Recency cutoff filters EMITTED points but window pre-fills from earlier games (Pitfall 2)."""
+        # Week 1: 10 endgame games pre-cutoff (pre-fills the window).
+        # Week 2: 1 endgame game post-cutoff (brings window to 11).
+        # With cutoff_str = week 2's Monday, only week 2's point should emit,
+        # and its window count must be 11 (not 1).
+        wk1 = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)
+        bucket_rows = [
+            _elo_bucket_row(
+                wk1 + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            )
+            for i in range(10)
+        ] + [
+            _elo_bucket_row(
+                wk2, "chess.com", "blitz", "white", 1500, 1500, 0, 0, "1/2-1/2"
+            ),
+        ]
+        all_rows = [
+            _elo_all_row(
+                wk1 + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+            )
+            for i in range(10)
+        ] + [
+            _elo_all_row(wk2, "chess.com", "blitz", "white", 1500, 1500),
+        ]
+        result = _compute_endgame_elo_weekly_series(
+            bucket_rows, all_rows, 100, cutoff_str="2026-01-12"
+        )
+        assert len(result) == 1
+        assert result[0].date == "2026-01-12"
+        # Window filled with 11 games (10 pre-cutoff + 1 post-cutoff).
+        assert result[0].endgame_games_in_window == 11
+
+    def test_rolling_window_caps_at_window_size(self):
+        """Window size caps at ENDGAME_ELO_TIMELINE_WINDOW (100); extra games are dropped.
+
+        Seed 150 endgame games across a single ISO week. The emitted point's
+        `endgame_games_in_window` must equal the window size (100), not 150 —
+        proving the trailing slice `[-window:]` trims old events correctly.
+        """
+        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        bucket_rows = [
+            _elo_bucket_row(
+                monday + datetime.timedelta(minutes=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            )
+            for i in range(150)
+        ]
+        all_rows = [
+            _elo_all_row(
+                monday + datetime.timedelta(minutes=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+            )
+            for i in range(150)
+        ]
+        result = _compute_endgame_elo_weekly_series(
+            bucket_rows, all_rows, ENDGAME_ELO_TIMELINE_WINDOW
+        )
+        assert len(result) >= 1
+        # Last emitted point of the week reflects the fully-saturated 100-game window.
+        assert result[-1].endgame_games_in_window == 100
+
+
+# Sanity check: EndgameEloTimelinePoint is actually exported from the schema.
+def test_endgame_elo_timeline_point_constructs():
+    pt = EndgameEloTimelinePoint(
+        date="2026-01-05",
+        endgame_elo=1500,
+        actual_elo=1480,
+        endgame_games_in_window=42,
+    )
+    assert pt.endgame_elo == 1500
+    assert pt.endgame_games_in_window == 42
