@@ -282,7 +282,7 @@ Plans:
 
 Plans:
 - [x] 57.1-01-PLAN.md — Backend: schema field + asof anchor + per-week count + 6 unit tests + 1 integration test + UI-SPEC + HUMAN-UAT inline updates
-- [ ] 57.1-02-PLAN.md — Frontend: TS interface + ENDGAME_VOLUME_BAR_COLOR + ComposedChart swap with hidden bar axis + tooltip top line + popover/subtitle copy rewrite
+- [x] 57.1-02-PLAN.md — Frontend: TS interface + ENDGAME_VOLUME_BAR_COLOR + ComposedChart swap with hidden bar axis + tooltip top line + popover/subtitle copy rewrite
 
 ### Phase 58: Opening Risk & Drawishness
 **Goal**: Users can see risk and drawishness signals per candidate move in the move explorer to inform opening selection
@@ -423,7 +423,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
