@@ -137,7 +137,7 @@ See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
 - [x] **Phase 54: Time Pressure — Clock Stats Table** - Per-time-control summary table of clock state at endgame entry with avg time, clock diff, and net timeout rate (completed 2026-04-12)
 - [x] **Phase 55: Time Pressure — Performance Chart** - Two-line comparison chart (user vs opponents) showing score by time pressure bucket, tabbed by time control (completed 2026-04-12)
 - [ ] **Phase 56: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
-- [ ] **Phase 57: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
+- [x] **Phase 57: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination (completed 2026-04-18)
 - [ ] **Phase 58: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
 - [x] **Phase 59: Fix Endgame Conv/Even/Recov per-game stats** - Ensure Conv+Even+Recov buckets sum to total endgame games; remove obsolete admin-gated gauges + timeline (completed 2026-04-13)
 - [x] **Phase 60: Opponent-based baseline for Endgame Conversion & Recovery** - Replace global-average baseline with self-calibrating opponent baseline computed via same-game symmetry; mute when opponent sample < 10 games (completed 2026-04-14)
@@ -257,7 +257,7 @@ Plans:
 
 Plans:
 - [x] 57-01-PLAN.md — Backend: schemas, repo query, Elo formula + skill composite + weekly-series helpers, orchestrator + overview wiring, unit tests
-- [ ] 57-02-PLAN.md — Frontend: TS types + ELO_COMBO_COLORS + niceEloAxis, EndgameEloTimelineSection component, Endgames page wiring + human-verify
+- [x] 57-02-PLAN.md — Frontend: TS types + ELO_COMBO_COLORS + niceEloAxis, EndgameEloTimelineSection component, Endgames page wiring + human-verify
 **UI hint**: yes
 
 ### Phase 58: Opening Risk & Drawishness
@@ -387,7 +387,7 @@ Plans:
 | 54. Time Pressure — Clock Stats Table | v1.10 | 2/2 | Complete    | 2026-04-12 |
 | 55. Time Pressure — Performance Chart | v1.10 | 2/2 | Complete    | 2026-04-12 |
 | 56. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
-| 57. Endgame ELO — Timeline Chart | v1.10 | 1/2 | In Progress|  |
+| 57. Endgame ELO — Timeline Chart | v1.10 | 2/2 | Complete   | 2026-04-18 |
 | 58. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
 | 59. Fix Endgame Conv/Even/Recov per-game stats | v1.10 | 3/3 | Complete    | 2026-04-13 |
 | 60. Opponent-based baseline for Endgame Conv/Even/Recov | v1.10 | 2/2 | Complete    | 2026-04-14 |
@@ -399,7 +399,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
