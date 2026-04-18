@@ -6,6 +6,7 @@ Functions:
 - query_endgame_performance_rows: endgame and non-endgame game rows for performance comparison
 - query_endgame_timeline_rows: rows for rolling-window time series, overall and per-type
 - query_clock_stats_rows: rows for time pressure at endgame entry (Phase 54)
+- query_endgame_elo_timeline_rows: bucket + all-game rows per-combo for Phase 57 Endgame ELO timeline
 """
 
 import datetime
@@ -773,3 +774,155 @@ async def query_clock_stats_rows(
 
     result = await session.execute(stmt)
     return list(result.fetchall())
+
+
+async def query_endgame_elo_timeline_rows(
+    session: AsyncSession,
+    user_id: int,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+) -> tuple[list[Row[Any]], list[Row[Any]]]:
+    """Return (bucket_rows, all_rows) for the Phase 57 Endgame ELO timeline.
+
+    bucket_rows: one row per ENDGAME game (uniform 6-ply rule via entry_subq HAVING).
+        Tuple shape:
+            (played_at, platform, time_control_bucket, user_color,
+             white_rating, black_rating,
+             user_material_imbalance, user_material_imbalance_after, result)
+        where user_material_imbalance is sign-flipped for black
+        (mirrors query_endgame_bucket_rows). Drives per-window skill computation
+        AND avg(opponent_rating).
+
+    all_rows: one row per ALL user games (endgame + non-endgame) for the combo.
+        Tuple shape:
+            (played_at, platform, time_control_bucket, user_color,
+             white_rating, black_rating)
+        Drives per-window mean(user_rating) for the Actual ELO line (D-04).
+
+    Both queries:
+    - Filter by Game.user_id == user_id at the TOP LEVEL (user scoping).
+    - Use apply_game_filters for time_control/platform/rated/opponent_type/
+      recency_cutoff/opponent_strength. Never duplicate filter logic.
+    - Exclude rows with NULL played_at.
+    - Exclude rows where white_rating IS NULL OR black_rating IS NULL (needed
+      for per-side Elo math; a game without ratings can't contribute).
+    - ORDER BY played_at ASC for chronological walking by the service layer.
+    - Execute sequentially on the same session (AsyncSession is not safe for
+      gather; single connection anyway).
+
+    The `recency_cutoff` param is deliberately forwarded to apply_game_filters
+    but the orchestrator passes None so the rolling window pre-fills (Pitfall 2
+    in 57-RESEARCH.md). Callers filter emitted timeline points afterwards.
+    """
+    # ── bucket_rows: one row per endgame game (uniform 6-ply rule) ─────────
+    entry_subq = (
+        select(
+            GamePosition.game_id.label("game_id"),
+            func.min(GamePosition.ply).label("entry_ply"),
+        )
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.endgame_class.isnot(None),
+        )
+        .group_by(GamePosition.game_id)
+        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
+        .subquery("elo_entry")
+    )
+
+    entry_pos = aliased(GamePosition, name="elo_entry_pos")
+    after_pos = aliased(GamePosition, name="elo_after_pos")
+
+    color_sign = case(
+        (Game.user_color == "white", 1),
+        else_=-1,
+    )
+
+    bucket_stmt = (
+        select(
+            Game.played_at,
+            Game.platform,
+            Game.time_control_bucket,
+            Game.user_color,
+            Game.white_rating,
+            Game.black_rating,
+            (entry_pos.material_imbalance * color_sign).label("user_material_imbalance"),
+            (after_pos.material_imbalance * color_sign).label("user_material_imbalance_after"),
+            Game.result,
+        )
+        .join(entry_subq, Game.id == entry_subq.c.game_id)
+        .join(
+            entry_pos,
+            and_(
+                entry_pos.user_id == user_id,
+                entry_pos.game_id == entry_subq.c.game_id,
+                entry_pos.ply == entry_subq.c.entry_ply,
+            ),
+        )
+        .outerjoin(
+            after_pos,
+            and_(
+                after_pos.user_id == user_id,
+                after_pos.game_id == entry_subq.c.game_id,
+                after_pos.ply == entry_subq.c.entry_ply + PERSISTENCE_PLIES,
+                after_pos.endgame_class.isnot(None),
+            ),
+        )
+        .where(
+            Game.user_id == user_id,
+            Game.played_at.isnot(None),
+            Game.white_rating.isnot(None),
+            Game.black_rating.isnot(None),
+        )
+        .order_by(Game.played_at.asc())
+    )
+    bucket_stmt = apply_game_filters(
+        bucket_stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+
+    # ── all_rows: one row per user game (endgame + non-endgame) ─────────────
+    all_stmt = (
+        select(
+            Game.played_at,
+            Game.platform,
+            Game.time_control_bucket,
+            Game.user_color,
+            Game.white_rating,
+            Game.black_rating,
+        )
+        .where(
+            Game.user_id == user_id,
+            Game.played_at.isnot(None),
+            Game.white_rating.isnot(None),
+            Game.black_rating.isnot(None),
+        )
+        .order_by(Game.played_at.asc())
+    )
+    all_stmt = apply_game_filters(
+        all_stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+
+    # Execute sequentially — AsyncSession is not safe for concurrent use from
+    # multiple coroutines, and a single session uses one DB connection so
+    # asyncio.gather provides no benefit (CLAUDE.md §Critical Constraints).
+    bucket_result = await session.execute(bucket_stmt)
+    all_result = await session.execute(all_stmt)
+    return list(bucket_result.fetchall()), list(all_result.fetchall())
