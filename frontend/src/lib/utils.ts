@@ -73,3 +73,53 @@ export function niceWinRateAxis(values: number[]): { domain: [number, number]; t
   }
   return { domain: [lo, hi], ticks };
 }
+
+/**
+ * Compute a nice y-axis domain and evenly-spaced ticks for Elo rating data.
+ * Uses step candidates [50, 100, 200, 500]; picks the largest step where
+ * range / step >= 4 (aim for 4-8 ticks). Lifted from RatingChart.tsx:54-106.
+ *
+ * Fallbacks:
+ * - empty values: { domain: ['auto', 'auto'], ticks: undefined } (Recharts auto-scale).
+ * - all values equal: expand min -= 50, max += 50 so ticks are meaningful.
+ *
+ * 57-UI-SPEC.md §Axes prescribes this signature and step set.
+ */
+export function niceEloAxis(
+  values: number[],
+): { domain: [number, number] | ['auto', 'auto']; ticks: number[] | undefined } {
+  if (values.length === 0) {
+    return { domain: ['auto', 'auto'], ticks: undefined };
+  }
+
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+
+  // All values equal -> pad so ticks render.
+  if (min === max) {
+    min -= 50;
+    max += 50;
+  }
+
+  const range = max - min;
+
+  // Pick the largest step where range/step >= 4.
+  const STEP_CANDIDATES = [50, 100, 200, 500];
+  // Start at 50 (smallest) to avoid noUncheckedIndexedAccess widening.
+  let step = 50;
+  for (const candidate of STEP_CANDIDATES) {
+    if (range / candidate >= 4) {
+      step = candidate;
+    }
+  }
+
+  const domainMin = Math.floor(min / step) * step;
+  const domainMax = Math.ceil(max / step) * step;
+
+  const ticks: number[] = [];
+  for (let t = domainMin; t <= domainMax; t += step) {
+    ticks.push(t);
+  }
+
+  return { domain: [domainMin, domainMax], ticks };
+}

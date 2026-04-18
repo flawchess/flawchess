@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createDateTickFormatter, formatDateWithYear } from './utils';
+import { createDateTickFormatter, formatDateWithYear, niceEloAxis } from './utils';
 
 describe('createDateTickFormatter', () => {
   // ── Long range (> 18 months) — format "Jan '24" ───────────────────────────
@@ -74,5 +74,49 @@ describe('formatDateWithYear', () => {
 
   it('formats December 31st correctly', () => {
     expect(formatDateWithYear('2022-12-31')).toBe('Dec 31, 2022');
+  });
+});
+
+describe('niceEloAxis', () => {
+  it('returns auto domain and undefined ticks for empty input', () => {
+    const result = niceEloAxis([]);
+    expect(result.domain).toEqual(['auto', 'auto']);
+    expect(result.ticks).toBeUndefined();
+  });
+
+  it('expands by +/-50 when all values are equal', () => {
+    const result = niceEloAxis([1500, 1500, 1500]);
+    // min=1450, max=1550 -> range=100 -> smallest step (50) gives 3 ticks at [1450,1500,1550]
+    expect(result.domain).toEqual([1450, 1550]);
+    expect(result.ticks).toEqual([1450, 1500, 1550]);
+  });
+
+  it('picks step=50 for small ranges (200 Elo)', () => {
+    // values span 200 Elo -> 200 / 50 = 4 ticks, step=50 wins.
+    const result = niceEloAxis([1400, 1500, 1600]);
+    expect(result.domain).toEqual([1400, 1600]);
+    expect(result.ticks).toEqual([1400, 1450, 1500, 1550, 1600]);
+  });
+
+  it('picks step=100 for medium ranges (~500 Elo)', () => {
+    // range ~= 500 -> 500/100 = 5 (>=4, so step=100 picked over step=200 which would give 2.5).
+    const result = niceEloAxis([1300, 1500, 1700, 1800]);
+    // domainMin floor(1300/100)*100 = 1300, domainMax ceil(1800/100)*100 = 1800
+    expect(result.domain).toEqual([1300, 1800]);
+    expect(result.ticks).toEqual([1300, 1400, 1500, 1600, 1700, 1800]);
+  });
+
+  it('picks step=200 for large ranges (~1200 Elo)', () => {
+    // range ~= 1200 -> 1200/200 = 6 (>=4); 1200/500 = 2.4 (<4); so step=200 wins.
+    const result = niceEloAxis([1000, 2200]);
+    expect(result.domain).toEqual([1000, 2200]);
+    expect(result.ticks).toEqual([1000, 1200, 1400, 1600, 1800, 2000, 2200]);
+  });
+
+  it('handles non-aligned values by flooring/ceiling to step boundaries', () => {
+    // 1347 and 1823 -> step=100 -> domain [1300, 1900].
+    const result = niceEloAxis([1347, 1823]);
+    expect(result.domain).toEqual([1300, 1900]);
+    expect(result.ticks).toEqual([1300, 1400, 1500, 1600, 1700, 1800, 1900]);
   });
 });
