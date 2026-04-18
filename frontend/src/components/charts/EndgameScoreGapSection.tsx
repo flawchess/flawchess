@@ -94,6 +94,16 @@ const FIXED_GAUGE_ZONES: Record<MaterialBucket, GaugeZone[]> = {
   ],
 };
 
+// Zones for the composite Endgame Skill gauge. The blue band mirrors the
+// Parity gauge (45–55%) so the color story stays consistent with the
+// per-bucket gauges users are already reading. Typical value lands around
+// 52% on FlawChess data, sitting in the middle of the blue band.
+const ENDGAME_SKILL_ZONES: GaugeZone[] = [
+  { from: 0, to: 0.45, color: GAUGE_DANGER },
+  { from: 0.45, to: 0.55, color: GAUGE_NEUTRAL },
+  { from: 0.55, to: 1.0, color: GAUGE_SUCCESS },
+];
+
 /** Format a 0.0-1.0 rate as an integer percent string, e.g. 0.684 -> "68%". */
 function formatScorePct(score: number): string {
   return `${Math.round(score * 100)}%`;
@@ -147,6 +157,25 @@ function opponentRate(row: MaterialRow, mirror: MaterialRow | undefined): number
   return 1 - row.score;
 }
 
+/** Composite "Endgame Skill" rate: simple arithmetic mean of the per-bucket
+ * rates from `userRate()`, computed over buckets with games > 0. Returns null
+ * when no bucket has games (callers render a disabled gauge).
+ *
+ * This is intentionally an aggregate of three different rate definitions
+ * (Win %, Score %, Save %), so the result is a one-number summary rather
+ * than a true chess score. */
+function endgameSkill(rows: MaterialRow[]): number | null {
+  const active = rows.filter((r) => r.games > 0);
+  if (active.length === 0) return null;
+  let sum = 0;
+  for (const row of active) {
+    if (row.bucket === 'conversion') sum += row.win_pct / 100;
+    else if (row.bucket === 'recovery') sum += (row.win_pct + row.draw_pct) / 100;
+    else sum += row.score; // parity
+  }
+  return sum / active.length;
+}
+
 interface EndgameScoreGapSectionProps {
   data: ScoreGapMaterialResponse;
 }
@@ -155,6 +184,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
   const totalMaterialGames = data.material_rows.reduce((sum, r) => sum + r.games, 0);
   const rowByBucket: Partial<Record<MaterialBucket, MaterialRow>> = {};
   for (const r of data.material_rows) rowByBucket[r.bucket] = r;
+  const skill = endgameSkill(data.material_rows);
 
   return (
     <div className="space-y-4" data-testid="score-gap-section">
@@ -211,6 +241,18 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   filters like Opponent Strength. Hidden when the opponent sample
                   is smaller than 10 games.
                 </p>
+                <p>
+                  <strong>Endgame Skill</strong> is a composite gauge: the simple
+                  average of your Conversion Win %, Parity Score %, and Recovery
+                  Save %. Typical FlawChess users land around 52%, which is why
+                  the blue band sits at 45–55% (mirroring the Parity band so the
+                  colors stay comparable). It's a useful one-number summary to
+                  track over time alongside your filters. Because the three
+                  inputs measure different things (Win %, Score %, Save %), the
+                  result is an aggregate rather than a true chess score, so
+                  colors are comparable to Parity but the number is not. Buckets
+                  with no games are excluded from the average.
+                </p>
               </div>
             </InfoPopover>
           </span>
@@ -225,7 +267,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
           per-bucket blue target bands. The Diff column below carries
           the opponent-relative verdict against the user's actual opponents. */}
       <div
-        className="hidden lg:grid grid-cols-3 gap-3"
+        className="hidden lg:grid grid-cols-4 gap-3"
         data-testid="endgame-gauge-strip"
       >
         {(['conversion', 'parity', 'recovery'] as const).map((bucket) => {
@@ -249,6 +291,23 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
             </div>
           );
         })}
+        {/* Composite Endgame Skill gauge — appears after Recovery so the
+            per-bucket gauges keep their existing order and Skill reads as
+            a summary on the right. */}
+        <div
+          key="skill"
+          className={
+            'flex flex-col items-center' + (skill === null ? ' opacity-50' : '')
+          }
+          data-testid="endgame-gauge-skill"
+        >
+          <div className="text-sm mb-1">Endgame Skill</div>
+          <EndgameGauge
+            value={(skill ?? 0) * 100}
+            label="Endgame Skill"
+            zones={ENDGAME_SKILL_ZONES}
+          />
+        </div>
       </div>
 
       {/* Desktop: table layout */}
@@ -469,6 +528,26 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
             </div>
           );
         })}
+        {/* Composite Endgame Skill card — gauge-only summary mirroring the
+            desktop strip's 4th gauge. No WDL / You / Opp / Diff rows. */}
+        <div
+          className={
+            'rounded border border-border p-3 space-y-2' +
+            (skill === null ? ' opacity-50' : '')
+          }
+          data-testid="endgame-skill-card"
+        >
+          <div className="flex items-baseline justify-between">
+            <div className="text-sm font-medium">Endgame Skill</div>
+          </div>
+          <div className="flex justify-center">
+            <EndgameGauge
+              value={(skill ?? 0) * 100}
+              label="Endgame Skill"
+              zones={ENDGAME_SKILL_ZONES}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
