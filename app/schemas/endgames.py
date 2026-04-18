@@ -329,6 +329,60 @@ class TimePressureChartResponse(BaseModel):
     total_endgame_games: int
 
 
+class EndgameEloTimelinePoint(BaseModel):
+    """One weekly point for a (platform, time_control) combo (Phase 57 ELO-05).
+
+    date: Monday of the ISO week, YYYY-MM-DD.
+    endgame_elo: performance rating = round(avg_opp + 400 * log10(clamp(skill) / (1 - clamp)))
+        where skill is the endgame-skill composite (Conv Win %, Parity Score %,
+        Recov Save %) over the trailing ENDGAME_ELO_TIMELINE_WINDOW endgame games
+        and avg_opp is the mean opponent_rating across the same window.
+    actual_elo: mean user_rating across the trailing window of ALL games for
+        this combo (not only endgame games), per D-04.
+    endgame_games_in_window: count of endgame games contributing to the skill /
+        opp-avg computation. Drives the frontend tooltip and the MIN_GAMES_FOR_TIMELINE
+        threshold check (>= 10).
+    """
+
+    date: str
+    endgame_elo: int
+    actual_elo: int
+    endgame_games_in_window: int
+
+
+class EndgameEloTimelineCombo(BaseModel):
+    """One (platform, time_control) combo's paired-line series (Phase 57 ELO-05).
+
+    combo_key: underscore-joined key like "chess_com_blitz" / "lichess_classical".
+        Frontend uses this as the lookup key into ELO_COMBO_COLORS.
+    platform / time_control: denormalized for the legend label, avoiding frontend
+        string-split and keeping the wire format explicit.
+    points: weekly points sorted by date ASC. Combos with zero qualifying points
+        are dropped from the response entirely (D-10 tier 2), so callers never
+        receive an empty `points` list.
+    """
+
+    combo_key: str
+    platform: Literal["chess.com", "lichess"]
+    time_control: Literal["bullet", "blitz", "rapid", "classical"]
+    points: list[EndgameEloTimelinePoint]
+
+
+class EndgameEloTimelineResponse(BaseModel):
+    """Response wrapper for the Endgame ELO timeline (Phase 57 ELO-05).
+
+    combos: one series per qualifying (platform, time_control). Ordered
+        chess.com-first then lichess, bullet->blitz->rapid->classical within each
+        platform (matches _TIME_CONTROL_ORDER elsewhere in endgame_service).
+        Empty list when no combo has any qualifying weekly point, the frontend
+        then swaps the chart body to an empty-state.
+    timeline_window: rolling window size used for each point (== ENDGAME_ELO_TIMELINE_WINDOW).
+    """
+
+    combos: list[EndgameEloTimelineCombo]
+    timeline_window: int
+
+
 class EndgameOverviewResponse(BaseModel):
     """Composed response for GET /api/endgames/overview.
 
@@ -344,3 +398,4 @@ class EndgameOverviewResponse(BaseModel):
     score_gap_material: ScoreGapMaterialResponse  # Phase 53: score gap & material breakdown
     clock_pressure: ClockPressureResponse  # Phase 54: time pressure at endgame entry
     time_pressure_chart: TimePressureChartResponse  # Phase 55: time pressure vs performance chart
+    endgame_elo_timeline: EndgameEloTimelineResponse  # Phase 57: paired Endgame ELO + Actual ELO series per (platform, TC)
