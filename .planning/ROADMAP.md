@@ -256,7 +256,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 57-01-PLAN.md — Backend: schemas, repo query, Elo formula + skill composite + weekly-series helpers, orchestrator + overview wiring, unit tests
+- [x] 57-01-PLAN.md — Backend: schemas, repo query, Elo formula + skill composite + weekly-series helpers, orchestrator + overview wiring, unit tests
 - [ ] 57-02-PLAN.md — Frontend: TS types + ELO_COMBO_COLORS + niceEloAxis, EndgameEloTimelineSection component, Endgames page wiring + human-verify
 **UI hint**: yes
 
@@ -387,7 +387,7 @@ Plans:
 | 54. Time Pressure — Clock Stats Table | v1.10 | 2/2 | Complete    | 2026-04-12 |
 | 55. Time Pressure — Performance Chart | v1.10 | 2/2 | Complete    | 2026-04-12 |
 | 56. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
-| 57. Endgame ELO — Timeline Chart | v1.10 | 0/2 | Not started | - |
+| 57. Endgame ELO — Timeline Chart | v1.10 | 1/2 | In Progress|  |
 | 58. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
 | 59. Fix Endgame Conv/Even/Recov per-game stats | v1.10 | 3/3 | Complete    | 2026-04-13 |
 | 60. Opponent-based baseline for Endgame Conv/Even/Recov | v1.10 | 2/2 | Complete    | 2026-04-14 |
@@ -399,7 +399,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
