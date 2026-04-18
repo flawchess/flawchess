@@ -223,6 +223,11 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   </li>
                 </ul>
                 <p>
+                  <strong>Endgame Skill</strong> averages the three rates above
+                  (typical ~52%). The 45–55% blue band matches Parity so the
+                  colors stay comparable.
+                </p>
+                <p>
                   These rates are not the same as the generic Score % used
                   elsewhere on the page.
                 </p>
@@ -240,18 +245,6 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   flipped). This baseline is self-calibrating and shifts with
                   filters like Opponent Strength. Hidden when the opponent sample
                   is smaller than 10 games.
-                </p>
-                <p>
-                  <strong>Endgame Skill</strong> is a composite gauge: the simple
-                  average of your Conversion Win %, Parity Score %, and Recovery
-                  Save %. Typical FlawChess users land around 52%, which is why
-                  the blue band sits at 45–55% (mirroring the Parity band so the
-                  colors stay comparable). It's a useful one-number summary to
-                  track over time alongside your filters. Because the three
-                  inputs measure different things (Win %, Score %, Save %), the
-                  result is an aggregate rather than a true chess score, so
-                  colors are comparable to Parity but the number is not. Buckets
-                  with no games are excluded from the average.
                 </p>
               </div>
             </InfoPopover>
