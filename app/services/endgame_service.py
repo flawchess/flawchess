@@ -959,10 +959,14 @@ def _compute_endgame_elo_weekly_series(
 
     Walks a merged chronological event stream of endgame bucket rows + all-games
     rows, maintaining one trailing window of bucket rows for the skill composite.
-    At each ISO-week boundary, emits one point with:
+    At each ISO-week boundary, emits one point dated to the ISO-Sunday
+    (end of week) with:
     - actual_elo = asof-join of (actual_elo_dates, actual_elo_ratings) at the
         ISO-week-end timestamp (Monday + 7 days, exclusive). Forward-fills from
-        the latest prior game when the week itself has no games (D-02).
+        the latest prior game when the week itself has no games (D-02). The
+        plotted date (Sunday) matches when this rating was measured — so a daily
+        rating chart at the same date shows the same value (assuming matching
+        filters).
     - endgame_elo = _endgame_elo_from_skill(skill, actual_elo) — both lines share
         the asof rating anchor (D-04).
     - endgame_games_in_window = len(endgame_window).
@@ -1040,6 +1044,12 @@ def _compute_endgame_elo_weekly_series(
         monday = (played_at - timedelta(days=iso_weekday - 1)).date()
         monday_dt = datetime.combine(monday, time.min, tzinfo=played_at.tzinfo)
         next_monday_dt = monday_dt + timedelta(days=7)
+        # Stored date is the ISO-Sunday (end of week). The asof rating reflects
+        # end-of-Sunday, so the plotted date must match that moment — otherwise
+        # a daily rating chart (e.g. Global Stats RatingChart) at the same date
+        # shows a rating that lags the Endgame Timeline by 6 days (Phase 57.1
+        # polish of D-02 framing).
+        sunday = monday + timedelta(days=6)
 
         idx = bisect.bisect_right(actual_elo_dates, next_monday_dt)
         if idx == 0:
@@ -1052,7 +1062,7 @@ def _compute_endgame_elo_weekly_series(
         endgame_elo = _endgame_elo_from_skill(skill, float(actual_elo_at_date))
 
         data_by_week[(iso_year, iso_week)] = {
-            "date": monday.isoformat(),
+            "date": sunday.isoformat(),
             "endgame_elo": endgame_elo,
             "actual_elo": int(actual_elo_at_date),
             "endgame_games_in_window": len(endgame_window),

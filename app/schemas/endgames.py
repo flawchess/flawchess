@@ -332,7 +332,9 @@ class TimePressureChartResponse(BaseModel):
 class EndgameEloTimelinePoint(BaseModel):
     """One weekly point for a (platform, time_control) combo (Phase 57 ELO-05; revised in Phase 57.1).
 
-    date: Monday of the ISO week, YYYY-MM-DD.
+    date: Sunday of the ISO week (end of week), YYYY-MM-DD. Aligned with the asof
+        rating moment so a daily rating chart at the same date shows the same value
+        (assuming matching filter inputs).
     endgame_elo: skill-adjusted rating
         = round(actual_elo_at_date + 400 * log10(clamp(skill) / (1 - clamp))),
         anchored on the user's actual rating at the point's date (per-combo asof-join

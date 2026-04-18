@@ -3176,7 +3176,8 @@ class TestEndgameEloTimeline:
             bucket_rows, all_rows, 100, asof_dates, asof_ratings
         )
         assert len(result) == 1
-        assert result[0].date == "2026-01-05"
+        # Dated to ISO-Sunday (end of week 2 = 2026-01-11). Monday was 2026-01-05.
+        assert result[0].date == "2026-01-11"
         # skill=0.5 (all draws => parity score=0.5), asof rating=1500 -> elo == 1500
         assert result[0].endgame_elo == 1500
         assert result[0].actual_elo == 1500
@@ -3276,7 +3277,9 @@ class TestEndgameEloTimeline:
             bucket_rows, all_rows, 100, asof_dates, asof_ratings, cutoff_str="2026-01-12"
         )
         assert len(result) == 1
-        assert result[0].date == "2026-01-12"
+        # Dated to ISO-Sunday (end of week 3 = 2026-01-18). Monday was 2026-01-12.
+        # cutoff_str="2026-01-12" excludes week-2 point dated 2026-01-11.
+        assert result[0].date == "2026-01-18"
         # Window filled with 11 games (10 pre-cutoff + 1 post-cutoff).
         assert result[0].endgame_games_in_window == 11
 
@@ -3605,9 +3608,10 @@ class TestEndgameEloTimeline:
             asof_ratings,
         )
         # Two points emitted (one per week). Verify per-week counts.
+        # Dates are ISO-Sundays (end of week): 2026-01-11 for week 2, 2026-01-18 for week 3.
         assert len(result) == 2
-        wk1_pt = next(p for p in result if p.date == "2026-01-05")
-        wk2_pt = next(p for p in result if p.date == "2026-01-12")
+        wk1_pt = next(p for p in result if p.date == "2026-01-11")
+        wk2_pt = next(p for p in result if p.date == "2026-01-18")
         assert wk1_pt.per_week_endgame_games == 15
         assert wk2_pt.per_week_endgame_games == 12  # NOT 27 (trailing window)
         # endgame_games_in_window IS the trailing window:
@@ -3703,7 +3707,8 @@ class TestEndgameEloTimeline:
         # Monday-morning 1600 rating (cutoff pinned to midnight excludes it).
         # A separate WR-02 regression test covers whether a week-3 point is
         # emitted at all off an "all" event.
-        wk2_pt = next(p for p in result if p.date == "2026-01-05")
+        # Point dated to ISO-Sunday (2026-01-11, end of ISO week 2).
+        wk2_pt = next(p for p in result if p.date == "2026-01-11")
         assert wk2_pt.actual_elo == 1500  # NOT 1600 — no week-3 bleed
 
     def test_all_events_do_not_trigger_emission_in_fresh_week(self):
@@ -3763,11 +3768,13 @@ class TestEndgameEloTimeline:
         )
         # Only week 1 should emit (where endgame games actually happened).
         # Week 2 must NOT be in the result even though "all" events fall there.
+        # Dates are ISO-Sundays (end of week): 2026-01-11 for ISO week 2,
+        # 2026-01-18 for ISO week 3.
         dates = {p.date for p in result}
-        assert "2026-01-05" in dates  # week 1 present
-        assert "2026-01-12" not in dates  # week 2 absent (no endgame events)
+        assert "2026-01-11" in dates  # week 1 present
+        assert "2026-01-18" not in dates  # week 2 absent (no endgame events)
         # And the week-1 point carries its true per-week count.
-        wk1_pt = next(p for p in result if p.date == "2026-01-05")
+        wk1_pt = next(p for p in result if p.date == "2026-01-11")
         assert wk1_pt.per_week_endgame_games == 10
 
 
