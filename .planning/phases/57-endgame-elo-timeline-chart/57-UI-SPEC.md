@@ -112,7 +112,7 @@ All copy follows CLAUDE.md em-dash guidance: at most one em-dash per paragraph, 
 |---------|------|
 | Section h2 header | `Endgame ELO` (shared container; Phase 56 breakdown table and Phase 57 timeline sit inside it with their own h3 subsection headers) |
 | Chart heading (h3) | `Endgame ELO Timeline` |
-| Chart sub-description | `Endgame ELO versus Actual ELO over time, per platform and time control. Bright lines are Endgame ELO, dark lines are Actual ELO.` |
+| Chart sub-description | `Actual ELO versus Endgame ELO over time, per platform and time control. Bars show endgame games per week. Bright lines are Actual ELO, dark dashed lines are Endgame ELO.` |
 | Primary CTA | None — this section has no primary CTA; it's a read-only visualization (the global FilterPanel sidebar is the only interactive control that affects it) |
 | Empty state (chart-level, all combos drop or `overall` empty) | Heading: `Not enough endgame games yet for a timeline.` &nbsp; Body: `Import more games or loosen the recency filter.` (mirrors CONTEXT.md D-10 verbatim) |
 | Empty state layout | Single `<div className="text-center text-muted-foreground py-8">` with the two lines; matches `EndgameTimelineChart`'s existing empty-state shape |
@@ -128,26 +128,25 @@ Render inside `<InfoPopover ariaLabel="Endgame ELO Timeline info" testId="endgam
 ```jsx
 <div className="space-y-2">
   <p>
-    <strong>Endgame ELO</strong> is a performance rating derived from your
-    Endgame Skill (the average of Conversion Win %, Parity Score %, and
-    Recovery Save %). We compute it as
-    <em> avg_opponent_rating + 400 &middot; log10(skill / (1 &minus; skill))</em>,
-    using the rolling window's opponent pool for the skill and for the
-    average opponent rating.
+    <strong>Endgame ELO</strong> is your Actual ELO shifted by how much your
+    Endgame Skill exceeds (or falls short of) the 50% neutral mark. We compute it as
+    <em> actual_elo + 400 &middot; log10(skill / (1 &minus; skill))</em>,
+    where skill is the composite of Conversion Win %, Parity Score %, and
+    Recovery Save % over your trailing 100 endgame games.
   </p>
   <p>
-    The bright line is Endgame ELO, the dark line is your <strong>Actual ELO</strong>
-    (average rating over the same rolling window of all games for that combo).
-    The gap between the lines is the interesting signal: well above Actual ELO
-    means your endgames are pulling your rating up; well below means they're
-    pulling it down.
+    The bright line is your <strong>Actual ELO</strong> &mdash; your rating at each
+    date from the most recent game on or before that date. The dark dashed line is
+    <strong> Endgame ELO</strong>. If your Endgame Skill is exactly 50% the two lines
+    touch; 75% skill puts Endgame ELO roughly 190 Elo above, 25% skill puts it roughly
+    190 Elo below. The gap between the lines is the interesting signal.
   </p>
   <p>
-    Points are emitted weekly and each point looks back at your trailing 100
-    endgame games for that platform and time control. Weeks with fewer than
-    10 qualifying endgame games are hidden. Skill is clamped to the 5&ndash;95 %
+    Points are emitted weekly; each Endgame Skill value looks back at your trailing
+    100 endgame games for that platform and time control. Weeks with fewer than
+    10 qualifying endgame games are hidden. Skill is clamped to the 5&ndash;95%
     range so a handful of lucky or unlucky endgames can't produce an
-    absurd performance rating at the extremes.
+    absurd rating shift at the extremes.
   </p>
   <p>
     Chess.com uses Glicko-1 and lichess uses Glicko-2, so ratings across the
@@ -160,7 +159,9 @@ Render inside `<InfoPopover ariaLabel="Endgame ELO Timeline info" testId="endgam
 Notes for the executor:
 - Use `&middot;` and `&minus;` and `&ndash;` HTML entities to avoid mixing multiplication/minus glyphs with prose hyphens.
 - Keep `<strong>` / `<em>` exactly as shown; matches the info-popover prose style elsewhere on the page (`EndgameScoreGapSection.tsx` lines 201–248).
-- One em-dash budget, not used — paragraphs are short enough that commas suffice.
+- One em-dash budget used in paragraph 2 (between "Actual ELO" and "your rating at each date"); remaining paragraphs use commas.
+
+<!-- Revised in Phase 57.1 (2026-04-18): paragraphs 1-3 + chart subtitle rewritten per 57.1-CONTEXT.md D-12/D-13/D-14/D-16 to drop "performance rating" framing after the anchor change. Endgame ELO is now a skill-adjusted rating (user's actual rating at each date via per-combo asof-join + log10(skill/(1-skill))*400 delta), not a classical performance rating anchored on rolling-mean opponent rating. The wire schema EndgameEloTimelinePoint also gained per_week_endgame_games per D-06; see 57.1-CONTEXT.md for full rationale. -->
 
 ---
 

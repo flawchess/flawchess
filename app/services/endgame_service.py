@@ -859,8 +859,8 @@ def _endgame_elo_from_skill(skill: float, actual_elo_at_date: float) -> int:
     When skill == 0.5 the log10 term is 0, so endgame_elo == actual_elo_at_date. Both
     timeline lines coincide at the neutral skill mark. 75 % skill puts endgame_elo
     roughly +190 Elo above; 25 % skill puts it roughly -190 Elo below. The anchor
-    change (Phase 57.1) replaces the old avg_opp_rating anchor; this is no longer a
-    classical performance rating, it is a skill-adjusted rating.
+    change (Phase 57.1) replaces the old opponent-average anchor; this is no longer a
+    classical performance metric, it is a skill-adjusted rating.
 
     Pure function. Safe for skill=0.0 and skill=1.0 by construction (clamp is applied
     unconditionally before the log10 / division).
@@ -1011,8 +1011,8 @@ def _compute_endgame_elo_weekly_series(
             )
 
         # Require endgame window >= threshold for emission. NOTE (Phase 57.1):
-        # the all_user_ratings rolling list is gone — actual_elo now comes from
-        # the per-combo asof arrays passed in by the orchestrator.
+        # the rolling user-rating mean from Phase 57 is gone — actual_elo now
+        # comes from the per-combo asof arrays passed in by the orchestrator.
         if len(endgame_window) < MIN_GAMES_FOR_TIMELINE:
             continue
 
