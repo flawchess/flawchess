@@ -1,6 +1,6 @@
 ---
 name: benchmarks
-description: Generate FlawChess population-level benchmarks from the prod or local dev database — per-user score-gap (endgame vs non-endgame), endgame Conversion/Parity/Recovery rates bucketed by ELO (500-wide) and time control, time-pressure stats at endgame entry (avg clock diff, net timeout rate), time-pressure-vs-performance curves across time controls, composite Endgame Skill distribution by ELO × TC, and Endgame ELO vs Actual ELO gap distribution per (platform, time-control) combo. Use this skill whenever the user asks about endgame benchmarks, neutral zones, gauge ranges, "what's typical", baseline distributions, calibrating thresholds, comparing time controls, deciding whether to collapse time controls, setting conversion/recovery/parity/skill ranges, or calibrating Endgame ELO timeline expectations. Trigger on phrases like "benchmark", "benchmarks", "baseline", "neutral zone", "gauge range", "distribution of rates", "how are rates distributed", "score gap distribution", "conversion distribution", "endgame skill distribution", "endgame ELO distribution", "endgame ELO gap", "calibrate thresholds", "collapse time controls", "is collapsing TC justified". Writes a timestamped markdown report to reports/benchmarks-YYYY-MM-DD.md.
+description: Generate FlawChess population-level benchmarks from the prod or local dev database — per-user score-gap (endgame vs non-endgame), endgame Conversion/Parity/Recovery rates and composite Endgame Skill distribution bucketed by ELO (500-wide) and time control, Endgame ELO vs Actual ELO gap distribution per (platform, time-control) combo, time-pressure stats at endgame entry (avg clock diff, net timeout rate), and time-pressure-vs-performance curves across time controls. Use this skill whenever the user asks about endgame benchmarks, neutral zones, gauge ranges, "what's typical", baseline distributions, calibrating thresholds, comparing time controls, deciding whether to collapse time controls, setting conversion/recovery/parity/skill ranges, or calibrating Endgame ELO timeline expectations. Trigger on phrases like "benchmark", "benchmarks", "baseline", "neutral zone", "gauge range", "distribution of rates", "how are rates distributed", "score gap distribution", "conversion distribution", "endgame skill distribution", "endgame ELO distribution", "endgame ELO gap", "calibrate thresholds", "collapse time controls", "is collapsing TC justified". Writes a timestamped markdown report to reports/benchmarks-YYYY-MM-DD.md.
 ---
 
 # Benchmarks
@@ -16,7 +16,7 @@ Generate population-level benchmarks for FlawChess endgame analytics. The goal i
 
 ## Report scope
 
-By default, run **all four** benchmark sections and write to `reports/benchmarks-YYYY-MM-DD.md` (UTC date). If the user only asks for one (e.g. "just the clock pressure benchmark"), run that section only and append to today's report — don't overwrite prior sections.
+By default, run **all five** benchmark sections and write to `reports/benchmarks-YYYY-MM-DD.md` (UTC date). If the user only asks for one (e.g. "just the clock pressure benchmark"), run that section only and append to today's report — don't overwrite prior sections.
 
 When writing the report, always include at the top:
 - Target DB (prod/local) and snapshot timestamp
@@ -29,19 +29,18 @@ When writing the report, always include at the top:
 Before running any SQL, **grep the frontend for the constants each section's gauge depends on** and include them in a "Currently set in code" subsection at the top of each benchmark section. The recommendations at the bottom of each section must compare `recommended` vs `currently set`, not invent values from nothing.
 
 Never assume a metric uses absolute units when the code uses relative ones, or vice versa. Past mistakes that must not repeat:
-- **Time pressure uses `% of base time`, NOT absolute seconds.** The clock-pressure gauge compares `user_avg_pct − opp_avg_pct` (both are `clock_seconds / base_time_seconds * 100`). Reports should present section 3 in **% of base time** and frame the recommendation that way. Absolute seconds are only useful as a secondary readout.
-- **The time-pressure-vs-performance chart (section 4) currently POOLS across time controls** (single `user_series + opp_series` pair, see `_compute_time_pressure_chart` in `app/services/endgame_service.py`). Section 4's job is therefore "is the current pooling still justified?", not "should we collapse?" — the default is already collapsed.
+- **Time pressure uses `% of base time`, NOT absolute seconds.** The clock-pressure gauge compares `user_avg_pct − opp_avg_pct` (both are `clock_seconds / base_time_seconds * 100`). Reports should present section 4 in **% of base time** and frame the recommendation that way. Absolute seconds are only useful as a secondary readout.
+- **The time-pressure-vs-performance chart (section 5) currently POOLS across time controls** (single `user_series + opp_series` pair, see `_compute_time_pressure_chart` in `app/services/endgame_service.py`). Section 5's job is therefore "is the current pooling still justified?", not "should we collapse?" — the default is already collapsed.
 
 ### Code locations to grep (update when files move)
 
 | Section | Metric | File | Constants |
 |---|---|---|---|
 | 1 | Endgame-vs-non-endgame score gap | `frontend/src/components/charts/EndgamePerformanceSection.tsx` | `SCORE_DIFF_NEUTRAL_MIN/MAX`, `SCORE_DIFF_DOMAIN` |
-| 2 | Conversion / parity / recovery gauges | `frontend/src/components/charts/EndgameScoreGapSection.tsx` | `FIXED_GAUGE_ZONES` (per bucket), `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN` |
-| 3 | Clock-diff neutral zone | `frontend/src/components/charts/EndgameClockPressureSection.tsx` | `NEUTRAL_PCT_THRESHOLD` (±pp of base time), `NEUTRAL_TIMEOUT_THRESHOLD` (±pp net timeout) |
-| 4 | Time-pressure chart pooling | `app/services/endgame_service.py::_compute_time_pressure_chart` + `frontend/src/components/charts/EndgameTimePressureSection.tsx` | `Y_AXIS_DOMAIN`, `X_AXIS_DOMAIN`, `MIN_GAMES_FOR_CLOCK_STATS` |
-| 5 | Endgame Skill gauge zones | `frontend/src/components/charts/EndgameScoreGapSection.tsx` | `ENDGAME_SKILL_ZONES` (3-band: danger / neutral / success) |
-| 6 | Endgame ELO formula + window | `app/services/endgame_service.py` | `ENDGAME_ELO_TIMELINE_WINDOW` (=100), `_ENDGAME_ELO_SKILL_CLAMP_LO/HI` (=0.05/0.95), `MIN_GAMES_FOR_TIMELINE` (=10, in `openings_service.py`), `_MATERIAL_ADVANTAGE_THRESHOLD` (=100) |
+| 2 | Conversion / parity / recovery gauges + Endgame Skill gauge | `frontend/src/components/charts/EndgameScoreGapSection.tsx` | `FIXED_GAUGE_ZONES` (per bucket), `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`, `ENDGAME_SKILL_ZONES` (3-band: danger / neutral / success) |
+| 3 | Endgame ELO formula + window + clamp | `app/services/endgame_service.py` | `ENDGAME_ELO_TIMELINE_WINDOW` (=100), `_ENDGAME_ELO_SKILL_CLAMP_LO/HI` (=0.05/0.95), `MIN_GAMES_FOR_TIMELINE` (=10, in `openings_service.py`), `_MATERIAL_ADVANTAGE_THRESHOLD` (=100) |
+| 4 | Clock-diff neutral zone | `frontend/src/components/charts/EndgameClockPressureSection.tsx` | `NEUTRAL_PCT_THRESHOLD` (±pp of base time), `NEUTRAL_TIMEOUT_THRESHOLD` (±pp net timeout) |
+| 5 | Time-pressure chart pooling | `app/services/endgame_service.py::_compute_time_pressure_chart` + `frontend/src/components/charts/EndgameTimePressureSection.tsx` | `Y_AXIS_DOMAIN`, `X_AXIS_DOMAIN`, `MIN_GAMES_FOR_CLOCK_STATS` |
 
 Grep with e.g. `rg "SCORE_DIFF_NEUTRAL|SCORE_DIFF_DOMAIN" frontend/src` (Grep tool, not bash) before writing each section. Record the literal values in the report.
 
@@ -93,11 +92,11 @@ Do **not** filter by `opponent_strength` or `recency` in benchmarks — populati
 | Benchmark | Minimum games |
 |-----------|---------------|
 | B1 score gap | 30 endgame AND 30 non-endgame games per user |
-| B2 conv/parity/recov distribution | 10 games per user in a given (ELO bucket × TC × material bucket) cell for per-user distributions; cells also shown only if the cell's pooled n ≥ 100 |
-| B3 clock stats | 20 endgame games per user per TC |
-| B4 pressure-vs-performance | 100 games per (TC × time-remaining bucket) cell to show a point on the curve |
-| B5 Endgame Skill | 20 endgame games per user per (ELO bucket × TC), AND at least 2 of the 3 material sub-buckets non-empty for that user (mirrors the service's "mean across non-empty buckets" rule); cells shown only if ≥ 10 users qualify |
-| B6 Endgame ELO gap | 30 endgame games per user per (platform × TC) combo AND 100 total games per combo (matches `ENDGAME_ELO_TIMELINE_WINDOW`); user must also have a non-NULL `user_rating` so Actual ELO is defined |
+| B2a conv/parity/recov pooled rates | 10 games per user in a given (ELO × TC × material bucket) cell for per-user distributions; cells shown only if the cell's pooled n ≥ 100 |
+| B2b Endgame Skill per-user distribution | 20 endgame games per user per (ELO bucket × TC), AND at least 2 of the 3 material sub-buckets non-empty for that user (mirrors the service's "mean across non-empty buckets" rule); cells shown only if ≥ 10 users qualify |
+| B3 Endgame ELO gap | 30 endgame games per user per (platform × TC) combo AND 100 total games per combo (matches `ENDGAME_ELO_TIMELINE_WINDOW`); user must also have at least one game with non-NULL `user_rating` so Actual ELO is defined |
+| B4 clock stats | 20 endgame games per user per TC |
+| B5 pressure-vs-performance | 100 games per (TC × time-remaining bucket) cell to show a point on the curve |
 
 ---
 
@@ -170,11 +169,11 @@ A single-row percentile table plus:
 
 ---
 
-## Section 2 — Conversion / Parity / Recovery Distribution
+## Section 2 — Conversion / Parity / Recovery + Endgame Skill by ELO × TC
 
-**Question:** How do per-game Conversion, Parity, Recovery rates (= user score within that material-entry bucket) vary across ELO (500-wide) and time control? Used to calibrate the conv/parity/recov gauges.
+**Question:** How do per-game Conversion, Parity, Recovery rates vary across ELO (500-wide) and time control, AND how does the composite Endgame Skill (the mean-across-non-empty-buckets of those same three per-user per-bucket rates) distribute across users per (ELO × TC)? Used to calibrate both the conv/parity/recov gauges AND the `ENDGAME_SKILL_ZONES` gauge.
 
-Per the clarified scope: **bucket games, not users.** Each game contributes to one (ELO bucket × TC × material bucket) cell based on its own per-game rating and its own material imbalance at endgame entry — no per-user ELO assignment.
+Endgame Skill is the unweighted average of the same three metrics a user sees on their conv/parity/recov gauges (see `_endgame_skill_from_bucket_rows` in `app/services/endgame_service.py`), so both are computed here together. The conv/parity/recov tables use **pooled game-weighted rates** (Query A — bucket games, not users); the Endgame Skill table uses the **per-user** composite (Query B) because the "mean-across-non-empty-buckets" rule requires materializing per-user per-bucket rates first.
 
 ### Bucket rules
 - **ELO bucket** = `floor(user_rating / 500) * 500` where `user_rating = white_rating if user_color='white' else black_rating`. Exclude games where that rating is NULL.
@@ -186,7 +185,17 @@ Per the clarified scope: **bucket games, not users.** Each game contributes to o
   - Bucket: `conversion` if both ≥ +100, `recovery` if both ≤ −100, else `parity` (including NULL after_imb).
   - Threshold 100 mirrors `_MATERIAL_ADVANTAGE_THRESHOLD`.
 
-### Query
+### Currently set in code (grep before reporting)
+
+Read `frontend/src/components/charts/EndgameScoreGapSection.tsx` and extract:
+- `FIXED_GAUGE_ZONES` — the per-bucket gauge neutral bands (conversion / parity / recovery). As of last audit: conversion `[0.65–0.75]`, parity `[0.45–0.55]`, recovery `[0.30–0.40]`.
+- `NEUTRAL_ZONE_MIN/MAX` — the neutral band on the opponent-calibrated bullet chart.
+- `BULLET_DOMAIN` — the bullet chart's half-width.
+- `ENDGAME_SKILL_ZONES` — the 3-band gauge for composite Endgame Skill. As of last audit: `[0–0.45 danger, 0.45–0.55 neutral, 0.55–1.00 success]` (mirrors the Parity gauge so the color story stays consistent). Typical value lands around 52% on FlawChess data.
+
+Report each literal value at the top of Section 2 so recommendations can be compared against what's live.
+
+### Query A — Pooled Conversion / Parity / Recovery by (ELO × TC × material bucket)
 ```sql
 WITH first_endgame AS (
   SELECT game_id, min(ply) AS entry_ply
@@ -244,18 +253,7 @@ GROUP BY elo_bucket, tc, bucket
 ORDER BY elo_bucket, tc, bucket;
 ```
 
-Run this once — the pivoted output powers the next two tables.
-
-### Currently set in code (grep before reporting)
-
-Read `frontend/src/components/charts/EndgameScoreGapSection.tsx` and extract:
-- `FIXED_GAUGE_ZONES` — the per-bucket gauge neutral bands (conversion / parity / recovery).
-- `NEUTRAL_ZONE_MIN/MAX` — the neutral band on the opponent-calibrated bullet chart.
-- `BULLET_DOMAIN` — the bullet chart's half-width.
-
-Report each of these literal values at the top of Section 2 so recommendations can be compared against what's live.
-
-### Output tables (one per material bucket: conversion, parity, recovery)
+### Output — Conversion / Parity / Recovery tables (one per material bucket)
 
 Rows = ELO bucket (`<500, 500–999, 1000–1499, ...`), columns = TC (bullet / blitz / rapid / classical). Cell = pooled score with `(n games)` on a second line. Grey out cells with `games < 100` (show value but flag as low-confidence).
 
@@ -270,9 +268,320 @@ After each table, include:
 
 For each (ELO × TC × material_bucket) cell with ≥ 10 users each having ≥ 10 games in the cell, add a p25/p50/p75 of per-user rates. This shows *spread* within a cell and is what backs statements like "at 1500 blitz, half of users convert between 68% and 78%". Only emit cells that pass the sample floor.
 
+### Query B — Per-user Endgame Skill by (ELO × TC)
+
+Skill math mirrors `_endgame_skill_from_bucket_rows` in `app/services/endgame_service.py`:
+1. **Per-bucket rate** — mean of per-game contributions inside that bucket:
+   - conversion → `1.0` if user won else `0.0` (Win %)
+   - parity → user score `1.0 / 0.5 / 0.0` (Score %)
+   - recovery → `1.0` if user won or drew else `0.0` (Save %)
+2. **Skill** — unweighted mean of the non-empty per-bucket rates (so a user with only parity games has `skill = parity_rate`; a user with all three has `skill = (conv + par + recov) / 3`).
+
+The "non-empty-buckets" rule is why we can't just average per-game rates directly — we have to materialize per-bucket rates first and then average those.
+
+```sql
+WITH first_endgame AS (
+  SELECT game_id, min(ply) AS entry_ply
+  FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id HAVING count(*) >= 6
+),
+bucketed AS (
+  SELECT
+    g.user_id,
+    g.time_control_bucket AS tc,
+    (floor((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)::numeric / 500) * 500)::int AS elo_bucket,
+    CASE
+      WHEN (g.result='1-0' AND g.user_color='white')
+        OR (g.result='0-1' AND g.user_color='black') THEN 1.0
+      WHEN g.result='1/2-1/2' THEN 0.5
+      ELSE 0.0
+    END AS score,
+    CASE WHEN g.user_color='white' THEN 1 ELSE -1 END AS color_sign,
+    ep.material_imbalance AS entry_imb,
+    ap.material_imbalance AS after_imb
+  FROM games g
+  JOIN first_endgame fe ON fe.game_id = g.id
+  JOIN game_positions ep
+    ON ep.game_id = g.id AND ep.ply = fe.entry_ply
+  LEFT JOIN game_positions ap
+    ON ap.game_id = g.id AND ap.ply = fe.entry_ply + 4
+   AND ap.endgame_class IS NOT NULL
+  WHERE g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket IS NOT NULL
+    AND (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) IS NOT NULL
+),
+classified AS (
+  SELECT
+    user_id, tc, elo_bucket,
+    CASE
+      WHEN entry_imb IS NULL OR after_imb IS NULL THEN 'parity'
+      WHEN (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100 THEN 'conversion'
+      WHEN (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100 THEN 'recovery'
+      ELSE 'parity'
+    END AS bucket,
+    -- Per-game contribution to that bucket's rate:
+    CASE
+      WHEN entry_imb IS NULL OR after_imb IS NULL THEN score  -- parity = score %
+      WHEN (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100
+        THEN CASE WHEN score = 1.0 THEN 1.0 ELSE 0.0 END       -- conversion = win %
+      WHEN (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100
+        THEN CASE WHEN score >= 0.5 THEN 1.0 ELSE 0.0 END      -- recovery = save %
+      ELSE score
+    END AS bucket_contribution
+  FROM bucketed
+),
+per_user_bucket AS (
+  SELECT
+    user_id, tc, elo_bucket, bucket,
+    count(*) AS games,
+    avg(bucket_contribution) AS bucket_rate
+  FROM classified
+  GROUP BY user_id, tc, elo_bucket, bucket
+),
+per_user_skill AS (
+  -- Mean-across-non-empty-buckets == simple AVG over the rows we just produced,
+  -- because per_user_bucket only has a row when the bucket had >= 1 game.
+  SELECT
+    user_id, tc, elo_bucket,
+    count(*) AS buckets_used,        -- 1..3
+    sum(games) AS total_games,
+    avg(bucket_rate) AS skill
+  FROM per_user_bucket
+  GROUP BY user_id, tc, elo_bucket
+  HAVING sum(games) >= 20
+     AND count(*) >= 2                -- at least 2 of the 3 buckets non-empty
+)
+SELECT
+  elo_bucket, tc,
+  count(*) AS n_users,
+  round(avg(skill)::numeric, 4) AS mean_skill,
+  round(stddev_samp(skill)::numeric, 4) AS std_skill,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY skill)::numeric, 4) AS p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY skill)::numeric, 4) AS p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY skill)::numeric, 4) AS p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY skill)::numeric, 4) AS p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY skill)::numeric, 4) AS p95,
+  round(min(skill)::numeric, 4) AS min_skill,
+  round(max(skill)::numeric, 4) AS max_skill
+FROM per_user_skill
+GROUP BY elo_bucket, tc
+HAVING count(*) >= 10
+ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
+```
+
+### Output — Endgame Skill tables
+
+Two views:
+
+1. **ELO × TC matrix (primary).** Rows = ELO bucket, columns = TC. Each cell shows `p50 [p25–p75] (n_users)`. Grey out cells with `n_users < 10` as low-confidence.
+2. **Pooled percentile table.** Single row per TC, columns `n_users / p05 / p25 / p50 / p75 / p95 / mean ± std`. Also emit one "all TCs pooled" row as the overall baseline.
+
+Below the tables:
+- **Currently set in code:** the literal `ENDGAME_SKILL_ZONES` boundaries and the "typical value" comment from the code.
+- **Recommended neutral zone** = `[p25, p75]` pooled across all ELO buckets and TCs (the skill gauge is shown on the overall tab, so the pooled percentiles are what matter).
+- **Recommended gauge range** = `[p05, p95]` pooled.
+- **Slope by ELO:** state whether `p50` moves meaningfully across ELO buckets. If it does (e.g. > 5 pp between adjacent 500-wide buckets), note that a single pooled gauge will favor one ELO cohort over others — future work could consider ELO-stratified zones like `FIXED_GAUGE_ZONES`, but only if the slope is large enough to justify UI complexity.
+- **Verdict:** compare the code's current neutral band `[0.45, 0.55]` against the observed pooled p25/p75. State "keep", "widen to X", "narrow to Y", or "re-center at Z" with one-line rationale. Also flag whether the "typical value" code comment (52% last audited) still matches the pooled median within ±1 pp.
+
+### Per-user list (optional)
+
+After the summary, dump the top 20 and bottom 20 users by pooled skill (collapsed across their cells) with columns `user_id / skill / buckets_used_avg / total_games / dominant_tc` so outliers are eyeballable. Useful to spot data-quality problems (e.g. a user whose skill is 0.9 because they only have 3 parity games — the sample floor should already exclude them, but double-check).
+
 ---
 
-## Section 3 — Time Pressure at Endgame Entry
+## Section 3 — Endgame ELO vs Actual ELO Gap
+
+**Question:** How does the gap `Endgame ELO − Actual ELO` distribute across users per (platform × time-control) combo? The Endgame ELO Timeline chart shows this gap visually ("bright = Actual ELO, dark dashed = Endgame ELO"). This section answers "what magnitude of gap is typical?", sanity-checks the 400-Elo scaling coefficient, and calibrates any future "notable divergence" callout.
+
+**As of Phase 57.1** the formula is anchored on the user's **actual rating at the point's date** (per-combo asof-join), not on avg_opponent_rating. The gap therefore simplifies:
+
+`endgame_elo = round(actual_elo_at_date + 400 · log10(clamped_skill / (1 − clamped_skill)))`
+`gap = endgame_elo − actual_elo = round(400 · log10(clamped_skill / (1 − clamped_skill)))`
+
+Because the anchor cancels out, **the gap distribution is now a deterministic transform of the skill distribution** (after the [0.05, 0.95] clamp). The absolute `mean_actual` and `mean_endgame` still differ across platforms because of Glicko-1 (chess.com) vs Glicko-2 (lichess) scale differences, but the gap itself does not depend on the ELO scale.
+
+The metric is computed per user per combo using the same window math as the live timeline: trailing 100 endgame games, per combo. We use the user's **latest-in-window** user_rating (played_at DESC) as a snapshot proxy for `actual_elo_at_date` at today — this mirrors the asof-join at the latest emitted week.
+
+### Currently set in code (grep before reporting)
+
+Read `app/services/endgame_service.py` and record the literal values of:
+- `ENDGAME_ELO_TIMELINE_WINDOW` (trailing window size for the endgame pool — should be `100`)
+- `_ENDGAME_ELO_SKILL_CLAMP_LO` and `_ENDGAME_ELO_SKILL_CLAMP_HI` (should be `0.05` and `0.95` — caps the formula's Elo contribution at ≈±510)
+- `MIN_GAMES_FOR_TIMELINE` (imported from `app/services/openings_service.py`, should be `10` — per-point emission threshold)
+- `_MATERIAL_ADVANTAGE_THRESHOLD` (should be `100`)
+
+Also record the formula for reference:
+`endgame_elo = round(actual_elo_at_date + 400 · log10(skill / (1 − skill)))`
+
+The `400` is the classical Elo scaling constant — a 400-point differential ⇒ the stronger side scores ~91% vs the weaker. The `log10(skill/(1−skill))` term is the inverse of the Elo expected-score curve applied to the measured skill rate. At the clamp boundaries the gap saturates: `skill=0.05 → gap ≈ −511`, `skill=0.5 → gap = 0`, `skill=0.95 → gap ≈ +511`.
+
+### Query
+
+```sql
+WITH first_endgame AS (
+  SELECT game_id, min(ply) AS entry_ply
+  FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id HAVING count(*) >= 6
+),
+endgame_games AS (
+  SELECT
+    g.id AS game_id,
+    g.user_id,
+    g.platform,
+    g.time_control_bucket AS tc,
+    g.played_at,
+    CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END AS user_rating,
+    CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END AS opp_rating,
+    CASE
+      WHEN (g.result='1-0' AND g.user_color='white')
+        OR (g.result='0-1' AND g.user_color='black') THEN 1.0
+      WHEN g.result='1/2-1/2' THEN 0.5
+      ELSE 0.0
+    END AS score,
+    CASE WHEN g.user_color='white' THEN 1 ELSE -1 END AS color_sign,
+    ep.material_imbalance AS entry_imb,
+    ap.material_imbalance AS after_imb,
+    row_number() OVER (
+      PARTITION BY g.user_id, g.platform, g.time_control_bucket
+      ORDER BY g.played_at DESC, g.id DESC
+    ) AS rn_desc
+  FROM games g
+  JOIN first_endgame fe ON fe.game_id = g.id
+  JOIN game_positions ep
+    ON ep.game_id = g.id AND ep.ply = fe.entry_ply
+  LEFT JOIN game_positions ap
+    ON ap.game_id = g.id AND ap.ply = fe.entry_ply + 4
+   AND ap.endgame_class IS NOT NULL
+  WHERE g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket IS NOT NULL
+    AND g.platform IN ('chess.com', 'lichess')
+    AND (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) IS NOT NULL
+),
+window_games AS (
+  -- Trailing 100 endgame games per (user, platform, tc). Matches ENDGAME_ELO_TIMELINE_WINDOW.
+  SELECT *
+  FROM endgame_games
+  WHERE rn_desc <= 100
+),
+classified AS (
+  SELECT
+    user_id, platform, tc, score, user_rating, opp_rating,
+    CASE
+      WHEN entry_imb IS NULL OR after_imb IS NULL THEN 'parity'
+      WHEN (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100 THEN 'conversion'
+      WHEN (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100 THEN 'recovery'
+      ELSE 'parity'
+    END AS bucket,
+    CASE
+      WHEN entry_imb IS NULL OR after_imb IS NULL THEN score
+      WHEN (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100
+        THEN CASE WHEN score = 1.0 THEN 1.0 ELSE 0.0 END
+      WHEN (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100
+        THEN CASE WHEN score >= 0.5 THEN 1.0 ELSE 0.0 END
+      ELSE score
+    END AS bucket_contribution
+  FROM window_games
+),
+per_user_bucket AS (
+  SELECT
+    user_id, platform, tc, bucket,
+    count(*) AS games,
+    avg(bucket_contribution) AS bucket_rate
+  FROM classified
+  GROUP BY user_id, platform, tc, bucket
+),
+per_user_skill AS (
+  SELECT
+    user_id, platform, tc,
+    count(*) AS buckets_used,
+    sum(games) AS total_games,
+    avg(bucket_rate) AS skill
+  FROM per_user_bucket
+  GROUP BY user_id, platform, tc
+  HAVING sum(games) >= 30
+     AND count(*) >= 2
+),
+per_user_snapshot AS (
+  -- Snapshot proxy for actual_elo_at_date: the user_rating from the most recent
+  -- game in the window (mirrors asof-join at the latest emitted week for that combo).
+  -- Also include avg opponent rating for context (no longer used by the formula).
+  SELECT
+    user_id, platform, tc,
+    count(*) AS endgame_games,
+    (ARRAY_AGG(user_rating ORDER BY played_at DESC, game_id DESC))[1]::numeric AS actual_elo,
+    avg(opp_rating)::numeric AS avg_opp_rating
+  FROM window_games
+  GROUP BY user_id, platform, tc
+),
+joined AS (
+  SELECT
+    s.user_id, s.platform, s.tc, s.skill, s.total_games,
+    p.actual_elo, p.avg_opp_rating,
+    -- Clamp skill to [0.05, 0.95] before the log, matching _ENDGAME_ELO_SKILL_CLAMP_*
+    least(0.95, greatest(0.05, s.skill)) AS clamped_skill
+  FROM per_user_skill s
+  JOIN per_user_snapshot p
+    ON p.user_id = s.user_id AND p.platform = s.platform AND p.tc = s.tc
+  WHERE p.endgame_games >= 30
+),
+elo AS (
+  SELECT
+    user_id, platform, tc, skill, total_games, actual_elo, avg_opp_rating, clamped_skill,
+    -- Phase 57.1 formula: anchor on actual_elo_at_date (snapshot proxy), not avg_opp_rating.
+    round(400 * log(10, clamped_skill / (1 - clamped_skill))) AS gap,
+    round(actual_elo + 400 * log(10, clamped_skill / (1 - clamped_skill))) AS endgame_elo
+  FROM joined
+)
+SELECT
+  platform, tc,
+  count(*) AS n_users,
+  round(avg(actual_elo)::numeric) AS mean_actual,
+  round(avg(endgame_elo)::numeric) AS mean_endgame,
+  round(avg(avg_opp_rating)::numeric) AS mean_opp,        -- context only, no longer in the formula
+  round(avg(gap)::numeric, 1) AS mean_gap,
+  round(stddev_samp(gap)::numeric, 1) AS std_gap,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY gap)::numeric) AS gap_p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY gap)::numeric) AS gap_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY gap)::numeric) AS gap_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY gap)::numeric) AS gap_p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY gap)::numeric) AS gap_p95,
+  round(min(gap)::numeric) AS gap_min,
+  round(max(gap)::numeric) AS gap_max,
+  -- Clamp saturation counters
+  sum(CASE WHEN skill <= 0.05 THEN 1 ELSE 0 END) AS n_clamp_low,
+  sum(CASE WHEN skill >= 0.95 THEN 1 ELSE 0 END) AS n_clamp_high
+FROM elo
+GROUP BY platform, tc
+ORDER BY platform, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
+```
+
+Note: Postgres' `log(base, numeric)` is `log_base(x)`, so `log(10, x)` is `log10(x)`. PG also has `log(x)` (base 10) without the base arg; either works but `log(10, x)` is explicit.
+
+### Output
+
+Three views:
+
+1. **Per-combo gap percentile table.** Rows = 8 combos (chess.com × {bullet, blitz, rapid, classical} then lichess × same). Columns `n_users / gap_p05 / gap_p25 / gap_p50 / gap_p75 / gap_p95 / mean_gap ± std / mean_actual / mean_endgame / mean_opp`.
+2. **Per-combo skill percentile table.** Same rows, columns `skill_p25 / skill_p50 / skill_p75` (re-aggregate from the `elo` CTE by swapping `gap` for `skill`). Because the gap is a deterministic transform of clamped skill, this table should roughly mirror the gap table one-to-one.
+3. **Pooled gap histogram.** One row per 100-Elo-wide bucket from `gap_p05` to `gap_p95` pooled across combos, showing `count` and `cumulative %`. Expected shape: bell-curve centered near 0 with modest right skew from the recovery-bucket save-bonus. Flat peaks at ±511 indicate clamp saturation.
+
+Below the tables:
+- **Currently set in code:** literal values of `ENDGAME_ELO_TIMELINE_WINDOW`, the skill clamp bounds, `MIN_GAMES_FOR_TIMELINE`, `_MATERIAL_ADVANTAGE_THRESHOLD`, plus the Phase 57.1 formula (`actual_elo + 400·log10(skill/(1-skill))`).
+- **Platform bias is no longer an issue for the gap.** With the 57.1 anchor, the gap only depends on skill — so any observed chess.com-vs-lichess difference in `mean_gap` reflects skill-distribution differences, not Glicko scale differences. If `mean_gap` diverges by > ±25 Elo between platforms at the same TC, attribute it to skill-distribution divergence and note which platform has systematically higher/lower Endgame Skill rates. (Absolute `mean_actual`/`mean_endgame` still differ by Glicko scale and should not be compared across platforms.)
+- **TC slope check:** within each platform, state whether `mean_gap` drifts across TCs. Slower TCs tend to surface deeper endgame skill (longer games → more endgame technique visible), so classical gaps may run higher than bullet gaps. Report the observed direction and magnitude per platform.
+- **Clamp saturation:** read `n_clamp_low` / `n_clamp_high` from the query. If more than 1 % of qualifying users saturate on either side, the clamp is doing heavy lifting — consider whether that's the intended behaviour (it caps the formula's blow-up) or a symptom of the skill definition being too coarse / the 30-game floor being too low.
+- **Recommended "notable divergence" threshold (forward-looking):** `|gap| > gap_p90_abs` pooled (roughly the top/bottom decile). Today's live UI doesn't expose a "your endgames are pulling your rating up/down notably" callout, but if a future phase adds one this gives it a data-driven threshold.
+- **Verdict on the 400-Elo scaling:** if the pooled `std_gap` lands in the 120–200 range, the formula's sensitivity looks reasonable. Much narrower (< 80) means the skill distribution is tightly concentrated around 0.5 and the log transform is squashing the signal. Much wider (> 300) means a handful of small-sample users with extreme skill are dominating despite the 30-game floor — consider raising the floor in a future revision.
+
+### Per-user list (optional)
+
+Dump the 20 largest positive gaps and 20 largest negative gaps with columns `user_id / platform / tc / skill / clamped_skill / actual_elo / endgame_elo / gap / total_games / buckets_used` so tail users are eyeballable. Useful to spot data-quality problems (e.g. a user at the clamp with only 30 games — borderline sample).
+
+---
+
+## Section 4 — Time Pressure at Endgame Entry
 
 **Question:** How do the per-user average clock difference (**in % of base time**) and net timeout rate (at endgame entry) distribute across users, per time control? Used to calibrate the neutral zone for the clock pressure gauge.
 
@@ -404,11 +713,11 @@ Below the tables:
 
 ---
 
-## Section 4 — Time Pressure vs Performance (Across Time Controls)
+## Section 5 — Time Pressure vs Performance (Across Time Controls)
 
 **Question:** The live chart already **pools all time controls into a single series** (see `_compute_time_pressure_chart` in `app/services/endgame_service.py` — `pooled_user_buckets` / `pooled_opp_buckets`). Is that pooling still justified, or does the data now suggest the chart should split by TC?
 
-**Currently set in code (grep before reporting):** confirm that `_compute_time_pressure_chart` still pools TCs and state this explicitly at the top of Section 4. Also record `Y_AXIS_DOMAIN` and `X_AXIS_DOMAIN` from `EndgameTimePressureSection.tsx` so the report can flag whether the observed curve uses the full axis range or sits squashed inside it.
+**Currently set in code (grep before reporting):** confirm that `_compute_time_pressure_chart` still pools TCs and state this explicitly at the top of Section 5. Also record `Y_AXIS_DOMAIN` and `X_AXIS_DOMAIN` from `EndgameTimePressureSection.tsx` so the report can flag whether the observed curve uses the full axis range or sits squashed inside it.
 
 ### Query
 ```sql
@@ -474,319 +783,6 @@ Verdict: if max per-bucket range < 0.05 (5 pp) across the reliable buckets, the 
 
 ---
 
-## Section 5 — Endgame Skill Distribution
-
-**Question:** How does the composite Endgame Skill (mean-across-non-empty-buckets of Conv Win %, Parity Score %, Recov Save %) distribute across users per (ELO bucket × TC)? Used to calibrate the `ENDGAME_SKILL_ZONES` gauge and to answer "what's a typical skill value at my rating level?"
-
-Endgame Skill is what the backend `_endgame_skill_from_bucket_rows` helper in `app/services/endgame_service.py` computes on each window, and it's the input to the `endgame_elo_from_skill` formula (Section 6). Benchmarking it in isolation lets us calibrate the skill gauge independently of the ELO translation.
-
-### Currently set in code (grep before reporting)
-
-Read `frontend/src/components/charts/EndgameScoreGapSection.tsx` and extract the literal values of `ENDGAME_SKILL_ZONES`. As of this skill's last audit the bands are `[0–0.45 danger, 0.45–0.55 neutral, 0.55–1.00 success]` (mirrors the Parity gauge so the color story stays consistent). Report the literal values and the comment above the constant (it documents "typical value lands around 52% on FlawChess data") at the top of Section 5.
-
-### Skill math, translated to SQL
-
-The Python helper splits each eligible endgame game into one of three mutually-exclusive buckets (`conversion` / `parity` / `recovery`) based on material imbalance at entry and at `entry_ply + 4` (see Section 2's bucket rules — same logic applies), then:
-
-1. **Per-bucket rate** — mean of per-game contributions inside that bucket:
-   - conversion → `1.0` if user won else `0.0` (Win %)
-   - parity → user score `1.0 / 0.5 / 0.0` (Score %)
-   - recovery → `1.0` if user won or drew else `0.0` (Save %)
-2. **Skill** — unweighted mean of the non-empty per-bucket rates (so a user with only parity games has `skill = parity_rate`; a user with all three has `skill = (conv + par + recov) / 3`).
-
-The "non-empty-buckets" rule is why we can't just average per-game rates directly — we have to materialize per-bucket rates first and then average those.
-
-### Query
-```sql
-WITH first_endgame AS (
-  SELECT game_id, min(ply) AS entry_ply
-  FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id HAVING count(*) >= 6
-),
-bucketed AS (
-  SELECT
-    g.user_id,
-    g.time_control_bucket AS tc,
-    (floor((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)::numeric / 500) * 500)::int AS elo_bucket,
-    CASE
-      WHEN (g.result='1-0' AND g.user_color='white')
-        OR (g.result='0-1' AND g.user_color='black') THEN 1.0
-      WHEN g.result='1/2-1/2' THEN 0.5
-      ELSE 0.0
-    END AS score,
-    CASE WHEN g.user_color='white' THEN 1 ELSE -1 END AS color_sign,
-    ep.material_imbalance AS entry_imb,
-    ap.material_imbalance AS after_imb
-  FROM games g
-  JOIN first_endgame fe ON fe.game_id = g.id
-  JOIN game_positions ep
-    ON ep.game_id = g.id AND ep.ply = fe.entry_ply
-  LEFT JOIN game_positions ap
-    ON ap.game_id = g.id AND ap.ply = fe.entry_ply + 4
-   AND ap.endgame_class IS NOT NULL
-  WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket IS NOT NULL
-    AND (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) IS NOT NULL
-),
-classified AS (
-  SELECT
-    user_id, tc, elo_bucket,
-    CASE
-      WHEN entry_imb IS NULL OR after_imb IS NULL THEN 'parity'
-      WHEN (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100 THEN 'conversion'
-      WHEN (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100 THEN 'recovery'
-      ELSE 'parity'
-    END AS bucket,
-    -- Per-game contribution to that bucket's rate:
-    CASE
-      WHEN entry_imb IS NULL OR after_imb IS NULL THEN score  -- parity = score %
-      WHEN (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100
-        THEN CASE WHEN score = 1.0 THEN 1.0 ELSE 0.0 END       -- conversion = win %
-      WHEN (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100
-        THEN CASE WHEN score >= 0.5 THEN 1.0 ELSE 0.0 END      -- recovery = save %
-      ELSE score
-    END AS bucket_contribution
-  FROM bucketed
-),
-per_user_bucket AS (
-  SELECT
-    user_id, tc, elo_bucket, bucket,
-    count(*) AS games,
-    avg(bucket_contribution) AS bucket_rate
-  FROM classified
-  GROUP BY user_id, tc, elo_bucket, bucket
-),
-per_user_skill AS (
-  -- Mean-across-non-empty-buckets == simple AVG over the rows we just produced,
-  -- because per_user_bucket only has a row when the bucket had >= 1 game.
-  SELECT
-    user_id, tc, elo_bucket,
-    count(*) AS buckets_used,        -- 1..3
-    sum(games) AS total_games,
-    avg(bucket_rate) AS skill
-  FROM per_user_bucket
-  GROUP BY user_id, tc, elo_bucket
-  HAVING sum(games) >= 20
-     AND count(*) >= 2                -- at least 2 of the 3 buckets non-empty
-)
-SELECT
-  elo_bucket, tc,
-  count(*) AS n_users,
-  round(avg(skill)::numeric, 4) AS mean_skill,
-  round(stddev_samp(skill)::numeric, 4) AS std_skill,
-  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY skill)::numeric, 4) AS p05,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY skill)::numeric, 4) AS p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY skill)::numeric, 4) AS p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY skill)::numeric, 4) AS p75,
-  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY skill)::numeric, 4) AS p95,
-  round(min(skill)::numeric, 4) AS min_skill,
-  round(max(skill)::numeric, 4) AS max_skill
-FROM per_user_skill
-GROUP BY elo_bucket, tc
-HAVING count(*) >= 10
-ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
-```
-
-### Output
-
-Two views:
-
-1. **ELO × TC matrix (primary).** Rows = ELO bucket (`<500, 500–999, 1000–1499, ...`), columns = TC (bullet / blitz / rapid / classical). Each cell shows `p50 [p25–p75] (n_users)`. Grey out cells with `n_users < 10` as low-confidence.
-2. **Pooled percentile table.** Single row per TC, columns `n_users / p05 / p25 / p50 / p75 / p95 / mean ± std`. Also emit one "all TCs pooled" row as the overall baseline.
-
-Below the tables:
-- **Currently set in code:** the literal `ENDGAME_SKILL_ZONES` boundaries and the "typical value" comment.
-- **Recommended neutral zone** = `[p25, p75]` pooled across all ELO buckets and TCs (the skill gauge in `EndgameScoreGapSection.tsx` is shown on the overall tab, so the pooled percentiles are what matter).
-- **Recommended gauge range** = `[p05, p95]` pooled.
-- **Slope by ELO:** state whether `p50` moves meaningfully across ELO buckets. If it does (e.g. > 5 pp between adjacent 500-wide buckets), note that a single pooled gauge will favor one ELO cohort over others — future work could consider ELO-stratified zones like Section 2's `FIXED_GAUGE_ZONES`, but only if the slope is large enough to justify UI complexity.
-- **Verdict:** compare the code's current neutral band `[0.45, 0.55]` against the observed pooled p25/p75. State "keep", "widen to X", "narrow to Y", or "re-center at Z" with one-line rationale. Also flag whether the "typical value" code comment (52% last audited) still matches the pooled median within ±1pp.
-
-### Per-user list (optional)
-
-After the summary, dump the top 20 and bottom 20 users by pooled skill (collapsed across their cells) with columns `user_id / skill / buckets_used_avg / total_games / dominant_tc` so outliers are eyeballable. Useful to spot data-quality problems (e.g. a user whose skill is 0.9 because they only have 3 parity games — the sample floor should already exclude them, but double-check).
-
----
-
-## Section 6 — Endgame ELO vs Actual ELO Gap
-
-**Question:** How does the gap `Endgame ELO − Actual ELO` distribute across users per (platform × time-control) combo? The Endgame ELO Timeline chart shows this gap visually ("bright = Actual ELO, dark dashed = Endgame ELO"). This section answers "what magnitude of gap is typical?" and "is there systematic bias between platforms?" — useful for future calibration of any "notable divergence" callout, and sanity-checking the 400-Elo scaling coefficient in the formula.
-
-The metric is computed per user per combo using the same window math as the live timeline: trailing 100 endgame games and trailing 100 all games, per combo. We use the user's **current** pool (not a rolling weekly series) to get one datapoint per (user, combo), which is what makes the distribution well-defined.
-
-### Currently set in code (grep before reporting)
-
-Read `app/services/endgame_service.py` and record the literal values of:
-- `ENDGAME_ELO_TIMELINE_WINDOW` (trailing window size for the endgame pool — should be `100`)
-- `_ENDGAME_ELO_SKILL_CLAMP_LO` and `_ENDGAME_ELO_SKILL_CLAMP_HI` (should be `0.05` and `0.95` — caps the formula's Elo contribution at ≈±510)
-- `MIN_GAMES_FOR_TIMELINE` (imported from `app/services/openings_service.py`, should be `10` — per-point emission threshold)
-- `_MATERIAL_ADVANTAGE_THRESHOLD` (should be `100`)
-
-Also record the formula for reference:
-`endgame_elo = round(avg_opp_rating + 400 · log10(skill / (1 − skill)))`
-
-The `400` is the classical Elo scaling constant — a 400-point differential ⇒ the stronger side scores ~91% vs the weaker. The `log10(skill/(1−skill))` term is the inverse of the Elo expected-score curve applied to the measured skill rate.
-
-### Query
-
-We compute per-user per-combo skill (using the same 3-bucket logic as Section 5) and pair it with the average opponent rating and the user's own average rating over the same endgame pool. `actual_elo` in the query is the user's mean rating across their last N endgame games for that combo — this matches how the live timeline defines it at each weekly point (rolling mean user_rating over the all-games pool), collapsed to a single snapshot.
-
-```sql
-WITH first_endgame AS (
-  SELECT game_id, min(ply) AS entry_ply
-  FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id HAVING count(*) >= 6
-),
-endgame_games AS (
-  SELECT
-    g.user_id,
-    g.platform,
-    g.time_control_bucket AS tc,
-    g.played_at,
-    CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END AS user_rating,
-    CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END AS opp_rating,
-    CASE
-      WHEN (g.result='1-0' AND g.user_color='white')
-        OR (g.result='0-1' AND g.user_color='black') THEN 1.0
-      WHEN g.result='1/2-1/2' THEN 0.5
-      ELSE 0.0
-    END AS score,
-    CASE WHEN g.user_color='white' THEN 1 ELSE -1 END AS color_sign,
-    ep.material_imbalance AS entry_imb,
-    ap.material_imbalance AS after_imb,
-    row_number() OVER (
-      PARTITION BY g.user_id, g.platform, g.time_control_bucket
-      ORDER BY g.played_at DESC, g.id DESC
-    ) AS rn_desc
-  FROM games g
-  JOIN first_endgame fe ON fe.game_id = g.id
-  JOIN game_positions ep
-    ON ep.game_id = g.id AND ep.ply = fe.entry_ply
-  LEFT JOIN game_positions ap
-    ON ap.game_id = g.id AND ap.ply = fe.entry_ply + 4
-   AND ap.endgame_class IS NOT NULL
-  WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket IS NOT NULL
-    AND g.platform IN ('chess.com', 'lichess')
-    AND (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) IS NOT NULL
-    AND (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END) IS NOT NULL
-),
-window_games AS (
-  -- Trailing 100 endgame games per (user, platform, tc). Matches ENDGAME_ELO_TIMELINE_WINDOW.
-  SELECT *
-  FROM endgame_games
-  WHERE rn_desc <= 100
-),
-classified AS (
-  SELECT
-    user_id, platform, tc, score, user_rating, opp_rating,
-    CASE
-      WHEN entry_imb IS NULL OR after_imb IS NULL THEN 'parity'
-      WHEN (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100 THEN 'conversion'
-      WHEN (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100 THEN 'recovery'
-      ELSE 'parity'
-    END AS bucket,
-    CASE
-      WHEN entry_imb IS NULL OR after_imb IS NULL THEN score
-      WHEN (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100
-        THEN CASE WHEN score = 1.0 THEN 1.0 ELSE 0.0 END
-      WHEN (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100
-        THEN CASE WHEN score >= 0.5 THEN 1.0 ELSE 0.0 END
-      ELSE score
-    END AS bucket_contribution
-  FROM window_games
-),
-per_user_bucket AS (
-  SELECT
-    user_id, platform, tc, bucket,
-    count(*) AS games,
-    avg(bucket_contribution) AS bucket_rate
-  FROM classified
-  GROUP BY user_id, platform, tc, bucket
-),
-per_user_skill AS (
-  SELECT
-    user_id, platform, tc,
-    count(*) AS buckets_used,
-    sum(games) AS total_games,
-    avg(bucket_rate) AS skill
-  FROM per_user_bucket
-  GROUP BY user_id, platform, tc
-  HAVING sum(games) >= 30
-     AND count(*) >= 2
-),
-per_user_pool AS (
-  -- Opponent avg + user avg across the same endgame window (trailing 100).
-  SELECT
-    user_id, platform, tc,
-    count(*) AS endgame_games,
-    avg(opp_rating)::numeric AS avg_opp_rating,
-    avg(user_rating)::numeric AS actual_elo
-  FROM window_games
-  GROUP BY user_id, platform, tc
-),
-joined AS (
-  SELECT
-    s.user_id, s.platform, s.tc, s.skill, s.total_games,
-    p.avg_opp_rating, p.actual_elo,
-    -- Clamp skill to [0.05, 0.95] before the log, matching _ENDGAME_ELO_SKILL_CLAMP_*
-    least(0.95, greatest(0.05, s.skill)) AS clamped_skill
-  FROM per_user_skill s
-  JOIN per_user_pool p
-    ON p.user_id = s.user_id AND p.platform = s.platform AND p.tc = s.tc
-  WHERE p.endgame_games >= 30
-),
-elo AS (
-  SELECT
-    user_id, platform, tc, skill, total_games, avg_opp_rating, actual_elo,
-    round(avg_opp_rating + 400 * log(10, clamped_skill / (1 - clamped_skill))) AS endgame_elo,
-    round(avg_opp_rating + 400 * log(10, clamped_skill / (1 - clamped_skill)) - actual_elo) AS gap
-  FROM joined
-)
-SELECT
-  platform, tc,
-  count(*) AS n_users,
-  round(avg(actual_elo)::numeric) AS mean_actual,
-  round(avg(endgame_elo)::numeric) AS mean_endgame,
-  round(avg(gap)::numeric, 1) AS mean_gap,
-  round(stddev_samp(gap)::numeric, 1) AS std_gap,
-  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY gap)::numeric) AS gap_p05,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY gap)::numeric) AS gap_p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY gap)::numeric) AS gap_p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY gap)::numeric) AS gap_p75,
-  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY gap)::numeric) AS gap_p95,
-  round(min(gap)::numeric) AS gap_min,
-  round(max(gap)::numeric) AS gap_max
-FROM elo
-GROUP BY platform, tc
-ORDER BY platform, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
-```
-
-Note: Postgres' `log(base, numeric)` is `log_base(x)`, so `log(10, x)` is `log10(x)`. PG also has `log(x)` (base 10) without the base arg; either works but `log(10, x)` is explicit.
-
-### Output
-
-Three views:
-
-1. **Per-combo gap percentile table.** Rows = 8 combos (chess.com × {bullet, blitz, rapid, classical} then lichess × same). Columns `n_users / gap_p05 / gap_p25 / gap_p50 / gap_p75 / gap_p95 / mean_gap ± std / mean_actual / mean_endgame`.
-2. **Per-combo skill percentile table.** Same rows, columns `skill_p25 / skill_p50 / skill_p75` (re-aggregate from the `elo` CTE by swapping `gap` for `skill` — one follow-up query or reuse the Section 5 query filtered to the pool).
-3. **Pooled gap histogram.** One row per 100-Elo-wide bucket from `gap_p05` to `gap_p95` pooled across combos, showing `count` and `cumulative %`. Quick visual sanity-check for distribution shape (expected: roughly bell-curve centered near 0 with modest right skew from the save-bonus in recovery games).
-
-Below the tables:
-- **Currently set in code:** literal values of `ENDGAME_ELO_TIMELINE_WINDOW`, the skill clamp bounds, `MIN_GAMES_FOR_TIMELINE`, `_MATERIAL_ADVANTAGE_THRESHOLD`, plus the formula itself.
-- **Platform bias check:** state whether `mean_gap` differs systematically between chess.com and lichess (same TC) by more than ±25 Elo. Chess.com uses Glicko-1 and lichess uses Glicko-2 — non-zero bias is expected and not a bug, but document the observed magnitude so downstream features don't assume cross-platform symmetry.
-- **TC slope check:** within each platform, state whether `mean_gap` drifts across TCs. Slower TCs tend to surface deeper endgame skill (longer games → more endgame technique visible), so bullet gaps may sit lower than classical gaps on average. Report the observed direction and magnitude.
-- **Clamp saturation:** count users whose `skill` is at the clamp boundary (≤ 0.05 or ≥ 0.95). If more than 1% of qualifying users saturate on either side, the clamp is doing heavy lifting — consider whether that's the intended behaviour (it caps the formula's blow-up) or a symptom of the skill definition being too coarse.
-- **Recommended "notable divergence" threshold (forward-looking):** `|gap| > gap_p90_abs` pooled (roughly the top/bottom decile). Today's live UI doesn't expose a "your endgames are pulling your rating up/down notably" callout, but if a future phase adds one this gives it a data-driven threshold.
-- **Verdict on the 400-Elo scaling:** if the pooled `std_gap` lands in the 120–200 range, the formula's sensitivity looks reasonable. Much narrower (< 80) means the clamp is compressing the signal too aggressively; much wider (> 300) means a handful of small-sample users are dominating despite the 30-game floor — consider raising the floor in a future revision.
-
-### Per-user list (optional)
-
-Dump the 20 largest positive gaps and 20 largest negative gaps with columns `user_id / platform / tc / actual_elo / endgame_elo / gap / total_games / buckets_used` so tail users are eyeballable. Useful to spot data-quality problems (e.g. a user at the clamp with only 30 games — borderline sample).
-
----
-
 ## Report file layout
 
 Write to `reports/benchmarks-YYYY-MM-DD.md` using today's UTC date. Layout:
@@ -802,19 +798,16 @@ Write to `reports/benchmarks-YYYY-MM-DD.md` using today's UTC date. Layout:
 ## 1. Score % Difference (endgame vs non-endgame)
 ...
 
-## 2. Conversion / Parity / Recovery by ELO × TC
+## 2. Conversion / Parity / Recovery + Endgame Skill by ELO × TC
 ...
 
-## 3. Time Pressure at Endgame Entry
+## 3. Endgame ELO vs Actual ELO Gap per combo
 ...
 
-## 4. Time Pressure vs Performance — cross-TC comparison
+## 4. Time Pressure at Endgame Entry
 ...
 
-## 5. Endgame Skill by ELO × TC
-...
-
-## 6. Endgame ELO vs Actual ELO Gap per combo
+## 5. Time Pressure vs Performance — cross-TC comparison
 ...
 
 ## Recommended thresholds summary
