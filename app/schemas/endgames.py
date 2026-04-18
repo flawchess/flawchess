@@ -330,24 +330,33 @@ class TimePressureChartResponse(BaseModel):
 
 
 class EndgameEloTimelinePoint(BaseModel):
-    """One weekly point for a (platform, time_control) combo (Phase 57 ELO-05).
+    """One weekly point for a (platform, time_control) combo (Phase 57 ELO-05; revised in Phase 57.1).
 
     date: Monday of the ISO week, YYYY-MM-DD.
-    endgame_elo: performance rating = round(avg_opp + 400 * log10(clamp(skill) / (1 - clamp)))
-        where skill is the endgame-skill composite (Conv Win %, Parity Score %,
-        Recov Save %) over the trailing ENDGAME_ELO_TIMELINE_WINDOW endgame games
-        and avg_opp is the mean opponent_rating across the same window.
-    actual_elo: mean user_rating across the trailing window of ALL games for
-        this combo (not only endgame games), per D-04.
-    endgame_games_in_window: count of endgame games contributing to the skill /
-        opp-avg computation. Drives the frontend tooltip and the MIN_GAMES_FOR_TIMELINE
-        threshold check (>= 10).
+    endgame_elo: skill-adjusted rating
+        = round(actual_elo_at_date + 400 * log10(clamp(skill) / (1 - clamp))),
+        anchored on the user's actual rating at the point's date (per-combo asof-join
+        with forward-fill from the latest game played on or before the ISO-week-end).
+        skill is the endgame-skill composite (Conv Win %, Parity Score %, Recov Save %)
+        over the trailing ENDGAME_ELO_TIMELINE_WINDOW endgame games. When skill == 0.5
+        the formula returns actual_elo_at_date exactly (zero delta at the neutral mark).
+    actual_elo: the user's rating at this point's date, sourced via the same per-combo
+        asof-join used as the endgame_elo anchor. Both lines share the anchor so the
+        gap between them IS the skill signal.
+    endgame_games_in_window: count of endgame games contributing to the trailing-window
+        skill computation. Drives the >=MIN_GAMES_FOR_TIMELINE (10) emission floor and
+        the frontend tooltip's "past N games" copy.
+    per_week_endgame_games: count of endgame games for THIS specific ISO week (NOT the
+        trailing window). Frontend uses this for the muted volume-bar series so users can
+        see at a glance whether a weekly point is well-supported (50+ games this week)
+        or marginal (just over the 10-game floor).
     """
 
     date: str
     endgame_elo: int
     actual_elo: int
     endgame_games_in_window: int
+    per_week_endgame_games: int
 
 
 class EndgameEloTimelineCombo(BaseModel):

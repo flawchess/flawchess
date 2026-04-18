@@ -12,11 +12,12 @@ Exposes:
 - get_endgame_elo_timeline: per-combo weekly Endgame ELO + Actual ELO rolling series (Phase 57 ELO-05)
 """
 
+import bisect
 import math
 import statistics
 from collections import defaultdict
 from collections.abc import Sequence
-from datetime import timedelta
+from datetime import datetime, timedelta
 from enum import IntEnum
 from typing import Any, Literal, cast
 
@@ -851,17 +852,23 @@ _ENDGAME_ELO_COMBO_ORDER: list[tuple[str, str]] = [
 ]
 
 
-def _endgame_elo_from_skill(skill: float, avg_opp_rating: float) -> int:
-    """Performance rating from skill composite + opponent average (Phase 57 D-01).
+def _endgame_elo_from_skill(skill: float, actual_elo_at_date: float) -> int:
+    """Skill-adjusted rating from skill composite + actual rating anchor (Phase 57.1 D-01).
 
-    endgame_elo = round(avg_opp + 400 * log10(s / (1 - s))) where s is skill
+    endgame_elo = round(actual_elo_at_date + 400 * log10(s / (1 - s))) where s is skill
     clamped to [_ENDGAME_ELO_SKILL_CLAMP_LO, _ENDGAME_ELO_SKILL_CLAMP_HI].
 
-    Pure function. Safe for skill=0.0 and skill=1.0 by construction (clamp is
-    applied unconditionally before the log10 / division).
+    When skill == 0.5 the log10 term is 0, so endgame_elo == actual_elo_at_date. Both
+    timeline lines coincide at the neutral skill mark. 75 % skill puts endgame_elo
+    roughly +190 Elo above; 25 % skill puts it roughly -190 Elo below. The anchor
+    change (Phase 57.1) replaces the old avg_opp_rating anchor; this is no longer a
+    classical performance rating, it is a skill-adjusted rating.
+
+    Pure function. Safe for skill=0.0 and skill=1.0 by construction (clamp is applied
+    unconditionally before the log10 / division).
     """
     s = max(_ENDGAME_ELO_SKILL_CLAMP_LO, min(_ENDGAME_ELO_SKILL_CLAMP_HI, skill))
-    return round(avg_opp_rating + 400 * math.log10(s / (1 - s)))
+    return round(actual_elo_at_date + 400 * math.log10(s / (1 - s)))
 
 
 def _endgame_skill_from_bucket_rows(
@@ -946,20 +953,26 @@ def _compute_endgame_elo_weekly_series(
     bucket_rows: Sequence[Row[Any] | tuple[Any, ...]],
     all_rows: Sequence[Row[Any] | tuple[Any, ...]],
     window: int,
+    actual_elo_dates: Sequence[datetime],
+    actual_elo_ratings: Sequence[int],
     cutoff_str: str | None = None,
 ) -> list[EndgameEloTimelinePoint]:
-    """Co-compute weekly Endgame ELO + Actual ELO rolling series for one combo.
+    """Co-compute weekly Endgame ELO + Actual ELO rolling series for one combo (Phase 57.1).
 
     Walks a merged chronological event stream of endgame bucket rows + all-games
-    rows, maintaining two independent trailing windows. At each ISO-week
-    boundary, emits one point with:
-    - endgame_elo = _endgame_elo_from_skill(
-        skill_from_endgame_window, avg_opp_rating_in_endgame_window)
-    - actual_elo = round(mean(user_rating in all_games_window))
-    - endgame_games_in_window = len(endgame_window)
+    rows, maintaining one trailing window of bucket rows for the skill composite.
+    At each ISO-week boundary, emits one point with:
+    - actual_elo = asof-join of (actual_elo_dates, actual_elo_ratings) at the
+        ISO-week-end timestamp (Monday + 7 days, exclusive). Forward-fills from
+        the latest prior game when the week itself has no games (D-02).
+    - endgame_elo = _endgame_elo_from_skill(skill, actual_elo) — both lines share
+        the asof rating anchor (D-04).
+    - endgame_games_in_window = len(endgame_window).
+    - per_week_endgame_games = count of endgame events for this specific ISO week
+        (NOT the trailing-window count). Drives the frontend volume bars (D-06).
 
     Per-point emission requires endgame_window_count >= MIN_GAMES_FOR_TIMELINE
-    (D-06, three-tier hide tier 1). `cutoff_str` filters output points to
+    (D-06 carry-over from Phase 57). `cutoff_str` filters output points to
     >= cutoff while letting earlier games pre-fill the windows (Pitfall 2).
 
     bucket_rows tuple shape matches query_endgame_elo_timeline_rows bucket output:
@@ -967,12 +980,15 @@ def _compute_endgame_elo_weekly_series(
        imbalance_entry, imbalance_after, result)
     all_rows tuple shape:
       (played_at, platform, tc, user_color, white_rating, black_rating)
+    actual_elo_dates / actual_elo_ratings: parallel arrays sorted by date ASC,
+        pre-computed by the orchestrator from this combo's all_rows. Derived from
+        white_rating/black_rating by user_color. NULL-rating rows are excluded by
+        the orchestrator before these arrays are built.
     """
     # Merge into single chronological stream. Tag each event with its side.
-    # Event value = the row tuple itself (we need all columns later).
     events: list[tuple[Any, Literal["endgame", "all"], tuple[Any, ...]]] = []
     for row in bucket_rows:
-        if row[0] is None:  # played_at
+        if row[0] is None:
             continue
         events.append((row[0], "endgame", tuple(row)))
     for row in all_rows:
@@ -983,61 +999,52 @@ def _compute_endgame_elo_weekly_series(
     # Stable chronological sort. Ties broken by side tag so deterministic.
     events.sort(key=lambda e: (e[0], e[1]))
 
-    endgame_window: list[tuple[Any, ...]] = []  # bucket rows for skill + opp-avg
-    all_user_ratings: list[float] = []  # user_rating floats from all-games
+    endgame_window: list[tuple[Any, ...]] = []  # bucket rows for skill composite
+    per_week_count: dict[tuple[int, int], int] = {}  # NEW (D-06): per-ISO-week endgame counts
     data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
 
     for played_at, side, row in events:
         if side == "endgame":
             endgame_window.append(row)
             endgame_window = endgame_window[-window:]
-        else:
-            # Compute user_rating from white/black rating + user_color.
-            user_color = row[3]
-            white_rating = row[4]
-            black_rating = row[5]
-            if white_rating is None or black_rating is None:
-                # Defensive — the repo query filters NULLs, but guard anyway.
-                continue
-            user_rating = white_rating if user_color == "white" else black_rating
-            all_user_ratings.append(float(user_rating))
-            all_user_ratings = all_user_ratings[-window:]
+            iso_year_evt, iso_week_evt, _ = played_at.isocalendar()
+            per_week_count[(iso_year_evt, iso_week_evt)] = (
+                per_week_count.get((iso_year_evt, iso_week_evt), 0) + 1
+            )
 
-        # Require both windows non-empty AND endgame window >= threshold for emission.
-        if len(endgame_window) < MIN_GAMES_FOR_TIMELINE or not all_user_ratings:
+        # Require endgame window >= threshold for emission. NOTE (Phase 57.1):
+        # the all_user_ratings rolling list is gone — actual_elo now comes from
+        # the per-combo asof arrays passed in by the orchestrator.
+        if len(endgame_window) < MIN_GAMES_FOR_TIMELINE:
             continue
 
-        # Compute skill + avg_opp_rating over the endgame window.
         skill = _endgame_skill_from_bucket_rows(endgame_window)
         if skill is None:
             continue
 
-        # avg_opp_rating from endgame window rows (opposite of user_color).
-        opp_rating_sum = 0.0
-        opp_rating_count = 0
-        for er in endgame_window:
-            er_user_color = er[3]
-            er_white = er[4]
-            er_black = er[5]
-            if er_white is None or er_black is None:
-                continue
-            opp = er_black if er_user_color == "white" else er_white
-            opp_rating_sum += float(opp)
-            opp_rating_count += 1
-        if opp_rating_count == 0:
-            continue
-        avg_opp = opp_rating_sum / opp_rating_count
-
-        endgame_elo = _endgame_elo_from_skill(skill, avg_opp)
-        actual_elo = round(statistics.mean(all_user_ratings))
-
+        # Compute the ISO-week emission key + monday + asof cutoff (Phase 57.1 D-01/D-02).
+        # Cutoff = start of NEXT Monday (Pitfall 2): inclusive of any Sunday game.
         iso_year, iso_week, iso_weekday = played_at.isocalendar()
-        monday = (played_at - timedelta(days=iso_weekday - 1)).date()
+        monday_dt = played_at - timedelta(days=iso_weekday - 1)
+        monday = monday_dt.date()
+        next_monday_dt = monday_dt + timedelta(days=7)
+
+        idx = bisect.bisect_right(actual_elo_dates, next_monday_dt)
+        if idx == 0:
+            # No prior game — unreachable in practice because the >=10-endgame-games
+            # floor above prevents emission before the bucket window fills (which
+            # itself requires games to have been played). Defensive skip.
+            continue
+        actual_elo_at_date = actual_elo_ratings[idx - 1]
+
+        endgame_elo = _endgame_elo_from_skill(skill, float(actual_elo_at_date))
+
         data_by_week[(iso_year, iso_week)] = {
             "date": monday.isoformat(),
             "endgame_elo": endgame_elo,
-            "actual_elo": actual_elo,
+            "actual_elo": int(actual_elo_at_date),
             "endgame_games_in_window": len(endgame_window),
+            "per_week_endgame_games": per_week_count.get((iso_year, iso_week), 0),
         }
 
     return [
@@ -1785,13 +1792,35 @@ async def get_endgame_elo_timeline(
         key = (row[1], row[2])
         all_by_combo.setdefault(key, []).append(tuple(row))
 
+    # Pre-compute per-combo (dates, ratings) parallel arrays for the asof-join
+    # (Phase 57.1 D-01/D-02). Each combo's all_rows is already sorted by
+    # played_at ASC by the repo query (ORDER BY played_at ASC); derive the
+    # user_rating from white/black + user_color and skip NULL-rating rows.
+    asof_by_combo: dict[tuple[str, str], tuple[list[Any], list[int]]] = {}
+    for asof_key, rows in all_by_combo.items():
+        dates: list[Any] = []
+        ratings: list[int] = []
+        for row in rows:
+            played_at_val = row[0]
+            user_color = row[3]
+            white_rating = row[4]
+            black_rating = row[5]
+            if played_at_val is None or white_rating is None or black_rating is None:
+                continue
+            dates.append(played_at_val)
+            ratings.append(white_rating if user_color == "white" else black_rating)
+        asof_by_combo[asof_key] = (dates, ratings)
+
     combos: list[EndgameEloTimelineCombo] = []
     for platform_name, tc in _ENDGAME_ELO_COMBO_ORDER:
         key = (platform_name, tc)
+        asof_dates, asof_ratings = asof_by_combo.get(key, ([], []))
         points = _compute_endgame_elo_weekly_series(
             bucket_by_combo.get(key, []),
             all_by_combo.get(key, []),
             ENDGAME_ELO_TIMELINE_WINDOW,
+            asof_dates,
+            asof_ratings,
             cutoff_str=cutoff_str,
         )
         if not points:
