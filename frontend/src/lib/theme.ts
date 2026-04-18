@@ -98,3 +98,10 @@ export const ELO_COMBO_COLORS: Record<EloComboKey, { bright: string; dark: strin
   lichess_rapid:       { bright: 'oklch(0.65 0.18 140)', dark: 'oklch(0.45 0.14 140)' },
   lichess_classical:   { bright: 'oklch(0.60 0.18 340)', dark: 'oklch(0.40 0.14 340)' },
 };
+
+// Endgame ELO Timeline volume bars (Phase 57.1). Muted gray with alpha so the
+// bars read as "context, not data" on the charcoal-texture card surface.
+// L=0.55 / chroma=0 keeps the bar visually distinct from all 8 ELO_COMBO_COLORS
+// hues; alpha=0.25 lets the texture noise show through, reinforcing the
+// passive-context reading. Locked per 57.1-RESEARCH.md Pitfall 3.
+export const ENDGAME_VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';

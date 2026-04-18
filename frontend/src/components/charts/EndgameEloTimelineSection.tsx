@@ -1,9 +1,16 @@
 /**
- * Phase 57 — Endgame ELO Timeline section.
+ * Phase 57 — Endgame ELO Timeline section (revised Phase 57.1).
  *
  * Paired-line weekly timeline per (platform, time_control) combo:
- *   - bright stroke: Actual ELO (rolling mean user_rating for same combo)
- *   - dark dashed stroke: Endgame ELO (performance rating from skill composite)
+ *   - bright stroke: Actual ELO (per-combo asof rating at each emitted date)
+ *   - dark dashed stroke: Endgame ELO (skill-adjusted rating anchored on Actual ELO)
+ *
+ * Phase 57.1 additions:
+ *   - Muted volume bars at the bottom ~20% of the chart canvas showing endgame
+ *     games per ISO week summed across currently-visible combos (ComposedChart +
+ *     hidden right Y-axis; Pattern 3 in 57.1-RESEARCH.md).
+ *   - Tooltip gains a "Games this week: N (visible combos)" top line.
+ *   - Info popover + subtitle rewritten per CONTEXT D-12/D-13/D-14/D-16.
  *
  * Owns its own loading / error / empty / chart branches so the locked
  * component-level error UI (`endgame-elo-timeline-error`) is reachable per
@@ -12,10 +19,10 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend } from '@/components/ui/chart';
-import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { ComposedChart, Line, Bar, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { createDateTickFormatter, formatDateWithYear, niceEloAxis } from '@/lib/utils';
-import { ELO_COMBO_COLORS } from '@/lib/theme';
+import { ELO_COMBO_COLORS, ENDGAME_VOLUME_BAR_COLOR } from '@/lib/theme';
 import type { EndgameEloTimelineResponse, EloComboKey } from '@/types/endgames';
 
 interface EndgameEloTimelineSectionProps {
@@ -96,6 +103,60 @@ export function EndgameEloTimelineSection({
     return niceEloAxis(values);
   }, [data?.combos, hiddenKeys]);
 
+  // Merged chart rows: one row per date with {combo_key}_endgame_elo /
+  // {combo_key}_actual_elo / {combo_key}_games_in_window / {combo_key}_per_week_games columns.
+  // Promoted to useMemo (Phase 57.1) because barChartData below derives from it;
+  // inline mapping would re-create the array every render.
+  const chartData = useMemo(() => {
+    return allDates.map((date) => {
+      const row: Record<string, string | number | undefined> = { date };
+      for (const combo of data?.combos ?? []) {
+        const pt = combo.points.find((p) => p.date === date);
+        if (pt) {
+          row[`${combo.combo_key}_endgame_elo`] = pt.endgame_elo;
+          row[`${combo.combo_key}_actual_elo`] = pt.actual_elo;
+          row[`${combo.combo_key}_games_in_window`] = pt.endgame_games_in_window;
+          row[`${combo.combo_key}_per_week_games`] = pt.per_week_endgame_games;
+        }
+        // undefined produces a gap that `connectNulls` bridges.
+      }
+      return row;
+    });
+  }, [allDates, data?.combos]);
+
+  // Phase 57.1 volume bars: per-row aggregate of per_week_endgame_games across
+  // currently-visible combos. Recomputes on legend toggle so hidden combos
+  // are excluded from the sum (CONTEXT D-09).
+  //
+  // Explicit return type keeps the Record<string, ...> index signature alive
+  // after the spread — without it TypeScript narrows to `{ per_week_total_visible }`
+  // and the tooltip's `dateRow[`${combo}_endgame_elo`]` lookups lose their typing.
+  const barChartData = useMemo<
+    Array<Record<string, string | number | undefined> & { per_week_total_visible: number }>
+  >(() => {
+    return chartData.map((row) => {
+      let total = 0;
+      for (const combo of data?.combos ?? []) {
+        if (hiddenKeys.has(combo.combo_key)) continue;
+        const n = row[`${combo.combo_key}_per_week_games`];
+        if (typeof n === 'number') total += n;
+      }
+      return { ...row, per_week_total_visible: total };
+    });
+  }, [chartData, data?.combos, hiddenKeys]);
+
+  // Bar Y-axis envelope. domain={[0, barMax * 5]} pins the tallest bar to the
+  // bottom 20% of the chart canvas (Pattern 3 in 57.1-RESEARCH.md).
+  // Math.max(m, 1) avoids a [0, 0] domain when no week has any games.
+  const barMax = useMemo(() => {
+    let m = 0;
+    for (const row of barChartData) {
+      const v = row.per_week_total_visible;
+      if (typeof v === 'number' && v > m) m = v;
+    }
+    return Math.max(m, 1);
+  }, [barChartData]);
+
   const infoPopover = (
     <InfoPopover
       ariaLabel="Endgame ELO Timeline info"
@@ -104,26 +165,26 @@ export function EndgameEloTimelineSection({
     >
       <div className="space-y-2">
         <p>
-          <strong>Endgame ELO</strong> is a performance rating derived from your
-          Endgame Skill (the average of Conversion Win %, Parity Score %, and
-          Recovery Save %). We compute it as
-          <em> avg_opponent_rating + 400 &middot; log10(skill / (1 &minus; skill))</em>,
-          using the rolling window's opponent pool for the skill and for the
-          average opponent rating.
+          <strong>Endgame ELO</strong> is your Actual ELO shifted by how much your
+          Endgame Skill exceeds (or falls short of) the 50% neutral mark. We compute it as
+          <em> actual_elo + 400 &middot; log10(skill / (1 &minus; skill))</em>,
+          where skill is the composite of Conversion Win %, Parity Score %, and
+          Recovery Save % over your trailing 100 endgame games.
         </p>
         <p>
-          The bright line is your <strong>Actual ELO</strong>
-          {' '}(average rating over the same rolling window of all games for that combo).
-          The dark dashed line is Endgame ELO. The gap between the lines is the
-          interesting signal: Endgame ELO well above Actual ELO means your endgames
-          are pulling your rating up; well below means they're pulling it down.
+          The bright line is your <strong>Actual ELO</strong> &mdash; your rating at
+          each date from the most recent game on or before that date. The dark dashed
+          line is <strong>Endgame ELO</strong>. If your Endgame Skill is exactly 50%
+          the two lines touch; 75% skill puts Endgame ELO roughly 190 Elo above,
+          25% skill puts it roughly 190 Elo below. The gap between the lines is
+          the interesting signal.
         </p>
         <p>
-          Points are emitted weekly and each point looks back at your trailing 100
-          endgame games for that platform and time control. Weeks with fewer than
-          10 qualifying endgame games are hidden. Skill is clamped to the 5&ndash;95 %
-          range so a handful of lucky or unlucky endgames can't produce an
-          absurd performance rating at the extremes.
+          Points are emitted weekly; each Endgame Skill value looks back at your
+          trailing 100 endgame games for that platform and time control. Weeks with
+          fewer than 10 qualifying endgame games are hidden.
+          Skill is clamped to the 5&ndash;95% range so a handful of lucky or
+          unlucky endgames can't produce an absurd rating shift at the extremes.
         </p>
         <p>
           Chess.com uses Glicko-1 and lichess uses Glicko-2, so ratings across the
@@ -144,7 +205,8 @@ export function EndgameEloTimelineSection({
       </h3>
       <p className="text-sm text-muted-foreground mt-1">
         Actual ELO versus Endgame ELO over time, per platform and time control.
-        Bright lines are Actual ELO, dark dashed lines are Endgame ELO.
+        Bars show endgame games per week. Bright lines are Actual ELO, dark dashed
+        lines are Endgame ELO.
       </p>
     </div>
   );
@@ -199,23 +261,9 @@ export function EndgameEloTimelineSection({
     );
   }
 
-  // Build merged chart rows: one row per date with {combo_key}_endgame_elo /
-  // {combo_key}_actual_elo / {combo_key}_games_in_window columns.
-  const chartData = allDates.map((date) => {
-    const row: Record<string, string | number | undefined> = { date };
-    for (const combo of data.combos) {
-      const pt = combo.points.find((p) => p.date === date);
-      if (pt) {
-        row[`${combo.combo_key}_endgame_elo`] = pt.endgame_elo;
-        row[`${combo.combo_key}_actual_elo`] = pt.actual_elo;
-        row[`${combo.combo_key}_games_in_window`] = pt.endgame_games_in_window;
-      }
-      // undefined produces a gap that `connectNulls` bridges.
-    }
-    return row;
-  });
-
   // Chart config — one entry per combo (legend renders per combo, not per line).
+  // chartData / barChartData / barMax are computed via useMemo above the early
+  // returns (hooks must run on every render).
   const chartConfig = Object.fromEntries(
     data.combos.map((combo) => {
       const colors = getComboColors(combo.combo_key);
@@ -270,10 +318,14 @@ export function EndgameEloTimelineSection({
         className="w-full h-72"
         data-testid="endgame-elo-timeline-chart"
       >
-        <LineChart data={chartData}>
+        <ComposedChart data={barChartData}>
           <CartesianGrid vertical={false} />
           <XAxis dataKey="date" tickFormatter={formatDateTick} tick={{ fontSize: 12 }} />
-          <YAxis domain={yAxis.domain} ticks={yAxis.ticks} tick={{ fontSize: 12 }} />
+          <YAxis yAxisId="elo" domain={yAxis.domain} ticks={yAxis.ticks} tick={{ fontSize: 12 }} />
+          {/* Phase 57.1: hidden right Y-axis dedicated to volume bars.
+              domain={[0, barMax * 5]} pins the tallest bar to the bottom 20%
+              of the chart canvas (Pattern 3 in 57.1-RESEARCH.md). */}
+          <YAxis yAxisId="bars" orientation="right" hide domain={[0, barMax * 5]} />
           <ChartTooltip
             content={({ active, label }) => {
               if (!active) return null;
@@ -281,11 +333,17 @@ export function EndgameEloTimelineSection({
               const visibleCombos = data.combos.filter(
                 (c) => !hiddenKeys.has(c.combo_key),
               );
-              const dateRow = chartData.find((r) => r.date === (label as string));
+              const dateRow = barChartData.find((r) => r.date === (label as string));
               if (!dateRow) return null;
+              const perWeekTotal =
+                (dateRow.per_week_total_visible as number | undefined) ?? 0;
               return (
                 <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
                   <div className="font-medium">{formatDateWithYear(label as string)}</div>
+                  {/* Phase 57.1 D-11: per-week game count summed across visible combos. */}
+                  <div className="text-muted-foreground">
+                    Games this week: {perWeekTotal} (visible combos)
+                  </div>
                   {visibleCombos.map((combo) => {
                     const endgame = dateRow[`${combo.combo_key}_endgame_elo`] as number | undefined;
                     const actual = dateRow[`${combo.combo_key}_actual_elo`] as number | undefined;
@@ -332,15 +390,30 @@ export function EndgameEloTimelineSection({
               testid. Pass `content={renderLegend()}` so Recharts renders the
               custom DOM (not ChartLegendContent's default grid). */}
           <ChartLegend content={renderLegend()} />
+          {/* Phase 57.1: muted volume bars bound to the hidden bars axis.
+              legendType="none" keeps the bar out of the combo legend.
+              isAnimationActive={false} matches the existing line behavior. */}
+          <Bar
+            yAxisId="bars"
+            dataKey="per_week_total_visible"
+            fill={ENDGAME_VOLUME_BAR_COLOR}
+            legendType="none"
+            isAnimationActive={false}
+            data-testid="endgame-elo-volume-bars"
+          />
           {/* flatMap (NOT React.Fragment) — Recharts 2.15.x traverses React.Children
               to discover <Line> instances, and Fragment wrappers are historically
               unreliable inside chart children. A flat array ensures every <Line>
-              is a direct child of <LineChart>. */}
+              is a direct child of <ComposedChart>.
+              Phase 57.1: every <Line> gains yAxisId="elo" so it binds to the
+              named Elo axis (once any yAxisId is declared, Recharts requires
+              explicit IDs on every series — Pitfall 1 in 57.1-RESEARCH.md). */}
           {data.combos.flatMap((combo) => {
             const colors = getComboColors(combo.combo_key);
             const isHidden = hiddenKeys.has(combo.combo_key);
             return [
               <Line
+                yAxisId="elo"
                 key={`${combo.combo_key}_actual_elo`}
                 type="monotone"
                 dataKey={`${combo.combo_key}_actual_elo`}
@@ -352,6 +425,7 @@ export function EndgameEloTimelineSection({
                 hide={isHidden}
               />,
               <Line
+                yAxisId="elo"
                 key={`${combo.combo_key}_endgame_elo`}
                 type="monotone"
                 dataKey={`${combo.combo_key}_endgame_elo`}
@@ -366,7 +440,7 @@ export function EndgameEloTimelineSection({
               />,
             ];
           })}
-        </LineChart>
+        </ComposedChart>
       </ChartContainer>
     </div>
   );

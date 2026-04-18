@@ -186,16 +186,18 @@ export type EloComboKey =
   | 'lichess_rapid'
   | 'lichess_classical';
 
-/** One weekly point for a (platform, time_control) combo (Phase 57 ELO-05).
+/** One weekly point for a (platform, time_control) combo (Phase 57 ELO-05; revised Phase 57.1).
  *  date: Monday of ISO week, YYYY-MM-DD.
- *  endgame_elo: performance rating from skill composite + avg opponent rating.
- *  actual_elo: mean user_rating over the trailing window of ALL games for this combo.
- *  endgame_games_in_window: endgame-window count (drives the >=10 threshold + tooltip). */
+ *  endgame_elo: skill-adjusted rating = round(actual_elo + 400 * log10(skill / (1 - skill))).
+ *  actual_elo: user's rating at this date via per-combo asof-join (forward-filled).
+ *  endgame_games_in_window: trailing 100-game window count (drives >=10 floor + tooltip "past N games").
+ *  per_week_endgame_games: count of endgame games for THIS specific ISO week (Phase 57.1, drives muted volume bars). */
 export interface EndgameEloTimelinePoint {
   date: string;
   endgame_elo: number;
   actual_elo: number;
   endgame_games_in_window: number;
+  per_week_endgame_games: number;
 }
 
 export interface EndgameEloTimelineCombo {
