@@ -242,7 +242,7 @@ Plans:
   2. Combinations with fewer than the minimum game threshold are omitted; "Insufficient data" appears when nothing qualifies
   3. User can read an info popover explaining how Endgame ELO is computed, what the baselines are, and its caveats
   4. Existing sidebar filters (platform, time-control, rated, recency, color, opponent type) update the breakdown table
-**Plans**: TBD
+**Plans**: 2 plans
 **UI hint**: yes
 
 ### Phase 57: Endgame ELO — Timeline Chart
@@ -277,11 +277,12 @@ Plans:
   2. Dark dashed Endgame ELO line equals `actual_elo + 400·log10(skill/(1-skill))` at each point, with skill still computed from the trailing `ENDGAME_ELO_TIMELINE_WINDOW` endgame games
   3. Chart renders a muted volume bar per emitted week showing that week's qualifying endgame game count (not trailing window count)
   4. Info popover no longer calls the metric a performance rating; frames it as a skill-adjusted rating with the 50% skill ⇒ zero-delta intuition
-**Plans**: TBD
+**Plans**: 2 plans
 **UI hint**: yes
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 57.1 to break down)
+- [ ] 57.1-01-PLAN.md — Backend: schema field + asof anchor + per-week count + 6 unit tests + 1 integration test + UI-SPEC + HUMAN-UAT inline updates
+- [ ] 57.1-02-PLAN.md — Frontend: TS interface + ENDGAME_VOLUME_BAR_COLOR + ComposedChart swap with hidden bar axis + tooltip top line + popover/subtitle copy rewrite
 
 ### Phase 58: Opening Risk & Drawishness
 **Goal**: Users can see risk and drawishness signals per candidate move in the move explorer to inform opening selection
