@@ -284,8 +284,6 @@ export function EndgamesPage() {
                 </div>
               )}
 
-              {/* ── Endgame ELO (shared container; Phase 56 breakdown table joins here later) ── */}
-              <h2 className="text-lg font-semibold text-foreground mt-2">Endgame ELO</h2>
               <div
                 className="charcoal-texture rounded-md p-4"
                 data-testid="endgame-elo-timeline-section"
