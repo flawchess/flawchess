@@ -3640,6 +3640,72 @@ class TestEndgameEloTimeline:
         )
         assert result == []
 
+    def test_asof_cutoff_pinned_to_midnight_no_week_bleed(self):
+        """Regression for Phase 57.1 WR-01.
+
+        Previously next_monday_dt carried the triggering played_at's time-of-day,
+        so the bisect_right cutoff drifted up to 24h into the next ISO week and
+        a Monday-morning rating (week N+1) could leak into week N's actual_elo.
+
+        Setup: 10 endgame games on Sunday 2026-01-11 at 14:00 (ISO week 2, rating
+        1500) plus a Monday-morning 2026-01-12 at 08:00 all-game with a fresh
+        rating of 1600 (ISO week 3). With the bug, asof for week 2 would return
+        1600 because the cutoff (Mon 14:00) > Mon 08:00. Fixed: cutoff is
+        Mon 00:00 so week 2's actual_elo stays 1500.
+        """
+        sunday = datetime.datetime(2026, 1, 11, 14, 0, 0)  # ISO week 2, Sunday
+        bucket_rows = [
+            _elo_bucket_row(
+                sunday + datetime.timedelta(minutes=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            )
+            for i in range(10)
+        ]
+        # All-games: 10 week-2 games at rating 1500 + a Monday-morning week-3
+        # game at rating 1600. The cutoff for week 2's emission must be
+        # Mon 2026-01-12 00:00, not Mon 14:00, so the 08:00 game is excluded.
+        all_rows = [
+            _elo_all_row(
+                sunday + datetime.timedelta(minutes=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+            )
+            for i in range(10)
+        ] + [
+            _elo_all_row(
+                datetime.datetime(2026, 1, 12, 8, 0, 0),  # Monday 08:00 week 3
+                "chess.com",
+                "blitz",
+                "white",
+                1600,
+                1600,
+            ),
+        ]
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        result = _compute_endgame_elo_weekly_series(
+            bucket_rows,
+            all_rows,
+            100,
+            asof_dates,
+            asof_ratings,
+        )
+        # Scoped strictly to WR-01: week 2's actual_elo must NOT see the
+        # Monday-morning 1600 rating (cutoff pinned to midnight excludes it).
+        # A separate WR-02 regression test covers whether a week-3 point is
+        # emitted at all off an "all" event.
+        wk2_pt = next(p for p in result if p.date == "2026-01-05")
+        assert wk2_pt.actual_elo == 1500  # NOT 1600 — no week-3 bleed
+
 
 # Sanity check: EndgameEloTimelinePoint is actually exported from the schema.
 def test_endgame_elo_timeline_point_constructs():

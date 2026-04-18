@@ -17,7 +17,7 @@ import math
 import statistics
 from collections import defaultdict
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from enum import IntEnum
 from typing import Any, Literal, cast
 
@@ -1022,9 +1022,15 @@ def _compute_endgame_elo_weekly_series(
 
         # Compute the ISO-week emission key + monday + asof cutoff (Phase 57.1 D-01/D-02).
         # Cutoff = start of NEXT Monday (Pitfall 2): inclusive of any Sunday game.
+        # BUGFIX (Phase 57.1 WR-01): pin monday_dt / next_monday_dt to midnight at the
+        # ISO boundary. Previously these carried played_at's time-of-day, so the
+        # bisect_right cutoff drifted up to 24h into the next ISO week — letting a
+        # Monday-morning rating from week N+1 leak into week N's actual_elo.
+        # Preserve tzinfo so the bisect comparison stays on the same tz axis
+        # (played_at is tz-aware in production via DateTime(timezone=True)).
         iso_year, iso_week, iso_weekday = played_at.isocalendar()
-        monday_dt = played_at - timedelta(days=iso_weekday - 1)
-        monday = monday_dt.date()
+        monday = (played_at - timedelta(days=iso_weekday - 1)).date()
+        monday_dt = datetime.combine(monday, time.min, tzinfo=played_at.tzinfo)
         next_monday_dt = monday_dt + timedelta(days=7)
 
         idx = bisect.bisect_right(actual_elo_dates, next_monday_dt)
