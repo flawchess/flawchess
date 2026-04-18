@@ -221,12 +221,10 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                   <li>
                     <strong>Recovery (Save %)</strong>: draws count as a save
                   </li>
+                  <li>
+                    <strong>Endgame Skill</strong>: averages the three rates above
+                  </li>
                 </ul>
-                <p>
-                  <strong>Endgame Skill</strong> averages the three rates above
-                  (typical ~52%). The 45–55% blue band matches Parity so the
-                  colors stay comparable.
-                </p>
                 <p>
                   These rates are not the same as the generic Score % used
                   elsewhere on the page.
