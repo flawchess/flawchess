@@ -23,6 +23,7 @@ import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
 import { EndgameScoreGapSection } from '@/components/charts/EndgameScoreGapSection';
 import { EndgameClockPressureSection } from '@/components/charts/EndgameClockPressureSection';
 import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePressureSection';
+import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelineSection';
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
@@ -162,6 +163,7 @@ export function EndgamesPage() {
   const scoreGapData = overviewData?.score_gap_material;
   const clockPressureData = overviewData?.clock_pressure;
   const timePressureChartData = overviewData?.time_pressure_chart;
+  const eloTimelineData = overviewData?.endgame_elo_timeline;
 
   const { data: gamesData, isLoading: gamesLoading, isError: gamesError } = useEndgameGames(
     selectedCategory,
@@ -319,6 +321,19 @@ export function EndgamesPage() {
               <EndgameTimelineChart data={timelineData} />
             </div>
           )}
+
+          {/* ── Endgame ELO (shared container; Phase 56 breakdown table joins here later) ── */}
+          <h2 className="text-lg font-semibold text-foreground mt-2">Endgame ELO</h2>
+          <div
+            className="charcoal-texture rounded-md p-4"
+            data-testid="endgame-elo-timeline-section"
+          >
+            <EndgameEloTimelineSection
+              data={eloTimelineData}
+              isLoading={overviewLoading}
+              isError={overviewError}
+            />
+          </div>
         </>
       ) : overviewError ? (
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
