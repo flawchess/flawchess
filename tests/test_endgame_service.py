@@ -3706,6 +3706,70 @@ class TestEndgameEloTimeline:
         wk2_pt = next(p for p in result if p.date == "2026-01-05")
         assert wk2_pt.actual_elo == 1500  # NOT 1600 — no week-3 bleed
 
+    def test_all_events_do_not_trigger_emission_in_fresh_week(self):
+        """Regression for Phase 57.1 WR-02.
+
+        Setup: 10 endgame games in ISO week 1 (saturates window), plus 3
+        all-games in ISO week 2 with NO endgame games that week. Before the
+        fix, each week-2 all-game triggered an emission with
+        per_week_endgame_games=0, contradicting the "only emits on endgame
+        events" contract. After the fix, only the week-1 emission should
+        appear — no week-2 point at all.
+        """
+        wk1 = datetime.datetime(2026, 1, 5, 12, 0, 0)  # ISO week 1 Monday
+        wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)  # ISO week 2 Monday
+        bucket_rows = [
+            _elo_bucket_row(
+                wk1 + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            )
+            for i in range(10)
+        ]
+        all_rows = [
+            _elo_all_row(
+                wk1 + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+            )
+            for i in range(10)
+        ] + [
+            _elo_all_row(
+                wk2 + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1600,
+                1600,
+            )
+            for i in range(3)
+        ]
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        result = _compute_endgame_elo_weekly_series(
+            bucket_rows,
+            all_rows,
+            100,
+            asof_dates,
+            asof_ratings,
+        )
+        # Only week 1 should emit (where endgame games actually happened).
+        # Week 2 must NOT be in the result even though "all" events fall there.
+        dates = {p.date for p in result}
+        assert "2026-01-05" in dates  # week 1 present
+        assert "2026-01-12" not in dates  # week 2 absent (no endgame events)
+        # And the week-1 point carries its true per-week count.
+        wk1_pt = next(p for p in result if p.date == "2026-01-05")
+        assert wk1_pt.per_week_endgame_games == 10
+
 
 # Sanity check: EndgameEloTimelinePoint is actually exported from the schema.
 def test_endgame_elo_timeline_point_constructs():

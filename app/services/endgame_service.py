@@ -1002,13 +1002,21 @@ def _compute_endgame_elo_weekly_series(
     data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
 
     for played_at, side, row in events:
-        if side == "endgame":
-            endgame_window.append(row)
-            endgame_window = endgame_window[-window:]
-            iso_year_evt, iso_week_evt, _ = played_at.isocalendar()
-            per_week_count[(iso_year_evt, iso_week_evt)] = (
-                per_week_count.get((iso_year_evt, iso_week_evt), 0) + 1
-            )
+        # BUGFIX (Phase 57.1 WR-02): only emit on endgame events. Previously the
+        # emission block ran for every merged event (endgame + "all"), so an
+        # "all" event in a new ISO week with no endgame games yet would still
+        # produce an emission with per_week_endgame_games=0. That contradicts
+        # the docstring ("only emits on endgame events") and misleads the
+        # frontend tooltip.
+        if side != "endgame":
+            continue
+
+        endgame_window.append(row)
+        endgame_window = endgame_window[-window:]
+        iso_year_evt, iso_week_evt, _ = played_at.isocalendar()
+        per_week_count[(iso_year_evt, iso_week_evt)] = (
+            per_week_count.get((iso_year_evt, iso_week_evt), 0) + 1
+        )
 
         # Require endgame window >= threshold for emission. NOTE (Phase 57.1):
         # the rolling user-rating mean from Phase 57 is gone — actual_elo now
