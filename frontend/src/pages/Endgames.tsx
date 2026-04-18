@@ -283,6 +283,19 @@ export function EndgamesPage() {
                   <EndgameScoreGapSection data={scoreGapData} />
                 </div>
               )}
+
+              {/* ── Endgame ELO (shared container; Phase 56 breakdown table joins here later) ── */}
+              <h2 className="text-lg font-semibold text-foreground mt-2">Endgame ELO</h2>
+              <div
+                className="charcoal-texture rounded-md p-4"
+                data-testid="endgame-elo-timeline-section"
+              >
+                <EndgameEloTimelineSection
+                  data={eloTimelineData}
+                  isLoading={overviewLoading}
+                  isError={overviewError}
+                />
+              </div>
             </>
           )}
 
@@ -321,19 +334,6 @@ export function EndgamesPage() {
               <EndgameTimelineChart data={timelineData} />
             </div>
           )}
-
-          {/* ── Endgame ELO (shared container; Phase 56 breakdown table joins here later) ── */}
-          <h2 className="text-lg font-semibold text-foreground mt-2">Endgame ELO</h2>
-          <div
-            className="charcoal-texture rounded-md p-4"
-            data-testid="endgame-elo-timeline-section"
-          >
-            <EndgameEloTimelineSection
-              data={eloTimelineData}
-              isLoading={overviewLoading}
-              isError={overviewError}
-            />
-          </div>
         </>
       ) : overviewError ? (
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">

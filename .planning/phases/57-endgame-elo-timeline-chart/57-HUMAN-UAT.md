@@ -13,7 +13,7 @@ updated: 2026-04-18T19:55:00Z
 ## Tests
 
 ### 1. Visual hue/contrast of paired bright/dark lines
-expected: Bright Endgame ELO line is clearly distinguishable from the dark Actual ELO line within each combo; adjacent combos read as different hues
+expected: Bright solid Actual ELO line is clearly distinguishable from the dark dashed Endgame ELO line within each combo; adjacent combos read as different hues
 result: [pending]
 
 ### 2. Legend click toggles BOTH lines of a combo

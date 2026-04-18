@@ -2,12 +2,12 @@
  * Phase 57 — Endgame ELO Timeline section.
  *
  * Paired-line weekly timeline per (platform, time_control) combo:
- *   - bright stroke: Endgame ELO (performance rating from skill composite)
- *   - dark dashed stroke: Actual ELO (rolling mean user_rating for same combo)
+ *   - bright stroke: Actual ELO (rolling mean user_rating for same combo)
+ *   - dark dashed stroke: Endgame ELO (performance rating from skill composite)
  *
  * Owns its own loading / error / empty / chart branches so the locked
  * component-level error UI (`endgame-elo-timeline-error`) is reachable per
- * UI-SPEC §Copywriting Contract. All visual decisions LOCKED in 57-UI-SPEC.md.
+ * UI-SPEC §Copywriting Contract.
  */
 
 import { useState, useCallback, useMemo } from 'react';
@@ -112,11 +112,11 @@ export function EndgameEloTimelineSection({
           average opponent rating.
         </p>
         <p>
-          The bright line is Endgame ELO, the dark line is your <strong>Actual ELO</strong>
+          The bright line is your <strong>Actual ELO</strong>
           {' '}(average rating over the same rolling window of all games for that combo).
-          The gap between the lines is the interesting signal: well above Actual ELO
-          means your endgames are pulling your rating up; well below means they're
-          pulling it down.
+          The dark dashed line is Endgame ELO. The gap between the lines is the
+          interesting signal: Endgame ELO well above Actual ELO means your endgames
+          are pulling your rating up; well below means they're pulling it down.
         </p>
         <p>
           Points are emitted weekly and each point looks back at your trailing 100
@@ -143,8 +143,8 @@ export function EndgameEloTimelineSection({
         </span>
       </h3>
       <p className="text-sm text-muted-foreground mt-1">
-        Endgame ELO versus Actual ELO over time, per platform and time control.
-        Bright lines are Endgame ELO, dark lines are Actual ELO.
+        Actual ELO versus Endgame ELO over time, per platform and time control.
+        Bright lines are Actual ELO, dark dashed lines are Endgame ELO.
       </p>
     </div>
   );
@@ -306,7 +306,7 @@ export function EndgameEloTimelineSection({
                             className="h-2 w-2 shrink-0 rounded-[2px]"
                             style={{ backgroundColor: colors.bright }}
                           />
-                          <span>Endgame ELO: {endgame}</span>
+                          <span>Actual ELO: {actual}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <span
@@ -314,7 +314,7 @@ export function EndgameEloTimelineSection({
                             style={{ backgroundColor: colors.dark }}
                           />
                           <span>
-                            Actual ELO: {actual}
+                            Endgame ELO: {endgame}
                             <span className="text-muted-foreground ml-1">
                               gap {gapSign}{gap}
                               {games !== undefined && ` (past ${games} games)`}
@@ -341,9 +341,9 @@ export function EndgameEloTimelineSection({
             const isHidden = hiddenKeys.has(combo.combo_key);
             return [
               <Line
-                key={`${combo.combo_key}_endgame_elo`}
+                key={`${combo.combo_key}_actual_elo`}
                 type="monotone"
-                dataKey={`${combo.combo_key}_endgame_elo`}
+                dataKey={`${combo.combo_key}_actual_elo`}
                 name={combo.combo_key}
                 stroke={colors.bright}
                 strokeWidth={2}
@@ -352,9 +352,9 @@ export function EndgameEloTimelineSection({
                 hide={isHidden}
               />,
               <Line
-                key={`${combo.combo_key}_actual_elo`}
+                key={`${combo.combo_key}_endgame_elo`}
                 type="monotone"
-                dataKey={`${combo.combo_key}_actual_elo`}
+                dataKey={`${combo.combo_key}_endgame_elo`}
                 name={combo.combo_key}
                 stroke={colors.dark}
                 strokeWidth={1.5}
