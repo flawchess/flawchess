@@ -253,7 +253,11 @@ Plans:
   1. User sees a timeline chart with paired lines per (platform, time-control) combination — one bright line for Endgame ELO and one dark line for Actual ELO
   2. The chart updates when sidebar filters change, showing only the relevant combination(s)
   3. The chart handles cold-start correctly — no artifacts when recency filters are active on a new account
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 57-01-PLAN.md — Backend: schemas, repo query, Elo formula + skill composite + weekly-series helpers, orchestrator + overview wiring, unit tests
+- [ ] 57-02-PLAN.md — Frontend: TS types + ELO_COMBO_COLORS + niceEloAxis, EndgameEloTimelineSection component, Endgames page wiring + human-verify
 **UI hint**: yes
 
 ### Phase 58: Opening Risk & Drawishness
@@ -383,7 +387,7 @@ Plans:
 | 54. Time Pressure — Clock Stats Table | v1.10 | 2/2 | Complete    | 2026-04-12 |
 | 55. Time Pressure — Performance Chart | v1.10 | 2/2 | Complete    | 2026-04-12 |
 | 56. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
-| 57. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
+| 57. Endgame ELO — Timeline Chart | v1.10 | 0/2 | Not started | - |
 | 58. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
 | 59. Fix Endgame Conv/Even/Recov per-game stats | v1.10 | 3/3 | Complete    | 2026-04-13 |
 | 60. Opponent-based baseline for Endgame Conv/Even/Recov | v1.10 | 2/2 | Complete    | 2026-04-14 |
