@@ -2396,8 +2396,14 @@ class TestComputeClockPressureTimeline:
         base = datetime.datetime(2026, 1, 5, 12, 0, 0)  # Monday
         rows = [
             _make_clock_row(
-                i + 1, "blitz", 180, "checkmate", "1-0", "white",
-                [0, 1], [50.0, 60.0],
+                i + 1,
+                "blitz",
+                180,
+                "checkmate",
+                "1-0",
+                "white",
+                [0, 1],
+                [50.0, 60.0],
                 played_at=base + datetime.timedelta(days=i),
             )
             for i in range(5)
@@ -2417,16 +2423,28 @@ class TestComputeClockPressureTimeline:
         for i in range(10):
             rows.append(
                 _make_clock_row(
-                    i + 1, "blitz", 180, "checkmate", "1-0", "white",
-                    [0, 1], [50.0, 60.0],
+                    i + 1,
+                    "blitz",
+                    180,
+                    "checkmate",
+                    "1-0",
+                    "white",
+                    [0, 1],
+                    [50.0, 60.0],
                     played_at=wk1_monday + datetime.timedelta(hours=i),
                 )
             )
         for i in range(10):
             rows.append(
                 _make_clock_row(
-                    i + 11, "blitz", 180, "checkmate", "1-0", "white",
-                    [0, 1], [80.0, 60.0],
+                    i + 11,
+                    "blitz",
+                    180,
+                    "checkmate",
+                    "1-0",
+                    "white",
+                    [0, 1],
+                    [80.0, 60.0],
                     played_at=wk2_monday + datetime.timedelta(hours=i),
                 )
             )
@@ -2454,16 +2472,28 @@ class TestComputeClockPressureTimeline:
         for i in range(10):
             rows.append(
                 _make_clock_row(
-                    i + 1, "blitz", 180, "checkmate", "1-0", "white",
-                    [0, 1], [50.0, 60.0],  # diff = -10/180
+                    i + 1,
+                    "blitz",
+                    180,
+                    "checkmate",
+                    "1-0",
+                    "white",
+                    [0, 1],
+                    [50.0, 60.0],  # diff = -10/180
                     played_at=wk1 + datetime.timedelta(hours=i),
                 )
             )
         for i in range(10):
             rows.append(
                 _make_clock_row(
-                    i + 11, "blitz", 180, "checkmate", "1-0", "white",
-                    [0, 1], [80.0, 60.0],  # diff = +20/180
+                    i + 11,
+                    "blitz",
+                    180,
+                    "checkmate",
+                    "1-0",
+                    "white",
+                    [0, 1],
+                    [80.0, 60.0],  # diff = +20/180
                     played_at=wk2 + datetime.timedelta(hours=i),
                 )
             )
@@ -2483,8 +2513,14 @@ class TestComputeClockPressureTimeline:
             # Valid rows
             *[
                 _make_clock_row(
-                    i + 1, "blitz", 180, "checkmate", "1-0", "white",
-                    [0, 1], [50.0, 60.0],
+                    i + 1,
+                    "blitz",
+                    180,
+                    "checkmate",
+                    "1-0",
+                    "white",
+                    [0, 1],
+                    [50.0, 60.0],
                     played_at=monday + datetime.timedelta(hours=i),
                 )
                 for i in range(10)
@@ -2493,17 +2529,38 @@ class TestComputeClockPressureTimeline:
             _make_clock_row(100, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [50.0, 60.0]),
             # Invalid: no base_time_seconds
             _make_clock_row(
-                101, "blitz", None, "checkmate", "1-0", "white", [0, 1], [50.0, 60.0],
+                101,
+                "blitz",
+                None,
+                "checkmate",
+                "1-0",
+                "white",
+                [0, 1],
+                [50.0, 60.0],
                 played_at=monday,
             ),
             # Invalid: no clocks
             _make_clock_row(
-                102, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [None, None],
+                102,
+                "blitz",
+                180,
+                "checkmate",
+                "1-0",
+                "white",
+                [0, 1],
+                [None, None],
                 played_at=monday,
             ),
             # Invalid: clock > 2x base time (bogus)
             _make_clock_row(
-                103, "blitz", 180, "checkmate", "1-0", "white", [0, 1], [540.0, 60.0],
+                103,
+                "blitz",
+                180,
+                "checkmate",
+                "1-0",
+                "white",
+                [0, 1],
+                [540.0, 60.0],
                 played_at=monday,
             ),
         ]
@@ -2516,8 +2573,14 @@ class TestComputeClockPressureTimeline:
         monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
         rows = [
             _make_clock_row(
-                i + 1, "blitz", 180, "checkmate", "1-0", "white",
-                [0, 1], [50.0, 60.0],
+                i + 1,
+                "blitz",
+                180,
+                "checkmate",
+                "1-0",
+                "white",
+                [0, 1],
+                [50.0, 60.0],
                 played_at=monday + datetime.timedelta(hours=i),
             )
             for i in range(12)
@@ -2541,16 +2604,28 @@ class TestComputeClockPressureTimeline:
         for i in range(10):
             rows.append(
                 _make_clock_row(
-                    i + 1, "blitz", 180, "checkmate", "1-0", "white",
-                    [0, 1], [50.0, 60.0],
+                    i + 1,
+                    "blitz",
+                    180,
+                    "checkmate",
+                    "1-0",
+                    "white",
+                    [0, 1],
+                    [50.0, 60.0],
                     played_at=wk1 + datetime.timedelta(hours=i),
                 )
             )
         for i in range(10):
             rows.append(
                 _make_clock_row(
-                    i + 11, "blitz", 180, "checkmate", "1-0", "white",
-                    [0, 1], [80.0, 60.0],
+                    i + 11,
+                    "blitz",
+                    180,
+                    "checkmate",
+                    "1-0",
+                    "white",
+                    [0, 1],
+                    [80.0, 60.0],
                     played_at=wk2 + datetime.timedelta(hours=i),
                 )
             )
@@ -2586,12 +2661,10 @@ class TestComputeScoreGapTimeline:
         """10 endgame games + 5 non-endgame games -> no points (non_endgame < 10)."""
         monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
         endgame_rows = [
-            _perf_row(monday + datetime.timedelta(hours=i), "1-0", "white")
-            for i in range(10)
+            _perf_row(monday + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
         ]
         non_endgame_rows = [
-            _perf_row(monday + datetime.timedelta(hours=i), "1-0", "white")
-            for i in range(5)
+            _perf_row(monday + datetime.timedelta(hours=i), "1-0", "white") for i in range(5)
         ]
         assert _compute_score_gap_timeline(endgame_rows, non_endgame_rows, 100) == []
 
@@ -2610,15 +2683,10 @@ class TestComputeScoreGapTimeline:
         wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)
         endgame_rows = [
             _perf_row(wk1 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
-        ] + [
-            _perf_row(wk2 + datetime.timedelta(hours=i), "1/2-1/2", "white")
-            for i in range(10)
-        ]
+        ] + [_perf_row(wk2 + datetime.timedelta(hours=i), "1/2-1/2", "white") for i in range(10)]
         non_endgame_rows = [
             _perf_row(wk1 + datetime.timedelta(hours=i), "0-1", "white") for i in range(10)
-        ] + [
-            _perf_row(wk2 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
-        ]
+        ] + [_perf_row(wk2 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)]
         series = _compute_score_gap_timeline(endgame_rows, non_endgame_rows, 100)
         assert len(series) == 2
         assert series[0].date == "2026-01-05"
@@ -2636,15 +2704,10 @@ class TestComputeScoreGapTimeline:
         wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)
         endgame_rows = [
             _perf_row(wk1 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
-        ] + [
-            _perf_row(wk2 + datetime.timedelta(hours=i), "1/2-1/2", "white")
-            for i in range(10)
-        ]
+        ] + [_perf_row(wk2 + datetime.timedelta(hours=i), "1/2-1/2", "white") for i in range(10)]
         non_endgame_rows = [
             _perf_row(wk1 + datetime.timedelta(hours=i), "0-1", "white") for i in range(10)
-        ] + [
-            _perf_row(wk2 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
-        ]
+        ] + [_perf_row(wk2 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)]
         series = _compute_score_gap_timeline(endgame_rows, non_endgame_rows, 10)
         assert len(series) == 2
         # Week 1: full window of week-1 only -> +1.0
@@ -2659,12 +2722,10 @@ class TestComputeScoreGapTimeline:
         """Rows with played_at=None are excluded from the timeline."""
         monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
         endgame_rows = [
-            _perf_row(monday + datetime.timedelta(hours=i), "1-0", "white")
-            for i in range(10)
+            _perf_row(monday + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
         ] + [_perf_row(None, "1-0", "white")]
         non_endgame_rows = [
-            _perf_row(monday + datetime.timedelta(hours=i), "0-1", "white")
-            for i in range(10)
+            _perf_row(monday + datetime.timedelta(hours=i), "0-1", "white") for i in range(10)
         ]
         series = _compute_score_gap_timeline(endgame_rows, non_endgame_rows, 100)
         assert len(series) == 1
@@ -2674,23 +2735,31 @@ class TestComputeScoreGapTimeline:
         """_compute_score_gap_material returns the pre-computed timeline as-is."""
         monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
         endgame_rows = [
-            _perf_row(monday + datetime.timedelta(hours=i), "1-0", "white")
-            for i in range(10)
+            _perf_row(monday + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
         ]
         non_endgame_rows = [
-            _perf_row(monday + datetime.timedelta(hours=i), "0-1", "white")
-            for i in range(10)
+            _perf_row(monday + datetime.timedelta(hours=i), "0-1", "white") for i in range(10)
         ]
         timeline = _compute_score_gap_timeline(
             endgame_rows, non_endgame_rows, SCORE_GAP_TIMELINE_WINDOW
         )
         endgame_wdl = EndgameWDLSummary(
-            wins=10, draws=0, losses=0, total=10,
-            win_pct=100.0, draw_pct=0.0, loss_pct=0.0,
+            wins=10,
+            draws=0,
+            losses=0,
+            total=10,
+            win_pct=100.0,
+            draw_pct=0.0,
+            loss_pct=0.0,
         )
         non_endgame_wdl = EndgameWDLSummary(
-            wins=0, draws=0, losses=10, total=10,
-            win_pct=0.0, draw_pct=0.0, loss_pct=100.0,
+            wins=0,
+            draws=0,
+            losses=10,
+            total=10,
+            win_pct=0.0,
+            draw_pct=0.0,
+            loss_pct=100.0,
         )
         result = _compute_score_gap_material(
             endgame_wdl,
@@ -2707,12 +2776,22 @@ class TestComputeScoreGapTimeline:
     def test_compute_score_gap_material_omits_timeline_when_absent(self):
         """Backward compat: omitting `timeline` yields an empty timeline."""
         endgame_wdl = EndgameWDLSummary(
-            wins=1, draws=0, losses=0, total=1,
-            win_pct=100.0, draw_pct=0.0, loss_pct=0.0,
+            wins=1,
+            draws=0,
+            losses=0,
+            total=1,
+            win_pct=100.0,
+            draw_pct=0.0,
+            loss_pct=0.0,
         )
         non_endgame_wdl = EndgameWDLSummary(
-            wins=0, draws=0, losses=1, total=1,
-            win_pct=0.0, draw_pct=0.0, loss_pct=100.0,
+            wins=0,
+            draws=0,
+            losses=1,
+            total=1,
+            win_pct=0.0,
+            draw_pct=0.0,
+            loss_pct=100.0,
         )
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows=[])
         assert result.timeline == []
@@ -2733,15 +2812,10 @@ class TestComputeScoreGapTimeline:
         wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)
         endgame_rows = [
             _perf_row(wk1 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
-        ] + [
-            _perf_row(wk2 + datetime.timedelta(hours=i), "1/2-1/2", "white")
-            for i in range(10)
-        ]
+        ] + [_perf_row(wk2 + datetime.timedelta(hours=i), "1/2-1/2", "white") for i in range(10)]
         non_endgame_rows = [
             _perf_row(wk1 + datetime.timedelta(hours=i), "0-1", "white") for i in range(10)
-        ] + [
-            _perf_row(wk2 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)
-        ]
+        ] + [_perf_row(wk2 + datetime.timedelta(hours=i), "1-0", "white") for i in range(10)]
         # Cutoff sits at the start of week 2.
         series = _compute_score_gap_timeline(
             endgame_rows, non_endgame_rows, 100, cutoff_str="2026-01-12"
@@ -2835,6 +2909,18 @@ def _elo_all_row(
     return (played_at, platform, tc, user_color, white_rating, black_rating)
 
 
+def _asof_arrays_from_all_rows(all_rows: list[tuple]) -> tuple[list, list[int]]:
+    """Mirror the orchestrator's per-combo asof-array build for unit tests (Phase 57.1)."""
+    dates: list = []
+    ratings: list[int] = []
+    for r in all_rows:
+        if r[0] is None or r[4] is None or r[5] is None:
+            continue
+        dates.append(r[0])
+        ratings.append(r[4] if r[3] == "white" else r[5])
+    return dates, ratings
+
+
 class TestEndgameSkillFromBucketRows:
     """Unit tests for _endgame_skill_from_bucket_rows — ported from frontend endgameSkill."""
 
@@ -2846,10 +2932,26 @@ class TestEndgameSkillFromBucketRows:
         # Score = (2*1 + 2*0.5) / 4 = 0.75
         rows = [
             _elo_bucket_row(
-                datetime.datetime(2026, 1, 1), "chess.com", "blitz", "white", 1500, 1500, 0, 0, "1-0"
+                datetime.datetime(2026, 1, 1),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1-0",
             ),
             _elo_bucket_row(
-                datetime.datetime(2026, 1, 2), "chess.com", "blitz", "white", 1500, 1500, 0, 0, "1-0"
+                datetime.datetime(2026, 1, 2),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1-0",
             ),
             _elo_bucket_row(
                 datetime.datetime(2026, 1, 3),
@@ -2881,16 +2983,48 @@ class TestEndgameSkillFromBucketRows:
         # 3 conv wins, 1 conv loss. Conv Win % = 0.75.
         rows = [
             _elo_bucket_row(
-                datetime.datetime(2026, 1, 1), "chess.com", "blitz", "white", 1500, 1500, 200, 200, "1-0"
+                datetime.datetime(2026, 1, 1),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                200,
+                200,
+                "1-0",
             ),
             _elo_bucket_row(
-                datetime.datetime(2026, 1, 2), "chess.com", "blitz", "white", 1500, 1500, 200, 200, "1-0"
+                datetime.datetime(2026, 1, 2),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                200,
+                200,
+                "1-0",
             ),
             _elo_bucket_row(
-                datetime.datetime(2026, 1, 3), "chess.com", "blitz", "white", 1500, 1500, 200, 200, "1-0"
+                datetime.datetime(2026, 1, 3),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                200,
+                200,
+                "1-0",
             ),
             _elo_bucket_row(
-                datetime.datetime(2026, 1, 4), "chess.com", "blitz", "white", 1500, 1500, 200, 200, "0-1"
+                datetime.datetime(2026, 1, 4),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                200,
+                200,
+                "0-1",
             ),
         ]
         result = _endgame_skill_from_bucket_rows(rows)
@@ -2900,7 +3034,15 @@ class TestEndgameSkillFromBucketRows:
         # imbalance_after=None => parity bucket (NULL-handling rule).
         rows = [
             _elo_bucket_row(
-                datetime.datetime(2026, 1, 1), "chess.com", "blitz", "white", 1500, 1500, 200, None, "1-0"
+                datetime.datetime(2026, 1, 1),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                200,
+                None,
+                "1-0",
             ),
         ]
         # 1 parity win -> score = 1.0, mean of one bucket = 1.0
@@ -2913,16 +3055,48 @@ class TestEndgameSkillFromBucketRows:
         # Mean of two bucket rates = (0.5 + 1.0) / 2 = 0.75
         rows = [
             _elo_bucket_row(
-                datetime.datetime(2026, 1, 1), "chess.com", "blitz", "white", 1500, 1500, 200, 200, "1-0"
+                datetime.datetime(2026, 1, 1),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                200,
+                200,
+                "1-0",
             ),
             _elo_bucket_row(
-                datetime.datetime(2026, 1, 2), "chess.com", "blitz", "white", 1500, 1500, 200, 200, "0-1"
+                datetime.datetime(2026, 1, 2),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                200,
+                200,
+                "0-1",
             ),
             _elo_bucket_row(
-                datetime.datetime(2026, 1, 3), "chess.com", "blitz", "white", 1500, 1500, 0, 0, "1-0"
+                datetime.datetime(2026, 1, 3),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1-0",
             ),
             _elo_bucket_row(
-                datetime.datetime(2026, 1, 4), "chess.com", "blitz", "white", 1500, 1500, 0, 0, "1-0"
+                datetime.datetime(2026, 1, 4),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1-0",
             ),
         ]
         result = _endgame_skill_from_bucket_rows(rows)
@@ -2930,10 +3104,10 @@ class TestEndgameSkillFromBucketRows:
 
 
 class TestEndgameEloTimeline:
-    """Unit tests for _compute_endgame_elo_weekly_series (Phase 57)."""
+    """Unit tests for _compute_endgame_elo_weekly_series (Phase 57; revised in Phase 57.1)."""
 
     def test_empty_inputs_returns_empty(self):
-        assert _compute_endgame_elo_weekly_series([], [], 100) == []
+        assert _compute_endgame_elo_weekly_series([], [], 100, [], []) == []
 
     def test_below_min_games_dropped(self):
         """Endgame window with 9 games -> no point emitted (D-06 threshold = 10)."""
@@ -2963,7 +3137,10 @@ class TestEndgameEloTimeline:
             )
             for i in range(50)
         ]
-        result = _compute_endgame_elo_weekly_series(bucket_rows, all_rows, 100)
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        result = _compute_endgame_elo_weekly_series(
+            bucket_rows, all_rows, 100, asof_dates, asof_ratings
+        )
         assert result == []
 
     def test_min_games_emits_point(self):
@@ -2994,22 +3171,29 @@ class TestEndgameEloTimeline:
             )
             for i in range(10)
         ]
-        result = _compute_endgame_elo_weekly_series(bucket_rows, all_rows, 100)
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        result = _compute_endgame_elo_weekly_series(
+            bucket_rows, all_rows, 100, asof_dates, asof_ratings
+        )
         assert len(result) == 1
         assert result[0].date == "2026-01-05"
-        # skill=0.5 (all draws => parity score=0.5), avg_opp=1500 -> elo ~= 1500
+        # skill=0.5 (all draws => parity score=0.5), asof rating=1500 -> elo == 1500
         assert result[0].endgame_elo == 1500
         assert result[0].actual_elo == 1500
         assert result[0].endgame_games_in_window == 10
+        # Phase 57.1: new per-week count field.
+        assert result[0].per_week_endgame_games == 10
 
-    def test_actual_elo_reflects_all_games_window_not_endgame_only(self):
-        """Actual ELO mean uses ALL games, not just endgame games (D-04).
+    def test_actual_elo_uses_asof_not_rolling_mean(self):
+        """Actual ELO comes from per-combo asof-join (Phase 57.1 D-04), not rolling mean.
 
-        All-games window has a DIFFERENT user_rating distribution than the
-        endgame window so the two mean values must be distinguishable.
+        Endgame games at rating 1400, all-games at rating 1800 — asof of the latest
+        all-game returns 1800 (the latest played rating), not the mean. Endgame ELO
+        with skill=0.5 equals actual_elo_at_date exactly (log10(1) == 0).
         """
         monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
-        # 10 endgame games at rating 1400 (would drive endgame mean to 1400)
+        # 10 endgame games at rating 1400 (per-game user_rating in bucket rows
+        # no longer influences the Elo formula after Phase 57.1).
         bucket_rows = [
             _elo_bucket_row(
                 monday + datetime.timedelta(hours=i),
@@ -3024,7 +3208,7 @@ class TestEndgameEloTimeline:
             )
             for i in range(10)
         ]
-        # 50 all-games (includes the endgame games) at rating 1800
+        # All-games at rating 1800 — the asof of the LATEST one wins.
         all_rows = [
             _elo_all_row(
                 monday + datetime.timedelta(hours=i),
@@ -3036,13 +3220,19 @@ class TestEndgameEloTimeline:
             )
             for i in range(50)
         ]
-        result = _compute_endgame_elo_weekly_series(bucket_rows, all_rows, 100)
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        result = _compute_endgame_elo_weekly_series(
+            bucket_rows,
+            all_rows,
+            100,
+            asof_dates,
+            asof_ratings,
+        )
         assert len(result) == 1
-        # Actual ELO uses ALL-games window, which is at 1800. Endgame ELO uses
-        # the endgame-window opp_avg (1400). If the two came from the same pool
-        # they would match.
+        # Asof returns the latest all-game's rating: 1800. Endgame ELO with skill=0.5
+        # equals actual_elo_at_date exactly (log10(1) == 0).
         assert result[0].actual_elo == 1800
-        assert result[0].endgame_elo == 1400  # skill=0.5 -> returns avg_opp (1400)
+        assert result[0].endgame_elo == 1800
 
     def test_cutoff_str_does_not_starve_window(self):
         """Recency cutoff filters EMITTED points but window pre-fills from earlier games (Pitfall 2)."""
@@ -3066,9 +3256,7 @@ class TestEndgameEloTimeline:
             )
             for i in range(10)
         ] + [
-            _elo_bucket_row(
-                wk2, "chess.com", "blitz", "white", 1500, 1500, 0, 0, "1/2-1/2"
-            ),
+            _elo_bucket_row(wk2, "chess.com", "blitz", "white", 1500, 1500, 0, 0, "1/2-1/2"),
         ]
         all_rows = [
             _elo_all_row(
@@ -3083,8 +3271,9 @@ class TestEndgameEloTimeline:
         ] + [
             _elo_all_row(wk2, "chess.com", "blitz", "white", 1500, 1500),
         ]
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
         result = _compute_endgame_elo_weekly_series(
-            bucket_rows, all_rows, 100, cutoff_str="2026-01-12"
+            bucket_rows, all_rows, 100, asof_dates, asof_ratings, cutoff_str="2026-01-12"
         )
         assert len(result) == 1
         assert result[0].date == "2026-01-12"
@@ -3124,12 +3313,332 @@ class TestEndgameEloTimeline:
             )
             for i in range(150)
         ]
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
         result = _compute_endgame_elo_weekly_series(
-            bucket_rows, all_rows, ENDGAME_ELO_TIMELINE_WINDOW
+            bucket_rows,
+            all_rows,
+            ENDGAME_ELO_TIMELINE_WINDOW,
+            asof_dates,
+            asof_ratings,
         )
         assert len(result) >= 1
         # Last emitted point of the week reflects the fully-saturated 100-game window.
         assert result[-1].endgame_games_in_window == 100
+
+    # --- Phase 57.1 D-18 tests (asof + per-week count) ---
+
+    def test_actual_elo_asof_forward_fill(self):
+        """Week with no games forward-fills from the latest prior game's rating (D-02).
+
+        Week 1 has 12 endgame games at rating 1500 -> emits with actual_elo=1500.
+        Week 3 has 1 game with rating 1600 -> emits with actual_elo=1600 (new asof).
+        Week 2 has no games -> no emission (the helper only emits on endgame events).
+        The forward-fill property is implicit: between week 1's emission and week 3's
+        emission, the asof value for any intermediate week would be 1500 until the
+        week-3 game updates it.
+        """
+        wk1 = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        wk3 = datetime.datetime(2026, 1, 19, 12, 0, 0)
+        bucket_rows = [
+            _elo_bucket_row(
+                wk1 + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            )
+            for i in range(12)
+        ] + [
+            _elo_bucket_row(
+                wk3,
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            ),
+        ]
+        # All-games contains the week-1 history at rating 1500 and a week-3 game at
+        # rating 1600 (user's rating changed between weeks).
+        all_rows = [
+            _elo_all_row(
+                wk1 + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+            )
+            for i in range(12)
+        ] + [
+            _elo_all_row(wk3, "chess.com", "blitz", "white", 1600, 1600),
+        ]
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        result = _compute_endgame_elo_weekly_series(
+            bucket_rows,
+            all_rows,
+            100,
+            asof_dates,
+            asof_ratings,
+        )
+        # Week 1 emits with actual_elo=1500 (asof of week-1 latest game).
+        # Week 3 emits with actual_elo=1600 (asof of week-3 game).
+        assert len(result) >= 2
+        assert result[0].actual_elo == 1500
+        assert result[-1].actual_elo == 1600
+
+    def test_asof_same_day_uses_last_game(self):
+        """Multiple games on the same Sunday: asof picks the last game's rating (D-03)."""
+        # 2026-01-11 is a Sunday (ISO week 2 of 2026).
+        sunday = datetime.datetime(2026, 1, 11, 12, 0, 0)
+        # 10 endgame games on the same Sunday.
+        bucket_rows = [
+            _elo_bucket_row(
+                sunday + datetime.timedelta(minutes=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            )
+            for i in range(10)
+        ]
+        # All-games rows: three games on the same Sunday with ratings 1500, 1550, 1600
+        # (in chronological order). Asof at week-end (next Monday) must return 1600.
+        all_rows = [
+            _elo_all_row(
+                sunday + datetime.timedelta(hours=1),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+            ),
+            _elo_all_row(
+                sunday + datetime.timedelta(hours=2),
+                "chess.com",
+                "blitz",
+                "white",
+                1550,
+                1550,
+            ),
+            _elo_all_row(
+                sunday + datetime.timedelta(hours=3),
+                "chess.com",
+                "blitz",
+                "white",
+                1600,
+                1600,
+            ),
+        ]
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        result = _compute_endgame_elo_weekly_series(
+            bucket_rows,
+            all_rows,
+            100,
+            asof_dates,
+            asof_ratings,
+        )
+        assert len(result) == 1
+        assert result[0].actual_elo == 1600  # last game on the Sunday wins
+
+    def test_neutral_skill_lines_coincide(self):
+        """skill == 0.5 makes endgame_elo == actual_elo (D-04 zero-delta)."""
+        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        bucket_rows = [
+            _elo_bucket_row(
+                monday + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            )
+            for i in range(10)
+        ]
+        all_rows = [
+            _elo_all_row(
+                monday + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1700,
+                1700,
+            )
+            for i in range(10)
+        ]
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        result = _compute_endgame_elo_weekly_series(
+            bucket_rows,
+            all_rows,
+            100,
+            asof_dates,
+            asof_ratings,
+        )
+        assert len(result) == 1
+        assert result[0].endgame_elo == result[0].actual_elo
+        assert result[0].actual_elo == 1700
+
+    def test_per_combo_asof_isolation(self):
+        """asof arrays are per-combo: a chess.com rating doesn't bleed into a lichess call.
+
+        The helper itself takes per-combo arrays as inputs, so isolation is
+        enforced at the orchestrator boundary. Test the helper-level contract:
+        passing only chess.com asof data still uses ONLY the chess.com asof for
+        actual_elo (no leak from a separate lichess pool).
+        """
+        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        bucket_rows = [
+            _elo_bucket_row(
+                monday + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1400,
+                1400,
+                0,
+                0,
+                "1/2-1/2",
+            )
+            for i in range(10)
+        ]
+        # all_rows contains only chess.com entries (orchestrator partitions by
+        # combo before calling the helper); asof arrays are derived from them.
+        all_rows = [
+            _elo_all_row(
+                monday + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1400,
+                1400,
+            )
+            for i in range(10)
+        ]
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        # Sanity: only chess.com ratings made it into the asof arrays.
+        assert max(asof_ratings) == 1400
+        result = _compute_endgame_elo_weekly_series(
+            bucket_rows,
+            all_rows,
+            100,
+            asof_dates,
+            asof_ratings,
+        )
+        assert len(result) == 1
+        assert result[0].actual_elo == 1400  # chess.com rating wins, no leak
+
+    def test_per_week_count_is_not_trailing(self):
+        """per_week_endgame_games counts THIS week's games, not trailing window (D-06)."""
+        # Week 1: 15 endgame games. Window fills, points emit.
+        # Week 2: 12 endgame games. Window now has 27.
+        # Points emitted for week 2 must have per_week_endgame_games == 12 (not 27).
+        wk1 = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)
+        bucket_rows = [
+            _elo_bucket_row(
+                wk1 + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            )
+            for i in range(15)
+        ] + [
+            _elo_bucket_row(
+                wk2 + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            )
+            for i in range(12)
+        ]
+        all_rows = [
+            _elo_all_row(
+                wk1 + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+            )
+            for i in range(15)
+        ] + [
+            _elo_all_row(
+                wk2 + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+            )
+            for i in range(12)
+        ]
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        result = _compute_endgame_elo_weekly_series(
+            bucket_rows,
+            all_rows,
+            100,
+            asof_dates,
+            asof_ratings,
+        )
+        # Two points emitted (one per week). Verify per-week counts.
+        assert len(result) == 2
+        wk1_pt = next(p for p in result if p.date == "2026-01-05")
+        wk2_pt = next(p for p in result if p.date == "2026-01-12")
+        assert wk1_pt.per_week_endgame_games == 15
+        assert wk2_pt.per_week_endgame_games == 12  # NOT 27 (trailing window)
+        # endgame_games_in_window IS the trailing window:
+        assert wk2_pt.endgame_games_in_window == 27
+
+    def test_no_prior_game_does_not_emit(self):
+        """Empty asof arrays -> bisect returns idx=0 -> no emission (defensive skip)."""
+        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        bucket_rows = [
+            _elo_bucket_row(
+                monday + datetime.timedelta(hours=i),
+                "chess.com",
+                "blitz",
+                "white",
+                1500,
+                1500,
+                0,
+                0,
+                "1/2-1/2",
+            )
+            for i in range(10)
+        ]
+        all_rows: list[tuple] = []  # no all-games rows -> empty asof
+        result = _compute_endgame_elo_weekly_series(
+            bucket_rows,
+            all_rows,
+            100,
+            [],
+            [],
+        )
+        assert result == []
 
 
 # Sanity check: EndgameEloTimelinePoint is actually exported from the schema.
@@ -3139,6 +3648,8 @@ def test_endgame_elo_timeline_point_constructs():
         endgame_elo=1500,
         actual_elo=1480,
         endgame_games_in_window=42,
+        per_week_endgame_games=8,
     )
     assert pt.endgame_elo == 1500
     assert pt.endgame_games_in_window == 42
+    assert pt.per_week_endgame_games == 8

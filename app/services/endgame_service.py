@@ -846,9 +846,7 @@ _ENDGAME_ELO_SKILL_CLAMP_HI = 0.95
 # Ordered combo list: chess.com first then lichess, per-platform follows
 # _TIME_CONTROL_ORDER. Used for stable response ordering (Phase 57 D-09).
 _ENDGAME_ELO_COMBO_ORDER: list[tuple[str, str]] = [
-    (platform_name, tc)
-    for platform_name in ("chess.com", "lichess")
-    for tc in _TIME_CONTROL_ORDER
+    (platform_name, tc) for platform_name in ("chess.com", "lichess") for tc in _TIME_CONTROL_ORDER
 ]
 
 
@@ -1934,9 +1932,7 @@ async def get_endgame_overview(
     )
     if cutoff is not None:
         endgame_rows = [r for r in endgame_rows_all if r[0] is not None and r[0] >= cutoff]
-        non_endgame_rows = [
-            r for r in non_endgame_rows_all if r[0] is not None and r[0] >= cutoff
-        ]
+        non_endgame_rows = [r for r in non_endgame_rows_all if r[0] is not None and r[0] >= cutoff]
     else:
         endgame_rows = list(endgame_rows_all)
         non_endgame_rows = list(non_endgame_rows_all)

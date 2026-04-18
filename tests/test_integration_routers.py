@@ -417,3 +417,37 @@ class TestEndgameEloTimelineRouter:
             f"expected empty combos for cold-start / narrow-recency seed, "
             f"got {len(elo_timeline['combos'])}: {elo_timeline['combos']}"
         )
+
+    @pytest.mark.asyncio
+    async def test_endgame_overview_elo_timeline_includes_per_week_count(
+        self, seeded_user: SeededUser
+    ) -> None:
+        """Phase 57.1 D-19: every emitted point exposes per_week_endgame_games as an int >= 0.
+
+        The seeded portfolio's per-combo counts may not all clear MIN_GAMES_FOR_TIMELINE,
+        so the assertion is shape-only: when a point is emitted, the new field is
+        present and non-negative. Math correctness is covered by the unit tests in
+        tests/test_endgame_service.py::TestEndgameEloTimeline.
+        """
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as client:
+            resp = await client.get(
+                "/api/endgames/overview",
+                headers=seeded_user.auth_headers,
+            )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        elo_timeline = data["endgame_elo_timeline"]
+        for combo in elo_timeline["combos"]:
+            for point in combo["points"]:
+                assert "per_week_endgame_games" in point, (
+                    f"missing per_week_endgame_games on point: {point}"
+                )
+                assert isinstance(point["per_week_endgame_games"], int), (
+                    f"per_week_endgame_games must be int, got {type(point['per_week_endgame_games'])}"
+                )
+                assert point["per_week_endgame_games"] >= 0
+                # Sanity: actual_elo is now an asof rating, must be a positive int.
+                assert isinstance(point["actual_elo"], int) and point["actual_elo"] > 0
+                assert isinstance(point["endgame_elo"], int) and point["endgame_elo"] > 0
