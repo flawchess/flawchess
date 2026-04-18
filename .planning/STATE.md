@@ -44,6 +44,7 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 
 - Phase 59 added: Fix Endgame Conv/Even/Recov per-game stats so Conv+Even+Recov game counts sum to Games-with-Endgame total; drop obsolete admin-gated gauges + timeline
 - Phase 62 added: Admin user impersonation — superusers can log in as any user, see stats from their perspective, perform any action, with impersonation session ending on logout (no last_login/last_activity updates). New Admin tab hosts impersonation selector and the existing Sentry Error Test section.
+- Phase 57.1 inserted after Phase 57: Endgame ELO timeline polish — switch Endgame ELO formula anchor from rolling-mean avg_opponent_rating to the user's actual rating at each emitted date (asof-join per combo, forward-fill to latest prior game's rating), add per-week endgame game count as muted volume bars via Recharts ComposedChart, rewrite info-popover copy (skill-adjusted rating, not performance rating). (URGENT)
 
 ### Decisions
 

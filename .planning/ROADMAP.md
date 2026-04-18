@@ -260,6 +260,29 @@ Plans:
 - [x] 57-02-PLAN.md — Frontend: TS types + ELO_COMBO_COLORS + niceEloAxis, EndgameEloTimelineSection component, Endgames page wiring + human-verify
 **UI hint**: yes
 
+### Phase 57.1: Endgame ELO Timeline — Anchor Change + Volume Bars (INSERTED)
+
+**Goal**: The Endgame ELO Timeline chart shows each emitted date's Endgame ELO anchored on the user's actual rating at that date (so the bright Actual ELO line matches the user's real rating trajectory instead of a rolling-mean approximation) and includes a secondary volume series showing how many endgame games informed each weekly point.
+
+**Scope**:
+- Backend: switch `_endgame_elo_from_skill` anchor from rolling-mean `avg_opponent_rating` to the user's actual rating at each emitted date. Actual rating is sourced via an asof-join per combo (user's latest game rating on or before the point's date, forward-fill if no game that week). Add `per_week_endgame_games: int` to each timeline point so the frontend can draw volume bars. Skill math (Conv Win %, Parity Score %, Recov Save % composite over trailing window) unchanged — only the Elo translation anchor shifts.
+- Frontend: swap `<LineChart>` for `<ComposedChart>`, add muted `<Bar>` series at the chart bottom (~20% of height, hidden right-axis). Rewrite info-popover copy: the number is a **skill-adjusted rating** (`actual_elo + 400·log10(skill/(1-skill))`), not a classical performance rating. Update chart subtitle, tooltip, and HUMAN-UAT items accordingly.
+
+**Why**: Phase 57 used classical Elo performance-rating math anchored on rolling-mean opponent rating. UAT showed that (a) "Actual ELO" as a rolling mean over 100 games lags the user's real rating and confuses the word "actual", and (b) users can't tell from the chart whether a weekly point is well-supported (50+ games) or marginal (just over the 10-game floor). This phase fixes both with one coherent revision.
+
+**Depends on**: Phase 57
+**Requirements**: ELO-05 (refinement — does not introduce new requirement IDs)
+**Success Criteria** (what must be TRUE):
+  1. Bright Actual ELO line equals the user's latest per-combo rating at each emitted weekly date (forward-filled from the last prior game if no game that week), not a rolling mean
+  2. Dark dashed Endgame ELO line equals `actual_elo + 400·log10(skill/(1-skill))` at each point, with skill still computed from the trailing `ENDGAME_ELO_TIMELINE_WINDOW` endgame games
+  3. Chart renders a muted volume bar per emitted week showing that week's qualifying endgame game count (not trailing window count)
+  4. Info popover no longer calls the metric a performance rating; frames it as a skill-adjusted rating with the 50% skill ⇒ zero-delta intuition
+**Plans**: TBD
+**UI hint**: yes
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 57.1 to break down)
+
 ### Phase 58: Opening Risk & Drawishness
 **Goal**: Users can see risk and drawishness signals per candidate move in the move explorer to inform opening selection
 **Depends on**: Phase 47
