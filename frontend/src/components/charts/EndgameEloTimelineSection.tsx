@@ -17,13 +17,29 @@
  * UI-SPEC §Copywriting Contract.
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend } from '@/components/ui/chart';
 import { ComposedChart, Line, Bar, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { createDateTickFormatter, formatDateWithYear, niceEloAxis } from '@/lib/utils';
 import { ELO_COMBO_COLORS, ENDGAME_VOLUME_BAR_COLOR } from '@/lib/theme';
 import type { EndgameEloTimelineResponse, EloComboKey } from '@/types/endgames';
+
+const MOBILE_BREAKPOINT_PX = 768;
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
+    const update = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isMobile;
+}
 
 interface EndgameEloTimelineSectionProps {
   data: EndgameEloTimelineResponse | undefined;
@@ -61,6 +77,7 @@ export function EndgameEloTimelineSection({
   isLoading,
   isError,
 }: EndgameEloTimelineSectionProps) {
+  const isMobile = useIsMobile();
   // One Set keyed by combo_key — toggles BOTH lines of a combo as a unit (UI-SPEC LOCKED).
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
 
@@ -183,8 +200,6 @@ export function EndgameEloTimelineSection({
           Points are emitted weekly; each Endgame Skill value looks back at your
           trailing 100 endgame games for that platform and time control. Weeks with
           fewer than 10 qualifying endgame games are hidden.
-          Skill is clamped to the 5&ndash;95% range so a handful of lucky or
-          unlucky endgames can't produce an absurd rating shift at the extremes.
         </p>
         <p>
           Chess.com uses Glicko-1 and lichess uses Glicko-2, so ratings across the
@@ -311,15 +326,33 @@ export function EndgameEloTimelineSection({
   return (
     <div>
       {headingBlock}
-      <ChartContainer
-        config={chartConfig}
-        className="w-full h-72"
-        data-testid="endgame-elo-timeline-chart"
-      >
-        <ComposedChart data={barChartData}>
-          <CartesianGrid vertical={false} />
-          <XAxis dataKey="date" tickFormatter={formatDateTick} tick={{ fontSize: 12 }} />
-          <YAxis yAxisId="elo" domain={yAxis.domain} ticks={yAxis.ticks} tick={{ fontSize: 12 }} />
+      <div className={isMobile ? '' : 'flex items-stretch'}>
+        {!isMobile && (
+          <div
+            className="flex items-center text-xs text-muted-foreground shrink-0 pt-30 -mr-1"
+            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+          >
+            ELO
+          </div>
+        )}
+        <ChartContainer
+          config={chartConfig}
+          className="w-full h-72"
+          data-testid="endgame-elo-timeline-chart"
+        >
+          <ComposedChart
+            data={barChartData}
+            margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
+          >
+            <CartesianGrid vertical={false} />
+            <XAxis dataKey="date" tickFormatter={formatDateTick} tick={{ fontSize: 12 }} />
+            <YAxis
+              yAxisId="elo"
+              domain={yAxis.domain}
+              ticks={yAxis.ticks}
+              tick={{ fontSize: 12 }}
+              width={isMobile ? 36 : 44}
+            />
           {/* Phase 57.1: hidden right Y-axis dedicated to volume bars.
               domain={[0, barMax * 5]} pins the tallest bar to the bottom 20%
               of the chart canvas (Pattern 3 in 57.1-RESEARCH.md). */}
@@ -437,8 +470,9 @@ export function EndgameEloTimelineSection({
               />,
             ];
           })}
-        </ComposedChart>
-      </ChartContainer>
+          </ComposedChart>
+        </ChartContainer>
+      </div>
     </div>
   );
 }
