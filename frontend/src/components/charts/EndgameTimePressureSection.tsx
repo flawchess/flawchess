@@ -139,7 +139,7 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
             position='insideLeft' + angle produced NaN plot-area rects and chart width 0). */}
         {!isMobile && (
           <div
-            className="flex items-center text-xs text-muted-foreground shrink-0 pt-30 -mr-1"
+            className="flex items-center text-xs text-muted-foreground shrink-0 pt-35 -mr-1"
             style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
           >
             Score %

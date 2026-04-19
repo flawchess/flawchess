@@ -341,7 +341,7 @@ function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProp
       <div className={isMobile ? '' : 'flex items-stretch'}>
         {!isMobile && (
           <div
-            className="flex items-center text-xs text-muted-foreground shrink-0 pt-30 -mr-1"
+            className="flex items-center text-xs text-muted-foreground shrink-0 pt-33 -mr-1"
             style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
           >
             Score diff %
