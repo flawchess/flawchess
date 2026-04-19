@@ -425,26 +425,7 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
               stroke="var(--muted-foreground)"
               strokeWidth={2}
               connectNulls={true}
-              dot={(props: {
-                cx?: number;
-                cy?: number;
-                payload?: Record<string, unknown>;
-              }) => {
-                const { cx, cy, payload } = props;
-                if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) {
-                  return <g key={`nodot-${String(payload?.date ?? cx)}`} />;
-                }
-                const diff = (payload.avg_clock_diff_pct as number) ?? 0;
-                return (
-                  <circle
-                    key={`clock-diff-dot-${payload.date as string}`}
-                    cx={cx}
-                    cy={cy}
-                    r={4}
-                    fill={zoneColor(diff)}
-                  />
-                );
-              }}
+              dot={false}
             />
           </ComposedChart>
         </ChartContainer>
