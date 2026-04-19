@@ -279,21 +279,18 @@ export function EndgamesPage() {
                 <EndgamePerformanceSection data={perfData} scoreGap={scoreGapData} />
               </div>
               {scoreGapData && (
-                <div className="charcoal-texture rounded-md p-4">
+                <div
+                  className="charcoal-texture rounded-md p-4 space-y-6"
+                  data-testid="endgame-elo-timeline-section"
+                >
                   <EndgameScoreGapSection data={scoreGapData} />
+                  <EndgameEloTimelineSection
+                    data={eloTimelineData}
+                    isLoading={overviewLoading}
+                    isError={overviewError}
+                  />
                 </div>
               )}
-
-              <div
-                className="charcoal-texture rounded-md p-4"
-                data-testid="endgame-elo-timeline-section"
-              >
-                <EndgameEloTimelineSection
-                  data={eloTimelineData}
-                  isLoading={overviewLoading}
-                  isError={overviewError}
-                />
-              </div>
             </>
           )}
 
