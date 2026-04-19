@@ -164,7 +164,7 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
               domain={Y_AXIS_DOMAIN}
               ticks={Y_AXIS_TICKS}
               tickFormatter={(v: number) => `${Math.round(v * 100)}%`}
-              width={isMobile ? 32 : 40}
+              width={44}
             />
           <ChartTooltip
             content={({ active, payload }) => {
