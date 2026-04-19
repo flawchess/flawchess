@@ -288,6 +288,7 @@ export function EndgamesPage() {
               )}
               {scoreGapData && (
                 <>
+                  <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Metrics and ELO</h2>
                   <div className="charcoal-texture rounded-md p-4">
                     <EndgameScoreGapSection data={scoreGapData} />
                   </div>
