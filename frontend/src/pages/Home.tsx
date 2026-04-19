@@ -29,18 +29,6 @@ const FEATURES: {
   imagePosition: 'left' | 'right';
 }[] = [
   {
-    slug: 'time-management',
-    icon: Timer,
-    heading: 'Time Management Stats',
-    desc: [
-        'See your average time advantage or deficit when entering the endgame.',
-        'Find out if you crack more than your opponents under matching time-pressure levels.',
-        'Track whether you flag more or less than your opponents per time control.',
-    ],
-    screenshot: { src: '/screenshots/time-management-stats.png', alt: 'Average clock difference over time and time-pressure-vs-performance charts' },
-    imagePosition: 'left',
-  },
-  {
     slug: 'opening-explorer',
     icon: Compass,
     heading: 'Interactive Opening Explorer',
@@ -50,6 +38,18 @@ const FEATURES: {
         "Scout your opponents\u2019 weaknesses and tendencies before a match.",
     ],
     screenshot: { src: '/screenshots/opening-explorer.png', alt: 'Board with move explorer showing win/draw/loss bars per candidate move' },
+    imagePosition: 'left',
+  },
+  {
+    slug: 'time-management',
+    icon: Timer,
+    heading: 'Time Management Stats',
+    desc: [
+        'See your average time advantage or deficit when entering the endgame.',
+        'Find out if you crack more than your opponents under matching time-pressure levels.',
+        'Track whether you flag more or less than your opponents per time control.',
+    ],
+    screenshot: { src: '/screenshots/time-management-stats.png', alt: 'Average clock difference over time and time-pressure-vs-performance charts' },
     imagePosition: 'right',
   },
   {
