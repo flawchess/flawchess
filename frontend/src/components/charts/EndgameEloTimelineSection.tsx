@@ -351,7 +351,7 @@ export function EndgameEloTimelineSection({
               domain={yAxis.domain}
               ticks={yAxis.ticks}
               tick={{ fontSize: 12 }}
-              width={isMobile ? 36 : 44}
+              width={44}
             />
           {/* Phase 57.1: hidden right Y-axis dedicated to volume bars.
               domain={[0, barMax * 5]} pins the tallest bar to the bottom 20%

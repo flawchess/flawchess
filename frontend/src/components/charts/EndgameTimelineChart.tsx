@@ -179,7 +179,7 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
               domain={yAxis.domain}
               ticks={yAxis.ticks}
               tickFormatter={(v) => `${Math.round(v * 100)}%`}
-              width={isMobile ? 36 : 44}
+              width={44}
             />
           {/* Hidden right Y-axis dedicated to volume bars.
               domain={[0, barMax * 5]} pins the tallest bar to the bottom 20%

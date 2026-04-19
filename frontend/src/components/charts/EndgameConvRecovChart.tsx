@@ -106,7 +106,7 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
               <YAxis
                 domain={[0, 100]}
                 tickFormatter={(v: number) => `${v}%`}
-                width={isMobile ? 36 : 44}
+                width={44}
               />
             <ChartTooltip
               content={({ active, payload }) => {

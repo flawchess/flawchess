@@ -369,7 +369,7 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
               tickFormatter={(v: number) =>
                 v > 0 ? `+${v}%` : `${v}%`
               }
-              width={isMobile ? 36 : 44}
+              width={44}
             />
             {/* Hidden right Y-axis dedicated to volume bars.
                 domain={[0, barMax * 5]} pins the tallest bar to the bottom 20%
