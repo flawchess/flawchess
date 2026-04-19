@@ -1,10 +1,26 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { ComposedChart, Bar, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ENDGAME_VOLUME_BAR_COLOR } from '@/lib/theme';
 import { createDateTickFormatter, formatDateWithYear, niceWinRateAxis } from '@/lib/utils';
 import type { EndgameTimelineResponse } from '@/types/endgames';
+
+const MOBILE_BREAKPOINT_PX = 768;
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
+    const update = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isMobile;
+}
 
 interface EndgameTimelineChartProps {
   data: EndgameTimelineResponse;
@@ -31,6 +47,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
+  const isMobile = useIsMobile();
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
 
   const handleLegendClick = useCallback((dataKey: string) => {
@@ -137,20 +154,33 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
           Win rate trend over time, per endgame type.
         </p>
       </div>
-      <ChartContainer
-        config={perTypeChartConfig}
-        className="w-full h-72"
-        data-testid="timeline-per-type-chart"
-      >
-        <ComposedChart data={perTypeBarData}>
-          <CartesianGrid vertical={false} />
-          <XAxis dataKey="date" tickFormatter={formatDateTick} />
-          <YAxis
-            yAxisId="value"
-            domain={yAxis.domain}
-            ticks={yAxis.ticks}
-            tickFormatter={(v) => `${Math.round(v * 100)}%`}
-          />
+      <div className={isMobile ? '' : 'flex items-stretch'}>
+        {!isMobile && (
+          <div
+            className="flex items-center text-xs text-muted-foreground shrink-0 pb-30 -mr-1"
+            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+          >
+            Win Rate %
+          </div>
+        )}
+        <ChartContainer
+          config={perTypeChartConfig}
+          className="w-full h-72"
+          data-testid="timeline-per-type-chart"
+        >
+          <ComposedChart
+            data={perTypeBarData}
+            margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
+          >
+            <CartesianGrid vertical={false} />
+            <XAxis dataKey="date" tickFormatter={formatDateTick} />
+            <YAxis
+              yAxisId="value"
+              domain={yAxis.domain}
+              ticks={yAxis.ticks}
+              tickFormatter={(v) => `${Math.round(v * 100)}%`}
+              width={isMobile ? 36 : 44}
+            />
           {/* Hidden right Y-axis dedicated to volume bars.
               domain={[0, barMax * 5]} pins the tallest bar to the bottom 20%
               of the chart canvas (Pattern 3 in 57.1-RESEARCH.md). */}
@@ -216,8 +246,9 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
               hide={hiddenKeys.has(key)}
             />
           ))}
-        </ComposedChart>
-      </ChartContainer>
+          </ComposedChart>
+        </ChartContainer>
+      </div>
     </div>
   );
 }

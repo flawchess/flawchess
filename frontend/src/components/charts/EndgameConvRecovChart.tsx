@@ -3,6 +3,7 @@
  * by endgame type (D-08, D-09).
  */
 
+import { useState, useEffect } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -10,6 +11,22 @@ import { MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/chart
 import { ZONE_SUCCESS } from '@/lib/theme';
 import type { EndgameCategoryStats } from '@/types/endgames';
 import type { ChartConfig } from '@/components/ui/chart';
+
+const MOBILE_BREAKPOINT_PX = 768;
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
+    const update = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isMobile;
+}
 
 const chartConfig: ChartConfig = {
   // Conversion uses the success (green) zone color from theme
@@ -31,6 +48,7 @@ interface EndgameConvRecovChartProps {
 }
 
 export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps) {
+  const isMobile = useIsMobile();
   const chartData: ConvRecovDataPoint[] = categories
     .filter(c => c.conversion.conversion_games > 0 || c.conversion.recovery_games > 0)
     .map(c => ({
@@ -69,19 +87,29 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
           Not enough data for conversion/recovery analysis
         </p>
       ) : (
-        <ChartContainer config={chartConfig} className="w-full h-64">
-          <BarChart data={chartData} margin={{ left: 4, right: 4, bottom: 20 }}>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey="label"
-              tick={{ fontSize: 11 }}
-              angle={-30}
-              textAnchor="end"
-            />
-            <YAxis
-              domain={[0, 100]}
-              tickFormatter={(v: number) => `${v}%`}
-            />
+        <div className={isMobile ? '' : 'flex items-stretch'}>
+          {!isMobile && (
+            <div
+              className="flex items-center text-xs text-muted-foreground shrink-0 pb-20 -mr-1"
+              style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+            >
+              Rate %
+            </div>
+          )}
+          <ChartContainer config={chartConfig} className="w-full h-64">
+            <BarChart data={chartData} margin={{ left: isMobile ? 0 : 4, right: 4, bottom: 20 }}>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="label"
+                tick={{ fontSize: 11 }}
+                angle={-30}
+                textAnchor="end"
+              />
+              <YAxis
+                domain={[0, 100]}
+                tickFormatter={(v: number) => `${v}%`}
+                width={isMobile ? 36 : 44}
+              />
             <ChartTooltip
               content={({ active, payload }) => {
                 if (!active || !payload?.length) return null;
@@ -102,10 +130,11 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
               }}
             />
             <ChartLegend content={<ChartLegendContent />} />
-            <Bar dataKey="conversion_pct" fill="var(--color-conversion_pct)" radius={[2, 2, 0, 0]} />
-            <Bar dataKey="recovery_pct" fill="var(--color-recovery_pct)" radius={[2, 2, 0, 0]} />
-          </BarChart>
-        </ChartContainer>
+              <Bar dataKey="conversion_pct" fill="var(--color-conversion_pct)" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="recovery_pct" fill="var(--color-recovery_pct)" radius={[2, 2, 0, 0]} />
+            </BarChart>
+          </ChartContainer>
+        </div>
       )}
     </div>
   );
