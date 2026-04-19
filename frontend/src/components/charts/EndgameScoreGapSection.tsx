@@ -192,9 +192,9 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
       <div>
         <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">
-            Endgame Conversion & Recovery
+            Endgame Metrics
             <InfoPopover
-              ariaLabel="Conversion & Recovery info"
+              ariaLabel="Endgame Metrics info"
               testId="material-breakdown-section-info"
               side="top"
             >

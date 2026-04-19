@@ -137,7 +137,7 @@ See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
 - [x] **Phase 54: Time Pressure — Clock Stats Table** - Per-time-control summary table of clock state at endgame entry with avg time, clock diff, and net timeout rate (completed 2026-04-12)
 - [x] **Phase 55: Time Pressure — Performance Chart** - Two-line comparison chart (user vs opponents) showing score by time pressure bucket, tabbed by time control (completed 2026-04-12)
 - [ ] **Phase 56: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
-- [ ] **Phase 57: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination
+- [x] **Phase 57: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination (completed 2026-04-18)
 - [ ] **Phase 58: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
 - [x] **Phase 59: Fix Endgame Conv/Even/Recov per-game stats** - Ensure Conv+Even+Recov buckets sum to total endgame games; remove obsolete admin-gated gauges + timeline (completed 2026-04-13)
 - [x] **Phase 60: Opponent-based baseline for Endgame Conversion & Recovery** - Replace global-average baseline with self-calibrating opponent baseline computed via same-game symmetry; mute when opponent sample < 10 games (completed 2026-04-14)
@@ -242,7 +242,7 @@ Plans:
   2. Combinations with fewer than the minimum game threshold are omitted; "Insufficient data" appears when nothing qualifies
   3. User can read an info popover explaining how Endgame ELO is computed, what the baselines are, and its caveats
   4. Existing sidebar filters (platform, time-control, rated, recency, color, opponent type) update the breakdown table
-**Plans**: TBD
+**Plans**: 2 plans
 **UI hint**: yes
 
 ### Phase 57: Endgame ELO — Timeline Chart
@@ -253,8 +253,36 @@ Plans:
   1. User sees a timeline chart with paired lines per (platform, time-control) combination — one bright line for Endgame ELO and one dark line for Actual ELO
   2. The chart updates when sidebar filters change, showing only the relevant combination(s)
   3. The chart handles cold-start correctly — no artifacts when recency filters are active on a new account
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [x] 57-01-PLAN.md — Backend: schemas, repo query, Elo formula + skill composite + weekly-series helpers, orchestrator + overview wiring, unit tests
+- [x] 57-02-PLAN.md — Frontend: TS types + ELO_COMBO_COLORS + niceEloAxis, EndgameEloTimelineSection component, Endgames page wiring + human-verify
 **UI hint**: yes
+
+### Phase 57.1: Endgame ELO Timeline — Anchor Change + Volume Bars (INSERTED)
+
+**Goal**: The Endgame ELO Timeline chart shows each emitted date's Endgame ELO anchored on the user's actual rating at that date (so the bright Actual ELO line matches the user's real rating trajectory instead of a rolling-mean approximation) and includes a secondary volume series showing how many endgame games informed each weekly point.
+
+**Scope**:
+- Backend: switch `_endgame_elo_from_skill` anchor from rolling-mean `avg_opponent_rating` to the user's actual rating at each emitted date. Actual rating is sourced via an asof-join per combo (user's latest game rating on or before the point's date, forward-fill if no game that week). Add `per_week_endgame_games: int` to each timeline point so the frontend can draw volume bars. Skill math (Conv Win %, Parity Score %, Recov Save % composite over trailing window) unchanged — only the Elo translation anchor shifts.
+- Frontend: swap `<LineChart>` for `<ComposedChart>`, add muted `<Bar>` series at the chart bottom (~20% of height, hidden right-axis). Rewrite info-popover copy: the number is a **skill-adjusted rating** (`actual_elo + 400·log10(skill/(1-skill))`), not a classical performance rating. Update chart subtitle, tooltip, and HUMAN-UAT items accordingly.
+
+**Why**: Phase 57 used classical Elo performance-rating math anchored on rolling-mean opponent rating. UAT showed that (a) "Actual ELO" as a rolling mean over 100 games lags the user's real rating and confuses the word "actual", and (b) users can't tell from the chart whether a weekly point is well-supported (50+ games) or marginal (just over the 10-game floor). This phase fixes both with one coherent revision.
+
+**Depends on**: Phase 57
+**Requirements**: ELO-05 (refinement — does not introduce new requirement IDs)
+**Success Criteria** (what must be TRUE):
+  1. Bright Actual ELO line equals the user's latest per-combo rating at each emitted weekly date (forward-filled from the last prior game if no game that week), not a rolling mean
+  2. Dark dashed Endgame ELO line equals `actual_elo + 400·log10(skill/(1-skill))` at each point, with skill still computed from the trailing `ENDGAME_ELO_TIMELINE_WINDOW` endgame games
+  3. Chart renders a muted volume bar per emitted week showing that week's qualifying endgame game count (not trailing window count)
+  4. Info popover no longer calls the metric a performance rating; frames it as a skill-adjusted rating with the 50% skill ⇒ zero-delta intuition
+**Plans**: 2 plans
+**UI hint**: yes
+
+Plans:
+- [x] 57.1-01-PLAN.md — Backend: schema field + asof anchor + per-week count + 6 unit tests + 1 integration test + UI-SPEC + HUMAN-UAT inline updates
+- [x] 57.1-02-PLAN.md — Frontend: TS interface + ENDGAME_VOLUME_BAR_COLOR + ComposedChart swap with hidden bar axis + tooltip top line + popover/subtitle copy rewrite
 
 ### Phase 58: Opening Risk & Drawishness
 **Goal**: Users can see risk and drawishness signals per candidate move in the move explorer to inform opening selection
@@ -383,7 +411,7 @@ Plans:
 | 54. Time Pressure — Clock Stats Table | v1.10 | 2/2 | Complete    | 2026-04-12 |
 | 55. Time Pressure — Performance Chart | v1.10 | 2/2 | Complete    | 2026-04-12 |
 | 56. Endgame ELO — Backend + Breakdown Table | v1.10 | 0/? | Not started | - |
-| 57. Endgame ELO — Timeline Chart | v1.10 | 0/? | Not started | - |
+| 57. Endgame ELO — Timeline Chart | v1.10 | 2/2 | Complete   | 2026-04-18 |
 | 58. Opening Risk & Drawishness | v1.10 | 0/? | Not started | - |
 | 59. Fix Endgame Conv/Even/Recov per-game stats | v1.10 | 3/3 | Complete    | 2026-04-13 |
 | 60. Opponent-based baseline for Endgame Conv/Even/Recov | v1.10 | 2/2 | Complete    | 2026-04-14 |
@@ -395,7 +423,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

@@ -77,3 +77,31 @@ export const OPP_SCORE_COLOR = WDL_LOSS;
 export const IMPERSONATION_PILL_BG = 'oklch(0.50 0.18 40)';
 export const IMPERSONATION_PILL_FG = 'oklch(0.95 0.02 40)';
 export const IMPERSONATION_PILL_BORDER = 'oklch(0.60 0.18 40)';
+
+// Endgame ELO Timeline chart combo palette (Phase 57 ELO-05).
+// 8 combos = 2 platforms x 4 time controls. Two constants per combo (bright
+// Endgame ELO stroke + dark Actual ELO stroke) instead of an opacity modifier,
+// so both tones preserve their hue reading on the dark charcoal surface.
+// Hues chosen to clear WCAG AA 3:1 non-text contrast against oklch(0.145 0 0);
+// adjacent combos separated by >=40 deg hue to stay visually distinct.
+// Values locked in 57-UI-SPEC.md §ELO_COMBO_COLORS.
+
+import type { EloComboKey } from '@/types/endgames';
+
+export const ELO_COMBO_COLORS: Record<EloComboKey, { bright: string; dark: string }> = {
+  chess_com_bullet:    { bright: 'oklch(0.62 0.22 30)',  dark: 'oklch(0.42 0.18 30)'  },
+  chess_com_blitz:     { bright: 'oklch(0.65 0.20 260)', dark: 'oklch(0.45 0.16 260)' },
+  chess_com_rapid:     { bright: 'oklch(0.70 0.18 80)',  dark: 'oklch(0.50 0.14 80)'  },
+  chess_com_classical: { bright: 'oklch(0.60 0.22 310)', dark: 'oklch(0.40 0.18 310)' },
+  lichess_bullet:      { bright: 'oklch(0.62 0.20 0)',   dark: 'oklch(0.42 0.16 0)'   },
+  lichess_blitz:       { bright: 'oklch(0.62 0.18 220)', dark: 'oklch(0.42 0.14 220)' },
+  lichess_rapid:       { bright: 'oklch(0.65 0.18 140)', dark: 'oklch(0.45 0.14 140)' },
+  lichess_classical:   { bright: 'oklch(0.60 0.18 340)', dark: 'oklch(0.40 0.14 340)' },
+};
+
+// Endgame ELO Timeline volume bars (Phase 57.1). Muted gray with alpha so the
+// bars read as "context, not data" on the charcoal-texture card surface.
+// L=0.55 / chroma=0 keeps the bar visually distinct from all 8 ELO_COMBO_COLORS
+// hues; alpha=0.25 lets the texture noise show through, reinforcing the
+// passive-context reading. Locked per 57.1-RESEARCH.md Pitfall 3.
+export const ENDGAME_VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';

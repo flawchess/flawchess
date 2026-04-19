@@ -167,4 +167,47 @@ export interface EndgameOverviewResponse {
   score_gap_material: ScoreGapMaterialResponse;  // Phase 53
   clock_pressure: ClockPressureResponse;         // Phase 54
   time_pressure_chart: TimePressureChartResponse; // Phase 55
+  endgame_elo_timeline: EndgameEloTimelineResponse; // Phase 57
+}
+
+// ── Phase 57: Endgame ELO Timeline ─────────────────────────────────────────
+
+/** Stable string-literal union of all 8 (platform, time_control) combo keys.
+ *  Format: {platform_with_dot_replaced_by_underscore}_{time_control}.
+ *  Frontend uses this as the lookup key into ELO_COMBO_COLORS.
+ *  Backend populates via EndgameEloTimelineCombo.combo_key. */
+export type EloComboKey =
+  | 'chess_com_bullet'
+  | 'chess_com_blitz'
+  | 'chess_com_rapid'
+  | 'chess_com_classical'
+  | 'lichess_bullet'
+  | 'lichess_blitz'
+  | 'lichess_rapid'
+  | 'lichess_classical';
+
+/** One weekly point for a (platform, time_control) combo (Phase 57 ELO-05; revised Phase 57.1).
+ *  date: Monday of ISO week, YYYY-MM-DD.
+ *  endgame_elo: skill-adjusted rating = round(actual_elo + 400 * log10(skill / (1 - skill))).
+ *  actual_elo: user's rating at this date via per-combo asof-join (forward-filled).
+ *  endgame_games_in_window: trailing 100-game window count (drives >=10 floor + tooltip "past N games").
+ *  per_week_endgame_games: count of endgame games for THIS specific ISO week (Phase 57.1, drives muted volume bars). */
+export interface EndgameEloTimelinePoint {
+  date: string;
+  endgame_elo: number;
+  actual_elo: number;
+  endgame_games_in_window: number;
+  per_week_endgame_games: number;
+}
+
+export interface EndgameEloTimelineCombo {
+  combo_key: EloComboKey;
+  platform: 'chess.com' | 'lichess';
+  time_control: 'bullet' | 'blitz' | 'rapid' | 'classical';
+  points: EndgameEloTimelinePoint[];
+}
+
+export interface EndgameEloTimelineResponse {
+  combos: EndgameEloTimelineCombo[];
+  timeline_window: number;
 }

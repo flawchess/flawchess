@@ -329,6 +329,71 @@ class TimePressureChartResponse(BaseModel):
     total_endgame_games: int
 
 
+class EndgameEloTimelinePoint(BaseModel):
+    """One weekly point for a (platform, time_control) combo (Phase 57 ELO-05; revised in Phase 57.1).
+
+    date: Sunday of the ISO week (end of week), YYYY-MM-DD. Aligned with the asof
+        rating moment so a daily rating chart at the same date shows the same value
+        (assuming matching filter inputs).
+    endgame_elo: skill-adjusted rating
+        = round(actual_elo_at_date + 400 * log10(clamp(skill) / (1 - clamp))),
+        anchored on the user's actual rating at the point's date (per-combo asof-join
+        with forward-fill from the latest game played on or before the ISO-week-end).
+        skill is the endgame-skill composite (Conv Win %, Parity Score %, Recov Save %)
+        over the trailing ENDGAME_ELO_TIMELINE_WINDOW endgame games. When skill == 0.5
+        the formula returns actual_elo_at_date exactly (zero delta at the neutral mark).
+    actual_elo: the user's rating at this point's date, sourced via the same per-combo
+        asof-join used as the endgame_elo anchor. Both lines share the anchor so the
+        gap between them IS the skill signal.
+    endgame_games_in_window: count of endgame games contributing to the trailing-window
+        skill computation. Drives the >=MIN_GAMES_FOR_TIMELINE (10) emission floor and
+        the frontend tooltip's "past N games" copy.
+    per_week_endgame_games: count of endgame games for THIS specific ISO week (NOT the
+        trailing window). Frontend uses this for the muted volume-bar series so users can
+        see at a glance whether a weekly point is well-supported (50+ games this week)
+        or marginal (just over the 10-game floor).
+    """
+
+    date: str
+    endgame_elo: int
+    actual_elo: int
+    endgame_games_in_window: int
+    per_week_endgame_games: int
+
+
+class EndgameEloTimelineCombo(BaseModel):
+    """One (platform, time_control) combo's paired-line series (Phase 57 ELO-05).
+
+    combo_key: underscore-joined key like "chess_com_blitz" / "lichess_classical".
+        Frontend uses this as the lookup key into ELO_COMBO_COLORS.
+    platform / time_control: denormalized for the legend label, avoiding frontend
+        string-split and keeping the wire format explicit.
+    points: weekly points sorted by date ASC. Combos with zero qualifying points
+        are dropped from the response entirely (D-10 tier 2), so callers never
+        receive an empty `points` list.
+    """
+
+    combo_key: str
+    platform: Literal["chess.com", "lichess"]
+    time_control: Literal["bullet", "blitz", "rapid", "classical"]
+    points: list[EndgameEloTimelinePoint]
+
+
+class EndgameEloTimelineResponse(BaseModel):
+    """Response wrapper for the Endgame ELO timeline (Phase 57 ELO-05).
+
+    combos: one series per qualifying (platform, time_control). Ordered
+        chess.com-first then lichess, bullet->blitz->rapid->classical within each
+        platform (matches _TIME_CONTROL_ORDER elsewhere in endgame_service).
+        Empty list when no combo has any qualifying weekly point, the frontend
+        then swaps the chart body to an empty-state.
+    timeline_window: rolling window size used for each point (== ENDGAME_ELO_TIMELINE_WINDOW).
+    """
+
+    combos: list[EndgameEloTimelineCombo]
+    timeline_window: int
+
+
 class EndgameOverviewResponse(BaseModel):
     """Composed response for GET /api/endgames/overview.
 
@@ -344,3 +409,4 @@ class EndgameOverviewResponse(BaseModel):
     score_gap_material: ScoreGapMaterialResponse  # Phase 53: score gap & material breakdown
     clock_pressure: ClockPressureResponse  # Phase 54: time pressure at endgame entry
     time_pressure_chart: TimePressureChartResponse  # Phase 55: time pressure vs performance chart
+    endgame_elo_timeline: EndgameEloTimelineResponse  # Phase 57: paired Endgame ELO + Actual ELO series per (platform, TC)

@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Advanced Analytics
-status: executing
-last_updated: "2026-04-17T18:49:21.722Z"
-last_activity: 2026-04-17
+status: verifying
+last_updated: "2026-04-18T22:08:09.637Z"
+last_activity: 2026-04-18 -- Phase 57.1 execution complete, awaiting human UAT
 progress:
-  total_phases: 15
-  completed_phases: 6
-  total_plans: 22
-  completed_plans: 18
-  percent: 82
+  total_phases: 16
+  completed_phases: 8
+  total_plans: 26
+  completed_plans: 22
+  percent: 85
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-04-17
+Phase: 57.1 (endgame-elo-timeline-polish) — COMPLETE (awaiting human UAT)
+Plan: 2 of 2
+Status: Phase 57.1 execution complete — code review and verification passed (2 warnings logged for follow-up)
+Last activity: 2026-04-18
 
 Progress: [██████████] 100% (4/4 v1.9 phases complete)
 
@@ -44,6 +44,7 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 
 - Phase 59 added: Fix Endgame Conv/Even/Recov per-game stats so Conv+Even+Recov game counts sum to Games-with-Endgame total; drop obsolete admin-gated gauges + timeline
 - Phase 62 added: Admin user impersonation — superusers can log in as any user, see stats from their perspective, perform any action, with impersonation session ending on logout (no last_login/last_activity updates). New Admin tab hosts impersonation selector and the existing Sentry Error Test section.
+- Phase 57.1 inserted after Phase 57: Endgame ELO timeline polish — switch Endgame ELO formula anchor from rolling-mean avg_opponent_rating to the user's actual rating at each emitted date (asof-join per combo, forward-fill to latest prior game's rating), add per-week endgame game count as muted volume bars via Recharts ComposedChart, rewrite info-popover copy (skill-adjusted rating, not performance rating). (URGENT)
 
 ### Decisions
 
@@ -59,6 +60,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 - [Phase 62-admin-user-impersonation]: shouldFilter=false on cmdk Command is mandatory — disables client-side fuzzy filter so server search results are shown verbatim (T-62-13)
 - [Phase 62-admin-user-impersonation]: knip.json ignores shadcn UI component files (command.tsx, popover.tsx, input-group.tsx) — shadcn ships full library surfaces; project-authored code still fully analyzed
 - [Phase 62-admin-user-impersonation]: Logout button hidden during impersonation (not kept alongside pill) — pill × is sole logout control per D-20; hiding eliminates two-path confusion
+- [Phase 57-endgame-elo-timeline-chart]: Phase 57-01: Inlined _endgame_skill_from_bucket_rows in endgame_service.py as a port of frontend endgameSkill() with a TODO to dedup when Phase 56's backend endgame_skill() lands
+- [Phase 57-endgame-elo-timeline-chart]: Phase 57-01: Endgame ELO timeline piggybacks on /api/endgames/overview response (no new router endpoint), matching Phase 52 consolidation
+- [Phase 57-endgame-elo-timeline-chart]: Phase 57-02: EndgameEloTimelineSection owns its own loading/error/empty branches; component-level isError UI reaches the LOCKED endgame-elo-timeline-error copy without depending on page-level error branch placement
+- [Phase 57-endgame-elo-timeline-chart]: Phase 57-02: flatMap (not React.Fragment) used inside Recharts LineChart children so Recharts 2.15.x React.Children traversal reliably discovers every Line instance; custom legend via ChartLegend content prop owns the endgame-elo-legend-{combo_key} testid on button elements
 
 ### Pending Todos
 
