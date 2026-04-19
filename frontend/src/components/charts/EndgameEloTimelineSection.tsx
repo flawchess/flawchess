@@ -172,7 +172,7 @@ export function EndgameEloTimelineSection({
           Recovery Save % over your trailing 100 endgame games.
         </p>
         <p>
-          The bright line is your <strong>Actual ELO</strong> &mdash; your rating at
+          The solid bright line is your <strong>Actual ELO</strong> &mdash; your rating at
           each date from the most recent game on or before that date. The dark dashed
           line is <strong>Endgame ELO</strong>. If your Endgame Skill is exactly 50%
           the two lines touch; 75% skill puts Endgame ELO roughly 190 Elo above,
@@ -204,9 +204,8 @@ export function EndgameEloTimelineSection({
         </span>
       </h3>
       <p className="text-sm text-muted-foreground mt-1">
-        Actual ELO versus Endgame ELO over time, per platform and time control.
-        Bars show endgame games per week. Bright lines are Actual ELO, dark dashed
-        lines are Endgame ELO.
+        Is your endgame ELO (dashed lines) keeping pace with your actual
+        ELO (solid lines) over time?
       </p>
     </div>
   );
@@ -340,9 +339,8 @@ export function EndgameEloTimelineSection({
               return (
                 <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
                   <div className="font-medium">{formatDateWithYear(label as string)}</div>
-                  {/* Phase 57.1 D-11: per-week game count summed across visible combos. */}
                   <div className="text-muted-foreground">
-                    Games this week: {perWeekTotal} (visible combos)
+                    Games this week: {perWeekTotal}
                   </div>
                   {visibleCombos.map((combo) => {
                     const endgame = dateRow[`${combo.combo_key}_endgame_elo`] as number | undefined;
