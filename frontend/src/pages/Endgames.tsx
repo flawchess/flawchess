@@ -284,6 +284,7 @@ export function EndgamesPage() {
                   data-testid="endgame-elo-timeline-section"
                 >
                   <EndgameScoreGapSection data={scoreGapData} />
+                  <div className="border-t border-border/40" />
                   <EndgameEloTimelineSection
                     data={eloTimelineData}
                     isLoading={overviewLoading}

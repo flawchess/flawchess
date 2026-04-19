@@ -305,7 +305,7 @@ function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProp
   const barMax = Math.max(1, ...data.map((p) => p.per_week_total_games));
 
   return (
-    <div className="mt-6" data-testid="score-diff-timeline-section">
+    <div className="pt-6 border-t border-border/40" data-testid="score-diff-timeline-section">
       <div className="mb-3">
         <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">

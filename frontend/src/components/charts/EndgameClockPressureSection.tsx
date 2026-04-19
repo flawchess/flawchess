@@ -289,7 +289,7 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
   const barMax = Math.max(1, ...timeline.map((p) => p.per_week_game_count));
 
   return (
-    <div className="mt-6" data-testid="clock-pressure-timeline-section">
+    <div className="pt-6 border-t border-border/40" data-testid="clock-pressure-timeline-section">
       <div className="mb-3">
         <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">
