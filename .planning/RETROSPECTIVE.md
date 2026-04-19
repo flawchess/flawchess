@@ -2,6 +2,64 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v1.10 — Advanced Analytics
+
+**Shipped:** 2026-04-19
+**Phases:** 11 (48, 52-55, 57, 57.1, 59-62; Phase 56 cancelled, 58 moved to backlog) | **Plans:** 28 | **Delivered via:** PRs #38, #43, #47, #49, #50, #51, #52
+
+### What Was Built
+- Consolidated `/api/endgames/overview` endpoint serving every endgame chart in one round trip; 2-query timeline (GROUP BY game_id+endgame_class with HAVING count(ply)>=6) replaces 8 sequential per-class queries; pg_stat_statements top-offender dropped from 150-500s to sub-second (Phase 52)
+- Endgame Score Gap & Material Breakdown: signed endgame-minus-non-endgame score plus 3-row bucket table (Ahead/Equal/Behind → later renamed Conversion/Parity/Recovery) with Good/OK/Bad verdicts calibrated against overall score (Phases 53, 59)
+- Opponent-based self-calibrating baseline for Conv/Parity/Recov bullet charts — opponent's rate against the user (respecting all filters) replaces global-average, muted when opponent sample < 10 games (Phase 60)
+- Time pressure analytics: per-time-control clock stats table with Games/My-avg/Opp-avg/Clock-diff/Net-timeout columns (Phase 54); two-line user-vs-opponents score chart across 10 time-remaining buckets per TC (Phase 55)
+- Endgame ELO Timeline: skill-adjusted rating per (platform, time-control) combo paired with actual rating, asof-join anchor per combo, weekly volume bars for data-weight transparency, info popover framing it as skill-adjusted rather than performance rating (Phases 57 + 57.1)
+- Conv/recov persistence filter: material imbalance required at entry AND 4 plies later, threshold 300cp → 100cp for a larger, less noisy dataset (Phase 48)
+- Test suite hardening: `flawchess_test` TRUNCATE on session start, deterministic `seeded_user` module-scoped fixture, aggregation sanity tests (WDL perspective when user plays black, material tally direction on captures, rolling-window boundaries, platform × TC filter intersection, recency cutoff, within-game dedup, endgame transitions), router integration tests with exact integer assertions (Phase 61)
+- Admin user impersonation: shadcn Command+Popover user search, POST /admin/impersonate, single auth_backend with ClaimAwareJWTStrategy wrapper preserving every `Depends(current_active_user)` call site, impersonation pill in header (desktop + mobile), last_login/last_activity frozen during impersonation, nested impersonation rejected via current_superuser dep (Phase 62)
+
+### What Worked
+- Consolidated overview endpoint + deferred desktop filter apply (matching mobile) solved the prod perf crisis cleanly — one response model, one hook, one round trip
+- Single-pass `GROUP BY (game_id, endgame_class)` with Python-side dedup was both faster and simpler than UNION ALL — exploits existing `ix_gp_user_endgame_game` index
+- Asof-join anchor on user's real rating (via `bisect_right` per combo) fixed the "Actual ELO as rolling mean confuses users" UAT feedback with one backend change — frontend just swapped to the new field
+- ClaimAwareJWTStrategy wrapper pattern kept Phase 62 invisible to every existing auth dep — zero changes at call sites, impersonation enabled entirely in the strategy + admin routes
+- Splitting Phase 57 (initial chart) from Phase 57.1 (UAT-driven polish) was the right call — clean history, clear rationale for each change, and Phase 57.1 could reference UAT evidence explicitly
+- Seeded_user module-scoped fixture → deterministic integer assertions → router integration tests could be written against *known* numbers rather than shape-only — caught two genuine bugs worth follow-up phases
+- Mid-milestone rename to Conversion/Parity/Recovery (via quick tasks 260413-pwv + 260415-q75) was done in small text-only passes rather than a big-bang rename commit — kept git history readable
+
+### What Was Inefficient
+- Two naming storms on material buckets (ahead/equal/behind → conversion/even/recovery → conversion/parity/recovery) forced three passes across backend schemas, Pydantic literals, frontend copy, and info popovers — should have nailed terminology in the Phase 53 discuss-phase
+- Phase 60-02 and all of Phase 61 have no SUMMARY.md files despite being complete — artifact hygiene gap that makes retroactive extraction harder
+- Phase 57 inlined `_endgame_skill_from_bucket_rows` in `endgame_service.py` as a port of the frontend `endgameSkill()` with a TODO to dedup when Phase 56's backend `endgame_skill()` landed — Phase 56 was later cancelled, making the TODO orphaned
+- Time pressure analytics required three follow-up quick tasks (260414-u88 aggregate TCs, 260414-pv4 fix whole-game rule, 260416-pkx backend aggregation) before settling — the initial plan underspecified the aggregation layer
+- Phase 52's `52-03` prod verification plan was deferred (validated informally post-deploy) — missed the discipline of explicit pg_stat_statements before/after capture
+- Phase 48 phase directory appears to have been cleaned from .planning/phases before archive — archive built from roadmap content alone, not from phase artifacts
+
+### Patterns Established
+- **One consolidated overview endpoint per tab** — for pages with >3 charts sharing the same filter set, consolidate server-side on one AsyncSession rather than fanning out; use one TanStack Query hook on the frontend
+- **Deferred filter apply on desktop matching mobile** — for filter sidebars that can push many filter changes, apply on sidebar close, not on every change; avoids query storm and reduces user confusion
+- **Weekly volume bars on timeline charts** — every new timeline chart (Endgame ELO, Clock Diff, Score Diff, Win Rate by Endgame Type) now renders a muted bar series showing per-week games; gives users a weight signal at every point
+- **Asof-join for per-combo anchors** — when a timeline needs to anchor on a slowly-changing value (user's rating per platform+TC), pre-sort rows by date and `bisect_right` per emitted date instead of a rolling mean
+- **ClaimAwareJWTStrategy wrapper** — feature-flag auth variants (impersonation, future: team membership, SSO claims) behind a strategy wrapper around the base JWTStrategy; keeps every existing `Depends(current_active_user)` call site unchanged
+- **Seeded portfolio + router integration tests** — for aggregation-heavy endpoints, a module-scoped fixture with a known ~15-game portfolio (black/white/bullet/blitz/rapid/classical/chess.com/lichess/wins/draws/losses) enables "known seed → known numbers" integration tests
+- **TRUNCATE on pytest session start** — deterministic DB state, no flaky accumulation, old runs remain inspectable until next session
+
+### Key Lessons
+1. **Nail semantic naming in discuss-phase.** Material buckets went through three rename passes mid-milestone (ahead/equal/behind → conversion/even/recovery → conversion/parity/recovery). Each rename touched backend schemas, Pydantic literals, frontend copy, info popovers, and tests. A 15-minute terminology check in the Phase 53 discuss-phase would have saved ~2 hours of rename churn.
+2. **Summary hygiene slips when momentum is high.** Phases 60-02 and all of Phase 61 have no SUMMARY.md. Neither blocks shipping, but retroactive archive extraction is harder and post-mortem learnings are thinner. Consider a git hook or pre-PR check that blocks merge without a SUMMARY.md per plan.
+3. **UAT catches what the planner misses.** Phase 57's "rolling-mean Actual ELO" shipped reviewer-approved and verifier-passed, yet was visibly wrong to the user on first interaction. The asof-join fix (Phase 57.1) is a clean demonstration of why UAT is worth the extra phase — and why 57.1 as a separate decimal phase beat a late revision to 57.
+4. **Consolidate read paths ruthlessly.** The v1.10 perf crisis came from frontend fan-out — 4 parallel requests × 8-per-class queries each. A single response model + single session + single hook fixed it. Every multi-chart page should start with that shape.
+5. **Performance measurements need before/after discipline.** Phase 52's success criterion (9) mentioned pg_stat_statements verification but plan 52-03 was deferred and done "informally." For production perf work, capture the metric explicitly before merging — otherwise post-hoc "feels faster" replaces real evidence.
+6. **Phase cancellation and backlog promotion are first-class moves.** Retiring Phase 56 (subsumed by 57) and bumping Phase 58 to backlog (999.6) via one small quick task kept v1.10 focused and honest. Don't force scope to match a pre-written roadmap when the work itself tells you the shape has shifted.
+
+### Cost Observations
+- 11 phases, 28 plans, 124 commits across ~12 days (2026-04-07 → 2026-04-19)
+- 249 files changed, +54835 / -1852 lines (includes generated artifacts, theme screenshots, and planning docs)
+- ~20 quick tasks landed on top of phases for iterative polish (mostly styling, renaming, chart tweaks) — quick tasks worked well as "the code is right, the copy/layout needs a pass" vehicles
+- Decimal phase (57.1) was the right structure for UAT-driven scope expansion — separate plan files, separate commit, clear rationale
+- Phase 62 (5 plans) was the largest; Phases 48, 53-55, 57, 57.1, 60 were each 2 plans — 2-plan is the median unit for a frontend+backend feature on this project
+
+---
+
 ## Milestone: v1.9 — UI/UX Restructuring
 
 **Shipped:** 2026-04-10

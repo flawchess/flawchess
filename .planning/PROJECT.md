@@ -83,17 +83,18 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Stats subtab: 2-column Bookmarked Openings: Results on desktop (lg breakpoint) and stacked WDLChartRows for mobile Most Played (STAB-01, STAB-02) — v1.9 Phase 51
 - ✓ Homepage: static 2-column desktop hero with Opening Explorer preview (heading + screenshot + bullets), pills row removed, Opening Explorer removed from FEATURES (HOME-01) — v1.9 Phase 51
 - ✓ Stats page relabeled to "Global Stats" across desktop nav, mobile bottom bar, More drawer, and mobile header, with new page h1; opponent_type + opponent_strength filters wired end-to-end through /stats/global and /stats/rating-history, defaulting to excluding bot games (GSTA-01, GSTA-02) — v1.9 Phase 51
+- ✓ Conversion & recovery persistence filter — 4-ply persistence check + 100cp threshold for conv/recov classification — v1.10 Phase 48
+- ✓ Endgame tab performance — 8-query timeline collapsed to 2, consolidated `/api/endgames/overview` endpoint, deferred desktop filter apply — v1.10 Phase 52
+- ✓ Endgame Score Gap & Material Breakdown — signed score difference + material-stratified WDL table (Conversion/Parity/Recovery) with Good/OK/Bad verdict calibration — v1.10 Phases 53, 59
+- ✓ Opponent-based self-calibrating baseline for Conv/Parity/Recov bullet charts (muted when sample < 10 games) — v1.10 Phase 60
+- ✓ Time pressure analytics — per-time-control clock stats table + two-line user-vs-opponents score chart across 10 buckets — v1.10 Phases 54, 55
+- ✓ Endgame ELO Timeline — skill-adjusted rating per (platform, time-control) combination with asof-join anchor on user's real rating and weekly volume bars — v1.10 Phases 57, 57.1
+- ✓ Test suite hardening — TRUNCATE on session start, seeded_user fixture, aggregation sanity + material tally + router integration tests — v1.10 Phase 61
+- ✓ Admin user impersonation — superuser can impersonate any user via new /admin page, single auth_backend + ClaimAwareJWTStrategy, impersonation pill in header, last_login/last_activity frozen — v1.10 Phase 62
 
 ### Active
 
-_No active requirements — v1.9 shipped. Next milestone requirements will be defined via `/gsd-new-milestone`._
-
-### Future (v1.10)
-
-- [ ] ELO-Adjusted Endgame Skill — opponent-strength-adjusted composite score with gauge + timeline
-- [ ] Refine existing endgame statistics (conversion/recovery rates, performance gauges)
-- [ ] New endgame statistics (TBD, added incrementally)
-- [ ] Opening Risk and other new opening statistics (TBD, added incrementally)
+_No active requirements — v1.10 shipped. Next milestone requirements will be defined via `/gsd-new-milestone`._
 
 ### Out of Scope
 
@@ -106,20 +107,21 @@ _No active requirements — v1.9 shipped. Next milestone requirements will be de
 
 ## Current Milestone
 
-_v1.9 shipped. Next milestone TBD — start with `/gsd-new-milestone`._
+_v1.10 shipped. Next milestone TBD — start with `/gsd-new-milestone`._
 
 ## Current State
 
-v1.9 shipped 2026-04-10. Ten milestones complete (v1.0–v1.9), 51 phases (+2 inserted), live at flawchess.com. v1.9 delivered a UI/UX restructuring pass: collapsible left-edge sidebar for the Openings desktop layout, a unified mobile control row that stays visible when the board is collapsed, visual alignment across Openings/Endgames mobile surfaces, a 2-column Stats subtab, a 2-column homepage hero, and a "Stats" → "Global Stats" rename with opponent filters wired end-to-end (bot games excluded by default). ~20K lines of code (8K Python, 12K TypeScript). v1.10 "Advanced Analytics" is queued with Phase 48 already complete (conv/recov persistence filter) plus Phases 52–54 planned.
+v1.10 shipped 2026-04-19. Eleven milestones complete (v1.0–v1.10), 61 phases (+3 inserted), live at flawchess.com. v1.10 delivered an endgame-focused advanced analytics pass: consolidated `/api/endgames/overview` endpoint (8 queries → 2), endgame score gap + material breakdown table with opponent-based self-calibrating baseline, time pressure clock stats + score chart across 10 buckets, skill-adjusted Endgame ELO timeline per (platform, time-control) combo anchored on user's real rating with weekly volume bars, conv/recov 4-ply persistence filter + 100cp threshold, test suite hardening (TRUNCATE + seeded_user fixture + aggregation sanity tests), and admin user impersonation for superusers. Phase 56 cancelled (subsumed by 57), Phase 58 moved to backlog as 999.6.
 
 ## Context
 
-- **Current state:** v1.9 shipped 2026-04-10. 50 phases complete across 10 milestones. Live at flawchess.com with CI/CD and Sentry.
-- **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui
-- **Auth:** FastAPI-Users (JWT + Google SSO + guest sessions with is_guest flag)
+- **Current state:** v1.10 shipped 2026-04-19. 60 phases complete across 11 milestones. Live at flawchess.com with CI/CD and Sentry.
+- **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui (Command, Popover)
+- **Auth:** FastAPI-Users (JWT + Google SSO + guest sessions with is_guest flag + impersonation via ClaimAwareJWTStrategy)
 - **Core algorithm:** Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import for indexed integer equality lookups
 - **PWA:** vite-plugin-pwa + Workbox (NetworkOnly for API routes), vaul drawer, tailwindcss-safe-area
-- **Known issues:** react-chessboard v5 arrow clearing workaround (clearArrowsOnPositionChange: false), BoardArrow local type definition, touch drag disabled (click-to-move only on mobile)
+- **Analytics:** Consolidated `/api/endgames/overview` serves every endgame chart in one round trip on a single AsyncSession; deferred filter apply on desktop (matches mobile)
+- **Known issues:** react-chessboard v5 arrow clearing workaround (clearArrowsOnPositionChange: false), BoardArrow local type definition, touch drag disabled (click-to-move only on mobile), Phase 60/61 have incomplete SUMMARY.md artifacts (no functional impact)
 
 ## Constraints
 
@@ -170,6 +172,17 @@ v1.9 shipped 2026-04-10. Ten milestones complete (v1.0–v1.9), 51 phases (+2 in
 | Bearer transport for guest JWTs | Avoids dual-transport complexity, Safari/Firefox ETP issues | ✓ Good |
 | Guest as User row with is_guest=True | Promotion is single-row UPDATE, no FK migration needed | ✓ Good |
 | Register-page promotion over modal | Cleaner UX, reuses existing register form, less code | ✓ Good |
+| Consolidated /api/endgames/overview | All endgame charts in one round trip, sequential on one AsyncSession | ✓ Good |
+| 2-query timeline via GROUP BY (game_id, endgame_class) | Collapsed 8 per-class queries, 150-500s → few seconds on prod | ✓ Good |
+| Deferred filter apply on desktop | Matches existing mobile pattern; avoids query storm | ✓ Good |
+| 4-ply persistence + 100cp conv/recov threshold | Reduces transient-capture noise; validated against Stockfish eval | ✓ Good |
+| Opponent-based self-calibrating baseline | Replaces global-average with opponent's rate against the user | ✓ Good |
+| Skill-adjusted Endgame ELO formula | actual_elo + 400·log10(skill/(1-skill)); not performance rating | ✓ Good |
+| Asof-join anchor on user's real rating | Fixes rolling-mean lag that confused "actual" terminology | ✓ Good |
+| Weekly volume bars on timeline charts | Visual weight indicator per weekly point | ✓ Good |
+| Single auth_backend + ClaimAwareJWTStrategy | Zero changes to existing Depends(current_active_user) call sites | ✓ Good |
+| Truncate flawchess_test at pytest session start | Enables deterministic integer assertions via seeded_user fixture | ✓ Good |
+| Split time_control into base_time + increment | Time pressure % denominator per-game base time, clamped at 2x | ✓ Good |
 
 ## Evolution
 
@@ -189,4 +202,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-10 after v1.9 UI/UX Restructuring milestone*
+*Last updated: 2026-04-19 after v1.10 Advanced Analytics milestone*

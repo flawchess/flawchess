@@ -2,33 +2,32 @@
 gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Advanced Analytics
-status: verifying
-last_updated: "2026-04-18T22:08:09.637Z"
-last_activity: 2026-04-18 -- Phase 57.1 execution complete, awaiting human UAT
+status: shipped
+last_updated: "2026-04-19T14:00:00.000Z"
+last_activity: 2026-04-19 -- v1.10 Advanced Analytics shipped, planning v1.11
 progress:
-  total_phases: 16
-  completed_phases: 8
-  total_plans: 26
-  completed_plans: 22
-  percent: 85
+  total_phases: 11
+  completed_phases: 11
+  total_plans: 28
+  completed_plans: 28
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 57.1 (endgame-elo-timeline-polish) — COMPLETE (awaiting human UAT)
-Plan: 2 of 2
-Status: Phase 57.1 execution complete — code review and verification passed (2 warnings logged for follow-up)
-Last activity: 2026-04-18
+Milestone: v1.10 Advanced Analytics — SHIPPED 2026-04-19
+Status: Next milestone TBD — start with `/gsd-new-milestone`
+Last activity: 2026-04-19
 
-Progress: [██████████] 100% (4/4 v1.9 phases complete)
+Progress: [██████████] 100% (11/11 v1.10 phases complete; Phase 56 cancelled, Phase 58 moved to backlog as 999.6)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-09)
+See: .planning/PROJECT.md (updated 2026-04-19)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop and mobile
+Current focus: Planning next milestone — expected direction TBD
 
 ## Key Context
 
@@ -42,9 +41,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 
 ### Roadmap Evolution
 
-- Phase 59 added: Fix Endgame Conv/Even/Recov per-game stats so Conv+Even+Recov game counts sum to Games-with-Endgame total; drop obsolete admin-gated gauges + timeline
-- Phase 62 added: Admin user impersonation — superusers can log in as any user, see stats from their perspective, perform any action, with impersonation session ending on logout (no last_login/last_activity updates). New Admin tab hosts impersonation selector and the existing Sentry Error Test section.
-- Phase 57.1 inserted after Phase 57: Endgame ELO timeline polish — switch Endgame ELO formula anchor from rolling-mean avg_opponent_rating to the user's actual rating at each emitted date (asof-join per combo, forward-fill to latest prior game's rating), add per-week endgame game count as muted volume bars via Recharts ComposedChart, rewrite info-popover copy (skill-adjusted rating, not performance rating). (URGENT)
+- v1.10 shipped 2026-04-19 with 11 phases and 28 plans
+- Phase 56 cancelled mid-milestone (subsumed by Phase 57)
+- Phase 58 moved to backlog as Phase 999.6 (better fit for upcoming Opening Insights milestone)
+- Phase 57.1 inserted after Phase 57 to switch ELO anchor from rolling-mean to asof-join and add weekly volume bars (driven by UAT feedback)
 
 ### Decisions
 
