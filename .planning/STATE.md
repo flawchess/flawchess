@@ -110,9 +110,10 @@ Current focus: v1.9 UI/UX Restructuring — layout improvements across desktop a
 | 260416-w3q | Add weekly rolling-100 clock-diff timeline chart below Time Pressure at Endgame Entry table | 2026-04-16 | 6729143 | [260416-w3q-clock-diff-timeline-chart](./quick/260416-w3q-clock-diff-timeline-chart/) |
 | 260417-br7 | Fix pytest warnings (JWT key length + httpx cookies) | 2026-04-17 | (uncommitted) | [260417-br7-fix-pytest-warnings-jwt-key-length-httpx](./quick/260417-br7-fix-pytest-warnings-jwt-key-length-httpx/) |
 | 260418-nlh | Add Endgame Skill composite gauge (simple average of Conv/Parity/Recovery, 45-55 blue neutral) | 2026-04-18 | 021b4ac | [260418-nlh-add-endgame-skill-metric-as-simple-avera](./quick/260418-nlh-add-endgame-skill-metric-as-simple-avera/) |
+| 260419-gjq | Retire Phase 56 (subsumed by 57) and move Phase 58 (Opening Risk) to backlog as Phase 999.6 | 2026-04-19 | c7dc214 | [260419-gjq-retire-phase-56-subsumed-by-57-and-move-](./quick/260419-gjq-retire-phase-56-subsumed-by-57-and-move-/) |
 
 ---
-Last activity: 2026-04-18 - Completed quick task 260418-nlh: Add Endgame Skill composite gauge
+Last activity: 2026-04-19 - Completed quick task 260419-gjq: Retire Phase 56 and move Phase 58 to backlog
 | 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
 | 2026-04-10 | ship | Phase 51 shipped — PR #42 merged into main | done |
 | 2026-04-11 | fast | Preserve Openings board position across main tab navigation | ✅ |

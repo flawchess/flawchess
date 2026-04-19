@@ -136,9 +136,8 @@ See [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) for full details.
 - [x] **Phase 53: Endgame Score Gap & Material Breakdown** - Endgame score difference metric + material-stratified WDL table by material balance at endgame entry (completed 2026-04-12)
 - [x] **Phase 54: Time Pressure — Clock Stats Table** - Per-time-control summary table of clock state at endgame entry with avg time, clock diff, and net timeout rate (completed 2026-04-12)
 - [x] **Phase 55: Time Pressure — Performance Chart** - Two-line comparison chart (user vs opponents) showing score by time pressure bucket, tabbed by time control (completed 2026-04-12)
-- [ ] **Phase 56: Endgame ELO — Backend + Breakdown Table** - Backend computation and per-(platform, time-control) table UI with filters
+- [~] **Phase 56: Endgame ELO — Backend + Breakdown Table** — cancelled, subsumed by Phase 57
 - [x] **Phase 57: Endgame ELO — Timeline Chart** - Rolling-window timeline chart tracking Endgame ELO over time per combination (completed 2026-04-18)
-- [ ] **Phase 58: Opening Risk & Drawishness** - Risk and drawishness metrics per position in the move explorer
 - [x] **Phase 59: Fix Endgame Conv/Even/Recov per-game stats** - Ensure Conv+Even+Recov buckets sum to total endgame games; remove obsolete admin-gated gauges + timeline (completed 2026-04-13)
 - [x] **Phase 60: Opponent-based baseline for Endgame Conversion & Recovery** - Replace global-average baseline with self-calibrating opponent baseline computed via same-game symmetry; mute when opponent sample < 10 games (completed 2026-04-14)
 - [x] **Phase 61: Test Suite Hardening & DB Reset** - Truncate `flawchess_test` at pytest session start and add meaningful aggregation sanity tests closing gaps identified in the 2026-04-16 audit (WDL perspective, material tally, rolling windows, filter intersections, recency boundary, position dedup, endgame transitions, router known-numbers integration) (completed 2026-04-16)
@@ -234,6 +233,7 @@ Plans:
 **UI hint**: yes
 
 ### Phase 56: Endgame ELO — Backend + Breakdown Table
+**Status**: Cancelled — subsumed by Phase 57
 **Goal**: Users can see their Endgame ELO per platform/time-control combination and understand how their endgame skill compares to their actual rating
 **Depends on**: Phase 48
 **Requirements**: ELO-01, ELO-02, ELO-03, ELO-04, ELO-06
@@ -247,7 +247,6 @@ Plans:
 
 ### Phase 57: Endgame ELO — Timeline Chart
 **Goal**: Users can track their Endgame ELO over time per combination and visually see where it diverges from their actual rating
-**Depends on**: Phase 56
 **Requirements**: ELO-05
 **Success Criteria** (what must be TRUE):
   1. User sees a timeline chart with paired lines per (platform, time-control) combination — one bright line for Endgame ELO and one dark line for Actual ELO
@@ -283,18 +282,6 @@ Plans:
 Plans:
 - [x] 57.1-01-PLAN.md — Backend: schema field + asof anchor + per-week count + 6 unit tests + 1 integration test + UI-SPEC + HUMAN-UAT inline updates
 - [x] 57.1-02-PLAN.md — Frontend: TS interface + ENDGAME_VOLUME_BAR_COLOR + ComposedChart swap with hidden bar axis + tooltip top line + popover/subtitle copy rewrite
-
-### Phase 58: Opening Risk & Drawishness
-**Goal**: Users can see risk and drawishness signals per candidate move in the move explorer to inform opening selection
-**Depends on**: Phase 47
-**Requirements**: OPN-01, OPN-02
-**Success Criteria** (what must be TRUE):
-  1. User sees an opening risk indicator per move row in the move explorer, reflecting material imbalance variance at the opening-to-middlegame transition
-  2. User sees an opening drawishness value per position, showing the draw rate of games that ended in the opening phase
-  3. Drawishness display is muted (visually de-emphasized) when the sample size is too small to be reliable
-  4. User can read an info popover noting that drawishness is more relevant for higher-rated players
-**Plans**: TBD
-**UI hint**: yes
 
 ### Phase 59: Fix Endgame Conv/Even/Recov per-game stats
 **Goal**: The "Endgame Conversion & Recovery" section counts each endgame game exactly once across Conv/Even/Recov buckets so the sum equals the "Games with Endgame" total; obsolete admin-gated gauges + timeline are removed.
@@ -445,6 +432,16 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
+
+### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
+
+**Goal:** Risk and drawishness metrics per position in the move explorer.
+**Requirements:** TBD
+**Plans:** 0 plans
+**Context:** Moved from v1.10 Advanced Analytics — v1.10 is an endgame-focused milestone and opening risk metrics are a better fit for the upcoming Opening Insights milestone (discovering weaknesses in most-played opening lines). Re-evaluate scope at that time.
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
 
 
 ### Phase 62: Admin user impersonation
