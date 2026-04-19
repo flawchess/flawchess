@@ -15,7 +15,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
-import { Scale, Filter, TrophyIcon, DownloadIcon, Loader2, UserPlus, DoorOpen } from 'lucide-react';
+import { Scale, Filter, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Feature sections — imagePosition alternates right/left so text and image swap sides on desktop.
@@ -29,16 +29,38 @@ const FEATURES: {
   imagePosition: 'left' | 'right';
 }[] = [
   {
+    slug: 'time-management',
+    icon: Timer,
+    heading: 'Time Management Stats',
+    desc: [
+        'See how much clock you have left when endgames begin, per time control.',
+        "Compare your score to your opponents\u2019 at matching time-pressure levels.",
+        'Find time controls where you lose on time more often than your opponents.',
+    ],
+    screenshot: { src: '/screenshots/time-management-stats.png', alt: 'Average clock difference over time and time-pressure-vs-performance charts' },
+    imagePosition: 'left',
+  },
+  {
+    slug: 'opening-explorer',
+    icon: Compass,
+    heading: 'Interactive Opening Explorer',
+    desc: [
+        "Step through any opening and see your win/draw/loss rate for every move you\u2019ve played.",
+        'Discover which moves you struggle against and which traps and gambits work for you.',
+        "Scout your opponents\u2019 weaknesses and tendencies before a match.",
+    ],
+    screenshot: { src: '/screenshots/opening-explorer.png', alt: 'Board with move explorer showing win/draw/loss bars per candidate move' },
+    imagePosition: 'right',
+  },
+  {
     slug: 'opening-comparison',
     icon: Scale,
     heading: 'Opening Comparison and Tracking',
     desc: [
         'Bookmark your favorite openings and compare their performance.',
         'Find out how your opening study impacts your win rate over time.',
-        'Use the filters to see which openings work best for which time controls.'
-
+        'Use the filters to see which openings work best for which time controls.',
     ],
-
     screenshot: { src: '/screenshots/opening-comparison.png', alt: 'Win rate trends over time for multiple openings' },
     imagePosition: 'left',
   },
@@ -47,35 +69,11 @@ const FEATURES: {
     icon: Filter,
     heading: 'System Opening Filter',
     desc: [
-        "You play the London, but your analysis tool scatters your games across 5 different opening names.",
+        'You play the London, but your analysis tool scatters your games across 5 different opening names.',
         "FlawChess lets you filter by your pieces only, ignoring your opponent\u2019s responses.",
-        "Calculate win/draw/loss rates for your system openings across all variations."
+        'Calculate win/draw/loss rates for your system openings across all variations.',
     ],
     screenshot: { src: '/screenshots/system-openings.png', alt: 'Opening bookmarks grouping system opening variations' },
-    imagePosition: 'right',
-  },
-  {
-    slug: 'endgame-analysis',
-    icon: TrophyIcon,
-    heading: 'Endgame Statistics',
-    desc: [
-        'Measure your endgame performance, conversion, and recovery ability.',
-        'Track your win/draw/loss rates by endgame type: rook, minor piece, pawn, queen, and more.',
-        'Find out for each endgame type how often you convert material advantages and recover from deficits.',
-    ],
-    screenshot: { src: '/screenshots/endgame-analysis.png', alt: 'Endgame analytics showing WDL rates by endgame category' },
-    imagePosition: 'left',
-  },
-  {
-    slug: 'cross-platform',
-    icon: DownloadIcon,
-    heading: 'Cross-Platform Import',
-    desc: [
-        "Import games from chess.com and lichess into one place.",
-        "Add your most recent games with the sync button.",
-        "Import your opponent's games to prepare for an upcoming match.",
-    ],
-    screenshot: { src: '/screenshots/cross-platform.png', alt: 'Import page with chess.com and lichess plus filter controls' },
     imagePosition: 'right',
   },
 ];
@@ -168,47 +166,47 @@ export function HomePageContent() {
             </div>
           </div>
 
-          {/* Right column: Interactive Opening Explorer preview — lg and up only.
+          {/* Right column: Endgame Analytics preview — lg and up only.
               Title → image → bullets stacking matches the feature sections below.
-              Below lg the explorer renders as a standalone charcoal section further down. */}
-          <div data-testid="hero-explorer-preview" className="hidden lg:block">
-            <h2 className="text-2xl font-bold mb-4">Interactive Opening Explorer</h2>
+              Below lg the preview renders as a standalone charcoal section further down. */}
+          <div data-testid="hero-endgame-preview" className="hidden lg:block">
+            <h2 className="text-2xl font-bold mb-4">Endgame Analytics</h2>
             <img
-              src="/screenshots/opening-explorer.png"
-              alt="Board with move explorer showing win/draw/loss bars per candidate move"
+              src="/screenshots/endgame-metrics-and-elo.png"
+              alt="Endgame metrics and Endgame ELO timeline over time"
               className="rounded-lg border border-border shadow-md w-full mb-4"
             />
             <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
-              <li>Step through any opening and see your win/draw/loss rate for every move you&apos;ve played.</li>
-              <li>Discover which moves you struggle against and which traps and gambits work for you.</li>
-              <li>Scout your opponents&apos; weaknesses and tendencies before a match.</li>
+              <li>Measure how well you convert winning endgames and recover from losing ones.</li>
+              <li>See whether you outperform your opponents once games reach an endgame.</li>
+              <li>Track your Endgame ELO over time by platform and time control.</li>
             </ul>
           </div>
         </div>
       </section>
       </div>
 
-      {/* Interactive Opening Explorer — standalone section (mobile / small desktop only).
+      {/* Endgame Analytics — standalone section (mobile / small desktop only).
           Title → image → bullets, matching the feature sections below. Hidden on lg+
           because the hero's right column already shows the same content there. */}
       <section
-        data-testid="feature-opening-explorer-mobile"
+        data-testid="feature-endgame-analytics-mobile"
         className="lg:hidden bg-[#1a1a1a] py-12"
       >
         <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
           <div className="flex items-center gap-4">
-            <Scale className="h-10 w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
-            <h2 className="text-2xl font-bold">Interactive Opening Explorer</h2>
+            <TrophyIcon className="h-10 w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+            <h2 className="text-2xl font-bold">Endgame Analytics</h2>
           </div>
           <img
-            src="/screenshots/opening-explorer.png"
-            alt="Board with move explorer showing win/draw/loss bars per candidate move"
+            src="/screenshots/endgame-metrics-and-elo.png"
+            alt="Endgame metrics and Endgame ELO timeline over time"
             className="rounded-lg border border-border shadow-md w-full"
           />
           <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
-            <li>Step through any opening and see your win/draw/loss rate for every move you&apos;ve played.</li>
-            <li>Discover which moves you struggle against and which traps and gambits work for you.</li>
-            <li>Scout your opponents&apos; weaknesses and tendencies before a match.</li>
+            <li>Measure how well you convert winning endgames and recover from losing ones.</li>
+            <li>See whether you outperform your opponents once games reach an endgame.</li>
+            <li>Track your Endgame ELO over time by platform and time control.</li>
           </ul>
         </div>
       </section>
