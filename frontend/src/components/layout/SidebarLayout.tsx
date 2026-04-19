@@ -107,8 +107,8 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
   ));
 
   // Strip container keeps its full self-stretched height (anchored like before).
-  // The inner `sticky top-0` wrapper is what actually pins the buttons to the
-  // viewport top as the user scrolls past the strip.
+  // An absolute inset-0 inner wrapper gives the sticky button stack a concrete
+  // full-height containing block to stick within — same pattern as the panel.
   const stripElement = (
     <div
       ref={stripRef}
@@ -116,9 +116,11 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
       style={{ width: STRIP_WIDTH, flexShrink: 0 }}
       data-testid="sidebar-strip"
     >
-      <div className="sticky top-0 flex flex-col items-center py-3 gap-2">
-        {stripIcons}
-        {stripExtra}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="sticky top-0 flex flex-col items-center py-3 gap-2 pointer-events-auto">
+          {stripIcons}
+          {stripExtra}
+        </div>
       </div>
     </div>
   );
