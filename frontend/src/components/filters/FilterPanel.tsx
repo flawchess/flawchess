@@ -175,6 +175,8 @@ export function FilterPanel({
               <SelectItem value="3months">3 months</SelectItem>
               <SelectItem value="6months">6 months</SelectItem>
               <SelectItem value="year">1 year</SelectItem>
+              <SelectItem value="3years">3 years</SelectItem>
+              <SelectItem value="5years">5 years</SelectItem>
             </SelectContent>
           </Select>
         </div>

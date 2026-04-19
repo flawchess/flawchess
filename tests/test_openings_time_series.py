@@ -114,7 +114,7 @@ def _make_request(
     target_hash: int,
     color: Literal["white", "black"] = "white",
     match_side: Literal["white", "black", "full"] = "full",
-    recency: Literal["week", "month", "3months", "6months", "year", "all"] | None = None,
+    recency: Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None = None,
 ) -> TimeSeriesRequest:
     """Build a minimal TimeSeriesRequest for one bookmark."""
     return TimeSeriesRequest(

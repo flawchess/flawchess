@@ -49,6 +49,8 @@ RECENCY_DELTAS: dict[str, datetime.timedelta] = {
     "3months": datetime.timedelta(days=90),
     "6months": datetime.timedelta(days=180),
     "year": datetime.timedelta(days=365),
+    "3years": datetime.timedelta(days=365 * 3),
+    "5years": datetime.timedelta(days=365 * 5),
 }
 
 

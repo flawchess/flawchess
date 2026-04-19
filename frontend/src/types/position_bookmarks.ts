@@ -49,7 +49,7 @@ export interface TimeSeriesRequest {
   platform?: ('chess.com' | 'lichess')[] | null;
   rated?: boolean | null;
   opponent_type?: 'human' | 'bot' | 'both';
-  recency?: 'week' | 'month' | '3months' | '6months' | 'year' | 'all' | null;
+  recency?: 'week' | 'month' | '3months' | '6months' | 'year' | '3years' | '5years' | 'all' | null;
   opponent_strength?: 'any' | 'stronger' | 'similar' | 'weaker';
 }
 

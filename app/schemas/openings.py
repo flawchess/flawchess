@@ -37,7 +37,7 @@ class OpeningsRequest(BaseModel):
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None
     opponent_type: Literal["human", "bot", "both"] = "human"
-    recency: Literal["week", "month", "3months", "6months", "year", "all"] | None = None
+    recency: Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None = None
     color: Literal["white", "black"] | None = None
 
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any"
@@ -119,7 +119,7 @@ class TimeSeriesRequest(BaseModel):
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None
     opponent_type: Literal["human", "bot", "both"] = "human"
-    recency: Literal["week", "month", "3months", "6months", "year", "all"] | None = None
+    recency: Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None = None
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any"
     elo_threshold: int = DEFAULT_ELO_THRESHOLD
 
@@ -175,7 +175,7 @@ class NextMovesRequest(BaseModel):
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None
     opponent_type: Literal["human", "bot", "both"] = "human"
-    recency: Literal["week", "month", "3months", "6months", "year", "all"] | None = None
+    recency: Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None = None
     color: Literal["white", "black"] | None = None
     sort_by: Literal["frequency", "win_rate"] = "frequency"
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any"

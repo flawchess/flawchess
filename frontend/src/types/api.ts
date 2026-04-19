@@ -35,7 +35,7 @@ export type TimeControl = 'bullet' | 'blitz' | 'rapid' | 'classical';
 export type MatchSide = 'mine' | 'opponent' | 'both';
 /** Backend API representation: white/black/full */
 type ApiMatchSide = 'white' | 'black' | 'full';
-export type Recency = 'week' | 'month' | '3months' | '6months' | 'year' | 'all';
+export type Recency = 'week' | 'month' | '3months' | '6months' | 'year' | '3years' | '5years' | 'all';
 export type Color = 'white' | 'black';
 export type OpponentType = 'human' | 'bot' | 'both';
 export type OpponentStrength = 'any' | 'stronger' | 'similar' | 'weaker';
