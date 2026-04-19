@@ -68,6 +68,9 @@ export interface EndgameTimelinePoint {
   date: string;
   win_rate: number;
   game_count: number;
+  // Count of games for THIS specific ISO week (NOT the trailing window).
+  // Drives the muted volume-bar series on the Win Rate by Endgame Type chart.
+  per_week_game_count: number;
 }
 
 export interface EndgameOverallPoint {
@@ -109,6 +112,9 @@ export interface ScoreGapTimelinePoint {
   score_difference: number;
   endgame_game_count: number;
   non_endgame_game_count: number;
+  // Count of games (endgame + non-endgame) played in THIS specific ISO week.
+  // Drives the muted volume-bar series on the Score % Difference timeline.
+  per_week_total_games: number;
 }
 
 export interface ScoreGapMaterialResponse {
@@ -137,6 +143,9 @@ export interface ClockPressureTimelinePoint {
   date: string;                 // Monday of ISO week, YYYY-MM-DD
   avg_clock_diff_pct: number;   // mean (user_clock - opp_clock) / base_time * 100 over trailing window
   game_count: number;           // games in the rolling window (<= timeline_window)
+  // Count of clock-eligible endgame games in THIS specific ISO week.
+  // Drives the muted volume-bar series on the Average Clock Difference timeline.
+  per_week_game_count: number;
 }
 
 export interface ClockPressureResponse {

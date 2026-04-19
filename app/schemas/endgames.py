@@ -126,6 +126,12 @@ class EndgameTimelinePoint(BaseModel):
     date: str  # Monday of the ISO week, "YYYY-MM-DD"
     win_rate: float  # rolling win rate (0.0-1.0) over trailing `window` games
     game_count: int  # number of games in the rolling window (<= window)
+    # Count of games for THIS specific ISO week (NOT the trailing window).
+    # Drives the muted volume-bar series on the frontend Win Rate by Endgame Type
+    # chart so users see at a glance whether a weekly point is well-supported or
+    # marginal (just over the 10-game floor). Mirrors `per_week_endgame_games`
+    # on EndgameEloTimelinePoint (Phase 57.1).
+    per_week_game_count: int
 
 
 class EndgameOverallPoint(BaseModel):
@@ -204,6 +210,11 @@ class ScoreGapTimelinePoint(BaseModel):
     score_difference: float
     endgame_game_count: int
     non_endgame_game_count: int
+    # Count of games (endgame + non-endgame) played in THIS specific ISO week.
+    # Drives the muted volume-bar series on the frontend Score % Difference
+    # timeline so users see at a glance whether a weekly point is well-supported
+    # or marginal. Mirrors the per_week_* fields on the other endgame timelines.
+    per_week_total_games: int
 
 
 class ScoreGapMaterialResponse(BaseModel):
@@ -270,6 +281,11 @@ class ClockPressureTimelinePoint(BaseModel):
     date: str
     avg_clock_diff_pct: float
     game_count: int
+    # Count of clock-eligible endgame games in THIS specific ISO week (NOT the
+    # trailing window). Drives the muted volume-bar series on the frontend
+    # Average Clock Difference timeline. Mirrors the per_week_* fields on the
+    # other endgame timelines.
+    per_week_game_count: int
 
 
 class ClockPressureResponse(BaseModel):

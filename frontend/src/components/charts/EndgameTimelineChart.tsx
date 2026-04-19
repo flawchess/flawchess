@@ -1,7 +1,8 @@
 import { useState, useCallback, useMemo } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
-import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { ComposedChart, Bar, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { ENDGAME_VOLUME_BAR_COLOR } from '@/lib/theme';
 import { createDateTickFormatter, formatDateWithYear, niceWinRateAxis } from '@/lib/utils';
 import type { EndgameTimelineResponse } from '@/types/endgames';
 
@@ -81,11 +82,30 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
       if (found) {
         point[key] = found.win_rate;
         point[`${key}_game_count`] = found.game_count;
+        point[`${key}_per_week_game_count`] = found.per_week_game_count;
       }
       // undefined produces a gap bridged by connectNulls
     }
     return point;
   });
+
+  // Per-row aggregate of per_week_game_count across currently-visible types.
+  // Recomputes on legend toggle so hidden types are excluded from the bar.
+  // Mirrors the Endgame ELO Timeline pattern (Phase 57.1).
+  const perTypeBarData = perTypeData.map((row) => {
+    let total = 0;
+    for (const key of typeKeys) {
+      if (hiddenKeys.has(key)) continue;
+      const n = row[`${key}_per_week_game_count`];
+      if (typeof n === 'number') total += n;
+    }
+    return { ...row, per_week_total_visible: total };
+  });
+
+  // Volume-bar Y-axis envelope. domain={[0, barMax * 5]} pins the tallest
+  // bar to the bottom 20% of the chart canvas (Pattern 3 from 57.1-RESEARCH.md).
+  // Math.max(..., 1) avoids a [0, 0] domain when no week has any games.
+  const barMax = Math.max(1, ...perTypeBarData.map((r) => r.per_week_total_visible));
 
   // Build per-type chart config from types present in data
   const perTypeChartConfig = Object.fromEntries(
@@ -122,18 +142,34 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
         className="w-full h-72"
         data-testid="timeline-per-type-chart"
       >
-        <LineChart data={perTypeData}>
+        <ComposedChart data={perTypeBarData}>
           <CartesianGrid vertical={false} />
           <XAxis dataKey="date" tickFormatter={formatDateTick} />
-          <YAxis domain={yAxis.domain} ticks={yAxis.ticks} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
+          <YAxis
+            yAxisId="value"
+            domain={yAxis.domain}
+            ticks={yAxis.ticks}
+            tickFormatter={(v) => `${Math.round(v * 100)}%`}
+          />
+          {/* Hidden right Y-axis dedicated to volume bars.
+              domain={[0, barMax * 5]} pins the tallest bar to the bottom 20%
+              of the chart canvas (Pattern 3 in 57.1-RESEARCH.md). */}
+          <YAxis yAxisId="bars" orientation="right" hide domain={[0, barMax * 5]} />
           <ChartTooltip
             content={({ active, payload, label }) => {
               if (!active || !payload?.length) return null;
+              const perWeekTotal =
+                ((payload[0]?.payload as Record<string, unknown> | undefined)?.[
+                  'per_week_total_visible'
+                ] as number | undefined) ?? 0;
               return (
                 <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
                   <div className="font-medium">{formatDateWithYear(label as string)}</div>
+                  <div className="text-muted-foreground">
+                    Games this week: {perWeekTotal}
+                  </div>
                   {payload
-                    .filter((item) => item.value !== undefined)
+                    .filter((item) => item.dataKey !== 'per_week_total_visible' && item.value !== undefined)
                     .map((item) => {
                       const cfg = perTypeChartConfig[item.dataKey as string];
                       const gameCount = item.payload[`${item.dataKey}_game_count`] as number | undefined;
@@ -159,8 +195,17 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
           <ChartLegend
             content={<ChartLegendContent hiddenKeys={hiddenKeys} onClickItem={handleLegendClick} />}
           />
+          <Bar
+            yAxisId="bars"
+            dataKey="per_week_total_visible"
+            fill={ENDGAME_VOLUME_BAR_COLOR}
+            legendType="none"
+            isAnimationActive={false}
+            data-testid="timeline-per-type-volume-bars"
+          />
           {typeKeys.map((key) => (
             <Line
+              yAxisId="value"
               key={key}
               type="monotone"
               dataKey={key}
@@ -171,7 +216,7 @@ export function EndgameTimelineChart({ data }: EndgameTimelineChartProps) {
               hide={hiddenKeys.has(key)}
             />
           ))}
-        </LineChart>
+        </ComposedChart>
       </ChartContainer>
     </div>
   );

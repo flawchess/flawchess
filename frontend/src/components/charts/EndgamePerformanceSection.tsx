@@ -7,12 +7,12 @@
  */
 
 import { useEffect, useState } from 'react';
-import { CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
-import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
+import { ENDGAME_VOLUME_BAR_COLOR, ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import type {
   EndgamePerformanceResponse,
@@ -270,6 +270,7 @@ interface ScoreDiffChartPoint {
   diff_pct: number;
   endgame_game_count: number;
   non_endgame_game_count: number;
+  per_week_total_games: number;
 }
 
 function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProps) {
@@ -283,6 +284,7 @@ function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProp
     diff_pct: p.score_difference * 100,
     endgame_game_count: p.endgame_game_count,
     non_endgame_game_count: p.non_endgame_game_count,
+    per_week_total_games: p.per_week_total_games,
   }));
 
   const dates = data.map((p) => p.date);
@@ -296,6 +298,11 @@ function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProp
   const yMax = Math.max(SCORE_DIFF_TIMELINE_Y_DOMAIN[1], Math.ceil(dataMax));
   const yMin = Math.min(SCORE_DIFF_TIMELINE_Y_DOMAIN[0], Math.floor(dataMin));
   const yDomain: [number, number] = [yMin, yMax];
+
+  // Volume-bar Y-axis envelope. domain={[0, barMax * 5]} pins the tallest
+  // bar to the bottom 20% of the chart canvas (Pattern 3 from 57.1-RESEARCH.md).
+  // Math.max(..., 1) avoids a [0, 0] domain when no week has any games.
+  const barMax = Math.max(1, ...data.map((p) => p.per_week_total_games));
 
   return (
     <div className="mt-6" data-testid="score-diff-timeline-section">
@@ -345,24 +352,27 @@ function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProp
           className="w-full h-72"
           data-testid="score-diff-timeline-chart"
         >
-          <LineChart
+          <ComposedChart
             data={data}
             margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
           >
             <CartesianGrid vertical={false} />
             <ReferenceArea
+              yAxisId="value"
               y1={yDomain[0]}
               y2={-SCORE_DIFF_TIMELINE_NEUTRAL_PCT}
               fill={ZONE_DANGER}
               fillOpacity={SCORE_DIFF_TIMELINE_ZONE_OPACITY}
             />
             <ReferenceArea
+              yAxisId="value"
               y1={-SCORE_DIFF_TIMELINE_NEUTRAL_PCT}
               y2={SCORE_DIFF_TIMELINE_NEUTRAL_PCT}
               fill={ZONE_NEUTRAL}
               fillOpacity={SCORE_DIFF_TIMELINE_ZONE_OPACITY}
             />
             <ReferenceArea
+              yAxisId="value"
               y1={SCORE_DIFF_TIMELINE_NEUTRAL_PCT}
               y2={yDomain[1]}
               fill={ZONE_SUCCESS}
@@ -370,6 +380,7 @@ function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProp
             />
             <XAxis dataKey="date" tickFormatter={formatDateTick} />
             <YAxis
+              yAxisId="value"
               domain={yDomain}
               ticks={SCORE_DIFF_TIMELINE_Y_TICKS}
               allowDataOverflow={false}
@@ -378,11 +389,17 @@ function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProp
               }
               width={isMobile ? 36 : 44}
             />
-            <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
+            {/* Hidden right Y-axis dedicated to volume bars.
+                domain={[0, barMax * 5]} pins the tallest bar to the bottom 20%
+                of the chart canvas (Pattern 3 in 57.1-RESEARCH.md). */}
+            <YAxis yAxisId="bars" orientation="right" hide domain={[0, barMax * 5]} />
+            <ReferenceLine yAxisId="value" y={0} stroke="var(--border)" strokeDasharray="3 3" />
             <ChartTooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;
-                const point = payload[0]?.payload as ScoreDiffChartPoint | undefined;
+                const point = payload.find(
+                  (p) => (p.payload as ScoreDiffChartPoint | undefined)?.date !== undefined,
+                )?.payload as ScoreDiffChartPoint | undefined;
                 if (!point) return null;
                 const diff = point.diff_pct;
                 const sign = diff > 0 ? '+' : '';
@@ -390,6 +407,9 @@ function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProp
                   <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
                     <div className="font-medium">
                       Week of {formatDateWithYear(label as string)}
+                    </div>
+                    <div className="text-muted-foreground">
+                      Games this week: {point.per_week_total_games}
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div
@@ -408,7 +428,16 @@ function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProp
                 );
               }}
             />
+            <Bar
+              yAxisId="bars"
+              dataKey="per_week_total_games"
+              fill={ENDGAME_VOLUME_BAR_COLOR}
+              legendType="none"
+              isAnimationActive={false}
+              data-testid="score-diff-volume-bars"
+            />
             <Line
+              yAxisId="value"
               type="monotone"
               dataKey="diff_pct"
               stroke="var(--muted-foreground)"
@@ -435,7 +464,7 @@ function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProp
                 );
               }}
             />
-          </LineChart>
+          </ComposedChart>
         </ChartContainer>
       </div>
       <p className="text-xs text-muted-foreground text-center -mt-2">

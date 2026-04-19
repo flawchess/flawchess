@@ -582,6 +582,10 @@ def _compute_score_gap_timeline(
 
     endgame_window: list[float] = []
     non_endgame_window: list[float] = []
+    # Per-ISO-week count of all events (endgame + non-endgame) — drives the
+    # frontend volume bars. Mirrors `per_week_count` in
+    # `_compute_endgame_elo_weekly_series` (Phase 57.1 D-06).
+    per_week_total: dict[tuple[int, int], int] = {}
     data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
 
     for played_at, side, score in events:
@@ -591,6 +595,11 @@ def _compute_score_gap_timeline(
         else:
             non_endgame_window.append(score)
             non_endgame_window = non_endgame_window[-window:]
+
+        iso_year, iso_week, iso_weekday = played_at.isocalendar()
+        per_week_total[(iso_year, iso_week)] = (
+            per_week_total.get((iso_year, iso_week), 0) + 1
+        )
 
         eg_count = len(endgame_window)
         neg_count = len(non_endgame_window)
@@ -604,13 +613,13 @@ def _compute_score_gap_timeline(
         non_endgame_mean = statistics.mean(non_endgame_window)
         diff = endgame_mean - non_endgame_mean
 
-        iso_year, iso_week, iso_weekday = played_at.isocalendar()
         monday = (played_at - timedelta(days=iso_weekday - 1)).date()
         data_by_week[(iso_year, iso_week)] = {
             "date": monday.isoformat(),
             "score_difference": round(diff, 4),
             "endgame_game_count": eg_count,
             "non_endgame_game_count": neg_count,
+            "per_week_total_games": per_week_total[(iso_year, iso_week)],
         }
 
     return [
@@ -1331,6 +1340,9 @@ def _compute_clock_pressure_timeline(
     game_data.sort(key=lambda x: x[0])
 
     diffs_so_far: list[float] = []
+    # Per-ISO-week count of clock-eligible endgame games — drives the frontend
+    # volume bars (mirrors `per_week_count` in `_compute_endgame_elo_weekly_series`).
+    per_week_count: dict[tuple[int, int], int] = {}
     data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
 
     for played_at, diff_pct in game_data:
@@ -1339,11 +1351,15 @@ def _compute_clock_pressure_timeline(
         avg = statistics.mean(window_slice)
 
         iso_year, iso_week, iso_weekday = played_at.isocalendar()
+        per_week_count[(iso_year, iso_week)] = (
+            per_week_count.get((iso_year, iso_week), 0) + 1
+        )
         monday = (played_at - timedelta(days=iso_weekday - 1)).date()
         data_by_week[(iso_year, iso_week)] = {
             "date": monday.isoformat(),
             "avg_clock_diff_pct": round(avg, 4),
             "game_count": len(window_slice),
+            "per_week_game_count": per_week_count[(iso_year, iso_week)],
         }
 
     return [
@@ -1560,6 +1576,10 @@ def _compute_weekly_rolling_series(
         win_rate, game_count. Sorted chronologically by date.
     """
     results_so_far: list[Literal["win", "draw", "loss"]] = []
+    # Per-ISO-week count of games — drives the frontend volume bars on the
+    # Win Rate by Endgame Type chart (mirrors `per_week_count` in
+    # `_compute_endgame_elo_weekly_series`).
+    per_week_count: dict[tuple[int, int], int] = {}
     # Keyed by (iso_year, iso_week) so each week keeps only its final state.
     data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
 
@@ -1572,12 +1592,16 @@ def _compute_weekly_rolling_series(
         win_rate = window_slice.count("win") / window_total if window_total > 0 else 0.0
 
         iso_year, iso_week, iso_weekday = played_at.isocalendar()
+        per_week_count[(iso_year, iso_week)] = (
+            per_week_count.get((iso_year, iso_week), 0) + 1
+        )
         monday = (played_at - timedelta(days=iso_weekday - 1)).date()
         # Overwrite so each week keeps the window state after its last game.
         data_by_week[(iso_year, iso_week)] = {
             "date": monday.isoformat(),
             "win_rate": round(win_rate, 4),
             "game_count": window_total,
+            "per_week_game_count": per_week_count[(iso_year, iso_week)],
         }
 
     return [
@@ -1760,6 +1784,7 @@ async def get_endgame_timeline(
                 date=pt["date"],
                 win_rate=pt["win_rate"],
                 game_count=pt["game_count"],
+                per_week_game_count=pt["per_week_game_count"],
             )
             for pt in series
             if not cutoff_str or pt["date"] >= cutoff_str

@@ -5,10 +5,10 @@
  */
 
 import { useState, useEffect } from 'react';
-import { CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
+import { ENDGAME_VOLUME_BAR_COLOR, ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import type { ClockPressureResponse, ClockPressureTimelinePoint } from '@/types/endgames';
 
@@ -283,6 +283,11 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
   const yMin = Math.min(TIMELINE_Y_DOMAIN[0], Math.floor(dataMin));
   const yDomain: [number, number] = [yMin, yMax];
 
+  // Volume-bar Y-axis envelope. domain={[0, barMax * 5]} pins the tallest
+  // bar to the bottom 20% of the chart canvas (Pattern 3 from 57.1-RESEARCH.md).
+  // Math.max(..., 1) avoids a [0, 0] domain when no week has any games.
+  const barMax = Math.max(1, ...timeline.map((p) => p.per_week_game_count));
+
   return (
     <div className="mt-6" data-testid="clock-pressure-timeline-section">
       <div className="mb-3">
@@ -329,24 +334,27 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
           className="w-full h-72"
           data-testid="clock-pressure-timeline-chart"
         >
-          <LineChart
+          <ComposedChart
             data={timeline}
             margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
           >
             <CartesianGrid vertical={false} />
             <ReferenceArea
+              yAxisId="value"
               y1={yDomain[0]}
               y2={-NEUTRAL_PCT_THRESHOLD}
               fill={ZONE_DANGER}
               fillOpacity={TIMELINE_ZONE_OPACITY}
             />
             <ReferenceArea
+              yAxisId="value"
               y1={-NEUTRAL_PCT_THRESHOLD}
               y2={NEUTRAL_PCT_THRESHOLD}
               fill={ZONE_NEUTRAL}
               fillOpacity={TIMELINE_ZONE_OPACITY}
             />
             <ReferenceArea
+              yAxisId="value"
               y1={NEUTRAL_PCT_THRESHOLD}
               y2={yDomain[1]}
               fill={ZONE_SUCCESS}
@@ -354,6 +362,7 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
             />
             <XAxis dataKey="date" tickFormatter={formatDateTick} />
             <YAxis
+              yAxisId="value"
               domain={yDomain}
               ticks={TIMELINE_Y_TICKS}
               allowDataOverflow={false}
@@ -362,13 +371,17 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
               }
               width={isMobile ? 36 : 44}
             />
-            <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
+            {/* Hidden right Y-axis dedicated to volume bars.
+                domain={[0, barMax * 5]} pins the tallest bar to the bottom 20%
+                of the chart canvas (Pattern 3 in 57.1-RESEARCH.md). */}
+            <YAxis yAxisId="bars" orientation="right" hide domain={[0, barMax * 5]} />
+            <ReferenceLine yAxisId="value" y={0} stroke="var(--border)" strokeDasharray="3 3" />
             <ChartTooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;
-                const point = payload[0]?.payload as
-                  | ClockPressureTimelinePoint
-                  | undefined;
+                const point = payload.find(
+                  (p) => (p.payload as ClockPressureTimelinePoint | undefined)?.date !== undefined,
+                )?.payload as ClockPressureTimelinePoint | undefined;
                 if (!point) return null;
                 const diff = point.avg_clock_diff_pct;
                 const sign = diff > 0 ? '+' : '';
@@ -376,6 +389,9 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
                   <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
                     <div className="font-medium">
                       Week of {formatDateWithYear(label as string)}
+                    </div>
+                    <div className="text-muted-foreground">
+                      Games this week: {point.per_week_game_count}
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div
@@ -394,7 +410,16 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
                 );
               }}
             />
+            <Bar
+              yAxisId="bars"
+              dataKey="per_week_game_count"
+              fill={ENDGAME_VOLUME_BAR_COLOR}
+              legendType="none"
+              isAnimationActive={false}
+              data-testid="clock-diff-volume-bars"
+            />
             <Line
+              yAxisId="value"
               type="monotone"
               dataKey="avg_clock_diff_pct"
               stroke="var(--muted-foreground)"
@@ -421,7 +446,7 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
                 );
               }}
             />
-          </LineChart>
+          </ComposedChart>
         </ChartContainer>
       </div>
       <p className="text-xs text-muted-foreground text-center -mt-2">
