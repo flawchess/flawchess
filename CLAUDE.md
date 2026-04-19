@@ -167,6 +167,7 @@ ssh flawchess "cd /opt/flawchess && docker compose down && docker compose up -d"
 - Hetzner Cloud Firewall configured with inbound TCP 22/80/443 + ICMP from any
 - Alembic migrations run automatically on backend container startup via `deploy/entrypoint.sh`
 - `.env` on server at `/opt/flawchess/.env` — never commit production secrets
+- Docker BuildKit cache is capped at 3 GB by a weekly cron job at `/etc/cron.d/docker-builder-prune` (Sundays 3am UTC, logs to `/var/log/docker-builder-prune.log`). Without it the cache grows ~50 GB over a few weeks of deploys and fills the disk.
 
 ## Version Control
 
