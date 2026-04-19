@@ -154,14 +154,11 @@ export function HomePageContent() {
             </div>
             {/* Callout pills — desktop only (hidden on mobile / small desktop) */}
             <div className="mt-10 hidden lg:flex flex-wrap justify-center gap-2">
-              <span className="bg-muted text-muted-foreground w-36 rounded-full px-3 py-1 text-center text-sm">
-                Free to use
+              <span className="bg-muted text-muted-foreground w-44 rounded-full px-4 py-1 text-center text-sm">
+                All features free
               </span>
-              <span className="bg-muted text-muted-foreground w-36 rounded-full px-3 py-1 text-center text-sm">
-                Mobile friendly
-              </span>
-              <span className="bg-muted text-muted-foreground w-36 rounded-full px-3 py-1 text-center text-sm">
-                Cross-Platform
+              <span className="bg-muted text-muted-foreground w-44 rounded-full px-4 py-1 text-center text-sm">
+                No signup required
               </span>
             </div>
           </div>
