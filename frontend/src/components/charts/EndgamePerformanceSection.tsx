@@ -435,7 +435,26 @@ export function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineCh
               stroke="var(--muted-foreground)"
               strokeWidth={2}
               connectNulls={true}
-              dot={false}
+              dot={(props: {
+                cx?: number;
+                cy?: number;
+                payload?: Record<string, unknown>;
+              }) => {
+                const { cx, cy, payload } = props;
+                if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) {
+                  return <g key={`nodot-${String(payload?.date ?? cx)}`} />;
+                }
+                const diff = (payload.diff_pct as number) ?? 0;
+                return (
+                  <circle
+                    key={`score-diff-dot-${payload.date as string}`}
+                    cx={cx}
+                    cy={cy}
+                    r={2.5}
+                    fill={scoreDiffZoneColor(diff)}
+                  />
+                );
+              }}
             />
           </ComposedChart>
         </ChartContainer>
