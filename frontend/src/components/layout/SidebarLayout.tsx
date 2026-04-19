@@ -106,21 +106,30 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
     </Tooltip>
   ));
 
-  // Strip container keeps its full self-stretched height (anchored like before).
-  // An absolute inset-0 inner wrapper gives the sticky button stack a concrete
-  // full-height containing block to stick within — same pattern as the panel.
-  const stripElement = (
+  // Split the strip into two layers so sticky behaves exactly like the panel:
+  //   1. stripBar — a self-stretched flex child that paints the full-height
+  //      vertical bar (bg, border, rounded corner). No positioning — just layout.
+  //   2. stripButtons — an absolutely positioned layer (top:0, bottom:0) over
+  //      the bar, containing a sticky top-0 inner wrapper with the buttons.
+  //      This mirrors the panel's absolute-outer + sticky-inner structure that
+  //      reliably pins to the viewport top on scroll.
+  const stripBar = (
+    <div
+      className="bg-sidebar-bg charcoal-texture border-r border-border rounded-l-md self-stretch"
+      style={{ width: STRIP_WIDTH, flexShrink: 0 }}
+    />
+  );
+
+  const stripButtons = (
     <div
       ref={stripRef}
-      className="bg-sidebar-bg charcoal-texture border-r border-border rounded-l-md self-stretch relative"
-      style={{ width: STRIP_WIDTH, flexShrink: 0 }}
+      className="absolute pointer-events-none"
+      style={{ top: 0, bottom: 0, left: 0, width: STRIP_WIDTH }}
       data-testid="sidebar-strip"
     >
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="sticky top-0 flex flex-col items-center py-3 gap-2 pointer-events-auto">
-          {stripIcons}
-          {stripExtra}
-        </div>
+      <div className="sticky top-0 flex flex-col items-center py-3 gap-2 pointer-events-auto">
+        {stripIcons}
+        {stripExtra}
       </div>
     </div>
   );
@@ -158,16 +167,18 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
   return (
     <div className={wrapperClass}>
       {hasSideContent ? (
-        /* Strip + sideContent share a container — strip height matches sideContent via CSS */
+        /* Strip bar + sideContent share a container; buttons+panel overlay via absolute */
         <div ref={sideContainerRef} className="flex flex-row self-start relative">
-          {stripElement}
+          {stripBar}
+          {stripButtons}
           {panelContent}
           <div className="ml-6">{sideContent}</div>
         </div>
       ) : (
-        /* No sideContent — strip stretches to main content height */
+        /* No sideContent — bar stretches to main content height */
         <>
-          {stripElement}
+          {stripBar}
+          {stripButtons}
           {panelContent}
         </>
       )}
