@@ -102,8 +102,6 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
               <XAxis
                 dataKey="label"
                 tick={{ fontSize: 11 }}
-                angle={-30}
-                textAnchor="end"
               />
               <YAxis
                 domain={[0, 100]}
