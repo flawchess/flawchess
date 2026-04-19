@@ -204,8 +204,7 @@ export function EndgameEloTimelineSection({
         </span>
       </h3>
       <p className="text-sm text-muted-foreground mt-1">
-        Is your endgame ELO (dashed lines) keeping pace with your actual
-        ELO (solid lines) over time?
+        Is your endgame-skill-based ELO (dashed lines) lifting your actual ELO rating (solid lines), or holding it back?
       </p>
     </div>
   );
