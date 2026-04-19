@@ -248,19 +248,11 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
           </div>
         )}
       </div>
-
-      {/* Score-diff timeline (quick-260417-o2l): weekly rolling-100 mean diff in pp. */}
-      {scoreGap && (
-        <ScoreDiffTimelineChart
-          timeline={scoreGap.timeline}
-          window={scoreGap.timeline_window}
-        />
-      )}
     </div>
   );
 }
 
-interface ScoreDiffTimelineChartProps {
+export interface ScoreDiffTimelineChartProps {
   timeline: ScoreGapTimelinePoint[];
   window: number;
 }
@@ -273,7 +265,7 @@ interface ScoreDiffChartPoint {
   per_week_total_games: number;
 }
 
-function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProps) {
+export function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProps) {
   const isMobile = useIsMobile();
 
   if (timeline.length === 0) return null;
@@ -305,7 +297,7 @@ function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProp
   const barMax = Math.max(1, ...data.map((p) => p.per_week_total_games));
 
   return (
-    <div className="pt-6 border-t border-border/40" data-testid="score-diff-timeline-section">
+    <div data-testid="score-diff-timeline-section">
       <div className="mb-3">
         <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">

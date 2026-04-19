@@ -17,11 +17,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
-import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/charts/EndgamePerformanceSection';
+import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES, ScoreDiffTimelineChart } from '@/components/charts/EndgamePerformanceSection';
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
 import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
 import { EndgameScoreGapSection } from '@/components/charts/EndgameScoreGapSection';
-import { EndgameClockPressureSection } from '@/components/charts/EndgameClockPressureSection';
+import { EndgameClockPressureSection, ClockDiffTimelineChart } from '@/components/charts/EndgameClockPressureSection';
 import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePressureSection';
 import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelineSection';
 import { GameCardList } from '@/components/results/GameCardList';
@@ -278,19 +278,30 @@ export function EndgamesPage() {
               <div className="charcoal-texture rounded-md p-4">
                 <EndgamePerformanceSection data={perfData} scoreGap={scoreGapData} />
               </div>
-              {scoreGapData && (
-                <div
-                  className="charcoal-texture rounded-md p-4 space-y-6"
-                  data-testid="endgame-elo-timeline-section"
-                >
-                  <EndgameScoreGapSection data={scoreGapData} />
-                  <div className="border-t border-border/40" />
-                  <EndgameEloTimelineSection
-                    data={eloTimelineData}
-                    isLoading={overviewLoading}
-                    isError={overviewError}
+              {scoreGapData && scoreGapData.timeline.length > 0 && (
+                <div className="charcoal-texture rounded-md p-4">
+                  <ScoreDiffTimelineChart
+                    timeline={scoreGapData.timeline}
+                    window={scoreGapData.timeline_window}
                   />
                 </div>
+              )}
+              {scoreGapData && (
+                <>
+                  <div className="charcoal-texture rounded-md p-4">
+                    <EndgameScoreGapSection data={scoreGapData} />
+                  </div>
+                  <div
+                    className="charcoal-texture rounded-md p-4"
+                    data-testid="endgame-elo-timeline-section"
+                  >
+                    <EndgameEloTimelineSection
+                      data={eloTimelineData}
+                      isLoading={overviewLoading}
+                      isError={overviewError}
+                    />
+                  </div>
+                </>
               )}
             </>
           )}
@@ -300,9 +311,19 @@ export function EndgamesPage() {
             <>
               <h2 className="text-lg font-semibold text-foreground mt-2">Time Pressure</h2>
               {showClockPressure && (
-                <div className="charcoal-texture rounded-md p-4">
-                  <EndgameClockPressureSection data={clockPressureData} />
-                </div>
+                <>
+                  <div className="charcoal-texture rounded-md p-4">
+                    <EndgameClockPressureSection data={clockPressureData} />
+                  </div>
+                  {clockPressureData && clockPressureData.timeline.length > 0 && (
+                    <div className="charcoal-texture rounded-md p-4">
+                      <ClockDiffTimelineChart
+                        timeline={clockPressureData.timeline}
+                        window={clockPressureData.timeline_window}
+                      />
+                    </div>
+                  )}
+                </>
               )}
               {showTimePressureChart && (
                 <div className="charcoal-texture rounded-md p-4">

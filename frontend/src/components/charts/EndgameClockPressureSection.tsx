@@ -248,22 +248,16 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
       <p className="text-xs text-muted-foreground mt-2">
         Games without time control are excluded.
       </p>
-
-      {/* Clock-diff timeline (quick-260416-w3q): weekly rolling-100 mean, ±20% axis. */}
-      <ClockDiffTimelineChart
-        timeline={data.timeline}
-        window={data.timeline_window}
-      />
     </div>
   );
 }
 
-interface ClockDiffTimelineChartProps {
+export interface ClockDiffTimelineChartProps {
   timeline: ClockPressureTimelinePoint[];
   window: number;
 }
 
-function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProps) {
+export function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProps) {
   const isMobile = useIsMobile();
 
   if (timeline.length === 0) return null;
@@ -289,7 +283,7 @@ function ClockDiffTimelineChart({ timeline, window }: ClockDiffTimelineChartProp
   const barMax = Math.max(1, ...timeline.map((p) => p.per_week_game_count));
 
   return (
-    <div className="pt-6 border-t border-border/40" data-testid="clock-pressure-timeline-section">
+    <div data-testid="clock-pressure-timeline-section">
       <div className="mb-3">
         <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">
