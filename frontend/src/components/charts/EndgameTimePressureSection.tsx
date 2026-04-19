@@ -174,7 +174,7 @@ export function EndgameTimePressureSection({ data }: EndgameTimePressureSectionP
               const bucketLabel = (payload[0]?.payload as ChartDataPoint | undefined)?.bucket_label ?? '';
               return (
                 <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
-                  <div className="font-medium">{bucketLabel}</div>
+                  <div className="font-medium">Time left at endgame entry: {bucketLabel}</div>
                   {payload
                     .filter((item) => item.value !== undefined)
                     .map((item) => {
