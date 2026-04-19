@@ -33,9 +33,9 @@ const FEATURES: {
     icon: Timer,
     heading: 'Time Management Stats',
     desc: [
-        'See how much clock you have left when endgames begin, per time control.',
-        "Compare your score to your opponents\u2019 at matching time-pressure levels.",
-        'Find time controls where you lose on time more often than your opponents.',
+        'See your average time advantage or deficit when entering the endgame.',
+        'Find out if you crack more than your opponents under matching time-pressure levels.',
+        'Track whether you flag more or less than your opponents per time control.',
     ],
     screenshot: { src: '/screenshots/time-management-stats.png', alt: 'Average clock difference over time and time-pressure-vs-performance charts' },
     imagePosition: 'left',
