@@ -1,6 +1,6 @@
 /**
  * Endgame Performance section:
- * - Endgame vs Non-Endgame WDL comparison table (games, WDL, score, score diff)
+ * - Endgame vs Non-Endgame WDL comparison table (games, WDL, score, score gap)
  *
  * Phase 59 removed the admin-only gauge charts (Conversion, Recovery, Endgame Skill);
  * the associated EndgameGaugesSection and its gauge-zone constants were deleted.
@@ -31,27 +31,27 @@ interface EndgamePerformanceSectionProps {
   scoreGap?: ScoreGapMaterialResponse;
 }
 
-// Neutral zone around zero for the endgame-vs-non-endgame score difference
+// Neutral zone around zero for the endgame-vs-non-endgame score gap
 // bullet chart: ±0.10 marks near-parity between the two splits.
-const SCORE_DIFF_NEUTRAL_MIN = -0.10;
-const SCORE_DIFF_NEUTRAL_MAX = 0.10;
+const SCORE_GAP_NEUTRAL_MIN = -0.10;
+const SCORE_GAP_NEUTRAL_MAX = 0.10;
 
 // Bullet domain half-width for this metric. Population p05/p95 spans ~±0.16
 // (see reports/benchmarks-2026-04-16.md §1), so ±0.20 covers the observed
 // range without making typical values look tiny against the default ±0.40.
-const SCORE_DIFF_DOMAIN = 0.20;
+const SCORE_GAP_DOMAIN = 0.20;
 
-// Score-diff timeline (quick-260417-o2l): plot in percentage points (0.10 -> 10).
+// Score-gap timeline (quick-260417-o2l): plot in percentage points (0.10 -> 10).
 // Zone band ±10 pp matches the table bullet chart's parity neutral threshold.
-const SCORE_DIFF_TIMELINE_NEUTRAL_PCT = 10;
-const SCORE_DIFF_TIMELINE_Y_DOMAIN: [number, number] = [-30, 30];
-const SCORE_DIFF_TIMELINE_Y_TICKS = [-30, -20, -10, 0, 10, 20, 30];
-const SCORE_DIFF_TIMELINE_ZONE_OPACITY = 0.15;
+const SCORE_GAP_TIMELINE_NEUTRAL_PCT = 10;
+const SCORE_GAP_TIMELINE_Y_DOMAIN: [number, number] = [-30, 30];
+const SCORE_GAP_TIMELINE_Y_TICKS = [-30, -20, -10, 0, 10, 20, 30];
+const SCORE_GAP_TIMELINE_ZONE_OPACITY = 0.15;
 const MOBILE_BREAKPOINT_PX = 768;
 
-function scoreDiffZoneColor(diffPct: number): string {
-  if (diffPct > SCORE_DIFF_TIMELINE_NEUTRAL_PCT) return ZONE_SUCCESS;
-  if (diffPct < -SCORE_DIFF_TIMELINE_NEUTRAL_PCT) return ZONE_DANGER;
+function scoreGapZoneColor(gapPct: number): string {
+  if (gapPct > SCORE_GAP_TIMELINE_NEUTRAL_PCT) return ZONE_SUCCESS;
+  if (gapPct < -SCORE_GAP_TIMELINE_NEUTRAL_PCT) return ZONE_DANGER;
   return ZONE_NEUTRAL;
 }
 
@@ -74,14 +74,14 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
   const endgamePct = totalGames > 0 ? (data.endgame_wdl.total / totalGames * 100).toFixed(1) : '0.0';
   const nonEndgamePct = totalGames > 0 ? (data.non_endgame_wdl.total / totalGames * 100).toFixed(1) : '0.0';
 
-  const diffPositive = scoreGap ? scoreGap.score_difference >= 0 : false;
-  const diffFormatted = scoreGap
-    ? (diffPositive ? '+' : '') + `${Math.round(scoreGap.score_difference * 100)}%`
+  const gapPositive = scoreGap ? scoreGap.score_difference >= 0 : false;
+  const gapFormatted = scoreGap
+    ? (gapPositive ? '+' : '') + `${Math.round(scoreGap.score_difference * 100)}%`
     : '';
-  const diffColor = scoreGap
-    ? scoreGap.score_difference >= SCORE_DIFF_NEUTRAL_MAX
+  const gapColor = scoreGap
+    ? scoreGap.score_difference >= SCORE_GAP_NEUTRAL_MAX
       ? ZONE_SUCCESS
-      : scoreGap.score_difference >= SCORE_DIFF_NEUTRAL_MIN
+      : scoreGap.score_difference >= SCORE_GAP_NEUTRAL_MIN
         ? ZONE_NEUTRAL
         : ZONE_DANGER
     : ZONE_NEUTRAL;
@@ -112,7 +112,8 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
             <InfoPopover ariaLabel="Games with vs without Endgame info" testId="perf-section-info" side="top">
               <div className="space-y-2">
                 <p>Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not. Only endgames that span at least 3 full moves (6 half-moves) are counted. Shorter tactical transitions from middlegame into a checkmate are treated as &quot;no endgame&quot;.</p>
-                <p>The <strong>Score % Difference</strong> column shows the signed gap between your endgame Score % and non-endgame Score % (green = endgame stronger, red = endgame weaker, blue = near parity).</p>
+                <p>The <strong>Score Gap</strong> column shows the signed gap between your endgame Score % and non-endgame Score % (green = endgame stronger, red = endgame weaker, blue = near parity).</p>
+                <p>The Score Gap is a comparison, not an absolute measure. A positive value can mean stronger endgames <em>or</em> weaker non-endgame play; a negative value, the reverse. Compare the two Score % rows to see which side is driving it.</p>
               </div>
             </InfoPopover>
           </span>
@@ -141,7 +142,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
               <th className="py-1 px-2 font-medium text-right">Games</th>
               <th className="py-1 px-2 font-medium">Win / Draw / Loss</th>
               <th className="py-1 px-2 font-medium text-right">Score %</th>
-              <th className="py-1 px-2 font-medium">Score % Difference</th>
+              <th className="py-1 px-2 font-medium">Score Gap</th>
             </tr>
           </thead>
           <tbody>
@@ -171,16 +172,16 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
                       className="py-1.5 px-2 text-left text-sm tabular-nums whitespace-nowrap"
                       data-testid="score-gap-difference"
                     >
-                      <span className="font-semibold" style={{ color: diffColor }}>{diffFormatted}</span>
+                      <span className="font-semibold" style={{ color: gapColor }}>{gapFormatted}</span>
                     </td>
                   ) : (
                     <td className="py-1.5 px-2 text-left">
                       <MiniBulletChart
                         value={scoreGap.score_difference}
-                        neutralMin={SCORE_DIFF_NEUTRAL_MIN}
-                        neutralMax={SCORE_DIFF_NEUTRAL_MAX}
-                        domain={SCORE_DIFF_DOMAIN}
-                        ariaLabel={`Endgame score difference: ${diffFormatted}`}
+                        neutralMin={SCORE_GAP_NEUTRAL_MIN}
+                        neutralMax={SCORE_GAP_NEUTRAL_MAX}
+                        domain={SCORE_GAP_DOMAIN}
+                        ariaLabel={`Endgame vs non-endgame score gap: ${gapFormatted}`}
                       />
                     </td>
                   )
@@ -233,17 +234,17 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
             data-testid="score-gap-difference-mobile"
           >
             <div className="flex items-baseline justify-between">
-              <div className="text-sm font-medium">Score % Difference</div>
+              <div className="text-sm font-medium">Score Gap</div>
               <div className="text-sm tabular-nums">
-                <span className="font-semibold" style={{ color: diffColor }}>{diffFormatted}</span>
+                <span className="font-semibold" style={{ color: gapColor }}>{gapFormatted}</span>
               </div>
             </div>
             <MiniBulletChart
               value={scoreGap.score_difference}
-              neutralMin={SCORE_DIFF_NEUTRAL_MIN}
-              neutralMax={SCORE_DIFF_NEUTRAL_MAX}
-              domain={SCORE_DIFF_DOMAIN}
-              ariaLabel={`Endgame score difference: ${diffFormatted}`}
+              neutralMin={SCORE_GAP_NEUTRAL_MIN}
+              neutralMax={SCORE_GAP_NEUTRAL_MAX}
+              domain={SCORE_GAP_DOMAIN}
+              ariaLabel={`Endgame vs non-endgame score gap: ${gapFormatted}`}
             />
           </div>
         )}
@@ -252,28 +253,28 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
   );
 }
 
-export interface ScoreDiffTimelineChartProps {
+export interface ScoreGapTimelineChartProps {
   timeline: ScoreGapTimelinePoint[];
   window: number;
 }
 
-interface ScoreDiffChartPoint {
+interface ScoreGapChartPoint {
   date: string;
-  diff_pct: number;
+  gap_pct: number;
   endgame_game_count: number;
   non_endgame_game_count: number;
   per_week_total_games: number;
 }
 
-export function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineChartProps) {
+export function ScoreGapTimelineChart({ timeline, window }: ScoreGapTimelineChartProps) {
   const isMobile = useIsMobile();
 
   if (timeline.length === 0) return null;
 
-  const data: ScoreDiffChartPoint[] = timeline.map((p) => ({
+  const data: ScoreGapChartPoint[] = timeline.map((p) => ({
     date: p.date,
     // Convert 0-1 score to percentage points for plotting (0.05 -> 5).
-    diff_pct: p.score_difference * 100,
+    gap_pct: p.score_difference * 100,
     endgame_game_count: p.endgame_game_count,
     non_endgame_game_count: p.non_endgame_game_count,
     per_week_total_games: p.per_week_total_games,
@@ -284,11 +285,11 @@ export function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineCh
 
   // Extend the Y domain symmetrically when data exceeds the default ±20 band,
   // so dots never overflow the plot area.
-  const values = data.map((p) => p.diff_pct);
-  const dataMax = values.length > 0 ? Math.max(...values) : SCORE_DIFF_TIMELINE_Y_DOMAIN[1];
-  const dataMin = values.length > 0 ? Math.min(...values) : SCORE_DIFF_TIMELINE_Y_DOMAIN[0];
-  const yMax = Math.max(SCORE_DIFF_TIMELINE_Y_DOMAIN[1], Math.ceil(dataMax));
-  const yMin = Math.min(SCORE_DIFF_TIMELINE_Y_DOMAIN[0], Math.floor(dataMin));
+  const values = data.map((p) => p.gap_pct);
+  const dataMax = values.length > 0 ? Math.max(...values) : SCORE_GAP_TIMELINE_Y_DOMAIN[1];
+  const dataMin = values.length > 0 ? Math.min(...values) : SCORE_GAP_TIMELINE_Y_DOMAIN[0];
+  const yMax = Math.max(SCORE_GAP_TIMELINE_Y_DOMAIN[1], Math.ceil(dataMax));
+  const yMin = Math.min(SCORE_GAP_TIMELINE_Y_DOMAIN[0], Math.floor(dataMin));
   const yDomain: [number, number] = [yMin, yMax];
 
   // Volume-bar Y-axis envelope. domain={[0, barMax * 5]} pins the tallest
@@ -297,27 +298,30 @@ export function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineCh
   const barMax = Math.max(1, ...data.map((p) => p.per_week_total_games));
 
   return (
-    <div data-testid="score-diff-timeline-section">
+    <div data-testid="score-gap-timeline-section">
       <div className="mb-3">
         <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">
-            Score % Difference over Time
+            Endgame vs Non-Endgame Score Gap over Time
             <InfoPopover
-              ariaLabel="Score difference timeline info"
-              testId="score-diff-timeline-info"
+              ariaLabel="Endgame vs non-endgame score gap timeline info"
+              testId="score-gap-timeline-info"
               side="top"
             >
               <p>
-                Difference between your endgame Score % and non-endgame Score %
-                over the trailing {window} games per side, sampled once per week.
-                Endgame and non-endgame games each carry their own
-                {' '}{window}-game window, so weeks with sparse activity on one
-                side still reflect the broader history of that side.
+                Gap between your endgame Score % and non-endgame Score %
+                over the trailing {window} games, sampled once per week.
+              </p>
+              <p className="mt-1">
+                This is a relative signal. A rising gap could mean endgames
+                are improving, non-endgame play is declining, or both. For
+                absolute endgame skill, compare against the Endgame ELO
+                timeline.
               </p>
               <p className="mt-1">
                 Dots are colored by zone: green when the gap exceeds
-                +{SCORE_DIFF_TIMELINE_NEUTRAL_PCT}%, red when it&apos;s below
-                -{SCORE_DIFF_TIMELINE_NEUTRAL_PCT}%, blue in between.
+                +{SCORE_GAP_TIMELINE_NEUTRAL_PCT}%, red when it&apos;s below
+                -{SCORE_GAP_TIMELINE_NEUTRAL_PCT}%, blue in between.
               </p>
               <p className="mt-1">
                 Early weeks where either side has fewer than 10 games in the
@@ -327,7 +331,7 @@ export function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineCh
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Has your endgame edge versus your non-endgame play improved over time?
+          Is your endgame improving faster than the rest of your game?
         </p>
       </div>
       <div className={isMobile ? '' : 'flex items-stretch'}>
@@ -336,13 +340,13 @@ export function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineCh
             className="flex items-center text-xs text-muted-foreground shrink-0 pt-33 -mr-1"
             style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
           >
-            Score diff %
+            Score gap %
           </div>
         )}
         <ChartContainer
           config={{}}
           className="w-full h-72"
-          data-testid="score-diff-timeline-chart"
+          data-testid="score-gap-timeline-chart"
         >
           <ComposedChart
             data={data}
@@ -352,29 +356,29 @@ export function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineCh
             <ReferenceArea
               yAxisId="value"
               y1={yDomain[0]}
-              y2={-SCORE_DIFF_TIMELINE_NEUTRAL_PCT}
+              y2={-SCORE_GAP_TIMELINE_NEUTRAL_PCT}
               fill={ZONE_DANGER}
-              fillOpacity={SCORE_DIFF_TIMELINE_ZONE_OPACITY}
+              fillOpacity={SCORE_GAP_TIMELINE_ZONE_OPACITY}
             />
             <ReferenceArea
               yAxisId="value"
-              y1={-SCORE_DIFF_TIMELINE_NEUTRAL_PCT}
-              y2={SCORE_DIFF_TIMELINE_NEUTRAL_PCT}
+              y1={-SCORE_GAP_TIMELINE_NEUTRAL_PCT}
+              y2={SCORE_GAP_TIMELINE_NEUTRAL_PCT}
               fill={ZONE_NEUTRAL}
-              fillOpacity={SCORE_DIFF_TIMELINE_ZONE_OPACITY}
+              fillOpacity={SCORE_GAP_TIMELINE_ZONE_OPACITY}
             />
             <ReferenceArea
               yAxisId="value"
-              y1={SCORE_DIFF_TIMELINE_NEUTRAL_PCT}
+              y1={SCORE_GAP_TIMELINE_NEUTRAL_PCT}
               y2={yDomain[1]}
               fill={ZONE_SUCCESS}
-              fillOpacity={SCORE_DIFF_TIMELINE_ZONE_OPACITY}
+              fillOpacity={SCORE_GAP_TIMELINE_ZONE_OPACITY}
             />
             <XAxis dataKey="date" tickFormatter={formatDateTick} />
             <YAxis
               yAxisId="value"
               domain={yDomain}
-              ticks={SCORE_DIFF_TIMELINE_Y_TICKS}
+              ticks={SCORE_GAP_TIMELINE_Y_TICKS}
               allowDataOverflow={false}
               tickFormatter={(v: number) =>
                 v > 0 ? `+${v}%` : `${v}%`
@@ -390,11 +394,11 @@ export function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineCh
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;
                 const point = payload.find(
-                  (p) => (p.payload as ScoreDiffChartPoint | undefined)?.date !== undefined,
-                )?.payload as ScoreDiffChartPoint | undefined;
+                  (p) => (p.payload as ScoreGapChartPoint | undefined)?.date !== undefined,
+                )?.payload as ScoreGapChartPoint | undefined;
                 if (!point) return null;
-                const diff = point.diff_pct;
-                const sign = diff > 0 ? '+' : '';
+                const gap = point.gap_pct;
+                const sign = gap > 0 ? '+' : '';
                 return (
                   <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
                     <div className="font-medium">
@@ -406,11 +410,11 @@ export function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineCh
                     <div className="flex items-center gap-1.5">
                       <div
                         className="h-2 w-2 shrink-0 rounded-[2px]"
-                        style={{ backgroundColor: scoreDiffZoneColor(diff) }}
+                        style={{ backgroundColor: scoreGapZoneColor(gap) }}
                       />
                       <span>
-                        Score % diff: {sign}
-                        {diff.toFixed(1)}%
+                        Score gap: {sign}
+                        {gap.toFixed(1)}%
                         <span className="text-muted-foreground ml-1">
                           (endgame {point.endgame_game_count} games, non-endgame {point.non_endgame_game_count} games)
                         </span>
@@ -426,12 +430,12 @@ export function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineCh
               fill={ENDGAME_VOLUME_BAR_COLOR}
               legendType="none"
               isAnimationActive={false}
-              data-testid="score-diff-volume-bars"
+              data-testid="score-gap-volume-bars"
             />
             <Line
               yAxisId="value"
               type="monotone"
-              dataKey="diff_pct"
+              dataKey="gap_pct"
               stroke="var(--muted-foreground)"
               strokeWidth={2}
               connectNulls={true}
@@ -444,14 +448,14 @@ export function ScoreDiffTimelineChart({ timeline, window }: ScoreDiffTimelineCh
                 if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) {
                   return <g key={`nodot-${String(payload?.date ?? cx)}`} />;
                 }
-                const diff = (payload.diff_pct as number) ?? 0;
+                const gap = (payload.gap_pct as number) ?? 0;
                 return (
                   <circle
-                    key={`score-diff-dot-${payload.date as string}`}
+                    key={`score-gap-dot-${payload.date as string}`}
                     cx={cx}
                     cy={cy}
                     r={2.5}
-                    fill={scoreDiffZoneColor(diff)}
+                    fill={scoreGapZoneColor(gap)}
                   />
                 );
               }}
