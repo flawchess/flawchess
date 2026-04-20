@@ -4,7 +4,7 @@ milestone: v1.10
 milestone_name: Advanced Analytics
 status: shipped
 last_updated: "2026-04-20T12:00:00.000Z"
-last_activity: 2026-04-20 -- Quick task 260420-je6 done: Renovate + CI audits + digest-pin base images
+last_activity: 2026-04-20 -- Quick task 260420-kzb done: Rename Score % Difference metric to Score Gap
 progress:
   total_phases: 11
   completed_phases: 11
@@ -112,9 +112,10 @@ Current focus: Planning next milestone — expected direction TBD
 | 260418-nlh | Add Endgame Skill composite gauge (simple average of Conv/Parity/Recovery, 45-55 blue neutral) | 2026-04-18 | 021b4ac | [260418-nlh-add-endgame-skill-metric-as-simple-avera](./quick/260418-nlh-add-endgame-skill-metric-as-simple-avera/) |
 | 260419-gjq | Retire Phase 56 (subsumed by 57) and move Phase 58 (Opening Risk) to backlog as Phase 999.6 | 2026-04-19 | c7dc214 | [260419-gjq-retire-phase-56-subsumed-by-57-and-move-](./quick/260419-gjq-retire-phase-56-subsumed-by-57-and-move-/) |
 | 260420-je6 | Dependency management fix: Renovate config, CI audits (pip-audit/npm audit/Trivy), digest-pin Dockerfile base images | 2026-04-20 | (uncommitted) | [260420-je6-implement-dependency-management-fix-reno](./quick/260420-je6-implement-dependency-management-fix-reno/) |
+| 260420-kzb | Rename "Score % Difference" metric to "Score Gap" in EndgamePerformanceSection | 2026-04-20 | 277ef31 | [260420-kzb-rename-score-difference-metric-to-score-](./quick/260420-kzb-rename-score-difference-metric-to-score-/) |
 
 ---
-Last activity: 2026-04-20 - Completed quick task 260420-je6: Dependency management fix (Renovate + CI audits + digest-pin base images)
+Last activity: 2026-04-20 - Completed quick task 260420-kzb: Rename "Score % Difference" metric to "Score Gap"
 | 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
 | 2026-04-10 | ship | Phase 51 shipped — PR #42 merged into main | done |
 | 2026-04-11 | fast | Preserve Openings board position across main tab navigation | ✅ |

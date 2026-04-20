@@ -104,7 +104,7 @@ export interface MaterialRow {
   opponent_games: number;
 }
 
-/** Single point in the score-difference rolling-window time series.
+/** Single point in the score-gap rolling-window time series.
  *  `date` is the Monday of an ISO week (YYYY-MM-DD).
  *  `score_difference` is endgame_score - non_endgame_score on a 0-1 scale (signed). */
 export interface ScoreGapTimelinePoint {
@@ -113,7 +113,7 @@ export interface ScoreGapTimelinePoint {
   endgame_game_count: number;
   non_endgame_game_count: number;
   // Count of games (endgame + non-endgame) played in THIS specific ISO week.
-  // Drives the muted volume-bar series on the Score % Difference timeline.
+  // Drives the muted volume-bar series on the Score Gap timeline.
   per_week_total_games: number;
 }
 
