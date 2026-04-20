@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Advanced Analytics
 status: shipped
-last_updated: "2026-04-19T14:00:00.000Z"
-last_activity: 2026-04-19 -- v1.10 Advanced Analytics shipped, planning v1.11
+last_updated: "2026-04-20T12:00:00.000Z"
+last_activity: 2026-04-20 -- Quick task 260420-je6 done: Renovate + CI audits + digest-pin base images
 progress:
   total_phases: 11
   completed_phases: 11
@@ -111,9 +111,10 @@ Current focus: Planning next milestone — expected direction TBD
 | 260417-br7 | Fix pytest warnings (JWT key length + httpx cookies) | 2026-04-17 | (uncommitted) | [260417-br7-fix-pytest-warnings-jwt-key-length-httpx](./quick/260417-br7-fix-pytest-warnings-jwt-key-length-httpx/) |
 | 260418-nlh | Add Endgame Skill composite gauge (simple average of Conv/Parity/Recovery, 45-55 blue neutral) | 2026-04-18 | 021b4ac | [260418-nlh-add-endgame-skill-metric-as-simple-avera](./quick/260418-nlh-add-endgame-skill-metric-as-simple-avera/) |
 | 260419-gjq | Retire Phase 56 (subsumed by 57) and move Phase 58 (Opening Risk) to backlog as Phase 999.6 | 2026-04-19 | c7dc214 | [260419-gjq-retire-phase-56-subsumed-by-57-and-move-](./quick/260419-gjq-retire-phase-56-subsumed-by-57-and-move-/) |
+| 260420-je6 | Dependency management fix: Renovate config, CI audits (pip-audit/npm audit/Trivy), digest-pin Dockerfile base images | 2026-04-20 | (uncommitted) | [260420-je6-implement-dependency-management-fix-reno](./quick/260420-je6-implement-dependency-management-fix-reno/) |
 
 ---
-Last activity: 2026-04-19 - Completed quick task 260419-gjq: Retire Phase 56 and move Phase 58 to backlog
+Last activity: 2026-04-20 - Completed quick task 260420-je6: Dependency management fix (Renovate + CI audits + digest-pin base images)
 | 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
 | 2026-04-10 | ship | Phase 51 shipped — PR #42 merged into main | done |
 | 2026-04-11 | fast | Preserve Openings board position across main tab navigation | ✅ |
