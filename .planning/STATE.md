@@ -1,33 +1,33 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.10
-milestone_name: Advanced Analytics
-status: shipped
+milestone: v1.11
+milestone_name: LLM-first Endgame Insights
+status: defining_requirements
 last_updated: "2026-04-20T12:00:00.000Z"
-last_activity: 2026-04-20 -- Quick task 260420-kzb done: Rename Score % Difference metric to Score Gap
+last_activity: 2026-04-20 -- Milestone v1.11 opened from SEED-003
 progress:
-  total_phases: 11
-  completed_phases: 11
-  total_plans: 28
-  completed_plans: 28
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: v1.10 Advanced Analytics — SHIPPED 2026-04-19
-Status: Next milestone TBD — start with `/gsd-new-milestone`
-Last activity: 2026-04-19
-
-Progress: [██████████] 100% (11/11 v1.10 phases complete; Phase 56 cancelled, Phase 58 moved to backlog as 999.6)
+Milestone: v1.11 LLM-first Endgame Insights
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-20 — Milestone v1.11 started from SEED-003
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-19)
+See: .planning/PROJECT.md (updated 2026-04-20)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Planning next milestone — expected direction TBD
+Current focus: v1.11 ships LLM-generated Endgame Insights (overview paragraph + 4 Section insights) over a stripped-down findings pipeline. Source: SEED-003 (supersedes SEED-001 for v1.11).
 
 ## Key Context
 

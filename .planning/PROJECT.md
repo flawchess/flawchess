@@ -94,7 +94,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ### Active
 
-_No active requirements — v1.10 shipped. Next milestone requirements will be defined via `/gsd-new-milestone`._
+_v1.11 LLM-first Endgame Insights — requirements defined in `.planning/REQUIREMENTS.md`._
 
 ### Out of Scope
 
@@ -105,9 +105,26 @@ _No active requirements — v1.10 shipped. Next milestone requirements will be d
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone
+## Current Milestone: v1.11 LLM-first Endgame Insights
 
-_v1.10 shipped. Next milestone TBD — start with `/gsd-new-milestone`._
+**Goal:** Ship an LLM-generated Insights block on the Endgame tab — overview paragraph + 4 Section insights — over a stripped-down findings pipeline, wired to 2026-04-18 benchmark bands, observable via a Postgres log table, and rolled out behind a beta flag to a small validation cohort.
+
+**Target features:**
+- Findings computation service that transforms the existing `/api/endgames/overview` composite into zone/trend/sample-quality findings and three deterministic cross-section flags
+- Zone band wiring from `reports/benchmarks-2026-04-18.md` into both the insights pipeline and the existing gauge components so narrative and visual agree
+- `POST /api/insights/endgame` backed by a pydantic-ai Agent with structured output, provider-agnostic model selection via `PYDANTIC_AI_MODEL_INSIGHTS`, findings-hash cache, and 3-miss/hr/user soft-fail rate limit
+- Postgres `insights_llm_logs` table (+ Alembic migration + async repo) capturing prompt, response, tokens, cost (via `genai-prices`), latency, cache-hit, error — the prompt-engineering harness
+- Frontend `EndgameInsightsBlock` rendering overview + 4 Section blocks inline on the Endgame tab, beta-flagged (default off)
+- Ground-truth regression test against the SEED-001 canonical user fixture plus admin-impersonation eyeball validation across 5+ real user profiles
+- Prompt-fluency spike (Phase 0) before any pipeline work to de-risk the "a small LLM is fluent enough" bet
+
+**Source seed:** `.planning/seeds/SEED-003-llm-based-insights.md` (supersedes SEED-001 for v1.11; SEED-001 remains the v1.12+ reference for deferred archetype/role/era/stability/admin work).
+
+**Key context:**
+- SEED-001 and SEED-003 both triggered at v1.11; SEED-003 is the MVP path, SEED-001 becomes v1.12+ scope
+- Zone calibration is no longer a blocker — bands come from the 2026-04-18 benchmark report (n=37 users)
+- Target size: 2–3 weeks of focused build, not a full milestone's worth — v1.11 may include additional parallel scope
+- Exit criteria are the six conditions in SEED-003's Notes section; do not backfill SEED-001's deferred parts before they ship
 
 ## Current State
 
@@ -202,4 +219,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-19 after v1.10 Advanced Analytics milestone*
+*Last updated: 2026-04-20 — v1.11 LLM-first Endgame Insights milestone opened (source: SEED-003).*
