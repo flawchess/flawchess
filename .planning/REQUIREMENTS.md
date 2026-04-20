@@ -32,9 +32,9 @@ Requirements for LLM-first Endgame Insights milestone. Source: `.planning/seeds/
 
 ### Observability
 
-- [ ] **LOG-01**: Alembic migration creates a generic `llm_logs` table (designed for reuse across future LLM features, not endgame-specific) with columns: id, created_at, user_id (FK ON DELETE CASCADE), endpoint, model, prompt_version, findings_hash, filter_context (JSONB), flags (JSONB), system_prompt, user_prompt, response_json (nullable), input_tokens, output_tokens, cost_usd (Numeric(10,6)), latency_ms, cache_hit, error (nullable)
+- [x] **LOG-01**: Alembic migration creates a generic `llm_logs` table (designed for reuse across future LLM features, not endgame-specific) with columns: id, created_at, user_id (FK ON DELETE CASCADE), endpoint, model, prompt_version, findings_hash, filter_context (JSONB), flags (JSONB), system_prompt, user_prompt, response_json (nullable), input_tokens, output_tokens, cost_usd (Numeric(10,6)), latency_ms, cache_hit, error (nullable)
 - [ ] **LOG-02**: Every cache-miss LLM call (success or failure) writes exactly one row to `llm_logs` capturing all fields above; cost is computed from `(model, input_tokens, output_tokens)` via `genai-prices` at write time
-- [ ] **LOG-03**: Indexes created on `(created_at)`, `(user_id, created_at DESC)`, `(findings_hash)`, `(endpoint, created_at DESC)`, and `(model, created_at DESC)` to support time-range, per-user, dedup, per-feature, and model-comparison queries
+- [x] **LOG-03**: Indexes created on `(created_at)`, `(user_id, created_at DESC)`, `(findings_hash)`, `(endpoint, created_at DESC)`, and `(model, created_at DESC)` to support time-range, per-user, dedup, per-feature, and model-comparison queries
 - [ ] **LOG-04**: Sentry errors on LLM failures use `set_context` for `user_id / findings_hash / model / endpoint` rather than embedding variables in error messages, per CLAUDE.md grouping rules
 
 ### Validation
@@ -106,9 +106,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 | LLM-01 | Phase 65 | Pending |
 | LLM-02 | Phase 65 | Pending |
 | LLM-03 | Phase 65 | Pending |
-| LOG-01 | Phase 64 | Pending |
+| LOG-01 | Phase 64 | Complete |
 | LOG-02 | Phase 64 | Pending |
-| LOG-03 | Phase 64 | Pending |
+| LOG-03 | Phase 64 | Complete |
 | LOG-04 | Phase 64 | Pending |
 | VAL-01 | Phase 67 | Pending |
 | VAL-02 | Phase 67 | Pending |

@@ -188,7 +188,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
   4. `cost_usd` falls back to 0 with `error = "cost_unknown:<model>"` when `genai-prices` doesn't recognize the model, rather than failing the write
 **Plans**: 3 plans
 - [x] 64-01-PLAN.md — Scaffolding (genai-prices pin, LlmLogCreate schema, LlmLog model, fresh_test_user fixture)
-- [ ] 64-02-PLAN.md — Migration (alembic/env.py registration, autogenerate + hand-edit for JSONB & DESC, dev-DB upgrade, migration smoke test)
+- [x] 64-02-PLAN.md — Migration (alembic/env.py registration, autogenerate + hand-edit for JSONB & DESC, dev-DB upgrade, migration smoke test)
 - [ ] 64-03-PLAN.md — Repository & Tests (create_llm_log, get_latest_log_by_hash, cost_unknown fallback tests, FK cascade test)
 
 ### Phase 65: LLM Endpoint with pydantic-ai Agent
@@ -251,7 +251,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 | 49-51. v1.9 phases | v1.9 | 7/7 | Complete | 2026-04-10 |
 | 48, 52-62. v1.10 phases | v1.10 | 28/28 | Complete | 2026-04-19 |
 | 63. Findings Pipeline & Zone Wiring | v1.11 | 5/5 | Complete | 2026-04-20 |
-| 64. llm_logs Table & Async Repo | v1.11 | 1/3 | In progress | - |
+| 64. llm_logs Table & Async Repo | v1.11 | 2/3 | In progress | - |
 | 65. LLM Endpoint with pydantic-ai Agent | v1.11 | 0/0 | Not started | - |
 | 66. Frontend EndgameInsightsBlock & Beta Flag | v1.11 | 0/0 | Not started | - |
 | 67. Validation & Beta Rollout | v1.11 | 0/0 | Not started | - |

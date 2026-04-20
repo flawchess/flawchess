@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: LLM-first Endgame Insights
 status: executing
-last_updated: "2026-04-20T21:10:15Z"
-last_activity: 2026-04-20 -- Phase 64 Plan 01 complete
+last_updated: "2026-04-20T21:25:00Z"
+last_activity: 2026-04-20 -- Phase 64 Plan 02 complete
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 8
-  completed_plans: 6
-  percent: 75
+  completed_plans: 7
+  percent: 88
 ---
 
 # Project State: FlawChess
@@ -18,10 +18,10 @@ progress:
 ## Current Position
 
 Milestone: v1.11 LLM-first Endgame Insights
-Phase: 64 — llm_logs Table & Async Repo (in progress, 1/3 plans)
-Plan: Plan 01 done; Plan 02 (migration) next
+Phase: 64 — llm_logs Table & Async Repo (in progress, 2/3 plans)
+Plan: Plans 01+02 done; Plan 03 (repository + tests) next
 Status: Executing
-Last activity: 2026-04-20 -- Phase 64 Plan 01 complete
+Last activity: 2026-04-20 -- Phase 64 Plan 02 complete
 
 ## Project Reference
 
@@ -33,10 +33,10 @@ Current focus: v1.11 ships LLM-generated Endgame Insights (overview paragraph + 
 
 ```
 v1.11 LLM-first Endgame Insights — 1/5 phases complete, Phase 64 in progress
-[████▌     ] 27%
+[█████▎    ] 33%
 
 Phase 63: Findings Pipeline & Zone Wiring     — Complete (5/5 plans)
-Phase 64: llm_logs Table & Async Repo         — In progress (1/3 plans — Plan 01 done)
+Phase 64: llm_logs Table & Async Repo         — In progress (2/3 plans — Plans 01+02 done)
 Phase 65: LLM Endpoint with pydantic-ai Agent — Not started
 Phase 66: Frontend EndgameInsightsBlock       — Not started
 Phase 67: Validation & Beta Rollout           — Not started
@@ -99,6 +99,9 @@ Phase 67: Validation & Beta Rollout           — Not started
 - [Phase 64-llm-logs-table-async-repo]: Plan 01: genai-prices.calc_price does NOT accept pydantic-ai 'provider:model' concatenated strings (LookupError against 'anthropic:claude-haiku-4-5-20251001'). Split form calc_price(..., model_ref='claude-haiku-4-5-20251001', provider_id='anthropic') returns Decimal('0.0006'). Plan 03's _compute_cost helper must split on first ':' into provider_id + model_ref.
 - [Phase 64-llm-logs-table-async-repo]: Plan 01: LlmLog.user_id uses Integer (not BigInteger) to match users.id type (RESEARCH.md Pitfall 1; verified via psql \d users). Log's own id stays BigInteger per D-05.
 - [Phase 64-llm-logs-table-async-repo]: Plan 01: app/models/__init__.py re-export of LlmLog is cosmetic only; alembic autogenerate discovers models via alembic/env.py — Plan 02 adds the env.py side-effect import.
+- [Phase 64-llm-logs-table-async-repo]: Plan 02: Alembic ≥1.13 with sqlalchemy 2.x preserved postgresql_ops={'created_at': 'DESC'} on autogenerate — RESEARCH.md §Pitfall 2 (Alembic issues #1166/#1213/#1285) defensive hand-edit was unnecessary for this version. The three composite indexes shipped with DESC verbatim from autogen.
+- [Phase 64-llm-logs-table-async-repo]: Plan 02: Scoped migration 85dfef624a19_create_llm_logs.py to the new table only; removed three unrelated REAL→Float alter_column diffs (game_positions.clock_seconds, games.white_accuracy, games.black_accuracy) that autogenerate emits on every run due to pre-existing ORM vs DB drift. The drift is genuine and is logged as a Phase 64 deferred item for a dedicated future cleanup migration.
+- [Phase 64-llm-logs-table-async-repo]: Plan 02: Dev DB upgraded from 179cfbd472ef → 85dfef624a19; pg_indexes.indexdef confirms 'created_at DESC' present on all three composite indexes and absent from the two single-column indexes. FK CASCADE confirmed via inspect.get_foreign_keys. Full 945-test suite green.
 
 ### Pending Todos
 
@@ -128,6 +131,7 @@ Phase 67: Validation & Beta Rollout           — Not started
 - Phase 63 Plan 05 complete 2026-04-20 — insights service test suite (tests/services/test_insights_service.py, 653 lines, 45 tests across 5 classes: TestComputeTrend/TestComputeFlags/TestComputeHash/TestEmptyFinding/TestComputeFindingsLayering); FIND-01 layering guard (inspect.getsource check + AsyncMock 2-call pattern), FIND-03 four flags × true/false branches + NaN guards, FIND-04 trend gate (count-fail, ratio-fail, both-pass via permissive override, stable), FIND-05 hash stability (64-char hex, as_of exclusion, dict-order invariance, NaN safety); runtime 0.13s; all 942 project tests pass; ty/ruff project-wide clean; commit 0a1872d
 - Phase 63 complete 2026-04-20 — 5/5 plans done; registry + codegen + schema + compute_findings service + test suite all shipped; ready for Phase 64 (llm_logs table)
 - Phase 64 Plan 01 complete 2026-04-20 — Wave 0 scaffold: genai-prices>=0.0.56,<0.1.0 pinned (pyproject.toml + uv.lock), app/schemas/llm_log.py (LlmLogCreate DTO + LlmLogEndpoint Literal, 42 lines), app/models/llm_log.py (LlmLog ORM, 18 columns + 5 named indexes including 3 postgresql_ops DESC composites, Integer FK CASCADE to users.id, first JSONB usage in codebase), app/models/__init__.py re-export, tests/conftest.py fresh_test_user fixture (own-session commit + delete teardown for D-02 tests); smoke test resolves RESEARCH.md Open Question #1 (calc_price requires split provider_id + model_ref, not combined "provider:model"); 944 tests pass in 12.67s; ty/ruff/phase-gate all clean; commits e345d36, 3b1c9ab, 661a3cd, 79d1449
+- Phase 64 Plan 02 complete 2026-04-20 — Wave 1 migration: alembic/env.py registers LlmLog side-effect import; alembic/versions/20260420_211450_85dfef624a19_create_llm_logs.py creates llm_logs table with 18 columns + FK(user_id→users.id ondelete=CASCADE) + 5 named indexes (3 composites with postgresql_ops={"created_at": "DESC"} preserved by autogenerate); unrelated REAL→Float drift on game_positions/games columns removed from migration during hand-edit scope pass; dev DB upgraded 179cfbd472ef → 85dfef624a19 and schema inspected (cols, indexes, FK CASCADE, DESC on composites all verified); tests/test_llm_logs_migration.py smoke test runs against test_engine; full 945-test suite passes in 12.72s; ty/ruff project-wide clean; LOG-01 + LOG-03 requirements checked off; commits dddac62, 5972eb1, 0a4c41c
 
 ### Quick Tasks Completed
 
@@ -159,4 +163,4 @@ Phase 67: Validation & Beta Rollout           — Not started
 | 260420-kzb | Rename "Score % Difference" metric to "Score Gap" in EndgamePerformanceSection | 2026-04-20 | 277ef31 | [260420-kzb-rename-score-difference-metric-to-score-](./quick/260420-kzb-rename-score-difference-metric-to-score-/) |
 
 ---
-Last activity: 2026-04-20 — Phase 64 Plan 01 complete (Wave 0 scaffold: genai-prices pin + LlmLogCreate DTO + LlmLog ORM + fresh_test_user fixture; 944 tests pass; ty/ruff/phase-gate all clean); Phase 64 next plan: Plan 02 (Alembic migration)
+Last activity: 2026-04-20 — Phase 64 Plan 02 complete (Wave 1 migration: alembic/env.py registers LlmLog, migration 85dfef624a19 creates llm_logs with 18 cols + 5 indexes + FK CASCADE, dev DB upgraded, migration smoke test lands; 945 tests pass; ty/ruff clean; LOG-01 + LOG-03 complete); Phase 64 next plan: Plan 03 (repository create_llm_log + tests: insert round-trip, cost_unknown fallback, FK cascade)
