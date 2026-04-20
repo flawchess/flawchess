@@ -12,6 +12,9 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Phase 63: Findings pipeline foundation for LLM Endgame Insights — deterministic `compute_findings` service produces per-subsection-per-window `EndgameTabFindings` with zone, trend, and sample-quality annotations over the existing `/api/endgames/overview` data
 - Phase 63: Shared zone registry (`app/services/endgame_zones.py`) as the single source of truth for thresholds and the 3-zone schema (weak/typical/strong) that backs both narrative and chart visuals
 - Phase 63: Python→TypeScript zone codegen (`scripts/gen_endgame_zones_ts.py`) with CI drift guard so frontend gauge constants can never silently diverge from the Python registry
+- Phase 64: Generic `llm_logs` Postgres table (18 columns, BigInteger PK, JSONB for filter_context/flags/response_json, FK CASCADE to users) with 5 indexes, designed to host every future LLM feature (not endgame-specific)
+- Phase 64: Async `LlmLogRepository.create_llm_log` that opens its own session scope, so log rows persist even when the caller's request-scoped transaction rolls back; `get_latest_log_by_hash` stub ready for Phase 65's findings-hash cache
+- Phase 64: Automatic per-call cost accounting via `genai-prices` with `LookupError` soft-fallback (`cost_usd=0`, `error=cost_unknown:<model>`) so unknown models never break logging
 
 ### Changed
 - Phase 63: Recovery gauge typical band re-centered to 0.25–0.35 per D-10 (previously 0.3–0.4)
