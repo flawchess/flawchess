@@ -91,35 +91,46 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INS-01 | TBD | Pending |
-| INS-02 | TBD | Pending |
-| INS-03 | TBD | Pending |
-| INS-04 | TBD | Pending |
-| INS-05 | TBD | Pending |
-| INS-06 | TBD | Pending |
-| INS-07 | TBD | Pending |
-| FIND-01 | TBD | Pending |
-| FIND-02 | TBD | Pending |
-| FIND-03 | TBD | Pending |
-| FIND-04 | TBD | Pending |
-| FIND-05 | TBD | Pending |
-| LLM-01 | TBD | Pending |
-| LLM-02 | TBD | Pending |
-| LLM-03 | TBD | Pending |
-| LOG-01 | TBD | Pending |
-| LOG-02 | TBD | Pending |
-| LOG-03 | TBD | Pending |
-| LOG-04 | TBD | Pending |
-| VAL-01 | TBD | Pending |
-| VAL-02 | TBD | Pending |
-| BETA-01 | TBD | Pending |
-| BETA-02 | TBD | Pending |
+| INS-01 | Phase 66 | Pending |
+| INS-02 | Phase 66 | Pending |
+| INS-03 | Phase 66 | Pending |
+| INS-04 | Phase 65 | Pending |
+| INS-05 | Phase 65 | Pending |
+| INS-06 | Phase 65 | Pending |
+| INS-07 | Phase 65 | Pending |
+| FIND-01 | Phase 63 | Pending |
+| FIND-02 | Phase 63 | Pending |
+| FIND-03 | Phase 63 | Pending |
+| FIND-04 | Phase 63 | Pending |
+| FIND-05 | Phase 63 | Pending |
+| LLM-01 | Phase 65 | Pending |
+| LLM-02 | Phase 65 | Pending |
+| LLM-03 | Phase 65 | Pending |
+| LOG-01 | Phase 64 | Pending |
+| LOG-02 | Phase 64 | Pending |
+| LOG-03 | Phase 64 | Pending |
+| LOG-04 | Phase 64 | Pending |
+| VAL-01 | Phase 67 | Pending |
+| VAL-02 | Phase 67 | Pending |
+| BETA-01 | Phase 66 | Pending |
+| BETA-02 | Phase 66 | Pending |
 
 **Coverage:**
 - v1.11 requirements: 23 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 23 ⚠️
+- Mapped to phases: 23 ✓
+- Unmapped: 0
+
+### Phase Coverage Summary
+
+| Phase | Requirements | Count |
+|-------|--------------|-------|
+| Phase 63: Findings Pipeline & Zone Wiring | FIND-01, FIND-02, FIND-03, FIND-04, FIND-05 | 5 |
+| Phase 64: `llm_logs` Table & Async Repo | LOG-01, LOG-02, LOG-03, LOG-04 | 4 |
+| Phase 65: LLM Endpoint with pydantic-ai Agent | LLM-01, LLM-02, LLM-03, INS-04, INS-05, INS-06, INS-07 | 7 |
+| Phase 66: Frontend EndgameInsightsBlock & Beta Flag | INS-01, INS-02, INS-03, BETA-01, BETA-02 | 5 |
+| Phase 67: Validation & Beta Rollout | VAL-01, VAL-02 | 2 |
+| **Total** | | **23** |
 
 ---
 *Requirements defined: 2026-04-20*
-*Last updated: 2026-04-20 after initial definition from SEED-003 + user adjustments*
+*Last updated: 2026-04-20 — roadmap created, 23/23 requirements mapped to Phases 63-67*

@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: LLM-first Endgame Insights
-status: defining_requirements
-last_updated: "2026-04-20T12:00:00.000Z"
-last_activity: 2026-04-20 -- Milestone v1.11 opened from SEED-003
+status: planning_phase_63
+last_updated: "2026-04-20T18:50:00.000Z"
+last_activity: 2026-04-20 -- Roadmap created for v1.11 (Phases 63-67); ready to plan Phase 63
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -18,10 +18,10 @@ progress:
 ## Current Position
 
 Milestone: v1.11 LLM-first Endgame Insights
-Phase: Not started (defining requirements)
+Phase: 63 — Findings Pipeline & Zone Wiring (planning)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-20 — Milestone v1.11 started from SEED-003
+Status: Roadmap approved; ready for `/gsd-plan-phase 63`
+Last activity: 2026-04-20 — Roadmap created: 5 phases (63-67) mapping all 23 v1.11 requirements
 
 ## Project Reference
 
@@ -29,13 +29,36 @@ See: .planning/PROJECT.md (updated 2026-04-20)
 Core value: Users can determine their success rate for any opening position they specify
 Current focus: v1.11 ships LLM-generated Endgame Insights (overview paragraph + 4 Section insights) over a stripped-down findings pipeline. Source: SEED-003 (supersedes SEED-001 for v1.11).
 
+## Milestone Progress
+
+```
+v1.11 LLM-first Endgame Insights — 0/5 phases complete
+[          ] 0%
+
+Phase 63: Findings Pipeline & Zone Wiring     — Not started
+Phase 64: llm_logs Table & Async Repo         — Not started
+Phase 65: LLM Endpoint with pydantic-ai Agent — Not started
+Phase 66: Frontend EndgameInsightsBlock       — Not started
+Phase 67: Validation & Beta Rollout           — Not started
+```
+
 ## Key Context
 
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
 - ORM: SQLAlchemy 2.x async + Alembic
-- Auth: FastAPI-Users 15.0.5 (Bearer JWT, Google SSO, guest sessions)
+- Auth: FastAPI-Users 15.0.5 (Bearer JWT, Google SSO, guest sessions, admin impersonation)
 - Core algorithm: Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import
 - Deployment: Docker Compose on Hetzner CX32 (4 vCPUs, 7.6 GB RAM + 2 GB swap)
+- v1.11 LLM stack (new): pydantic-ai Agent with env-var-driven model selection (`PYDANTIC_AI_MODEL_INSIGHTS`), `genai-prices` for cost accounting, generic `llm_logs` Postgres table as prompt-engineering harness
+
+## v1.11 Constraints (from SEED-003 + user adjustments)
+
+- Phase 0 prompt-fluency spike DROPPED — risk absorbed by regression test + admin-impersonation validation loop (Phase 67)
+- Zone source of truth is the existing in-code gauge constants (NOT the 2026-04-18 benchmark report) — no gauge-update phase needed
+- Beta flag is a boolean column on `users` flipped via direct DB operation — no settings UI, no admin page
+- Overview paragraph ALWAYS populated (no null overview in MVP); when no strong cross-section signal, overview summarizes per-section findings
+- LLM output is NOT style-constrained — no em-dash/noun-label/prescriptive-advice policing; correctness guardrails come from the three precomputed cross-section flags
+- Log table is generic `llm_logs` (not `insights_llm_logs`), designed to host future LLM features
 
 ## Accumulated Context
 
@@ -45,6 +68,7 @@ Current focus: v1.11 ships LLM-generated Endgame Insights (overview paragraph + 
 - Phase 56 cancelled mid-milestone (subsumed by Phase 57)
 - Phase 58 moved to backlog as Phase 999.6 (better fit for upcoming Opening Insights milestone)
 - Phase 57.1 inserted after Phase 57 to switch ELO anchor from rolling-mean to asof-join and add weekly volume bars (driven by UAT feedback)
+- v1.11 roadmap created 2026-04-20: Phases 63-67 derived from SEED-003 dependency order (findings + log infra parallel → LLM endpoint → frontend → validation)
 
 ### Decisions
 
@@ -80,10 +104,14 @@ Current focus: v1.11 ships LLM-generated Endgame Insights (overview paragraph + 
 ### Blockers/Concerns
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
+- v1.11: `PYDANTIC_AI_MODEL_INSIGHTS` env var must be decided in `/gsd-discuss-phase 65` and pinned in `.env.example`; provider API keys (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`) need to be set on the Hetzner server before Phase 65 ships
+- v1.11: Open question — whether to add the `notable_endgame_elo_divergence` cross-section flag (`|gap| > 100 Elo`) in Phase 63, or defer. SEED-003 Open Questions flags as discuss-phase decision
 
 ### Recently Resolved
 
 - MMOB-01 (subtab placement TBD) resolved 2026-04-10: unified row holding Tabs | color toggle | bookmark | filter inside sticky wrapper but outside the board collapse region — see `.planning/phases/50-mobile-layout-restructuring/50-CONTEXT.md`
+- v1.11 requirements defined 2026-04-20 — 23 requirements extracted from SEED-003 + user adjustments (no Phase 0 spike, no gauge-update phase, no beta-flag UI, overview always populated, no style restrictions, generic `llm_logs`)
+- v1.11 roadmap created 2026-04-20 — 5 phases (63-67), 100% coverage (23/23 requirements mapped)
 
 ### Quick Tasks Completed
 
@@ -115,7 +143,4 @@ Current focus: v1.11 ships LLM-generated Endgame Insights (overview paragraph + 
 | 260420-kzb | Rename "Score % Difference" metric to "Score Gap" in EndgamePerformanceSection | 2026-04-20 | 277ef31 | [260420-kzb-rename-score-difference-metric-to-score-](./quick/260420-kzb-rename-score-difference-metric-to-score-/) |
 
 ---
-Last activity: 2026-04-20 - Completed quick task 260420-kzb: Rename "Score % Difference" metric to "Score Gap"
-| 2026-04-10 | fast | Match Global Stats mobile filter button size to Endgames | done |
-| 2026-04-10 | ship | Phase 51 shipped — PR #42 merged into main | done |
-| 2026-04-11 | fast | Preserve Openings board position across main tab navigation | ✅ |
+Last activity: 2026-04-20 — v1.11 roadmap created (Phases 63-67, 23/23 requirements mapped); ready for `/gsd-plan-phase 63`
