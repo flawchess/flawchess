@@ -309,10 +309,7 @@ export function ScoreGapTimelineChart({ timeline, window }: ScoreGapTimelineChar
             >
               <p>
                 Gap between your endgame Score % and non-endgame Score %
-                over the trailing {window} games per side, sampled once per week.
-                Endgame and non-endgame games each carry their own
-                {' '}{window}-game window, so weeks with sparse activity on one
-                side still reflect the broader history of that side.
+                over the trailing {window} games, sampled once per week.
               </p>
               <p className="mt-1">
                 Dots are colored by zone: green when the gap exceeds
