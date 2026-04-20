@@ -167,7 +167,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 **Requirements**: FIND-01, FIND-02, FIND-03, FIND-04, FIND-05
 **Success Criteria** (what must be TRUE):
   1. Given a fixed user + filter context, the findings service returns a stable `EndgameTabFindings` object with per-subsection-per-window findings covering both `all_time` and `last_3mo` windows
-  2. Every subsection finding is assigned a zone (`very_weak`/`weak`/`typical`/`strong`/`very_strong`) using the SAME in-code gauge constants that drive the chart visuals — a developer can verify narrative and visuals agree by construction
+  2. Every subsection finding is assigned a zone (`weak`/`typical`/`strong` — 3-zone MVP per CONTEXT.md D-05; 5-zone schema deferred to v1.12 alongside SEED-002 population baselines) using the SAME in-code gauge constants that drive the chart visuals — a developer can verify narrative and visuals agree by construction
   3. The three cross-section flags (`baseline_lift_mutes_score_gap`, `clock_entry_advantage`, `no_clock_entry_advantage`) fire deterministically against the SEED-001 canonical user fixture
   4. Trend returns `n_a` when weekly-points-in-window is below the threshold; `findings_hash` is stable across Python sessions and unchanged across days (`as_of` excluded)
 **Plans**: 5 plans
