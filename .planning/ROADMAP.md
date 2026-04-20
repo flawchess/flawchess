@@ -170,7 +170,12 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
   2. Every subsection finding is assigned a zone (`very_weak`/`weak`/`typical`/`strong`/`very_strong`) using the SAME in-code gauge constants that drive the chart visuals — a developer can verify narrative and visuals agree by construction
   3. The three cross-section flags (`baseline_lift_mutes_score_gap`, `clock_entry_advantage`, `no_clock_entry_advantage`) fire deterministically against the SEED-001 canonical user fixture
   4. Trend returns `n_a` when weekly-points-in-window is below the threshold; `findings_hash` is stable across Python sessions and unchanged across days (`as_of` excluded)
-**Plans**: TBD
+**Plans**: 5 plans
+- [ ] 63-01-PLAN.md — Zone Registry & Recovery Band Edit (endgame_zones.py, Recovery re-center, zone unit tests)
+- [ ] 63-02-PLAN.md — TS Codegen & CI Drift Guard (gen script, generated TS, knip ignore, CI step, FE consistency test)
+- [ ] 63-03-PLAN.md — Insights Schemas (FilterContext, SubsectionFinding, EndgameTabFindings, FlagId, SectionId)
+- [ ] 63-04-PLAN.md — Findings Service Compute (compute_findings, flags, trend, hash)
+- [ ] 63-05-PLAN.md — Findings Service Tests (layering, flags, trend gate, hash stability)
 
 ### Phase 64: `llm_logs` Table & Async Repo
 **Goal**: Generic Postgres log table with async write repository lands in prod so every LLM call (miss) can be captured with prompt, response, tokens, cost, latency, and error fields. Designed up-front to host future LLM features, not endgame-specific.
@@ -242,7 +247,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 | 44-47. v1.8 phases | v1.8 | N/A | Complete | 2026-04-06 |
 | 49-51. v1.9 phases | v1.9 | 7/7 | Complete | 2026-04-10 |
 | 48, 52-62. v1.10 phases | v1.10 | 28/28 | Complete | 2026-04-19 |
-| 63. Findings Pipeline & Zone Wiring | v1.11 | 0/0 | Not started | - |
+| 63. Findings Pipeline & Zone Wiring | v1.11 | 0/5 | Not started | - |
 | 64. llm_logs Table & Async Repo | v1.11 | 0/0 | Not started | - |
 | 65. LLM Endpoint with pydantic-ai Agent | v1.11 | 0/0 | Not started | - |
 | 66. Frontend EndgameInsightsBlock & Beta Flag | v1.11 | 0/0 | Not started | - |

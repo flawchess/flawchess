@@ -1,9 +1,9 @@
 ---
 phase: 63
 slug: findings-pipeline-zone-wiring
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: planned
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-04-20
 ---
 
@@ -40,12 +40,18 @@ created: 2026-04-20
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 63-XX-XX | TBD | TBD | FIND-01 | — | findings service consumes only `endgame_service.get_endgame_overview` | integration | `uv run pytest tests/services/test_insights_service.py::test_consumes_overview_only` | ❌ W0 | ⬜ pending |
-| 63-XX-XX | TBD | TBD | FIND-02 | — | gauge thresholds sourced from `endgame_zones.ZONE_REGISTRY`, FE inline values match | unit + drift | `uv run pytest tests/services/test_endgame_zones_consistency.py` | ❌ W0 | ⬜ pending |
-| 63-XX-XX | TBD | TBD | FIND-03 | — | four cross-section flags fire deterministically against fixture | unit | `uv run pytest tests/services/test_insights_service.py::test_cross_section_flags` | ❌ W0 | ⬜ pending |
-| 63-XX-XX | TBD | TBD | FIND-04 | — | trend gates on weekly count AND slope/volatility ratio | unit | `uv run pytest tests/services/test_insights_service.py::test_trend_gating` | ❌ W0 | ⬜ pending |
-| 63-XX-XX | TBD | TBD | FIND-05 | — | `findings_hash` stable across two sessions, unchanged across days | unit | `uv run pytest tests/services/test_insights_service.py::test_findings_hash_stable` | ❌ W0 | ⬜ pending |
-| 63-XX-XX | TBD | TBD | FIND-02 (codegen) | — | `gen_endgame_zones_ts.py` output equals committed file | CI | `python scripts/gen_endgame_zones_ts.py && git diff --exit-code frontend/src/generated/endgameZones.ts` | ❌ W0 | ⬜ pending |
+| 63-01-T1 | 63-01 | 1 | FIND-02 | — | Zone registry is Python source of truth; thresholds are named constants | unit (file + import check) | `uv run ty check app/services/endgame_zones.py && uv run ruff check app/services/endgame_zones.py` | ✅ | ⬜ pending |
+| 63-01-T2 | 63-01 | 1 | FIND-02 (D-10) | — | Recovery band re-centered to [0.25, 0.35] in TSX | grep | `grep -c "from: 0.25, to: 0.35" frontend/src/components/charts/EndgameScoreGapSection.tsx` returns 1 | ✅ | ⬜ pending |
+| 63-01-T3 | 63-01 | 1 | FIND-02 | — | assign_zone direction handling, NaN guard, D-10 band, registry sanity | unit | `uv run pytest tests/services/test_endgame_zones.py -x` | ✅ W0 | ⬜ pending |
+| 63-02-T1 | 63-02 | 2 | FIND-02 (codegen) | — | `gen_endgame_zones_ts.py` produces committed file byte-for-byte | CI | `uv run python scripts/gen_endgame_zones_ts.py && git diff --exit-code frontend/src/generated/endgameZones.ts` | ✅ | ⬜ pending |
+| 63-02-T2 | 63-02 | 2 | FIND-02 (drift) | — | CI step enforces drift guard on every PR | CI | `grep -A 3 "Zone drift check" .github/workflows/ci.yml \| grep -q "git diff --exit-code frontend/src/generated/endgameZones.ts"` | ✅ | ⬜ pending |
+| 63-02-T3 | 63-02 | 2 | FIND-02 (drift) | — | FE inline constants match Python registry until Phase 66 consumer switch | unit + drift | `uv run pytest tests/services/test_endgame_zones_consistency.py -x` | ✅ W0 | ⬜ pending |
+| 63-03-T1 | 63-03 | 2 | FIND-01, FIND-05 | — | Pydantic schemas lock field order and types for Phase 65 consumers | unit (import + round-trip) | `uv run ty check app/schemas/insights.py && uv run python -c "from app.schemas.insights import EndgameTabFindings, FilterContext, SubsectionFinding; print('OK')"` | ✅ | ⬜ pending |
+| 63-04-T1 | 63-04 | 3 | FIND-01, FIND-03, FIND-04, FIND-05 | — | compute_findings consumes only endgame_service, two sequential calls, no gather, no repo imports | integration (source grep + ty) | `grep -c "from app.repositories" app/services/insights_service.py` returns 0; `uv run ty check app/services/insights_service.py` exits 0 | ✅ | ⬜ pending |
+| 63-05-T1 | 63-05 | 4 | FIND-01 | — | Module source has no repository imports and no asyncio.gather | unit | `uv run pytest tests/services/test_insights_service.py::TestComputeFindingsLayering -x` | ✅ W0 | ⬜ pending |
+| 63-05-T1 | 63-05 | 4 | FIND-03 | — | Four cross-section flags fire/no-fire deterministically; thresholds from registry | unit | `uv run pytest tests/services/test_insights_service.py::TestComputeFlags -x` | ✅ W0 | ⬜ pending |
+| 63-05-T1 | 63-05 | 4 | FIND-04 | — | Trend gate: count-fail, ratio-fail, both-pass, stable | unit | `uv run pytest tests/services/test_insights_service.py::TestComputeTrend -x` | ✅ W0 | ⬜ pending |
+| 63-05-T1 | 63-05 | 4 | FIND-05 | — | findings_hash stable across invocations, NaN-safe, dict-order-invariant | unit | `uv run pytest tests/services/test_insights_service.py::TestComputeHash -x` | ✅ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
