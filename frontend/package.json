@@ -20,7 +20,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@sentry/react": "^10.45.0",
     "@tanstack/react-query": "^5.90.21",
-    "axios": "^1.13.6",
+    "axios": "^1.15.0",
     "chess.js": "^1.4.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
