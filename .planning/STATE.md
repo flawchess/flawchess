@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: LLM-first Endgame Insights
 status: executing_phase_63
-last_updated: "2026-04-20T18:45:00.000Z"
-last_activity: 2026-04-20 -- Phase 63 Plan 01 complete (zone registry + D-10 recovery band + 22 unit tests)
+last_updated: "2026-04-20T19:10:00.000Z"
+last_activity: 2026-04-20 -- Phase 63 Wave 2 complete (63-02 codegen + CI drift guard, 63-03 insights schemas)
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 5
-  completed_plans: 1
-  percent: 20
+  completed_plans: 3
+  percent: 60
 ---
 
 # Project State: FlawChess
@@ -19,9 +19,9 @@ progress:
 
 Milestone: v1.11 LLM-first Endgame Insights
 Phase: 63 — Findings Pipeline & Zone Wiring (executing)
-Plan: 1/5 complete (Plan 01 done)
-Status: Plan 01 complete — zone registry shipped; Plan 02 (codegen + consistency test) next in Wave 2
-Last activity: 2026-04-20 — Phase 63 Plan 01 executed: zone registry module + D-10 recovery band re-center + 22 unit tests, all ty/ruff/tsc green
+Plan: 3/5 complete (Plans 01, 02, 03 done)
+Status: Wave 2 merged — codegen + CI drift check + Pydantic insights schemas landed; Wave 3 next (Plan 04 compute_findings)
+Last activity: 2026-04-20 — Phase 63 Wave 2 complete: Plan 02 codegen + zone drift guard, Plan 03 insights schemas. 59 tests pass; ty/ruff/tsc green.
 
 ## Project Reference
 

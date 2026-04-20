@@ -171,9 +171,9 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
   3. The three cross-section flags (`baseline_lift_mutes_score_gap`, `clock_entry_advantage`, `no_clock_entry_advantage`) fire deterministically against the SEED-001 canonical user fixture
   4. Trend returns `n_a` when weekly-points-in-window is below the threshold; `findings_hash` is stable across Python sessions and unchanged across days (`as_of` excluded)
 **Plans**: 5 plans
-- [ ] 63-01-PLAN.md — Zone Registry & Recovery Band Edit (endgame_zones.py, Recovery re-center, zone unit tests)
-- [ ] 63-02-PLAN.md — TS Codegen & CI Drift Guard (gen script, generated TS, knip ignore, CI step, FE consistency test)
-- [ ] 63-03-PLAN.md — Insights Schemas (FilterContext, SubsectionFinding, EndgameTabFindings, FlagId, SectionId)
+- [x] 63-01-PLAN.md — Zone Registry & Recovery Band Edit (endgame_zones.py, Recovery re-center, zone unit tests)
+- [x] 63-02-PLAN.md — TS Codegen & CI Drift Guard (gen script, generated TS, knip ignore, CI step, FE consistency test)
+- [x] 63-03-PLAN.md — Insights Schemas (FilterContext, SubsectionFinding, EndgameTabFindings, FlagId, SectionId)
 - [ ] 63-04-PLAN.md — Findings Service Compute (compute_findings, flags, trend, hash)
 - [ ] 63-05-PLAN.md — Findings Service Tests (layering, flags, trend gate, hash stability)
 
