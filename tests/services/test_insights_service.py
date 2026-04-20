@@ -651,3 +651,68 @@ class TestComputeFindingsLayering:
                 pass
             for call in mocked.await_args_list:
                 assert "color" not in call.kwargs
+
+
+# ---------------------------------------------------------------------------
+# TestComputeFindingsReturnContract — REVIEW WR-03: end-to-end contract that
+# compute_findings returns an EndgameTabFindings whose findings_hash is
+# populated (64-char lowercase hex) so a refactor cannot silently drop the
+# hash assignment. Subsection extraction is patched to [] so the test does
+# not need a full EndgameOverviewResponse fixture — only the wiring from
+# compute_findings' hash step to the returned model matters here.
+# ---------------------------------------------------------------------------
+
+import re  # noqa: E402
+
+
+class TestComputeFindingsReturnContract:
+    """End-to-end wiring of compute_findings → EndgameTabFindings."""
+
+    @pytest.mark.asyncio
+    async def test_returns_endgame_tab_findings_with_populated_hash(self) -> None:
+        mock_response = EndgameOverviewResponse.model_construct()
+        fc = FilterContext()
+        with (
+            patch.object(
+                insights_module,
+                "get_endgame_overview",
+                new=AsyncMock(return_value=mock_response),
+            ),
+            patch.object(
+                insights_module,
+                "_compute_subsection_findings",
+                return_value=[],
+            ),
+        ):
+            result = await compute_findings(fc, session=AsyncMock(), user_id=1)
+
+        assert isinstance(result, EndgameTabFindings)
+        assert re.fullmatch(r"[0-9a-f]{64}", result.findings_hash), (
+            f"findings_hash must be 64-char lowercase hex, got: {result.findings_hash!r}"
+        )
+        assert result.filters == fc
+        assert result.findings == []
+        assert isinstance(result.flags, list)
+
+    @pytest.mark.asyncio
+    async def test_hash_is_stable_across_two_invocations_end_to_end(self) -> None:
+        """Calling compute_findings twice with the same inputs produces the
+        same findings_hash (as_of differs between calls but is excluded)."""
+        mock_response = EndgameOverviewResponse.model_construct()
+        fc = FilterContext(opponent_strength="stronger")
+        with (
+            patch.object(
+                insights_module,
+                "get_endgame_overview",
+                new=AsyncMock(return_value=mock_response),
+            ),
+            patch.object(
+                insights_module,
+                "_compute_subsection_findings",
+                return_value=[],
+            ),
+        ):
+            first = await compute_findings(fc, session=AsyncMock(), user_id=1)
+            second = await compute_findings(fc, session=AsyncMock(), user_id=1)
+
+        assert first.findings_hash == second.findings_hash
