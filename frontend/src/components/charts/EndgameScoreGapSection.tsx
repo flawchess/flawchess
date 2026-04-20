@@ -88,9 +88,9 @@ const FIXED_GAUGE_ZONES: Record<MaterialBucket, GaugeZone[]> = {
     { from: 0.55, to: 1.0, color: GAUGE_SUCCESS },
   ],
   recovery: [
-    { from: 0, to: 0.30, color: GAUGE_DANGER },
-    { from: 0.30, to: 0.40, color: GAUGE_NEUTRAL },
-    { from: 0.40, to: 1.0, color: GAUGE_SUCCESS },
+    { from: 0, to: 0.25, color: GAUGE_DANGER },
+    { from: 0.25, to: 0.35, color: GAUGE_NEUTRAL },
+    { from: 0.35, to: 1.0, color: GAUGE_SUCCESS },
   ],
 };
 
