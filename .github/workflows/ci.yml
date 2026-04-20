@@ -40,6 +40,9 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --locked
 
+      - name: Python vulnerability scan (pip-audit)
+        run: uv run --with pip-audit pip-audit --strict
+
       - name: Lint (ruff)
         run: uv run ruff check .
 
@@ -59,6 +62,10 @@ jobs:
         run: npm ci
         working-directory: frontend
 
+      - name: Frontend vulnerability scan (npm audit)
+        run: npm audit --audit-level=high --omit=dev
+        working-directory: frontend
+
       - name: Lint (eslint)
         run: npm run lint
         working-directory: frontend
@@ -74,6 +81,17 @@ jobs:
       - name: Dead code check (knip)
         run: npm run knip
         working-directory: frontend
+
+      - name: Build image for vulnerability scan
+        run: docker build -t flawchess:ci .
+
+      - name: Container vulnerability scan (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: flawchess:ci
+          severity: HIGH,CRITICAL
+          exit-code: 1
+          ignore-unfixed: true
 
   deploy:
     needs: test
