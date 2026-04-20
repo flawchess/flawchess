@@ -57,7 +57,7 @@ SEED-001's design decisions for the deferred parts are preserved, not rejected. 
 **Full milestone** — smaller than SEED-001 but not trivial. Expected decomposition:
 
 1. Backend findings computation service (`insights_service.py`) + Pydantic schemas (`app/schemas/insights.py`) — reads existing section service outputs, computes zone / trend / sample-quality / flags per subsection × window
-2. Zone thresholds calibrated from prod via the `/benchmarks` skill (blocking dependency — zone assignment is the foundation every insight sits on)
+2. Zone thresholds wired from `reports/benchmarks-2026-04-18.md` recommendations (no longer a blocker — bands are in hand; see "Zone bands" section below). Refresh once mid-milestone if the user base grows materially before ship.
 3. LLM endpoint (`/api/insights/endgame`) backed by a pydantic-ai Agent with structured output (`result_type=EndgameInsightsReport`). Model selected via env var `PYDANTIC_AI_MODEL_INSIGHTS` (swappable across providers at any time). Findings-hash cache, 3 misses/hr/user rate limit, soft-fail-to-cache on limit.
 4. Postgres log table (`insights_llm_logs`) + Alembic migration + async repository — one row per LLM call capturing prompt, response, token counts, cost (via `genai-prices`), latency, cache-hit flag, and errors. Used for prompt-engineering iteration, cost monitoring, and regression analysis.
 5. Frontend Insights component — renders overview paragraph + 4 Section blocks inline on the Endgame tab (or at the top as the first visual block), behind a beta flag
@@ -68,9 +68,10 @@ Target: 2–3 weeks of focused build, not a full milestone's worth. If v1.11 has
 
 **Recommended sequence:**
 
-- Items 1 (findings service) and 2 (zone calibration) run in parallel and BOTH must complete before item 3 (LLM endpoint) produces meaningful output. Zone bands are the schema's foundation; everything else re-runs cheaply if they land early, expensively if they land late.
+- **Phase 0 — Prompt-fluency spike (1 day, before any pipeline work).** Hand-craft a findings JSON for one impersonated user, run it through the candidate model(s) with a draft system prompt, eyeball 3–5 outputs. Validates the central bet ("a small LLM is fluent enough") before building the findings pipeline. If fluency fails, the milestone shape changes; better to find out before week 2.
+- Items 1 (findings service) and 2 (zone-band wiring) run in parallel. Item 2 is now a wiring task, not a calibration task — bands come from `reports/benchmarks-2026-04-18.md` and the gauge-band update phase (see "Zone bands" below). Both must complete before item 3 (LLM endpoint) produces meaningful output.
 - Item 4 (log table) should land with item 3, not after. The log IS the prompt-engineering harness (see Notes) — iterating on prompts without the log means comparing output quality by memory, which wastes iterations.
-- Item 6 (regression test) follows item 3 directly; writing the fixture before the first real LLM call prevents shipping a prompt tuned to outputs the test never codified.
+- Item 6 (regression test) follows item 3 directly; writing the fixture before the first real LLM call prevents shipping a prompt tuned to outputs the test never codified. **Use admin user impersonation to extend regression coverage beyond the canonical N=1 fixture** — sample 5–10 real users across different filter combos and eyeball-validate before flipping the beta flag.
 - Item 5 (frontend) and item 7 (beta toggle) ship last. Keep the frontend on a beta flag that defaults off — you want the first live sessions to be you and 3–5 invited beta users, not the entire user base.
 
 ## Design Decisions
@@ -166,6 +167,33 @@ class InsightsLlmLog(Base):
 **Retention:** keep indefinitely in MVP (low volume, high iteration value). Revisit when the table crosses ~1M rows or the cost-monitoring story matures into a proper dashboard.
 
 **Privacy:** no PII is included (no game PGNs, no opponent usernames). The prompts contain only aggregated statistics about the calling user's own play, tied to `user_id`. GDPR deletion: row cascades via the `user_id` FK on user deletion.
+
+### Zone bands (sourced from `reports/benchmarks-2026-04-18.md`)
+
+Zone calibration is no longer an open question — the 2026-04-18 benchmark snapshot (n=37 active users, ≥30 endgame games each) produced concrete recommendations per metric. The insights pipeline wires these directly; the gauge components on the Endgame tab should be updated to match in the same milestone so the narrative and the visual zone agree.
+
+Recommended bands (5-zone mapping for insights — `very_weak / weak / typical / strong / very_strong`):
+
+| Metric | Source constant | Recommendation | Notes |
+|---|---|---|---|
+| Score Gap (endgame vs non-endgame) | `SCORE_DIFF_NEUTRAL_*` | `typical` band ±8pp (was ±10pp) | Pooled p25–p75 of users; tighten so half of meaningfully-skewed users stop reading "neutral". |
+| Conversion (Win % at +1 material) | `FIXED_GAUGE_ZONES.conversion` | `[0.65, 0.75]` typical (keep) | Pooled median 0.72 sits dead-center. |
+| Parity (Score % at ±0 material) | `FIXED_GAUGE_ZONES.parity` | `[0.45, 0.55]` typical (keep) | Pooled median 0.52. High-ELO drift (0.54–0.58) reads as "above neutral", which is correct. |
+| Recovery (Save % at -1 material) | `FIXED_GAUGE_ZONES.recovery` | `[0.30, 0.40]` typical (decision needed) | Benchmarks suggest re-centering to `[0.25, 0.35]` so the pooled median 0.32 sits in the middle, OR keeping `[0.30, 0.40]` as the design target. **Lock this in `/gsd-discuss-phase`** — insights and gauges must agree. |
+| Endgame Skill (composite) | `ENDGAME_SKILL_ZONES` | Widen upper bound: `[0–0.45 / 0.45–0.59 / 0.59–1.0]` | Pooled p25–p75 = `[0.47, 0.59]`. Today's `0.55` upper bound flags ~30% of users as "success" while they're still inside the typical cohort. |
+| Clock diff at endgame entry (% base time) | `NEUTRAL_PCT_THRESHOLD` | ±7% (was ±10%) | Pooled p25–p75 across blitz/rapid; the current ±10% swallows almost the whole population. |
+| Net timeout rate | `NEUTRAL_TIMEOUT_THRESHOLD` | ±5pp (keep) | Bullet skews positive (signal expected); blitz/rapid fit comfortably inside ±5pp. |
+| Endgame ELO vs Actual ELO gap | (no UI constant yet) | `\|gap\| > 100 Elo` flags as "notable" | Pooled p90; ~10% of users at any snapshot. New flag candidate, see "Cross-section flags" below. |
+
+**Five-zone mapping rule.** The benchmark report gives 3-zone bands (danger / neutral / success). For the insights pipeline's 5-zone schema, split each outer zone in half at p10/p90 of the pooled distribution: `very_weak < p10 < weak < typical_lower < typical < typical_upper < strong < p90 < very_strong`. Use the per-metric percentile tables in the benchmark report (Section 1 has full p05/p10/p25/p50/p75/p90/p95 for Score Diff; Section 5 has the same for Endgame Skill; Sections 2/3 give the cell-level distributions for Conversion/Parity/Recovery/Clock).
+
+**Sample-size caveat.** n=37 active users is a small base for tail estimates (p05/p95 are noisy). The bands are good enough for v1.11 MVP; SEED-002 (v1.12+) replaces them with rating-stratified population baselines from a Lichess benchmark DB. Treat these bands as v1 and expect them to move once SEED-002 lands.
+
+**New cross-section flag candidate.** The benchmark report surfaces an Endgame ELO gap signal that wasn't in the original three flags. Consider adding:
+
+- `notable_endgame_elo_divergence`: set when `|endgame_elo − actual_elo| > 100` for the active filter combo. Prompt rule: lead with the divergence direction ("your endgame play pulls your rating up" / "your endgames are dragging your rating down") only when the flag is set; never speculate without it. Roughly 10% of users qualify, matching the "noteworthy signal" intent.
+
+Decide in `/gsd-discuss-phase` whether to ship this flag in v1.11 or defer.
 
 ### What the findings pipeline computes
 
@@ -374,7 +402,7 @@ Four **Sections**, ten data **Subsections** (plus the Endgame statistics concept
 
 ## Open Questions for v1.11 Discuss Phase
 
-- **Zone threshold calibration.** Run `/benchmarks` on prod to set `very_weak / weak / typical / strong / very_strong` bands per metric. This is the single upstream dependency that blocks everything else — zone assignment is the foundation every insight sits on. If miscalibrated, every insight is off. Confirm bands with a sanity-check report before wiring into the pipeline.
+- **Zone threshold calibration.** ~~Run `/benchmarks` on prod~~ — **done as of `reports/benchmarks-2026-04-18.md`.** Bands are wired from that report (see "Zone bands" section). Two follow-on decisions remain: (a) Recovery `[0.30, 0.40]` keep-as-target vs re-center to `[0.25, 0.35]`, (b) whether to add the `notable_endgame_elo_divergence` flag (`|gap| > 100 Elo`) in v1.11 or defer. (c) When to refresh: re-run `/benchmarks` once before ship if the user count has materially grown, but do not re-derive bands from scratch.
 - **Trend-quality gate threshold.** Start with SEED-001's "≥20 weekly points" rule. Revisit after looking at real data — if too many trends gate to `n_a`, lower to 15.
 - **Sample-quality bands per subsection.** What game count is `thin` vs `adequate` vs `rich`? `results_by_endgame_type` needs per-type thresholds because types split samples 5 ways.
 - **Default `PYDANTIC_AI_MODEL_INSIGHTS` value.** Which model does the v1.11 release ship with as the production default? Pick one cost-efficient model that reliably produces structured output for this payload size and pin it in `.env.example`. Re-evaluate every milestone; the env var design means swapping costs nothing.
@@ -431,6 +459,7 @@ Everything deferred from SEED-001 per the "Relationship to SEED-001" table. Spec
 
 - `.planning/seeds/SEED-001-endgame-tab-insights-section.md` — source of the insights concept. SEED-003 defers most of SEED-001's schema work to v1.12.
 - `.planning/seeds/SEED-002-benchmark-db-population-baselines.md` — v1.12 upgrade path for population-stratified zone thresholds (MVP uses self-referential + `/benchmarks` calibration).
+- `reports/benchmarks-2026-04-18.md` — **the calibration source of truth for v1.11 zone bands.** Per-metric pooled percentiles (n=37 active users), gauge-band recommendations, and the pooled `|gap| > 100 Elo` "notable" threshold for the new flag candidate. Read alongside this seed when wiring `insights_service.py`'s zone assignment.
 - `docs/endgame-analysis-v2.md` — overall endgame analytics spec
 - `.planning/quick/260418-nlh-add-endgame-skill-metric-as-simple-avera/260418-nlh-SUMMARY.md` — Endgame Skill composite decisions
 
@@ -453,7 +482,8 @@ Everything deferred from SEED-001 per the "Relationship to SEED-001" table. Spec
 
 ## Notes
 
-- **Zone threshold calibration is the one upstream blocker.** Before any LLM call produces meaningful output, zone bands must be set per metric from real FlawChess data. Run `/benchmarks` early in v1.11; everything else can proceed in parallel once bands are locked.
+- **Zone threshold calibration is no longer a blocker.** ~~Before any LLM call produces meaningful output, zone bands must be set per metric from real FlawChess data.~~ The 2026-04-18 `/benchmarks` run (`reports/benchmarks-2026-04-18.md`) provides bands for every metric in scope; the "Zone bands" subsection translates them into the 5-zone schema. Wiring is a small task, not a calibration phase. Sample size (n=37 users) is acceptable for v1.11; SEED-002 replaces these bands with rating-stratified population baselines in v1.12.
+- **Admin user impersonation is the eyeball-validation tool.** The N=1 fixture problem from SEED-001 is materially reduced by the existing impersonation feature. During the prompt-fluency spike (Phase 0) and again before flipping the beta flag, impersonate 5–10 real users covering: a high-skill endgame profile, a weak-endgame profile, a clock-pressure-skewed profile, a thin-sample profile, and a "everything typical" profile. Read the generated insights as that user. Catches prompt-engineering blind spots that snapshot-testing one canonical user cannot. Capture findings as a manual checklist in the PR description; do not codify as automated tests until SEED-002's larger benchmark dataset enables real cross-user assertions.
 - **The log table is the prompt-engineering harness.** Iteration cadence during v1.11 development should be: bump prompt version → run against a fixture set → query the log for the new `prompt_version` → compare input/output token counts, cost, and output quality against the prior version. Don't skip the log table even if it feels like scaffolding; it's the fastest path to a good prompt.
 - **Ground-truth regression test is mandatory.** Encode the SEED-001 canonical user profile (Endgame Skill ≈ 64% chess.com Blitz, Endgame ELO ~100 above Actual ELO in that combo, Score Gap +5pp, Avg clock diff within ±10%, positive time-pressure skill edge at low-clock buckets) as a synthetic fixture. Snapshot-test that the LLM's output:
   1. Does NOT describe Score Gap as "average" (flag: `baseline_lift_mutes_score_gap`)
@@ -465,8 +495,8 @@ Everything deferred from SEED-001 per the "Relationship to SEED-001" table. Spec
   If any of 1-6 regress, fix the system prompt and re-run. Run the regression against whichever model `PYDANTIC_AI_MODEL_INSIGHTS` currently points to; the assertions are about *output*, not about which model produced it.
 - **Prompt is versioned code, not a string literal.** `app/services/insights_prompts/endgame_v1.md` with few-shot examples. Review prompt changes like code changes. Bump version → cache key changes → forces regeneration. The log table's `prompt_version` column makes A/B analysis across prompt revisions trivial.
 - **Exit criteria for v1.11 (prevents scope creep back to SEED-001).** Ship when all of the following are true; do NOT bolt on archetypes/roles/era/stability/admin-mode in the same milestone even if the LLM output suggests they'd help. Those are v1.12 scope by definition:
-  1. Zone bands calibrated from prod and locked into the pipeline.
-  2. `POST /api/insights/endgame` returns a valid `EndgameInsightsReport` for the canonical user fixture AND for at least 3 real beta users across different filter combinations.
+  1. Zone bands from `reports/benchmarks-2026-04-18.md` wired into `insights_service.py`; gauge components on the Endgame tab updated to match (insights and gauges agree).
+  2. `POST /api/insights/endgame` returns a valid `EndgameInsightsReport` for the canonical user fixture AND has been eyeball-validated via admin impersonation for at least 5 real users across different skill profiles and filter combinations (high-skill, weak-skill, clock-skewed, thin-sample, all-typical).
   3. `insights_llm_logs` is populated in prod with `cost_usd`, `input_tokens`, `output_tokens`, `latency_ms`, `prompt_version`, `model` for every miss.
   4. Regression test (6 assertions from the note above) passes against the currently-configured `PYDANTIC_AI_MODEL_INSIGHTS` model.
   5. Beta flag defaults off; a small flag set of users (you + 3–5 invited) can enable insights via user settings.
@@ -481,4 +511,4 @@ Everything deferred from SEED-001 per the "Relationship to SEED-001" table. Spec
   - Any prompt string literal inline in `.py` — prompts live in `insights_prompts/*.md`, loaded at startup.
   - Any em-dash in user-facing insight copy (CLAUDE.md rule) or in the system prompt's examples.
   - Any code reading `response_format`, `json_schema`, or provider-specific SDK types — pydantic-ai abstracts all of this.
-- **Reference chat context:** this seed was refined on 2026-04-20 in a conversation that (1) enumerated the 10 Endgame tab subsections from the frontend components, (2) established Section / Subsection naming, (3) decided on single-call LLM architecture, (4) sized the overview to 1–2 paragraphs (not one sentence) so output quality can be judged before deciding whether to hide it, (5) confirmed the stats pipeline is still required even with LLM-first rendering, (6) switched the implementation to pydantic-ai with env-var-driven model selection and a dedicated Postgres log table for prompts/responses/tokens/cost. When v1.11 opens, `/gsd-discuss-phase` should start from this seed and expand the Open Questions rather than re-derive the architecture.
+- **Reference chat context:** this seed was refined on 2026-04-20 in a conversation that (1) enumerated the 10 Endgame tab subsections from the frontend components, (2) established Section / Subsection naming, (3) decided on single-call LLM architecture, (4) sized the overview to 1–2 paragraphs (not one sentence) so output quality can be judged before deciding whether to hide it, (5) confirmed the stats pipeline is still required even with LLM-first rendering, (6) switched the implementation to pydantic-ai with env-var-driven model selection and a dedicated Postgres log table for prompts/responses/tokens/cost. A second pass later the same day (7) wired in the 2026-04-18 benchmark report as the calibration source so zone bands are no longer an open question, (8) added admin impersonation as the eyeball-validation tool that closes the N=1 fixture gap, and (9) added Phase 0 (prompt-fluency spike) as the de-risking step before the findings pipeline is built. When v1.11 opens, `/gsd-discuss-phase` should start from this seed and expand the Open Questions rather than re-derive the architecture.
