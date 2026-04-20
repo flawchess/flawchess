@@ -154,7 +154,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 ### 🚧 v1.11 LLM-first Endgame Insights (Phases 63-67)
 
 - [x] **Phase 63: Findings Pipeline & Zone Wiring** — Transform `/api/endgames/overview` composite into zone/trend/sample-quality findings and cross-section flags (complete 2026-04-20, 5/5 plans)
-- [ ] **Phase 64: `llm_logs` Table & Async Repo** — Generic Postgres log table (+ Alembic migration + async repo) designed for reuse across future LLM features
+- [x] **Phase 64: `llm_logs` Table & Async Repo** — Generic Postgres log table (+ Alembic migration + async repo) designed for reuse across future LLM features (complete 2026-04-20, 3/3 plans)
 - [ ] **Phase 65: LLM Endpoint with pydantic-ai Agent** — `POST /api/insights/endgame` with versioned prompt, findings-hash cache, rate limit, soft-fail
 - [ ] **Phase 66: Frontend EndgameInsightsBlock & Beta Flag** — Overview + 4 Section blocks inline on the Endgame tab, gated by `users.insights_beta_enabled`
 - [ ] **Phase 67: Validation & Beta Rollout** — Ground-truth regression test + admin-impersonation eyeball validation across 5+ real user profiles
@@ -189,7 +189,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 **Plans**: 3 plans
 - [x] 64-01-PLAN.md — Scaffolding (genai-prices pin, LlmLogCreate schema, LlmLog model, fresh_test_user fixture)
 - [x] 64-02-PLAN.md — Migration (alembic/env.py registration, autogenerate + hand-edit for JSONB & DESC, dev-DB upgrade, migration smoke test)
-- [ ] 64-03-PLAN.md — Repository & Tests (create_llm_log, get_latest_log_by_hash, cost_unknown fallback tests, FK cascade test)
+- [x] 64-03-PLAN.md — Repository & Tests (create_llm_log, get_latest_log_by_hash, cost_unknown fallback tests, FK cascade test)
 
 ### Phase 65: LLM Endpoint with pydantic-ai Agent
 **Goal**: `POST /api/insights/endgame` returns a structured `EndgameInsightsReport` produced by a pydantic-ai Agent, cached on `findings_hash`, rate-limited per user, soft-failing to last cached report, and writing one `llm_logs` row per miss. This is where the prompt engineering harness comes alive.
