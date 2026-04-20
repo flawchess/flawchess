@@ -584,6 +584,7 @@ dependencies = [
     { name = "chess" },
     { name = "fastapi", extra = ["standard"] },
     { name = "fastapi-users", extra = ["oauth", "sqlalchemy"] },
+    { name = "genai-prices" },
     { name = "httpx" },
     { name = "httpx-oauth" },
     { name = "pydantic" },
@@ -609,6 +610,7 @@ requires-dist = [
     { name = "chess", specifier = ">=1.10.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.0" },
     { name = "fastapi-users", extras = ["oauth", "sqlalchemy"], specifier = ">=15.0.4" },
+    { name = "genai-prices", specifier = ">=0.0.56,<0.1.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "httpx-oauth", specifier = ">=0.16.1" },
     { name = "pydantic", specifier = ">=2.0.0" },
@@ -625,6 +627,19 @@ dev = [
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "ruff", specifier = ">=0.4.0" },
     { name = "ty", specifier = ">=0.0.26" },
+]
+
+[[package]]
+name = "genai-prices"
+version = "0.0.56"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/44/6b/94b3018a672c7775edfb485f0fed8f6068fba75e49b067e8a1ac5eb96764/genai_prices-0.0.56.tar.gz", hash = "sha256:ac24b16a84d0ab97539bfa48dfa4649689de8e3ce71c12ebacef29efb1998045", size = 65872, upload-time = "2026-03-20T20:33:00.732Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/f6/8ef7e4c286deb2709d11ca96a5237caae3ef4876ab3c48095856cfd2df30/genai_prices-0.0.56-py3-none-any.whl", hash = "sha256:dbe86be8f3f556bed1b72209ed36851fec8b01793b3b220f42921a4e7da945f6", size = 68966, upload-time = "2026-03-20T20:33:02.555Z" },
 ]
 
 [[package]]

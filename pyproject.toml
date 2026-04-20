@@ -16,6 +16,7 @@ dependencies = [
     "fastapi-users[oauth,sqlalchemy]>=15.0.4",
     "httpx-oauth>=0.16.1",
     "sentry-sdk[fastapi]>=2.54.0",
+    "genai-prices>=0.0.56,<0.1.0",
 ]
 
 [dependency-groups]
