@@ -1,5 +1,6 @@
 import asyncio
 import os
+import uuid
 
 # Disable Sentry before any app imports — must precede app.core.config which
 # reads SENTRY_DSN from env/.env.  Without this, test-triggered exceptions
@@ -17,7 +18,7 @@ import pytest_asyncio
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from collections.abc import AsyncGenerator
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
@@ -183,3 +184,32 @@ async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
         finally:
             await session.close()
             await conn.rollback()
+
+
+@pytest_asyncio.fixture
+async def fresh_test_user(test_engine) -> AsyncGenerator[User, None]:
+    """A committed User that survives outside the db_session rollback scope.
+
+    Required because create_llm_log (Phase 64 D-02) opens its OWN async session
+    via async_session_maker() and commits independently — the rollback-scoped
+    db_session fixture cannot observe its writes, and rows inserted against a
+    user_id FK must point at a user that actually exists in the DB, not one
+    that will disappear at transaction rollback.
+
+    On teardown, the user is deleted (not rolled back). ON DELETE CASCADE on
+    llm_logs.user_id (Phase 64 migration) removes any log rows created during
+    the test in the same teardown step.
+    """
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        user = User(
+            email=f"llm-log-test-{uuid.uuid4()}@example.com",
+            hashed_password="x",
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+    yield user
+    async with session_maker() as session:
+        await session.execute(delete(User).where(User.id == user.id))
+        await session.commit()
