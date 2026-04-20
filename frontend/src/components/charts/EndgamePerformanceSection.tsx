@@ -113,6 +113,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
               <div className="space-y-2">
                 <p>Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not. Only endgames that span at least 3 full moves (6 half-moves) are counted. Shorter tactical transitions from middlegame into a checkmate are treated as &quot;no endgame&quot;.</p>
                 <p>The <strong>Score Gap</strong> column shows the signed gap between your endgame Score % and non-endgame Score % (green = endgame stronger, red = endgame weaker, blue = near parity).</p>
+                <p>The Score Gap is a comparison, not an absolute measure. A positive value can mean stronger endgames <em>or</em> weaker non-endgame play; a negative value, the reverse. Compare the two Score % rows to see which side is driving it.</p>
               </div>
             </InfoPopover>
           </span>
@@ -310,6 +311,12 @@ export function ScoreGapTimelineChart({ timeline, window }: ScoreGapTimelineChar
               <p>
                 Gap between your endgame Score % and non-endgame Score %
                 over the trailing {window} games, sampled once per week.
+              </p>
+              <p className="mt-1">
+                This is a relative signal. A rising gap could mean endgames
+                are improving, non-endgame play is declining, or both. For
+                absolute endgame skill, compare against the Endgame ELO
+                timeline.
               </p>
               <p className="mt-1">
                 Dots are colored by zone: green when the gap exceeds
