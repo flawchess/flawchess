@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: LLM-first Endgame Insights
-status: executing_phase_63
-last_updated: "2026-04-20T19:34:00.000Z"
-last_activity: 2026-04-20 -- Phase 63 Plan 04 complete (compute_findings insights service)
+status: phase_63_complete
+last_updated: "2026-04-20T19:55:00.000Z"
+last_activity: 2026-04-20 -- Phase 63 Plan 05 complete (insights service test suite, 45 tests)
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 4
-  percent: 80
+  completed_plans: 5
+  percent: 100
 ---
 
 # Project State: FlawChess
@@ -18,10 +18,10 @@ progress:
 ## Current Position
 
 Milestone: v1.11 LLM-first Endgame Insights
-Phase: 63 — Findings Pipeline & Zone Wiring (executing)
-Plan: 4/5 complete (Plans 01, 02, 03, 04 done)
-Status: Wave 3 Plan 04 landed — compute_findings service implemented (1036-line app/services/insights_service.py); two-call pattern, four flags, trend gate, deterministic SHA256 hash, Sentry set_context in except blocks; zero imports from app.repositories. Plan 05 (compute_findings tests) next.
-Last activity: 2026-04-20 — Phase 63 Plan 04 complete: insights_service.compute_findings lands. 49 pre-existing tests pass; ty/ruff project-wide clean.
+Phase: 63 — Findings Pipeline & Zone Wiring (complete, 5/5 plans)
+Plan: 5/5 complete (Plans 01, 02, 03, 04, 05 done)
+Status: Phase 63 complete. Plan 05 landed 45 insights_service tests across 5 classes (TestComputeTrend, TestComputeFlags, TestComputeHash, TestEmptyFinding, TestComputeFindingsLayering) covering FIND-01 (layering), FIND-03 (four flags × true/false), FIND-04 (trend gate), FIND-05 (hash stability). Runtime 0.13s. Full suite 942 passed; ty/ruff project-wide clean; phase gate (scripts/gen_endgame_zones_ts.py drift check) PASSED. Next: Phase 64 (llm_logs table & async repo).
+Last activity: 2026-04-20 — Phase 63 Plan 05 complete: tests/services/test_insights_service.py (653 lines, 45 tests). All 4 FIND requirements (01/03/04/05) have dedicated coverage with registry-constant-as-threshold pattern.
 
 ## Project Reference
 
@@ -32,10 +32,10 @@ Current focus: v1.11 ships LLM-generated Endgame Insights (overview paragraph + 
 ## Milestone Progress
 
 ```
-v1.11 LLM-first Endgame Insights — 0/5 phases complete
-[██        ] 20%
+v1.11 LLM-first Endgame Insights — 1/5 phases complete
+[████      ] 20%
 
-Phase 63: Findings Pipeline & Zone Wiring     — In progress (4/5 plans)
+Phase 63: Findings Pipeline & Zone Wiring     — Complete (5/5 plans)
 Phase 64: llm_logs Table & Async Repo         — Not started
 Phase 65: LLM Endpoint with pydantic-ai Agent — Not started
 Phase 66: Frontend EndgameInsightsBlock       — Not started
@@ -122,6 +122,8 @@ Phase 67: Validation & Beta Rollout           — Not started
 - v1.11 roadmap created 2026-04-20 — 5 phases (63-67), 100% coverage (23/23 requirements mapped)
 - Phase 63 Plan 01 complete 2026-04-20 — zone registry (app/services/endgame_zones.py, 271 lines) + D-10 recovery band re-center [0.25, 0.35] in both Python registry and FIXED_GAUGE_ZONES.recovery of EndgameScoreGapSection.tsx + 22 unit tests; ty/ruff/tsc all clean; commits de735ea, c6da043, a32e895
 - Phase 63 Plan 04 complete 2026-04-20 — compute_findings insights service (app/services/insights_service.py, 1036 lines) with two-call sequential pattern on single AsyncSession, 16 private helpers (10 subsection builders + _compute_trend/_compute_flags/_compute_hash/_endgame_skill_from_material_rows/_empty_finding), four FIND-03 flags from endgame_zones constants, FIND-04 trend gate (count + slope/vol ratio), FIND-05 NaN-safe SHA256 hash, FIND-01 zero repo imports, D-06 sign-flip resolution; ty/ruff project-wide clean; commit 3728ebf
+- Phase 63 Plan 05 complete 2026-04-20 — insights service test suite (tests/services/test_insights_service.py, 653 lines, 45 tests across 5 classes: TestComputeTrend/TestComputeFlags/TestComputeHash/TestEmptyFinding/TestComputeFindingsLayering); FIND-01 layering guard (inspect.getsource check + AsyncMock 2-call pattern), FIND-03 four flags × true/false branches + NaN guards, FIND-04 trend gate (count-fail, ratio-fail, both-pass via permissive override, stable), FIND-05 hash stability (64-char hex, as_of exclusion, dict-order invariance, NaN safety); runtime 0.13s; all 942 project tests pass; ty/ruff project-wide clean; commit 0a1872d
+- Phase 63 complete 2026-04-20 — 5/5 plans done; registry + codegen + schema + compute_findings service + test suite all shipped; ready for Phase 64 (llm_logs table)
 
 ### Quick Tasks Completed
 
@@ -153,4 +155,4 @@ Phase 67: Validation & Beta Rollout           — Not started
 | 260420-kzb | Rename "Score % Difference" metric to "Score Gap" in EndgamePerformanceSection | 2026-04-20 | 277ef31 | [260420-kzb-rename-score-difference-metric-to-score-](./quick/260420-kzb-rename-score-difference-metric-to-score-/) |
 
 ---
-Last activity: 2026-04-20 — Phase 63 Plan 04 complete (compute_findings insights service, 1036 lines, FIND-01/03/04/05 done, ty/ruff project-wide clean); Plan 05 (compute_findings tests) next
+Last activity: 2026-04-20 — Phase 63 Plan 05 complete (insights service test suite, 45 tests in 0.13s, FIND-01/03/04/05 covered, ty/ruff/phase-gate all clean); Phase 63 DONE (5/5 plans); Phase 64 (llm_logs table) next

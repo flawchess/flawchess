@@ -153,7 +153,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 
 ### 🚧 v1.11 LLM-first Endgame Insights (Phases 63-67)
 
-- [ ] **Phase 63: Findings Pipeline & Zone Wiring** — Transform `/api/endgames/overview` composite into zone/trend/sample-quality findings and cross-section flags
+- [x] **Phase 63: Findings Pipeline & Zone Wiring** — Transform `/api/endgames/overview` composite into zone/trend/sample-quality findings and cross-section flags (complete 2026-04-20, 5/5 plans)
 - [ ] **Phase 64: `llm_logs` Table & Async Repo** — Generic Postgres log table (+ Alembic migration + async repo) designed for reuse across future LLM features
 - [ ] **Phase 65: LLM Endpoint with pydantic-ai Agent** — `POST /api/insights/endgame` with versioned prompt, findings-hash cache, rate limit, soft-fail
 - [ ] **Phase 66: Frontend EndgameInsightsBlock & Beta Flag** — Overview + 4 Section blocks inline on the Endgame tab, gated by `users.insights_beta_enabled`
@@ -175,7 +175,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 - [x] 63-02-PLAN.md — TS Codegen & CI Drift Guard (gen script, generated TS, knip ignore, CI step, FE consistency test)
 - [x] 63-03-PLAN.md — Insights Schemas (FilterContext, SubsectionFinding, EndgameTabFindings, FlagId, SectionId)
 - [x] 63-04-PLAN.md — Findings Service Compute (compute_findings, flags, trend, hash)
-- [ ] 63-05-PLAN.md — Findings Service Tests (layering, flags, trend gate, hash stability)
+- [x] 63-05-PLAN.md — Findings Service Tests (layering, flags, trend gate, hash stability)
 
 ### Phase 64: `llm_logs` Table & Async Repo
 **Goal**: Generic Postgres log table with async write repository lands in prod so every LLM call (miss) can be captured with prompt, response, tokens, cost, latency, and error fields. Designed up-front to host future LLM features, not endgame-specific.
@@ -247,7 +247,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 | 44-47. v1.8 phases | v1.8 | N/A | Complete | 2026-04-06 |
 | 49-51. v1.9 phases | v1.9 | 7/7 | Complete | 2026-04-10 |
 | 48, 52-62. v1.10 phases | v1.10 | 28/28 | Complete | 2026-04-19 |
-| 63. Findings Pipeline & Zone Wiring | v1.11 | 0/5 | Not started | - |
+| 63. Findings Pipeline & Zone Wiring | v1.11 | 5/5 | Complete | 2026-04-20 |
 | 64. llm_logs Table & Async Repo | v1.11 | 0/0 | Not started | - |
 | 65. LLM Endpoint with pydantic-ai Agent | v1.11 | 0/0 | Not started | - |
 | 66. Frontend EndgameInsightsBlock & Beta Flag | v1.11 | 0/0 | Not started | - |
