@@ -14,6 +14,8 @@
 
 <p align="center">
   <a href="https://github.com/flawchess/flawchess/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/flawchess/flawchess/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://github.com/flawchess/flawchess/actions/workflows/github-code-scanning/codeql"><img alt="CodeQL" src="https://github.com/flawchess/flawchess/actions/workflows/github-code-scanning/codeql/badge.svg" /></a>
+  <a href="https://docs.renovatebot.com"><img alt="Renovate" src="https://img.shields.io/badge/renovate-enabled-brightgreen?logo=renovatebot" /></a>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue" />
   <img alt="Python" src="https://img.shields.io/badge/python-3.13-blue" />
   <img alt="React" src="https://img.shields.io/badge/react-19-blue" />
