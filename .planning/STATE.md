@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: LLM-first Endgame Insights
-status: phase_63_complete
-last_updated: "2026-04-20T19:55:00.000Z"
-last_activity: 2026-04-20 -- Phase 63 Plan 05 complete (insights service test suite, 45 tests)
+status: phase_63_verified
+last_updated: "2026-04-20T22:20:00.000Z"
+last_activity: 2026-04-20 -- Phase 63 verified and closed (5/5 plans, code-review passed, 3 UAT items approved, WR-03 end-to-end hash-populated test added)
 progress:
   total_phases: 5
   completed_phases: 1
@@ -20,8 +20,8 @@ progress:
 Milestone: v1.11 LLM-first Endgame Insights
 Phase: 63 — Findings Pipeline & Zone Wiring (complete, 5/5 plans)
 Plan: 5/5 complete (Plans 01, 02, 03, 04, 05 done)
-Status: Phase 63 complete. Plan 05 landed 45 insights_service tests across 5 classes (TestComputeTrend, TestComputeFlags, TestComputeHash, TestEmptyFinding, TestComputeFindingsLayering) covering FIND-01 (layering), FIND-03 (four flags × true/false), FIND-04 (trend gate), FIND-05 (hash stability). Runtime 0.13s. Full suite 942 passed; ty/ruff project-wide clean; phase gate (scripts/gen_endgame_zones_ts.py drift check) PASSED. Next: Phase 64 (llm_logs table & async repo).
-Last activity: 2026-04-20 — Phase 63 Plan 05 complete: tests/services/test_insights_service.py (653 lines, 45 tests). All 4 FIND requirements (01/03/04/05) have dedicated coverage with registry-constant-as-threshold pattern.
+Status: Phase 63 verified and closed. Code review: 0 critical, 3 warning, 6 info (WR-03 fixed in-phase via end-to-end hash-populated test; WR-01 and WR-02 accepted as non-blocking). UAT: 3/3 approved — 3-zone scope (ROADMAP SC #2 reworded to match v1.12 deferral), 4-flag additive scope, review warnings shipped. Full test suite 944 passed. Next: Phase 64 (llm_logs table & async repo).
+Last activity: 2026-04-20 — Phase 63 verified: VERIFICATION.md status=passed, 5/5 plans complete, FIND-01..05 all implemented and traced.
 
 ## Project Reference
 
