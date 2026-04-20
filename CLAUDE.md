@@ -176,6 +176,29 @@ ssh flawchess "cd /opt/flawchess && docker compose down && docker compose up -d"
 - When working on the main branch (e.g. with /gsd:quick), don't commit the changes unless the user explicitly asks for it. When working on a feature branch, you can commit as often as you like.
 - **v2 development** will use a long-lived `v2` branch. v1.x work continues on `main` via feature branches.
 
+## Changelog & Releases
+
+Releases are cut at the **milestone** boundary (not per phase). Changes accumulate in `CHANGELOG.md` under `## [Unreleased]` as phases merge, then get promoted to a versioned section when the milestone ships.
+
+### Per-phase (when a phase merges to `main`)
+
+Append one or more bullets under `## [Unreleased]` in `CHANGELOG.md`, grouped into `### Added` / `### Changed` / `### Fixed` / `### Removed` / `### Security` / `### Tests` subsections. Reference the phase number. Keep the tone terse and user-facing (what changed, not how). Skip this for `/gsd-quick` / `/gsd-fast` tasks that don't meaningfully change behavior (pure refactors, tooling tweaks, internal cleanup).
+
+### Per-milestone (at milestone close)
+
+When a milestone ships (e.g. via `/gsd-complete-milestone`):
+
+1. In `CHANGELOG.md`, rename `## [Unreleased]` → `## [vX.Y] Milestone Title — YYYY-MM-DD` and reset `[Unreleased]` to empty.
+2. Add the compare link at the bottom: `[vX.Y]: https://github.com/flawchess/flawchess/compare/vX.Y-1...vX.Y` and update the `[Unreleased]` link to `compare/vX.Y...HEAD`.
+3. Create the git tag (`git tag vX.Y && git push origin vX.Y`).
+4. Create the GitHub release, using the `CHANGELOG.md` section as the body:
+   ```bash
+   gh release create vX.Y --title "vX.Y Milestone Title" --notes-file <(sed -n '/^## \[vX.Y\]/,/^## /p' CHANGELOG.md | sed '$d')
+   ```
+   Or craft the notes inline with `--notes "$(cat <<'EOF' ... EOF)"` when you want a richer release page (stats, PR list) than the CHANGELOG entry.
+
+Never cut a release without a matching `CHANGELOG.md` entry. Never edit a released section retroactively — corrections go in a new `[Unreleased]` bullet.
+
 ## Project Management
 
 This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/get-shit-done). All features and work are planned through GSD phases and roadmap. Do not add unplanned features, refactors, or improvements outside the current GSD phase scope. If something seems needed but isn't in the plan, flag it rather than implementing it.
