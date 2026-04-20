@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: LLM-first Endgame Insights
-status: ready_to_execute_phase_63
-last_updated: "2026-04-20T19:30:00.000Z"
-last_activity: 2026-04-20 -- Phase 63 planned (5 plans across 4 waves, all FIND-01..05 covered, plan-checker PASSED on first iteration)
+status: executing_phase_63
+last_updated: "2026-04-20T18:45:00.000Z"
+last_activity: 2026-04-20 -- Phase 63 Plan 01 complete (zone registry + D-10 recovery band + 22 unit tests)
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 20
 ---
 
 # Project State: FlawChess
@@ -18,10 +18,10 @@ progress:
 ## Current Position
 
 Milestone: v1.11 LLM-first Endgame Insights
-Phase: 63 — Findings Pipeline & Zone Wiring (planned, ready to execute)
-Plan: 0/5 complete
-Status: Phase 63 planned (5 plans, 4 waves); ready for `/gsd-execute-phase 63`
-Last activity: 2026-04-20 — Phase 63 RESEARCH/PATTERNS/VALIDATION/PLANs committed; plan-checker PASSED on first iteration (FIND-01..05 all covered)
+Phase: 63 — Findings Pipeline & Zone Wiring (executing)
+Plan: 1/5 complete (Plan 01 done)
+Status: Plan 01 complete — zone registry shipped; Plan 02 (codegen + consistency test) next in Wave 2
+Last activity: 2026-04-20 — Phase 63 Plan 01 executed: zone registry module + D-10 recovery band re-center + 22 unit tests, all ty/ruff/tsc green
 
 ## Project Reference
 
@@ -33,9 +33,9 @@ Current focus: v1.11 ships LLM-generated Endgame Insights (overview paragraph + 
 
 ```
 v1.11 LLM-first Endgame Insights — 0/5 phases complete
-[          ] 0%
+[██        ] 20%
 
-Phase 63: Findings Pipeline & Zone Wiring     — Planned (0/5 plans)
+Phase 63: Findings Pipeline & Zone Wiring     — In progress (1/5 plans)
 Phase 64: llm_logs Table & Async Repo         — Not started
 Phase 65: LLM Endpoint with pydantic-ai Agent — Not started
 Phase 66: Frontend EndgameInsightsBlock       — Not started
@@ -88,6 +88,9 @@ Phase 67: Validation & Beta Rollout           — Not started
 - [Phase 57-endgame-elo-timeline-chart]: Phase 57-01: Endgame ELO timeline piggybacks on /api/endgames/overview response (no new router endpoint), matching Phase 52 consolidation
 - [Phase 57-endgame-elo-timeline-chart]: Phase 57-02: EndgameEloTimelineSection owns its own loading/error/empty branches; component-level isError UI reaches the LOCKED endgame-elo-timeline-error copy without depending on page-level error branch placement
 - [Phase 57-endgame-elo-timeline-chart]: Phase 57-02: flatMap (not React.Fragment) used inside Recharts LineChart children so Recharts 2.15.x React.Children traversal reliably discovers every Line instance; custom legend via ChartLegend content prop owns the endgame-elo-legend-{combo_key} testid on button elements
+- [Phase 63-findings-pipeline-zone-wiring]: Plan 01: net_timeout_rate direction locked to lower_is_better per CONTEXT.md D-06 verbatim — if a future review finds the formula produces positive-when-good values, the findings service (Plan 04) flips the sign at the call site rather than mutating the registry
+- [Phase 63-findings-pipeline-zone-wiring]: Plan 01: NaN guard in assign_zone / assign_bucketed_zone returns "typical" (not raising, not "weak") — missing-data signal is is_headline_eligible=False on SubsectionFinding per D-13, keeping the zone contract pure
+- [Phase 63-findings-pipeline-zone-wiring]: Plan 01: BucketedMetricId Literal promoted to module-level alias (conversion_win_pct | parity_score_pct | recovery_save_pct) so BUCKETED_ZONE_REGISTRY typing and assign_bucketed_zone signature share one name
 
 ### Pending Todos
 
@@ -112,6 +115,7 @@ Phase 67: Validation & Beta Rollout           — Not started
 - MMOB-01 (subtab placement TBD) resolved 2026-04-10: unified row holding Tabs | color toggle | bookmark | filter inside sticky wrapper but outside the board collapse region — see `.planning/phases/50-mobile-layout-restructuring/50-CONTEXT.md`
 - v1.11 requirements defined 2026-04-20 — 23 requirements extracted from SEED-003 + user adjustments (no Phase 0 spike, no gauge-update phase, no beta-flag UI, overview always populated, no style restrictions, generic `llm_logs`)
 - v1.11 roadmap created 2026-04-20 — 5 phases (63-67), 100% coverage (23/23 requirements mapped)
+- Phase 63 Plan 01 complete 2026-04-20 — zone registry (app/services/endgame_zones.py, 271 lines) + D-10 recovery band re-center [0.25, 0.35] in both Python registry and FIXED_GAUGE_ZONES.recovery of EndgameScoreGapSection.tsx + 22 unit tests; ty/ruff/tsc all clean; commits de735ea, c6da043, a32e895
 
 ### Quick Tasks Completed
 
@@ -143,4 +147,4 @@ Phase 67: Validation & Beta Rollout           — Not started
 | 260420-kzb | Rename "Score % Difference" metric to "Score Gap" in EndgamePerformanceSection | 2026-04-20 | 277ef31 | [260420-kzb-rename-score-difference-metric-to-score-](./quick/260420-kzb-rename-score-difference-metric-to-score-/) |
 
 ---
-Last activity: 2026-04-20 — Phase 63 planned (5 PLANs, 4 waves); ready for `/gsd-execute-phase 63`
+Last activity: 2026-04-20 — Phase 63 Plan 01 complete (zone registry + D-10 recovery band + 22 unit tests, ty/ruff/tsc green); Plan 02 (codegen + FE-drift consistency) next
