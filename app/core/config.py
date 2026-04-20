@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     BACKEND_URL: str = "http://localhost:8000"
     # Frontend base URL — used to build OAuth redirect back to SPA
     FRONTEND_URL: str = "http://localhost:5173"
-    # Environment: "development" bypasses JWT auth on all endpoints
+    # "development" enables CORS for localhost:5173 and drops the Secure flag on auth cookies (so cookies work over plain HTTP in local dev)
     ENVIRONMENT: str = "production"
     SENTRY_DSN: str = ""  # Empty string = Sentry disabled (dev default)
     SENTRY_TRACES_SAMPLE_RATE: float = 0.0  # 0.0 = no traces (dev default)
