@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: LLM-first Endgame Insights
 status: executing
-last_updated: "2026-04-20T20:58:55.887Z"
-last_activity: 2026-04-20 -- Phase 64 planning complete
+last_updated: "2026-04-20T21:10:15Z"
+last_activity: 2026-04-20 -- Phase 64 Plan 01 complete
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 8
-  completed_plans: 5
-  percent: 63
+  completed_plans: 6
+  percent: 75
 ---
 
 # Project State: FlawChess
@@ -18,10 +18,10 @@ progress:
 ## Current Position
 
 Milestone: v1.11 LLM-first Endgame Insights
-Phase: 63 — Findings Pipeline & Zone Wiring (complete, 5/5 plans)
-Plan: 5/5 complete (Plans 01, 02, 03, 04, 05 done)
-Status: Ready to execute
-Last activity: 2026-04-20 -- Phase 64 planning complete
+Phase: 64 — llm_logs Table & Async Repo (in progress, 1/3 plans)
+Plan: Plan 01 done; Plan 02 (migration) next
+Status: Executing
+Last activity: 2026-04-20 -- Phase 64 Plan 01 complete
 
 ## Project Reference
 
@@ -32,11 +32,11 @@ Current focus: v1.11 ships LLM-generated Endgame Insights (overview paragraph + 
 ## Milestone Progress
 
 ```
-v1.11 LLM-first Endgame Insights — 1/5 phases complete
-[████      ] 20%
+v1.11 LLM-first Endgame Insights — 1/5 phases complete, Phase 64 in progress
+[████▌     ] 27%
 
 Phase 63: Findings Pipeline & Zone Wiring     — Complete (5/5 plans)
-Phase 64: llm_logs Table & Async Repo         — Not started
+Phase 64: llm_logs Table & Async Repo         — In progress (1/3 plans — Plan 01 done)
 Phase 65: LLM Endpoint with pydantic-ai Agent — Not started
 Phase 66: Frontend EndgameInsightsBlock       — Not started
 Phase 67: Validation & Beta Rollout           — Not started
@@ -96,6 +96,9 @@ Phase 67: Validation & Beta Rollout           — Not started
 - [Phase 63-findings-pipeline-zone-wiring]: Plan 04: findings_hash uses the two-step NaN-safe recipe (model_dump_json exclude={"findings_hash","as_of"} -> json.loads -> json.dumps sort_keys=True separators=(",", ":") -> sha256 hex) — model_dump(mode="json") leaves NaN unchanged which json.dumps would emit as invalid NaN literal
 - [Phase 63-findings-pipeline-zone-wiring]: Plan 04: Explicit dict[str, str] annotations on every dimension-dict literal site (bucket_dim, combo dim, endgame_class dim, conv_dim, recov_dim) — required because ty treats dict value types as invariant, so a Literal-typed value like MaterialBucket won't widen to str without the annotation
 - [Phase 63-findings-pipeline-zone-wiring]: Plan 04: time_pressure_vs_performance emits a conservative placeholder finding using avg_clock_diff_pct as metric with value=weighted mean of user scores across time-pressure buckets; is_headline_eligible=False until a dedicated slope metric lands (planner note in RESEARCH.md §Subsection Mapping)
+- [Phase 64-llm-logs-table-async-repo]: Plan 01: genai-prices.calc_price does NOT accept pydantic-ai 'provider:model' concatenated strings (LookupError against 'anthropic:claude-haiku-4-5-20251001'). Split form calc_price(..., model_ref='claude-haiku-4-5-20251001', provider_id='anthropic') returns Decimal('0.0006'). Plan 03's _compute_cost helper must split on first ':' into provider_id + model_ref.
+- [Phase 64-llm-logs-table-async-repo]: Plan 01: LlmLog.user_id uses Integer (not BigInteger) to match users.id type (RESEARCH.md Pitfall 1; verified via psql \d users). Log's own id stays BigInteger per D-05.
+- [Phase 64-llm-logs-table-async-repo]: Plan 01: app/models/__init__.py re-export of LlmLog is cosmetic only; alembic autogenerate discovers models via alembic/env.py — Plan 02 adds the env.py side-effect import.
 
 ### Pending Todos
 
@@ -124,6 +127,7 @@ Phase 67: Validation & Beta Rollout           — Not started
 - Phase 63 Plan 04 complete 2026-04-20 — compute_findings insights service (app/services/insights_service.py, 1036 lines) with two-call sequential pattern on single AsyncSession, 16 private helpers (10 subsection builders + _compute_trend/_compute_flags/_compute_hash/_endgame_skill_from_material_rows/_empty_finding), four FIND-03 flags from endgame_zones constants, FIND-04 trend gate (count + slope/vol ratio), FIND-05 NaN-safe SHA256 hash, FIND-01 zero repo imports, D-06 sign-flip resolution; ty/ruff project-wide clean; commit 3728ebf
 - Phase 63 Plan 05 complete 2026-04-20 — insights service test suite (tests/services/test_insights_service.py, 653 lines, 45 tests across 5 classes: TestComputeTrend/TestComputeFlags/TestComputeHash/TestEmptyFinding/TestComputeFindingsLayering); FIND-01 layering guard (inspect.getsource check + AsyncMock 2-call pattern), FIND-03 four flags × true/false branches + NaN guards, FIND-04 trend gate (count-fail, ratio-fail, both-pass via permissive override, stable), FIND-05 hash stability (64-char hex, as_of exclusion, dict-order invariance, NaN safety); runtime 0.13s; all 942 project tests pass; ty/ruff project-wide clean; commit 0a1872d
 - Phase 63 complete 2026-04-20 — 5/5 plans done; registry + codegen + schema + compute_findings service + test suite all shipped; ready for Phase 64 (llm_logs table)
+- Phase 64 Plan 01 complete 2026-04-20 — Wave 0 scaffold: genai-prices>=0.0.56,<0.1.0 pinned (pyproject.toml + uv.lock), app/schemas/llm_log.py (LlmLogCreate DTO + LlmLogEndpoint Literal, 42 lines), app/models/llm_log.py (LlmLog ORM, 18 columns + 5 named indexes including 3 postgresql_ops DESC composites, Integer FK CASCADE to users.id, first JSONB usage in codebase), app/models/__init__.py re-export, tests/conftest.py fresh_test_user fixture (own-session commit + delete teardown for D-02 tests); smoke test resolves RESEARCH.md Open Question #1 (calc_price requires split provider_id + model_ref, not combined "provider:model"); 944 tests pass in 12.67s; ty/ruff/phase-gate all clean; commits e345d36, 3b1c9ab, 661a3cd, 79d1449
 
 ### Quick Tasks Completed
 
@@ -155,4 +159,4 @@ Phase 67: Validation & Beta Rollout           — Not started
 | 260420-kzb | Rename "Score % Difference" metric to "Score Gap" in EndgamePerformanceSection | 2026-04-20 | 277ef31 | [260420-kzb-rename-score-difference-metric-to-score-](./quick/260420-kzb-rename-score-difference-metric-to-score-/) |
 
 ---
-Last activity: 2026-04-20 — Phase 63 Plan 05 complete (insights service test suite, 45 tests in 0.13s, FIND-01/03/04/05 covered, ty/ruff/phase-gate all clean); Phase 63 DONE (5/5 plans); Phase 64 (llm_logs table) next
+Last activity: 2026-04-20 — Phase 64 Plan 01 complete (Wave 0 scaffold: genai-prices pin + LlmLogCreate DTO + LlmLog ORM + fresh_test_user fixture; 944 tests pass; ty/ruff/phase-gate all clean); Phase 64 next plan: Plan 02 (Alembic migration)
