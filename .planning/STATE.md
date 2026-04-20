@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: LLM-first Endgame Insights
 status: executing_phase_63
-last_updated: "2026-04-20T19:10:00.000Z"
-last_activity: 2026-04-20 -- Phase 63 Wave 2 complete (63-02 codegen + CI drift guard, 63-03 insights schemas)
+last_updated: "2026-04-20T19:34:00.000Z"
+last_activity: 2026-04-20 -- Phase 63 Plan 04 complete (compute_findings insights service)
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
-  percent: 60
+  completed_plans: 4
+  percent: 80
 ---
 
 # Project State: FlawChess
@@ -19,9 +19,9 @@ progress:
 
 Milestone: v1.11 LLM-first Endgame Insights
 Phase: 63 — Findings Pipeline & Zone Wiring (executing)
-Plan: 3/5 complete (Plans 01, 02, 03 done)
-Status: Wave 2 merged — codegen + CI drift check + Pydantic insights schemas landed; Wave 3 next (Plan 04 compute_findings)
-Last activity: 2026-04-20 — Phase 63 Wave 2 complete: Plan 02 codegen + zone drift guard, Plan 03 insights schemas. 59 tests pass; ty/ruff/tsc green.
+Plan: 4/5 complete (Plans 01, 02, 03, 04 done)
+Status: Wave 3 Plan 04 landed — compute_findings service implemented (1036-line app/services/insights_service.py); two-call pattern, four flags, trend gate, deterministic SHA256 hash, Sentry set_context in except blocks; zero imports from app.repositories. Plan 05 (compute_findings tests) next.
+Last activity: 2026-04-20 — Phase 63 Plan 04 complete: insights_service.compute_findings lands. 49 pre-existing tests pass; ty/ruff project-wide clean.
 
 ## Project Reference
 
@@ -35,7 +35,7 @@ Current focus: v1.11 ships LLM-generated Endgame Insights (overview paragraph + 
 v1.11 LLM-first Endgame Insights — 0/5 phases complete
 [██        ] 20%
 
-Phase 63: Findings Pipeline & Zone Wiring     — In progress (1/5 plans)
+Phase 63: Findings Pipeline & Zone Wiring     — In progress (4/5 plans)
 Phase 64: llm_logs Table & Async Repo         — Not started
 Phase 65: LLM Endpoint with pydantic-ai Agent — Not started
 Phase 66: Frontend EndgameInsightsBlock       — Not started
@@ -91,6 +91,11 @@ Phase 67: Validation & Beta Rollout           — Not started
 - [Phase 63-findings-pipeline-zone-wiring]: Plan 01: net_timeout_rate direction locked to lower_is_better per CONTEXT.md D-06 verbatim — if a future review finds the formula produces positive-when-good values, the findings service (Plan 04) flips the sign at the call site rather than mutating the registry
 - [Phase 63-findings-pipeline-zone-wiring]: Plan 01: NaN guard in assign_zone / assign_bucketed_zone returns "typical" (not raising, not "weak") — missing-data signal is is_headline_eligible=False on SubsectionFinding per D-13, keeping the zone contract pure
 - [Phase 63-findings-pipeline-zone-wiring]: Plan 01: BucketedMetricId Literal promoted to module-level alias (conversion_win_pct | parity_score_pct | recovery_save_pct) so BUCKETED_ZONE_REGISTRY typing and assign_bucketed_zone signature share one name
+- [Phase 63-findings-pipeline-zone-wiring]: Plan 04: D-06 resolution applied at the call site — compute_findings flips the sign of net_timeout_rate before passing to assign_zone (honoring the registry's locked lower_is_better direction) but preserves the raw formula output in the emitted SubsectionFinding so Phase 65 prompt-assembly sees the real number
+- [Phase 63-findings-pipeline-zone-wiring]: Plan 04: as_of typed as datetime.datetime (not str) — Plan 03 schema is authoritative; compute_findings uses datetime.datetime.now(datetime.UTC). JSON wire shape identical (Pydantic emits ISO-8601); findings_hash excludes as_of so daily recompute is cache-stable
+- [Phase 63-findings-pipeline-zone-wiring]: Plan 04: findings_hash uses the two-step NaN-safe recipe (model_dump_json exclude={"findings_hash","as_of"} -> json.loads -> json.dumps sort_keys=True separators=(",", ":") -> sha256 hex) — model_dump(mode="json") leaves NaN unchanged which json.dumps would emit as invalid NaN literal
+- [Phase 63-findings-pipeline-zone-wiring]: Plan 04: Explicit dict[str, str] annotations on every dimension-dict literal site (bucket_dim, combo dim, endgame_class dim, conv_dim, recov_dim) — required because ty treats dict value types as invariant, so a Literal-typed value like MaterialBucket won't widen to str without the annotation
+- [Phase 63-findings-pipeline-zone-wiring]: Plan 04: time_pressure_vs_performance emits a conservative placeholder finding using avg_clock_diff_pct as metric with value=weighted mean of user scores across time-pressure buckets; is_headline_eligible=False until a dedicated slope metric lands (planner note in RESEARCH.md §Subsection Mapping)
 
 ### Pending Todos
 
@@ -116,6 +121,7 @@ Phase 67: Validation & Beta Rollout           — Not started
 - v1.11 requirements defined 2026-04-20 — 23 requirements extracted from SEED-003 + user adjustments (no Phase 0 spike, no gauge-update phase, no beta-flag UI, overview always populated, no style restrictions, generic `llm_logs`)
 - v1.11 roadmap created 2026-04-20 — 5 phases (63-67), 100% coverage (23/23 requirements mapped)
 - Phase 63 Plan 01 complete 2026-04-20 — zone registry (app/services/endgame_zones.py, 271 lines) + D-10 recovery band re-center [0.25, 0.35] in both Python registry and FIXED_GAUGE_ZONES.recovery of EndgameScoreGapSection.tsx + 22 unit tests; ty/ruff/tsc all clean; commits de735ea, c6da043, a32e895
+- Phase 63 Plan 04 complete 2026-04-20 — compute_findings insights service (app/services/insights_service.py, 1036 lines) with two-call sequential pattern on single AsyncSession, 16 private helpers (10 subsection builders + _compute_trend/_compute_flags/_compute_hash/_endgame_skill_from_material_rows/_empty_finding), four FIND-03 flags from endgame_zones constants, FIND-04 trend gate (count + slope/vol ratio), FIND-05 NaN-safe SHA256 hash, FIND-01 zero repo imports, D-06 sign-flip resolution; ty/ruff project-wide clean; commit 3728ebf
 
 ### Quick Tasks Completed
 
@@ -147,4 +153,4 @@ Phase 67: Validation & Beta Rollout           — Not started
 | 260420-kzb | Rename "Score % Difference" metric to "Score Gap" in EndgamePerformanceSection | 2026-04-20 | 277ef31 | [260420-kzb-rename-score-difference-metric-to-score-](./quick/260420-kzb-rename-score-difference-metric-to-score-/) |
 
 ---
-Last activity: 2026-04-20 — Phase 63 Plan 01 complete (zone registry + D-10 recovery band + 22 unit tests, ty/ruff/tsc green); Plan 02 (codegen + FE-drift consistency) next
+Last activity: 2026-04-20 — Phase 63 Plan 04 complete (compute_findings insights service, 1036 lines, FIND-01/03/04/05 done, ty/ruff project-wide clean); Plan 05 (compute_findings tests) next

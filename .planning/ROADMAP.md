@@ -174,7 +174,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 - [x] 63-01-PLAN.md — Zone Registry & Recovery Band Edit (endgame_zones.py, Recovery re-center, zone unit tests)
 - [x] 63-02-PLAN.md — TS Codegen & CI Drift Guard (gen script, generated TS, knip ignore, CI step, FE consistency test)
 - [x] 63-03-PLAN.md — Insights Schemas (FilterContext, SubsectionFinding, EndgameTabFindings, FlagId, SectionId)
-- [ ] 63-04-PLAN.md — Findings Service Compute (compute_findings, flags, trend, hash)
+- [x] 63-04-PLAN.md — Findings Service Compute (compute_findings, flags, trend, hash)
 - [ ] 63-05-PLAN.md — Findings Service Tests (layering, flags, trend gate, hash stability)
 
 ### Phase 64: `llm_logs` Table & Async Repo

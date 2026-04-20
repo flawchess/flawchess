@@ -18,11 +18,11 @@ Requirements for LLM-first Endgame Insights milestone. Source: `.planning/seeds/
 
 ### Findings Pipeline
 
-- [ ] **FIND-01**: `insights_service.py` computes `SubsectionFinding` (metric, value, zone, trend, sample_size, sample_quality, weekly_points_in_window) per subsection × window (`all_time`, `last_3mo`) by consuming `endgame_service.get_overview(filter_context)` — no direct repository access from the service
+- [x] **FIND-01**: `insights_service.py` computes `SubsectionFinding` (metric, value, zone, trend, sample_size, sample_quality, weekly_points_in_window) per subsection × window (`all_time`, `last_3mo`) by consuming `endgame_service.get_overview(filter_context)` — no direct repository access from the service
 - [ ] **FIND-02**: Zone assignment uses the existing in-code gauge constants as the single source of truth (`SCORE_DIFF_NEUTRAL_*`, `FIXED_GAUGE_ZONES`, `ENDGAME_SKILL_ZONES`, `NEUTRAL_PCT_THRESHOLD`, `NEUTRAL_TIMEOUT_THRESHOLD`). Insights narrative and chart visuals MUST agree by construction — one set of thresholds imported from one module. The 2026-04-18 benchmark report is background context only; if a band needs adjusting, the gauge constant is the place to adjust it.
-- [ ] **FIND-03**: Three cross-section flags precomputed deterministically: `baseline_lift_mutes_score_gap`, `clock_entry_advantage`, `no_clock_entry_advantage`
-- [ ] **FIND-04**: Trend quality gate — trend returns `n_a` when weekly-points-in-window is below threshold (start at 20) or slope-to-volatility ratio is below threshold
-- [ ] **FIND-05**: `findings_hash` is a stable SHA256 of canonical-JSON-serialized `EndgameTabFindings` with `as_of` excluded and keys sorted — so cache does not churn daily
+- [x] **FIND-03**: Three cross-section flags precomputed deterministically: `baseline_lift_mutes_score_gap`, `clock_entry_advantage`, `no_clock_entry_advantage`
+- [x] **FIND-04**: Trend quality gate — trend returns `n_a` when weekly-points-in-window is below threshold (start at 20) or slope-to-volatility ratio is below threshold
+- [x] **FIND-05**: `findings_hash` is a stable SHA256 of canonical-JSON-serialized `EndgameTabFindings` with `as_of` excluded and keys sorted — so cache does not churn daily
 
 ### LLM Endpoint
 
@@ -98,11 +98,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 | INS-05 | Phase 65 | Pending |
 | INS-06 | Phase 65 | Pending |
 | INS-07 | Phase 65 | Pending |
-| FIND-01 | Phase 63 | Pending |
+| FIND-01 | Phase 63 | Complete |
 | FIND-02 | Phase 63 | Pending |
-| FIND-03 | Phase 63 | Pending |
-| FIND-04 | Phase 63 | Pending |
-| FIND-05 | Phase 63 | Pending |
+| FIND-03 | Phase 63 | Complete |
+| FIND-04 | Phase 63 | Complete |
+| FIND-05 | Phase 63 | Complete |
 | LLM-01 | Phase 65 | Pending |
 | LLM-02 | Phase 65 | Pending |
 | LLM-03 | Phase 65 | Pending |
