@@ -249,13 +249,17 @@ def _finding_score_gap_timeline(
     if not timeline:
         return _empty_finding("score_gap_timeline", window, "score_gap")
 
-    series = [p.score_difference for p in timeline]
-    trend, weekly_points = _compute_trend(series)
-    last_value = series[-1]
-    sample_size = len(series)
+    values = [p.score_difference for p in timeline]
+    trend, weekly_points = _compute_trend(values)
+    last_value = values[-1]
+    sample_size = len(values)
     quality = sample_quality("score_gap_timeline", sample_size)
     # Timeline headline-eligibility hinges on the trend gate (D-13).
     is_headline = trend != "n_a"
+    # D-02/D-03: populate resampled series for LLM prompt assembly.
+    weekly: list[tuple[str, float, int]] = [
+        (p.date, p.score_difference, p.per_week_total_games) for p in timeline
+    ]
     return SubsectionFinding(
         subsection_id="score_gap_timeline",
         parent_subsection_id=None,
@@ -269,6 +273,7 @@ def _finding_score_gap_timeline(
         sample_quality=quality,
         is_headline_eligible=is_headline,
         dimension=None,
+        series=_weekly_points_to_time_points(weekly, window),
     )
 
 
@@ -411,6 +416,10 @@ def _findings_endgame_elo_timeline(
     lives in the `dimension` field (D-14). Combos with zero points are
     already dropped by the endgame service, but we defensively skip any
     empty `points` list.
+
+    Phase 65 D-04: combos with fewer than SPARSE_COMBO_FLOOR weekly
+    observations are skipped entirely — no SubsectionFinding is emitted.
+    The gap-only series is populated via _series_for_endgame_elo_combo.
     """
     combos: list[EndgameEloTimelineCombo] = response.endgame_elo_timeline.combos
     findings: list[SubsectionFinding] = []
@@ -435,6 +444,13 @@ def _findings_endgame_elo_timeline(
                 )
             )
             continue
+
+        # D-04: build gap-only series; returns None if combo is too sparse
+        # (< SPARSE_COMBO_FLOOR points). Skip the finding entirely in that case.
+        combo_series = _series_for_endgame_elo_combo(combo, window)
+        if combo_series is None:
+            continue
+
         last = combo.points[-1]
         value = float(last.endgame_elo - last.actual_elo)
         sample_size = len(combo.points)
@@ -453,6 +469,7 @@ def _findings_endgame_elo_timeline(
                 sample_quality=quality,
                 is_headline_eligible=quality != "thin",
                 dimension=dim,
+                series=combo_series,
             )
         )
 
@@ -574,12 +591,16 @@ def _finding_clock_diff_timeline(
     if not timeline:
         return _empty_finding("clock_diff_timeline", window, "avg_clock_diff_pct")
 
-    series = [p.avg_clock_diff_pct for p in timeline]
-    trend, weekly_points = _compute_trend(series)
-    last_value = series[-1]
-    sample_size = len(series)
+    values = [p.avg_clock_diff_pct for p in timeline]
+    trend, weekly_points = _compute_trend(values)
+    last_value = values[-1]
+    sample_size = len(values)
     quality = sample_quality("clock_diff_timeline", sample_size)
     is_headline = trend != "n_a"
+    # D-02/D-03: populate resampled series for LLM prompt assembly.
+    weekly: list[tuple[str, float, int]] = [
+        (p.date, p.avg_clock_diff_pct, p.per_week_game_count) for p in timeline
+    ]
     return SubsectionFinding(
         subsection_id="clock_diff_timeline",
         parent_subsection_id=None,
@@ -593,6 +614,7 @@ def _finding_clock_diff_timeline(
         sample_quality=quality,
         is_headline_eligible=is_headline,
         dimension=None,
+        series=_weekly_points_to_time_points(weekly, window),
     )
 
 
@@ -837,11 +859,16 @@ def _findings_type_win_rate_timeline(
                 )
             )
             continue
-        series = [p.win_rate for p in points]
-        trend, weekly_points = _compute_trend(series)
-        last_value = series[-1]
-        sample_size = len(series)
+        values = [p.win_rate for p in points]
+        trend, weekly_points = _compute_trend(values)
+        last_value = values[-1]
+        sample_size = len(values)
         quality = sample_quality("type_win_rate_timeline", sample_size)
+        # D-02/D-05: populate resampled series. type_win_rate uses monthly for
+        # BOTH windows (5-way split makes weekly noise).
+        weekly: list[tuple[str, float, int]] = [
+            (p.date, p.win_rate, p.per_week_game_count) for p in points
+        ]
         findings.append(
             SubsectionFinding(
                 subsection_id="type_win_rate_timeline",
@@ -857,6 +884,8 @@ def _findings_type_win_rate_timeline(
                 # D-13: type_win_rate_timeline is never headline-eligible.
                 is_headline_eligible=False,
                 dimension=dim,
+                # D-05: type_win_rate uses monthly for both windows (5-way split makes weekly noise).
+                series=_weekly_points_to_time_points(weekly, "all_time"),
             )
         )
     return findings
