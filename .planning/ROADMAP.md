@@ -219,7 +219,12 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
   3. Changing filters that affect findings (recency, opponent_strength, time_controls, platforms) and regenerating produces a visibly different insight; toggling `color` or `rated_only` alone does not force a new LLM call for the same underlying findings
   4. When backend config hides the overview, the per-section blocks still render normally; the block works on mobile (matches existing Endgame tab mobile layout patterns)
   5. The block surfaces a single retry affordance with the locked copy on any failure path rather than empty state or partial content
-**Plans**: TBD
+**Plans**: 5 plans
+- [ ] 66-01-PLAN.md — Backend: users.beta_enabled migration + UserProfileResponse extension + router tests (Wave 1)
+- [ ] 66-02-PLAN.md — Frontend types + useEndgameInsights hook + buildFilterParams export (Wave 2)
+- [ ] 66-03-PLAN.md — EndgameInsightsBlock component (hero / skeleton / overview / error states) + render tests (Wave 3)
+- [ ] 66-04-PLAN.md — Endgames.tsx integration: mount block + 4 SectionInsight slots across H2 groups (Wave 4)
+- [ ] 66-05-PLAN.md — Docs alignment: REQUIREMENTS.md BETA-01 + ROADMAP.md Phase 66/67 → `beta_enabled` (Wave 2)
 **UI hint**: yes
 
 ### Phase 67: Validation & Beta Rollout
@@ -259,7 +264,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 | 63. Findings Pipeline & Zone Wiring | v1.11 | 5/5 | Complete | 2026-04-20 |
 | 64. llm_logs Table & Async Repo | v1.11 | 2/3 | In progress | - |
 | 65. LLM Endpoint with pydantic-ai Agent | v1.11 | 6/6 | Complete    | 2026-04-21 |
-| 66. Frontend EndgameInsightsBlock & Beta Flag | v1.11 | 0/0 | Not started | - |
+| 66. Frontend EndgameInsightsBlock & Beta Flag | v1.11 | 0/5 | Planned     | - |
 | 67. Validation & Beta Rollout | v1.11 | 0/0 | Not started | - |
 
 ## Backlog
