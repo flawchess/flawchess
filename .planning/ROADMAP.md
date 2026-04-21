@@ -202,8 +202,8 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
   4. Structured-output validation failures, provider errors, and startup misconfiguration (`PYDANTIC_AI_MODEL_INSIGHTS` missing/invalid) each surface via Sentry with `user_id / findings_hash / model` in `set_context` and return a client-side retry-affordance payload
   5. The system prompt is loaded from `app/services/insights_prompts/endgame_v1.md` at startup — no string-literal prompts live inline in `.py` files
 **Plans**: 6 plans
-- [ ] 65-01-PLAN.md — Dependency + config + prompt file + conftest env-var setup (Wave 1)
-- [ ] 65-02-PLAN.md — Pydantic schema extensions: EndgameInsightsReport, SectionInsight, TimePoint, response/error envelopes, SubsectionFinding.series (Wave 1)
+- [x] 65-01-PLAN.md — Dependency + config + prompt file + conftest env-var setup (Wave 1)
+- [x] 65-02-PLAN.md — Pydantic schema extensions: EndgameInsightsReport, SectionInsight, TimePoint, response/error envelopes, SubsectionFinding.series (Wave 1)
 - [ ] 65-03-PLAN.md — Findings pipeline extension: weekly/monthly resampling, gap-only + sparse-combo Endgame ELO, series population (Wave 2)
 - [ ] 65-04-PLAN.md — Repository read helpers: count_recent_successful_misses + get_latest_report_for_user (Wave 2)
 - [ ] 65-05-PLAN.md — LLM orchestration service: Agent singleton, prompt assembly, generate_insights, Sentry wiring, tests (Wave 3)
