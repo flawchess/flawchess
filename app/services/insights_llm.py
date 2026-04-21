@@ -26,7 +26,6 @@ from pathlib import Path
 import sentry_sdk
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -36,6 +35,7 @@ from app.repositories.llm_log_repository import (
     create_llm_log,
     get_latest_log_by_hash,
     get_latest_report_for_user,
+    get_oldest_recent_miss_timestamp,
 )
 from app.schemas.insights import (
     EndgameInsightsReport,
@@ -209,20 +209,7 @@ def _maybe_stale_filters(
 
 async def _compute_retry_after(session: AsyncSession, user_id: int) -> int:
     """Seconds until oldest successful miss in the 1h window expires."""
-    cutoff = datetime.datetime.now(datetime.UTC) - _RATE_LIMIT_WINDOW
-    result = await session.execute(
-        select(LlmLog.created_at)
-        .where(
-            LlmLog.user_id == user_id,
-            LlmLog.created_at > cutoff,
-            LlmLog.cache_hit.is_(False),
-            LlmLog.error.is_(None),
-            LlmLog.response_json.is_not(None),
-        )
-        .order_by(LlmLog.created_at.asc())
-        .limit(1)
-    )
-    oldest = result.scalar_one_or_none()
+    oldest = await get_oldest_recent_miss_timestamp(session, user_id, _RATE_LIMIT_WINDOW)
     if oldest is None:
         return 1
     expires_at = oldest + _RATE_LIMIT_WINDOW

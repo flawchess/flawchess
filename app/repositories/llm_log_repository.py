@@ -207,6 +207,48 @@ async def count_recent_successful_misses(
     return result.scalar_one()
 
 
+async def get_oldest_recent_miss_timestamp(
+    session: AsyncSession,
+    user_id: int,
+    window: datetime.timedelta,
+) -> datetime.datetime | None:
+    """Return created_at of the oldest successful miss within the window, or None.
+
+    Used by the rate-limit retry-after computation in the service layer to
+    calculate when the oldest miss in the current window expires. Factored out
+    of the service so DB access stays exclusively in the repository (CLAUDE.md
+    §Architecture: "no SQL in services").
+
+    "Successful miss" definition mirrors count_recent_successful_misses:
+      - cache_hit IS FALSE
+      - error IS NULL
+      - response_json IS NOT NULL
+
+    Args:
+        session: caller-supplied AsyncSession.
+        user_id: authenticated user scoping the query.
+        window: timedelta defining the look-back window (e.g. timedelta(hours=1)).
+
+    Returns:
+        The created_at timestamp of the oldest qualifying row, or None if no
+        rows exist in the window (caller defaults retry_after to 1 second).
+    """
+    cutoff = datetime.datetime.now(datetime.UTC) - window
+    result = await session.execute(
+        select(LlmLog.created_at)
+        .where(
+            LlmLog.user_id == user_id,
+            LlmLog.created_at > cutoff,
+            LlmLog.cache_hit.is_(False),
+            LlmLog.error.is_(None),
+            LlmLog.response_json.is_not(None),
+        )
+        .order_by(LlmLog.created_at.asc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_latest_report_for_user(
     session: AsyncSession,
     user_id: int,
