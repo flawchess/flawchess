@@ -11,6 +11,7 @@ dependencies = [
     "alembic>=1.13.0",
     "chess>=1.10.0",
     "pydantic>=2.0.0",
+    "pydantic-ai-slim[anthropic,google]>=1.85,<2.0",
     "pydantic-settings>=2.0.0",
     "httpx>=0.27.0",
     "fastapi-users[oauth,sqlalchemy]>=15.0.4",
