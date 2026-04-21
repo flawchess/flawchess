@@ -19,7 +19,7 @@ stability (see Plan 04 / RESEARCH.md §Hash Implementation).
 import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # Re-import the Literal aliases owned by Plan 01 so `from app.schemas.insights
 # import Zone` works and consumers do not need to know about
@@ -44,14 +44,21 @@ from app.services.endgame_zones import (
 )
 
 __all__ = [
+    "EndgameInsightsReport",
+    "EndgameInsightsResponse",
     "EndgameTabFindings",
     "FilterContext",
     "FlagId",
+    "InsightsError",
+    "InsightsErrorResponse",
+    "InsightsStatus",
     "MetricId",
     "SampleQuality",
     "SectionId",
+    "SectionInsight",
     "SubsectionFinding",
     "SubsectionId",
+    "TimePoint",
     "Trend",
     "Window",
     "Zone",
@@ -82,6 +89,20 @@ SectionId = Literal[
     "time_pressure",
     "type_breakdown",
 ]
+
+# Discriminator on EndgameInsightsResponse. Frontend TanStack Query branches
+# on this value (Phase 66) — "cache_hit" vs "fresh" vs "stale_rate_limited"
+# drive different banner states.
+InsightsStatus = Literal["fresh", "cache_hit", "stale_rate_limited"]
+
+# Error codes on InsightsErrorResponse. Stable machine-readable prefixes,
+# NOT user-facing copy — Phase 66 frontend owns the retry-message mapping.
+# "rate_limit_exceeded" fires only when BOTH tier-1 cache lookup AND tier-2
+# get_latest_report_for_user return None (D-11); "provider_error" covers
+# ModelAPIError subclasses; "validation_failure" covers
+# UnexpectedModelBehavior after output_retries exhaust; "config_error" is
+# defensive (should never reach clients — lifespan aborts first).
+InsightsError = Literal["rate_limit_exceeded", "provider_error", "validation_failure", "config_error"]
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +184,12 @@ class SubsectionFinding(BaseModel):
     sample_quality: SampleQuality
     is_headline_eligible: bool
     dimension: dict[str, str] | None = None
+    # Phase 65 D-02: populated ONLY for the 4 timeline subsections
+    # (score_gap_timeline, clock_diff_timeline, endgame_elo_timeline,
+    # type_win_rate_timeline). None for non-timeline findings — default
+    # preserves existing callers unchanged. Append-only: reordering this
+    # field above another existing field would churn findings_hash.
+    series: list["TimePoint"] | None = None
 
 
 class EndgameTabFindings(BaseModel):
@@ -184,3 +211,88 @@ class EndgameTabFindings(BaseModel):
     findings: list[SubsectionFinding]
     flags: list[FlagId]
     findings_hash: str
+
+
+class TimePoint(BaseModel):
+    """One point on a resampled timeseries attached to a timeline SubsectionFinding.
+
+    `bucket_start` is ISO YYYY-MM-DD: first-of-week (Monday) for `last_3mo`
+    window, first-of-month for `all_time` window (D-03).
+
+    `n` is the sample size for this bucket (weekly game count for last_3mo,
+    summed-over-the-month for all_time — see insights_service resampler).
+    """
+
+    bucket_start: str  # ISO YYYY-MM-DD
+    value: float
+    n: int
+
+
+class SectionInsight(BaseModel):
+    """One `section` entry in EndgameInsightsReport. LLM emits up to 4 of these.
+
+    Length bounds enforce prompt-compliance: headline <=120 chars (~12 words),
+    bullets 0-2 items x 200 chars (~20 words). Pydantic rejects oversized
+    output -> pydantic-ai's output_retries (2) retries the Agent.
+    """
+
+    section_id: SectionId
+    headline: str = Field(..., max_length=120)
+    bullets: list[str] = Field(default_factory=list, max_length=2)
+
+
+class EndgameInsightsReport(BaseModel):
+    """LLM-produced structured report.
+
+    Shape locked by:
+      - INS-06: `overview` is `str` (not `str | None`); Pydantic rejects null.
+        Always-populate rule is enforced in the system prompt (endgame_v1.md).
+      - D-19: `sections` has `min_length=1, max_length=4`. LLM decides which
+        to include based on sample_quality of underlying findings.
+      - D-20: `unique_section_ids` validator is a cheap safety net — duplicate
+        section_id raises ValueError; pydantic-ai catches and retries.
+      - D-17: `model_used` + `prompt_version` echoed back for frontend debug.
+    """
+
+    overview: str
+    sections: list[SectionInsight] = Field(..., min_length=1, max_length=4)
+    model_used: str
+    prompt_version: str
+
+    @model_validator(mode="after")
+    def unique_section_ids(self) -> "EndgameInsightsReport":
+        ids = [s.section_id for s in self.sections]
+        if len(ids) != len(set(ids)):
+            raise ValueError("duplicate section_id")
+        return self
+
+
+class EndgameInsightsResponse(BaseModel):
+    """HTTP 200 success envelope.
+
+    `stale_filters` is populated ONLY when `status == "stale_rate_limited"`
+    AND the fallback log's filter_context differs from the current request's
+    FilterContext (D-14). Phase 66 reads this to show a "showing stale
+    results for <filters>" banner.
+    """
+
+    report: EndgameInsightsReport
+    status: InsightsStatus
+    stale_filters: FilterContext | None = None
+
+
+class InsightsErrorResponse(BaseModel):
+    """HTTP 429 / 502 / 503 error envelope. Frontend owns user-facing copy.
+
+    `retry_after_seconds` populated ONLY for 429 (computed from oldest miss
+    in the rate-limit window, D-15 + RESEARCH.md §4). Null for 502/503.
+    """
+
+    error: InsightsError
+    retry_after_seconds: int | None = None
+
+
+# Update SubsectionFinding to resolve the forward reference to TimePoint.
+# TimePoint is defined after SubsectionFinding (required because SubsectionFinding
+# uses it in a list annotation), so we call model_rebuild() to resolve it.
+SubsectionFinding.model_rebuild()

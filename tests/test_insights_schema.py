@@ -157,7 +157,12 @@ class TestSubsectionFinding:
             SubsectionFinding(**kwargs)
 
     def test_field_order_locked(self) -> None:
-        """Field order is locked per the plan action (load-bearing for hash stability)."""
+        """Field order is locked per the plan action (load-bearing for hash stability).
+
+        Phase 65 appended `series` as the final field (D-02). The ordering of
+        the first 12 fields is unchanged — only `series` was appended after
+        `dimension`.
+        """
         assert list(SubsectionFinding.model_fields.keys()) == [
             "subsection_id",
             "parent_subsection_id",
@@ -171,6 +176,7 @@ class TestSubsectionFinding:
             "sample_quality",
             "is_headline_eligible",
             "dimension",
+            "series",  # Phase 65 D-02: appended last for findings_hash stability
         ]
 
 
@@ -304,15 +310,24 @@ class TestModuleAll:
     def test_all_contains_expected_names(self) -> None:
         from app.schemas import insights
 
+        # Phase 65 extended __all__ from 11 to 18 names. The original 11 are
+        # preserved; 7 new names were added for the LLM endpoint schemas.
         expected = {
+            "EndgameInsightsReport",
+            "EndgameInsightsResponse",
             "EndgameTabFindings",
             "FilterContext",
             "FlagId",
+            "InsightsError",
+            "InsightsErrorResponse",
+            "InsightsStatus",
             "MetricId",
             "SampleQuality",
             "SectionId",
+            "SectionInsight",
             "SubsectionFinding",
             "SubsectionId",
+            "TimePoint",
             "Trend",
             "Window",
             "Zone",
@@ -329,7 +344,7 @@ def test_nan_constant_available_for_callers() -> None:
 # Phase 65 schema extension tests
 # ---------------------------------------------------------------------------
 
-from typing import Any
+from typing import Any  # noqa: E402
 
 from app.schemas.insights import (  # noqa: E402
     EndgameInsightsReport,
@@ -350,7 +365,7 @@ class TestTimePoint:
 
     def test_all_fields_required(self) -> None:
         with pytest.raises(ValidationError):
-            TimePoint(bucket_start="2026-02-03", value=0.42)  # type: ignore[call-arg]
+            TimePoint(bucket_start="2026-02-03", value=0.42)  # ty: ignore[missing-argument]
 
 
 class TestSectionInsight:
@@ -370,7 +385,7 @@ class TestSectionInsight:
 
     def test_section_id_literal_enforced(self) -> None:
         with pytest.raises(ValidationError):
-            SectionInsight(section_id="invalid", headline="ok")  # type: ignore[arg-type]
+            SectionInsight(section_id="invalid", headline="ok")  # ty: ignore[invalid-argument-type]
 
 
 class TestEndgameInsightsReport:
@@ -445,7 +460,7 @@ class TestEndgameInsightsReport:
         """INS-06: overview is `str`, not `str | None`."""
         with pytest.raises(ValidationError):
             EndgameInsightsReport(
-                overview=None,  # type: ignore[arg-type]
+                overview=None,  # ty: ignore[invalid-argument-type]
                 sections=[self._build_section("overall")],
                 model_used="test",
                 prompt_version="endgame_v1",
@@ -481,7 +496,7 @@ class TestEndgameInsightsResponse:
 
     def test_status_literal_enforced(self) -> None:
         with pytest.raises(ValidationError):
-            EndgameInsightsResponse(report=self._report(), status="bogus")  # type: ignore[arg-type]
+            EndgameInsightsResponse(report=self._report(), status="bogus")  # ty: ignore[invalid-argument-type]
 
 
 class TestInsightsErrorResponse:
@@ -497,7 +512,7 @@ class TestInsightsErrorResponse:
 
     def test_error_literal_enforced(self) -> None:
         with pytest.raises(ValidationError):
-            InsightsErrorResponse(error="bogus")  # type: ignore[arg-type]
+            InsightsErrorResponse(error="bogus")  # ty: ignore[invalid-argument-type]
 
 
 class TestSubsectionFindingSeries:
