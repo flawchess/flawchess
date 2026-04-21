@@ -1,0 +1,842 @@
+"""Tests for app/services/insights_llm.py — Phase 65 orchestration service.
+
+Covers:
+- LLM-01: Agent returns validated EndgameInsightsReport via TestModel.
+- LLM-02: Startup validation (UserError on empty model, ValueError on bad provider).
+- INS-04: Cache key = (findings_hash, prompt_version, model).
+- INS-05: 3-miss rate-limit boundary, tier-2 soft-fail, window rollover.
+- INS-06: Overview always populated in log; hidden only in response when flag set.
+
+No real provider calls — all agent calls use TestModel or FunctionModel per D-38/D-39.
+Rate-limit seeding uses fresh_test_user + own-session pattern (mirrors Plan 04 tests).
+compute_findings is monkeypatched for all orchestration tests to avoid DB-heavy Phase 63.
+"""
+
+import datetime
+from decimal import Decimal
+from typing import Any
+from unittest.mock import MagicMock
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+
+from app.models.llm_log import LlmLog
+from app.models.user import User
+from app.schemas.insights import (
+    EndgameInsightsReport,
+    EndgameTabFindings,
+    FilterContext,
+    SectionInsight,
+    SubsectionFinding,
+    TimePoint,
+)
+from app.services import insights_llm
+from app.services.insights_llm import (
+    INSIGHTS_MISSES_PER_HOUR,
+    InsightsProviderError,
+    InsightsRateLimitExceeded,
+    InsightsValidationFailure,
+    _SYSTEM_PROMPT,
+    _assemble_user_prompt,
+    _maybe_strip_overview,
+    generate_insights,
+    get_insights_agent,
+)
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameInsightsReport:
+    return EndgameInsightsReport(
+        overview=overview,
+        sections=[
+            SectionInsight(
+                section_id="overall",
+                headline="Score Gap is typical",
+                bullets=["+4.2pp gap on last_3mo"],
+            ),
+        ],
+        model_used="test",
+        prompt_version="endgame_v1",
+    )
+
+
+def _sample_filter_context(**kwargs: Any) -> FilterContext:
+    defaults: dict[str, Any] = {
+        "recency": "all_time",
+        "opponent_strength": "any",
+        "color": "all",
+        "time_controls": [],
+        "platforms": [],
+        "rated_only": False,
+    }
+    defaults.update(kwargs)
+    return FilterContext(**defaults)
+
+
+def _make_log_row(
+    user_id: int,
+    *,
+    created_at: datetime.datetime | None = None,
+    error: str | None = None,
+    response_json: dict[str, Any] | None = None,
+    cache_hit: bool = False,
+    prompt_version: str = "endgame_v1",
+    model: str = "test",
+    findings_hash: str = "b" * 64,
+) -> LlmLog:
+    """Build a minimal LlmLog row for seeding rate-limit tests."""
+    kwargs: dict[str, Any] = dict(
+        user_id=user_id,
+        endpoint="insights.endgame",
+        model=model,
+        prompt_version=prompt_version,
+        findings_hash=findings_hash,
+        filter_context={"recency": "all_time"},
+        flags=[],
+        system_prompt="system",
+        user_prompt="user",
+        response_json=response_json,
+        input_tokens=100,
+        output_tokens=50,
+        latency_ms=500,
+        cache_hit=cache_hit,
+        error=error,
+        cost_usd=Decimal("0"),
+    )
+    if created_at is not None:
+        kwargs["created_at"] = created_at
+    return LlmLog(**kwargs)
+
+
+async def _seed(session: AsyncSession, *rows: LlmLog) -> None:
+    for row in rows:
+        session.add(row)
+    await session.commit()
+
+
+def _fake_findings(
+    filter_context: FilterContext,
+    findings_hash: str = "b" * 64,
+    findings: list[SubsectionFinding] | None = None,
+) -> EndgameTabFindings:
+    return EndgameTabFindings(
+        as_of=datetime.datetime.now(datetime.UTC),
+        filters=filter_context,
+        findings=findings or [],
+        flags=[],
+        findings_hash=findings_hash,
+    )
+
+
+async def _fake_compute_findings(
+    filter_context: FilterContext,
+    session: AsyncSession,
+    user_id: int,
+    findings_hash: str = "b" * 64,
+) -> EndgameTabFindings:
+    return _fake_findings(filter_context, findings_hash=findings_hash)
+
+
+# ---------------------------------------------------------------------------
+# TestStartupValidation
+# ---------------------------------------------------------------------------
+
+
+class TestStartupValidation:
+    def test_empty_model_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from pydantic_ai.exceptions import UserError
+        insights_llm.get_insights_agent.cache_clear()
+        monkeypatch.setattr(insights_llm.settings, "PYDANTIC_AI_MODEL_INSIGHTS", "")
+        with pytest.raises(UserError):
+            insights_llm.get_insights_agent()
+        insights_llm.get_insights_agent.cache_clear()
+
+    def test_bad_provider_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        insights_llm.get_insights_agent.cache_clear()
+        monkeypatch.setattr(
+            insights_llm.settings, "PYDANTIC_AI_MODEL_INSIGHTS", "bogus-provider:foo"
+        )
+        with pytest.raises(ValueError):
+            insights_llm.get_insights_agent()
+        insights_llm.get_insights_agent.cache_clear()
+
+    def test_valid_test_model_constructs(self) -> None:
+        # conftest sets PYDANTIC_AI_MODEL_INSIGHTS="test"; cache may hold it already.
+        insights_llm.get_insights_agent.cache_clear()
+        agent = get_insights_agent()
+        assert agent is not None
+        insights_llm.get_insights_agent.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# TestPromptAssembly
+# ---------------------------------------------------------------------------
+
+
+class TestPromptAssembly:
+    def test_user_prompt_shape(self) -> None:
+        filters = _sample_filter_context(
+            recency="3months", time_controls=["blitz"], platforms=["chess.com"]
+        )
+        non_timeline = SubsectionFinding(
+            subsection_id="overall",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="score_gap",
+            value=4.2,
+            zone="typical",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=487,
+            sample_quality="rich",
+            is_headline_eligible=True,
+            dimension=None,
+            series=None,
+        )
+        timeline = SubsectionFinding(
+            subsection_id="score_gap_timeline",
+            parent_subsection_id=None,
+            window="last_3mo",
+            metric="score_gap",
+            value=3.5,
+            zone="typical",
+            trend="improving",
+            weekly_points_in_window=8,
+            sample_size=8,
+            sample_quality="adequate",
+            is_headline_eligible=True,
+            dimension=None,
+            series=[
+                TimePoint(bucket_start="2026-01-06", value=2.1, n=12),
+                TimePoint(bucket_start="2026-01-13", value=3.5, n=14),
+            ],
+        )
+        tab_findings = _fake_findings(filters, findings=[non_timeline, timeline])
+        prompt = _assemble_user_prompt(tab_findings)
+
+        assert "Filters:" in prompt
+        assert "Flags:" in prompt
+        assert "## Subsection: overall" in prompt
+        assert "## Subsection: score_gap_timeline" in prompt
+        assert "### Series (" in prompt
+        assert "2026-01-06" in prompt
+        assert "2026-01-13" in prompt
+
+    def test_system_prompt_loaded_from_file(self) -> None:
+        import app.services.insights_prompts as pkg
+        from pathlib import Path
+
+        file_path = Path(pkg.__file__).parent / "endgame_v1.md"
+        file_content = file_path.read_text(encoding="utf-8")
+        assert _SYSTEM_PROMPT == file_content
+        assert len(_SYSTEM_PROMPT) > 0
+
+    def test_filter_excludes_color_and_rated_only(self) -> None:
+        filters = _sample_filter_context(color="white", rated_only=True)
+        tab_findings = _fake_findings(filters)
+        prompt = _assemble_user_prompt(tab_findings)
+
+        assert "color=" not in prompt
+        assert "rated_only=" not in prompt
+        assert "white" not in prompt
+        assert "rated" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# TestHappyPath
+# ---------------------------------------------------------------------------
+
+
+class TestHappyPath:
+    @pytest.mark.asyncio
+    async def test_generate_insights_fresh_miss(
+        self,
+        fake_insights_agent: Any,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Fresh miss: returns status='fresh', writes exactly one llm_logs row."""
+        report = _sample_report()
+        fake_insights_agent(report)
+
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid),
+        )
+
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session:
+            response = await generate_insights(
+                _sample_filter_context(), fresh_test_user.id, session
+            )
+
+        assert response.status == "fresh"
+        assert response.report.overview == report.overview
+        assert response.report.sections[0].section_id == "overall"
+
+        # Verify exactly one llm_logs row written with cache_hit=False + response_json set.
+        # Note: the "test" model is unknown to genai-prices so the row's error field
+        # will contain "cost_unknown:test" (not NULL). We query directly by user_id +
+        # findings_hash rather than via get_latest_log_by_hash which filters error IS NULL.
+        from sqlalchemy import select as sa_select
+        from app.models.llm_log import LlmLog as LlmLogModel
+        async with session_maker() as session:
+            result = await session.execute(
+                sa_select(LlmLogModel)
+                .where(
+                    LlmLogModel.user_id == fresh_test_user.id,
+                    LlmLogModel.findings_hash == "b" * 64,
+                    LlmLogModel.cache_hit.is_(False),
+                )
+                .order_by(LlmLogModel.created_at.desc())
+                .limit(1)
+            )
+            log = result.scalar_one_or_none()
+        assert log is not None
+        assert log.cache_hit is False
+        assert log.response_json is not None
+
+
+# ---------------------------------------------------------------------------
+# TestCacheBehavior
+# ---------------------------------------------------------------------------
+
+
+class TestCacheBehavior:
+    @pytest.mark.asyncio
+    async def test_second_call_cache_hits(
+        self,
+        fake_insights_agent: Any,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A seeded cache row (error=None) causes the next call to return cache_hit.
+
+        Note: the test provider "test" is unknown to genai-prices, so any row
+        written by generate_insights itself gets error="cost_unknown:test" and
+        would NOT be found by get_latest_log_by_hash (which filters error IS NULL).
+        We seed a clean cache row manually to test the cache-hit branch directly.
+        """
+        report = _sample_report()
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        # Seed a cache-hit eligible row: error=None, response_json set,
+        # matching (findings_hash, prompt_version="endgame_v1", model="test").
+        async with session_maker() as session:
+            await _seed(
+                session,
+                _make_log_row(
+                    fresh_test_user.id,
+                    model="test",
+                    findings_hash="b" * 64,
+                    response_json=report.model_dump(),
+                    error=None,
+                ),
+            )
+
+        fake_insights_agent(report)
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid),
+        )
+
+        # Call returns cache_hit because the seeded row matches (hash + prompt_version + model).
+        async with session_maker() as session:
+            r = await generate_insights(
+                _sample_filter_context(), fresh_test_user.id, session
+            )
+        assert r.status == "cache_hit"
+
+    @pytest.mark.asyncio
+    async def test_prompt_version_bump_misses(
+        self,
+        fake_insights_agent: Any,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A row with an old prompt_version does not count as a cache hit."""
+        report = _sample_report()
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        # Seed a row with old prompt version
+        async with session_maker() as session:
+            await _seed(
+                session,
+                _make_log_row(
+                    fresh_test_user.id,
+                    prompt_version="endgame_v0",
+                    model="test",
+                    findings_hash="b" * 64,
+                    response_json=report.model_dump(),
+                ),
+            )
+
+        fake_insights_agent(report)
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid),
+        )
+
+        async with session_maker() as session:
+            r = await generate_insights(
+                _sample_filter_context(), fresh_test_user.id, session
+            )
+        # Should be fresh — old prompt_version doesn't match _PROMPT_VERSION
+        assert r.status == "fresh"
+
+    @pytest.mark.asyncio
+    async def test_model_swap_misses(
+        self,
+        fake_insights_agent: Any,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A row with a different model does not count as a cache hit."""
+        report = _sample_report()
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        # Seed a row with different model
+        async with session_maker() as session:
+            await _seed(
+                session,
+                _make_log_row(
+                    fresh_test_user.id,
+                    model="google-gla:gemini-2.5-flash",
+                    findings_hash="b" * 64,
+                    response_json=report.model_dump(),
+                ),
+            )
+
+        fake_insights_agent(report)
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid),
+        )
+
+        async with session_maker() as session:
+            r = await generate_insights(
+                _sample_filter_context(), fresh_test_user.id, session
+            )
+        # Should be fresh — model "test" != "google-gla:gemini-2.5-flash"
+        assert r.status == "fresh"
+
+
+# ---------------------------------------------------------------------------
+# TestRateLimit
+# ---------------------------------------------------------------------------
+
+
+class TestRateLimit:
+    @pytest.mark.asyncio
+    async def test_boundary_3_misses_allowed_4th_stale(
+        self,
+        fake_insights_agent: Any,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """After 3 successful misses, 4th call returns stale_rate_limited with tier-2 fallback."""
+        assert INSIGHTS_MISSES_PER_HOUR == 3  # confirm constant
+        report = _sample_report()
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        # Seed 3 successful miss rows (consuming the quota) + 1 tier-2 fallback.
+        # All rows use valid EndgameInsightsReport JSON (get_latest_report_for_user
+        # returns the most recent one, which may be any of these — that's fine as
+        # long as it parses). Use distinct findings_hashes != "b"*64 so tier-1
+        # lookup for the current "b"*64 hash does not find them.
+        now = datetime.datetime.now(datetime.UTC)
+        valid_report_json = report.model_dump()
+        async with session_maker() as session:
+            for i in range(3):
+                await _seed(
+                    session,
+                    _make_log_row(
+                        fresh_test_user.id,
+                        created_at=now - datetime.timedelta(minutes=10 + i),
+                        findings_hash="c" * 64,
+                        response_json=valid_report_json,
+                    ),
+                )
+            # Tier-2 fallback: oldest successful row (get_latest returns newest,
+            # which is one of the 3 above — all valid — so any serves as fallback).
+            # This extra row ensures at least one valid fallback exists regardless
+            # of query ordering.
+            await _seed(
+                session,
+                _make_log_row(
+                    fresh_test_user.id,
+                    created_at=now - datetime.timedelta(minutes=30),
+                    findings_hash="d" * 64,
+                    response_json=valid_report_json,
+                ),
+            )
+
+        fake_insights_agent(report)
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid),
+        )
+
+        async with session_maker() as session:
+            r = await generate_insights(
+                _sample_filter_context(), fresh_test_user.id, session
+            )
+        assert r.status == "stale_rate_limited"
+        assert r.report.overview == report.overview
+
+    @pytest.mark.asyncio
+    async def test_429_when_no_tier2(
+        self,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Rate-limit exhausted with no tier-2 fallback raises InsightsRateLimitExceeded."""
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        # Seed 3 successful miss rows with an OLD prompt_version so they count
+        # toward the rate-limit (count_recent_successful_misses does NOT filter
+        # by prompt_version) but are NOT returned by get_latest_report_for_user
+        # (which filters by prompt_version="endgame_v1"), producing "no tier-2".
+        now = datetime.datetime.now(datetime.UTC)
+        # Build a valid report JSON for rows (avoids ValidationError in case tier-2
+        # is somehow reached — but with the prompt_version mismatch it should not be).
+        valid_json = _sample_report().model_dump()
+        async with session_maker() as session:
+            for _ in range(3):
+                await _seed(
+                    session,
+                    _make_log_row(
+                        fresh_test_user.id,
+                        created_at=now - datetime.timedelta(minutes=10),
+                        prompt_version="endgame_v0",  # old era — excluded from tier-2
+                        response_json=valid_json,
+                        findings_hash="k" * 64,
+                    ),
+                )
+
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            # Use a hash that differs from all seeded rows so tier-1 misses
+            lambda fc, sess, uid: _fake_compute_findings(
+                fc, sess, uid, findings_hash="d" * 64
+            ),
+        )
+
+        async with session_maker() as session:
+            with pytest.raises(InsightsRateLimitExceeded) as exc_info:
+                await generate_insights(
+                    _sample_filter_context(), fresh_test_user.id, session
+                )
+        assert exc_info.value.retry_after_seconds > 0
+
+    @pytest.mark.asyncio
+    async def test_window_rollover(
+        self,
+        fake_insights_agent: Any,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Misses older than 1h are outside the window; 4th call is fresh (not rate-limited)."""
+        report = _sample_report()
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        # Seed 3 misses with created_at >61 minutes ago (outside the 1h window)
+        old_time = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=61)
+        async with session_maker() as session:
+            for _ in range(3):
+                await _seed(
+                    session,
+                    _make_log_row(
+                        fresh_test_user.id,
+                        created_at=old_time,
+                        response_json={"ok": True},
+                        findings_hash="e" * 64,
+                    ),
+                )
+
+        fake_insights_agent(report)
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(
+                fc, sess, uid, findings_hash="f" * 64
+            ),
+        )
+
+        async with session_maker() as session:
+            r = await generate_insights(
+                _sample_filter_context(), fresh_test_user.id, session
+            )
+        # Window rolled over — should be fresh, not rate-limited
+        assert r.status == "fresh"
+
+
+# ---------------------------------------------------------------------------
+# TestErrors
+# ---------------------------------------------------------------------------
+
+
+class TestErrors:
+    @pytest.mark.asyncio
+    async def test_provider_error_logs_row_and_raises(
+        self,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Provider error: raises InsightsProviderError + writes one row with error='provider_error'."""
+        from pydantic_ai import Agent
+        from pydantic_ai.exceptions import ModelHTTPError
+        from pydantic_ai.models.function import FunctionModel
+
+        async def _failing_model(messages: Any, info: Any) -> Any:
+            raise ModelHTTPError(status_code=500, model_name="test", body="simulated")
+
+        fake = Agent(FunctionModel(_failing_model), output_type=EndgameInsightsReport)
+        monkeypatch.setattr(
+            "app.services.insights_llm.get_insights_agent", lambda: fake
+        )
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(
+                fc, sess, uid, findings_hash="g" * 64
+            ),
+        )
+        # Silence Sentry in this test
+        mock_sentry = MagicMock()
+        monkeypatch.setattr("app.services.insights_llm.sentry_sdk", mock_sentry)
+
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session:
+            with pytest.raises(InsightsProviderError):
+                await generate_insights(
+                    _sample_filter_context(), fresh_test_user.id, session
+                )
+
+        # Verify log row written with error marker and null response_json
+        async with session_maker() as session:
+            from sqlalchemy import select
+            from app.models.llm_log import LlmLog as LlmLogModel
+            result = await session.execute(
+                select(LlmLogModel)
+                .where(
+                    LlmLogModel.user_id == fresh_test_user.id,
+                    LlmLogModel.findings_hash == "g" * 64,
+                )
+            )
+            row = result.scalar_one_or_none()
+        assert row is not None
+        assert row.error is not None
+        assert "provider_error" in row.error
+
+    @pytest.mark.asyncio
+    async def test_validation_failure_logs_row_and_raises(
+        self,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Validation failure: raises InsightsValidationFailure + writes row with error marker."""
+        from pydantic_ai import Agent
+        from pydantic_ai.models.test import TestModel
+
+        # TestModel with sections=[] violates min_length=1, triggering UnexpectedModelBehavior
+        # after output_retries are exhausted.
+        bad_output: dict[str, Any] = {
+            "overview": "ok",
+            "sections": [],  # violates min_length=1
+            "model_used": "test",
+            "prompt_version": "endgame_v1",
+        }
+        fake = Agent(
+            TestModel(custom_output_args=bad_output),
+            output_type=EndgameInsightsReport,
+            output_retries=0,  # no retries — fail immediately
+        )
+        monkeypatch.setattr(
+            "app.services.insights_llm.get_insights_agent", lambda: fake
+        )
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(
+                fc, sess, uid, findings_hash="h" * 64
+            ),
+        )
+        mock_sentry = MagicMock()
+        monkeypatch.setattr("app.services.insights_llm.sentry_sdk", mock_sentry)
+
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session:
+            with pytest.raises(InsightsValidationFailure):
+                await generate_insights(
+                    _sample_filter_context(), fresh_test_user.id, session
+                )
+
+        async with session_maker() as session:
+            from sqlalchemy import select
+            from app.models.llm_log import LlmLog as LlmLogModel
+            result = await session.execute(
+                select(LlmLogModel)
+                .where(
+                    LlmLogModel.user_id == fresh_test_user.id,
+                    LlmLogModel.findings_hash == "h" * 64,
+                )
+            )
+            row = result.scalar_one_or_none()
+        assert row is not None
+        # The "test" model is unknown to genai-prices so the repo appends
+        # "; cost_unknown:test" to the error column. The marker we care about
+        # (the pydantic-ai failure reason) must be the first part.
+        assert row.error is not None
+        assert row.error.startswith("validation_failure_after_retries")
+        assert row.response_json is None
+
+
+# ---------------------------------------------------------------------------
+# TestSentryCapture
+# ---------------------------------------------------------------------------
+
+
+class TestSentryCapture:
+    @pytest.mark.asyncio
+    async def test_set_context_called_on_provider_error(
+        self,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Provider error triggers sentry_sdk.set_context with structured data."""
+        from pydantic_ai import Agent
+        from pydantic_ai.exceptions import ModelHTTPError
+        from pydantic_ai.models.function import FunctionModel
+
+        async def _failing_model(messages: Any, info: Any) -> Any:
+            raise ModelHTTPError(status_code=500, model_name="test", body="simulated")
+
+        fake = Agent(FunctionModel(_failing_model), output_type=EndgameInsightsReport)
+        monkeypatch.setattr(
+            "app.services.insights_llm.get_insights_agent", lambda: fake
+        )
+        findings_hash = "i" * 64
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(
+                fc, sess, uid, findings_hash=findings_hash
+            ),
+        )
+        mock_sentry = MagicMock()
+        monkeypatch.setattr("app.services.insights_llm.sentry_sdk", mock_sentry)
+
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session:
+            with pytest.raises(InsightsProviderError):
+                await generate_insights(
+                    _sample_filter_context(), fresh_test_user.id, session
+                )
+
+        mock_sentry.set_context.assert_called_with(
+            "insights",
+            {
+                "user_id": fresh_test_user.id,
+                "findings_hash": findings_hash,
+                "model": "test",
+                "endpoint": "insights.endgame",
+            },
+        )
+        mock_sentry.capture_exception.assert_called_once()
+
+    def test_no_variable_in_exception_message(self) -> None:
+        """Exception messages use stable markers — no user_id or dynamic data."""
+        exc = InsightsProviderError("provider_error")
+        msg = str(exc)
+        # Must not contain anything dynamic (user_id is an int, findings_hash is hex)
+        assert "user_id" not in msg
+        assert "findings_hash" not in msg
+        # Must be the stable marker
+        assert msg == "provider_error"
+
+
+# ---------------------------------------------------------------------------
+# TestHideOverview
+# ---------------------------------------------------------------------------
+
+
+class TestHideOverview:
+    def test_maybe_strip_overview_strips_when_flag_set(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(insights_llm.settings, "INSIGHTS_HIDE_OVERVIEW", True)
+        report = _sample_report(overview="Full overview text here.")
+        stripped = _maybe_strip_overview(report)
+        assert stripped.overview == ""
+        # Original unchanged
+        assert report.overview == "Full overview text here."
+
+    def test_maybe_strip_overview_keeps_when_flag_false(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(insights_llm.settings, "INSIGHTS_HIDE_OVERVIEW", False)
+        report = _sample_report(overview="Full overview text.")
+        result = _maybe_strip_overview(report)
+        assert result.overview == "Full overview text."
+
+    @pytest.mark.asyncio
+    async def test_hide_overview_strips_response_but_logs_full(
+        self,
+        fake_insights_agent: Any,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """INSIGHTS_HIDE_OVERVIEW=True: response has empty overview but log has full text."""
+        full_overview = "Detailed analysis here."
+        report = _sample_report(overview=full_overview)
+        fake_insights_agent(report)
+
+        monkeypatch.setattr(insights_llm.settings, "INSIGHTS_HIDE_OVERVIEW", True)
+        findings_hash = "j" * 64
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(
+                fc, sess, uid, findings_hash=findings_hash
+            ),
+        )
+
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session:
+            response = await generate_insights(
+                _sample_filter_context(), fresh_test_user.id, session
+            )
+
+        # Response overview stripped
+        assert response.status == "fresh"
+        assert response.report.overview == ""
+
+        # Log response_json still has the full overview.
+        # Query directly (not via get_latest_log_by_hash which filters error IS NULL;
+        # the "test" model yields cost_unknown:test in the error column).
+        from sqlalchemy import select as sa_select
+        from app.models.llm_log import LlmLog as LlmLogModel
+        async with session_maker() as session:
+            result = await session.execute(
+                sa_select(LlmLogModel)
+                .where(
+                    LlmLogModel.user_id == fresh_test_user.id,
+                    LlmLogModel.findings_hash == findings_hash,
+                )
+                .order_by(LlmLogModel.created_at.desc())
+                .limit(1)
+            )
+            log = result.scalar_one_or_none()
+        assert log is not None
+        assert log.response_json is not None
+        assert log.response_json.get("overview") == full_overview

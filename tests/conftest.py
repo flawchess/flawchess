@@ -245,8 +245,13 @@ def fake_insights_agent(monkeypatch: pytest.MonkeyPatch):
     from app.schemas.insights import EndgameInsightsReport
     from app.services import insights_llm
 
+    # Save reference to the real cached function BEFORE monkeypatching so
+    # teardown can clear it (monkeypatch restores AFTER our yield teardown runs,
+    # so insights_llm.get_insights_agent would still be the lambda during teardown).
+    original_get_insights_agent = insights_llm.get_insights_agent
+
     def _install(report: EndgameInsightsReport) -> None:
-        insights_llm.get_insights_agent.cache_clear()
+        original_get_insights_agent.cache_clear()
         fake = Agent(
             TestModel(custom_output_args=report.model_dump()),
             output_type=EndgameInsightsReport,
@@ -258,5 +263,7 @@ def fake_insights_agent(monkeypatch: pytest.MonkeyPatch):
 
     yield _install
 
-    # Teardown: clear cache so the real Agent is rebuilt on next use.
-    insights_llm.get_insights_agent.cache_clear()
+    # Teardown: clear cache on the original lru_cache function so the real
+    # Agent is rebuilt on next use. (monkeypatch restores the name binding
+    # after this teardown, so we must use the saved reference.)
+    original_get_insights_agent.cache_clear()
