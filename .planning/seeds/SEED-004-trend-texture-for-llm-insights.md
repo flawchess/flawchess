@@ -49,6 +49,7 @@ Do NOT surface during Phase 63 retro or Phase 64 follow-ups — Phase 63's MVP i
 - PELT / kernel changepoint detection, Mann-Kendall, Bayesian changepoint. Any external dependency.
 - Replacing `_compute_trend` or removing the slope/stdev ratio gate.
 - Per-game point arrays in `SubsectionFinding` (would balloon the log payload and the LLM context).
+- Additional smoothing (EMA, LOESS, Savitzky-Golay). Weekly bucketing in `endgame_service.py` already averages within each week, so the series fed to `_compute_trend` is pre-smoothed. Further smoothing would blunt the recent-shift signal `recent_vs_prior_delta` is meant to catch.
 
 ## Breadcrumbs
 
