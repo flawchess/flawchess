@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: LLM-first Endgame Insights
 status: executing
-last_updated: "2026-04-21T17:41:21.343Z"
+last_updated: "2026-04-21T18:38:36.483Z"
 last_activity: 2026-04-20 -- Phase 64 Plan 03 complete (repo + 5 tests)
 progress:
   total_phases: 9
   completed_phases: 2
-  total_plans: 8
+  total_plans: 14
   completed_plans: 8
-  percent: 100
+  percent: 57
 ---
 
 # Project State: FlawChess
@@ -169,3 +169,5 @@ Phase 67: Validation & Beta Rollout           — Not started
 
 ---
 Last activity: 2026-04-20 — Phase 64 complete (Plan 03: async repo create_llm_log + get_latest_log_by_hash with D-02 own-session commit + D-03 genai-prices split-form cost computation + SC #4 cost_unknown fallback; 4 repo tests + 1 cascade test; conftest.py patch list extended for own-session modules; 950 tests pass in 12.78s; ty/ruff clean; LOG-02 + LOG-04 complete). Next: Phase 65 (LLM Endpoint with pydantic-ai Agent) — requires discuss-phase to pin PYDANTIC_AI_MODEL_INSIGHTS env var and resolve notable_endgame_elo_divergence cross-section flag.
+
+**Planned Phase:** 65 (LLM Endpoint with pydantic-ai Agent) — 6 plans — 2026-04-21T18:38:36.479Z
