@@ -207,7 +207,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 - [x] 65-03-PLAN.md — Findings pipeline extension: weekly/monthly resampling, gap-only + sparse-combo Endgame ELO, series population (Wave 2)
 - [x] 65-04-PLAN.md — Repository read helpers: count_recent_successful_misses + get_latest_report_for_user (Wave 2)
 - [x] 65-05-PLAN.md — LLM orchestration service: Agent singleton, prompt assembly, generate_insights, Sentry wiring, tests (Wave 3)
-- [ ] 65-06-PLAN.md — Router + lifespan wiring + end-to-end tests + CHANGELOG + SEED-004 close (Wave 4)
+- [x] 65-06-PLAN.md — Router + lifespan wiring + end-to-end tests + CHANGELOG + SEED-004 close (Wave 4)
 
 ### Phase 66: Frontend EndgameInsightsBlock & Beta Flag
 **Goal**: Users with `insights_beta_enabled=true` see a "Generate insights" button on the Endgame tab and, on click, receive the overview paragraph plus 4 Section blocks rendered inline. Backend config can hide the overview independently while per-section insights stay live.
