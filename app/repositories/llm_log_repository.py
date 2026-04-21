@@ -205,3 +205,53 @@ async def count_recent_successful_misses(
         )
     )
     return result.scalar_one()
+
+
+async def get_latest_report_for_user(
+    session: AsyncSession,
+    user_id: int,
+    prompt_version: str,
+    model: str,
+) -> LlmLog | None:
+    """Tier-2 soft-fail lookup per CONTEXT.md D-11.
+
+    Returns the user's most recent successful report under the current
+    prompt_version / model era. Called when rate-limit is exhausted and
+    tier-1 exact cache lookup (get_latest_log_by_hash) returned None.
+
+    Rationale for the era filter (prompt_version + model): serving a stale
+    report from a prior prompt/model era would mix narratives from
+    inconsistent prompts, confusing the user. Limiting to current era
+    ensures stale content is still stylistically / semantically coherent
+    with what a fresh call would have produced.
+
+    "Successful" per same rule as tier-1: response_json IS NOT NULL AND
+    error IS NULL — a cost_unknown row or provider-error row is NOT a
+    valid stale-serve source.
+
+    Index coverage: ix_llm_logs_user_id_created_at (user_id equality +
+    created_at DESC ordering). prompt_version / model / response_json /
+    error filters apply on the small per-user-per-era slice.
+
+    Args:
+        session: caller-supplied AsyncSession.
+        user_id: authenticated user scoping the query.
+        prompt_version: current prompt version (e.g. "endgame_v1") — era key.
+        model: current pydantic-ai model string (e.g. "anthropic:claude-...") — era key.
+
+    Returns:
+        The most recent matching LlmLog, or None if no row matches.
+    """
+    result = await session.execute(
+        select(LlmLog)
+        .where(
+            LlmLog.user_id == user_id,
+            LlmLog.prompt_version == prompt_version,
+            LlmLog.model == model,
+            LlmLog.response_json.is_not(None),
+            LlmLog.error.is_(None),
+        )
+        .order_by(LlmLog.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
