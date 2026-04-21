@@ -155,7 +155,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 
 - [x] **Phase 63: Findings Pipeline & Zone Wiring** — Transform `/api/endgames/overview` composite into zone/trend/sample-quality findings and cross-section flags (complete 2026-04-20, 5/5 plans)
 - [x] **Phase 64: `llm_logs` Table & Async Repo** — Generic Postgres log table (+ Alembic migration + async repo) designed for reuse across future LLM features (complete 2026-04-20, 3/3 plans)
-- [ ] **Phase 65: LLM Endpoint with pydantic-ai Agent** — `POST /api/insights/endgame` with versioned prompt, findings-hash cache, rate limit, soft-fail
+- [x] **Phase 65: LLM Endpoint with pydantic-ai Agent** — `POST /api/insights/endgame` with versioned prompt, findings-hash cache, rate limit, soft-fail (completed 2026-04-21)
 - [ ] **Phase 66: Frontend EndgameInsightsBlock & Beta Flag** — Overview + 4 Section blocks inline on the Endgame tab, gated by `users.insights_beta_enabled`
 - [ ] **Phase 67: Validation & Beta Rollout** — Ground-truth regression test + admin-impersonation eyeball validation across 5+ real user profiles
 
@@ -258,7 +258,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 | 48, 52-62. v1.10 phases | v1.10 | 28/28 | Complete | 2026-04-19 |
 | 63. Findings Pipeline & Zone Wiring | v1.11 | 5/5 | Complete | 2026-04-20 |
 | 64. llm_logs Table & Async Repo | v1.11 | 2/3 | In progress | - |
-| 65. LLM Endpoint with pydantic-ai Agent | v1.11 | 0/6 | Not started | - |
+| 65. LLM Endpoint with pydantic-ai Agent | v1.11 | 6/6 | Complete    | 2026-04-21 |
 | 66. Frontend EndgameInsightsBlock & Beta Flag | v1.11 | 0/0 | Not started | - |
 | 67. Validation & Beta Rollout | v1.11 | 0/0 | Not started | - |
 
@@ -268,7 +268,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/2 plans complete
+**Plans:** 6/6 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

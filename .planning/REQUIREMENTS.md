@@ -11,10 +11,10 @@ Requirements for LLM-first Endgame Insights milestone. Source: `.planning/seeds/
 - [ ] **INS-01**: User with beta flag enabled sees a "Generate insights" button on the Endgame tab and can generate an insights report on demand
 - [ ] **INS-02**: Generated report renders an overview paragraph (1–2 paragraphs, ≤150 words) above 4 Section blocks, each with a headline (≤12 words) and 0–2 bullets (≤20 words each)
 - [ ] **INS-03**: Insights respect the active filter context that meaningfully changes the underlying findings (recency, opponent_strength, time_controls, platforms) — different filter states produce different insights. `color` and `rated_only` are NOT fed into the prompt: they do not materially reshape the cross-section story the LLM tells.
-- [ ] **INS-04**: Insights cache on `findings_hash` so equivalent filter states reuse the prior report; cache key includes `prompt_version` and `model` so prompt bumps and env-var model swaps invalidate naturally
-- [ ] **INS-05**: Generation is rate-limited to 3 cache misses per hour per user; on limit exhaustion, the user receives the last cached report (soft-fail) rather than an error
-- [ ] **INS-06**: The overview paragraph is ALWAYS populated when a report is produced. When no strong cross-section signal is present, the overview summarizes the per-section findings instead of returning null — silence is not a valid overview output
-- [ ] **INS-07**: All failure paths (structured-output validation, provider error, missing env var at startup) show a single retry affordance copy and are captured in Sentry with `set_context` for `user_id / findings_hash / model` (never embedded in error message, per CLAUDE.md grouping rules)
+- [x] **INS-04**: Insights cache on `findings_hash` so equivalent filter states reuse the prior report; cache key includes `prompt_version` and `model` so prompt bumps and env-var model swaps invalidate naturally
+- [x] **INS-05**: Generation is rate-limited to 3 cache misses per hour per user; on limit exhaustion, the user receives the last cached report (soft-fail) rather than an error
+- [x] **INS-06**: The overview paragraph is ALWAYS populated when a report is produced. When no strong cross-section signal is present, the overview summarizes the per-section findings instead of returning null — silence is not a valid overview output
+- [x] **INS-07**: All failure paths (structured-output validation, provider error, missing env var at startup) show a single retry affordance copy and are captured in Sentry with `set_context` for `user_id / findings_hash / model` (never embedded in error message, per CLAUDE.md grouping rules)
 
 ### Findings Pipeline
 
@@ -26,9 +26,9 @@ Requirements for LLM-first Endgame Insights milestone. Source: `.planning/seeds/
 
 ### LLM Endpoint
 
-- [ ] **LLM-01**: `POST /api/insights/endgame` endpoint accepts filter context and returns a validated `EndgameInsightsReport` produced by a `pydantic_ai.Agent` with `result_type=EndgameInsightsReport`
-- [ ] **LLM-02**: Model selected at startup from env var `PYDANTIC_AI_MODEL_INSIGHTS` (accepts any pydantic-ai model string); backend refuses to start if the env var is missing or invalid
-- [ ] **LLM-03**: System prompt is versioned in `app/services/insights_prompts/endgame_v1.md` (loaded from file, not a string literal) and shapes the prompt with filter context, precomputed flags, findings, and info-popover ground-truth text
+- [x] **LLM-01**: `POST /api/insights/endgame` endpoint accepts filter context and returns a validated `EndgameInsightsReport` produced by a `pydantic_ai.Agent` with `result_type=EndgameInsightsReport`
+- [x] **LLM-02**: Model selected at startup from env var `PYDANTIC_AI_MODEL_INSIGHTS` (accepts any pydantic-ai model string); backend refuses to start if the env var is missing or invalid
+- [x] **LLM-03**: System prompt is versioned in `app/services/insights_prompts/endgame_v1.md` (loaded from file, not a string literal) and shapes the prompt with filter context, precomputed flags, findings, and info-popover ground-truth text
 
 ### Observability
 
@@ -94,18 +94,18 @@ Which phases cover which requirements. Populated during roadmap creation.
 | INS-01 | Phase 66 | Pending |
 | INS-02 | Phase 66 | Pending |
 | INS-03 | Phase 66 | Pending |
-| INS-04 | Phase 65 | Pending |
-| INS-05 | Phase 65 | Pending |
-| INS-06 | Phase 65 | Pending |
-| INS-07 | Phase 65 | Pending |
+| INS-04 | Phase 65 | Complete |
+| INS-05 | Phase 65 | Complete |
+| INS-06 | Phase 65 | Complete |
+| INS-07 | Phase 65 | Complete |
 | FIND-01 | Phase 63 | Complete |
 | FIND-02 | Phase 63 | Complete |
 | FIND-03 | Phase 63 | Complete |
 | FIND-04 | Phase 63 | Complete |
 | FIND-05 | Phase 63 | Complete |
-| LLM-01 | Phase 65 | Pending |
-| LLM-02 | Phase 65 | Pending |
-| LLM-03 | Phase 65 | Pending |
+| LLM-01 | Phase 65 | Complete |
+| LLM-02 | Phase 65 | Complete |
+| LLM-03 | Phase 65 | Complete |
 | LOG-01 | Phase 64 | Complete |
 | LOG-02 | Phase 64 | Pending |
 | LOG-03 | Phase 64 | Complete |
