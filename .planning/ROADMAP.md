@@ -201,7 +201,13 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
   3. Exceeding 3 cache misses per hour returns the user's last cached report (not an error) and does not write a new log row
   4. Structured-output validation failures, provider errors, and startup misconfiguration (`PYDANTIC_AI_MODEL_INSIGHTS` missing/invalid) each surface via Sentry with `user_id / findings_hash / model` in `set_context` and return a client-side retry-affordance payload
   5. The system prompt is loaded from `app/services/insights_prompts/endgame_v1.md` at startup — no string-literal prompts live inline in `.py` files
-**Plans**: TBD
+**Plans**: 6 plans
+- [ ] 65-01-PLAN.md — Dependency + config + prompt file + conftest env-var setup (Wave 1)
+- [ ] 65-02-PLAN.md — Pydantic schema extensions: EndgameInsightsReport, SectionInsight, TimePoint, response/error envelopes, SubsectionFinding.series (Wave 1)
+- [ ] 65-03-PLAN.md — Findings pipeline extension: weekly/monthly resampling, gap-only + sparse-combo Endgame ELO, series population (Wave 2)
+- [ ] 65-04-PLAN.md — Repository read helpers: count_recent_successful_misses + get_latest_report_for_user (Wave 2)
+- [ ] 65-05-PLAN.md — LLM orchestration service: Agent singleton, prompt assembly, generate_insights, Sentry wiring, tests (Wave 3)
+- [ ] 65-06-PLAN.md — Router + lifespan wiring + end-to-end tests + CHANGELOG + SEED-004 close (Wave 4)
 
 ### Phase 66: Frontend EndgameInsightsBlock & Beta Flag
 **Goal**: Users with `insights_beta_enabled=true` see a "Generate insights" button on the Endgame tab and, on click, receive the overview paragraph plus 4 Section blocks rendered inline. Backend config can hide the overview independently while per-section insights stay live.
@@ -252,7 +258,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 | 48, 52-62. v1.10 phases | v1.10 | 28/28 | Complete | 2026-04-19 |
 | 63. Findings Pipeline & Zone Wiring | v1.11 | 5/5 | Complete | 2026-04-20 |
 | 64. llm_logs Table & Async Repo | v1.11 | 2/3 | In progress | - |
-| 65. LLM Endpoint with pydantic-ai Agent | v1.11 | 0/0 | Not started | - |
+| 65. LLM Endpoint with pydantic-ai Agent | v1.11 | 0/6 | Not started | - |
 | 66. Frontend EndgameInsightsBlock & Beta Flag | v1.11 | 0/0 | Not started | - |
 | 67. Validation & Beta Rollout | v1.11 | 0/0 | Not started | - |
 

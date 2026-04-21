@@ -19,7 +19,7 @@ created: 2026-04-21
 |----------|-------|
 | **Framework** | pytest 8.x (async-mode via pytest-asyncio) |
 | **Config file** | `pyproject.toml` (`[tool.pytest.ini_options]`) + `tests/conftest.py` |
-| **Quick run command** | `uv run pytest tests/services/test_insights_llm.py tests/routers/test_insights_router.py tests/repositories/test_llm_log_repository_reads.py tests/services/test_insights_service_series.py -x` |
+| **Quick run command** | `uv run pytest tests/services/test_insights_llm.py tests/test_insights_router.py tests/test_llm_log_repository_reads.py tests/services/test_insights_service_series.py -x` |
 | **Full suite command** | `uv run pytest -x && uv run ruff check . && uv run ty check app/ tests/` |
 | **Estimated runtime** | ~45 seconds (quick), ~3-5 minutes (full) |
 
@@ -54,8 +54,8 @@ Wave 0 installs new dependencies and creates test scaffolding. Everything below 
 - [ ] `uv.lock` regenerated via `uv lock`
 - [ ] `tests/conftest.py` extended with `os.environ["PYDANTIC_AI_MODEL_INSIGHTS"] = "test"` before any `from app...` import (mirrors existing `SENTRY_DSN` + `SECRET_KEY` pattern, per D-40)
 - [ ] `tests/services/test_insights_llm.py` — stub file created for LLM-01, LLM-02, LLM-03, INS-04, INS-05, INS-06 tests
-- [ ] `tests/routers/test_insights_router.py` — stub file for INS-07 + end-to-end envelope tests
-- [ ] `tests/repositories/test_llm_log_repository_reads.py` — stub for new D-34 read helpers
+- [ ] `tests/test_insights_router.py` — stub file for INS-07 + end-to-end envelope tests (flat — mirrors `tests/test_endgames_router.py`)
+- [ ] `tests/test_llm_log_repository_reads.py` — stub for new D-34 read helpers (flat — mirrors `tests/test_llm_log_repository.py`)
 - [ ] `tests/services/test_insights_service_series.py` — stub for D-03/D-04/D-05 resampling logic
 - [ ] `tests/conftest.py` gains `fake_insights_agent(report)` fixture that monkeypatches `get_insights_agent()` with `TestModel(custom_output_args=report.model_dump())` per D-38
 - [ ] `app/services/insights_prompts/endgame_v1.md` created (even if short) — startup validation requires the file to exist; tests require it too
