@@ -41,6 +41,7 @@ import hashlib
 import json
 import math
 import statistics
+from collections import defaultdict
 
 import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +60,7 @@ from app.schemas.insights import (
     FilterContext,
     FlagId,
     SubsectionFinding,
+    TimePoint,
 )
 from app.services.endgame_service import get_endgame_overview
 from app.services.endgame_zones import (
@@ -81,6 +83,23 @@ from app.services.endgame_zones import (
 # ---------------------------------------------------------------------------
 
 _OPPONENT_TYPE: str = "human"
+
+# ---------------------------------------------------------------------------
+# Phase 65 series resampling constants.
+# ---------------------------------------------------------------------------
+
+# D-04: min weekly observations per (platform, time_control) combo for the
+# endgame_elo_timeline series. Combos below this floor are silently skipped —
+# no SubsectionFinding is emitted for them.
+SPARSE_COMBO_FLOOR: int = 10
+
+# The 4 timeline SubsectionIds that receive a populated `series` field (D-02).
+_TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset({
+    "score_gap_timeline",
+    "clock_diff_timeline",
+    "endgame_elo_timeline",
+    "type_win_rate_timeline",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -846,6 +865,67 @@ def _findings_type_win_rate_timeline(
 # ---------------------------------------------------------------------------
 # Helpers.
 # ---------------------------------------------------------------------------
+
+
+def _weekly_points_to_time_points(
+    weekly: list[tuple[str, float, int]],
+    window: Window,
+) -> list[TimePoint]:
+    """Convert weekly (date_iso, value, n) tuples to TimePoint list per D-03.
+
+    last_3mo: pass-through (weekly resolution, sorted by date).
+    all_time: resample to monthly, weighted-by-n mean, sample sizes summed.
+
+    Weighted mean rationale (D-03 / RESEARCH.md §5): a 50-game week must
+    dominate a 3-game week because the LLM also sees `n` on each TimePoint
+    and would otherwise see inconsistent per-month numbers.
+
+    Empty input returns []. All-zero-n month falls back to arithmetic mean
+    with n=0 (emits the point rather than dropping — matches the LLM
+    contract that a month with zero games is still a visible gap).
+    """
+    if not weekly:
+        return []
+    if window == "last_3mo":
+        return [
+            TimePoint(bucket_start=d, value=v, n=n)
+            for d, v, n in sorted(weekly, key=lambda t: t[0])
+        ]
+    # all_time -> monthly
+    buckets: dict[str, list[tuple[float, int]]] = defaultdict(list)
+    for date_iso, value, n in weekly:
+        ym = date_iso[:7]  # "YYYY-MM" prefix of ISO date string
+        buckets[ym].append((value, n))
+    points: list[TimePoint] = []
+    for ym in sorted(buckets.keys()):
+        weeks = buckets[ym]
+        total_n = sum(n for _, n in weeks)
+        if total_n > 0:
+            weighted_sum = sum(v * n for v, n in weeks)
+            mean_value = weighted_sum / total_n
+        else:
+            mean_value = statistics.mean(v for v, _ in weeks)
+        points.append(TimePoint(bucket_start=f"{ym}-01", value=mean_value, n=total_n))
+    return points
+
+
+def _series_for_endgame_elo_combo(
+    combo: EndgameEloTimelineCombo,
+    window: Window,
+) -> list[TimePoint] | None:
+    """Build gap-only series for one (platform, time_control) combo per D-04.
+
+    Returns None if combo has fewer than SPARSE_COMBO_FLOOR total weekly
+    observations in the window (caller skips the subsection finding entirely).
+    Value is endgame_elo - actual_elo per week.
+    """
+    if len(combo.points) < SPARSE_COMBO_FLOOR:
+        return None
+    weekly: list[tuple[str, float, int]] = [
+        (p.date, float(p.endgame_elo - p.actual_elo), p.per_week_endgame_games)
+        for p in combo.points
+    ]
+    return _weekly_points_to_time_points(weekly, window)
 
 
 def _endgame_skill_from_material_rows(rows: list[MaterialRow]) -> float:
