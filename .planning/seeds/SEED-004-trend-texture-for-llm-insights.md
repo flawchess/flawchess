@@ -1,6 +1,6 @@
 ---
 id: SEED-004
-status: dormant
+status: closed_superseded_by_phase_65
 planted: 2026-04-21
 planted_during: v1.11 LLM-first Endgame Insights (executing, Phase 64 complete, Phase 65 next)
 trigger_when: Phase 65 discuss begins (LLM Endpoint with pydantic-ai Agent)
@@ -8,6 +8,8 @@ scope: phase
 ---
 
 # SEED-004: Trend texture (volatility + recent-shift) for LLM insights
+
+> **Closed 2026-04-21 — superseded by Phase 65 D-01.** The raw-series approach (D-01: feed weekly/monthly TimePoint arrays to the LLM) obviates the `volatility_cv` / `recent_vs_prior_delta` schema additions this seed proposed. See `.planning/phases/65-llm-endpoint-with-pydantic-ai-agent/65-CONTEXT.md`.
 
 ## Why This Matters
 
