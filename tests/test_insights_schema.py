@@ -323,3 +323,220 @@ class TestModuleAll:
 def test_nan_constant_available_for_callers() -> None:
     """Sanity: math.nan is what the service will emit for empty windows."""
     assert math.isnan(float("nan"))
+
+
+# ---------------------------------------------------------------------------
+# Phase 65 schema extension tests
+# ---------------------------------------------------------------------------
+
+from typing import Any
+
+from app.schemas.insights import (  # noqa: E402
+    EndgameInsightsReport,
+    EndgameInsightsResponse,
+    InsightsErrorResponse,
+    SectionInsight,
+    TimePoint,
+)
+
+
+class TestTimePoint:
+    """Phase 65 D-02: TimePoint schema."""
+
+    def test_round_trip(self) -> None:
+        tp = TimePoint(bucket_start="2026-02-03", value=0.42, n=12)
+        reloaded = TimePoint.model_validate_json(tp.model_dump_json())
+        assert reloaded == tp
+
+    def test_all_fields_required(self) -> None:
+        with pytest.raises(ValidationError):
+            TimePoint(bucket_start="2026-02-03", value=0.42)  # type: ignore[call-arg]
+
+
+class TestSectionInsight:
+    """Phase 65 D-19: SectionInsight shape + length bounds."""
+
+    def test_bullets_default_empty(self) -> None:
+        s = SectionInsight(section_id="overall", headline="ok")
+        assert s.bullets == []
+
+    def test_bullets_max_length_2(self) -> None:
+        with pytest.raises(ValidationError):
+            SectionInsight(section_id="overall", headline="ok", bullets=["a", "b", "c"])
+
+    def test_headline_max_length_120(self) -> None:
+        with pytest.raises(ValidationError):
+            SectionInsight(section_id="overall", headline="x" * 121, bullets=[])
+
+    def test_section_id_literal_enforced(self) -> None:
+        with pytest.raises(ValidationError):
+            SectionInsight(section_id="invalid", headline="ok")  # type: ignore[arg-type]
+
+
+class TestEndgameInsightsReport:
+    """Phase 65 D-17/D-19/D-20 + INS-06: core LLM output schema."""
+
+    def _build_section(self, section_id: SectionId) -> SectionInsight:
+        return SectionInsight(section_id=section_id, headline="h", bullets=[])
+
+    def test_happy_path(self) -> None:
+        r = EndgameInsightsReport(
+            overview="Summary of endgame signals.",
+            sections=[self._build_section("overall")],
+            model_used="test",
+            prompt_version="endgame_v1",
+        )
+        assert r.overview == "Summary of endgame signals."
+
+    def test_sections_min_length_1(self) -> None:
+        with pytest.raises(ValidationError):
+            EndgameInsightsReport(
+                overview="x",
+                sections=[],
+                model_used="test",
+                prompt_version="endgame_v1",
+            )
+
+    def test_sections_max_length_4(self) -> None:
+        # "overall" repeated beyond 4 would also fail model_validator; use
+        # distinct valid section_ids, then add one invalid 5th via cast.
+        with pytest.raises(ValidationError):
+            EndgameInsightsReport(
+                overview="x",
+                sections=[
+                    SectionInsight(section_id="overall", headline="h"),
+                    SectionInsight(section_id="metrics_elo", headline="h"),
+                    SectionInsight(section_id="time_pressure", headline="h"),
+                    SectionInsight(section_id="type_breakdown", headline="h"),
+                    SectionInsight(section_id="overall", headline="h"),  # 5th entry
+                ],
+                model_used="test",
+                prompt_version="endgame_v1",
+            )
+
+    def test_unique_section_ids_validator(self) -> None:
+        """D-20: duplicate section_id raises → pydantic-ai retries upstream."""
+        with pytest.raises(ValidationError) as exc_info:
+            EndgameInsightsReport(
+                overview="x",
+                sections=[
+                    SectionInsight(section_id="overall", headline="h"),
+                    SectionInsight(section_id="overall", headline="h"),
+                ],
+                model_used="test",
+                prompt_version="endgame_v1",
+            )
+        assert "duplicate section_id" in str(exc_info.value)
+
+    def test_overview_empty_string_allowed(self) -> None:
+        """INS-06 contract: backend may set overview='' when INSIGHTS_HIDE_OVERVIEW=true (D-18).
+        Schema ALLOWS empty string — the always-populate rule is enforced by
+        the system prompt, not the schema. Pydantic rejects only NULL.
+        """
+        r = EndgameInsightsReport(
+            overview="",
+            sections=[self._build_section("overall")],
+            model_used="test",
+            prompt_version="endgame_v1",
+        )
+        assert r.overview == ""
+
+    def test_overview_none_rejected(self) -> None:
+        """INS-06: overview is `str`, not `str | None`."""
+        with pytest.raises(ValidationError):
+            EndgameInsightsReport(
+                overview=None,  # type: ignore[arg-type]
+                sections=[self._build_section("overall")],
+                model_used="test",
+                prompt_version="endgame_v1",
+            )
+
+
+class TestEndgameInsightsResponse:
+    """Phase 65 D-14: HTTP 200 success envelope."""
+
+    def _report(self) -> EndgameInsightsReport:
+        return EndgameInsightsReport(
+            overview="x",
+            sections=[SectionInsight(section_id="overall", headline="h")],
+            model_used="test",
+            prompt_version="endgame_v1",
+        )
+
+    def test_fresh_status(self) -> None:
+        resp = EndgameInsightsResponse(report=self._report(), status="fresh")
+        assert resp.stale_filters is None
+        assert resp.status == "fresh"
+
+    def test_stale_rate_limited_with_filters(self) -> None:
+        # Use an actually-valid recency literal:
+        filters = FilterContext(recency="3months", opponent_strength="any")
+        resp = EndgameInsightsResponse(
+            report=self._report(),
+            status="stale_rate_limited",
+            stale_filters=filters,
+        )
+        assert resp.stale_filters is not None
+        assert resp.stale_filters.recency == "3months"
+
+    def test_status_literal_enforced(self) -> None:
+        with pytest.raises(ValidationError):
+            EndgameInsightsResponse(report=self._report(), status="bogus")  # type: ignore[arg-type]
+
+
+class TestInsightsErrorResponse:
+    """Phase 65 D-15: HTTP 4xx/5xx error envelope."""
+
+    def test_rate_limit_with_retry_after(self) -> None:
+        resp = InsightsErrorResponse(error="rate_limit_exceeded", retry_after_seconds=3600)
+        assert resp.retry_after_seconds == 3600
+
+    def test_provider_error_no_retry_after(self) -> None:
+        resp = InsightsErrorResponse(error="provider_error")
+        assert resp.retry_after_seconds is None
+
+    def test_error_literal_enforced(self) -> None:
+        with pytest.raises(ValidationError):
+            InsightsErrorResponse(error="bogus")  # type: ignore[arg-type]
+
+
+class TestSubsectionFindingSeries:
+    """Phase 65 D-02: append-only extension to Phase 63 SubsectionFinding."""
+
+    def _minimal_kwargs(self) -> dict[str, Any]:
+        return dict(
+            subsection_id="score_gap_timeline",
+            window="last_3mo",
+            metric="score_gap",
+            value=4.2,
+            zone="typical",
+            trend="stable",
+            weekly_points_in_window=12,
+            sample_size=487,
+            sample_quality="rich",
+            is_headline_eligible=True,
+        )
+
+    def test_series_default_none(self) -> None:
+        f = SubsectionFinding(**self._minimal_kwargs())
+        assert f.series is None
+
+    def test_series_populated(self) -> None:
+        f = SubsectionFinding(
+            **self._minimal_kwargs(),
+            series=[TimePoint(bucket_start="2026-02-03", value=4.2, n=12)],
+        )
+        assert f.series is not None
+        assert len(f.series) == 1
+
+    def test_series_declaration_is_last_field(self) -> None:
+        """Declaration order is load-bearing for findings_hash stability.
+
+        `series` was APPENDED after `dimension` in Phase 65 — it MUST be the
+        last declared field so pre-Phase-65 rows (with no `series` emitted)
+        hash identically whether decoded by old or new code.
+        """
+        fields = list(SubsectionFinding.model_fields.keys())
+        assert fields[-1] == "series", (
+            f"Expected 'series' as last field for hash stability; got {fields}"
+        )
