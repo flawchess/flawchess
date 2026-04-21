@@ -12,6 +12,14 @@ os.environ["SENTRY_DSN"] = ""
 # "change-me-in-production" is 23 bytes, below RFC 7518 §3.2 minimum for HS256.
 os.environ["SECRET_KEY"] = "test-secret-key-32-bytes-exactly-ok-for-hs256-tests"
 
+# Pydantic-AI's built-in "test" provider prefix passes Agent(...) startup
+# validation without requiring any real API key. Individual tests override
+# via monkeypatch + TestModel/FunctionModel (see `fake_insights_agent`
+# fixture added in a later plan). Must precede any `from app...` import so
+# app/services/insights_llm module-level Agent construction (and the
+# lifespan-time get_insights_agent() call in app/main.py) see the env var.
+os.environ["PYDANTIC_AI_MODEL_INSIGHTS"] = "test"
+
 import chess
 import pytest
 import pytest_asyncio
