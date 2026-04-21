@@ -226,3 +226,37 @@ async def fresh_test_user(test_engine) -> AsyncGenerator[User, None]:
     async with session_maker() as session:
         await session.execute(delete(User).where(User.id == user.id))
         await session.commit()
+
+
+@pytest.fixture
+def fake_insights_agent(monkeypatch: pytest.MonkeyPatch):
+    """Factory fixture that monkeypatches get_insights_agent() with a TestModel.
+
+    Usage:
+        def test_x(fake_insights_agent, sample_report):
+            fake_insights_agent(sample_report)  # any subsequent call to
+            # get_insights_agent() returns an Agent wrapping TestModel
+            # that yields sample_report.
+
+    Also clears the lru_cache on entry so prior cached Agents don't leak.
+    """
+    from pydantic_ai import Agent
+    from pydantic_ai.models.test import TestModel
+    from app.schemas.insights import EndgameInsightsReport
+    from app.services import insights_llm
+
+    def _install(report: EndgameInsightsReport) -> None:
+        insights_llm.get_insights_agent.cache_clear()
+        fake = Agent(
+            TestModel(custom_output_args=report.model_dump()),
+            output_type=EndgameInsightsReport,
+        )
+        monkeypatch.setattr(
+            "app.services.insights_llm.get_insights_agent",
+            lambda: fake,
+        )
+
+    yield _install
+
+    # Teardown: clear cache so the real Agent is rebuilt on next use.
+    insights_llm.get_insights_agent.cache_clear()
