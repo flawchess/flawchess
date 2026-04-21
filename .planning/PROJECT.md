@@ -130,6 +130,8 @@ _v1.11 LLM-first Endgame Insights — requirements defined in `.planning/REQUIRE
 
 v1.10 shipped 2026-04-19. Eleven milestones complete (v1.0–v1.10), 61 phases (+3 inserted), live at flawchess.com. v1.10 delivered an endgame-focused advanced analytics pass: consolidated `/api/endgames/overview` endpoint (8 queries → 2), endgame score gap + material breakdown table with opponent-based self-calibrating baseline, time pressure clock stats + score chart across 10 buckets, skill-adjusted Endgame ELO timeline per (platform, time-control) combo anchored on user's real rating with weekly volume bars, conv/recov 4-ply persistence filter + 100cp threshold, test suite hardening (TRUNCATE + seeded_user fixture + aggregation sanity tests), and admin user impersonation for superusers. Phase 56 cancelled (subsumed by 57), Phase 58 moved to backlog as 999.6.
 
+v1.11 in progress: Phase 63 (findings pipeline), Phase 64 (llm_logs table + async repo), and Phase 65 (LLM endpoint with pydantic-ai Agent) complete (2026-04-21). `POST /api/insights/endgame` ships with findings-hash cache, 3-miss/hr rate limit, soft-fail to last cached report, and startup validation of `PYDANTIC_AI_MODEL_INSIGHTS`. Phase 66 (frontend block + beta flag) and Phase 67 (validation + beta rollout) remain.
+
 ## Context
 
 - **Current state:** v1.10 shipped 2026-04-19. 60 phases complete across 11 milestones. Live at flawchess.com with CI/CD and Sentry.
