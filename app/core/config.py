@@ -1,4 +1,11 @@
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Populate os.environ from .env so third-party libraries that read provider
+# API keys directly (e.g. pydantic-ai's GoogleProvider reading GOOGLE_API_KEY)
+# can see them. pydantic-settings only loads .env into the Settings object,
+# not into the process environment.
+load_dotenv()
 
 
 class Settings(BaseSettings):
