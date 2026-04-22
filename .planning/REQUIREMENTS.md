@@ -8,9 +8,11 @@ Requirements for LLM-first Endgame Insights milestone. Source: `.planning/seeds/
 
 ### Insights UX
 
-- [ ] **INS-01**: User with beta flag enabled sees a "Generate insights" button on the Endgame tab and can generate an insights report on demand
+- [x] **INS-01
+**: User with beta flag enabled sees a "Generate insights" button on the Endgame tab and can generate an insights report on demand
 - [ ] **INS-02**: Generated report renders an overview paragraph (1–2 paragraphs, ≤150 words) above 4 Section blocks, each with a headline (≤12 words) and 0–2 bullets (≤20 words each)
-- [ ] **INS-03**: Insights respect the active filter context that meaningfully changes the underlying findings (recency, opponent_strength, time_controls, platforms) — different filter states produce different insights. `color` and `rated_only` are NOT fed into the prompt: they do not materially reshape the cross-section story the LLM tells.
+- [x] **INS-03
+**: Insights respect the active filter context that meaningfully changes the underlying findings (recency, opponent_strength, time_controls, platforms) — different filter states produce different insights. `color` and `rated_only` are NOT fed into the prompt: they do not materially reshape the cross-section story the LLM tells.
 - [x] **INS-04**: Insights cache on `findings_hash` so equivalent filter states reuse the prior report; cache key includes `prompt_version` and `model` so prompt bumps and env-var model swaps invalidate naturally
 - [x] **INS-05**: Generation is rate-limited to 3 cache misses per hour per user; on limit exhaustion, the user receives the last cached report (soft-fail) rather than an error
 - [x] **INS-06**: The overview paragraph is ALWAYS populated when a report is produced. When no strong cross-section signal is present, the overview summarizes the per-section findings instead of returning null — silence is not a valid overview output
@@ -93,9 +95,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INS-01 | Phase 66 | Pending |
+| INS-01 | Phase 66 | Complete |
 | INS-02 | Phase 66 | Pending |
-| INS-03 | Phase 66 | Pending |
+| INS-03 | Phase 66 | Complete |
 | INS-04 | Phase 65 | Complete |
 | INS-05 | Phase 65 | Complete |
 | INS-06 | Phase 65 | Complete |
@@ -114,8 +116,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | LOG-04 | Phase 64 | Pending |
 | VAL-01 | Phase 67 | Pending |
 | VAL-02 | Phase 67 | Pending |
-| BETA-01 | Phase 66 | Pending |
-| BETA-02 | Phase 66 | Pending |
+| BETA-01 | Phase 66 | Complete |
+| BETA-02 | Phase 66 | Complete |
 
 **Coverage:**
 - v1.11 requirements: 23 total

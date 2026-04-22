@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: LLM-first Endgame Insights
 status: executing
-last_updated: "2026-04-22T01:50:41.703Z"
+last_updated: "2026-04-22T05:29:19.737Z"
 last_activity: 2026-04-22
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 19
-  completed_plans: 15
-  percent: 79
+  completed_plans: 16
+  percent: 84
 ---
 
 # Project State: FlawChess
@@ -19,7 +19,7 @@ progress:
 
 Milestone: v1.11 LLM-first Endgame Insights
 Phase: 66 (frontend-endgameinsightsblock-beta-flag) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-04-22
 
@@ -108,6 +108,10 @@ Phase 67: Validation & Beta Rollout           — Not started
 - [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 01: Scoped Alembic migration 24baa961e5cf to users.beta_enabled only; stripped pre-existing autogen drift (REAL->Float on game_positions.clock_seconds / games.white_accuracy / games.black_accuracy + postgresql_ops DESC index re-create noise on llm_logs) per plan instructions. Matches Phase 64 Plan 02 precedent; drift stays deferred for a dedicated future cleanup migration.
 - [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 01: Mass-assignment defense (T-66-02) lives in the Pydantic schema shape, not the router. UserProfileUpdate stays a two-field schema; Pydantic v2 default extra='ignore' silently drops beta_enabled from PUT bodies. Test 3 (test_user_profile_update_does_not_change_beta_enabled) asserts the invariant.
 - [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 01: Router test helper _register_login_and_get_id reads user id from the /api/auth/register response; avoids ty's invalid-argument-type on User.email == email (FastAPI-Users generic column inference narrows to bool at compare time). User.id == user_id works cleanly.
+- [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 02: stale_filters typed as 'unknown' on FE envelope (not FilterContext | null) — BE sends null or FilterContext; per Phase 65 D-13 FE never reads this; 'unknown' forces narrowing and avoids forcing a FilterContext FE type this plan does not need.
+- [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 02: opponent_type regression enforced in two places — inline code comment at hook call site AND unit-test assertion (params has no opponent_type key even when FilterState.opponentType='computer'); insights router rejects it, silent 422 trap otherwise.
+- [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 02: File-level '// @vitest-environment jsdom' pragma instead of global config — vitest.config has no environment set; per-file opt-in keeps the 83 pure tests fast. @testing-library/react@^16.3 + jsdom@^25 installed as devDeps.
+- [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 02: jest-dom devDep dropped from install — only renderHook/waitFor from @testing-library/react used; knip flags unused packages in CI.
 
 ### Pending Todos
 
