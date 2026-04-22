@@ -222,7 +222,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 **Plans**: 5 plans
 - [x] 66-01-PLAN.md — Backend: users.beta_enabled migration + UserProfileResponse extension + router tests (Wave 1)
 - [x] 66-02-PLAN.md — Frontend types + useEndgameInsights hook + buildFilterParams export (Wave 2)
-- [ ] 66-03-PLAN.md — EndgameInsightsBlock component (hero / skeleton / overview / error states) + render tests (Wave 3)
+- [x] 66-03-PLAN.md — EndgameInsightsBlock component (hero / skeleton / overview / error states) + render tests (Wave 3)
 - [ ] 66-04-PLAN.md — Endgames.tsx integration: mount block + 4 SectionInsight slots across H2 groups (Wave 4)
 - [x] 66-05-PLAN.md — Docs alignment: REQUIREMENTS.md BETA-01 + ROADMAP.md Phase 66/67 → `beta_enabled` (Wave 2)
 **UI hint**: yes

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: LLM-first Endgame Insights
 status: executing
-last_updated: "2026-04-22T05:29:19.737Z"
+last_updated: "2026-04-22T05:40:15.252Z"
 last_activity: 2026-04-22
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 19
-  completed_plans: 16
-  percent: 84
+  completed_plans: 18
+  percent: 95
 ---
 
 # Project State: FlawChess
@@ -19,7 +19,7 @@ progress:
 
 Milestone: v1.11 LLM-first Endgame Insights
 Phase: 66 (frontend-endgameinsightsblock-beta-flag) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-04-22
 
@@ -112,6 +112,10 @@ Phase 67: Validation & Beta Rollout           — Not started
 - [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 02: opponent_type regression enforced in two places — inline code comment at hook call site AND unit-test assertion (params has no opponent_type key even when FilterState.opponentType='computer'); insights router rejects it, silent 422 trap otherwise.
 - [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 02: File-level '// @vitest-environment jsdom' pragma instead of global config — vitest.config has no environment set; per-file opt-in keeps the 83 pure tests fast. @testing-library/react@^16.3 + jsdom@^25 installed as devDeps.
 - [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 02: jest-dom devDep dropped from install — only renderHook/waitFor from @testing-library/react used; knip flags unused packages in CI.
+- [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 03: EndgameInsightsBlock is self-gating — returns null when useUserProfile().data?.beta_enabled is falsy (also during loading). Plan 04's mount site stays unconditional; no caller-side flag check needed.
+- [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 03: Parent-lifted mutation state pattern (locked in plan) — component receives UseMutationResult + rendered + reportFilters + onGenerate as props instead of calling useEndgameInsights() itself. Enables Plan 04's per-section insights-section-* slots to observe the same state without a context provider.
+- [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 03: String literal wrapper `{"Couldn't generate insights."}` instead of JSX text with &apos; — acceptance criterion greps source for verbatim phrase; JSX entities would render correctly but fail the grep.
+- [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 03: Explicit afterEach(cleanup) in test file — Vitest 4 does not auto-cleanup RTL mounts; without cleanup, DOM from prior tests bleeds into subsequent screen.getByTestId queries (discovered after 4/11 initial failures).
 
 ### Pending Todos
 
