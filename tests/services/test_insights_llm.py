@@ -126,7 +126,6 @@ def _fake_findings(
         as_of=datetime.datetime.now(datetime.UTC),
         filters=filter_context,
         findings=findings or [],
-        flags=[],
         findings_hash=findings_hash,
     )
 
@@ -218,7 +217,7 @@ class TestPromptAssembly:
         prompt = _assemble_user_prompt(tab_findings)
 
         assert "Filters:" in prompt
-        assert "Flags:" in prompt
+        assert "Flags:" not in prompt
         assert "## Subsection: overall" in prompt
         assert "## Subsection: score_gap_timeline" in prompt
         assert "### Series (" in prompt

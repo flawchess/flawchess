@@ -7,10 +7,6 @@ Coverage by requirement:
   `asyncio.gather`, and that `compute_findings` issues exactly two
   sequential calls to `endgame_service.get_endgame_overview`
   (recency=None then recency="3months").
-- FIND-03 (flags): TestComputeFlags exercises each of the four
-  cross-section flags with a true-branch test and a false-branch test,
-  plus NaN / missing-finding guards. All thresholds reference
-  `app.services.endgame_zones` constants — no inline magic numbers.
 - FIND-04 (trend gate): TestComputeTrend covers count-fail, ratio-fail,
   both-pass (improving / declining), and flat (stable).
 - FIND-05 (hash stability): TestComputeHash covers the 64-char lowercase
@@ -48,13 +44,10 @@ from app.schemas.insights import (
     Zone,
 )
 from app.services.endgame_zones import (
-    NEUTRAL_PCT_THRESHOLD,
-    NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD,
     TREND_MIN_SLOPE_VOL_RATIO,
     TREND_MIN_WEEKLY_POINTS,
 )
 from app.services.insights_service import (
-    _compute_flags,
     _compute_hash,
     _compute_trend,
     _empty_finding,
@@ -190,203 +183,6 @@ class TestComputeTrend:
         assert default == TREND_MIN_WEEKLY_POINTS
 
 
-# ---------------------------------------------------------------------------
-# TestComputeFlags — FIND-03 four cross-section flags, each with true and
-# false-branch assertions. Every threshold references the registry constants.
-# ---------------------------------------------------------------------------
-
-
-class TestComputeFlags:
-    """Unit tests for _compute_flags over list[SubsectionFinding]."""
-
-    # --- Flag 1: baseline_lift_mutes_score_gap ---
-
-    def test_baseline_lift_fires_when_skill_strong_and_score_gap_typical(self) -> None:
-        """skill=strong + score_gap=typical → baseline_lift fires."""
-        findings = [
-            _make_finding("endgame_metrics", "endgame_skill", 0.60, "strong"),
-            _make_finding("overall", "score_gap", 0.0, "typical"),
-        ]
-        flags = _compute_flags(findings)
-        assert "baseline_lift_mutes_score_gap" in flags
-
-    def test_baseline_lift_fires_when_skill_strong_and_score_gap_weak(self) -> None:
-        """skill=strong + score_gap=weak → baseline_lift also fires (per D-09)."""
-        findings = [
-            _make_finding("endgame_metrics", "endgame_skill", 0.60, "strong"),
-            _make_finding("overall", "score_gap", -0.15, "weak"),
-        ]
-        flags = _compute_flags(findings)
-        assert "baseline_lift_mutes_score_gap" in flags
-
-    def test_baseline_lift_does_not_fire_when_skill_not_strong(self) -> None:
-        """skill=typical + score_gap=typical → no baseline_lift flag."""
-        findings = [
-            _make_finding("endgame_metrics", "endgame_skill", 0.50, "typical"),
-            _make_finding("overall", "score_gap", 0.0, "typical"),
-        ]
-        flags = _compute_flags(findings)
-        assert "baseline_lift_mutes_score_gap" not in flags
-
-    def test_baseline_lift_does_not_fire_when_score_gap_strong(self) -> None:
-        """skill=strong + score_gap=strong → baseline is not muting anything."""
-        findings = [
-            _make_finding("endgame_metrics", "endgame_skill", 0.60, "strong"),
-            _make_finding("overall", "score_gap", 0.20, "strong"),
-        ]
-        flags = _compute_flags(findings)
-        assert "baseline_lift_mutes_score_gap" not in flags
-
-    # --- Flag 2: clock_entry_advantage ---
-
-    def test_clock_entry_advantage_fires_above_threshold(self) -> None:
-        """avg_clock_diff_pct strictly > NEUTRAL_PCT_THRESHOLD → fires."""
-        findings = [
-            _make_finding(
-                "time_pressure_at_entry",
-                "avg_clock_diff_pct",
-                NEUTRAL_PCT_THRESHOLD + 5.0,
-                "strong",
-            ),
-        ]
-        flags = _compute_flags(findings)
-        assert "clock_entry_advantage" in flags
-
-    def test_clock_entry_advantage_does_not_fire_at_threshold(self) -> None:
-        """value == NEUTRAL_PCT_THRESHOLD does NOT fire (strict >)."""
-        findings = [
-            _make_finding(
-                "time_pressure_at_entry",
-                "avg_clock_diff_pct",
-                NEUTRAL_PCT_THRESHOLD,
-                "typical",
-            ),
-        ]
-        flags = _compute_flags(findings)
-        assert "clock_entry_advantage" not in flags
-
-    # --- Flag 3: no_clock_entry_advantage ---
-
-    def test_no_clock_entry_advantage_fires_at_or_below_abs_threshold(self) -> None:
-        """|avg_clock_diff_pct| <= NEUTRAL_PCT_THRESHOLD → no-advantage flag."""
-        findings = [
-            _make_finding(
-                "time_pressure_at_entry", "avg_clock_diff_pct", 5.0, "typical",
-            ),
-        ]
-        flags = _compute_flags(findings)
-        assert "no_clock_entry_advantage" in flags
-
-    def test_no_clock_entry_advantage_does_not_fire_above_threshold(self) -> None:
-        """|avg_clock_diff_pct| > threshold → no-advantage flag is absent."""
-        findings = [
-            _make_finding(
-                "time_pressure_at_entry",
-                "avg_clock_diff_pct",
-                NEUTRAL_PCT_THRESHOLD + 5.0,
-                "strong",
-            ),
-        ]
-        flags = _compute_flags(findings)
-        assert "no_clock_entry_advantage" not in flags
-
-    # --- Flag 4: notable_endgame_elo_divergence ---
-
-    def test_notable_elo_divergence_fires_above_threshold(self) -> None:
-        """Any combo with |gap| > threshold → flag fires."""
-        findings = [
-            _make_finding(
-                "endgame_elo_timeline",
-                "endgame_elo_gap",
-                float(NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD) + 50.0,
-                "strong",
-                dimension={"platform": "chess.com", "time_control": "blitz"},
-            ),
-        ]
-        flags = _compute_flags(findings)
-        assert "notable_endgame_elo_divergence" in flags
-
-    def test_notable_elo_divergence_does_not_fire_at_threshold(self) -> None:
-        """Strict > means value == threshold does NOT fire."""
-        findings = [
-            _make_finding(
-                "endgame_elo_timeline",
-                "endgame_elo_gap",
-                float(NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD),
-                "typical",
-                dimension={"platform": "chess.com", "time_control": "blitz"},
-            ),
-        ]
-        flags = _compute_flags(findings)
-        assert "notable_endgame_elo_divergence" not in flags
-
-    def test_notable_elo_divergence_fires_on_negative_side(self) -> None:
-        """abs() of gap — negative values below -threshold also fire."""
-        findings = [
-            _make_finding(
-                "endgame_elo_timeline",
-                "endgame_elo_gap",
-                -float(NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD) - 50.0,
-                "weak",
-                dimension={"platform": "lichess", "time_control": "rapid"},
-            ),
-        ]
-        flags = _compute_flags(findings)
-        assert "notable_endgame_elo_divergence" in flags
-
-    # --- NaN / missing-data guards ---
-
-    def test_nan_clock_value_does_not_fire_clock_flags(self) -> None:
-        """NaN clock value: neither clock flag fires (empty-window guard)."""
-        findings = [
-            _make_finding(
-                "time_pressure_at_entry",
-                "avg_clock_diff_pct",
-                float("nan"),
-                "typical",
-            ),
-        ]
-        flags = _compute_flags(findings)
-        assert "clock_entry_advantage" not in flags
-        assert "no_clock_entry_advantage" not in flags
-
-    def test_missing_clock_finding_does_not_fire_clock_flags(self) -> None:
-        """No time_pressure_at_entry finding at all → neither flag fires."""
-        findings = [
-            _make_finding("overall", "score_gap", 0.0, "typical"),
-        ]
-        flags = _compute_flags(findings)
-        assert "clock_entry_advantage" not in flags
-        assert "no_clock_entry_advantage" not in flags
-
-    def test_nan_elo_value_does_not_fire_elo_flag(self) -> None:
-        """NaN endgame_elo_gap findings are skipped in the flag scan."""
-        findings = [
-            _make_finding(
-                "endgame_elo_timeline",
-                "endgame_elo_gap",
-                float("nan"),
-                "typical",
-                dimension={"platform": "chess.com", "time_control": "blitz"},
-            ),
-        ]
-        flags = _compute_flags(findings)
-        assert "notable_endgame_elo_divergence" not in flags
-
-    def test_last_3mo_findings_ignored_by_flags(self) -> None:
-        """Only all_time findings drive flag computation (per-window scope)."""
-        findings = [
-            _make_finding(
-                "time_pressure_at_entry",
-                "avg_clock_diff_pct",
-                NEUTRAL_PCT_THRESHOLD + 5.0,
-                "strong",
-                window="last_3mo",
-            ),
-        ]
-        flags = _compute_flags(findings)
-        assert flags == []
-
 
 # ---------------------------------------------------------------------------
 # TestComputeHash — FIND-05 hash format + stability + discrimination.
@@ -397,14 +193,13 @@ class TestComputeHash:
     """Unit tests for _compute_hash canonical-JSON + SHA256 recipe."""
 
     def _base_findings(self) -> EndgameTabFindings:
-        """Minimal EndgameTabFindings seed — one ordinary finding, empty flags."""
+        """Minimal EndgameTabFindings seed — one ordinary finding."""
         import datetime
 
         return EndgameTabFindings(
             as_of=datetime.datetime(2026, 4, 20, tzinfo=datetime.UTC),
             filters=FilterContext(),
             findings=[_make_finding("overall", "score_gap", 0.05, "typical")],
-            flags=[],
             findings_hash="",
         )
 
@@ -692,7 +487,6 @@ class TestComputeFindingsReturnContract:
         )
         assert result.filters == fc
         assert result.findings == []
-        assert isinstance(result.flags, list)
 
     @pytest.mark.asyncio
     async def test_hash_is_stable_across_two_invocations_end_to_end(self) -> None:

@@ -190,7 +190,6 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     """Render EndgameTabFindings as structured text for the LLM (D-29 format)."""
     lines: list[str] = [
         _format_filters_for_prompt(findings.filters),
-        f"Flags: {', '.join(findings.flags) if findings.flags else 'none'}",
         "",
     ]
     for f in findings.findings:
@@ -396,7 +395,7 @@ async def generate_insights(
         prompt_version=_PROMPT_VERSION,
         findings_hash=findings.findings_hash,
         filter_context=filter_context.model_dump(),
-        flags=list(findings.flags),
+        flags=[],
         system_prompt=_SYSTEM_PROMPT,
         user_prompt=user_prompt,
         response_json=report.model_dump() if report is not None else None,

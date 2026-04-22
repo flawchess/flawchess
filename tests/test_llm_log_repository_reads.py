@@ -47,7 +47,7 @@ def _make_row(
         prompt_version=prompt_version,
         findings_hash=findings_hash,
         filter_context={"recency": "last_3mo"},
-        flags=["baseline_lift_mutes_score_gap"],
+        flags=[],
         system_prompt="You are FlawChess's endgame analyst.",
         user_prompt="Filters: recency=last_3mo...",
         response_json=response_json,

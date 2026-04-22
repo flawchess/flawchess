@@ -9,10 +9,8 @@ Scope (Phase 63):
   `AsyncSession` and composes the per-subsection `SubsectionFinding` list.
 - All data access goes through `endgame_service.get_endgame_overview` (FIND-01):
   this module MUST NOT import from `app.repositories`.
-- Zones, trend gates, and flag thresholds are sourced from named constants in
+- Zones and trend gates are sourced from named constants in
   `app.services.endgame_zones` (FIND-02): no inline magic numbers.
-- The four cross-section flags are computed deterministically from all_time
-  findings (FIND-03).
 - Trend gate combines BOTH the weekly-points-in-window count and the
   slope-to-volatility ratio; either failure collapses the trend to `"n_a"`
   (FIND-04).
@@ -58,14 +56,11 @@ from app.schemas.endgames import (
 from app.schemas.insights import (
     EndgameTabFindings,
     FilterContext,
-    FlagId,
     SubsectionFinding,
     TimePoint,
 )
 from app.services.endgame_service import get_endgame_overview
 from app.services.endgame_zones import (
-    NEUTRAL_PCT_THRESHOLD,
-    NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD,
     TREND_MIN_SLOPE_VOL_RATIO,
     TREND_MIN_WEEKLY_POINTS,
     MetricId,
@@ -158,13 +153,10 @@ async def compute_findings(
     last_3mo_findings = _compute_subsection_findings(last_3mo_resp, window="last_3mo")
     all_findings = all_time_findings + last_3mo_findings
 
-    flags = _compute_flags(all_findings)
-
     findings = EndgameTabFindings(
         as_of=datetime.datetime.now(datetime.UTC),
         filters=filter_context,
         findings=all_findings,
-        flags=flags,
         findings_hash="",  # placeholder; replaced below
     )
     findings_hash = _compute_hash(findings)
@@ -1025,74 +1017,6 @@ def _compute_trend(
     if ratio < min_slope_vol_ratio:
         return "n_a", n
     return ("improving" if slope > 0 else "declining"), n
-
-
-def _compute_flags(findings: list[SubsectionFinding]) -> list[FlagId]:
-    """Compute four cross-section flags from all_time findings (FIND-03).
-
-    All thresholds reference named constants from
-    `app.services.endgame_zones` — no inline magic numbers. Flags fire
-    only when the underlying findings exist with non-NaN values; missing
-    data produces an absent flag, not a false positive.
-    """
-    by_key: dict[tuple[SubsectionId, Window, MetricId], SubsectionFinding] = {}
-    for f in findings:
-        if f.window != "all_time":
-            continue
-        # Top-level lookups only (no dimensioned bucket rows). The four
-        # flags read the aggregate endgame_skill / score_gap findings and
-        # the weighted-mean clock metric — all of which have dimension=None.
-        if f.dimension is not None and f.subsection_id != "endgame_elo_timeline":
-            continue
-        by_key[(f.subsection_id, f.window, f.metric)] = f
-
-    flags: list[FlagId] = []
-
-    # Flag 1 — baseline_lift_mutes_score_gap
-    skill_f = by_key.get(("endgame_metrics", "all_time", "endgame_skill"))
-    sg_f = by_key.get(("overall", "all_time", "score_gap"))
-    if (
-        skill_f is not None
-        and sg_f is not None
-        and skill_f.zone == "strong"
-        and sg_f.zone in ("typical", "weak")
-    ):
-        flags.append("baseline_lift_mutes_score_gap")
-
-    # Flag 2 — clock_entry_advantage
-    clock_f = by_key.get(
-        ("time_pressure_at_entry", "all_time", "avg_clock_diff_pct")
-    )
-    if (
-        clock_f is not None
-        and not math.isnan(clock_f.value)
-        and clock_f.value > NEUTRAL_PCT_THRESHOLD
-    ):
-        flags.append("clock_entry_advantage")
-
-    # Flag 3 — no_clock_entry_advantage
-    if (
-        clock_f is not None
-        and not math.isnan(clock_f.value)
-        and abs(clock_f.value) <= NEUTRAL_PCT_THRESHOLD
-    ):
-        flags.append("no_clock_entry_advantage")
-
-    # Flag 4 — notable_endgame_elo_divergence
-    elo_findings = [
-        f for f in findings
-        if f.subsection_id == "endgame_elo_timeline"
-        and f.window == "all_time"
-        and f.metric == "endgame_elo_gap"
-        and not math.isnan(f.value)
-    ]
-    if any(
-        abs(f.value) > NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD
-        for f in elo_findings
-    ):
-        flags.append("notable_endgame_elo_divergence")
-
-    return flags
 
 
 def _compute_hash(findings: EndgameTabFindings) -> str:

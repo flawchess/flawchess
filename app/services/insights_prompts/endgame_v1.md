@@ -8,22 +8,13 @@ Return exactly this shape:
 - `overview`: a single paragraph of at most 150 words that summarizes the most important endgame signals for this user. ALWAYS populate this field — never return an empty string, never return null. When no strong cross-section signal is present, summarize the per-section findings instead. Silence is not a valid output.
 - `sections`: between 1 and 4 `SectionInsight` entries, each with a unique `section_id` from the enum {overall, metrics_elo, time_pressure, type_breakdown}. Each section has:
   - `headline`: at most 12 words, present-tense, descriptive (not imperative)
-  - `bullets`: 0-2 bullets, each at most 20 words
+  - `bullets`: 1-5 bullets, each at most 20 words. Aim for 2-3 when the evidence supports it; use 1 when there is a single dominant signal; extend to 4-5 only when distinct, non-overlapping points are worth making. Do NOT pad with weak bullets.
 - `model_used`: echo back the `model_used` value provided in the user message
 - `prompt_version`: echo back the `prompt_version` value provided in the user message (always `endgame_v1`)
 
 ## Section gating
 
 Include a section ONLY when at least one of its underlying subsection findings has `sample_size > 0` AND `sample_quality != "thin"`. If a section's underlying subsections are all thin or empty, omit the section entirely. Do NOT fabricate content to fill sections.
-
-## Cross-section flags
-
-The user message includes a `Flags:` line listing deterministically precomputed cross-section flags. Trust these — they encode correctness guardrails the computation derived from the raw data:
-
-- `baseline_lift_mutes_score_gap` — the user's Score Gap is partly explained by an opponent-strength baseline lift. Do NOT narrate Score Gap as pure skill when this flag is present.
-- `clock_entry_advantage` — user enters the endgame with more clock than opponent on average. Safe to narrate composure/time advantage.
-- `no_clock_entry_advantage` — user does NOT enter the endgame with a clock advantage. Do NOT claim a clock-management edge.
-- `notable_endgame_elo_divergence` — actual Elo and endgame Elo differ by >100 points. Worth narrating.
 
 ## Series interpretation
 
@@ -33,7 +24,7 @@ Derive trend and volatility from the series yourself. Give more narrative weight
 
 ## Overview rule
 
-The overview is always 1-2 paragraphs totalling at most 150 words. When a cross-section story emerges (e.g. strong endgame skill + weak clock = composure under time pressure), lead with it. When no cross-section story emerges, summarize the per-section findings in priority order (overall → metrics_elo → time_pressure → type_breakdown).
+The overview is always 1-2 paragraphs totalling at most 150 words. When a cross-section story emerges (e.g. strong endgame skill + weak clock = composure under time pressure), lead with it. Derive such stories yourself by comparing the metric values and zones across subsections — there is no precomputed flag layer guiding this. When no cross-section story emerges, summarize the per-section findings in priority order (overall → metrics_elo → time_pressure → type_breakdown).
 
 ## Metric glossary
 
@@ -44,7 +35,7 @@ Interpret each metric using the definitions below. These match the user-facing i
 - **score_gap**: the user's Score % in games that reached an endgame phase **minus** their Score % in games that did not. This is a within-user, relative signal — NOT a user-vs-opponent comparison. A positive value can mean endgame play is strong OR non-endgame play is weak; a negative value, the reverse.
   - Scale: signed fraction in `[-1.0, +1.0]` (e.g. `+0.08` = endgame Score % is 8 percentage points higher than non-endgame).
   - Also drives the `score_gap_timeline` subsection (weekly series of the same metric).
-  - When the cross-section flag `baseline_lift_mutes_score_gap` is present, do NOT frame score_gap as pure endgame skill.
+  - Do NOT frame score_gap as pure endgame skill on its own; cross-check it against `endgame_skill` before claiming a skill story.
 
 - **conversion_win_pct**: user's **Win %** in the Conversion material bucket — games where the user entered the endgame leading by ≥ 1 pawn (persisted at least 2 full moves). Only wins count; draws do NOT count as half.
   - Scale: fraction in `[0.0, 1.0]` (e.g. `+0.68` = 68% win rate from winning material positions).
@@ -64,13 +55,11 @@ Interpret each metric using the definitions below. These match the user-facing i
 
 - **endgame_elo_gap**: `endgame_elo − actual_elo`, where endgame_elo is actual Elo shifted by `400 · log10(skill / (1 − skill))` using the trailing 100-endgame-game skill composite.
   - Scale: signed **Elo points**, NOT a fraction or percentage (e.g. `+150.00` = endgame rating 150 Elo above actual rating).
-  - Fanned out per `(platform, time_control)` combo via the `dimension` field.
-  - Cross-section flag `notable_endgame_elo_divergence` fires when any combo exceeds ±100 Elo.
+  - Fanned out per `(platform, time_control)` combo via the `dimension` field. A single combo exceeding ±100 Elo is worth narrating as a notable divergence.
 
 - **avg_clock_diff_pct**: mean of `(user_clock − opp_clock) / base_time_seconds × 100` at endgame entry, weighted by game count across time controls. Positive = user enters endgames with more clock than opponent.
   - Scale: signed **percentage points of base clock**, NOT a fraction (e.g. `+5.20` = user averaged 5.2 pp more of base time remaining than opponent at endgame entry).
-  - Drives the `time_pressure_at_entry` subsection and the `clock_diff_timeline` series.
-  - Flags: `clock_entry_advantage` when value > +10 pp; `no_clock_entry_advantage` when `|value| ≤ 10 pp`.
+  - Drives the `time_pressure_at_entry` subsection and the `clock_diff_timeline` series. Values within ±10 pp are near-parity; beyond that, the `zone` label already captures strong/weak — narrate the direction, do not over-claim a clock-management edge when the metric is near zero.
 
 - **net_timeout_rate**: `(timeout_wins − timeout_losses) / total_endgame_games × 100`. Positive = user wins more flag battles than they lose; negative = user gets flagged more than they flag.
   - Scale: signed **percentage points**, NOT a fraction (e.g. `-3.20` = user's net timeout rate is 3.2 pp negative).

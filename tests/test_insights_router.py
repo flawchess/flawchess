@@ -63,8 +63,7 @@ async def _fake_compute_findings(
         as_of=datetime.datetime.now(datetime.UTC),
         filters=filter_context,
         findings=[],
-        flags=[],
-        findings_hash=findings_hash,
+                findings_hash=findings_hash,
     )
 
 
@@ -233,8 +232,7 @@ class TestHappyPath:
                 as_of=datetime.datetime.now(datetime.UTC),
                 filters=fc,
                 findings=[],
-                flags=[],
-                findings_hash="m" * 64,
+                                findings_hash="m" * 64,
             )
 
         monkeypatch.setattr(
@@ -292,8 +290,7 @@ class TestRateLimit:
                 as_of=datetime.datetime.now(datetime.UTC),
                 filters=fc,
                 findings=[],
-                flags=[],
-                findings_hash="c" * 64,  # distinct from seeded rows
+                                findings_hash="c" * 64,  # distinct from seeded rows
             )
 
         monkeypatch.setattr("app.services.insights_llm.compute_findings", _fake_compute_new_hash)
@@ -356,8 +353,7 @@ class TestRateLimit:
                 as_of=datetime.datetime.now(datetime.UTC),
                 filters=fc,
                 findings=[],
-                flags=[],
-                findings_hash="g" * 64,  # distinct from seeded rows
+                                findings_hash="g" * 64,  # distinct from seeded rows
             )
 
         monkeypatch.setattr("app.services.insights_llm.compute_findings", _fake_compute_new_hash)
@@ -536,8 +532,7 @@ class TestFilterPassing:
                 as_of=datetime.datetime.now(datetime.UTC),
                 filters=fc,
                 findings=[],
-                flags=[],
-                findings_hash="z" * 64,
+                                findings_hash="z" * 64,
             )
 
         monkeypatch.setattr(

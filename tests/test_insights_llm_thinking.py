@@ -240,8 +240,7 @@ class TestGenerateInsightsPersistsThinkingTokens:
                 as_of=datetime.datetime.now(datetime.UTC),
                 filters=fc,
                 findings=[],
-                flags=[],
-                findings_hash="t" * 64,
+                                findings_hash="t" * 64,
             )
 
         monkeypatch.setattr(

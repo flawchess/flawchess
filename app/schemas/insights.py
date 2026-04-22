@@ -48,7 +48,6 @@ __all__ = [
     "EndgameInsightsResponse",
     "EndgameTabFindings",
     "FilterContext",
-    "FlagId",
     "InsightsError",
     "InsightsErrorResponse",
     "InsightsStatus",
@@ -68,17 +67,6 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # Literal aliases owned by this module (cross-section concepts, not zone-level).
 # ---------------------------------------------------------------------------
-
-# Four cross-section flags precomputed deterministically by the findings
-# service (CONTEXT.md D-09). The Phase 65 prompt references these IDs
-# verbatim, so the set is locked: adding or renaming a flag requires a
-# prompt-assembly update.
-FlagId = Literal[
-    "baseline_lift_mutes_score_gap",
-    "clock_entry_advantage",
-    "no_clock_entry_advantage",
-    "notable_endgame_elo_divergence",
-]
 
 # Section grouping used by Phase 65 prompt-assembly. NOT stored on
 # SubsectionFinding — section membership is derived at consumption time
@@ -209,7 +197,6 @@ class EndgameTabFindings(BaseModel):
     as_of: datetime.datetime
     filters: FilterContext
     findings: list[SubsectionFinding]
-    flags: list[FlagId]
     findings_hash: str
 
 
@@ -232,13 +219,15 @@ class SectionInsight(BaseModel):
     """One `section` entry in EndgameInsightsReport. LLM emits up to 4 of these.
 
     Length bounds enforce prompt-compliance: headline <=120 chars (~12 words),
-    bullets 0-2 items x 200 chars (~20 words). Pydantic rejects oversized
+    bullets 0-5 items, each at most 200 chars (~20 words). The prompt asks
+    for 1-5 bullets per section but the schema leaves min_length at 0 so the
+    LLM is not forced to pad with weak bullets. Pydantic rejects oversized
     output -> pydantic-ai's output_retries (2) retries the Agent.
     """
 
     section_id: SectionId
     headline: str = Field(..., max_length=120)
-    bullets: list[str] = Field(default_factory=list, max_length=2)
+    bullets: list[str] = Field(default_factory=list, max_length=5)
 
 
 class EndgameInsightsReport(BaseModel):

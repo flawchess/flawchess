@@ -3,8 +3,8 @@
 Covers:
 - FilterContext: defaults, Literal validation, field set matches INS-03 spec
 - SubsectionFinding: required + optional fields, NaN value round-trip, Literal validation
-- EndgameTabFindings: composition, required fields, FlagId validation
-- FlagId / SectionId Literal alias contents match CONTEXT.md D-09 / specifics
+- EndgameTabFindings: composition, required fields
+- SectionId Literal alias matches the Phase 65 prompt sections
 - Re-exports: Zone, Trend, SampleQuality, Window, MetricId, SubsectionId all come from endgame_zones
 """
 
@@ -18,7 +18,6 @@ from pydantic import ValidationError
 from app.schemas.insights import (
     EndgameTabFindings,
     FilterContext,
-    FlagId,
     MetricId,
     SampleQuality,
     SectionId,
@@ -202,11 +201,9 @@ class TestEndgameTabFindings:
             as_of=datetime.datetime(2026, 4, 20, 12, 0, 0, tzinfo=datetime.timezone.utc),
             filters=FilterContext(),
             findings=[],
-            flags=[],
             findings_hash="",
         )
         assert findings.findings == []
-        assert findings.flags == []
         assert findings.findings_hash == ""
 
     def test_populated(self) -> None:
@@ -216,51 +213,23 @@ class TestEndgameTabFindings:
             as_of=datetime.datetime(2026, 4, 20, tzinfo=datetime.timezone.utc),
             filters=fc,
             findings=[f],
-            flags=["clock_entry_advantage"],
             findings_hash="0" * 64,
         )
         assert len(findings.findings) == 1
-        assert findings.flags == ["clock_entry_advantage"]
-        # JSON round-trip works
         payload = json.loads(findings.model_dump_json())
-        assert payload["flags"] == ["clock_entry_advantage"]
         assert payload["findings"][0]["subsection_id"] == "overall"
-
-    def test_flag_rejects_unknown_value(self) -> None:
-        """An unknown flag string in the flags list triggers ValidationError."""
-        with pytest.raises(ValidationError):
-            EndgameTabFindings(
-                as_of=datetime.datetime(2026, 4, 20, tzinfo=datetime.timezone.utc),
-                filters=FilterContext(),
-                findings=[],
-                flags=["not_a_real_flag"],  # ty: ignore[invalid-argument-type]
-                findings_hash="",
-            )
 
     def test_field_order_locked(self) -> None:
         assert list(EndgameTabFindings.model_fields.keys()) == [
             "as_of",
             "filters",
             "findings",
-            "flags",
             "findings_hash",
         ]
 
 
-class TestFlagIdAndSectionId:
-    """FlagId and SectionId Literal aliases match CONTEXT.md D-09 and specifics."""
-
-    def test_flag_id_has_exactly_four_values(self) -> None:
-        """D-09 locks four cross-section flag IDs."""
-        from typing import get_args
-
-        expected = {
-            "baseline_lift_mutes_score_gap",
-            "clock_entry_advantage",
-            "no_clock_entry_advantage",
-            "notable_endgame_elo_divergence",
-        }
-        assert set(get_args(FlagId)) == expected
+class TestSectionIdLiteral:
+    """SectionId Literal alias matches the four Phase 65 prompt sections."""
 
     def test_section_id_has_exactly_four_values(self) -> None:
         """SectionId enumerates the four Phase 65 prompt sections."""
@@ -310,14 +279,11 @@ class TestModuleAll:
     def test_all_contains_expected_names(self) -> None:
         from app.schemas import insights
 
-        # Phase 65 extended __all__ from 11 to 18 names. The original 11 are
-        # preserved; 7 new names were added for the LLM endpoint schemas.
         expected = {
             "EndgameInsightsReport",
             "EndgameInsightsResponse",
             "EndgameTabFindings",
             "FilterContext",
-            "FlagId",
             "InsightsError",
             "InsightsErrorResponse",
             "InsightsStatus",
@@ -375,9 +341,13 @@ class TestSectionInsight:
         s = SectionInsight(section_id="overall", headline="ok")
         assert s.bullets == []
 
-    def test_bullets_max_length_2(self) -> None:
+    def test_bullets_accepts_up_to_5(self) -> None:
+        s = SectionInsight(section_id="overall", headline="ok", bullets=["a", "b", "c", "d", "e"])
+        assert len(s.bullets) == 5
+
+    def test_bullets_rejects_more_than_5(self) -> None:
         with pytest.raises(ValidationError):
-            SectionInsight(section_id="overall", headline="ok", bullets=["a", "b", "c"])
+            SectionInsight(section_id="overall", headline="ok", bullets=["a", "b", "c", "d", "e", "f"])
 
     def test_headline_max_length_120(self) -> None:
         with pytest.raises(ValidationError):
