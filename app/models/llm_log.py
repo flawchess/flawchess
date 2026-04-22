@@ -69,4 +69,10 @@ class LlmLog(Base):
     cache_hit: Mapped[bool] = mapped_column(
         nullable=False, default=False, server_default="false"
     )
+    # Thinking/reasoning tokens, when the provider reports them (Gemini 3 via
+    # pydantic-ai's `usage.details["thoughts_tokens"]`). Null for providers that
+    # don't expose a separate thinking count (Anthropic, OpenAI, test provider).
+    # Not included in cost_usd — genai-prices already bills these inside
+    # output_tokens for Google models.
+    thinking_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)

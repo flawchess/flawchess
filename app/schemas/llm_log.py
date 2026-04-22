@@ -39,4 +39,7 @@ class LlmLogCreate(BaseModel):
     output_tokens: int
     latency_ms: int
     cache_hit: bool = False
+    # Thinking/reasoning tokens when the provider reports them (Gemini 3 via
+    # pydantic-ai's `usage.details["thoughts_tokens"]`). None otherwise.
+    thinking_tokens: int | None = None
     error: str | None = None
