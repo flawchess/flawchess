@@ -675,16 +675,19 @@ def _findings_results_by_endgame_type(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> list[SubsectionFinding]:
-    """results_by_endgame_type -> per-category endgame_skill finding.
+    """results_by_endgame_type -> per-category win_rate finding.
 
-    Value = category win rate (0.0-1.0), derived from EndgameCategoryStats.
+    Value = category win rate (0.0-1.0, W/total, draws excluded), derived from
+    EndgameCategoryStats. Emitted as metric="win_rate" so the LLM prompt does
+    not confuse it with endgame_skill (the Conv/Parity/Recov composite used
+    only in subsection `endgame_metrics`).
     """
     categories: list[EndgameCategoryStats] = response.stats.categories
     findings: list[SubsectionFinding] = []
 
     if not categories:
         findings.append(
-            _empty_finding("results_by_endgame_type", window, "endgame_skill")
+            _empty_finding("results_by_endgame_type", window, "win_rate")
         )
         return findings
 
@@ -695,7 +698,7 @@ def _findings_results_by_endgame_type(
         if cat.total == 0:
             findings.append(
                 _empty_finding(
-                    "results_by_endgame_type", window, "endgame_skill",
+                    "results_by_endgame_type", window, "win_rate",
                     dimension=dim,
                 )
             )
@@ -707,9 +710,9 @@ def _findings_results_by_endgame_type(
                 subsection_id="results_by_endgame_type",
                 parent_subsection_id=None,
                 window=window,
-                metric="endgame_skill",
+                metric="win_rate",
                 value=value,
-                zone=assign_zone("endgame_skill", value),
+                zone=assign_zone("win_rate", value),
                 trend="n_a",
                 weekly_points_in_window=0,
                 sample_size=cat.total,
@@ -842,7 +845,7 @@ def _findings_type_win_rate_timeline(
     if not per_type:
         findings.append(
             _empty_finding(
-                "type_win_rate_timeline", window, "endgame_skill",
+                "type_win_rate_timeline", window, "win_rate",
                 parent="results_by_endgame_type",
             )
         )
@@ -853,7 +856,7 @@ def _findings_type_win_rate_timeline(
         if not points:
             findings.append(
                 _empty_finding(
-                    "type_win_rate_timeline", window, "endgame_skill",
+                    "type_win_rate_timeline", window, "win_rate",
                     parent="results_by_endgame_type",
                     dimension=dim,
                 )
@@ -874,9 +877,9 @@ def _findings_type_win_rate_timeline(
                 subsection_id="type_win_rate_timeline",
                 parent_subsection_id="results_by_endgame_type",
                 window=window,
-                metric="endgame_skill",
+                metric="win_rate",
                 value=last_value,
-                zone=assign_zone("endgame_skill", last_value),
+                zone=assign_zone("win_rate", last_value),
                 trend=trend,
                 weekly_points_in_window=weekly_points,
                 sample_size=sample_size,

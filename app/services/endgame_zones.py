@@ -36,6 +36,7 @@ MetricId = Literal[
     "avg_clock_diff_pct",
     "net_timeout_rate",
     "endgame_elo_gap",
+    "win_rate",
 ]
 
 SubsectionId = Literal[
@@ -154,6 +155,16 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     "endgame_elo_gap": ZoneSpec(
         typical_lower=-100.0,
         typical_upper=100.0,
+        direction="higher_is_better",
+    ),
+    # Plain win rate (W / total, draws excluded) for per-type findings in the
+    # results_by_endgame_type and type_win_rate_timeline subsections. Band
+    # mirrors endgame_skill (0.45-0.55) because before the relabel these same
+    # values were zoned with the endgame_skill spec. Kept identical to
+    # preserve all prior zone assignments.
+    "win_rate": ZoneSpec(
+        typical_lower=0.45,
+        typical_upper=0.55,
         direction="higher_is_better",
     ),
 }

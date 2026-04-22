@@ -122,14 +122,15 @@ class TestRegistrySanity:
     """Sanity checks on registry shape and constants."""
 
     def test_all_scalar_metrics_have_entries(self) -> None:
-        """ZONE_REGISTRY covers exactly the five scalar metrics (bucketed
-        metrics live in BUCKETED_ZONE_REGISTRY)."""
+        """ZONE_REGISTRY covers exactly the scalar metrics (bucketed metrics
+        live in BUCKETED_ZONE_REGISTRY)."""
         assert set(ZONE_REGISTRY.keys()) == {
             "score_gap",
             "endgame_skill",
             "avg_clock_diff_pct",
             "net_timeout_rate",
             "endgame_elo_gap",
+            "win_rate",
         }
 
     def test_net_timeout_rate_uses_threshold_constant(self) -> None:
