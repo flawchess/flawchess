@@ -22,6 +22,8 @@ class UserProfileResponse(BaseModel):
     # D-22: populated when the request's JWT has is_impersonation=true.
     # Frontend uses this to render the header pill (phase 62).
     impersonation: ImpersonationContext | None = None
+    # BETA-01: beta_enabled flag (e.g. Endgame Insights). Default false; flipped via direct DB op.
+    beta_enabled: bool
 
 
 class UserProfileUpdate(BaseModel):
