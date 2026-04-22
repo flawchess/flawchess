@@ -77,17 +77,17 @@ Interpret each metric using the definitions below. These match the user-facing i
 
 Each subsection in the user prompt belongs to exactly one output section. Emit at most one `SectionInsight` per section_id, aggregating insights from all its subsections:
 
-| Subsection | section_id |
-|---|---|
-| overall | overall |
-| score_gap_timeline | metrics_elo |
-| endgame_metrics | metrics_elo |
-| endgame_elo_timeline | metrics_elo |
-| time_pressure_at_entry | time_pressure |
-| clock_diff_timeline | time_pressure |
-| results_by_endgame_type | type_breakdown |
-| conversion_recovery_by_type | type_breakdown |
-| type_win_rate_timeline | type_breakdown |
+| Subsection                   | section_id     |
+| ---------------------------- | -------------- |
+| overall                      | overall        |
+| score_gap_timeline           | metrics_elo    |
+| endgame_metrics              | metrics_elo    |
+| endgame_elo_timeline         | metrics_elo    |
+| time_pressure_at_entry       | time_pressure  |
+| clock_diff_timeline          | time_pressure  |
+| results_by_endgame_type      | type_breakdown |
+| conversion_recovery_by_type  | type_breakdown |
+| type_win_rate_timeline       | type_breakdown |
 
 Subsections not in this table (e.g. `time_pressure_vs_performance`) will not appear in your user prompt; the frontend renders them directly.
 
