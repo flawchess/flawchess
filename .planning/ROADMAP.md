@@ -156,7 +156,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 - [x] **Phase 63: Findings Pipeline & Zone Wiring** — Transform `/api/endgames/overview` composite into zone/trend/sample-quality findings and cross-section flags (complete 2026-04-20, 5/5 plans)
 - [x] **Phase 64: `llm_logs` Table & Async Repo** — Generic Postgres log table (+ Alembic migration + async repo) designed for reuse across future LLM features (complete 2026-04-20, 3/3 plans)
 - [x] **Phase 65: LLM Endpoint with pydantic-ai Agent** — `POST /api/insights/endgame` with versioned prompt, findings-hash cache, rate limit, soft-fail (completed 2026-04-21)
-- [ ] **Phase 66: Frontend EndgameInsightsBlock & Beta Flag** — Overview + 4 Section blocks inline on the Endgame tab, gated by `users.insights_beta_enabled`
+- [ ] **Phase 66: Frontend EndgameInsightsBlock & Beta Flag** — Overview + 4 Section blocks inline on the Endgame tab, gated by `users.beta_enabled`
 - [ ] **Phase 67: Validation & Beta Rollout** — Ground-truth regression test + admin-impersonation eyeball validation across 5+ real user profiles
 
 ## Phase Details
@@ -210,11 +210,11 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 - [x] 65-06-PLAN.md — Router + lifespan wiring + end-to-end tests + CHANGELOG + SEED-004 close (Wave 4)
 
 ### Phase 66: Frontend EndgameInsightsBlock & Beta Flag
-**Goal**: Users with `insights_beta_enabled=true` see a "Generate insights" button on the Endgame tab and, on click, receive the overview paragraph plus 4 Section blocks rendered inline. Backend config can hide the overview independently while per-section insights stay live.
+**Goal**: Users with `beta_enabled=true` see a "Generate insights" button on the Endgame tab and, on click, receive the overview paragraph plus 4 Section blocks rendered inline. Backend config can hide the overview independently while per-section insights stay live.
 **Depends on**: Phase 65 (endpoint)
 **Requirements**: INS-01, INS-02, INS-03, BETA-01, BETA-02
 **Success Criteria** (what must be TRUE):
-  1. A user with `insights_beta_enabled=true` sees a "Generate insights" button on the Endgame tab; a user with the flag `false` does not see the button or the block at all
+  1. A user with `beta_enabled=true` sees a "Generate insights" button on the Endgame tab; a user with the flag `false` does not see the button or the block at all
   2. Clicking "Generate insights" renders an overview paragraph (≤150 words) above exactly up to 4 Section blocks, each with a ≤12-word headline and 0–2 bullets (≤20 words each)
   3. Changing filters that affect findings (recency, opponent_strength, time_controls, platforms) and regenerating produces a visibly different insight; toggling `color` or `rated_only` alone does not force a new LLM call for the same underlying findings
   4. When backend config hides the overview, the per-section blocks still render normally; the block works on mobile (matches existing Endgame tab mobile layout patterns)
@@ -228,13 +228,13 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 **UI hint**: yes
 
 ### Phase 67: Validation & Beta Rollout
-**Goal**: Before any real user sees insights, we have an automated ground-truth regression passing against the canonical SEED-001 fixture AND we have manually eyeball-validated the LLM output against at least 5 real user profiles spanning different skill/sample/clock shapes via admin impersonation. The `insights_beta_enabled` DB flag is flipped for the initial cohort only after both gates pass.
+**Goal**: Before any real user sees insights, we have an automated ground-truth regression passing against the canonical SEED-001 fixture AND we have manually eyeball-validated the LLM output against at least 5 real user profiles spanning different skill/sample/clock shapes via admin impersonation. The `beta_enabled` DB flag is flipped for the initial cohort only after both gates pass.
 **Depends on**: Phase 66 (frontend ships the block users will see)
 **Requirements**: VAL-01, VAL-02
 **Success Criteria** (what must be TRUE):
   1. `pytest tests/services/test_insights_llm_snapshot.py` passes against the currently-configured `PYDANTIC_AI_MODEL_INSIGHTS`, asserting all 5 SEED-003 correctness behaviors (no "average" Score Gap, mentions strong Endgame Skill, no clock-management edge claim, mentions low-clock composure, no double-counting of Skill+ELO gap)
   2. At least 5 real user profiles (high-skill, weak-skill, clock-skewed, thin-sample, all-typical) have been impersonated via the admin panel and their insight output documented in the PR description with any issues flagged
-  3. The `users.insights_beta_enabled` flag has been flipped to `true` for the hand-picked beta cohort via direct DB operation; the rest of the user base continues to see no insights UI
+  3. The `users.beta_enabled` flag has been flipped to `true` for the hand-picked beta cohort via direct DB operation; the rest of the user base continues to see no insights UI
 **Plans**: TBD
 
 ## Progress

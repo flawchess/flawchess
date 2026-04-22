@@ -47,7 +47,7 @@ Requirements for LLM-first Endgame Insights milestone. Source: `.planning/seeds/
 ### Beta Rollout
 
 - [x] **BETA-01
-**: Beta access is controlled by a boolean flag on the `users` table (e.g. `insights_beta_enabled`). Default `false`. Flipping the flag is a direct DB operation (no user-settings UI, no admin page) — the whole point is a small, hand-picked validation cohort
+**: Beta access is controlled by a boolean flag on the `users` table (`beta_enabled`). Default `false`. Flipping the flag is a direct DB operation (no user-settings UI, no admin page) — the whole point is a small, hand-picked validation cohort
 - [x] **BETA-02
 **: Overview paragraph can be independently hidden via backend config so per-section insights can ship while overview quality is being reviewed in the first rollout week
 
