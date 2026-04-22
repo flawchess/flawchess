@@ -39,6 +39,7 @@ async def test_llm_logs_table_exists_with_columns_indexes_and_cascade(test_engin
             "cost_usd",
             "latency_ms",
             "cache_hit",
+            "thinking_tokens",
             "error",
         }
         assert cols == expected_cols, f"missing={expected_cols - cols} extra={cols - expected_cols}"

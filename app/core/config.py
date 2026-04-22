@@ -1,3 +1,5 @@
+from typing import Literal
+
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -35,6 +37,21 @@ class Settings(BaseSettings):
     # for offline analysis — log is source of truth, response is policy-gated
     # view (D-18, BETA-02).
     INSIGHTS_HIDE_OVERVIEW: bool = False
+
+    # Google Gemini thinking controls. Only applied when PYDANTIC_AI_MODEL_INSIGHTS
+    # starts with "google-gla:" or "google-vertex:". Silently ignored for other
+    # providers (Anthropic, OpenAI, test).
+    #
+    # GEMINI_THINKING_LEVEL:  Gemini 3+ knob (e.g. gemini-3-flash-preview) —
+    #   "low" (cheaper, faster) or "high" (more reasoning).
+    # GEMINI_THINKING_BUDGET: Gemini 2.5 knob — explicit token cap. 0 disables
+    #   thinking entirely. Ignored on Gemini 3 (which uses thinking_level).
+    # GEMINI_INCLUDE_THOUGHTS: when True, Google returns thoughts_token_count in
+    #   usage metadata so the insights service can persist them to
+    #   llm_logs.thinking_tokens for cost attribution.
+    GEMINI_THINKING_LEVEL: Literal["low", "high"] = "low"
+    GEMINI_THINKING_BUDGET: int = 0
+    GEMINI_INCLUDE_THOUGHTS: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

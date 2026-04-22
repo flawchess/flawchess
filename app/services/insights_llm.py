@@ -22,10 +22,12 @@ import datetime
 import functools
 import time
 from pathlib import Path
+from typing import Literal, cast
 
 import sentry_sdk
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
+from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -86,9 +88,40 @@ class InsightsValidationFailure(Exception):
 
 # -- Agent singleton (CONTEXT.md D-21, D-22) --
 
+_GOOGLE_PREFIXES = ("google-gla:", "google-vertex:")
+_GEMINI3_MODEL_MARKER = "gemini-3"  # Gemini 3+ uses thinking_level; older uses thinking_budget
+
+
+def _build_google_thinking_config(model_name: str) -> dict[str, object]:
+    """Return the google_thinking_config dict appropriate for this model.
+
+    Gemini 3+ models use `thinking_level: 'low' | 'high'`. Older Gemini
+    models (e.g. gemini-2.5-flash) use `thinking_budget: int` where 0 disables
+    thinking entirely. `include_thoughts=True` makes the provider return
+    `usage_metadata.thoughts_token_count` so the service can persist it.
+    """
+    config: dict[str, object] = {"include_thoughts": settings.GEMINI_INCLUDE_THOUGHTS}
+    if _GEMINI3_MODEL_MARKER in model_name:
+        config["thinking_level"] = settings.GEMINI_THINKING_LEVEL
+    else:
+        config["thinking_budget"] = settings.GEMINI_THINKING_BUDGET
+    return config
+
+
 @functools.lru_cache(maxsize=1)
 def get_insights_agent() -> Agent[None, EndgameInsightsReport]:
     """Return the singleton pydantic-ai Agent, constructing on first call.
+
+    For Google-provider models ("google-gla:" / "google-vertex:" prefix) the
+    Agent is constructed from an explicit `GoogleModel` plus a
+    `GoogleModelSettings` carrying `google_thinking_config`. This lets us cap
+    thinking cost (thinking_level=low on Gemini 3; thinking_budget=0 on 2.5)
+    and ask the provider to surface `thoughts_token_count` so the insights
+    service can persist it to `llm_logs.thinking_tokens`.
+
+    For all other providers (Anthropic, OpenAI, test) we keep the plain
+    string-form Agent constructor — no thinking control surface, and
+    pydantic-ai silently ignores the Google-specific settings anyway.
 
     Raises:
         UserError: empty PYDANTIC_AI_MODEL_INSIGHTS or unknown model suffix.
@@ -99,9 +132,27 @@ def get_insights_agent() -> Agent[None, EndgameInsightsReport]:
     instance across the app lifetime; pydantic-ai Agents are async-safe
     (RESEARCH.md §6).
     """
-    model = settings.PYDANTIC_AI_MODEL_INSIGHTS
+    model_str = settings.PYDANTIC_AI_MODEL_INSIGHTS
+    if model_str.startswith(_GOOGLE_PREFIXES):
+        provider_prefix, _, model_name = model_str.partition(":")
+        # provider_prefix is "google-gla" or "google-vertex" — both are valid
+        # pydantic-ai GoogleProvider names (see pydantic_ai.providers.google).
+        # cast to satisfy pydantic-ai's Literal param — the startswith check
+        # above guarantees provider_prefix is one of the two accepted values.
+        provider_literal = cast(Literal["google-gla", "google-vertex"], provider_prefix)
+        google_model = GoogleModel(model_name, provider=provider_literal)
+        google_settings = GoogleModelSettings(
+            google_thinking_config=_build_google_thinking_config(model_name),  # ty: ignore[invalid-argument-type]
+        )
+        return Agent(  # ty: ignore[invalid-return-type]
+            google_model,
+            output_type=EndgameInsightsReport,
+            system_prompt=_SYSTEM_PROMPT,
+            output_retries=_OUTPUT_RETRIES,
+            model_settings=google_settings,
+        )
     return Agent(  # ty: ignore[invalid-return-type] — pydantic-ai Agent generic params depend on runtime model string; ty cannot infer Agent[None, EndgameInsightsReport] from a str variable
-        model,
+        model_str,
         output_type=EndgameInsightsReport,
         system_prompt=_SYSTEM_PROMPT,
         output_retries=_OUTPUT_RETRIES,
@@ -219,15 +270,23 @@ async def _compute_retry_after(session: AsyncSession, user_id: int) -> int:
 
 # -- Agent invocation wrapper: exception -> (None, marker), success -> (report, ...) --
 
+_THOUGHTS_DETAIL_KEY = "thoughts_tokens"  # pydantic-ai Google adapter key (models/google.py:1454)
+
+
 async def _run_agent(
     user_prompt: str,
     user_id: int,
     findings_hash: str,
-) -> tuple[EndgameInsightsReport | None, int, int, int, str | None]:
-    """Run the Agent; return (report, input_tokens, output_tokens, latency_ms, error_marker).
+) -> tuple[EndgameInsightsReport | None, int, int, int | None, int, str | None]:
+    """Run the Agent; return (report, input_tokens, output_tokens, thinking_tokens, latency_ms, error_marker).
 
-    On success: (report, in_toks, out_toks, latency_ms, None).
-    On failure: (None, 0, 0, latency_ms, "<marker>") and Sentry capture.
+    On success: (report, in_toks, out_toks, thinking_toks_or_None, latency_ms, None).
+    On failure: (None, 0, 0, None, latency_ms, "<marker>") and Sentry capture.
+
+    thinking_tokens is None for providers that don't surface a separate thought
+    count (Anthropic, OpenAI, test). For Google models with include_thoughts=True
+    it comes from `usage.details["thoughts_tokens"]` (populated by pydantic-ai's
+    Google adapter from usage_metadata.thoughts_token_count).
 
     Latency is measured ONLY around agent.run() per D-25.
     """
@@ -244,7 +303,7 @@ async def _run_agent(
             "endpoint": _ENDPOINT,
         })
         sentry_sdk.capture_exception(exc)
-        return None, 0, 0, latency_ms, "validation_failure_after_retries"
+        return None, 0, 0, None, latency_ms, "validation_failure_after_retries"
     except ModelAPIError as exc:
         latency_ms = int((time.monotonic() - t0) * 1000)
         sentry_sdk.set_context("insights", {
@@ -254,7 +313,7 @@ async def _run_agent(
             "endpoint": _ENDPOINT,
         })
         sentry_sdk.capture_exception(exc)
-        return None, 0, 0, latency_ms, "provider_error"
+        return None, 0, 0, None, latency_ms, "provider_error"
     except Exception as exc:
         # Defensive catch-all for unexpected exceptions (e.g. httpx connect errors
         # not wrapped as ModelAPIError). Map to provider_error marker per
@@ -267,10 +326,11 @@ async def _run_agent(
             "endpoint": _ENDPOINT,
         })
         sentry_sdk.capture_exception(exc)
-        return None, 0, 0, latency_ms, "provider_error"
+        return None, 0, 0, None, latency_ms, "provider_error"
     latency_ms = int((time.monotonic() - t0) * 1000)
     usage = result.usage()
-    return result.output, usage.input_tokens, usage.output_tokens, latency_ms, None
+    thinking = usage.details.get(_THOUGHTS_DETAIL_KEY) or None
+    return result.output, usage.input_tokens, usage.output_tokens, thinking, latency_ms, None
 
 
 # -- Orchestration entry point (CONTEXT.md D-33) --
@@ -326,7 +386,7 @@ async def generate_insights(
 
     # Fresh call.
     user_prompt = _assemble_user_prompt(findings)
-    report, in_tokens, out_tokens, latency_ms, marker = await _run_agent(
+    report, in_tokens, out_tokens, thinking_tokens, latency_ms, marker = await _run_agent(
         user_prompt, user_id, findings.findings_hash
     )
     await create_llm_log(LlmLogCreate(
@@ -342,6 +402,7 @@ async def generate_insights(
         response_json=report.model_dump() if report is not None else None,
         input_tokens=in_tokens,
         output_tokens=out_tokens,
+        thinking_tokens=thinking_tokens,
         latency_ms=latency_ms,
         cache_hit=False,
         error=marker,
