@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: LLM-first Endgame Insights
-status: planning
-last_updated: "2026-04-21T21:48:47.032Z"
-last_activity: 2026-04-21
+status: executing
+last_updated: "2026-04-22T01:50:41.703Z"
+last_activity: 2026-04-22
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 19
-  completed_plans: 14
-  percent: 74
+  completed_plans: 15
+  percent: 79
 ---
 
 # Project State: FlawChess
@@ -18,10 +18,10 @@ progress:
 ## Current Position
 
 Milestone: v1.11 LLM-first Endgame Insights
-Phase: 999.5
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-04-21
+Phase: 66 (frontend-endgameinsightsblock-beta-flag) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-04-22
 
 ## Project Reference
 
@@ -105,6 +105,9 @@ Phase 67: Validation & Beta Rollout           — Not started
 - [Phase 64-llm-logs-table-async-repo]: Plan 03: `_compute_cost` splits pydantic-ai 'provider:model' on first ':' via str.partition() into provider_id + model_ref — confirms Plan 01 smoke finding; combined form raises LookupError inside genai-prices 0.0.56 and is never used.
 - [Phase 64-llm-logs-table-async-repo]: Plan 03: Extended tests/conftest.py::override_get_async_session to patch app.repositories.llm_log_repository.async_session_maker alongside existing db/users/activity module patches. Required because create_llm_log's D-02 own-session path binds module-level names at call time via __globals__; patching only app.core.database wasn't enough. Established precedent: any future module with own-session pattern must be added to this patch list.
 - [Phase 64-llm-logs-table-async-repo]: Plan 03: Docstring phrasing in llm_log_repository.py avoids the literal 'sentry' substring to satisfy the plan's case-insensitive verification grep ('sentry not in src.lower()'). D-08 intent (no sentry_sdk import, no capture_exception call) is preserved behaviorally; only the word used to document the contract changed ('caller captures at the router/service layer (D-08)').
+- [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 01: Scoped Alembic migration 24baa961e5cf to users.beta_enabled only; stripped pre-existing autogen drift (REAL->Float on game_positions.clock_seconds / games.white_accuracy / games.black_accuracy + postgresql_ops DESC index re-create noise on llm_logs) per plan instructions. Matches Phase 64 Plan 02 precedent; drift stays deferred for a dedicated future cleanup migration.
+- [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 01: Mass-assignment defense (T-66-02) lives in the Pydantic schema shape, not the router. UserProfileUpdate stays a two-field schema; Pydantic v2 default extra='ignore' silently drops beta_enabled from PUT bodies. Test 3 (test_user_profile_update_does_not_change_beta_enabled) asserts the invariant.
+- [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 01: Router test helper _register_login_and_get_id reads user id from the /api/auth/register response; avoids ty's invalid-argument-type on User.email == email (FastAPI-Users generic column inference narrows to bool at compare time). User.id == user_id works cleanly.
 
 ### Pending Todos
 
