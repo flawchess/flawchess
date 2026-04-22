@@ -27,8 +27,11 @@ import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelin
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
+import { EndgameInsightsBlock } from '@/components/insights/EndgameInsightsBlock';
+import { useEndgameInsights } from '@/hooks/useEndgameInsights';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
+import type { EndgameInsightsResponse, SectionId } from '@/types/insights';
 
 const PAGE_SIZE = 20;
 
@@ -68,6 +71,45 @@ export function EndgamesPage() {
   // Queries only fire when the sidebar/drawer closes and commits pending -> applied.
   const [appliedFilters, setAppliedFilters] = useFilterStore();
   const [pendingFilters, setPendingFilters] = useState<FilterState>(appliedFilters);
+
+  // ── Endgame Insights (Phase 66) ─────────────────────────────────────────────
+  // Mutation state lifted here so per-section slots in each H2 can observe the
+  // same report without a context provider. See 66-03-PLAN architecture note.
+  // Hook call is unconditional (non-beta users just never see the Generate CTA
+  // because EndgameInsightsBlock self-gates on profile.beta_enabled), so no
+  // network request fires unless the user clicks Generate.
+  const insightsMutation = useEndgameInsights();
+  const [renderedInsights, setRenderedInsights] = useState<EndgameInsightsResponse | null>(null);
+  const [insightsReportFilters, setInsightsReportFilters] = useState<FilterState | null>(null);
+
+  const handleGenerateInsights = useCallback(async () => {
+    try {
+      const result = await insightsMutation.mutateAsync(appliedFilters);
+      setRenderedInsights(result);
+      setInsightsReportFilters(appliedFilters);
+    } catch {
+      // Error is surfaced via insightsMutation.isError → EndgameInsightsBlock error state.
+      // Global MutationCache.onError in lib/queryClient.ts captures Sentry; do not
+      // add a local capture here (would double-report).
+    }
+  }, [insightsMutation, appliedFilters]);
+
+  // Build a lookup for O(1) per-slot access during render. Null for sections the
+  // backend did not return (including all 4 when no report has been generated).
+  const sectionBySection: Record<SectionId, { headline: string; bullets: string[] } | null> = {
+    overall: null,
+    metrics_elo: null,
+    time_pressure: null,
+    type_breakdown: null,
+  };
+  if (renderedInsights && !insightsMutation.isError) {
+    for (const section of renderedInsights.report.sections) {
+      sectionBySection[section.section_id] = {
+        headline: section.headline,
+        bullets: section.bullets,
+      };
+    }
+  }
 
   // Sync pending -> applied when the filter store changes from another page/tab
   useEffect(() => {
@@ -218,6 +260,13 @@ export function EndgamesPage() {
 
   const statisticsContent = (
     <div className="flex flex-col gap-4">
+      <EndgameInsightsBlock
+        appliedFilters={appliedFilters}
+        rendered={renderedInsights}
+        reportFilters={insightsReportFilters}
+        mutation={insightsMutation}
+        onGenerate={handleGenerateInsights}
+      />
       {overviewLoading ? (
         <div className="charcoal-texture rounded-md p-12 flex items-center justify-center">
           <p className="text-muted-foreground">Loading endgame analytics...</p>
@@ -275,6 +324,7 @@ export function EndgamesPage() {
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
+              <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
               <div className="charcoal-texture rounded-md p-4">
                 <EndgamePerformanceSection data={perfData} scoreGap={scoreGapData} />
               </div>
@@ -289,6 +339,7 @@ export function EndgamesPage() {
               {scoreGapData && (
                 <>
                   <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Metrics and ELO</h2>
+                  <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                   <div className="charcoal-texture rounded-md p-4">
                     <EndgameScoreGapSection data={scoreGapData} />
                   </div>
@@ -311,6 +362,7 @@ export function EndgamesPage() {
           {(showClockPressure || showTimePressureChart) && (
             <>
               <h2 className="text-lg font-semibold text-foreground mt-2">Time Pressure</h2>
+              <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
               {showClockPressure && (
                 <>
                   <div className="charcoal-texture rounded-md p-4">
@@ -336,6 +388,7 @@ export function EndgamesPage() {
 
           {/* ── Endgame Type Breakdown ── */}
           <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Type Breakdown</h2>
+          <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />
           <div className="charcoal-texture rounded-md p-4">
             <EndgameWDLChart
               categories={statsData.categories}
@@ -589,6 +642,33 @@ export function EndgamesPage() {
           </Tabs>
         </div>
       </main>
+    </div>
+  );
+}
+
+// ── SectionInsightSlot ──────────────────────────────────────────────────────
+// Renders a per-section insight (headline + 0-2 bullets) above the first chart
+// card of each H2 group when the backend returned a matching section_id. Returns
+// null when no matching data exists — e.g. non-beta users (never fires Generate),
+// pre-generate state, or any section the LLM chose to omit (Phase 65 min=1/max=4).
+function SectionInsightSlot({
+  sectionId,
+  data,
+}: {
+  sectionId: SectionId;
+  data: { headline: string; bullets: string[] } | null;
+}) {
+  if (!data) return null;
+  return (
+    <div data-testid={`insights-section-${sectionId}`} className="mb-3">
+      <p className="text-sm font-semibold text-foreground mb-2">{data.headline}</p>
+      {data.bullets.length > 0 && (
+        <ul className="list-disc list-outside pl-5 space-y-1 text-sm text-muted-foreground">
+          {data.bullets.map((b, i) => (
+            <li key={i}>{b}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
