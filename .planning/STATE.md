@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: LLM-first Endgame Insights
 status: executing
-last_updated: "2026-04-22T05:40:15.252Z"
+last_updated: "2026-04-22T05:48:41.414Z"
 last_activity: 2026-04-22
 progress:
   total_phases: 9
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 19
-  completed_plans: 18
-  percent: 95
+  completed_plans: 19
+  percent: 100
 ---
 
 # Project State: FlawChess
@@ -19,7 +19,7 @@ progress:
 
 Milestone: v1.11 LLM-first Endgame Insights
 Phase: 66 (frontend-endgameinsightsblock-beta-flag) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-04-22
 
@@ -116,6 +116,8 @@ Phase 67: Validation & Beta Rollout           — Not started
 - [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 03: Parent-lifted mutation state pattern (locked in plan) — component receives UseMutationResult + rendered + reportFilters + onGenerate as props instead of calling useEndgameInsights() itself. Enables Plan 04's per-section insights-section-* slots to observe the same state without a context provider.
 - [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 03: String literal wrapper `{"Couldn't generate insights."}` instead of JSX text with &apos; — acceptance criterion greps source for verbatim phrase; JSX entities would render correctly but fail the grep.
 - [Phase 66-frontend-endgameinsightsblock-beta-flag]: Plan 03: Explicit afterEach(cleanup) in test file — Vitest 4 does not auto-cleanup RTL mounts; without cleanup, DOM from prior tests bleeds into subsequent screen.getByTestId queries (discovered after 4/11 initial failures).
+- Parent-owned mutation state + sibling slot subscription for EndgameInsights: Endgames.tsx holds the single useEndgameInsights mutation + rendered snapshot; EndgameInsightsBlock + 4 SectionInsightSlot instances all observe the same state without a context provider
+- H2-ride-along slot suppression (D-05) achieved by placement alone: per-section insight slots live inside the same conditional branches as their matching H2, so H2 suppression transitively suppresses the slot — no extra guard logic
 
 ### Pending Todos
 

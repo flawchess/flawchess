@@ -156,7 +156,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 - [x] **Phase 63: Findings Pipeline & Zone Wiring** — Transform `/api/endgames/overview` composite into zone/trend/sample-quality findings and cross-section flags (complete 2026-04-20, 5/5 plans)
 - [x] **Phase 64: `llm_logs` Table & Async Repo** — Generic Postgres log table (+ Alembic migration + async repo) designed for reuse across future LLM features (complete 2026-04-20, 3/3 plans)
 - [x] **Phase 65: LLM Endpoint with pydantic-ai Agent** — `POST /api/insights/endgame` with versioned prompt, findings-hash cache, rate limit, soft-fail (completed 2026-04-21)
-- [ ] **Phase 66: Frontend EndgameInsightsBlock & Beta Flag** — Overview + 4 Section blocks inline on the Endgame tab, gated by `users.beta_enabled`
+- [x] **Phase 66: Frontend EndgameInsightsBlock & Beta Flag** — Overview + 4 Section blocks inline on the Endgame tab, gated by `users.beta_enabled` (complete 2026-04-22, 5/5 plans)
 - [ ] **Phase 67: Validation & Beta Rollout** — Ground-truth regression test + admin-impersonation eyeball validation across 5+ real user profiles
 
 ## Phase Details
@@ -223,7 +223,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 - [x] 66-01-PLAN.md — Backend: users.beta_enabled migration + UserProfileResponse extension + router tests (Wave 1)
 - [x] 66-02-PLAN.md — Frontend types + useEndgameInsights hook + buildFilterParams export (Wave 2)
 - [x] 66-03-PLAN.md — EndgameInsightsBlock component (hero / skeleton / overview / error states) + render tests (Wave 3)
-- [ ] 66-04-PLAN.md — Endgames.tsx integration: mount block + 4 SectionInsight slots across H2 groups (Wave 4)
+- [x] 66-04-PLAN.md — Endgames.tsx integration: mount block + 4 SectionInsight slots across H2 groups (Wave 4)
 - [x] 66-05-PLAN.md — Docs alignment: REQUIREMENTS.md BETA-01 + ROADMAP.md Phase 66/67 → `beta_enabled` (Wave 2)
 **UI hint**: yes
 
@@ -264,7 +264,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 | 63. Findings Pipeline & Zone Wiring | v1.11 | 5/5 | Complete | 2026-04-20 |
 | 64. llm_logs Table & Async Repo | v1.11 | 2/3 | In progress | - |
 | 65. LLM Endpoint with pydantic-ai Agent | v1.11 | 6/6 | Complete    | 2026-04-21 |
-| 66. Frontend EndgameInsightsBlock & Beta Flag | v1.11 | 0/5 | Planned     | - |
+| 66. Frontend EndgameInsightsBlock & Beta Flag | v1.11 | 5/5 | Complete    | 2026-04-22 |
 | 67. Validation & Beta Rollout | v1.11 | 0/0 | Not started | - |
 
 ## Backlog
