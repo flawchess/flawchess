@@ -59,7 +59,7 @@ def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameI
             ),
         ],
         model_used="test",
-        prompt_version="endgame_v1",
+        prompt_version="endgame_v2",
     )
 
 
@@ -83,7 +83,7 @@ def _make_log_row(
     error: str | None = None,
     response_json: dict[str, Any] | None = None,
     cache_hit: bool = False,
-    prompt_version: str = "endgame_v1",
+    prompt_version: str = "endgame_v2",
     model: str = "test",
     findings_hash: str = "b" * 64,
 ) -> LlmLog:
@@ -225,13 +225,21 @@ class TestPromptAssembly:
         assert "2026-01-13" in prompt
 
     def test_system_prompt_loaded_from_file(self) -> None:
+        """_SYSTEM_PROMPT is the markdown file contents + auto-generated zone appendix.
+
+        Per 260422-tnb B2: _SYSTEM_PROMPT at module load = file contents + a
+        deterministic `## Zone thresholds` appendix sourced from ZONE_REGISTRY
+        and BUCKETED_ZONE_REGISTRY. The appendix is appended so the file
+        content must be a strict prefix.
+        """
         import app.services.insights_prompts as pkg
         from pathlib import Path
 
         file_path = Path(pkg.__file__).parent / "endgame_v1.md"
         file_content = file_path.read_text(encoding="utf-8")
-        assert _SYSTEM_PROMPT == file_content
-        assert len(_SYSTEM_PROMPT) > 0
+        assert _SYSTEM_PROMPT.startswith(file_content)
+        assert "## Zone thresholds" in _SYSTEM_PROMPT
+        assert len(_SYSTEM_PROMPT) > len(file_content)
 
     def test_filter_excludes_color_and_rated_only(self) -> None:
         filters = _sample_filter_context(color="white", rated_only=True)
@@ -242,6 +250,145 @@ class TestPromptAssembly:
         assert "rated_only=" not in prompt
         assert "white" not in prompt
         assert "rated" not in prompt
+
+    def test_assemble_user_prompt_drops_nan_findings(self) -> None:
+        """A2 (260422-tnb): NaN values and thin empty findings are filtered out."""
+        filters = _sample_filter_context()
+        normal = SubsectionFinding(
+            subsection_id="overall",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="score_gap",
+            value=0.05,
+            zone="typical",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=120,
+            sample_quality="adequate",
+            is_headline_eligible=True,
+            dimension=None,
+            series=None,
+        )
+        # Empty finding mirrors _empty_finding output: NaN value, thin, n=0.
+        empty = SubsectionFinding(
+            subsection_id="endgame_metrics",
+            parent_subsection_id=None,
+            window="last_3mo",
+            metric="recovery_save_pct",
+            value=float("nan"),
+            zone="typical",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=0,
+            sample_quality="thin",
+            is_headline_eligible=False,
+            dimension={"bucket": "recovery"},
+            series=None,
+        )
+        tab_findings = _fake_findings(filters, findings=[normal, empty])
+        prompt = _assemble_user_prompt(tab_findings)
+
+        # Must not leak NaN into the prompt (was: "+nan | typical | 0 games | thin").
+        assert "nan" not in prompt.lower()
+        # The only bullet line should be the normal finding.
+        bullet_lines = [line for line in prompt.splitlines() if line.startswith("- ")]
+        assert len(bullet_lines) == 1
+        assert "score_gap" in bullet_lines[0]
+
+    def test_assemble_user_prompt_groups_by_subsection(self) -> None:
+        """C1 (260422-tnb): multiple findings under one subsection share a single header."""
+        from typing import cast
+        from app.schemas.insights import MetricId
+
+        filters = _sample_filter_context()
+
+        def _em(metric: str, bucket: str, value: float) -> SubsectionFinding:
+            return SubsectionFinding(
+                subsection_id="endgame_metrics",
+                parent_subsection_id=None,
+                window="all_time",
+                metric=cast(MetricId, metric),
+                value=value,
+                zone="typical",
+                trend="n_a",
+                weekly_points_in_window=0,
+                sample_size=120,
+                sample_quality="adequate",
+                is_headline_eligible=True,
+                dimension={"bucket": bucket},
+                series=None,
+            )
+
+        findings_list = [
+            _em("conversion_win_pct", "conversion", 0.66),
+            _em("parity_score_pct", "parity", 0.50),
+            _em("recovery_save_pct", "recovery", 0.30),
+        ]
+        tab_findings = _fake_findings(filters, findings=findings_list)
+        prompt = _assemble_user_prompt(tab_findings)
+
+        assert prompt.count("## Subsection: endgame_metrics") == 1
+        bullet_lines = [line for line in prompt.splitlines() if line.startswith("- ")]
+        assert len(bullet_lines) == 3
+
+    def test_assemble_user_prompt_filters_sparse_series_points(self) -> None:
+        """A4 (260422-tnb): series points with n < MIN_BUCKET_N (=3) are dropped."""
+        filters = _sample_filter_context()
+        timeline = SubsectionFinding(
+            subsection_id="score_gap_timeline",
+            parent_subsection_id=None,
+            window="last_3mo",
+            metric="score_gap",
+            value=0.08,
+            zone="typical",
+            trend="improving",
+            weekly_points_in_window=4,
+            sample_size=4,
+            sample_quality="thin",
+            is_headline_eligible=False,
+            dimension=None,
+            series=[
+                TimePoint(bucket_start="2026-02-02", value=0.01, n=1),   # drop
+                TimePoint(bucket_start="2026-02-09", value=0.04, n=5),   # keep
+                TimePoint(bucket_start="2026-02-16", value=0.06, n=2),   # drop
+                TimePoint(bucket_start="2026-02-23", value=0.08, n=10),  # keep
+            ],
+        )
+        tab_findings = _fake_findings(filters, findings=[timeline])
+        prompt = _assemble_user_prompt(tab_findings)
+
+        # Retained points must appear.
+        assert "2026-02-09" in prompt
+        assert "(n=5)" in prompt
+        assert "2026-02-23" in prompt
+        assert "(n=10)" in prompt
+        # Dropped points must NOT appear.
+        assert "2026-02-02" not in prompt
+        assert "(n=1)" not in prompt
+        assert "2026-02-16" not in prompt
+        assert "(n=2)" not in prompt
+
+    def test_assemble_user_prompt_skips_time_pressure_vs_performance(self) -> None:
+        """A5 (260422-tnb): time_pressure_vs_performance is dropped entirely."""
+        filters = _sample_filter_context()
+        hidden = SubsectionFinding(
+            subsection_id="time_pressure_vs_performance",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="avg_clock_diff_pct",
+            value=0.46,
+            zone="typical",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=2940,
+            sample_quality="rich",
+            is_headline_eligible=False,
+            dimension=None,
+            series=None,
+        )
+        tab_findings = _fake_findings(filters, findings=[hidden])
+        prompt = _assemble_user_prompt(tab_findings)
+        assert "time_pressure_vs_performance" not in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +452,86 @@ class TestHappyPath:
 # ---------------------------------------------------------------------------
 
 
+class TestMetadataOverride:
+    """260422-tnb A3: server-side override of model_used + prompt_version."""
+
+    @pytest.mark.asyncio
+    async def test_generate_insights_overrides_model_used_and_prompt_version(
+        self,
+        fake_insights_agent: Any,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Fabricated LLM output for model_used/prompt_version is overwritten server-side.
+
+        The LLM can (and has — see review of gemini-3-flash-preview run) return
+        "gpt-4o-2024-05-13" as model_used. The service must override both
+        fields after _run_agent returns so the user-facing response and the
+        persisted llm_logs row both reflect the actual configured values.
+        """
+        # Simulate a fabricated report from the LLM.
+        fabricated = EndgameInsightsReport(
+            overview="Fabricated overview.",
+            sections=[
+                SectionInsight(
+                    section_id="overall",
+                    headline="A headline",
+                    bullets=["a bullet"],
+                ),
+            ],
+            model_used="FABRICATED",
+            prompt_version="WRONG",
+        )
+        fake_insights_agent(fabricated)
+
+        # Unique findings_hash — the cache-lookup is global (not per-user), so
+        # we must not collide with any row left behind by the router tests which
+        # seed rows with hashes like "m"*64 and do NOT tear them down.
+        import uuid as _uuid
+        findings_hash = _uuid.uuid4().hex + _uuid.uuid4().hex  # 64 lowercase hex
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(
+                fc, sess, uid, findings_hash=findings_hash
+            ),
+        )
+
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session:
+            response = await generate_insights(
+                _sample_filter_context(), fresh_test_user.id, session
+            )
+
+        # Response carries the overridden values — never "FABRICATED" or "WRONG".
+        assert response.status == "fresh"
+        assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
+        assert response.report.prompt_version == "endgame_v2"
+
+        # Log row's response_json also carries the overridden values (the override
+        # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
+        # per-test) rather than filtering by error IS NULL — the "test" model is
+        # unknown to genai-prices so the row's error column will contain
+        # "cost_unknown:test". We query directly since we know our hash is unique.
+        from sqlalchemy import select as sa_select
+        from app.models.llm_log import LlmLog as LlmLogModel
+        async with session_maker() as session:
+            result = await session.execute(
+                sa_select(LlmLogModel)
+                .where(
+                    LlmLogModel.user_id == fresh_test_user.id,
+                    LlmLogModel.findings_hash == findings_hash,
+                )
+                .order_by(LlmLogModel.created_at.desc())
+                .limit(1)
+            )
+            log = result.scalar_one_or_none()
+        assert log is not None, f"no log row for findings_hash={findings_hash}"
+        assert log.response_json is not None
+        assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
+        assert log.response_json["prompt_version"] == "endgame_v2"
+
+
 class TestCacheBehavior:
     @pytest.mark.asyncio
     async def test_second_call_cache_hits(
@@ -325,7 +552,7 @@ class TestCacheBehavior:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
         # Seed a cache-hit eligible row: error=None, response_json set,
-        # matching (findings_hash, prompt_version="endgame_v1", model="test").
+        # matching (findings_hash, prompt_version="endgame_v2", model="test").
         async with session_maker() as session:
             await _seed(
                 session,
@@ -504,7 +731,7 @@ class TestRateLimit:
         # Seed 3 successful miss rows with an OLD prompt_version so they count
         # toward the rate-limit (count_recent_successful_misses does NOT filter
         # by prompt_version) but are NOT returned by get_latest_report_for_user
-        # (which filters by prompt_version="endgame_v1"), producing "no tier-2".
+        # (which filters by prompt_version="endgame_v2"), producing "no tier-2".
         now = datetime.datetime.now(datetime.UTC)
         # Build a valid report JSON for rows (avoids ValidationError in case tier-2
         # is somehow reached — but with the prompt_version mismatch it should not be).
@@ -654,7 +881,7 @@ class TestErrors:
             "overview": "ok",
             "sections": [],  # violates min_length=1
             "model_used": "test",
-            "prompt_version": "endgame_v1",
+            "prompt_version": "endgame_v2",
         }
         fake = Agent(
             TestModel(custom_output_args=bad_output),

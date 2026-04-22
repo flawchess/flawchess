@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import inspect
 import math
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -510,3 +510,184 @@ class TestComputeFindingsReturnContract:
             second = await compute_findings(fc, session=AsyncMock(), user_id=1)
 
         assert first.findings_hash == second.findings_hash
+
+
+# ---------------------------------------------------------------------------
+# TestFindingsEndgameMetrics — 260422-tnb A1: bucket-matched metric emission.
+# Each MaterialRow maps to exactly ONE finding whose metric matches the
+# bucket (conversion -> conversion_win_pct, parity -> parity_score_pct,
+# recovery -> recovery_save_pct). Total emitted: 1 endgame_skill + N
+# bucket-rows = N+1 findings (was: 1 + 3N with the old fan-out).
+# ---------------------------------------------------------------------------
+
+
+class TestFindingsEndgameMetrics:
+    """Unit tests for _findings_endgame_metrics A1 fix."""
+
+    def _make_overview_with_material_rows(
+        self,
+        material_rows: list[Any],
+    ) -> Any:
+        """Build a minimal EndgameOverviewResponse with given material_rows."""
+        from app.schemas.endgames import ScoreGapMaterialResponse
+
+        score_gap_material = ScoreGapMaterialResponse(
+            endgame_score=0.5,
+            non_endgame_score=0.5,
+            score_difference=0.0,
+            material_rows=material_rows,
+            timeline=[],
+            timeline_window=50,
+        )
+        resp = EndgameOverviewResponse.model_construct(
+            score_gap_material=score_gap_material,
+        )
+        return resp
+
+    def _make_material_row(
+        self,
+        bucket: str,
+        games: int,
+        win_pct: float,
+        draw_pct: float,
+        score: float,
+    ) -> Any:
+        from app.schemas.endgames import MaterialRow
+
+        return MaterialRow(
+            bucket=cast(Any, bucket),
+            label=bucket.capitalize(),
+            games=games,
+            win_pct=win_pct,
+            draw_pct=draw_pct,
+            loss_pct=100.0 - win_pct - draw_pct,
+            score=score,
+            opponent_score=None,
+            opponent_games=0,
+        )
+
+    def test_emits_exactly_one_finding_per_non_empty_bucket(self) -> None:
+        """3 non-zero MaterialRows -> 1 endgame_skill + 3 bucket findings = 4 total."""
+        from app.services.insights_service import _findings_endgame_metrics
+
+        rows = [
+            self._make_material_row("conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73),
+            self._make_material_row("parity", games=80, win_pct=40.0, draw_pct=20.0, score=0.50),
+            self._make_material_row("recovery", games=60, win_pct=15.0, draw_pct=20.0, score=0.25),
+        ]
+        response = self._make_overview_with_material_rows(rows)
+        findings = _findings_endgame_metrics(response, window="all_time")
+
+        assert len(findings) == 4
+        # First is endgame_skill (aggregate, no dimension).
+        assert findings[0].metric == "endgame_skill"
+        assert findings[0].dimension is None
+
+        # Remaining three: one per bucket, metric matches the bucket.
+        by_bucket: dict[str, str] = {
+            f.dimension["bucket"]: f.metric
+            for f in findings[1:]
+            if f.dimension is not None
+        }
+        assert by_bucket == {
+            "conversion": "conversion_win_pct",
+            "parity": "parity_score_pct",
+            "recovery": "recovery_save_pct",
+        }
+
+    def test_no_cross_bucket_fan_out(self) -> None:
+        """No finding has (bucket=conversion, metric=parity_score_pct) or similar.
+
+        Regression guard for the A1 semantic conflict: before the fix, every
+        bucket emitted all three metrics, producing self-contradictory rows
+        like `parity_score_pct | [bucket=conversion]`.
+        """
+        from app.services.insights_service import _findings_endgame_metrics
+
+        rows = [
+            self._make_material_row("conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73),
+            self._make_material_row("parity", games=80, win_pct=40.0, draw_pct=20.0, score=0.50),
+            self._make_material_row("recovery", games=60, win_pct=15.0, draw_pct=20.0, score=0.25),
+        ]
+        response = self._make_overview_with_material_rows(rows)
+        findings = _findings_endgame_metrics(response, window="all_time")
+
+        for f in findings:
+            if f.dimension is None:
+                continue  # endgame_skill has no bucket dim
+            bucket = f.dimension.get("bucket")
+            if bucket == "conversion":
+                assert f.metric == "conversion_win_pct"
+            elif bucket == "parity":
+                assert f.metric == "parity_score_pct"
+            elif bucket == "recovery":
+                assert f.metric == "recovery_save_pct"
+
+    def test_empty_bucket_emits_one_empty_finding(self) -> None:
+        """A MaterialRow with games=0 emits ONE empty finding for the matching metric."""
+        from app.services.insights_service import _findings_endgame_metrics
+
+        rows = [
+            self._make_material_row("conversion", games=0, win_pct=0.0, draw_pct=0.0, score=0.0),
+            self._make_material_row("parity", games=50, win_pct=40.0, draw_pct=20.0, score=0.50),
+            self._make_material_row("recovery", games=0, win_pct=0.0, draw_pct=0.0, score=0.0),
+        ]
+        response = self._make_overview_with_material_rows(rows)
+        findings = _findings_endgame_metrics(response, window="all_time")
+
+        # 1 endgame_skill + 3 bucket findings (2 empty + 1 normal).
+        assert len(findings) == 4
+
+        bucket_findings = [f for f in findings if f.dimension is not None]
+        # Each bucket appears exactly once.
+        buckets_seen = [f.dimension["bucket"] for f in bucket_findings if f.dimension]
+        assert sorted(buckets_seen) == ["conversion", "parity", "recovery"]
+
+        # Empty-bucket findings carry the matching metric with NaN value.
+        conv = next(f for f in bucket_findings if f.dimension and f.dimension["bucket"] == "conversion")
+        assert conv.metric == "conversion_win_pct"
+        assert math.isnan(conv.value)
+        assert conv.sample_size == 0
+
+        recov = next(f for f in bucket_findings if f.dimension and f.dimension["bucket"] == "recovery")
+        assert recov.metric == "recovery_save_pct"
+        assert math.isnan(recov.value)
+
+    def test_conversion_value_is_win_pct_over_100(self) -> None:
+        """Value for the conversion bucket = win_pct / 100."""
+        from app.services.insights_service import _findings_endgame_metrics
+
+        rows = [
+            self._make_material_row("conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73),
+        ]
+        response = self._make_overview_with_material_rows(rows)
+        findings = _findings_endgame_metrics(response, window="all_time")
+
+        conv = next(f for f in findings if f.dimension and f.dimension.get("bucket") == "conversion")
+        assert conv.value == pytest.approx(0.68)
+
+    def test_parity_value_is_score(self) -> None:
+        """Value for the parity bucket = score (already 0.0-1.0)."""
+        from app.services.insights_service import _findings_endgame_metrics
+
+        rows = [
+            self._make_material_row("parity", games=80, win_pct=40.0, draw_pct=20.0, score=0.50),
+        ]
+        response = self._make_overview_with_material_rows(rows)
+        findings = _findings_endgame_metrics(response, window="all_time")
+
+        parity = next(f for f in findings if f.dimension and f.dimension.get("bucket") == "parity")
+        assert parity.value == pytest.approx(0.50)
+
+    def test_recovery_value_is_win_plus_draw_over_100(self) -> None:
+        """Value for the recovery bucket = (win_pct + draw_pct) / 100."""
+        from app.services.insights_service import _findings_endgame_metrics
+
+        rows = [
+            self._make_material_row("recovery", games=60, win_pct=15.0, draw_pct=20.0, score=0.25),
+        ]
+        response = self._make_overview_with_material_rows(rows)
+        findings = _findings_endgame_metrics(response, window="all_time")
+
+        recov = next(f for f in findings if f.dimension and f.dimension.get("bucket") == "recovery")
+        assert recov.value == pytest.approx(0.35)

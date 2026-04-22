@@ -20,7 +20,9 @@ Critical invariants:
 
 import datetime
 import functools
+import math
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Literal, cast
 
@@ -44,20 +46,71 @@ from app.schemas.insights import (
     EndgameInsightsResponse,
     EndgameTabFindings,
     FilterContext,
+    SubsectionFinding,
 )
 from app.schemas.llm_log import LlmLogCreate, LlmLogEndpoint
+from app.services.endgame_zones import BUCKETED_ZONE_REGISTRY, ZONE_REGISTRY
 from app.services.insights_service import compute_findings
 
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3             # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v1"           # CONTEXT.md D-08, bump to "endgame_v2" on prompt edit
+_PROMPT_VERSION = "endgame_v2"           # CONTEXT.md D-08, bumped from "endgame_v1" for prompt rewrite (260422-tnb)
 _OUTPUT_RETRIES = 2                      # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
 
+# Series / prompt-assembly filter constants (260422-tnb A4/C3/A5/C2).
+MIN_BUCKET_N: int = 3                    # A4: drop timeline points with n<3
+_ACTIVITY_GAP_DAYS: int = 90             # C3: insert gap markers between >90-day-apart points
+_ALL_TIME_CUTOFF_DAYS: int = 90          # C2: trim last 90d from all_time series when last_3mo exists
+_SKIPPED_SUBSECTIONS: frozenset[str] = frozenset({"time_pressure_vs_performance"})  # A5
+
 _PROMPTS_DIR = Path(__file__).parent / "insights_prompts"
-_SYSTEM_PROMPT = (_PROMPTS_DIR / "endgame_v1.md").read_text(encoding="utf-8")
+
+
+def _build_zone_threshold_appendix() -> str:
+    """Render ZONE_REGISTRY + BUCKETED_ZONE_REGISTRY as a markdown appendix.
+
+    Auto-generated at module load so the LLM always sees the current numeric
+    bands. Kept separate from the hand-authored system-prompt markdown so
+    prompt-version bumps aren't required when thresholds change (the cache
+    key is findings_hash + prompt_version + model — threshold changes
+    propagate via findings_hash since zones are baked into findings).
+    """
+    lines: list[str] = ["", "## Zone thresholds", ""]
+    lines.append("Numeric bands for each metric (auto-generated — do not contradict).")
+    lines.append("")
+    for metric_id, spec in ZONE_REGISTRY.items():
+        if spec.direction == "higher_is_better":
+            lines.append(
+                f"- `{metric_id}`: weak<{spec.typical_lower:.2f}, "
+                f"typical [{spec.typical_lower:.2f}, {spec.typical_upper:.2f}], "
+                f"strong>{spec.typical_upper:.2f}"
+            )
+        else:
+            lines.append(
+                f"- `{metric_id}` (lower_is_better): strong<={spec.typical_lower:.2f}, "
+                f"typical [{spec.typical_lower:.2f}, {spec.typical_upper:.2f}], "
+                f"weak>{spec.typical_upper:.2f}"
+            )
+    lines.append("")
+    lines.append("Bucketed metrics (one band per MaterialBucket):")
+    for metric_id, buckets in BUCKETED_ZONE_REGISTRY.items():
+        lines.append(f"- `{metric_id}`:")
+        for bucket, spec in buckets.items():
+            lines.append(
+                f"  - {bucket}: weak<{spec.typical_lower:.2f}, "
+                f"typical [{spec.typical_lower:.2f}, {spec.typical_upper:.2f}], "
+                f"strong>{spec.typical_upper:.2f}"
+            )
+    return "\n".join(lines) + "\n"
+
+
+_SYSTEM_PROMPT = (
+    (_PROMPTS_DIR / "endgame_v1.md").read_text(encoding="utf-8")
+    + _build_zone_threshold_appendix()
+)
 
 
 # -- Custom exceptions (router maps to HTTP status per Plan 06) --
@@ -187,37 +240,109 @@ def _format_filters_for_prompt(filters: FilterContext) -> str:
 
 
 def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
-    """Render EndgameTabFindings as structured text for the LLM (D-29 format)."""
+    """Render EndgameTabFindings as structured text for the LLM (D-29 format).
+
+    Filters applied (260422-tnb):
+    - A5: skip findings in _SKIPPED_SUBSECTIONS (time_pressure_vs_performance).
+    - A2: skip findings where value is NaN or (sample_size=0 AND thin quality).
+    - C1: group findings by subsection_id under one header (not one per finding).
+    - A4: drop series points with n < MIN_BUCKET_N.
+    - C2: for `all_time` series, drop points within last 90 days if a matching
+      `last_3mo` series exists for the same (metric, subsection) pair.
+    - C3: insert `# Activity gap: ...` markers when consecutive retained
+      series points are > _ACTIVITY_GAP_DAYS apart.
+    """
+    # A5 + A2: drop hidden subsections, NaN values, and thin empty findings.
+    visible: list[SubsectionFinding] = [
+        f
+        for f in findings.findings
+        if f.subsection_id not in _SKIPPED_SUBSECTIONS
+        and not math.isnan(f.value)
+        and not (f.sample_size == 0 and f.sample_quality == "thin")
+    ]
+
+    # C2: identify (metric, subsection_id) pairs that have a `last_3mo` variant
+    # so we can trim the last 90 days off the matching `all_time` series below.
+    last_3mo_pairs: set[tuple[str, str]] = {
+        (f.metric, f.subsection_id) for f in visible if f.window == "last_3mo"
+    }
+    today = datetime.date.today()
+    all_time_cutoff = (today - datetime.timedelta(days=_ALL_TIME_CUTOFF_DAYS)).isoformat()
+
+    # C1: group by subsection_id preserving first-seen order.
+    groups: OrderedDict[str, list[SubsectionFinding]] = OrderedDict()
+    for f in visible:
+        groups.setdefault(f.subsection_id, []).append(f)
+
     lines: list[str] = [
         _format_filters_for_prompt(findings.filters),
         "",
     ]
-    for f in findings.findings:
-        header = f"## Subsection: {f.subsection_id}"
-        if f.parent_subsection_id:
-            header += f" (parent: {f.parent_subsection_id})"
-        lines.append(header)
-        dim = ""
-        if f.dimension:
-            dim = " [" + ", ".join(f"{k}={v}" for k, v in f.dimension.items()) + "]"
-        lines.append(
-            f"- {f.metric} ({f.window}): {f.value:+.2f} | {f.zone} | "
-            f"{f.sample_size} games | {f.sample_quality}{dim}"
+
+    for subsection_id, members in groups.items():
+        header = f"## Subsection: {subsection_id}"
+        # Parent info on header if any finding in the group has one (take first).
+        parent = next(
+            (m.parent_subsection_id for m in members if m.parent_subsection_id),
+            None,
         )
-        if f.series is not None and f.subsection_id in _TIMELINE_SUBSECTION_IDS:
-            # Determine resolution for the series header.
-            # type_win_rate_timeline always uses monthly (D-05).
-            # score_gap_timeline / clock_diff_timeline use weekly for last_3mo.
-            if f.subsection_id == "type_win_rate_timeline":
-                resolution = "monthly"
-            elif f.window == "last_3mo":
-                resolution = "weekly"
-            else:
-                resolution = "monthly"
-            lines.append(f"### Series ({f.metric}, {f.window}, {resolution})")
-            for pt in f.series:
-                lines.append(f"{pt.bucket_start}: {pt.value:+.3f} (n={pt.n})")
+        if parent:
+            header += f" (parent: {parent})"
+        lines.append(header)
+
+        for f in members:
+            dim = ""
+            if f.dimension:
+                dim = " [" + ", ".join(f"{k}={v}" for k, v in f.dimension.items()) + "]"
+            lines.append(
+                f"- {f.metric} ({f.window}): {f.value:+.2f} | {f.zone} | "
+                f"{f.sample_size} games | {f.sample_quality}{dim}"
+            )
+
+            # Series rendering with A4/C2/C3 filters applied.
+            if f.series is not None and f.subsection_id in _TIMELINE_SUBSECTION_IDS:
+                # A4: drop sparse points.
+                points = [pt for pt in f.series if pt.n >= MIN_BUCKET_N]
+                # C2: if an all_time series has a last_3mo twin for the same
+                # (metric, subsection), trim the last 90 days off the all_time
+                # series so the two don't duplicate coverage.
+                if (
+                    f.window == "all_time"
+                    and (f.metric, f.subsection_id) in last_3mo_pairs
+                ):
+                    points = [pt for pt in points if pt.bucket_start < all_time_cutoff]
+
+                if not points:
+                    continue
+
+                # Resolution header for LLM orientation.
+                if f.subsection_id == "type_win_rate_timeline":
+                    resolution = "monthly"
+                elif f.window == "last_3mo":
+                    resolution = "weekly"
+                else:
+                    resolution = "monthly"
+                lines.append(f"### Series ({f.metric}, {f.window}, {resolution})")
+
+                # C3: emit points with activity-gap markers between >90-day gaps.
+                prev_date: datetime.date | None = None
+                prev_bucket_start: str | None = None
+                for pt in points:
+                    curr_date = datetime.date.fromisoformat(pt.bucket_start)
+                    if (
+                        prev_date is not None
+                        and prev_bucket_start is not None
+                        and (curr_date - prev_date).days > _ACTIVITY_GAP_DAYS
+                    ):
+                        lines.append(
+                            f"# Activity gap: {prev_bucket_start} → {pt.bucket_start}"
+                        )
+                    lines.append(f"{pt.bucket_start}: {pt.value:+.3f} (n={pt.n})")
+                    prev_date = curr_date
+                    prev_bucket_start = pt.bucket_start
+
         lines.append("")
+
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -388,6 +513,16 @@ async def generate_insights(
     report, in_tokens, out_tokens, thinking_tokens, latency_ms, marker = await _run_agent(
         user_prompt, user_id, findings.findings_hash
     )
+    # A3 (260422-tnb): server-side override of model_used and prompt_version.
+    # Previously the system prompt asked the LLM to echo these back, which
+    # produced fabricated strings ("gpt-4o" in Gemini outputs). Overriding
+    # here — before create_llm_log — ensures both the response AND the
+    # persisted log row store the authoritative values.
+    if report is not None:
+        report = report.model_copy(update={
+            "model_used": model,
+            "prompt_version": _PROMPT_VERSION,
+        })
     await create_llm_log(LlmLogCreate(
         user_id=user_id,
         endpoint=_ENDPOINT,

@@ -63,6 +63,7 @@ from app.services.endgame_service import get_endgame_overview
 from app.services.endgame_zones import (
     TREND_MIN_SLOPE_VOL_RATIO,
     TREND_MIN_WEEKLY_POINTS,
+    BucketedMetricId,
     MetricId,
     SubsectionId,
     Trend,
@@ -95,6 +96,17 @@ _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset({
     "endgame_elo_timeline",
     "type_win_rate_timeline",
 })
+
+# Maps each MaterialBucket to the ONE bucketed metric whose glossary definition
+# applies to that bucket. Used by _findings_endgame_metrics so each MaterialRow
+# emits exactly one finding (not three). Fixes the A1 semantic-conflict bug:
+# the prior 3×3 fan-out emitted e.g. `parity_score_pct | [bucket=conversion]`
+# which contradicts the glossary.
+_BUCKET_TO_METRIC: dict[MaterialBucket, BucketedMetricId] = {
+    "conversion": "conversion_win_pct",
+    "parity": "parity_score_pct",
+    "recovery": "recovery_save_pct",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +285,15 @@ def _findings_endgame_metrics(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> list[SubsectionFinding]:
-    """endgame_metrics -> 1 endgame_skill + 9 bucket×metric findings.
+    """endgame_metrics -> 1 endgame_skill + 1 per-bucket matching metric.
+
+    Per CONTEXT.md A1: each bucketed metric is tied to exactly ONE bucket
+    (conversion_win_pct -> conversion, parity_score_pct -> parity,
+    recovery_save_pct -> recovery). The previous 3×3 fan-out emitted
+    self-contradictory findings like `parity_score_pct | [bucket=conversion]`
+    which caused the LLM to hallucinate "parity score rates are strong across
+    several categories" from conversion-bucket data. Fix: dispatch on
+    `row.bucket` via _BUCKET_TO_METRIC and emit only the matching metric.
 
     endgame_skill is recomputed from material_rows (Phase 59 removed the
     aggregate field per RESEARCH.md §Pitfall 7).
@@ -307,85 +327,48 @@ def _findings_endgame_metrics(
         )
     )
 
-    # 2. Nine bucket×metric findings. Bucket identity goes in dimension.
+    # 2. One finding per MaterialRow using the bucket's matching metric (A1 fix).
     # Values follow RESEARCH.md §Subsection Mapping:
-    #   conversion_win_pct = win_pct / 100
-    #   parity_score_pct   = score (already 0.0-1.0)
-    #   recovery_save_pct  = (win_pct + draw_pct) / 100
+    #   conversion bucket -> conversion_win_pct = win_pct / 100
+    #   parity bucket     -> parity_score_pct   = score (already 0.0-1.0)
+    #   recovery bucket   -> recovery_save_pct  = (win_pct + draw_pct) / 100
     for row in rows:
         bucket: MaterialBucket = row.bucket
         # Explicit dict[str, str] annotation so ty widens the MaterialBucket
         # Literal value to str — dict value types are invariant otherwise.
         bucket_dim: dict[str, str] = {"bucket": bucket}
         bucket_games = row.games
-        bucket_quality = sample_quality("endgame_metrics", bucket_games)
-        bucket_headline = bucket_quality != "thin"
+        bucket_metric: BucketedMetricId = _BUCKET_TO_METRIC[bucket]
 
         if bucket_games == 0:
             findings.append(
                 _empty_finding(
-                    "endgame_metrics", window, "conversion_win_pct",
-                    dimension=bucket_dim,
-                )
-            )
-            findings.append(
-                _empty_finding(
-                    "endgame_metrics", window, "parity_score_pct",
-                    dimension=bucket_dim,
-                )
-            )
-            findings.append(
-                _empty_finding(
-                    "endgame_metrics", window, "recovery_save_pct",
+                    "endgame_metrics", window, bucket_metric,
                     dimension=bucket_dim,
                 )
             )
             continue
 
-        conv_value = row.win_pct / 100.0
-        parity_value = row.score
-        recov_value = (row.win_pct + row.draw_pct) / 100.0
+        bucket_quality = sample_quality("endgame_metrics", bucket_games)
+        bucket_headline = bucket_quality != "thin"
+
+        # Dispatch on bucket to pick the ONE metric whose glossary entry
+        # applies to that bucket — no cross-bucket fan-out.
+        if bucket == "conversion":
+            bucket_value = row.win_pct / 100.0
+        elif bucket == "parity":
+            bucket_value = row.score
+        else:  # recovery
+            bucket_value = (row.win_pct + row.draw_pct) / 100.0
 
         findings.append(
             SubsectionFinding(
                 subsection_id="endgame_metrics",
                 parent_subsection_id=None,
                 window=window,
-                metric="conversion_win_pct",
-                value=conv_value,
-                zone=assign_bucketed_zone("conversion_win_pct", bucket, conv_value),
-                trend="n_a",
-                weekly_points_in_window=0,
-                sample_size=bucket_games,
-                sample_quality=bucket_quality,
-                is_headline_eligible=bucket_headline,
-                dimension=bucket_dim,
-            )
-        )
-        findings.append(
-            SubsectionFinding(
-                subsection_id="endgame_metrics",
-                parent_subsection_id=None,
-                window=window,
-                metric="parity_score_pct",
-                value=parity_value,
-                zone=assign_bucketed_zone("parity_score_pct", bucket, parity_value),
-                trend="n_a",
-                weekly_points_in_window=0,
-                sample_size=bucket_games,
-                sample_quality=bucket_quality,
-                is_headline_eligible=bucket_headline,
-                dimension=bucket_dim,
-            )
-        )
-        findings.append(
-            SubsectionFinding(
-                subsection_id="endgame_metrics",
-                parent_subsection_id=None,
-                window=window,
-                metric="recovery_save_pct",
-                value=recov_value,
-                zone=assign_bucketed_zone("recovery_save_pct", bucket, recov_value),
+                metric=bucket_metric,
+                value=bucket_value,
+                zone=assign_bucketed_zone(bucket_metric, bucket, bucket_value),
                 trend="n_a",
                 weekly_points_in_window=0,
                 sample_size=bucket_games,
