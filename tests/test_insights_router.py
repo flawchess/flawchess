@@ -48,7 +48,7 @@ def _sample_report(overview: str = "FlawChess played solidly overall.") -> Endga
             )
         ],
         model_used="test",
-        prompt_version="endgame_v2",
+        prompt_version="endgame_v3",
     )
 
 
@@ -63,7 +63,7 @@ async def _fake_compute_findings(
         as_of=datetime.datetime.now(datetime.UTC),
         filters=filter_context,
         findings=[],
-                findings_hash=findings_hash,
+        findings_hash=findings_hash,
     )
 
 
@@ -232,12 +232,10 @@ class TestHappyPath:
                 as_of=datetime.datetime.now(datetime.UTC),
                 filters=fc,
                 findings=[],
-                                findings_hash="m" * 64,
+                findings_hash="m" * 64,
             )
 
-        monkeypatch.setattr(
-            "app.services.insights_llm.compute_findings", _compute_with_known_hash
-        )
+        monkeypatch.setattr("app.services.insights_llm.compute_findings", _compute_with_known_hash)
 
         # Seed a row that get_latest_log_by_hash will find (error=None, matching hash)
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -251,7 +249,7 @@ class TestHappyPath:
                     findings_hash="m" * 64,
                     error=None,
                     model="test",
-                    prompt_version="endgame_v2",
+                    prompt_version="endgame_v3",
                 ),
             )
 
@@ -290,7 +288,7 @@ class TestRateLimit:
                 as_of=datetime.datetime.now(datetime.UTC),
                 filters=fc,
                 findings=[],
-                                findings_hash="c" * 64,  # distinct from seeded rows
+                findings_hash="c" * 64,  # distinct from seeded rows
             )
 
         monkeypatch.setattr("app.services.insights_llm.compute_findings", _fake_compute_new_hash)
@@ -353,7 +351,7 @@ class TestRateLimit:
                 as_of=datetime.datetime.now(datetime.UTC),
                 filters=fc,
                 findings=[],
-                                findings_hash="g" * 64,  # distinct from seeded rows
+                findings_hash="g" * 64,  # distinct from seeded rows
             )
 
         monkeypatch.setattr("app.services.insights_llm.compute_findings", _fake_compute_new_hash)
@@ -386,7 +384,7 @@ class TestRateLimit:
                 _make_row(
                     user.id,
                     response_json=valid_report.model_dump(),
-                    prompt_version="endgame_v2",  # matches get_latest_report_for_user filter
+                    prompt_version="endgame_v3",  # matches get_latest_report_for_user filter
                     findings_hash="k" * 64,
                 ),
             )
@@ -423,7 +421,9 @@ class TestErrors:
         monkeypatch.setattr("app.services.insights_llm.compute_findings", _fake_compute_findings)
 
         async def _failing_model(messages: Any, info: Any) -> Any:
-            raise ModelHTTPError(status_code=500, model_name="test", body="simulated provider error")
+            raise ModelHTTPError(
+                status_code=500, model_name="test", body="simulated provider error"
+            )
 
         monkeypatch.setattr(
             "app.services.insights_llm.get_insights_agent",
@@ -532,12 +532,10 @@ class TestFilterPassing:
                 as_of=datetime.datetime.now(datetime.UTC),
                 filters=fc,
                 findings=[],
-                                findings_hash="z" * 64,
+                findings_hash="z" * 64,
             )
 
-        monkeypatch.setattr(
-            "app.services.insights_llm.compute_findings", _capture_compute_findings
-        )
+        monkeypatch.setattr("app.services.insights_llm.compute_findings", _capture_compute_findings)
 
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"

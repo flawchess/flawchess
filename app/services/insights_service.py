@@ -90,12 +90,14 @@ _OPPONENT_TYPE: str = "human"
 SPARSE_COMBO_FLOOR: int = 10
 
 # The 4 timeline SubsectionIds that receive a populated `series` field (D-02).
-_TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset({
-    "score_gap_timeline",
-    "clock_diff_timeline",
-    "endgame_elo_timeline",
-    "type_win_rate_timeline",
-})
+_TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
+    {
+        "score_gap_timeline",
+        "clock_diff_timeline",
+        "endgame_elo_timeline",
+        "type_win_rate_timeline",
+    }
+)
 
 # Maps each MaterialBucket to the ONE bucketed metric whose glossary definition
 # applies to that bucket. Used by _findings_endgame_metrics so each MaterialRow
@@ -157,7 +159,9 @@ async def compute_findings(
     except Exception as exc:
         # CLAUDE.md §Sentry: pass variable data via set_context; never embed
         # user_id or filter_context values in the error message (grouping).
-        sentry_sdk.set_context("insights", {"user_id": user_id, "filter_context": filter_context.model_dump()})
+        sentry_sdk.set_context(
+            "insights", {"user_id": user_id, "filter_context": filter_context.model_dump()}
+        )
         sentry_sdk.capture_exception(exc)
         raise
 
@@ -169,6 +173,12 @@ async def compute_findings(
         as_of=datetime.datetime.now(datetime.UTC),
         filters=filter_context,
         findings=all_findings,
+        # Pass the raw 10-bucket all_time chart through to the LLM prompt
+        # assembler. The single-value _finding_time_pressure_vs_performance
+        # placeholder stays in `all_findings` (still filtered out of the
+        # prompt) so the findings list shape is unchanged — bucket rendering
+        # is additive, not a replacement.
+        time_pressure_chart=all_time_resp.time_pressure_chart,
         findings_hash="",  # placeholder; replaced below
     )
     findings_hash = _compute_hash(findings)
@@ -220,8 +230,7 @@ def _finding_overall(
 ) -> SubsectionFinding:
     """overall -> score_gap from score_gap_material.score_difference."""
     sample_size = (
-        response.performance.endgame_wdl.total
-        + response.performance.non_endgame_wdl.total
+        response.performance.endgame_wdl.total + response.performance.non_endgame_wdl.total
     )
     if sample_size == 0:
         return _empty_finding("overall", window, "score_gap")
@@ -343,7 +352,9 @@ def _findings_endgame_metrics(
         if bucket_games == 0:
             findings.append(
                 _empty_finding(
-                    "endgame_metrics", window, bucket_metric,
+                    "endgame_metrics",
+                    window,
+                    bucket_metric,
                     dimension=bucket_dim,
                 )
             )
@@ -414,7 +425,9 @@ def _findings_endgame_elo_timeline(
         if not combo.points:
             findings.append(
                 _empty_finding(
-                    "endgame_elo_timeline", window, "endgame_elo_gap",
+                    "endgame_elo_timeline",
+                    window,
+                    "endgame_elo_gap",
                     dimension=dim,
                 )
             )
@@ -472,12 +485,8 @@ def _findings_time_pressure_at_entry(
     findings: list[SubsectionFinding] = []
 
     if not rows or total_clock_games == 0:
-        findings.append(
-            _empty_finding("time_pressure_at_entry", window, "avg_clock_diff_pct")
-        )
-        findings.append(
-            _empty_finding("time_pressure_at_entry", window, "net_timeout_rate")
-        )
+        findings.append(_empty_finding("time_pressure_at_entry", window, "avg_clock_diff_pct"))
+        findings.append(_empty_finding("time_pressure_at_entry", window, "net_timeout_rate"))
         return findings
 
     # avg_clock_diff_pct: mean of (user_avg_pct - opp_avg_pct) across rows,
@@ -624,9 +633,7 @@ def _finding_time_pressure_vs_performance(
         value = float("nan")
 
     if total == 0 or math.isnan(value):
-        return _empty_finding(
-            "time_pressure_vs_performance", window, "avg_clock_diff_pct"
-        )
+        return _empty_finding("time_pressure_vs_performance", window, "avg_clock_diff_pct")
 
     return SubsectionFinding(
         subsection_id="time_pressure_vs_performance",
@@ -661,9 +668,7 @@ def _findings_results_by_endgame_type(
     findings: list[SubsectionFinding] = []
 
     if not categories:
-        findings.append(
-            _empty_finding("results_by_endgame_type", window, "win_rate")
-        )
+        findings.append(_empty_finding("results_by_endgame_type", window, "win_rate"))
         return findings
 
     for cat in categories:
@@ -673,7 +678,9 @@ def _findings_results_by_endgame_type(
         if cat.total == 0:
             findings.append(
                 _empty_finding(
-                    "results_by_endgame_type", window, "win_rate",
+                    "results_by_endgame_type",
+                    window,
+                    "win_rate",
                     dimension=dim,
                 )
             )
@@ -714,16 +721,8 @@ def _findings_conversion_recovery_by_type(
     findings: list[SubsectionFinding] = []
 
     if not categories:
-        findings.append(
-            _empty_finding(
-                "conversion_recovery_by_type", window, "conversion_win_pct"
-            )
-        )
-        findings.append(
-            _empty_finding(
-                "conversion_recovery_by_type", window, "recovery_save_pct"
-            )
-        )
+        findings.append(_empty_finding("conversion_recovery_by_type", window, "conversion_win_pct"))
+        findings.append(_empty_finding("conversion_recovery_by_type", window, "recovery_save_pct"))
         return findings
 
     for cat in categories:
@@ -738,7 +737,9 @@ def _findings_conversion_recovery_by_type(
         if conv_games == 0:
             findings.append(
                 _empty_finding(
-                    "conversion_recovery_by_type", window, "conversion_win_pct",
+                    "conversion_recovery_by_type",
+                    window,
+                    "conversion_win_pct",
                     dimension=conv_dim,
                 )
             )
@@ -752,9 +753,7 @@ def _findings_conversion_recovery_by_type(
                     window=window,
                     metric="conversion_win_pct",
                     value=conv_value,
-                    zone=assign_bucketed_zone(
-                        "conversion_win_pct", "conversion", conv_value
-                    ),
+                    zone=assign_bucketed_zone("conversion_win_pct", "conversion", conv_value),
                     trend="n_a",
                     weekly_points_in_window=0,
                     sample_size=conv_games,
@@ -774,15 +773,15 @@ def _findings_conversion_recovery_by_type(
         if recov_games == 0:
             findings.append(
                 _empty_finding(
-                    "conversion_recovery_by_type", window, "recovery_save_pct",
+                    "conversion_recovery_by_type",
+                    window,
+                    "recovery_save_pct",
                     dimension=recov_dim,
                 )
             )
         else:
             recov_value = cat.conversion.recovery_pct / 100.0
-            recov_quality = sample_quality(
-                "conversion_recovery_by_type", recov_games
-            )
+            recov_quality = sample_quality("conversion_recovery_by_type", recov_games)
             findings.append(
                 SubsectionFinding(
                     subsection_id="conversion_recovery_by_type",
@@ -790,9 +789,7 @@ def _findings_conversion_recovery_by_type(
                     window=window,
                     metric="recovery_save_pct",
                     value=recov_value,
-                    zone=assign_bucketed_zone(
-                        "recovery_save_pct", "recovery", recov_value
-                    ),
+                    zone=assign_bucketed_zone("recovery_save_pct", "recovery", recov_value),
                     trend="n_a",
                     weekly_points_in_window=0,
                     sample_size=recov_games,
@@ -820,7 +817,9 @@ def _findings_type_win_rate_timeline(
     if not per_type:
         findings.append(
             _empty_finding(
-                "type_win_rate_timeline", window, "win_rate",
+                "type_win_rate_timeline",
+                window,
+                "win_rate",
                 parent="results_by_endgame_type",
             )
         )
@@ -831,7 +830,9 @@ def _findings_type_win_rate_timeline(
         if not points:
             findings.append(
                 _empty_finding(
-                    "type_win_rate_timeline", window, "win_rate",
+                    "type_win_rate_timeline",
+                    window,
+                    "win_rate",
                     parent="results_by_endgame_type",
                     dimension=dim,
                 )

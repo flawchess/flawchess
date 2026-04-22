@@ -224,6 +224,7 @@ class TestEndgameTabFindings:
             "as_of",
             "filters",
             "findings",
+            "time_pressure_chart",
             "findings_hash",
         ]
 
@@ -347,7 +348,9 @@ class TestSectionInsight:
 
     def test_bullets_rejects_more_than_5(self) -> None:
         with pytest.raises(ValidationError):
-            SectionInsight(section_id="overall", headline="ok", bullets=["a", "b", "c", "d", "e", "f"])
+            SectionInsight(
+                section_id="overall", headline="ok", bullets=["a", "b", "c", "d", "e", "f"]
+            )
 
     def test_headline_max_length_120(self) -> None:
         with pytest.raises(ValidationError):

@@ -42,6 +42,7 @@ from app.services.endgame_zones import (
 from app.services.endgame_zones import (
     Zone as Zone,
 )
+from app.schemas.endgames import TimePressureChartResponse
 
 __all__ = [
     "EndgameInsightsReport",
@@ -90,7 +91,9 @@ InsightsStatus = Literal["fresh", "cache_hit", "stale_rate_limited"]
 # ModelAPIError subclasses; "validation_failure" covers
 # UnexpectedModelBehavior after output_retries exhaust; "config_error" is
 # defensive (should never reach clients — lifespan aborts first).
-InsightsError = Literal["rate_limit_exceeded", "provider_error", "validation_failure", "config_error"]
+InsightsError = Literal[
+    "rate_limit_exceeded", "provider_error", "validation_failure", "config_error"
+]
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +200,12 @@ class EndgameTabFindings(BaseModel):
     as_of: datetime.datetime
     filters: FilterContext
     findings: list[SubsectionFinding]
+    # Raw 10-bucket time-pressure chart data (user_series + opp_series) from
+    # the all_time window. Rendered directly in the user prompt by
+    # `_assemble_user_prompt` because the 20-point curve does not fit the
+    # single-value SubsectionFinding shape. Optional so existing test fixtures
+    # that construct EndgameTabFindings without chart data still work.
+    time_pressure_chart: TimePressureChartResponse | None = None
     findings_hash: str
 
 
@@ -235,7 +244,7 @@ class EndgameInsightsReport(BaseModel):
 
     Shape locked by:
       - INS-06: `overview` is `str` (not `str | None`); Pydantic rejects null.
-        Always-populate rule is enforced in the system prompt (endgame_v1.md).
+        Always-populate rule is enforced in the system prompt (endgame_insights.md).
       - D-19: `sections` has `min_length=1, max_length=4`. LLM decides which
         to include based on sample_quality of underlying findings.
       - D-20: `unique_section_ids` validator is a cheap safety net — duplicate

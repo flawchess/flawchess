@@ -54,19 +54,25 @@ from app.services.insights_service import compute_findings
 
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
-INSIGHTS_MISSES_PER_HOUR = 3             # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v2"           # CONTEXT.md D-08, bumped from "endgame_v1" for prompt rewrite (260422-tnb)
-_OUTPUT_RETRIES = 2                      # CONTEXT.md D-24, RESEARCH.md §2
+INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
+_PROMPT_VERSION = "endgame_v3"  # bumped from "endgame_v2" when time_pressure_vs_performance chart rows were added to the prompt
+_OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
 
 # Series / prompt-assembly filter constants (260422-tnb A4/C3/A5/C2).
-MIN_BUCKET_N: int = 3                    # A4: drop timeline points with n<3
-_ACTIVITY_GAP_DAYS: int = 90             # C3: insert gap markers between >90-day-apart points
-_ALL_TIME_CUTOFF_DAYS: int = 90          # C2: trim last 90d from all_time series when last_3mo exists
-_SKIPPED_SUBSECTIONS: frozenset[str] = frozenset({"time_pressure_vs_performance"})  # A5
+MIN_BUCKET_N: int = 3  # A4: drop timeline points with n<3
+_ACTIVITY_GAP_DAYS: int = 90  # C3: insert gap markers between >90-day-apart points
+_ALL_TIME_CUTOFF_DAYS: int = 90  # C2: trim last 90d from all_time series when last_3mo exists
+# time_pressure_vs_performance produces a single weighted-mean finding that is
+# not useful on its own; the 10-bucket chart is rendered separately by
+# `_format_time_pressure_chart_block`.
+_SKIPPED_SUBSECTIONS: frozenset[str] = frozenset({"time_pressure_vs_performance"})
+# Mirror frontend MIN_GAMES_FOR_RELIABLE_STATS (frontend/src/lib/theme.ts) so
+# the LLM sees the same bucket gating as the rendered chart.
+_MIN_GAMES_FOR_RELIABLE_BUCKET: int = 10
 
-_PROMPTS_DIR = Path(__file__).parent / "insights_prompts"
+_PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 
 def _build_zone_threshold_appendix() -> str:
@@ -107,13 +113,13 @@ def _build_zone_threshold_appendix() -> str:
     return "\n".join(lines) + "\n"
 
 
-_SYSTEM_PROMPT = (
-    (_PROMPTS_DIR / "endgame_v1.md").read_text(encoding="utf-8")
-    + _build_zone_threshold_appendix()
-)
+_SYSTEM_PROMPT = (_PROMPTS_DIR / "endgame_insights.md").read_text(
+    encoding="utf-8"
+) + _build_zone_threshold_appendix()
 
 
 # -- Custom exceptions (router maps to HTTP status per Plan 06) --
+
 
 class InsightsRateLimitExceeded(Exception):
     """Rate limit exhausted AND no tier-2 fallback available. Router -> 429."""
@@ -215,12 +221,14 @@ def get_insights_agent() -> Agent[None, EndgameInsightsReport]:
 # -- User-prompt assembly (CONTEXT.md D-28, D-29) --
 
 # Subsections that produce Series blocks in the prompt (MUST match Plan 03's _TIMELINE_SUBSECTION_IDS).
-_TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset({
-    "score_gap_timeline",
-    "clock_diff_timeline",
-    "endgame_elo_timeline",
-    "type_win_rate_timeline",
-})
+_TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
+    {
+        "score_gap_timeline",
+        "clock_diff_timeline",
+        "endgame_elo_timeline",
+        "type_win_rate_timeline",
+    }
+)
 
 
 def _format_filters_for_prompt(filters: FilterContext) -> str:
@@ -237,6 +245,61 @@ def _format_filters_for_prompt(filters: FilterContext) -> str:
         f"platform=[{','.join(filters.platforms) or 'all'}]",
     ]
     return "Filters: " + ", ".join(parts)
+
+
+def _format_time_pressure_chart_block(findings: EndgameTabFindings) -> list[str]:
+    """Render the 10-bucket time_pressure_vs_performance chart as a table.
+
+    Emits one `## Chart` header followed by a markdown table with one row per
+    bucket (0-10% ... 90-100%), each showing user Score %, user game count,
+    opponent Score %, opponent game count. Buckets where BOTH sides have
+    fewer than _MIN_GAMES_FOR_RELIABLE_BUCKET games are dropped (mirrors
+    the frontend's visual suppression). Returns [] if the chart is missing
+    or empty. Rendered separately from SubsectionFinding rows because the
+    20 data points do not fit the single-value finding shape.
+    """
+    chart = findings.time_pressure_chart
+    if chart is None or chart.total_endgame_games == 0:
+        return []
+
+    user_by_idx = {p.bucket_index: p for p in chart.user_series}
+    opp_by_idx = {p.bucket_index: p for p in chart.opp_series}
+
+    rows: list[str] = []
+    for idx in range(10):
+        u = user_by_idx.get(idx)
+        o = opp_by_idx.get(idx)
+        u_n = u.game_count if u else 0
+        o_n = o.game_count if o else 0
+        if u_n < _MIN_GAMES_FOR_RELIABLE_BUCKET and o_n < _MIN_GAMES_FOR_RELIABLE_BUCKET:
+            continue
+        label = u.bucket_label if u else (o.bucket_label if o else f"{idx * 10}-{(idx + 1) * 10}%")
+        u_score = (
+            f"{u.score:.2f}"
+            if u is not None and u.score is not None and u_n >= _MIN_GAMES_FOR_RELIABLE_BUCKET
+            else "—"
+        )
+        o_score = (
+            f"{o.score:.2f}"
+            if o is not None and o.score is not None and o_n >= _MIN_GAMES_FOR_RELIABLE_BUCKET
+            else "—"
+        )
+        rows.append(f"| {label:<7} | {u_score:<10} | {u_n:<6} | {o_score:<10} | {o_n:<6} |")
+
+    if not rows:
+        return []
+
+    lines: list[str] = [
+        "## Chart: time_pressure_vs_performance (all_time)",
+        f"Total endgame games: {chart.total_endgame_games}. "
+        "Rows show Score % conditional on time remaining at endgame entry, "
+        "for the user and the opponent separately (each side binned by their own clock).",
+        "| time_left | user_score | user_n | opp_score | opp_n |",
+        "| --------- | ---------- | ------ | ---------- | ------ |",
+    ]
+    lines.extend(rows)
+    lines.append("")
+    return lines
 
 
 def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
@@ -306,10 +369,7 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
                 # C2: if an all_time series has a last_3mo twin for the same
                 # (metric, subsection), trim the last 90 days off the all_time
                 # series so the two don't duplicate coverage.
-                if (
-                    f.window == "all_time"
-                    and (f.metric, f.subsection_id) in last_3mo_pairs
-                ):
+                if f.window == "all_time" and (f.metric, f.subsection_id) in last_3mo_pairs:
                     points = [pt for pt in points if pt.bucket_start < all_time_cutoff]
 
                 if not points:
@@ -334,19 +394,20 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
                         and prev_bucket_start is not None
                         and (curr_date - prev_date).days > _ACTIVITY_GAP_DAYS
                     ):
-                        lines.append(
-                            f"# Activity gap: {prev_bucket_start} → {pt.bucket_start}"
-                        )
+                        lines.append(f"# Activity gap: {prev_bucket_start} → {pt.bucket_start}")
                     lines.append(f"{pt.bucket_start}: {pt.value:+.3f} (n={pt.n})")
                     prev_date = curr_date
                     prev_bucket_start = pt.bucket_start
 
         lines.append("")
 
+    lines.extend(_format_time_pressure_chart_block(findings))
+
     return "\n".join(lines).rstrip() + "\n"
 
 
 # -- Overview gate (CONTEXT.md D-18) --
+
 
 def _maybe_strip_overview(report: EndgameInsightsReport) -> EndgameInsightsReport:
     """If INSIGHTS_HIDE_OVERVIEW is True, return a copy with overview=''.
@@ -360,6 +421,7 @@ def _maybe_strip_overview(report: EndgameInsightsReport) -> EndgameInsightsRepor
 
 
 # -- Stale-filter detection for soft-fail banner (CONTEXT.md D-14) --
+
 
 def _maybe_stale_filters(
     fallback_log: LlmLog,
@@ -381,6 +443,7 @@ def _maybe_stale_filters(
 
 
 # -- Rate-limit retry-after computation (CONTEXT.md D-11, RESEARCH.md §4) --
+
 
 async def _compute_retry_after(session: AsyncSession, user_id: int) -> int:
     """Seconds until oldest successful miss in the 1h window expires."""
@@ -420,22 +483,28 @@ async def _run_agent(
         result = await agent.run(user_prompt)
     except UnexpectedModelBehavior as exc:
         latency_ms = int((time.monotonic() - t0) * 1000)
-        sentry_sdk.set_context("insights", {
-            "user_id": user_id,
-            "findings_hash": findings_hash,
-            "model": settings.PYDANTIC_AI_MODEL_INSIGHTS,
-            "endpoint": _ENDPOINT,
-        })
+        sentry_sdk.set_context(
+            "insights",
+            {
+                "user_id": user_id,
+                "findings_hash": findings_hash,
+                "model": settings.PYDANTIC_AI_MODEL_INSIGHTS,
+                "endpoint": _ENDPOINT,
+            },
+        )
         sentry_sdk.capture_exception(exc)
         return None, 0, 0, None, latency_ms, "validation_failure_after_retries"
     except ModelAPIError as exc:
         latency_ms = int((time.monotonic() - t0) * 1000)
-        sentry_sdk.set_context("insights", {
-            "user_id": user_id,
-            "findings_hash": findings_hash,
-            "model": settings.PYDANTIC_AI_MODEL_INSIGHTS,
-            "endpoint": _ENDPOINT,
-        })
+        sentry_sdk.set_context(
+            "insights",
+            {
+                "user_id": user_id,
+                "findings_hash": findings_hash,
+                "model": settings.PYDANTIC_AI_MODEL_INSIGHTS,
+                "endpoint": _ENDPOINT,
+            },
+        )
         sentry_sdk.capture_exception(exc)
         return None, 0, 0, None, latency_ms, "provider_error"
     except Exception as exc:
@@ -443,12 +512,15 @@ async def _run_agent(
         # not wrapped as ModelAPIError). Map to provider_error marker per
         # RESEARCH.md §2 "Any other unexpected Exception -> 502 / provider_error".
         latency_ms = int((time.monotonic() - t0) * 1000)
-        sentry_sdk.set_context("insights", {
-            "user_id": user_id,
-            "findings_hash": findings_hash,
-            "model": settings.PYDANTIC_AI_MODEL_INSIGHTS,
-            "endpoint": _ENDPOINT,
-        })
+        sentry_sdk.set_context(
+            "insights",
+            {
+                "user_id": user_id,
+                "findings_hash": findings_hash,
+                "model": settings.PYDANTIC_AI_MODEL_INSIGHTS,
+                "endpoint": _ENDPOINT,
+            },
+        )
         sentry_sdk.capture_exception(exc)
         return None, 0, 0, None, latency_ms, "provider_error"
     latency_ms = int((time.monotonic() - t0) * 1000)
@@ -458,6 +530,7 @@ async def _run_agent(
 
 
 # -- Orchestration entry point (CONTEXT.md D-33) --
+
 
 async def generate_insights(
     filter_context: FilterContext,
@@ -479,9 +552,7 @@ async def generate_insights(
     findings = await compute_findings(filter_context, session, user_id)
 
     # Tier-1 cache lookup (CONTEXT.md D-08).
-    cached = await get_latest_log_by_hash(
-        session, findings.findings_hash, _PROMPT_VERSION, model
-    )
+    cached = await get_latest_log_by_hash(session, findings.findings_hash, _PROMPT_VERSION, model)
     if cached is not None:
         report = EndgameInsightsReport.model_validate(cached.response_json)
         return EndgameInsightsResponse(
@@ -490,13 +561,9 @@ async def generate_insights(
         )
 
     # Rate-limit check (CONTEXT.md D-09, D-10).
-    misses = await count_recent_successful_misses(
-        session, user_id, _RATE_LIMIT_WINDOW
-    )
+    misses = await count_recent_successful_misses(session, user_id, _RATE_LIMIT_WINDOW)
     if misses >= INSIGHTS_MISSES_PER_HOUR:
-        fallback = await get_latest_report_for_user(
-            session, user_id, _PROMPT_VERSION, model
-        )
+        fallback = await get_latest_report_for_user(session, user_id, _PROMPT_VERSION, model)
         if fallback is not None:
             stale_report = EndgameInsightsReport.model_validate(fallback.response_json)
             stale = _maybe_stale_filters(fallback, filter_context)
@@ -519,28 +586,32 @@ async def generate_insights(
     # here — before create_llm_log — ensures both the response AND the
     # persisted log row store the authoritative values.
     if report is not None:
-        report = report.model_copy(update={
-            "model_used": model,
-            "prompt_version": _PROMPT_VERSION,
-        })
-    await create_llm_log(LlmLogCreate(
-        user_id=user_id,
-        endpoint=_ENDPOINT,
-        model=model,
-        prompt_version=_PROMPT_VERSION,
-        findings_hash=findings.findings_hash,
-        filter_context=filter_context.model_dump(),
-        flags=[],
-        system_prompt=_SYSTEM_PROMPT,
-        user_prompt=user_prompt,
-        response_json=report.model_dump() if report is not None else None,
-        input_tokens=in_tokens,
-        output_tokens=out_tokens,
-        thinking_tokens=thinking_tokens,
-        latency_ms=latency_ms,
-        cache_hit=False,
-        error=marker,
-    ))
+        report = report.model_copy(
+            update={
+                "model_used": model,
+                "prompt_version": _PROMPT_VERSION,
+            }
+        )
+    await create_llm_log(
+        LlmLogCreate(
+            user_id=user_id,
+            endpoint=_ENDPOINT,
+            model=model,
+            prompt_version=_PROMPT_VERSION,
+            findings_hash=findings.findings_hash,
+            filter_context=filter_context.model_dump(),
+            flags=[],
+            system_prompt=_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            response_json=report.model_dump() if report is not None else None,
+            input_tokens=in_tokens,
+            output_tokens=out_tokens,
+            thinking_tokens=thinking_tokens,
+            latency_ms=latency_ms,
+            cache_hit=False,
+            error=marker,
+        )
+    )
     if marker == "validation_failure_after_retries":
         raise InsightsValidationFailure(marker)
     if marker is not None or report is None:

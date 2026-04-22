@@ -48,6 +48,7 @@ from app.services.insights_llm import (
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+
 def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameInsightsReport:
     return EndgameInsightsReport(
         overview=overview,
@@ -59,7 +60,7 @@ def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameI
             ),
         ],
         model_used="test",
-        prompt_version="endgame_v2",
+        prompt_version="endgame_v3",
     )
 
 
@@ -83,7 +84,7 @@ def _make_log_row(
     error: str | None = None,
     response_json: dict[str, Any] | None = None,
     cache_hit: bool = False,
-    prompt_version: str = "endgame_v2",
+    prompt_version: str = "endgame_v3",
     model: str = "test",
     findings_hash: str = "b" * 64,
 ) -> LlmLog:
@@ -147,6 +148,7 @@ async def _fake_compute_findings(
 class TestStartupValidation:
     def test_empty_model_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from pydantic_ai.exceptions import UserError
+
         insights_llm.get_insights_agent.cache_clear()
         monkeypatch.setattr(insights_llm.settings, "PYDANTIC_AI_MODEL_INSIGHTS", "")
         with pytest.raises(UserError):
@@ -232,10 +234,11 @@ class TestPromptAssembly:
         and BUCKETED_ZONE_REGISTRY. The appendix is appended so the file
         content must be a strict prefix.
         """
-        import app.services.insights_prompts as pkg
         from pathlib import Path
 
-        file_path = Path(pkg.__file__).parent / "endgame_v1.md"
+        import app.services.insights_llm as mod
+
+        file_path = Path(mod.__file__).parent.parent / "prompts" / "endgame_insights.md"
         file_content = file_path.read_text(encoding="utf-8")
         assert _SYSTEM_PROMPT.startswith(file_content)
         assert "## Zone thresholds" in _SYSTEM_PROMPT
@@ -348,9 +351,9 @@ class TestPromptAssembly:
             is_headline_eligible=False,
             dimension=None,
             series=[
-                TimePoint(bucket_start="2026-02-02", value=0.01, n=1),   # drop
-                TimePoint(bucket_start="2026-02-09", value=0.04, n=5),   # keep
-                TimePoint(bucket_start="2026-02-16", value=0.06, n=2),   # drop
+                TimePoint(bucket_start="2026-02-02", value=0.01, n=1),  # drop
+                TimePoint(bucket_start="2026-02-09", value=0.04, n=5),  # keep
+                TimePoint(bucket_start="2026-02-16", value=0.06, n=2),  # drop
                 TimePoint(bucket_start="2026-02-23", value=0.08, n=10),  # keep
             ],
         )
@@ -368,8 +371,16 @@ class TestPromptAssembly:
         assert "2026-02-16" not in prompt
         assert "(n=2)" not in prompt
 
-    def test_assemble_user_prompt_skips_time_pressure_vs_performance(self) -> None:
-        """A5 (260422-tnb): time_pressure_vs_performance is dropped entirely."""
+    def test_assemble_user_prompt_skips_time_pressure_vs_performance_subsection_finding(
+        self,
+    ) -> None:
+        """The single-value time_pressure_vs_performance finding is dropped.
+
+        The 10-bucket chart is rendered separately via
+        `_format_time_pressure_chart_block`; the scalar placeholder finding
+        must NOT appear as a `## Subsection` row (it would be a meaningless
+        weighted-mean number labelled as `avg_clock_diff_pct`).
+        """
         filters = _sample_filter_context()
         hidden = SubsectionFinding(
             subsection_id="time_pressure_vs_performance",
@@ -388,7 +399,85 @@ class TestPromptAssembly:
         )
         tab_findings = _fake_findings(filters, findings=[hidden])
         prompt = _assemble_user_prompt(tab_findings)
-        assert "time_pressure_vs_performance" not in prompt
+        assert "## Subsection: time_pressure_vs_performance" not in prompt
+
+    def test_assemble_user_prompt_renders_time_pressure_chart_block(self) -> None:
+        """The 10-bucket chart is rendered as a `## Chart` table.
+
+        Mirrors the frontend's MIN_GAMES_FOR_RELIABLE_STATS=10 gate: buckets
+        where both sides have <10 games are dropped, and a side with <10
+        games renders as "—".
+        """
+        from app.schemas.endgames import TimePressureBucketPoint, TimePressureChartResponse
+
+        user_series = [
+            TimePressureBucketPoint(
+                bucket_index=i,
+                bucket_label=f"{i * 10}-{(i + 1) * 10}%",
+                score=0.30 + 0.05 * i,  # climbs from 0.30 to 0.75
+                game_count=20 if i >= 2 else 3,  # first two buckets thin
+            )
+            for i in range(10)
+        ]
+        opp_series = [
+            TimePressureBucketPoint(
+                bucket_index=i,
+                bucket_label=f"{i * 10}-{(i + 1) * 10}%",
+                score=0.45 + 0.03 * i,
+                game_count=20 if i >= 2 else 3,
+            )
+            for i in range(10)
+        ]
+        chart = TimePressureChartResponse(
+            user_series=user_series,
+            opp_series=opp_series,
+            total_endgame_games=487,
+        )
+        filters = _sample_filter_context()
+        tab_findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=filters,
+            findings=[],
+            time_pressure_chart=chart,
+            findings_hash="b" * 64,
+        )
+        prompt = _assemble_user_prompt(tab_findings)
+
+        assert "## Chart: time_pressure_vs_performance" in prompt
+        assert "Total endgame games: 487" in prompt
+        assert "| time_left | user_score | user_n | opp_score | opp_n |" in prompt
+        # Buckets with >=10 games on both sides render scores.
+        assert "20-30%" in prompt
+        assert "90-100%" in prompt
+        # Buckets where both sides have <10 games are dropped entirely.
+        assert "0-10%" not in prompt
+        assert "10-20%" not in prompt
+
+    def test_assemble_user_prompt_omits_chart_block_when_empty(self) -> None:
+        """Chart block is omitted when total_endgame_games == 0 or chart is None."""
+        from app.schemas.endgames import TimePressureChartResponse
+
+        filters = _sample_filter_context()
+        empty_chart = TimePressureChartResponse(
+            user_series=[], opp_series=[], total_endgame_games=0
+        )
+        tab = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=filters,
+            findings=[],
+            time_pressure_chart=empty_chart,
+            findings_hash="b" * 64,
+        )
+        assert "## Chart: time_pressure_vs_performance" not in _assemble_user_prompt(tab)
+
+        tab_none = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=filters,
+            findings=[],
+            time_pressure_chart=None,
+            findings_hash="b" * 64,
+        )
+        assert "## Chart: time_pressure_vs_performance" not in _assemble_user_prompt(tab_none)
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +519,7 @@ class TestHappyPath:
         # findings_hash rather than via get_latest_log_by_hash which filters error IS NULL.
         from sqlalchemy import select as sa_select
         from app.models.llm_log import LlmLog as LlmLogModel
+
         async with session_maker() as session:
             result = await session.execute(
                 sa_select(LlmLogModel)
@@ -489,6 +579,7 @@ class TestMetadataOverride:
         # we must not collide with any row left behind by the router tests which
         # seed rows with hashes like "m"*64 and do NOT tear them down.
         import uuid as _uuid
+
         findings_hash = _uuid.uuid4().hex + _uuid.uuid4().hex  # 64 lowercase hex
         monkeypatch.setattr(
             "app.services.insights_llm.compute_findings",
@@ -506,7 +597,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v2"
+        assert response.report.prompt_version == "endgame_v3"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -515,6 +606,7 @@ class TestMetadataOverride:
         # "cost_unknown:test". We query directly since we know our hash is unique.
         from sqlalchemy import select as sa_select
         from app.models.llm_log import LlmLog as LlmLogModel
+
         async with session_maker() as session:
             result = await session.execute(
                 sa_select(LlmLogModel)
@@ -529,7 +621,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v2"
+        assert log.response_json["prompt_version"] == "endgame_v3"
 
 
 class TestCacheBehavior:
@@ -552,7 +644,7 @@ class TestCacheBehavior:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
         # Seed a cache-hit eligible row: error=None, response_json set,
-        # matching (findings_hash, prompt_version="endgame_v2", model="test").
+        # matching (findings_hash, prompt_version="endgame_v3", model="test").
         async with session_maker() as session:
             await _seed(
                 session,
@@ -573,9 +665,7 @@ class TestCacheBehavior:
 
         # Call returns cache_hit because the seeded row matches (hash + prompt_version + model).
         async with session_maker() as session:
-            r = await generate_insights(
-                _sample_filter_context(), fresh_test_user.id, session
-            )
+            r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
         assert r.status == "cache_hit"
 
     @pytest.mark.asyncio
@@ -610,9 +700,7 @@ class TestCacheBehavior:
         )
 
         async with session_maker() as session:
-            r = await generate_insights(
-                _sample_filter_context(), fresh_test_user.id, session
-            )
+            r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
         # Should be fresh — old prompt_version doesn't match _PROMPT_VERSION
         assert r.status == "fresh"
 
@@ -647,9 +735,7 @@ class TestCacheBehavior:
         )
 
         async with session_maker() as session:
-            r = await generate_insights(
-                _sample_filter_context(), fresh_test_user.id, session
-            )
+            r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
         # Should be fresh — model "test" != "google-gla:gemini-2.5-flash"
         assert r.status == "fresh"
 
@@ -712,9 +798,7 @@ class TestRateLimit:
         )
 
         async with session_maker() as session:
-            r = await generate_insights(
-                _sample_filter_context(), fresh_test_user.id, session
-            )
+            r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
         assert r.status == "stale_rate_limited"
         assert r.report.overview == report.overview
 
@@ -731,7 +815,7 @@ class TestRateLimit:
         # Seed 3 successful miss rows with an OLD prompt_version so they count
         # toward the rate-limit (count_recent_successful_misses does NOT filter
         # by prompt_version) but are NOT returned by get_latest_report_for_user
-        # (which filters by prompt_version="endgame_v2"), producing "no tier-2".
+        # (which filters by prompt_version="endgame_v3"), producing "no tier-2".
         now = datetime.datetime.now(datetime.UTC)
         # Build a valid report JSON for rows (avoids ValidationError in case tier-2
         # is somehow reached — but with the prompt_version mismatch it should not be).
@@ -752,16 +836,12 @@ class TestRateLimit:
         monkeypatch.setattr(
             "app.services.insights_llm.compute_findings",
             # Use a hash that differs from all seeded rows so tier-1 misses
-            lambda fc, sess, uid: _fake_compute_findings(
-                fc, sess, uid, findings_hash="d" * 64
-            ),
+            lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid, findings_hash="d" * 64),
         )
 
         async with session_maker() as session:
             with pytest.raises(InsightsRateLimitExceeded) as exc_info:
-                await generate_insights(
-                    _sample_filter_context(), fresh_test_user.id, session
-                )
+                await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
         assert exc_info.value.retry_after_seconds > 0
 
     @pytest.mark.asyncio
@@ -793,15 +873,11 @@ class TestRateLimit:
         fake_insights_agent(report)
         monkeypatch.setattr(
             "app.services.insights_llm.compute_findings",
-            lambda fc, sess, uid: _fake_compute_findings(
-                fc, sess, uid, findings_hash="f" * 64
-            ),
+            lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid, findings_hash="f" * 64),
         )
 
         async with session_maker() as session:
-            r = await generate_insights(
-                _sample_filter_context(), fresh_test_user.id, session
-            )
+            r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
         # Window rolled over — should be fresh, not rate-limited
         assert r.status == "fresh"
 
@@ -828,14 +904,10 @@ class TestErrors:
             raise ModelHTTPError(status_code=500, model_name="test", body="simulated")
 
         fake = Agent(FunctionModel(_failing_model), output_type=EndgameInsightsReport)
-        monkeypatch.setattr(
-            "app.services.insights_llm.get_insights_agent", lambda: fake
-        )
+        monkeypatch.setattr("app.services.insights_llm.get_insights_agent", lambda: fake)
         monkeypatch.setattr(
             "app.services.insights_llm.compute_findings",
-            lambda fc, sess, uid: _fake_compute_findings(
-                fc, sess, uid, findings_hash="g" * 64
-            ),
+            lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid, findings_hash="g" * 64),
         )
         # Silence Sentry in this test
         mock_sentry = MagicMock()
@@ -844,17 +916,15 @@ class TestErrors:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
         async with session_maker() as session:
             with pytest.raises(InsightsProviderError):
-                await generate_insights(
-                    _sample_filter_context(), fresh_test_user.id, session
-                )
+                await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
 
         # Verify log row written with error marker and null response_json
         async with session_maker() as session:
             from sqlalchemy import select
             from app.models.llm_log import LlmLog as LlmLogModel
+
             result = await session.execute(
-                select(LlmLogModel)
-                .where(
+                select(LlmLogModel).where(
                     LlmLogModel.user_id == fresh_test_user.id,
                     LlmLogModel.findings_hash == "g" * 64,
                 )
@@ -881,21 +951,17 @@ class TestErrors:
             "overview": "ok",
             "sections": [],  # violates min_length=1
             "model_used": "test",
-            "prompt_version": "endgame_v2",
+            "prompt_version": "endgame_v3",
         }
         fake = Agent(
             TestModel(custom_output_args=bad_output),
             output_type=EndgameInsightsReport,
             output_retries=0,  # no retries — fail immediately
         )
-        monkeypatch.setattr(
-            "app.services.insights_llm.get_insights_agent", lambda: fake
-        )
+        monkeypatch.setattr("app.services.insights_llm.get_insights_agent", lambda: fake)
         monkeypatch.setattr(
             "app.services.insights_llm.compute_findings",
-            lambda fc, sess, uid: _fake_compute_findings(
-                fc, sess, uid, findings_hash="h" * 64
-            ),
+            lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid, findings_hash="h" * 64),
         )
         mock_sentry = MagicMock()
         monkeypatch.setattr("app.services.insights_llm.sentry_sdk", mock_sentry)
@@ -903,16 +969,14 @@ class TestErrors:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
         async with session_maker() as session:
             with pytest.raises(InsightsValidationFailure):
-                await generate_insights(
-                    _sample_filter_context(), fresh_test_user.id, session
-                )
+                await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
 
         async with session_maker() as session:
             from sqlalchemy import select
             from app.models.llm_log import LlmLog as LlmLogModel
+
             result = await session.execute(
-                select(LlmLogModel)
-                .where(
+                select(LlmLogModel).where(
                     LlmLogModel.user_id == fresh_test_user.id,
                     LlmLogModel.findings_hash == "h" * 64,
                 )
@@ -949,9 +1013,7 @@ class TestSentryCapture:
             raise ModelHTTPError(status_code=500, model_name="test", body="simulated")
 
         fake = Agent(FunctionModel(_failing_model), output_type=EndgameInsightsReport)
-        monkeypatch.setattr(
-            "app.services.insights_llm.get_insights_agent", lambda: fake
-        )
+        monkeypatch.setattr("app.services.insights_llm.get_insights_agent", lambda: fake)
         findings_hash = "i" * 64
         monkeypatch.setattr(
             "app.services.insights_llm.compute_findings",
@@ -965,9 +1027,7 @@ class TestSentryCapture:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
         async with session_maker() as session:
             with pytest.raises(InsightsProviderError):
-                await generate_insights(
-                    _sample_filter_context(), fresh_test_user.id, session
-                )
+                await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
 
         mock_sentry.set_context.assert_called_with(
             "insights",
@@ -1052,6 +1112,7 @@ class TestHideOverview:
         # the "test" model yields cost_unknown:test in the error column).
         from sqlalchemy import select as sa_select
         from app.models.llm_log import LlmLog as LlmLogModel
+
         async with session_maker() as session:
             result = await session.execute(
                 sa_select(LlmLogModel)
