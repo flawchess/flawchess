@@ -225,6 +225,8 @@ class TestEndgameTabFindings:
             "filters",
             "findings",
             "time_pressure_chart",
+            "overall_performance",
+            "type_categories",
             "findings_hash",
         ]
 

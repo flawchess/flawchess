@@ -179,6 +179,14 @@ async def compute_findings(
         # prompt) so the findings list shape is unchanged — bucket rendering
         # is additive, not a replacement.
         time_pressure_chart=all_time_resp.time_pressure_chart,
+        # Pass the all_time WDL detail (endgame vs non-endgame, plus per-type
+        # categories) through so the LLM prompt can render the `overall_wdl`
+        # and `results_by_endgame_type_wdl` chart blocks. The corresponding
+        # SubsectionFinding rows (`overall` -> score_gap, `results_by_endgame_type`
+        # -> win_rate) stay in `all_findings`; the chart blocks add the W/D/L
+        # and Score % detail the single-value findings cannot carry.
+        overall_performance=all_time_resp.performance,
+        type_categories=all_time_resp.stats.categories,
         findings_hash="",  # placeholder; replaced below
     )
     findings_hash = _compute_hash(findings)

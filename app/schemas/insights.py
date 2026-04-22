@@ -42,7 +42,11 @@ from app.services.endgame_zones import (
 from app.services.endgame_zones import (
     Zone as Zone,
 )
-from app.schemas.endgames import TimePressureChartResponse
+from app.schemas.endgames import (
+    EndgameCategoryStats,
+    EndgamePerformanceResponse,
+    TimePressureChartResponse,
+)
 
 __all__ = [
     "EndgameInsightsReport",
@@ -206,6 +210,16 @@ class EndgameTabFindings(BaseModel):
     # single-value SubsectionFinding shape. Optional so existing test fixtures
     # that construct EndgameTabFindings without chart data still work.
     time_pressure_chart: TimePressureChartResponse | None = None
+    # Endgame vs non-endgame WDL summary (all_time window) — feeds the
+    # `## Chart: overall_wdl` block in the user prompt so the LLM can see the
+    # underlying Win/Draw/Loss/Score % rows behind the single `score_gap`
+    # finding. Optional for backwards compatibility with test fixtures.
+    overall_performance: EndgamePerformanceResponse | None = None
+    # Per-endgame-type W/D/L summary (all_time window) — feeds the
+    # `## Chart: results_by_endgame_type_wdl` block so the LLM can see the
+    # Score % per type behind the single `win_rate` finding (which excludes
+    # draws). Optional for backwards compatibility.
+    type_categories: list[EndgameCategoryStats] | None = None
     findings_hash: str
 
 

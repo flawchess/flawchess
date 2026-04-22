@@ -460,12 +460,29 @@ class TestComputeFindingsLayering:
 import re  # noqa: E402
 
 
+def _stub_endgame_overview_response() -> EndgameOverviewResponse:
+    """Build a minimal EndgameOverviewResponse for compute_findings wiring tests.
+
+    `model_construct` skips validation but does not set defaults, so any field
+    `compute_findings` reads (`time_pressure_chart`, `performance`,
+    `stats.categories`) must be populated explicitly. Subsection extraction is
+    patched to [] in the wiring tests, so per-subsection field accesses inside
+    `_compute_subsection_findings` don't matter here — only the top-level
+    fields read by `compute_findings` itself need stub values.
+    """
+    return EndgameOverviewResponse.model_construct(
+        time_pressure_chart=None,
+        performance=None,
+        stats=type("StatsStub", (), {"categories": []})(),
+    )
+
+
 class TestComputeFindingsReturnContract:
     """End-to-end wiring of compute_findings → EndgameTabFindings."""
 
     @pytest.mark.asyncio
     async def test_returns_endgame_tab_findings_with_populated_hash(self) -> None:
-        mock_response = EndgameOverviewResponse.model_construct()
+        mock_response = _stub_endgame_overview_response()
         fc = FilterContext()
         with (
             patch.object(
@@ -492,7 +509,7 @@ class TestComputeFindingsReturnContract:
     async def test_hash_is_stable_across_two_invocations_end_to_end(self) -> None:
         """Calling compute_findings twice with the same inputs produces the
         same findings_hash (as_of differs between calls but is excluded)."""
-        mock_response = EndgameOverviewResponse.model_construct()
+        mock_response = _stub_endgame_overview_response()
         fc = FilterContext(opponent_strength="stronger")
         with (
             patch.object(

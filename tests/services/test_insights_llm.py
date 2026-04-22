@@ -60,7 +60,7 @@ def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameI
             ),
         ],
         model_used="test",
-        prompt_version="endgame_v3",
+        prompt_version="endgame_v4",
     )
 
 
@@ -84,7 +84,7 @@ def _make_log_row(
     error: str | None = None,
     response_json: dict[str, Any] | None = None,
     cache_hit: bool = False,
-    prompt_version: str = "endgame_v3",
+    prompt_version: str = "endgame_v4",
     model: str = "test",
     findings_hash: str = "b" * 64,
 ) -> LlmLog:
@@ -479,6 +479,119 @@ class TestPromptAssembly:
         )
         assert "## Chart: time_pressure_vs_performance" not in _assemble_user_prompt(tab_none)
 
+    def test_assemble_user_prompt_renders_overall_wdl_chart_block(self) -> None:
+        """The endgame-vs-non-endgame WDL block is rendered when performance is set."""
+        from app.schemas.endgames import EndgamePerformanceResponse, EndgameWDLSummary
+
+        perf = EndgamePerformanceResponse(
+            endgame_wdl=EndgameWDLSummary(
+                wins=120, draws=40, losses=80, total=240,
+                win_pct=50.0, draw_pct=16.7, loss_pct=33.3,
+            ),
+            non_endgame_wdl=EndgameWDLSummary(
+                wins=300, draws=50, losses=350, total=700,
+                win_pct=42.9, draw_pct=7.1, loss_pct=50.0,
+            ),
+            endgame_win_rate=50.0,
+        )
+        tab = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[],
+            overall_performance=perf,
+            findings_hash="b" * 64,
+        )
+        prompt = _assemble_user_prompt(tab)
+
+        assert "## Chart: overall_wdl (all_time)" in prompt
+        assert "| series      | games | win_pct | draw_pct | loss_pct | score_pct |" in prompt
+        assert "| endgame     | 240" in prompt
+        assert "| non_endgame | 700" in prompt
+        # Score % computed as (W + 0.5*D)/total: endgame=140/240=0.583, non-endgame=325/700=0.464
+        assert "0.583" in prompt
+        assert "0.464" in prompt
+
+    def test_assemble_user_prompt_omits_overall_wdl_when_thin(self) -> None:
+        """Rows below the 10-game floor are dropped; block omitted if all dropped."""
+        from app.schemas.endgames import EndgamePerformanceResponse, EndgameWDLSummary
+
+        perf = EndgamePerformanceResponse(
+            endgame_wdl=EndgameWDLSummary(
+                wins=2, draws=1, losses=1, total=4,
+                win_pct=50.0, draw_pct=25.0, loss_pct=25.0,
+            ),
+            non_endgame_wdl=EndgameWDLSummary(
+                wins=0, draws=0, losses=0, total=0,
+                win_pct=0.0, draw_pct=0.0, loss_pct=0.0,
+            ),
+            endgame_win_rate=50.0,
+        )
+        tab = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[],
+            overall_performance=perf,
+            findings_hash="b" * 64,
+        )
+        assert "## Chart: overall_wdl" not in _assemble_user_prompt(tab)
+
+        # None case
+        tab_none = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[],
+            overall_performance=None,
+            findings_hash="b" * 64,
+        )
+        assert "## Chart: overall_wdl" not in _assemble_user_prompt(tab_none)
+
+    def test_assemble_user_prompt_renders_type_wdl_chart_block(self) -> None:
+        """Per-endgame-type WDL block is rendered, sorted by total descending."""
+        from app.schemas.endgames import ConversionRecoveryStats, EndgameCategoryStats
+
+        # Helper conversion stub — values irrelevant for the WDL block.
+        conv_stub = ConversionRecoveryStats.model_construct(
+            conversion_games=0, conversion_wins=0, conversion_pct=0.0,
+            recovery_games=0, recovery_saves=0, recovery_pct=0.0,
+        )
+        categories = [
+            EndgameCategoryStats(
+                endgame_class="rook", label="Rook",
+                wins=50, draws=20, losses=30, total=100,
+                win_pct=50.0, draw_pct=20.0, loss_pct=30.0,
+                conversion=conv_stub,
+            ),
+            EndgameCategoryStats(
+                endgame_class="pawn", label="Pawn",
+                wins=15, draws=5, losses=10, total=30,
+                win_pct=50.0, draw_pct=16.7, loss_pct=33.3,
+                conversion=conv_stub,
+            ),
+            EndgameCategoryStats(
+                endgame_class="queen", label="Queen",
+                wins=2, draws=0, losses=1, total=3,  # below 10-game floor — dropped
+                win_pct=66.7, draw_pct=0.0, loss_pct=33.3,
+                conversion=conv_stub,
+            ),
+        ]
+        tab = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[],
+            type_categories=categories,
+            findings_hash="b" * 64,
+        )
+        prompt = _assemble_user_prompt(tab)
+
+        assert "## Chart: results_by_endgame_type_wdl (all_time)" in prompt
+        assert "| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct |" in prompt
+        # Sorted by total descending: rook (100) before pawn (30).
+        rook_idx = prompt.index("| rook")
+        pawn_idx = prompt.index("| pawn")
+        assert rook_idx < pawn_idx
+        # Queen (n=3) dropped by 10-game floor.
+        assert "| queen" not in prompt
+
 
 # ---------------------------------------------------------------------------
 # TestHappyPath
@@ -597,7 +710,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v3"
+        assert response.report.prompt_version == "endgame_v4"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -621,7 +734,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v3"
+        assert log.response_json["prompt_version"] == "endgame_v4"
 
 
 class TestCacheBehavior:
@@ -644,7 +757,7 @@ class TestCacheBehavior:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
         # Seed a cache-hit eligible row: error=None, response_json set,
-        # matching (findings_hash, prompt_version="endgame_v3", model="test").
+        # matching (findings_hash, prompt_version="endgame_v4", model="test").
         async with session_maker() as session:
             await _seed(
                 session,
@@ -815,7 +928,7 @@ class TestRateLimit:
         # Seed 3 successful miss rows with an OLD prompt_version so they count
         # toward the rate-limit (count_recent_successful_misses does NOT filter
         # by prompt_version) but are NOT returned by get_latest_report_for_user
-        # (which filters by prompt_version="endgame_v3"), producing "no tier-2".
+        # (which filters by prompt_version="endgame_v4"), producing "no tier-2".
         now = datetime.datetime.now(datetime.UTC)
         # Build a valid report JSON for rows (avoids ValidationError in case tier-2
         # is somehow reached — but with the prompt_version mismatch it should not be).
@@ -951,7 +1064,7 @@ class TestErrors:
             "overview": "ok",
             "sections": [],  # violates min_length=1
             "model_used": "test",
-            "prompt_version": "endgame_v3",
+            "prompt_version": "endgame_v4",
         }
         fake = Agent(
             TestModel(custom_output_args=bad_output),

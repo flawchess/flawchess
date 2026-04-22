@@ -55,7 +55,7 @@ from app.services.insights_service import compute_findings
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v3"  # bumped from "endgame_v2" when time_pressure_vs_performance chart rows were added to the prompt
+_PROMPT_VERSION = "endgame_v4"  # bumped from "endgame_v3" when score_gap_timeline section moved overall, statistics-concepts section added, and overall_wdl + results_by_endgame_type_wdl chart blocks added
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
@@ -302,6 +302,95 @@ def _format_time_pressure_chart_block(findings: EndgameTabFindings) -> list[str]
     return lines
 
 
+def _format_overall_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
+    """Render the endgame-vs-non-endgame WDL + Score % comparison as a table.
+
+    Emits a `## Chart: overall_wdl` header followed by a 2-row markdown table
+    (endgame, non_endgame) with win_pct / draw_pct / loss_pct / score_pct
+    columns. score_pct = (wins + 0.5*draws) / total (matches the UI's
+    Endgame Performance section). Rows with fewer than
+    _MIN_GAMES_FOR_RELIABLE_BUCKET games are skipped. Returns [] when the
+    performance payload is absent or both rows are empty.
+    """
+    perf = findings.overall_performance
+    if perf is None:
+        return []
+
+    rows: list[str] = []
+    for label, summary in (("endgame", perf.endgame_wdl), ("non_endgame", perf.non_endgame_wdl)):
+        total = summary.total
+        if total < _MIN_GAMES_FOR_RELIABLE_BUCKET:
+            continue
+        win_frac = summary.win_pct / 100.0
+        draw_frac = summary.draw_pct / 100.0
+        loss_frac = summary.loss_pct / 100.0
+        score_frac = (summary.wins + 0.5 * summary.draws) / total
+        rows.append(
+            f"| {label:<11} | {total:<5} | {win_frac:.2f}    | {draw_frac:.2f}     | "
+            f"{loss_frac:.2f}     | {score_frac:.3f}     |"
+        )
+
+    if not rows:
+        return []
+
+    lines: list[str] = [
+        "## Chart: overall_wdl (all_time)",
+        "Two-row WDL comparison for games that reached an endgame phase vs games that did not. "
+        "score_pct uses wins=1, draws=0.5, losses=0.",
+        "| series      | games | win_pct | draw_pct | loss_pct | score_pct |",
+        "| ----------- | ----- | ------- | -------- | -------- | --------- |",
+    ]
+    lines.extend(rows)
+    lines.append("")
+    return lines
+
+
+def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
+    """Render per-endgame-type WDL + Score % as a table.
+
+    Emits `## Chart: results_by_endgame_type_wdl` followed by one row per
+    endgame category (rook, minor_piece, pawn, queen, mixed) sorted by total
+    descending (matches `EndgameStatsResponse` D-05). score_pct = (wins +
+    0.5*draws) / total. Opponent Score % is the algebraic complement
+    (1 - score_pct) for these samples since both sides played the same games,
+    documented in the caption; not emitted as a separate column. Rows with
+    fewer than _MIN_GAMES_FOR_RELIABLE_BUCKET games are skipped.
+    """
+    categories = findings.type_categories
+    if not categories:
+        return []
+
+    sorted_cats = sorted(categories, key=lambda c: c.total, reverse=True)
+
+    rows: list[str] = []
+    for cat in sorted_cats:
+        if cat.total < _MIN_GAMES_FOR_RELIABLE_BUCKET:
+            continue
+        win_frac = cat.win_pct / 100.0
+        draw_frac = cat.draw_pct / 100.0
+        loss_frac = cat.loss_pct / 100.0
+        score_frac = (cat.wins + 0.5 * cat.draws) / cat.total
+        rows.append(
+            f"| {cat.endgame_class:<13} | {cat.total:<5} | {win_frac:.2f}    | "
+            f"{draw_frac:.2f}     | {loss_frac:.2f}     | {score_frac:.3f}     |"
+        )
+
+    if not rows:
+        return []
+
+    lines: list[str] = [
+        "## Chart: results_by_endgame_type_wdl (all_time)",
+        "Per-endgame-type W/D/L and Score % for the user. opp_score_pct = 1 - score_pct "
+        "(both sides played the same games), so a score_pct above 0.50 means the user "
+        "outscores their opponents in that type.",
+        "| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct |",
+        "| ------------- | ----- | ------- | -------- | -------- | --------- |",
+    ]
+    lines.extend(rows)
+    lines.append("")
+    return lines
+
+
 def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     """Render EndgameTabFindings as structured text for the LLM (D-29 format).
 
@@ -401,7 +490,9 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
 
         lines.append("")
 
+    lines.extend(_format_overall_wdl_chart_block(findings))
     lines.extend(_format_time_pressure_chart_block(findings))
+    lines.extend(_format_type_wdl_chart_block(findings))
 
     return "\n".join(lines).rstrip() + "\n"
 
