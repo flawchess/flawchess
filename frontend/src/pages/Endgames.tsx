@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
-import { SlidersHorizontal, X, BarChart2Icon, Gamepad2Icon, HelpCircle } from 'lucide-react';
+import { SlidersHorizontal, X, BarChart2Icon, Gamepad2Icon, HelpCircle, Lightbulb } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
@@ -324,7 +324,6 @@ export function EndgamesPage() {
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
-              <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
               <div className="charcoal-texture rounded-md p-4">
                 <EndgamePerformanceSection data={perfData} scoreGap={scoreGapData} />
               </div>
@@ -336,10 +335,10 @@ export function EndgamesPage() {
                   />
                 </div>
               )}
+              <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
               {scoreGapData && (
                 <>
                   <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Metrics and ELO</h2>
-                  <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                   <div className="charcoal-texture rounded-md p-4">
                     <EndgameScoreGapSection data={scoreGapData} />
                   </div>
@@ -353,6 +352,7 @@ export function EndgamesPage() {
                       isError={overviewError}
                     />
                   </div>
+                  <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                 </>
               )}
             </>
@@ -362,7 +362,6 @@ export function EndgamesPage() {
           {(showClockPressure || showTimePressureChart) && (
             <>
               <h2 className="text-lg font-semibold text-foreground mt-2">Time Pressure</h2>
-              <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
               {showClockPressure && (
                 <>
                   <div className="charcoal-texture rounded-md p-4">
@@ -383,12 +382,12 @@ export function EndgamesPage() {
                   <EndgameTimePressureSection data={timePressureChartData} />
                 </div>
               )}
+              <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
             </>
           )}
 
           {/* ── Endgame Type Breakdown ── */}
           <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Type Breakdown</h2>
-          <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />
           <div className="charcoal-texture rounded-md p-4">
             <EndgameWDLChart
               categories={statsData.categories}
@@ -405,6 +404,7 @@ export function EndgamesPage() {
               <EndgameTimelineChart data={timelineData} />
             </div>
           )}
+          <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />
         </>
       ) : overviewError ? (
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
@@ -660,8 +660,16 @@ function SectionInsightSlot({
 }) {
   if (!data) return null;
   return (
-    <div data-testid={`insights-section-${sectionId}`} className="mb-3">
-      <p className="text-sm font-semibold text-foreground mb-2">{data.headline}</p>
+    <div
+      data-testid={`insights-section-${sectionId}`}
+      className="charcoal-texture rounded-md p-4"
+    >
+      <p className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+        <span className="insight-lightbulb" aria-hidden="true">
+          <Lightbulb className="size-4" />
+        </span>
+        {data.headline}
+      </p>
       {data.bullets.length > 0 && (
         <ul className="list-disc list-outside pl-5 space-y-1 text-sm text-muted-foreground">
           {data.bullets.map((b, i) => (

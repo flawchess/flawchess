@@ -99,6 +99,11 @@ export const ELO_COMBO_COLORS: Record<EloComboKey, { bright: string; dark: strin
   lichess_classical:   { bright: 'oklch(0.60 0.18 340)', dark: 'oklch(0.40 0.14 340)' },
 };
 
+// Insights lightbulb — gold color + glow hue used by the `.insight-lightbulb`
+// utility in index.css. Drop-shadow layers reference the same hue to keep the
+// glow and the icon tint matched.
+export const INSIGHT_GOLD = 'oklch(0.82 0.17 85)';
+
 // Endgame ELO Timeline volume bars (Phase 57.1). Muted gray with alpha so the
 // bars read as "context, not data" on the charcoal-texture card surface.
 // L=0.55 / chroma=0 keeps the bar visually distinct from all 8 ELO_COMBO_COLORS

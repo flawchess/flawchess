@@ -1,5 +1,5 @@
 import type { UseMutationResult } from '@tanstack/react-query';
-import { Info, Loader2 } from 'lucide-react';
+import { Info, Lightbulb, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { areFiltersEqual, type FilterState } from '@/components/filters/FilterPanel';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -71,7 +71,12 @@ export function EndgameInsightsBlock({
     >
       {/* H2 row with optional outdated indicator (inline-right on desktop, wraps on narrow viewports) */}
       <div className="flex flex-wrap items-center gap-2 mb-2">
-        <h2 className="text-lg font-semibold text-foreground mt-2">Insights</h2>
+        <h2 className="text-lg font-semibold text-foreground mt-2 flex items-center gap-2">
+          <span className="insight-lightbulb" aria-hidden="true">
+            <Lightbulb className="size-5" />
+          </span>
+          Insights
+        </h2>
         {isOutdated && !isError && (
           <div
             data-testid="insights-outdated-indicator"
@@ -122,14 +127,15 @@ function HeroState({
   return (
     <>
       <p className="text-sm text-muted-foreground mb-3">
-        Generate a short written summary of your endgame performance based on the current filters.
+        Generate a short written summary and insights for each section for your endgame performance based on the current filters.
       </p>
       <Button
-        variant="default"
+        variant="brand-outline"
         onClick={onGenerate}
         disabled={isPending}
         data-testid="btn-generate-insights"
       >
+        <Sparkles className="h-4 w-4" />
         Generate insights
       </Button>
     </>
