@@ -21,6 +21,21 @@ vi.mock('@/hooks/useUserProfile', () => ({
 }));
 import { useUserProfile } from '@/hooks/useUserProfile';
 
+// Mock useActiveJobs — v8 button gating reads active imports. Default: no
+// active jobs so the block renders its enabled happy path.
+vi.mock('@/hooks/useImport', () => ({
+  useActiveJobs: vi.fn(() => ({ data: [] })),
+}));
+
+// Stub the Tooltip primitive so blocked-state renders don't need a
+// TooltipProvider wrapper in tests. The component under test only uses
+// Tooltip for accessibility hints; the wrapper's internal Radix context is
+// not relevant to rendering assertions.
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+}));
+import type { ReactNode } from 'react';
+
 const BASE_FILTERS: FilterState = {
   matchSide: 'both',
   timeControls: null,
@@ -62,12 +77,18 @@ function makeMutation(
 
 const RESPONSE_FRESH: EndgameInsightsResponse = {
   report: {
+    player_profile:
+      'Active rapid player around 1500 Elo, range 1200-1600 over the last two years.',
     overview: 'You converted winning endgames at 62% in the last 90 days.',
+    recommendations: [
+      'Try drilling pawn endgames against an engine.',
+      'Review your last few losses on time.',
+    ],
     sections: [
       { section_id: 'overall', headline: 'Strong headline', bullets: ['bullet one'] },
     ],
     model_used: 'anthropic:claude-haiku-4-5-20251001',
-    prompt_version: 'endgame_v1',
+    prompt_version: 'endgame_v9',
   },
   status: 'fresh',
   stale_filters: null,
@@ -135,7 +156,7 @@ describe('EndgameInsightsBlock — beta enabled', () => {
       />,
     );
     const generate = screen.getByTestId('btn-generate-insights');
-    expect(generate.textContent).toContain('Generate insights');
+    expect(generate.textContent).toContain('Generate Insights');
     expect(screen.queryByText(/Generate a short written summary/)).not.toBeNull();
     expect(screen.queryByTestId('insights-skeleton')).toBeNull();
     expect(screen.queryByTestId('insights-overview')).toBeNull();
@@ -170,6 +191,28 @@ describe('EndgameInsightsBlock — beta enabled', () => {
     );
     expect(screen.getByTestId('btn-regenerate-insights').textContent).toContain('Regenerate');
     expect(screen.queryByTestId('insights-stale-banner')).toBeNull();
+  });
+
+  it('v9: renders player profile, data analysis, and recommendations as stacked cards', () => {
+    render(
+      <EndgameInsightsBlock
+        appliedFilters={BASE_FILTERS}
+        rendered={RESPONSE_FRESH}
+        reportFilters={BASE_FILTERS}
+        mutation={makeMutation()}
+        onGenerate={vi.fn()}
+      />,
+    );
+    const profile = screen.getByTestId('insights-player-profile');
+    expect(profile.textContent).toContain('Player Profile');
+    expect(profile.textContent).toContain('Active rapid player around 1500 Elo');
+    const overview = screen.getByTestId('insights-overview');
+    expect(overview.textContent).toContain('Data Analysis');
+    expect(overview.textContent).toContain('You converted winning endgames at 62%');
+    const recs = screen.getByTestId('insights-recommendations');
+    expect(recs.textContent).toContain('Recommendations');
+    expect(recs.textContent).toContain('Try drilling pawn endgames against an engine.');
+    expect(recs.textContent).toContain('Review your last few losses on time.');
   });
 
   it('hides overview paragraph when empty string (BETA-02)', () => {

@@ -474,6 +474,7 @@ def _stub_endgame_overview_response() -> EndgameOverviewResponse:
         time_pressure_chart=None,
         performance=None,
         stats=type("StatsStub", (), {"categories": []})(),
+        endgame_elo_timeline=type("EloTimelineStub", (), {"combos": []})(),
     )
 
 

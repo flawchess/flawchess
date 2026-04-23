@@ -57,6 +57,7 @@ __all__ = [
     "InsightsErrorResponse",
     "InsightsStatus",
     "MetricId",
+    "PlayerProfileEntry",
     "SampleQuality",
     "SectionId",
     "SectionInsight",
@@ -220,7 +221,30 @@ class EndgameTabFindings(BaseModel):
     # Score % per type behind the single `win_rate` finding (which excludes
     # draws). Optional for backwards compatibility.
     type_categories: list[EndgameCategoryStats] | None = None
+    # Per-(platform, time_control) Elo context used by the LLM to calibrate
+    # narrative tone to skill level. None when no qualifying combo exists
+    # (new user with too few games). See PlayerProfileEntry for shape.
+    player_profile: list["PlayerProfileEntry"] | None = None
     findings_hash: str
+
+
+class PlayerProfileEntry(BaseModel):
+    """One (platform, time_control) combo's Elo context for the LLM prompt.
+
+    Surfaces current rating, historical range, and recent trajectory so the
+    LLM can adjust register (beginner vs intermediate vs advanced) without
+    being told an explicit skill-level label. Populated by
+    `compute_player_profile` from the endgame_elo timeline combos.
+    """
+
+    platform: Literal["chess.com", "lichess"]
+    time_control: Literal["bullet", "blitz", "rapid", "classical"]
+    games: int  # total qualifying points in the combo (drives sort order)
+    current_elo: int
+    min_elo: int
+    max_elo: int
+    window_days: int  # span from first to last qualifying point
+    trajectory: str  # e.g. "+120 over 3 months", "stable", "-45 over 3 months"
 
 
 class TimePoint(BaseModel):
@@ -231,11 +255,17 @@ class TimePoint(BaseModel):
 
     `n` is the sample size for this bucket (weekly game count for last_3mo,
     summed-over-the-month for all_time — see insights_service resampler).
+
+    `actual_elo` is populated ONLY for `endgame_elo_timeline` series; None for
+    all other timelines. Carrying the user's actual rating alongside the gap
+    lets the prompt render `gap=<v>, elo=<r>` per bucket so the LLM can
+    distinguish endgame-skill regression from rating growth outpacing skill.
     """
 
     bucket_start: str  # ISO YYYY-MM-DD
     value: float
     n: int
+    actual_elo: int | None = None
 
 
 class SectionInsight(BaseModel):
@@ -264,9 +294,15 @@ class EndgameInsightsReport(BaseModel):
       - D-20: `unique_section_ids` validator is a cheap safety net — duplicate
         section_id raises ValueError; pydantic-ai catches and retries.
       - D-17: `model_used` + `prompt_version` echoed back for frontend debug.
+      - v9: `player_profile` (~3-5 sentence paragraph) and `recommendations`
+        (2-4 short bullets) are first-class top-of-page blocks rendered above
+        the `overview`. The LLM derives both from the `## Player profile`
+        block in the user prompt and the per-section findings.
     """
 
+    player_profile: str = Field(..., min_length=1, max_length=800)
     overview: str
+    recommendations: list[str] = Field(..., min_length=2, max_length=4)
     sections: list[SectionInsight] = Field(..., min_length=1, max_length=4)
     model_used: str
     prompt_version: str
@@ -276,6 +312,15 @@ class EndgameInsightsReport(BaseModel):
         ids = [s.section_id for s in self.sections]
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate section_id")
+        return self
+
+    @model_validator(mode="after")
+    def recommendations_length(self) -> "EndgameInsightsReport":
+        for rec in self.recommendations:
+            if not rec.strip():
+                raise ValueError("recommendation must not be empty")
+            if len(rec) > 200:
+                raise ValueError("recommendation exceeds 200 chars")
         return self
 
 
@@ -308,3 +353,5 @@ class InsightsErrorResponse(BaseModel):
 # TimePoint is defined after SubsectionFinding (required because SubsectionFinding
 # uses it in a list annotation), so we call model_rebuild() to resolve it.
 SubsectionFinding.model_rebuild()
+# Same pattern for EndgameTabFindings -> PlayerProfileEntry forward ref.
+EndgameTabFindings.model_rebuild()

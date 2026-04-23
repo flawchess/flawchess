@@ -48,6 +48,7 @@ from app.schemas.endgames import (
     ClockStatsRow,
     EndgameCategoryStats,
     EndgameEloTimelineCombo,
+    EndgameEloTimelinePoint,
     EndgameOverviewResponse,
     MaterialBucket,
     MaterialRow,
@@ -56,6 +57,7 @@ from app.schemas.endgames import (
 from app.schemas.insights import (
     EndgameTabFindings,
     FilterContext,
+    PlayerProfileEntry,
     SubsectionFinding,
     TimePoint,
 )
@@ -169,6 +171,8 @@ async def compute_findings(
     last_3mo_findings = _compute_subsection_findings(last_3mo_resp, window="last_3mo")
     all_findings = all_time_findings + last_3mo_findings
 
+    player_profile = compute_player_profile(all_time_resp.endgame_elo_timeline.combos)
+
     findings = EndgameTabFindings(
         as_of=datetime.datetime.now(datetime.UTC),
         filters=filter_context,
@@ -187,10 +191,114 @@ async def compute_findings(
         # and Score % detail the single-value findings cannot carry.
         overall_performance=all_time_resp.performance,
         type_categories=all_time_resp.stats.categories,
+        player_profile=player_profile,
         findings_hash="",  # placeholder; replaced below
     )
     findings_hash = _compute_hash(findings)
     return findings.model_copy(update={"findings_hash": findings_hash})
+
+
+# ---------------------------------------------------------------------------
+# Player profile — per-(platform, time_control) Elo context for the LLM.
+# ---------------------------------------------------------------------------
+
+# Minimum qualifying points a combo needs before it gets an entry in the
+# player profile. Below this, range/trajectory are too noisy to be useful.
+_PLAYER_PROFILE_MIN_POINTS: int = 20
+
+# Trajectory noise threshold (Elo). |last_90d mean - prior_90d mean| below
+# this reads as "stable" rather than "+N over 3 months".
+_PLAYER_PROFILE_TRAJECTORY_STABLE: float = 30.0
+
+
+def compute_player_profile(
+    combos: list[EndgameEloTimelineCombo],
+) -> list[PlayerProfileEntry] | None:
+    """Produce per-combo Elo context for the LLM prompt.
+
+    Uses the already-fetched `endgame_elo_timeline.combos` — no extra DB
+    work. Each qualifying combo (>= _PLAYER_PROFILE_MIN_POINTS weekly points)
+    yields one entry with current Elo, historical range, window length, and
+    recent trajectory. Combos are sorted by total game count desc so the LLM
+    sees the most-played combo first (the default anchor for tone).
+
+    Returns None when no combo qualifies — the caller renders no
+    `## Player profile` block in the prompt.
+    """
+    entries: list[PlayerProfileEntry] = []
+    for combo in combos:
+        points = combo.points
+        if len(points) < _PLAYER_PROFILE_MIN_POINTS:
+            continue
+        # Sort by date ASC (the endgame service already returns ASC, but be
+        # defensive — trajectory math depends on chronological order).
+        ordered = sorted(points, key=lambda p: p.date)
+        elos = [p.actual_elo for p in ordered]
+        current_elo = elos[-1]
+        min_elo = min(elos)
+        max_elo = max(elos)
+        try:
+            first_date = datetime.date.fromisoformat(ordered[0].date)
+            last_date = datetime.date.fromisoformat(ordered[-1].date)
+            window_days = (last_date - first_date).days
+        except ValueError:
+            window_days = 0
+        if window_days == 0:
+            # Can't compute trajectory without a dated window; treat as stable.
+            trajectory = "stable"
+        else:
+            trajectory = _trajectory_for_combo(ordered, last_date)
+        games = sum(p.per_week_endgame_games for p in ordered)
+        entries.append(
+            PlayerProfileEntry(
+                platform=combo.platform,
+                time_control=combo.time_control,
+                games=games,
+                current_elo=current_elo,
+                min_elo=min_elo,
+                max_elo=max_elo,
+                window_days=window_days,
+                trajectory=trajectory,
+            )
+        )
+    if not entries:
+        return None
+    entries.sort(key=lambda e: e.games, reverse=True)
+    return entries
+
+
+def _trajectory_for_combo(
+    ordered_points: list[EndgameEloTimelinePoint],
+    last_date: datetime.date,
+) -> str:
+    """Describe recent trajectory as '+120 over 3 months' / 'stable' / '-45 over 3 months'.
+
+    Compares the mean Elo in the last 90 days to the mean Elo in the 90 days
+    prior. Falls back to 'stable' when either window has no points or when
+    the delta is below the noise threshold.
+    """
+    cutoff_recent = last_date - datetime.timedelta(days=90)
+    cutoff_prior = last_date - datetime.timedelta(days=180)
+    recent: list[int] = []
+    prior: list[int] = []
+    for p in ordered_points:
+        try:
+            d = datetime.date.fromisoformat(p.date)
+        except ValueError:
+            continue
+        if d > cutoff_recent:
+            recent.append(p.actual_elo)
+        elif d > cutoff_prior:
+            prior.append(p.actual_elo)
+    if not recent or not prior:
+        return "stable"
+    recent_mean = statistics.mean(recent)
+    prior_mean = statistics.mean(prior)
+    delta = recent_mean - prior_mean
+    if abs(delta) < _PLAYER_PROFILE_TRAJECTORY_STABLE:
+        return "stable"
+    sign = "+" if delta > 0 else "-"
+    return f"{sign}{abs(round(delta))} over 3 months"
 
 
 # ---------------------------------------------------------------------------
@@ -479,10 +587,8 @@ def _findings_time_pressure_at_entry(
     """time_pressure_at_entry -> avg_clock_diff_pct + net_timeout_rate.
 
     Values are game-weighted means across ClockStatsRow rows (one per time
-    control). `net_timeout_rate` is passed to `assign_zone` with its sign
-    flipped to match the registry's `lower_is_better` direction (D-06 A1
-    resolution) — the raw value is preserved in the SubsectionFinding so
-    Phase 65 prompt-assembly sees the real formula output.
+    control). Both metrics are zoned as higher_is_better, so zones are read
+    directly from the raw formula output — no sign flip.
     """
     rows: list[ClockStatsRow] = response.clock_pressure.rows
     total_clock_games = response.clock_pressure.total_clock_games
@@ -543,17 +649,6 @@ def _findings_time_pressure_at_entry(
     else:
         net_timeout_value = float("nan")
 
-    # D-06 resolution: the registry declares net_timeout_rate as
-    # `lower_is_better`, but ClockStatsRow.net_timeout_rate is
-    # (timeout_wins - timeout_losses) / total * 100 — positive when the user
-    # wins flag battles. We flip the sign before calling assign_zone so the
-    # zone matches the user's actual advantage under the locked
-    # lower_is_better semantic. Do NOT store the negated value — emit the
-    # original formula output in the finding so Phase 65 prompt-assembly
-    # sees the actual number, not its sign-flipped proxy.
-    net_timeout_zone_input = (
-        -net_timeout_value if not math.isnan(net_timeout_value) else net_timeout_value
-    )
     findings.append(
         SubsectionFinding(
             subsection_id="time_pressure_at_entry",
@@ -561,7 +656,7 @@ def _findings_time_pressure_at_entry(
             window=window,
             metric="net_timeout_rate",
             value=net_timeout_value,
-            zone=assign_zone("net_timeout_rate", net_timeout_zone_input),
+            zone=assign_zone("net_timeout_rate", net_timeout_value),
             trend="n_a",
             weekly_points_in_window=0,
             sample_size=nt_den,
@@ -929,19 +1024,66 @@ def _series_for_endgame_elo_combo(
     combo: EndgameEloTimelineCombo,
     window: Window,
 ) -> list[TimePoint] | None:
-    """Build gap-only series for one (platform, time_control) combo per D-04.
+    """Build gap+elo series for one (platform, time_control) combo per D-04.
 
     Returns None if combo has fewer than SPARSE_COMBO_FLOOR total weekly
     observations in the window (caller skips the subsection finding entirely).
-    Value is endgame_elo - actual_elo per week.
+    Each point carries both `value` (endgame_elo - actual_elo, the zoned gap)
+    and `actual_elo` (the user's rating at that bucket) so the LLM prompt can
+    render `gap=<v>, elo=<r>` per row and distinguish skill regression from
+    rating growth outpacing skill.
     """
     if len(combo.points) < SPARSE_COMBO_FLOOR:
         return None
-    weekly: list[tuple[str, float, int]] = [
-        (p.date, float(p.endgame_elo - p.actual_elo), p.per_week_endgame_games)
+    weekly: list[tuple[str, float, int, int]] = [
+        (p.date, float(p.endgame_elo - p.actual_elo), p.per_week_endgame_games, p.actual_elo)
         for p in combo.points
     ]
-    return _weekly_points_to_time_points(weekly, window)
+    return _weekly_points_to_time_points_with_elo(weekly, window)
+
+
+def _weekly_points_to_time_points_with_elo(
+    weekly: list[tuple[str, float, int, int]],
+    window: Window,
+) -> list[TimePoint]:
+    """Endgame-elo variant of `_weekly_points_to_time_points` that also
+    carries `actual_elo` through. Weighted by game count (same convention as
+    the gap value) so the monthly aggregate satisfies the invariant
+    `value ≈ endgame_elo - actual_elo` for the aggregated `actual_elo`.
+    """
+    if not weekly:
+        return []
+    if window == "last_3mo":
+        return [
+            TimePoint(bucket_start=d, value=v, n=n, actual_elo=elo)
+            for d, v, n, elo in sorted(weekly, key=lambda t: t[0])
+        ]
+    # all_time -> monthly
+    buckets: dict[str, list[tuple[float, int, int]]] = defaultdict(list)
+    for date_iso, value, n, elo in weekly:
+        ym = date_iso[:7]
+        buckets[ym].append((value, n, elo))
+    points: list[TimePoint] = []
+    for ym in sorted(buckets.keys()):
+        weeks = buckets[ym]
+        total_n = sum(n for _, n, _ in weeks)
+        if total_n > 0:
+            weighted_sum = sum(v * n for v, n, _ in weeks)
+            mean_value = weighted_sum / total_n
+            elo_weighted_sum = sum(elo * n for _, n, elo in weeks)
+            mean_elo = round(elo_weighted_sum / total_n)
+        else:
+            mean_value = statistics.mean(v for v, _, _ in weeks)
+            mean_elo = round(statistics.mean(elo for _, _, elo in weeks))
+        points.append(
+            TimePoint(
+                bucket_start=f"{ym}-01",
+                value=mean_value,
+                n=total_n,
+                actual_elo=mean_elo,
+            )
+        )
+    return points
 
 
 def _endgame_skill_from_material_rows(rows: list[MaterialRow]) -> float:

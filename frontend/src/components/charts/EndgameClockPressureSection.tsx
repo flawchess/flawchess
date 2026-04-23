@@ -10,7 +10,7 @@ import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ENDGAME_VOLUME_BAR_COLOR, ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
-import type { ClockPressureResponse, ClockPressureTimelinePoint } from '@/types/endgames';
+import type { ClockPressureResponse, ClockPressureTimelinePoint, ClockStatsRow } from '@/types/endgames';
 
 // Threshold (in % of base clock time) within which a clock-diff is considered
 // neutral and shown in the bullet-chart's blue zone color. Beyond this band,
@@ -88,6 +88,67 @@ function formatNetTimeoutRate(rate: number): string {
   return `0.0%`;
 }
 
+interface ClockPressureAggregate {
+  totalEndgameGames: number;
+  userAvgPct: number | null;
+  userAvgSeconds: number | null;
+  oppAvgPct: number | null;
+  oppAvgSeconds: number | null;
+  avgClockDiffSeconds: number | null;
+  netTimeoutRate: number;
+}
+
+/**
+ * Weighted aggregate across all time control rows. Weights mirror the backend
+ * LLM payload:
+ *   - clock metrics weighted by `clock_games` (games with both clocks present)
+ *   - net_timeout_rate weighted by `total_endgame_games` (the metric's denominator)
+ * The LLM narrates these weighted means; surfacing them in the UI too lets
+ * users reconcile the narration with the table.
+ */
+function computeClockPressureAggregate(
+  rows: ClockStatsRow[],
+): ClockPressureAggregate {
+  let userPctNum = 0;
+  let oppPctNum = 0;
+  let userSecNum = 0;
+  let oppSecNum = 0;
+  let diffSecNum = 0;
+  let clockDen = 0;
+  let timeoutNum = 0;
+  let timeoutDen = 0;
+  let totalGames = 0;
+
+  for (const r of rows) {
+    totalGames += r.total_endgame_games;
+    if (r.total_endgame_games > 0) {
+      timeoutNum += r.net_timeout_rate * r.total_endgame_games;
+      timeoutDen += r.total_endgame_games;
+    }
+    if (r.clock_games > 0 && r.user_avg_pct !== null && r.opp_avg_pct !== null
+        && r.user_avg_seconds !== null && r.opp_avg_seconds !== null
+        && r.avg_clock_diff_seconds !== null) {
+      userPctNum += r.user_avg_pct * r.clock_games;
+      oppPctNum += r.opp_avg_pct * r.clock_games;
+      userSecNum += r.user_avg_seconds * r.clock_games;
+      oppSecNum += r.opp_avg_seconds * r.clock_games;
+      diffSecNum += r.avg_clock_diff_seconds * r.clock_games;
+      clockDen += r.clock_games;
+    }
+  }
+
+  const hasClock = clockDen > 0;
+  return {
+    totalEndgameGames: totalGames,
+    userAvgPct: hasClock ? userPctNum / clockDen : null,
+    userAvgSeconds: hasClock ? userSecNum / clockDen : null,
+    oppAvgPct: hasClock ? oppPctNum / clockDen : null,
+    oppAvgSeconds: hasClock ? oppSecNum / clockDen : null,
+    avgClockDiffSeconds: hasClock ? diffSecNum / clockDen : null,
+    netTimeoutRate: timeoutDen > 0 ? timeoutNum / timeoutDen : 0,
+  };
+}
+
 export function EndgameClockPressureSection({ data }: EndgameClockPressureSectionProps) {
   return (
     <div className="space-y-4" data-testid="clock-pressure-section">
@@ -142,6 +203,32 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
           return { row, diffColor, timeoutColor };
         });
 
+        // Weighted aggregate across all time control rows. Shown as a summary
+        // row/card when more than one TC is present — lets users reconcile the
+        // "enters endgames with X% less time" narration against the table.
+        const showAggregate = data.rows.length > 1;
+        const aggregate = showAggregate ? computeClockPressureAggregate(data.rows) : null;
+        const aggregatePctDiff =
+          aggregate !== null && aggregate.userAvgPct !== null && aggregate.oppAvgPct !== null
+            ? aggregate.userAvgPct - aggregate.oppAvgPct
+            : null;
+        const aggregateDiffColor =
+          aggregatePctDiff === null
+            ? undefined
+            : aggregatePctDiff > NEUTRAL_PCT_THRESHOLD
+              ? ZONE_SUCCESS
+              : aggregatePctDiff < -NEUTRAL_PCT_THRESHOLD
+                ? ZONE_DANGER
+                : ZONE_NEUTRAL;
+        const aggregateTimeoutColor =
+          aggregate === null
+            ? undefined
+            : aggregate.netTimeoutRate > NEUTRAL_TIMEOUT_THRESHOLD
+              ? ZONE_SUCCESS
+              : aggregate.netTimeoutRate < -NEUTRAL_TIMEOUT_THRESHOLD
+                ? ZONE_DANGER
+                : ZONE_NEUTRAL;
+
         return (
           <>
             {/* Desktop: table layout */}
@@ -191,6 +278,36 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
                       </td>
                     </tr>
                   ))}
+                  {aggregate !== null && (
+                    <tr
+                      className="border-t border-border font-medium"
+                      data-testid="clock-pressure-row-total"
+                    >
+                      <td className="py-1.5 pr-3 text-sm">All time controls</td>
+                      <td className="py-1.5 px-2 text-right text-sm tabular-nums">
+                        {aggregate.totalEndgameGames.toLocaleString()}
+                      </td>
+                      <td className="py-1.5 px-2 text-right text-sm tabular-nums">
+                        {formatClockCell(aggregate.userAvgPct, aggregate.userAvgSeconds)}
+                      </td>
+                      <td className="py-1.5 px-2 text-right text-sm tabular-nums">
+                        {formatClockCell(aggregate.oppAvgPct, aggregate.oppAvgSeconds)}
+                      </td>
+                      <td
+                        className="py-1.5 px-2 text-right text-sm tabular-nums"
+                        style={aggregateDiffColor ? { color: aggregateDiffColor } : undefined}
+                      >
+                        {formatSignedPct(aggregate.userAvgPct, aggregate.oppAvgPct)}
+                        <span className="text-muted-foreground ml-1">({formatSignedSeconds(aggregate.avgClockDiffSeconds)})</span>
+                      </td>
+                      <td
+                        className="py-1.5 pl-2 text-right text-sm tabular-nums"
+                        style={aggregateTimeoutColor ? { color: aggregateTimeoutColor } : undefined}
+                      >
+                        {formatNetTimeoutRate(aggregate.netTimeoutRate)}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -239,6 +356,50 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
                   </div>
                 </div>
               ))}
+              {aggregate !== null && (
+                <div
+                  className="rounded border border-border p-3 space-y-2 font-medium"
+                  data-testid="clock-pressure-card-total"
+                >
+                  <div className="flex items-baseline justify-between">
+                    <div className="text-sm font-medium">All time controls</div>
+                    <div className="text-xs tabular-nums text-muted-foreground">
+                      {aggregate.totalEndgameGames.toLocaleString()} games
+                    </div>
+                  </div>
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-muted-foreground">My avg time</span>
+                    <span className="tabular-nums">
+                      {formatClockCell(aggregate.userAvgPct, aggregate.userAvgSeconds)}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-muted-foreground">Opp avg time</span>
+                    <span className="tabular-nums">
+                      {formatClockCell(aggregate.oppAvgPct, aggregate.oppAvgSeconds)}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-muted-foreground">Avg clock diff</span>
+                    <span
+                      className="tabular-nums"
+                      style={aggregateDiffColor ? { color: aggregateDiffColor } : undefined}
+                    >
+                      {formatSignedPct(aggregate.userAvgPct, aggregate.oppAvgPct)}
+                      <span className="text-muted-foreground ml-1">({formatSignedSeconds(aggregate.avgClockDiffSeconds)})</span>
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-muted-foreground">Net timeout rate</span>
+                    <span
+                      className="tabular-nums"
+                      style={aggregateTimeoutColor ? { color: aggregateTimeoutColor } : undefined}
+                    >
+                      {formatNetTimeoutRate(aggregate.netTimeoutRate)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         );

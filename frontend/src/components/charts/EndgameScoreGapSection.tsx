@@ -60,13 +60,13 @@ const BUCKET_DISPLAY_LABELS: Record<MaterialBucket, string> = {
 };
 
 // User-facing labels that also name the per-bucket metric, so readers can
-// tell the percent column isn't the generic Score % used elsewhere on the
+// tell the percent column isn't the generic Score used elsewhere on the
 // page. Used in the gauge strip, desktop table, and mobile cards; aria
 // labels and gauge testIds keep the short form above.
 const BUCKET_DISPLAY_LABELS_WITH_METRIC: Record<MaterialBucket, string> = {
-  conversion: 'Conversion (Win %)',
-  parity: 'Parity (Score %)',
-  recovery: 'Recovery (Save %)',
+  conversion: 'Conversion (Win)',
+  parity: 'Parity (Score)',
+  recovery: 'Recovery (Save)',
 };
 
 // Fixed per-bucket gauge zones. The blue band marks the typical
@@ -162,7 +162,7 @@ function opponentRate(row: MaterialRow, mirror: MaterialRow | undefined): number
  * when no bucket has games (callers render a disabled gauge).
  *
  * This is intentionally an aggregate of three different rate definitions
- * (Win %, Score %, Save %), so the result is a one-number summary rather
+ * (Win, Score, Save), so the result is a one-number summary rather
  * than a true chess score. */
 function endgameSkill(rows: MaterialRow[]): number | null {
   const active = rows.filter((r) => r.games > 0);
@@ -213,20 +213,20 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                 </p>
                 <ul className="list-disc pl-5 space-y-1">
                   <li>
-                    <strong>Conversion (Win %)</strong>: only wins count
+                    <strong>Conversion (Win)</strong>: only wins count
                   </li>
                   <li>
-                    <strong>Parity (Score %)</strong>: draws count as half
+                    <strong>Parity (Score)</strong>: draws count as half
                   </li>
                   <li>
-                    <strong>Recovery (Save %)</strong>: draws count as a save
+                    <strong>Recovery (Save)</strong>: draws count as a save
                   </li>
                   <li>
                     <strong>Endgame Skill</strong>: averages the three rates above
                   </li>
                 </ul>
                 <p>
-                  These rates are not the same as the generic Score % used
+                  These rates are not the same as the generic Score used
                   elsewhere on the page.
                 </p>
                 <p>

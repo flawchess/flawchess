@@ -39,15 +39,16 @@ class TestAssignZone:
         assert assign_zone("score_gap", 0.15) == "strong"
         assert assign_zone("score_gap", -0.15) == "weak"
 
-    def test_lower_is_better_below_lower_is_strong(self) -> None:
-        """Net timeout rate is lower_is_better per D-06: low = good."""
-        assert assign_zone("net_timeout_rate", -8.0) == "strong"
+    def test_net_timeout_rate_positive_is_strong(self) -> None:
+        """Net timeout rate is higher_is_better: positive = user flags opponents more."""
+        assert assign_zone("net_timeout_rate", 8.0) == "strong"
 
-    def test_lower_is_better_in_band_is_typical(self) -> None:
+    def test_net_timeout_rate_in_band_is_typical(self) -> None:
         assert assign_zone("net_timeout_rate", 0.0) == "typical"
 
-    def test_lower_is_better_above_upper_is_weak(self) -> None:
-        assert assign_zone("net_timeout_rate", 8.0) == "weak"
+    def test_net_timeout_rate_negative_is_weak(self) -> None:
+        """Negative net timeout rate = user gets flagged more than they flag."""
+        assert assign_zone("net_timeout_rate", -8.0) == "weak"
 
     def test_nan_returns_typical(self) -> None:
         """NaN must not raise. Plan 03 findings use is_headline_eligible=False
@@ -134,9 +135,9 @@ class TestRegistrySanity:
         }
 
     def test_net_timeout_rate_uses_threshold_constant(self) -> None:
-        """D-06: lower_is_better; bounds reference NEUTRAL_TIMEOUT_THRESHOLD."""
+        """higher_is_better (positive = good); bounds reference NEUTRAL_TIMEOUT_THRESHOLD."""
         spec = ZONE_REGISTRY["net_timeout_rate"]
-        assert spec.direction == "lower_is_better"
+        assert spec.direction == "higher_is_better"
         assert spec.typical_upper == NEUTRAL_TIMEOUT_THRESHOLD
         assert spec.typical_lower == -NEUTRAL_TIMEOUT_THRESHOLD
 

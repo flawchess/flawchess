@@ -136,17 +136,16 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         typical_upper=NEUTRAL_PCT_THRESHOLD,
         direction="higher_is_better",
     ),
-    # Net timeout rate (pp, signed).
-    # D-06: lower_is_better — net_timeout_rate formula
-    # "(timeout_wins - timeout_losses) / total * 100" is interpreted here as a
-    # disadvantage metric. If Phase 63 review determines the formula produces
-    # positive-when-good values, the findings service (Plan 04) flips the sign
-    # before calling assign_zone rather than changing this registry entry.
-    # That keeps the registry honest to the CONTEXT.md locked decision.
+    # Net timeout rate (signed percent).
+    # Formula: (timeout_wins - timeout_losses) / total_endgame_games * 100.
+    # Positive = user wins more flag battles than they lose (strong); negative
+    # = user gets flagged more than they flag (weak). higher_is_better keeps
+    # the metric's natural reading — no sign-flip gymnastics anywhere else in
+    # the pipeline.
     "net_timeout_rate": ZoneSpec(
         typical_lower=-NEUTRAL_TIMEOUT_THRESHOLD,
         typical_upper=NEUTRAL_TIMEOUT_THRESHOLD,
-        direction="lower_is_better",
+        direction="higher_is_better",
     ),
     # Endgame ELO gap (endgame_elo - actual_elo, signed Elo).
     # Typical band = ±100 Elo, matches NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD.

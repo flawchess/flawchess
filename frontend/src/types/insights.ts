@@ -30,11 +30,15 @@ export interface SectionInsight {
 }
 
 export interface EndgameInsightsReport {
+  /** v9: Player profile paragraph (~3-5 sentences). Always populated. */
+  player_profile: string;
   /**
    * Natural-language overview (1-2 paragraphs, <= 150 words).
    * BETA-02: empty string when INSIGHTS_HIDE_OVERVIEW=true (per-section insights still render).
    */
   overview: string;
+  /** v9: 2-4 short bullet recommendations grounded in weak/typical metrics. */
+  recommendations: string[];
   /** Min 1, max 4 section insights. See Phase 65 D-19. */
   sections: SectionInsight[];
   /** FE does not display to end users; available for debug. */

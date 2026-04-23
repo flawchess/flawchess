@@ -51,7 +51,9 @@ from app.services.insights_llm import (
 
 def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameInsightsReport:
     return EndgameInsightsReport(
+        player_profile="Player around 1500 rapid, range 1200-1600 over 2 years.",
         overview=overview,
+        recommendations=["Try drilling pawn endings.", "Review losses on time."],
         sections=[
             SectionInsight(
                 section_id="overall",
@@ -60,7 +62,7 @@ def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameI
             ),
         ],
         model_used="test",
-        prompt_version="endgame_v6",
+        prompt_version="endgame_v9",
     )
 
 
@@ -84,7 +86,7 @@ def _make_log_row(
     error: str | None = None,
     response_json: dict[str, Any] | None = None,
     cache_hit: bool = False,
-    prompt_version: str = "endgame_v6",
+    prompt_version: str = "endgame_v9",
     model: str = "test",
     findings_hash: str = "b" * 64,
 ) -> LlmLog:
@@ -217,7 +219,9 @@ class TestPromptAssembly:
         tab_findings = _fake_findings(filters, findings=[non_timeline, timeline])
         prompt = _assemble_user_prompt(tab_findings)
 
-        assert "Filters:" in prompt
+        # v9: Filters: header is no longer always emitted; only the
+        # `## Scoping caveat` line appears when opponent_strength != "any".
+        assert "Filters:" not in prompt
         assert "Flags:" not in prompt
         assert "## Subsection: overall" in prompt
         assert "## Subsection: score_gap_timeline" in prompt
@@ -516,10 +520,10 @@ class TestPromptAssembly:
         assert "| series      | games | win_pct | draw_pct | loss_pct | score_pct |" in prompt
         assert "| endgame     | 240" in prompt
         assert "| non_endgame | 700" in prompt
-        # v6 0-100 scale: Score % = (W + 0.5*D)/total * 100.
-        # endgame = 140/240*100 = 58.3, non-endgame = 325/700*100 = 46.4
-        assert "58.3" in prompt
-        assert "46.4" in prompt
+        # v7 whole-number scale: Score % = (W + 0.5*D)/total * 100, rounded.
+        # endgame = 140/240*100 = 58.3 → 58, non-endgame = 325/700*100 = 46.4 → 46
+        assert "| 58 " in prompt or "| 58\n" in prompt or " 58 " in prompt
+        assert "| 46 " in prompt or "| 46\n" in prompt or " 46 " in prompt
 
     def test_assemble_user_prompt_omits_overall_wdl_when_thin(self) -> None:
         """Rows below the 10-game floor are dropped; block omitted if all dropped."""
@@ -727,10 +731,10 @@ class TestPromptAssembly:
         assert "| pawnless" not in prompt
 
     def test_bullet_includes_inline_zone_bounds(self) -> None:
-        """v5: every finding bullet renders `(typical LO to UP)` next to its zone.
+        """v7: every finding bullet renders `(typical LO to UP)` next to its zone.
 
         Covers scalar (score_gap), bucketed (conversion_win_pct), and
-        lower_is_better (net_timeout_rate) registry paths. The inline shorthand
+        higher_is_better (net_timeout_rate) registry paths. The inline shorthand
         lets the LLM judge proximity to a zone edge without consulting the
         global appendix.
         """
@@ -787,19 +791,23 @@ class TestPromptAssembly:
         tab = _fake_findings(filters, findings=[scalar, bucketed, timeout])
         prompt = _assemble_user_prompt(tab)
 
-        # v6 0-100 scale: score_gap band is -10.0 to +10.0 pp.
-        assert "weak (typical -10.0 to +10.0)" in prompt
-        # v6 0-100 scale: conversion bucket band is +65.0 to +75.0.
-        assert "weak (typical +65.0 to +75.0)" in prompt
-        # lower_is_better metric: net_timeout_rate band (already pp) now rendered at .1f.
-        assert "weak (typical -5.0 to +5.0, lower is better)" in prompt
+        # v7 whole-number scale: score_gap band is -10 to +10.
+        assert "weak (typical -10 to +10)" in prompt
+        # conversion bucket band is +65 to +75.
+        assert "weak (typical +65 to +75)" in prompt
+        # net_timeout_rate band is now higher_is_better (positive is strong): typical -5 to +5.
+        assert "weak (typical -5 to +5)" in prompt
+        assert "lower is better" not in prompt  # v7: no lower_is_better metrics left.
 
-    def test_overall_subsection_dropped_when_wdl_chart_present(self) -> None:
-        """v5 C4: scalar `overall` subsection is omitted when overall_wdl renders.
+    def test_overall_subsection_emitted_alongside_wdl_chart(self) -> None:
+        """v9: scalar `overall` subsection is now emitted EVEN WHEN the chart fires.
 
-        The 2-row chart already carries the endgame-vs-non-endgame framing;
-        keeping the scalar `score_gap` bullet alongside invited the LLM to
-        anchor on a misleading one-number narrative.
+        Previously (v5 C4) the scalar was dropped when the chart rendered, leaving
+        only the score_gap_timeline subsection's bullet — but that bullet's
+        `value` is the latest weekly bucket of the rolling timeline, mislabeled
+        as `(all_time)`. v9 keeps both: the chart shows the WDL decomposition,
+        and the `overall` scalar reports the all-time aggregate that exactly
+        matches the chart math (endgame.score_pct - non_endgame.score_pct).
         """
         from app.schemas.endgames import EndgamePerformanceResponse, EndgameWDLSummary
 
@@ -848,24 +856,12 @@ class TestPromptAssembly:
         )
         prompt = _assemble_user_prompt(tab)
 
-        # Chart renders.
+        # Chart renders AND the overall scalar bullet renders alongside it.
         assert "## Chart: overall_wdl" in prompt
-        # Scalar `overall` subsection dropped — no subsection header, no bullet.
-        assert "## Subsection: overall\n" not in prompt
-        assert "- score_gap (all_time):" not in prompt
-
-        # Control: when the chart is absent (no overall_performance), the
-        # scalar overall subsection IS kept as a fallback.
-        tab_no_chart = EndgameTabFindings(
-            as_of=datetime.datetime.now(datetime.UTC),
-            filters=_sample_filter_context(),
-            findings=[scalar],
-            overall_performance=None,
-            findings_hash="b" * 64,
-        )
-        prompt_no_chart = _assemble_user_prompt(tab_no_chart)
-        assert "## Subsection: overall" in prompt_no_chart
-        assert "- score_gap (all_time):" in prompt_no_chart
+        assert "## Subsection: overall" in prompt
+        assert "- score_gap (all_time):" in prompt
+        # The scalar value should be -15 (-0.15 * 100, rounded).
+        assert "score_gap (all_time): -15" in prompt
 
     def test_all_time_series_trimmed_to_last_12_points(self) -> None:
         """v5 C6: all_time Series block is capped at the most-recent 12 buckets.
@@ -887,6 +883,9 @@ class TestPromptAssembly:
                 month = 1
             cursor = datetime.date(year, month, 1)
         assert len(bucket_starts) == 20
+        # Values alternate between -0.05 and -0.15 so the flat-trend collapse
+        # (v7 B4) doesn't trigger — the series must retain its per-bucket lines
+        # for this test's date-presence assertions to make sense.
         timeline = SubsectionFinding(
             subsection_id="score_gap_timeline",
             parent_subsection_id=None,
@@ -900,7 +899,12 @@ class TestPromptAssembly:
             sample_quality="rich",
             is_headline_eligible=True,
             dimension=None,
-            series=[TimePoint(bucket_start=bs, value=-0.05, n=20) for bs in bucket_starts],
+            series=[
+                TimePoint(
+                    bucket_start=bs, value=-0.05 if i % 2 == 0 else -0.15, n=20
+                )
+                for i, bs in enumerate(bucket_starts)
+            ],
         )
         tab = _fake_findings(filters, findings=[timeline])
         prompt = _assemble_user_prompt(tab)
@@ -923,13 +927,22 @@ class TestPromptAssembly:
         rolls up those weeks at monthly resolution.
         """
         filters = _sample_filter_context()
+        # Varied values so the v7 B4 flat-trend collapse doesn't suppress the series.
         all_time_series = [
-            TimePoint(bucket_start=f"2025-{month:02d}-01", value=-0.05, n=20)
+            TimePoint(
+                bucket_start=f"2025-{month:02d}-01",
+                value=-0.05 if month % 2 == 0 else -0.15,
+                n=20,
+            )
             for month in range(1, 11)
         ]
         last_3mo_series = [
-            TimePoint(bucket_start=f"2026-02-{day:02d}", value=-0.03, n=12)
-            for day in (2, 9, 16, 23)
+            TimePoint(
+                bucket_start=f"2026-02-{day:02d}",
+                value=-0.03 if i % 2 == 0 else -0.13,
+                n=12,
+            )
+            for i, day in enumerate((2, 9, 16, 23))
         ]
         all_time_finding = SubsectionFinding(
             subsection_id="score_gap_timeline",
@@ -964,9 +977,13 @@ class TestPromptAssembly:
         tab = _fake_findings(filters, findings=[all_time_finding, last_3mo_finding])
         prompt = _assemble_user_prompt(tab)
 
-        # Both scalar bullets stay.
-        assert "- score_gap (all_time):" in prompt
-        assert "- score_gap (last_3mo):" in prompt
+        # v9: scalar bullets in score_gap_timeline are SUPPRESSED — the
+        # finding's `value` is the latest weekly bucket (mislabeled as
+        # `(all_time)`) and `sample_size` is the count of weekly points
+        # (not games). The `overall` subsection now carries the all-time
+        # aggregate; the timeline emits only the series + trend.
+        assert "- score_gap (all_time):" not in prompt
+        assert "- score_gap (last_3mo):" not in prompt
         # all_time Series header + points present.
         assert "### Series (score_gap, all_time, monthly)" in prompt
         assert "2025-10-01" in prompt
@@ -1054,8 +1071,8 @@ class TestV6Enrichments:
         assert "## Payload summary" in prompt
         assert "Total games in scope: 940" in prompt
         assert "Newest bucket across all series: 2026-01-26" in prompt
-        # Summary appears BEFORE the Filters line.
-        assert prompt.index("## Payload summary") < prompt.index("Filters:")
+        # v9: Filters: line is no longer emitted at defaults.
+        assert "Filters:" not in prompt
 
     def test_stale_marker_on_old_endgame_elo_gap(self) -> None:
         """A combo whose series trails >6mo behind the newest bucket is STALE-tagged."""
@@ -1145,7 +1162,7 @@ class TestV6Enrichments:
         tab = _fake_findings(filters, findings=[conv, rec])
         prompt = _assemble_user_prompt(tab)
 
-        assert "# asymmetry (pawn): conversion=77.0 strong, recovery=16.0 weak" in prompt
+        assert "# asymmetry (pawn): conversion=77 strong, recovery=16 weak" in prompt
         assert "closes winning endgames but bleeds losing ones" in prompt
 
     def test_low_time_gap_line_emitted_in_time_pressure_chart(self) -> None:
@@ -1205,7 +1222,7 @@ class TestV6Enrichments:
         tab = _fake_findings(filters, findings=[at, lm])
         prompt = _assemble_user_prompt(tab)
 
-        assert "# delta endgame_skill: all_time=+45.0 (n=2948) → last_3mo=+49.0 (n=195)" in prompt
+        assert "# delta endgame_skill: all_time=+45 (n=2948) → last_3mo=+49 (n=195)" in prompt
         assert "within-noise" in prompt
 
 
@@ -1291,7 +1308,9 @@ class TestMetadataOverride:
         """
         # Simulate a fabricated report from the LLM.
         fabricated = EndgameInsightsReport(
+            player_profile="Fabricated player profile.",
             overview="Fabricated overview.",
+            recommendations=["Fabricated rec one.", "Fabricated rec two."],
             sections=[
                 SectionInsight(
                     section_id="overall",
@@ -1326,7 +1345,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v6"
+        assert response.report.prompt_version == "endgame_v9"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -1350,7 +1369,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v6"
+        assert log.response_json["prompt_version"] == "endgame_v9"
 
 
 class TestCacheBehavior:
@@ -1373,7 +1392,7 @@ class TestCacheBehavior:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
         # Seed a cache-hit eligible row: error=None, response_json set,
-        # matching (findings_hash, prompt_version="endgame_v6", model="test").
+        # matching (findings_hash, prompt_version="endgame_v9", model="test").
         async with session_maker() as session:
             await _seed(
                 session,
@@ -1544,7 +1563,7 @@ class TestRateLimit:
         # Seed 3 successful miss rows with an OLD prompt_version so they count
         # toward the rate-limit (count_recent_successful_misses does NOT filter
         # by prompt_version) but are NOT returned by get_latest_report_for_user
-        # (which filters by prompt_version="endgame_v6"), producing "no tier-2".
+        # (which filters by prompt_version="endgame_v9"), producing "no tier-2".
         now = datetime.datetime.now(datetime.UTC)
         # Build a valid report JSON for rows (avoids ValidationError in case tier-2
         # is somehow reached — but with the prompt_version mismatch it should not be).
@@ -1680,7 +1699,7 @@ class TestErrors:
             "overview": "ok",
             "sections": [],  # violates min_length=1
             "model_used": "test",
-            "prompt_version": "endgame_v6",
+            "prompt_version": "endgame_v9",
         }
         fake = Agent(
             TestModel(custom_output_args=bad_output),

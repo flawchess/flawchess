@@ -227,6 +227,7 @@ class TestEndgameTabFindings:
             "time_pressure_chart",
             "overall_performance",
             "type_categories",
+            "player_profile",
             "findings_hash",
         ]
 
@@ -291,6 +292,7 @@ class TestModuleAll:
             "InsightsErrorResponse",
             "InsightsStatus",
             "MetricId",
+            "PlayerProfileEntry",
             "SampleQuality",
             "SectionId",
             "SectionInsight",
@@ -369,19 +371,28 @@ class TestEndgameInsightsReport:
     def _build_section(self, section_id: SectionId) -> SectionInsight:
         return SectionInsight(section_id=section_id, headline="h", bullets=[])
 
+    _DEFAULT_PROFILE = "Player at 1500 rapid, range 1100-1600 over 2 years, recently stable."
+    _DEFAULT_RECS = ["Try drilling pawn endings.", "Review recent losses on time."]
+
     def test_happy_path(self) -> None:
         r = EndgameInsightsReport(
+            player_profile=self._DEFAULT_PROFILE,
             overview="Summary of endgame signals.",
+            recommendations=self._DEFAULT_RECS,
             sections=[self._build_section("overall")],
             model_used="test",
             prompt_version="endgame_v1",
         )
         assert r.overview == "Summary of endgame signals."
+        assert r.player_profile == self._DEFAULT_PROFILE
+        assert r.recommendations == self._DEFAULT_RECS
 
     def test_sections_min_length_1(self) -> None:
         with pytest.raises(ValidationError):
             EndgameInsightsReport(
+                player_profile=self._DEFAULT_PROFILE,
                 overview="x",
+                recommendations=self._DEFAULT_RECS,
                 sections=[],
                 model_used="test",
                 prompt_version="endgame_v1",
@@ -392,7 +403,9 @@ class TestEndgameInsightsReport:
         # distinct valid section_ids, then add one invalid 5th via cast.
         with pytest.raises(ValidationError):
             EndgameInsightsReport(
+                player_profile=self._DEFAULT_PROFILE,
                 overview="x",
+                recommendations=self._DEFAULT_RECS,
                 sections=[
                     SectionInsight(section_id="overall", headline="h"),
                     SectionInsight(section_id="metrics_elo", headline="h"),
@@ -408,7 +421,9 @@ class TestEndgameInsightsReport:
         """D-20: duplicate section_id raises → pydantic-ai retries upstream."""
         with pytest.raises(ValidationError) as exc_info:
             EndgameInsightsReport(
+                player_profile=self._DEFAULT_PROFILE,
                 overview="x",
+                recommendations=self._DEFAULT_RECS,
                 sections=[
                     SectionInsight(section_id="overall", headline="h"),
                     SectionInsight(section_id="overall", headline="h"),
@@ -424,7 +439,9 @@ class TestEndgameInsightsReport:
         the system prompt, not the schema. Pydantic rejects only NULL.
         """
         r = EndgameInsightsReport(
+            player_profile=self._DEFAULT_PROFILE,
             overview="",
+            recommendations=self._DEFAULT_RECS,
             sections=[self._build_section("overall")],
             model_used="test",
             prompt_version="endgame_v1",
@@ -435,7 +452,69 @@ class TestEndgameInsightsReport:
         """INS-06: overview is `str`, not `str | None`."""
         with pytest.raises(ValidationError):
             EndgameInsightsReport(
+                player_profile=self._DEFAULT_PROFILE,
                 overview=None,  # ty: ignore[invalid-argument-type]
+                recommendations=self._DEFAULT_RECS,
+                sections=[self._build_section("overall")],
+                model_used="test",
+                prompt_version="endgame_v1",
+            )
+
+    def test_player_profile_required_non_empty(self) -> None:
+        """v9: player_profile is required and must not be empty (min_length=1)."""
+        with pytest.raises(ValidationError):
+            EndgameInsightsReport(
+                player_profile="",
+                overview="x",
+                recommendations=self._DEFAULT_RECS,
+                sections=[self._build_section("overall")],
+                model_used="test",
+                prompt_version="endgame_v1",
+            )
+
+    def test_recommendations_min_2(self) -> None:
+        """v9: recommendations must have at least 2 items."""
+        with pytest.raises(ValidationError):
+            EndgameInsightsReport(
+                player_profile=self._DEFAULT_PROFILE,
+                overview="x",
+                recommendations=["only one"],
+                sections=[self._build_section("overall")],
+                model_used="test",
+                prompt_version="endgame_v1",
+            )
+
+    def test_recommendations_max_4(self) -> None:
+        """v9: recommendations cap at 4 items."""
+        with pytest.raises(ValidationError):
+            EndgameInsightsReport(
+                player_profile=self._DEFAULT_PROFILE,
+                overview="x",
+                recommendations=["a", "b", "c", "d", "e"],
+                sections=[self._build_section("overall")],
+                model_used="test",
+                prompt_version="endgame_v1",
+            )
+
+    def test_recommendation_empty_string_rejected(self) -> None:
+        """v9: each recommendation must be non-empty (validator)."""
+        with pytest.raises(ValidationError):
+            EndgameInsightsReport(
+                player_profile=self._DEFAULT_PROFILE,
+                overview="x",
+                recommendations=["valid", "  "],
+                sections=[self._build_section("overall")],
+                model_used="test",
+                prompt_version="endgame_v1",
+            )
+
+    def test_recommendation_too_long_rejected(self) -> None:
+        """v9: each recommendation must be <= 200 chars."""
+        with pytest.raises(ValidationError):
+            EndgameInsightsReport(
+                player_profile=self._DEFAULT_PROFILE,
+                overview="x",
+                recommendations=["valid", "x" * 201],
                 sections=[self._build_section("overall")],
                 model_used="test",
                 prompt_version="endgame_v1",
@@ -447,7 +526,9 @@ class TestEndgameInsightsResponse:
 
     def _report(self) -> EndgameInsightsReport:
         return EndgameInsightsReport(
+            player_profile="profile",
             overview="x",
+            recommendations=["one", "two"],
             sections=[SectionInsight(section_id="overall", headline="h")],
             model_used="test",
             prompt_version="endgame_v1",

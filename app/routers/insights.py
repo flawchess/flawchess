@@ -7,11 +7,16 @@ The router is deliberately thin per CONTEXT.md D-33 — all cache / rate-limit /
 LLM-call / logging logic lives in app.services.insights_llm.generate_insights().
 This router: auth + session dep + query-param-to-FilterContext + one service
 call + exception-to-HTTP status mapping (D-16).
+
+v8: reject requests with any non-default filter other than opponent_strength
+(400) so a report is only generated over the user's full history. Frontend
+already disables the button in these cases; the server-side check is a
+defensive safety net against callers that bypass the UI.
 """
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +38,43 @@ from app.users import current_active_user
 router = APIRouter(prefix="/insights", tags=["insights"])
 
 
+def _validate_full_history_filters(filters: FilterContext) -> None:
+    """Raise 400 when any filter other than opponent_strength is non-default.
+
+    v8 allows only opponent_strength to vary — it genuinely changes which
+    games feed the findings, so it's a legitimate cross-section. All other
+    filters (recency, time controls, platforms, rated) truncate the dataset
+    and would produce a partial report that doesn't match the system
+    prompt's "your full history" framing.
+
+    `color` is intentionally NOT gated here — it's ignored by the findings
+    pipeline (compute_findings doesn't forward it), so the frontend's
+    `color='white'` default has no effect on the report.
+    """
+    blocking: list[str] = []
+    if filters.recency != "all_time":
+        blocking.append("Switch Recency to All time")
+    if filters.time_controls:
+        blocking.append("Remove Time control filter")
+    if filters.platforms:
+        blocking.append("Remove Platform filter")
+    if filters.rated_only:
+        blocking.append("Remove Rated filter")
+    if blocking:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "filters_not_supported",
+                "message": (
+                    "Insights can only be generated for your full game history. "
+                    + blocking[0]
+                    + "."
+                ),
+                "blocking": blocking,
+            },
+        )
+
+
 @router.post("/endgame", response_model=EndgameInsightsResponse)
 async def get_endgame_insights(
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -50,10 +92,13 @@ async def get_endgame_insights(
 
     Query params mirror /api/endgames/overview so the Phase 66 frontend can share
     query-string builders with useEndgames.ts (D-31). `color` and `rated_only`
-    flow into findings but NOT into the LLM prompt (INS-03).
+    flow into findings but NOT into the LLM prompt (INS-03). v8: all filters
+    other than opponent_strength must be at defaults — see
+    `_validate_full_history_filters`.
 
     Returns:
         200: EndgameInsightsResponse with status in {fresh, cache_hit, stale_rate_limited}.
+        400: filters_not_supported (any non-default filter other than opponent_strength).
         429: InsightsErrorResponse(error='rate_limit_exceeded', retry_after_seconds=N).
         502: InsightsErrorResponse(error='provider_error' | 'validation_failure').
     """
@@ -65,6 +110,7 @@ async def get_endgame_insights(
         platforms=platform or [],
         rated_only=bool(rated) if rated is not None else False,
     )
+    _validate_full_history_filters(filter_context)
     try:
         return await insights_llm.generate_insights(filter_context, user.id, session)
     except InsightsRateLimitExceeded as exc:

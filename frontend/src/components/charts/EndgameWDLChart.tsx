@@ -282,9 +282,9 @@ export function EndgameWDLChart({
                   that included the endgame type. Note that a game can include more than one type of endgame.
                 </p>
                 <p>
-                  <strong>You</strong> is your Score % in these games
+                  <strong>You</strong> is your Score in these games
                   (100% per win, 50% per draw, averaged over games). <strong>Opp</strong>{' '}
-                  is the complement: your opponents' Score % in the same games. <strong>Diff</strong>{' '}
+                  is the complement: your opponents' Score in the same games. <strong>Diff</strong>{' '}
                   and the bullet chart visualize the gap, with a ±5% neutral band.
                 </p>
                 <p><strong>Rook:</strong> {ENDGAME_TYPE_DESCRIPTIONS.rook}</p>

@@ -22,7 +22,6 @@ import datetime
 import functools
 import math
 import time
-from collections import OrderedDict
 from pathlib import Path
 from typing import Literal, cast
 
@@ -47,6 +46,7 @@ from app.schemas.insights import (
     EndgameInsightsResponse,
     EndgameTabFindings,
     FilterContext,
+    PlayerProfileEntry,
     SubsectionFinding,
     TimePoint,
 )
@@ -57,7 +57,7 @@ from app.services.insights_service import compute_findings
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v6"  # bumped from "endgame_v5": (1) rate/percent metrics flipped to the 0-100 scale end-to-end (values, zone bounds, chart tables), (2) pawnless findings filtered to match the hidden UI row, (3) system-prompt rewrite with UI vocabulary block and win_rate-citation ban, (4) new rules for staleness / latest-bucket / activity-gap / intra-type asymmetry / grounding / sample-size-delta, (5) precomputed signals: ## Payload summary header, STALE markers on stale series, # trend tags, # asymmetry flags, # low-time gap scalar, # delta all_time↔last_3mo annotations
+_PROMPT_VERSION = "endgame_v9"  # bumped from "endgame_v8": (1) added first-class `player_profile` (paragraph) and `recommendations` (bullets) fields to EndgameInsightsReport — surfaced as stacked top-of-page cards above the data-analysis overview, (2) fixed score_gap scalar: `_finding_overall` always emits (no longer suppressed by overall_wdl chart) so the all-time aggregate matches the chart row math; the misleading score_gap_timeline scalar (latest weekly bucket mislabeled as `(all_time)`) is dropped from the prompt, (3) dropped always-on `Filters:` header — emit only the `## Scoping caveat` line when opponent_strength != "any", (4) dropped redundant `Conversion/Recovery asymmetries detected: N` count from payload summary; the per-type `# asymmetry` tags carry the actionable detail
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
@@ -111,6 +111,21 @@ _DELTA_WITHIN_NOISE_ELO: float = (
 )
 _DELTA_SMALL_SAMPLE_RATIO: float = 0.20  # last_3mo_n / all_time_n below this → within-noise flag only fires with this much size mismatch
 
+# v7 proximity hint thresholds: inline `[near edge]` marker on bullets whose
+# value sits within this many points of a zone boundary. Different scales for
+# percent-scale metrics (0-100) and Elo-scale metrics.
+_PROXIMITY_PCT_THRESHOLD: float = 2.0
+_PROXIMITY_ELO_THRESHOLD: float = 20.0
+
+# v7 weakest-type tag: requires the lowest score_pct to be clearly separated
+# from the next-lowest AND to have a meaningful sample (avoids noise calls).
+_WEAKEST_TYPE_MIN_GAMES: int = 100
+_WEAKEST_TYPE_MIN_SEPARATION: float = 2.0  # on 0-100 score_pct scale
+
+# v7 recovery pattern tag: fires when Recovery sits weak across at least this
+# many endgame types.
+_RECOVERY_PATTERN_MIN_WEAK_TYPES: int = 4
+
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
@@ -138,13 +153,13 @@ def _build_zone_threshold_appendix() -> str:
         hi = spec.typical_upper * scale
         if spec.direction == "higher_is_better":
             lines.append(
-                f"- `{metric_id}`: weak<{lo:.1f}, typical [{lo:.1f}, {hi:.1f}], strong>{hi:.1f}"
+                f"- `{metric_id}`: weak<{lo:.0f}, typical [{lo:.0f}, {hi:.0f}], strong>{hi:.0f}"
             )
         else:
             lines.append(
-                f"- `{metric_id}` (lower_is_better): strong<={lo:.1f}, "
-                f"typical [{lo:.1f}, {hi:.1f}], "
-                f"weak>{hi:.1f}"
+                f"- `{metric_id}` (lower_is_better): strong<={lo:.0f}, "
+                f"typical [{lo:.0f}, {hi:.0f}], "
+                f"weak>{hi:.0f}"
             )
     lines.append("")
     lines.append("Bucketed metrics (one band per MaterialBucket):")
@@ -155,7 +170,7 @@ def _build_zone_threshold_appendix() -> str:
             lo = spec.typical_lower * scale
             hi = spec.typical_upper * scale
             lines.append(
-                f"  - {bucket}: weak<{lo:.1f}, typical [{lo:.1f}, {hi:.1f}], strong>{hi:.1f}"
+                f"  - {bucket}: weak<{lo:.0f}, typical [{lo:.0f}, {hi:.0f}], strong>{hi:.0f}"
             )
     return "\n".join(lines) + "\n"
 
@@ -302,23 +317,51 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
     lo = spec.typical_lower * scale
     hi = spec.typical_upper * scale
     direction_note = ", lower is better" if spec.direction == "lower_is_better" else ""
-    return f"(typical {lo:+.1f} to {hi:+.1f}{direction_note})"
+    return f"(typical {lo:+.0f} to {hi:+.0f}{direction_note})"
 
 
-def _format_filters_for_prompt(filters: FilterContext) -> str:
-    """Render FilterContext as 'Filters: key=value, ...' string.
+def _format_filters_for_prompt(filters: FilterContext) -> list[str]:
+    """Emit only the `## Scoping caveat` line when opponent_strength is set.
 
-    Excludes `color` and `rated_only` per INS-03 / D-31 — they flow into the
-    findings pipeline (affecting what games count) but must NOT appear in
-    the LLM prompt (they don't materially reshape the cross-section story).
+    v9: dropped the always-on `Filters:` header. The router enforces defaults
+    for `recency`, `time_controls`, `platforms`, `rated_only`, and `color`
+    (INS-03 / D-31), so the only filter that can be non-default is
+    `opponent_strength`. When it's `any`, no filter context is relevant to
+    the LLM and we emit nothing. When it's `stronger` / `similar` / `weaker`,
+    we emit the scoping caveat the system prompt tells the LLM to lead the
+    overview with.
     """
-    parts = [
-        f"recency={filters.recency}",
-        f"opponent={filters.opponent_strength}",
-        f"tc=[{','.join(filters.time_controls) or 'all'}]",
-        f"platform=[{','.join(filters.platforms) or 'all'}]",
+    if filters.opponent_strength == "any":
+        return []
+    return [
+        f"## Scoping caveat: opponent strength filter is active "
+        f"({filters.opponent_strength}) — all findings reflect performance "
+        f"vs {filters.opponent_strength} opponents only; lead the overview "
+        f"with this scoping."
     ]
-    return "Filters: " + ", ".join(parts)
+
+
+def _format_player_profile_block(
+    profile: list[PlayerProfileEntry] | None,
+) -> list[str]:
+    """Render the `## Player profile` block listing per-combo Elo context.
+
+    Emits nothing when profile is None or empty. Each line is:
+    `- <platform> <time_control>: current <elo>, range <min>-<max> over
+    <window_days>d, <trajectory>`. Combos are already sorted by game count
+    desc upstream in compute_player_profile.
+    """
+    if not profile:
+        return []
+    lines: list[str] = ["## Player profile"]
+    for entry in profile:
+        lines.append(
+            f"- {entry.platform} {entry.time_control}: current {entry.current_elo}, "
+            f"range {entry.min_elo}-{entry.max_elo} over {entry.window_days}d, "
+            f"{entry.trajectory}"
+        )
+    lines.append("")
+    return lines
 
 
 def _format_time_pressure_chart_block(findings: EndgameTabFindings) -> list[str]:
@@ -349,12 +392,12 @@ def _format_time_pressure_chart_block(findings: EndgameTabFindings) -> list[str]
             continue
         label = u.bucket_label if u else (o.bucket_label if o else f"{idx * 10}-{(idx + 1) * 10}%")
         u_score = (
-            f"{u.score * 100:.1f}"
+            f"{u.score * 100:.0f}"
             if u is not None and u.score is not None and u_n >= _MIN_GAMES_FOR_RELIABLE_BUCKET
             else "—"
         )
         o_score = (
-            f"{o.score * 100:.1f}"
+            f"{o.score * 100:.0f}"
             if o is not None and o.score is not None and o_n >= _MIN_GAMES_FOR_RELIABLE_BUCKET
             else "—"
         )
@@ -368,7 +411,7 @@ def _format_time_pressure_chart_block(findings: EndgameTabFindings) -> list[str]
         f"Total endgame games: {chart.total_endgame_games}. "
         "Rows show Score % conditional on time remaining at endgame entry, "
         "for the user and the opponent separately (each side binned by their own clock). "
-        "user_score / opp_score are on the 0-100 Score % scale (wins=100, draws=50).",
+        "user_score / opp_score are whole-number Score % values (wins=100, draws=50).",
     ]
     low_time_line = _low_time_gap_line(chart)
     if low_time_line:
@@ -401,8 +444,8 @@ def _format_overall_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
             continue
         score_pct = (summary.wins + 0.5 * summary.draws) / total * 100.0
         rows.append(
-            f"| {label:<11} | {total:<5} | {summary.win_pct:.1f}   | {summary.draw_pct:.1f}    | "
-            f"{summary.loss_pct:.1f}    | {score_pct:.1f}     |"
+            f"| {label:<11} | {total:<5} | {summary.win_pct:.0f}     | {summary.draw_pct:.0f}      | "
+            f"{summary.loss_pct:.0f}      | {score_pct:.0f}       |"
         )
 
     if not rows:
@@ -411,7 +454,7 @@ def _format_overall_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
     lines: list[str] = [
         "## Chart: overall_wdl (all_time)",
         "Two-row WDL comparison for games that reached an endgame phase vs games that did not. "
-        "All columns are on the 0-100 percentage scale; score_pct uses wins=100, draws=50, losses=0.",
+        "All columns are whole-number percentages; score_pct uses wins=100, draws=50, losses=0.",
         "| series      | games | win_pct | draw_pct | loss_pct | score_pct |",
         "| ----------- | ----- | ------- | -------- | -------- | --------- |",
     ]
@@ -443,13 +486,15 @@ def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
     )
 
     rows: list[str] = []
+    weakest_tag = _weakest_type_tag(sorted_cats)
+
     for cat in sorted_cats:
         if cat.total < _MIN_GAMES_FOR_RELIABLE_BUCKET:
             continue
         score_pct = (cat.wins + 0.5 * cat.draws) / cat.total * 100.0
         rows.append(
-            f"| {cat.endgame_class:<13} | {cat.total:<5} | {cat.win_pct:.1f}   | "
-            f"{cat.draw_pct:.1f}    | {cat.loss_pct:.1f}    | {score_pct:.1f}     |"
+            f"| {cat.endgame_class:<13} | {cat.total:<5} | {cat.win_pct:.0f}     | "
+            f"{cat.draw_pct:.0f}      | {cat.loss_pct:.0f}      | {score_pct:.0f}       |"
         )
 
     if not rows:
@@ -457,12 +502,14 @@ def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
 
     lines: list[str] = [
         "## Chart: results_by_endgame_type_wdl (all_time)",
-        "Per-endgame-type W/D/L and Score % for the user. All columns are on the 0-100 "
-        "percentage scale. opp_score_pct = 100 - score_pct (both sides played the same "
+        "Per-endgame-type W/D/L and Score % for the user. All columns are whole-number "
+        "percentages. opp_score_pct = 100 - score_pct (both sides played the same "
         "games), so a score_pct above 50 means the user outscores their opponents in that type.",
-        "| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct |",
-        "| ------------- | ----- | ------- | -------- | -------- | --------- |",
     ]
+    if weakest_tag:
+        lines.append(weakest_tag)
+    lines.append("| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct |")
+    lines.append("| ------------- | ----- | ------- | -------- | -------- | --------- |")
     lines.extend(rows)
     lines.append("")
     return lines
@@ -505,7 +552,7 @@ def _stale_marker(series: list[TimePoint] | None, newest_payload_date: datetime.
 
 
 def _trend_tag(metric_id: str, points: list[TimePoint]) -> str:
-    """Emit a '# trend: direction=..., latest=..., prior-mean=..., n(last4)=...' comment.
+    """Emit a '# trend: direction=..., latest=..., prior-mean=..., n(last4)=...[, within-noise]' comment.
 
     Uses the last 4 retained points (post A4/C2/C6 filtering): the most recent
     bucket plus its prior 3. Direction is flat when |latest - prior-mean| <
@@ -513,6 +560,11 @@ def _trend_tag(metric_id: str, points: list[TimePoint]) -> str:
     prior-mean. Returns '' when fewer than _TREND_MIN_POINTS buckets remain —
     the series interpretation rule in the system prompt already bars trend
     claims on short windows; we simply don't hand the LLM a misleading tag.
+
+    v7: appends ", within-noise" when the shift is below the metric-appropriate
+    noise threshold even if the direction is improving/regressing. This catches
+    marginal Elo-combo regressions (e.g. -59 → -72) that don't warrant a
+    "regressed" narration.
     """
     if len(points) < _TREND_MIN_POINTS:
         return ""
@@ -528,9 +580,129 @@ def _trend_tag(metric_id: str, points: list[TimePoint]) -> str:
     else:
         direction = "regressing"
     n_last4 = sum(pt.n for pt in points[-4:])
+    noise_cap = (
+        _DELTA_WITHIN_NOISE_ELO if metric_id == "endgame_elo_gap" else _DELTA_WITHIN_NOISE_SHIFT
+    )
+    noise_suffix = ""
+    if direction != "flat" and abs(diff) < noise_cap:
+        noise_suffix = ", within-noise"
     return (
-        f"# trend: direction={direction}, latest={latest:+.1f}, "
-        f"prior-mean={prior_mean:+.1f}, n(last4)={n_last4}"
+        f"# trend: direction={direction}, latest={latest:+.0f}, "
+        f"prior-mean={prior_mean:+.0f}, n(last4)={n_last4}{noise_suffix}"
+    )
+
+
+def _is_flat_stable(metric_id: str, points: list[TimePoint]) -> tuple[bool, float, int]:
+    """Check whether a series qualifies for flat-trend collapse (B4).
+
+    Returns (is_flat_stable, series_mean_scaled, total_n). A series is
+    collapsible when it has ≥ _TREND_MIN_POINTS buckets AND the trend is
+    direction=flat AND the full-series range (max - min) stays below the same
+    flat threshold — otherwise the visible shape is still worth showing even
+    if the latest-vs-prior comparison is flat.
+    """
+    if len(points) < _TREND_MIN_POINTS:
+        return False, 0.0, 0
+    scale = _scale_for_metric(metric_id)
+    values = [pt.value * scale for pt in points]
+    latest = values[-1]
+    prior = values[-4:-1]
+    prior_mean = sum(prior) / len(prior)
+    if abs(latest - prior_mean) >= _TREND_FLAT_THRESHOLD:
+        return False, 0.0, 0
+    # Also require the full window to be visually stable — no outlier buckets.
+    if max(values) - min(values) >= _TREND_FLAT_THRESHOLD * 2:
+        return False, 0.0, 0
+    series_mean = sum(values) / len(values)
+    total_n = sum(pt.n for pt in points)
+    return True, series_mean, total_n
+
+
+def _proximity_hint(metric_id: str, value_scaled: float, dimension: dict[str, str] | None) -> str:
+    """Return ' [near edge]' when the value sits within a proximity threshold of a zone boundary.
+
+    Percent-scale metrics use _PROXIMITY_PCT_THRESHOLD; endgame_elo_gap uses
+    _PROXIMITY_ELO_THRESHOLD. Returns '' for unknown metrics or when the value
+    is comfortably inside one zone.
+    """
+    spec: ZoneSpec | None = None
+    bucket = dimension.get("bucket") if dimension else None
+    bucketed = cast("dict[str, dict[str, ZoneSpec]]", dict(BUCKETED_ZONE_REGISTRY))
+    scalar = cast("dict[str, ZoneSpec]", dict(ZONE_REGISTRY))
+    if metric_id in bucketed and bucket is not None:
+        spec = bucketed[metric_id].get(bucket)
+    elif metric_id in scalar:
+        spec = scalar[metric_id]
+    if spec is None:
+        return ""
+    scale = _scale_for_metric(metric_id)
+    lo = spec.typical_lower * scale
+    hi = spec.typical_upper * scale
+    threshold = (
+        _PROXIMITY_ELO_THRESHOLD if metric_id == "endgame_elo_gap" else _PROXIMITY_PCT_THRESHOLD
+    )
+    if abs(value_scaled - lo) <= threshold or abs(value_scaled - hi) <= threshold:
+        return " [near edge]"
+    return ""
+
+
+def _weakest_type_tag(sorted_cats: list[object]) -> str:
+    """Emit '# weakest type: <class> (score_pct=X, next=Y <class>)' when one type stands out.
+
+    Deterministic lowest-score_pct pick across the per-type WDL chart. Gated by
+    _WEAKEST_TYPE_MIN_GAMES (ensures noise stays out) and
+    _WEAKEST_TYPE_MIN_SEPARATION (requires a clear gap over the runner-up so
+    close ties aren't framed as "weakest").
+    """
+    # EndgameCategoryStats is imported lazily to keep the helper cheap when no
+    # type chart is emitted. Using `object` in the signature and casting here
+    # keeps ty happy without a top-level import.
+    from app.schemas.endgames import EndgameCategoryStats
+
+    eligible: list[tuple[float, str]] = []
+    for cat in sorted_cats:
+        c = cast(EndgameCategoryStats, cat)
+        if c.total < _WEAKEST_TYPE_MIN_GAMES:
+            continue
+        score_pct = (c.wins + 0.5 * c.draws) / c.total * 100.0
+        eligible.append((score_pct, c.endgame_class))
+    if len(eligible) < 2:
+        return ""
+    eligible.sort(key=lambda t: t[0])
+    weakest_score, weakest_class = eligible[0]
+    next_score, next_class = eligible[1]
+    if next_score - weakest_score < _WEAKEST_TYPE_MIN_SEPARATION:
+        return ""
+    return (
+        f"# weakest type: {weakest_class} (score_pct={weakest_score:.0f}, "
+        f"next={next_score:.0f} {next_class})"
+    )
+
+
+def _recovery_pattern_tag(findings: list[SubsectionFinding]) -> str:
+    """Emit '# recovery pattern: ...' when Recovery is weak across many endgame types.
+
+    Scans all_time `conversion_recovery_by_type` findings for
+    `recovery_save_pct` with zone=weak. When ≥ _RECOVERY_PATTERN_MIN_WEAK_TYPES
+    types qualify, emits a hint so the LLM frames Recovery as a consistent
+    pattern rather than a per-type crisis in each bullet.
+    """
+    weak_types: list[str] = []
+    for f in findings:
+        if f.subsection_id != "conversion_recovery_by_type" or f.window != "all_time":
+            continue
+        if f.metric != "recovery_save_pct" or f.dimension is None:
+            continue
+        klass = f.dimension.get("endgame_class")
+        if klass is None or klass == "pawnless":
+            continue
+        if f.zone == "weak":
+            weak_types.append(klass)
+    if len(weak_types) < _RECOVERY_PATTERN_MIN_WEAK_TYPES:
+        return ""
+    return (
+        f"# recovery pattern: weak across {len(weak_types)} of 5 types — "
+        "consistent defensive pattern, frame as one story not per-type crisis"
     )
 
 
@@ -572,8 +744,8 @@ def _asymmetry_lines(findings: list[SubsectionFinding]) -> list[str]:
         else:
             story = "defends losing endgames but mishandles winning ones"
         lines.append(
-            f"# asymmetry ({klass}): conversion={c_val:.1f} {c.zone}, "
-            f"recovery={r_val:.1f} {r.zone} — {story}"
+            f"# asymmetry ({klass}): conversion={c_val:.0f} {c.zone}, "
+            f"recovery={r_val:.0f} {r.zone} — {story}"
         )
     return lines
 
@@ -606,13 +778,21 @@ def _low_time_gap_line(chart: TimePressureChartResponse | None) -> str:
     else:
         verdict = "near parity"
     return (
-        f"# low-time gap (0-30% buckets, weighted): user={user_avg:.1f}, opp={opp_avg:.1f}, "
-        f"gap={gap:+.1f} — {verdict}"
+        f"# low-time gap (0-30% buckets, weighted): user={user_avg:.0f}, opp={opp_avg:.0f}, "
+        f"gap={gap:+.0f} — {verdict}"
     )
 
 
-def _delta_lines_for_subsection(members: list[SubsectionFinding]) -> list[str]:
-    """Emit '# delta <metric>[<dim>]: all_time=X → last_3mo=Y, shift=Z[, within-noise]'."""
+def _delta_lines_for_subsection(
+    members: list[SubsectionFinding],
+) -> tuple[list[str], set[tuple[str, str]]]:
+    """Emit '# delta <metric>[<dim>]: all_time=X → last_3mo=Y, shift=Z[, within-noise]'.
+
+    v7: additionally returns the set of (metric, dim_key) pairs flagged
+    within-noise so the caller can suppress the redundant last_3mo bullet
+    (B5) — the all_time bullet already reflects current state when the shift
+    is noise.
+    """
     by_key: dict[tuple[str, str], dict[str, SubsectionFinding]] = {}
     for f in members:
         if f.series is not None:
@@ -625,6 +805,7 @@ def _delta_lines_for_subsection(members: list[SubsectionFinding]) -> list[str]:
         by_key.setdefault((f.metric, dim_key), {})[f.window] = f
 
     lines: list[str] = []
+    within_noise: set[tuple[str, str]] = set()
     for (metric, dim_key), windows in by_key.items():
         at = windows.get("all_time")
         lm = windows.get("last_3mo")
@@ -640,13 +821,16 @@ def _delta_lines_for_subsection(members: list[SubsectionFinding]) -> list[str]:
         sample_mismatch = (
             at.sample_size > 0 and (lm.sample_size / at.sample_size) < _DELTA_SMALL_SAMPLE_RATIO
         )
-        noise_tag = ", within-noise" if abs(shift) < noise_cap and sample_mismatch else ""
+        is_noise = abs(shift) < noise_cap and sample_mismatch
+        noise_tag = ", within-noise" if is_noise else ""
+        if is_noise:
+            within_noise.add((metric, dim_key))
         dim_note = f" [{dim_key}]" if dim_key else ""
         lines.append(
-            f"# delta {metric}{dim_note}: all_time={at_val:+.1f} (n={at.sample_size}) → "
-            f"last_3mo={lm_val:+.1f} (n={lm.sample_size}), shift={shift:+.1f}{noise_tag}"
+            f"# delta {metric}{dim_note}: all_time={at_val:+.0f} (n={at.sample_size}) → "
+            f"last_3mo={lm_val:+.0f} (n={lm.sample_size}), shift={shift:+.0f}{noise_tag}"
         )
-    return lines
+    return lines, within_noise
 
 
 def _count_activity_gaps(findings: list[SubsectionFinding]) -> int:
@@ -674,10 +858,14 @@ def _payload_summary_lines(
     *,
     newest_date: datetime.date | None,
     stale_series_count: int,
-    asymmetry_count: int,
     activity_gap_count: int,
 ) -> list[str]:
-    """Compact summary prepended to the prompt so macro context is always visible."""
+    """Compact summary prepended to the prompt so macro context is always visible.
+
+    v9: dropped the `Conversion/Recovery asymmetries detected: N` count — the
+    per-type `# asymmetry (<type>): ...` tags surfaced inside the
+    `conversion_recovery_by_type` subsection carry the actionable detail.
+    """
     lines: list[str] = ["## Payload summary"]
     if findings.overall_performance is not None:
         total_games = (
@@ -696,10 +884,194 @@ def _payload_summary_lines(
         lines.append(
             f"- Stale series (>{_STALE_SERIES_THRESHOLD_DAYS}d behind newest): {stale_series_count}"
         )
-    if asymmetry_count > 0:
-        lines.append(f"- Conversion/Recovery asymmetries detected: {asymmetry_count}")
     if len(lines) == 1:  # only the header line
         return []
+    lines.append("")
+    return lines
+
+
+# v8: UI-ordered section layout. Each entry is (section_id, ordered blocks
+# in UI top-to-bottom order). A block is ("subsection", id) or ("chart", id).
+# The `section_id` strings match the `SectionId` enum on EndgameInsightsReport
+# so the LLM can treat each `## Section:` header as the cue for which
+# SectionInsight it is writing.
+_SECTION_LAYOUT: list[tuple[str, list[tuple[str, str]]]] = [
+    (
+        "overall",
+        [
+            ("chart", "overall_wdl"),
+            # Scalar `overall` subsection emits only when the overall_wdl chart
+            # does NOT (C4 gate below suppresses it when both exist).
+            ("subsection", "overall"),
+            ("subsection", "score_gap_timeline"),
+        ],
+    ),
+    (
+        "metrics_elo",
+        [
+            ("subsection", "endgame_metrics"),
+            ("subsection", "endgame_elo_timeline"),
+        ],
+    ),
+    (
+        "time_pressure",
+        [
+            ("subsection", "time_pressure_at_entry"),
+            ("subsection", "clock_diff_timeline"),
+            ("chart", "time_pressure_vs_performance"),
+        ],
+    ),
+    (
+        "type_breakdown",
+        [
+            ("chart", "results_by_endgame_type_wdl"),
+            ("subsection", "conversion_recovery_by_type"),
+            ("subsection", "type_win_rate_timeline"),
+            ("subsection", "results_by_endgame_type"),
+        ],
+    ),
+]
+
+
+def _render_subsection_block(
+    *,
+    subsection_id: str,
+    members: list[SubsectionFinding],
+    stale_markers: dict[int, str],
+    live_series_metrics: set[tuple[str, str]],
+    last_3mo_pairs: set[tuple[str, str]],
+    all_time_series_pairs: set[tuple[str, str]],
+    all_time_cutoff: str,
+    asymmetry_lines: list[str],
+    recovery_pattern: str,
+) -> list[str]:
+    """Render one subsection (header + enrichment tags + bullets + series).
+
+    Extracted from _assemble_user_prompt so the v8 section-based emission
+    loop can interleave subsections and chart blocks in UI order.
+    """
+    lines: list[str] = []
+    header = f"## Subsection: {subsection_id}"
+    parent = next(
+        (m.parent_subsection_id for m in members if m.parent_subsection_id),
+        None,
+    )
+    if parent:
+        header += f" (parent: {parent})"
+    lines.append(header)
+
+    within_noise_keys: set[tuple[str, str]] = set()
+    if subsection_id == "endgame_metrics":
+        delta_lines, within_noise_keys = _delta_lines_for_subsection(members)
+        lines.extend(delta_lines)
+    if subsection_id == "conversion_recovery_by_type":
+        if recovery_pattern:
+            lines.append(recovery_pattern)
+        if asymmetry_lines:
+            lines.extend(asymmetry_lines)
+
+    recovery_note_emitted = False
+    # v9: suppress scalar bullets in score_gap_timeline. The finding's `value`
+    # is the latest WEEKLY bucket of the timeline (not an all-time aggregate)
+    # and `sample_size` is the count of weekly points (not games). Rendering
+    # it as `score_gap (all_time): X | ... | N games` mislabels both. The
+    # all-time aggregate is now emitted by the `overall` subsection.
+    suppress_scalar_bullets = subsection_id == "score_gap_timeline"
+    for f in members:
+        dim = ""
+        if f.dimension:
+            dim = " [" + ", ".join(f"{k}={v}" for k, v in f.dimension.items()) + "]"
+        bounds = _format_zone_bounds(f.metric, f.dimension)
+        zone_label = f"{f.zone} {bounds}".rstrip()
+        value_scaled = f.value * _scale_for_metric(f.metric)
+
+        # v7 B5: drop last_3mo scalar bullets when the all_time → last_3mo
+        # delta is within-noise. The all_time bullet already reflects the
+        # current state; a second bullet invites separate "recent" framing.
+        if f.window == "last_3mo" and f.series is None:
+            dim_key = (
+                ""
+                if f.dimension is None
+                else ",".join(f"{k}={v}" for k, v in sorted(f.dimension.items()))
+            )
+            if (f.metric, dim_key) in within_noise_keys:
+                continue
+
+        if not suppress_scalar_bullets:
+            stale_suffix = f" | {stale_markers[id(f)]}" if id(f) in stale_markers else ""
+            proximity = _proximity_hint(f.metric, value_scaled, f.dimension)
+            lines.append(
+                f"- {f.metric} ({f.window}): {value_scaled:+.0f} | {zone_label} | "
+                f"{f.sample_size} games | {f.sample_quality}{dim}{stale_suffix}{proximity}"
+            )
+        if (
+            not recovery_note_emitted
+            and f.metric == "recovery_save_pct"
+            and subsection_id == "conversion_recovery_by_type"
+        ):
+            lines.append(
+                "  [typical band 25-35 is cohort-wide; weak here means at/below "
+                "population average, not absolute crisis]"
+            )
+            recovery_note_emitted = True
+
+        if f.series is not None and f.subsection_id in _TIMELINE_SUBSECTION_IDS:
+            if f.window == "last_3mo" and (f.metric, f.subsection_id) in all_time_series_pairs:
+                continue
+            if id(f) in stale_markers and (f.metric, f.subsection_id) in live_series_metrics:
+                continue
+
+            points = [pt for pt in f.series if pt.n >= MIN_BUCKET_N]
+            if f.window == "all_time" and (f.metric, f.subsection_id) in last_3mo_pairs:
+                points = [pt for pt in points if pt.bucket_start < all_time_cutoff]
+            if f.window == "all_time":
+                points = points[-_ALL_TIME_MAX_POINTS:]
+
+            if not points:
+                continue
+
+            if f.subsection_id == "type_win_rate_timeline":
+                resolution = "monthly"
+            elif f.window == "last_3mo":
+                resolution = "weekly"
+            else:
+                resolution = "monthly"
+            lines.append(f"### Series ({f.metric}, {f.window}, {resolution})")
+
+            is_flat, series_mean, total_n = _is_flat_stable(f.metric, points)
+            if is_flat:
+                lines.append(
+                    f"# series stable around {series_mean:+.0f} (n={total_n} across "
+                    f"{len(points)} buckets)"
+                )
+                continue
+
+            trend_line = _trend_tag(f.metric, points)
+            if trend_line:
+                lines.append(trend_line)
+
+            series_scale = _scale_for_metric(f.metric)
+            emit_elo = f.metric == "endgame_elo_gap"
+            prev_date: datetime.date | None = None
+            prev_bucket_start: str | None = None
+            for pt in points:
+                curr_date = datetime.date.fromisoformat(pt.bucket_start)
+                if (
+                    prev_date is not None
+                    and prev_bucket_start is not None
+                    and (curr_date - prev_date).days > _ACTIVITY_GAP_DAYS
+                ):
+                    lines.append(f"# Activity gap: {prev_bucket_start} → {pt.bucket_start}")
+                pt_value = pt.value * series_scale
+                if emit_elo and pt.actual_elo is not None:
+                    lines.append(
+                        f"{pt.bucket_start}: gap={pt_value:+.0f}, elo={pt.actual_elo} (n={pt.n})"
+                    )
+                else:
+                    lines.append(f"{pt.bucket_start}: {pt_value:+.0f} (n={pt.n})")
+                prev_date = curr_date
+                prev_bucket_start = pt.bucket_start
+
     lines.append("")
     return lines
 
@@ -707,22 +1079,26 @@ def _payload_summary_lines(
 def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     """Render EndgameTabFindings as structured text for the LLM (D-29 format).
 
-    Filters applied (260422-tnb v4+v5):
-    - A5: skip findings in _SKIPPED_SUBSECTIONS (time_pressure_vs_performance).
+    v8 layout: payload summary + filters (+ scoping caveat) + player profile,
+    then one `## Section:` block per UI section with subsection and chart
+    blocks interleaved in UI order. Each section maps 1:1 to one `section_id`
+    in the LLM output. Empty sections (no qualifying blocks) are omitted.
+
+    Filters applied:
+    - A5: skip findings in _SKIPPED_SUBSECTIONS (time_pressure_vs_performance
+      single-value placeholder; the 10-bucket chart is rendered instead).
     - A2: skip findings where value is NaN or (sample_size=0 AND thin quality).
-    - C1: group findings by subsection_id under one header (not one per finding).
     - A4: drop series points with n < MIN_BUCKET_N.
     - C2: for `all_time` series, drop points within last 90 days if a matching
       `last_3mo` series exists for the same (metric, subsection) pair.
     - C3: insert `# Activity gap: ...` markers when consecutive retained
       series points are > _ACTIVITY_GAP_DAYS apart.
-    - C4 (v5): drop the `overall` scalar subsection when the overall_wdl chart
-      renders — the 2-row chart already carries the framing, the scalar invited
-      a misleading one-number narration.
-    - C5 (v5): skip the `last_3mo` Series block when an `all_time` Series for
+    - C4: drop the scalar `overall` subsection when the overall_wdl chart
+      renders — the 2-row chart already carries the framing.
+    - C5: skip the `last_3mo` Series block when an `all_time` Series for
       the same (metric, subsection) is emitted. The last_3mo scalar stays.
-    - C6 (v5): cap `all_time` series at the last _ALL_TIME_MAX_POINTS buckets.
-    - Inline zone bounds (v5): every finding bullet includes a
+    - C6: cap `all_time` series at the last _ALL_TIME_MAX_POINTS buckets.
+    - Inline zone bounds: every finding bullet includes a
       `(typical LO to UP[, lower is better])` fragment next to the zone token.
     """
     # Pre-render chart blocks so we can gate the scalar `overall` subsection
@@ -730,6 +1106,11 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     overall_wdl_block = _format_overall_wdl_chart_block(findings)
     time_pressure_block = _format_time_pressure_chart_block(findings)
     type_wdl_block = _format_type_wdl_chart_block(findings)
+    chart_blocks: dict[str, list[str]] = {
+        "overall_wdl": overall_wdl_block,
+        "time_pressure_vs_performance": time_pressure_block,
+        "results_by_endgame_type_wdl": type_wdl_block,
+    }
 
     # A5 + A2: drop hidden subsections, NaN values, and thin empty findings.
     # v6: also drop any finding dimensioned on endgame_class=pawnless — the UI
@@ -744,20 +1125,19 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
         and not (f.dimension is not None and f.dimension.get("endgame_class") == "pawnless")
     ]
 
-    # C4: drop the scalar `overall` subsection when the overall_wdl chart will
-    # emit. The chart's 2-row comparison carries the framing; keeping both
-    # anchored the LLM on a misleading one-number score_gap narration.
-    if overall_wdl_block:
-        visible = [f for f in visible if f.subsection_id != "overall"]
+    # v9: previously C4 dropped the scalar `overall` finding when the chart
+    # fired, leaving only the score_gap_timeline subsection's bullet — but
+    # that bullet's `value` is the latest WEEKLY bucket of the timeline,
+    # mislabeled `(all_time)`. We now keep both: the chart shows the WDL
+    # decomposition, the `overall` scalar shows the all-time aggregate
+    # (matches chart row math: endgame.score_pct - non_endgame.score_pct).
+    # The score_gap_timeline scalar bullet is suppressed below in
+    # `_render_subsection_block` so the misleading value never reaches the
+    # LLM (the series + trend tag still carry the timeline shape).
 
-    # C2: identify (metric, subsection_id) pairs that have a `last_3mo` variant
-    # so we can trim the last 90 days off the matching `all_time` series below.
     last_3mo_pairs: set[tuple[str, str]] = {
         (f.metric, f.subsection_id) for f in visible if f.window == "last_3mo"
     }
-    # C5: identify (metric, subsection_id) pairs where an `all_time` series
-    # already renders so the `last_3mo` Series block can be skipped as
-    # duplicate coverage. The last_3mo scalar bullet itself is kept.
     all_time_series_pairs: set[tuple[str, str]] = {
         (f.metric, f.subsection_id)
         for f in visible
@@ -766,10 +1146,10 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     today = datetime.date.today()
     all_time_cutoff = (today - datetime.timedelta(days=_ALL_TIME_CUTOFF_DAYS)).isoformat()
 
-    # Batch 2 pre-pass: compute cross-finding signals the LLM routinely misses.
     newest_date = _newest_bucket_date(visible)
     stale_markers: dict[int, str] = {}
     stale_count = 0
+    live_series_metrics: set[tuple[str, str]] = set()
     for f in visible:
         if f.series is None:
             continue
@@ -777,11 +1157,14 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
         if marker:
             stale_markers[id(f)] = marker
             stale_count += 1
+        else:
+            live_series_metrics.add((f.metric, f.subsection_id))
     asymmetry_lines = _asymmetry_lines(visible)
     activity_gap_count = _count_activity_gaps(visible)
+    recovery_pattern = _recovery_pattern_tag(visible)
 
-    # C1: group by subsection_id preserving first-seen order.
-    groups: OrderedDict[str, list[SubsectionFinding]] = OrderedDict()
+    # Group findings by subsection_id for per-block rendering.
+    groups: dict[str, list[SubsectionFinding]] = {}
     for f in visible:
         groups.setdefault(f.subsection_id, []).append(f)
 
@@ -791,101 +1174,45 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
             findings,
             newest_date=newest_date,
             stale_series_count=stale_count,
-            asymmetry_count=len(asymmetry_lines),
             activity_gap_count=activity_gap_count,
         )
     )
-    lines.append(_format_filters_for_prompt(findings.filters))
+    lines.extend(_format_filters_for_prompt(findings.filters))
     lines.append("")
+    lines.extend(_format_player_profile_block(findings.player_profile))
 
-    for subsection_id, members in groups.items():
-        header = f"## Subsection: {subsection_id}"
-        # Parent info on header if any finding in the group has one (take first).
-        parent = next(
-            (m.parent_subsection_id for m in members if m.parent_subsection_id),
-            None,
-        )
-        if parent:
-            header += f" (parent: {parent})"
-        lines.append(header)
-
-        # v6 enrichments anchored to specific subsections.
-        if subsection_id == "endgame_metrics":
-            lines.extend(_delta_lines_for_subsection(members))
-        if subsection_id == "conversion_recovery_by_type" and asymmetry_lines:
-            lines.extend(asymmetry_lines)
-
-        for f in members:
-            dim = ""
-            if f.dimension:
-                dim = " [" + ", ".join(f"{k}={v}" for k, v in f.dimension.items()) + "]"
-            bounds = _format_zone_bounds(f.metric, f.dimension)
-            zone_label = f"{f.zone} {bounds}".rstrip()
-            value_scaled = f.value * _scale_for_metric(f.metric)
-            stale_suffix = f" | {stale_markers[id(f)]}" if id(f) in stale_markers else ""
-            lines.append(
-                f"- {f.metric} ({f.window}): {value_scaled:+.1f} | {zone_label} | "
-                f"{f.sample_size} games | {f.sample_quality}{dim}{stale_suffix}"
-            )
-
-            # Series rendering with A4/C2/C3/C5/C6 filters applied.
-            if f.series is not None and f.subsection_id in _TIMELINE_SUBSECTION_IDS:
-                # C5: skip last_3mo Series block when the all_time series for
-                # the same (metric, subsection) already renders above. The
-                # scalar bullet on this finding has already been emitted.
-                if f.window == "last_3mo" and (f.metric, f.subsection_id) in all_time_series_pairs:
+    # v8: emit one `## Section:` block per UI section, with subsections and
+    # charts interleaved in UI order. Skip a whole section when none of its
+    # blocks produce content.
+    for section_id, layout in _SECTION_LAYOUT:
+        section_body: list[str] = []
+        for kind, block_id in layout:
+            if kind == "chart":
+                block = chart_blocks.get(block_id, [])
+                if block:
+                    section_body.extend(block)
+            else:  # subsection
+                members = groups.get(block_id)
+                if not members:
                     continue
-
-                # A4: drop sparse points.
-                points = [pt for pt in f.series if pt.n >= MIN_BUCKET_N]
-                # C2: if an all_time series has a last_3mo twin for the same
-                # (metric, subsection), trim the last 90 days off the all_time
-                # series so the two don't duplicate coverage.
-                if f.window == "all_time" and (f.metric, f.subsection_id) in last_3mo_pairs:
-                    points = [pt for pt in points if pt.bucket_start < all_time_cutoff]
-                # C6: cap all_time series at the last _ALL_TIME_MAX_POINTS
-                # (~12 months). Applied after A4/C2 so older sparse or
-                # pre-cutoff points don't consume the budget.
-                if f.window == "all_time":
-                    points = points[-_ALL_TIME_MAX_POINTS:]
-
-                if not points:
-                    continue
-
-                # Resolution header for LLM orientation.
-                if f.subsection_id == "type_win_rate_timeline":
-                    resolution = "monthly"
-                elif f.window == "last_3mo":
-                    resolution = "weekly"
-                else:
-                    resolution = "monthly"
-                lines.append(f"### Series ({f.metric}, {f.window}, {resolution})")
-                trend_line = _trend_tag(f.metric, points)
-                if trend_line:
-                    lines.append(trend_line)
-
-                # C3: emit points with activity-gap markers between >90-day gaps.
-                series_scale = _scale_for_metric(f.metric)
-                prev_date: datetime.date | None = None
-                prev_bucket_start: str | None = None
-                for pt in points:
-                    curr_date = datetime.date.fromisoformat(pt.bucket_start)
-                    if (
-                        prev_date is not None
-                        and prev_bucket_start is not None
-                        and (curr_date - prev_date).days > _ACTIVITY_GAP_DAYS
-                    ):
-                        lines.append(f"# Activity gap: {prev_bucket_start} → {pt.bucket_start}")
-                    pt_value = pt.value * series_scale
-                    lines.append(f"{pt.bucket_start}: {pt_value:+.1f} (n={pt.n})")
-                    prev_date = curr_date
-                    prev_bucket_start = pt.bucket_start
-
+                section_body.extend(
+                    _render_subsection_block(
+                        subsection_id=block_id,
+                        members=members,
+                        stale_markers=stale_markers,
+                        live_series_metrics=live_series_metrics,
+                        last_3mo_pairs=last_3mo_pairs,
+                        all_time_series_pairs=all_time_series_pairs,
+                        all_time_cutoff=all_time_cutoff,
+                        asymmetry_lines=asymmetry_lines,
+                        recovery_pattern=recovery_pattern,
+                    )
+                )
+        if not section_body:
+            continue
+        lines.append(f"## Section: {section_id}")
         lines.append("")
-
-    lines.extend(overall_wdl_block)
-    lines.extend(time_pressure_block)
-    lines.extend(type_wdl_block)
+        lines.extend(section_body)
 
     return "\n".join(lines).rstrip() + "\n"
 

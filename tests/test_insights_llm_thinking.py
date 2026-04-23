@@ -37,7 +37,9 @@ from app.services import insights_llm
 
 def _sample_report() -> EndgameInsightsReport:
     return EndgameInsightsReport(
+        player_profile="profile",
         overview="thinking-tokens coverage",
+        recommendations=["rec one", "rec two"],
         sections=[
             SectionInsight(
                 section_id="overall",

@@ -112,8 +112,8 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
             <InfoPopover ariaLabel="Games with vs without Endgame info" testId="perf-section-info" side="top">
               <div className="space-y-2">
                 <p>Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not. Only endgames that span at least 3 full moves (6 half-moves) are counted. Shorter tactical transitions from middlegame into a checkmate are treated as &quot;no endgame&quot;.</p>
-                <p>The <strong>Score Gap</strong> column shows the signed gap between your endgame Score % and non-endgame Score % (green = endgame stronger, red = endgame weaker, blue = near parity).</p>
-                <p>The Score Gap is a comparison, not an absolute measure. A positive value can mean stronger endgames <em>or</em> weaker non-endgame play; a negative value, the reverse. Compare the two Score % rows to see which side is driving it.</p>
+                <p>The <strong>Score Gap</strong> column shows the signed gap between your endgame Score and non-endgame Score (green = endgame stronger, red = endgame weaker, blue = near parity).</p>
+                <p>The Score Gap is a comparison, not an absolute measure. A positive value can mean stronger endgames <em>or</em> weaker non-endgame play; a negative value, the reverse. Compare the two Score rows to see which side is driving it.</p>
               </div>
             </InfoPopover>
           </span>
@@ -141,7 +141,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
               <th className="py-1 pr-3 font-medium">Endgame</th>
               <th className="py-1 px-2 font-medium text-right">Games</th>
               <th className="py-1 px-2 font-medium">Win / Draw / Loss</th>
-              <th className="py-1 px-2 font-medium text-right">Score %</th>
+              <th className="py-1 px-2 font-medium text-right">Score</th>
               <th className="py-1 px-2 font-medium">Score Gap</th>
             </tr>
           </thead>
@@ -221,7 +221,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
               )}
             </div>
             <div className="flex items-baseline justify-between text-sm">
-              <span className="text-muted-foreground">Score %</span>
+              <span className="text-muted-foreground">Score</span>
               <span className="tabular-nums text-muted-foreground">
                 {row.score !== undefined ? `${Math.round(row.score * 100)}%` : '—'}
               </span>
@@ -309,7 +309,7 @@ export function ScoreGapTimelineChart({ timeline, window }: ScoreGapTimelineChar
               side="top"
             >
               <p>
-                Gap between your endgame Score % and non-endgame Score %
+                Gap between your endgame Score and non-endgame Score
                 over the trailing {window} games, sampled once per week.
               </p>
               <p className="mt-1">
@@ -340,7 +340,7 @@ export function ScoreGapTimelineChart({ timeline, window }: ScoreGapTimelineChar
             className="flex items-center text-xs text-muted-foreground shrink-0 pt-33 -mr-1"
             style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
           >
-            Score gap %
+            Score gap
           </div>
         )}
         <ChartContainer

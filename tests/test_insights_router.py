@@ -39,7 +39,9 @@ INSIGHTS_ENDPOINT = "/api/insights/endgame"
 
 def _sample_report(overview: str = "FlawChess played solidly overall.") -> EndgameInsightsReport:
     return EndgameInsightsReport(
+        player_profile="Player around 1500 rapid, range 1200-1600 over 2 years.",
         overview=overview,
+        recommendations=["Try drilling pawn endings.", "Review losses on time."],
         sections=[
             SectionInsight(
                 section_id="overall",
@@ -48,7 +50,7 @@ def _sample_report(overview: str = "FlawChess played solidly overall.") -> Endga
             )
         ],
         model_used="test",
-        prompt_version="endgame_v5",
+        prompt_version="endgame_v9",
     )
 
 
@@ -248,7 +250,7 @@ class TestHappyPath:
                     findings_hash="m" * 64,
                     error=None,
                     model="test",
-                    prompt_version="endgame_v5",
+                    prompt_version="endgame_v9",
                 ),
             )
 
@@ -383,7 +385,7 @@ class TestRateLimit:
                 _make_row(
                     user.id,
                     response_json=valid_report.model_dump(),
-                    prompt_version="endgame_v5",  # matches get_latest_report_for_user filter
+                    prompt_version="endgame_v9",  # matches get_latest_report_for_user filter
                     findings_hash="k" * 64,
                 ),
             )
@@ -517,7 +519,8 @@ class TestFilterPassing:
         monkeypatch: pytest.MonkeyPatch,
         test_engine: AsyncEngine,
     ) -> None:
-        """Query params are forwarded as FilterContext and written to llm_logs.filter_context."""
+        """opponent_strength is forwarded as FilterContext (v8: the only
+        non-default filter the router accepts)."""
         headers, user = authed_user_with_session
         fake_insights_agent(_sample_report())
 
@@ -541,11 +544,39 @@ class TestFilterPassing:
         ) as client:
             response = await client.post(
                 INSIGHTS_ENDPOINT,
-                params={"time_control": "blitz", "platform": "chess.com"},
+                params={"opponent_strength": "stronger"},
                 headers=headers,
             )
 
         assert response.status_code == 200
-        # Verify filter_context captured at compute_findings call time
-        assert captured_filter["time_controls"] == ["blitz"]
-        assert captured_filter["platforms"] == ["chess.com"]
+        assert captured_filter["opponent_strength"] == "stronger"
+        assert captured_filter["time_controls"] == []
+        assert captured_filter["platforms"] == []
+
+    @pytest.mark.asyncio
+    async def test_rejects_non_default_filters(
+        self,
+        authed_user_with_session: tuple[dict[str, str], User],
+        test_engine: AsyncEngine,
+    ) -> None:
+        """v8: router returns 400 when any filter other than opponent_strength
+        is non-default. Frontend already gates the button; the server check is
+        the defensive safety net."""
+        headers, _user = authed_user_with_session
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            cases = [
+                ({"time_control": "blitz"}, "Time control"),
+                ({"platform": "chess.com"}, "Platform"),
+                ({"recency": "3months"}, "Recency"),
+                ({"rated": "true"}, "Rated"),
+            ]
+            for params, _label in cases:
+                response = await client.post(
+                    INSIGHTS_ENDPOINT, params=params, headers=headers
+                )
+                assert response.status_code == 400, f"expected 400 for params={params}"
+                body = response.json()
+                assert body["detail"]["error"] == "filters_not_supported"
