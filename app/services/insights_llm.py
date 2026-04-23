@@ -49,21 +49,25 @@ from app.schemas.insights import (
     SubsectionFinding,
 )
 from app.schemas.llm_log import LlmLogCreate, LlmLogEndpoint
-from app.services.endgame_zones import BUCKETED_ZONE_REGISTRY, ZONE_REGISTRY
+from app.services.endgame_zones import BUCKETED_ZONE_REGISTRY, ZONE_REGISTRY, ZoneSpec
 from app.services.insights_service import compute_findings
 
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v4"  # bumped from "endgame_v3" when score_gap_timeline section moved overall, statistics-concepts section added, and overall_wdl + results_by_endgame_type_wdl chart blocks added
+_PROMPT_VERSION = "endgame_v5"  # bumped from "endgame_v4" when tone recalibrated, inline zone bounds added, overall scalar dropped when wdl chart present, all_time series capped, last_3mo series skipped when all_time present
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
 
-# Series / prompt-assembly filter constants (260422-tnb A4/C3/A5/C2).
+# Series / prompt-assembly filter constants (260422-tnb A4/C3/A5/C2/C4/C5/C6).
 MIN_BUCKET_N: int = 3  # A4: drop timeline points with n<3
 _ACTIVITY_GAP_DAYS: int = 90  # C3: insert gap markers between >90-day-apart points
 _ALL_TIME_CUTOFF_DAYS: int = 90  # C2: trim last 90d from all_time series when last_3mo exists
+# C6 (v5): cap all_time series at the most-recent N monthly points. Older
+# history rarely adds narrative value — Series interpretation rule already
+# tells the LLM to focus on multi-bucket direction, not long history.
+_ALL_TIME_MAX_POINTS: int = 12
 # time_pressure_vs_performance produces a single weighted-mean finding that is
 # not useful on its own; the 10-bucket chart is rendered separately by
 # `_format_time_pressure_chart_block`.
@@ -85,7 +89,12 @@ def _build_zone_threshold_appendix() -> str:
     propagate via findings_hash since zones are baked into findings).
     """
     lines: list[str] = ["", "## Zone thresholds", ""]
-    lines.append("Numeric bands for each metric (auto-generated — do not contradict).")
+    lines.append(
+        "Numeric bands for each metric (auto-generated — do not contradict). "
+        "These same bands are also inlined next to every finding bullet as "
+        "`(typical LO to UP[, lower is better])`; this appendix is the full "
+        "reference, the inline fragment is the per-bullet shorthand."
+    )
     lines.append("")
     for metric_id, spec in ZONE_REGISTRY.items():
         if spec.direction == "higher_is_better":
@@ -229,6 +238,30 @@ _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
         "type_win_rate_timeline",
     }
 )
+
+
+def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str:
+    """Render '(typical LO to UP[, lower is better])' for a finding bullet.
+
+    v5 (260422-tnb pass2): inline shorthand of the zone band for each finding,
+    so the LLM can judge proximity to a zone edge without consulting the
+    global appendix. Bucketed metrics (conversion_win_pct / parity_score_pct /
+    recovery_save_pct) dispatch via `dimension['bucket']`; all other scalar
+    metrics use ZONE_REGISTRY directly. Returns '' for unknown metric_ids
+    (defensive — shouldn't fire for valid findings since MetricId is enumerated).
+    """
+    spec: ZoneSpec | None = None
+    bucket = dimension.get("bucket") if dimension else None
+    bucketed = cast("dict[str, dict[str, ZoneSpec]]", dict(BUCKETED_ZONE_REGISTRY))
+    scalar = cast("dict[str, ZoneSpec]", dict(ZONE_REGISTRY))
+    if metric_id in bucketed and bucket is not None:
+        spec = bucketed[metric_id].get(bucket)
+    elif metric_id in scalar:
+        spec = scalar[metric_id]
+    if spec is None:
+        return ""
+    direction_note = ", lower is better" if spec.direction == "lower_is_better" else ""
+    return f"(typical {spec.typical_lower:+.2f} to {spec.typical_upper:+.2f}{direction_note})"
 
 
 def _format_filters_for_prompt(filters: FilterContext) -> str:
@@ -394,7 +427,7 @@ def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
 def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     """Render EndgameTabFindings as structured text for the LLM (D-29 format).
 
-    Filters applied (260422-tnb):
+    Filters applied (260422-tnb v4+v5):
     - A5: skip findings in _SKIPPED_SUBSECTIONS (time_pressure_vs_performance).
     - A2: skip findings where value is NaN or (sample_size=0 AND thin quality).
     - C1: group findings by subsection_id under one header (not one per finding).
@@ -403,7 +436,21 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
       `last_3mo` series exists for the same (metric, subsection) pair.
     - C3: insert `# Activity gap: ...` markers when consecutive retained
       series points are > _ACTIVITY_GAP_DAYS apart.
+    - C4 (v5): drop the `overall` scalar subsection when the overall_wdl chart
+      renders — the 2-row chart already carries the framing, the scalar invited
+      a misleading one-number narration.
+    - C5 (v5): skip the `last_3mo` Series block when an `all_time` Series for
+      the same (metric, subsection) is emitted. The last_3mo scalar stays.
+    - C6 (v5): cap `all_time` series at the last _ALL_TIME_MAX_POINTS buckets.
+    - Inline zone bounds (v5): every finding bullet includes a
+      `(typical LO to UP[, lower is better])` fragment next to the zone token.
     """
+    # Pre-render chart blocks so we can gate the scalar `overall` subsection
+    # (C4) on whether the overall_wdl chart will emit.
+    overall_wdl_block = _format_overall_wdl_chart_block(findings)
+    time_pressure_block = _format_time_pressure_chart_block(findings)
+    type_wdl_block = _format_type_wdl_chart_block(findings)
+
     # A5 + A2: drop hidden subsections, NaN values, and thin empty findings.
     visible: list[SubsectionFinding] = [
         f
@@ -413,10 +460,24 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
         and not (f.sample_size == 0 and f.sample_quality == "thin")
     ]
 
+    # C4: drop the scalar `overall` subsection when the overall_wdl chart will
+    # emit. The chart's 2-row comparison carries the framing; keeping both
+    # anchored the LLM on a misleading one-number score_gap narration.
+    if overall_wdl_block:
+        visible = [f for f in visible if f.subsection_id != "overall"]
+
     # C2: identify (metric, subsection_id) pairs that have a `last_3mo` variant
     # so we can trim the last 90 days off the matching `all_time` series below.
     last_3mo_pairs: set[tuple[str, str]] = {
         (f.metric, f.subsection_id) for f in visible if f.window == "last_3mo"
+    }
+    # C5: identify (metric, subsection_id) pairs where an `all_time` series
+    # already renders so the `last_3mo` Series block can be skipped as
+    # duplicate coverage. The last_3mo scalar bullet itself is kept.
+    all_time_series_pairs: set[tuple[str, str]] = {
+        (f.metric, f.subsection_id)
+        for f in visible
+        if f.window == "all_time" and f.series is not None
     }
     today = datetime.date.today()
     all_time_cutoff = (today - datetime.timedelta(days=_ALL_TIME_CUTOFF_DAYS)).isoformat()
@@ -446,13 +507,21 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
             dim = ""
             if f.dimension:
                 dim = " [" + ", ".join(f"{k}={v}" for k, v in f.dimension.items()) + "]"
+            bounds = _format_zone_bounds(f.metric, f.dimension)
+            zone_label = f"{f.zone} {bounds}".rstrip()
             lines.append(
-                f"- {f.metric} ({f.window}): {f.value:+.2f} | {f.zone} | "
+                f"- {f.metric} ({f.window}): {f.value:+.2f} | {zone_label} | "
                 f"{f.sample_size} games | {f.sample_quality}{dim}"
             )
 
-            # Series rendering with A4/C2/C3 filters applied.
+            # Series rendering with A4/C2/C3/C5/C6 filters applied.
             if f.series is not None and f.subsection_id in _TIMELINE_SUBSECTION_IDS:
+                # C5: skip last_3mo Series block when the all_time series for
+                # the same (metric, subsection) already renders above. The
+                # scalar bullet on this finding has already been emitted.
+                if f.window == "last_3mo" and (f.metric, f.subsection_id) in all_time_series_pairs:
+                    continue
+
                 # A4: drop sparse points.
                 points = [pt for pt in f.series if pt.n >= MIN_BUCKET_N]
                 # C2: if an all_time series has a last_3mo twin for the same
@@ -460,6 +529,11 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
                 # series so the two don't duplicate coverage.
                 if f.window == "all_time" and (f.metric, f.subsection_id) in last_3mo_pairs:
                     points = [pt for pt in points if pt.bucket_start < all_time_cutoff]
+                # C6: cap all_time series at the last _ALL_TIME_MAX_POINTS
+                # (~12 months). Applied after A4/C2 so older sparse or
+                # pre-cutoff points don't consume the budget.
+                if f.window == "all_time":
+                    points = points[-_ALL_TIME_MAX_POINTS:]
 
                 if not points:
                     continue
@@ -490,9 +564,9 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
 
         lines.append("")
 
-    lines.extend(_format_overall_wdl_chart_block(findings))
-    lines.extend(_format_time_pressure_chart_block(findings))
-    lines.extend(_format_type_wdl_chart_block(findings))
+    lines.extend(overall_wdl_block)
+    lines.extend(time_pressure_block)
+    lines.extend(type_wdl_block)
 
     return "\n".join(lines).rstrip() + "\n"
 

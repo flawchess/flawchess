@@ -60,7 +60,7 @@ def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameI
             ),
         ],
         model_used="test",
-        prompt_version="endgame_v4",
+        prompt_version="endgame_v5",
     )
 
 
@@ -84,7 +84,7 @@ def _make_log_row(
     error: str | None = None,
     response_json: dict[str, Any] | None = None,
     cache_hit: bool = False,
-    prompt_version: str = "endgame_v4",
+    prompt_version: str = "endgame_v5",
     model: str = "test",
     findings_hash: str = "b" * 64,
 ) -> LlmLog:
@@ -485,12 +485,22 @@ class TestPromptAssembly:
 
         perf = EndgamePerformanceResponse(
             endgame_wdl=EndgameWDLSummary(
-                wins=120, draws=40, losses=80, total=240,
-                win_pct=50.0, draw_pct=16.7, loss_pct=33.3,
+                wins=120,
+                draws=40,
+                losses=80,
+                total=240,
+                win_pct=50.0,
+                draw_pct=16.7,
+                loss_pct=33.3,
             ),
             non_endgame_wdl=EndgameWDLSummary(
-                wins=300, draws=50, losses=350, total=700,
-                win_pct=42.9, draw_pct=7.1, loss_pct=50.0,
+                wins=300,
+                draws=50,
+                losses=350,
+                total=700,
+                win_pct=42.9,
+                draw_pct=7.1,
+                loss_pct=50.0,
             ),
             endgame_win_rate=50.0,
         )
@@ -517,12 +527,22 @@ class TestPromptAssembly:
 
         perf = EndgamePerformanceResponse(
             endgame_wdl=EndgameWDLSummary(
-                wins=2, draws=1, losses=1, total=4,
-                win_pct=50.0, draw_pct=25.0, loss_pct=25.0,
+                wins=2,
+                draws=1,
+                losses=1,
+                total=4,
+                win_pct=50.0,
+                draw_pct=25.0,
+                loss_pct=25.0,
             ),
             non_endgame_wdl=EndgameWDLSummary(
-                wins=0, draws=0, losses=0, total=0,
-                win_pct=0.0, draw_pct=0.0, loss_pct=0.0,
+                wins=0,
+                draws=0,
+                losses=0,
+                total=0,
+                win_pct=0.0,
+                draw_pct=0.0,
+                loss_pct=0.0,
             ),
             endgame_win_rate=50.0,
         )
@@ -551,26 +571,48 @@ class TestPromptAssembly:
 
         # Helper conversion stub — values irrelevant for the WDL block.
         conv_stub = ConversionRecoveryStats.model_construct(
-            conversion_games=0, conversion_wins=0, conversion_pct=0.0,
-            recovery_games=0, recovery_saves=0, recovery_pct=0.0,
+            conversion_games=0,
+            conversion_wins=0,
+            conversion_pct=0.0,
+            recovery_games=0,
+            recovery_saves=0,
+            recovery_pct=0.0,
         )
         categories = [
             EndgameCategoryStats(
-                endgame_class="rook", label="Rook",
-                wins=50, draws=20, losses=30, total=100,
-                win_pct=50.0, draw_pct=20.0, loss_pct=30.0,
+                endgame_class="rook",
+                label="Rook",
+                wins=50,
+                draws=20,
+                losses=30,
+                total=100,
+                win_pct=50.0,
+                draw_pct=20.0,
+                loss_pct=30.0,
                 conversion=conv_stub,
             ),
             EndgameCategoryStats(
-                endgame_class="pawn", label="Pawn",
-                wins=15, draws=5, losses=10, total=30,
-                win_pct=50.0, draw_pct=16.7, loss_pct=33.3,
+                endgame_class="pawn",
+                label="Pawn",
+                wins=15,
+                draws=5,
+                losses=10,
+                total=30,
+                win_pct=50.0,
+                draw_pct=16.7,
+                loss_pct=33.3,
                 conversion=conv_stub,
             ),
             EndgameCategoryStats(
-                endgame_class="queen", label="Queen",
-                wins=2, draws=0, losses=1, total=3,  # below 10-game floor — dropped
-                win_pct=66.7, draw_pct=0.0, loss_pct=33.3,
+                endgame_class="queen",
+                label="Queen",
+                wins=2,
+                draws=0,
+                losses=1,
+                total=3,  # below 10-game floor — dropped
+                win_pct=66.7,
+                draw_pct=0.0,
+                loss_pct=33.3,
                 conversion=conv_stub,
             ),
         ]
@@ -591,6 +633,261 @@ class TestPromptAssembly:
         assert rook_idx < pawn_idx
         # Queen (n=3) dropped by 10-game floor.
         assert "| queen" not in prompt
+
+    def test_bullet_includes_inline_zone_bounds(self) -> None:
+        """v5: every finding bullet renders `(typical LO to UP)` next to its zone.
+
+        Covers scalar (score_gap), bucketed (conversion_win_pct), and
+        lower_is_better (net_timeout_rate) registry paths. The inline shorthand
+        lets the LLM judge proximity to a zone edge without consulting the
+        global appendix.
+        """
+        from typing import cast
+
+        from app.schemas.insights import MetricId
+
+        filters = _sample_filter_context()
+        scalar = SubsectionFinding(
+            subsection_id="overall",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="score_gap",
+            value=-0.15,
+            zone="weak",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=200,
+            sample_quality="rich",
+            is_headline_eligible=True,
+            dimension=None,
+            series=None,
+        )
+        bucketed = SubsectionFinding(
+            subsection_id="endgame_metrics",
+            parent_subsection_id=None,
+            window="all_time",
+            metric=cast(MetricId, "conversion_win_pct"),
+            value=0.65,
+            zone="weak",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=100,
+            sample_quality="rich",
+            is_headline_eligible=True,
+            dimension={"bucket": "conversion"},
+            series=None,
+        )
+        timeout = SubsectionFinding(
+            subsection_id="time_pressure_at_entry",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="net_timeout_rate",
+            value=-12.82,
+            zone="weak",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=2940,
+            sample_quality="rich",
+            is_headline_eligible=True,
+            dimension=None,
+            series=None,
+        )
+        tab = _fake_findings(filters, findings=[scalar, bucketed, timeout])
+        prompt = _assemble_user_prompt(tab)
+
+        # Scalar metric: score_gap band is -0.10 to +0.10.
+        assert "weak (typical -0.10 to +0.10)" in prompt
+        # Bucketed metric: conversion bucket band is +0.65 to +0.75.
+        assert "weak (typical +0.65 to +0.75)" in prompt
+        # lower_is_better metric: net_timeout_rate band flagged accordingly.
+        assert "weak (typical -5.00 to +5.00, lower is better)" in prompt
+
+    def test_overall_subsection_dropped_when_wdl_chart_present(self) -> None:
+        """v5 C4: scalar `overall` subsection is omitted when overall_wdl renders.
+
+        The 2-row chart already carries the endgame-vs-non-endgame framing;
+        keeping the scalar `score_gap` bullet alongside invited the LLM to
+        anchor on a misleading one-number narrative.
+        """
+        from app.schemas.endgames import EndgamePerformanceResponse, EndgameWDLSummary
+
+        scalar = SubsectionFinding(
+            subsection_id="overall",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="score_gap",
+            value=-0.15,
+            zone="weak",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=200,
+            sample_quality="rich",
+            is_headline_eligible=True,
+            dimension=None,
+            series=None,
+        )
+        perf = EndgamePerformanceResponse(
+            endgame_wdl=EndgameWDLSummary(
+                wins=120,
+                draws=40,
+                losses=80,
+                total=240,
+                win_pct=50.0,
+                draw_pct=16.7,
+                loss_pct=33.3,
+            ),
+            non_endgame_wdl=EndgameWDLSummary(
+                wins=300,
+                draws=50,
+                losses=350,
+                total=700,
+                win_pct=42.9,
+                draw_pct=7.1,
+                loss_pct=50.0,
+            ),
+            endgame_win_rate=50.0,
+        )
+        tab = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[scalar],
+            overall_performance=perf,
+            findings_hash="b" * 64,
+        )
+        prompt = _assemble_user_prompt(tab)
+
+        # Chart renders.
+        assert "## Chart: overall_wdl" in prompt
+        # Scalar `overall` subsection dropped — no subsection header, no bullet.
+        assert "## Subsection: overall\n" not in prompt
+        assert "- score_gap (all_time):" not in prompt
+
+        # Control: when the chart is absent (no overall_performance), the
+        # scalar overall subsection IS kept as a fallback.
+        tab_no_chart = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[scalar],
+            overall_performance=None,
+            findings_hash="b" * 64,
+        )
+        prompt_no_chart = _assemble_user_prompt(tab_no_chart)
+        assert "## Subsection: overall" in prompt_no_chart
+        assert "- score_gap (all_time):" in prompt_no_chart
+
+    def test_all_time_series_trimmed_to_last_12_points(self) -> None:
+        """v5 C6: all_time Series block is capped at the most-recent 12 buckets.
+
+        Older monthly history consumes tokens without narrative value — the
+        Series interpretation rule already tells the LLM to focus on
+        multi-bucket direction, not deep history.
+        """
+        filters = _sample_filter_context()
+        # 20 consecutive monthly buckets ending 2025-10: 2024-03 .. 2025-10.
+        bucket_starts: list[str] = []
+        cursor = datetime.date(2024, 3, 1)
+        while cursor <= datetime.date(2025, 10, 1):
+            bucket_starts.append(cursor.isoformat())
+            # next month (first-of-month arithmetic)
+            year, month = cursor.year, cursor.month + 1
+            if month > 12:
+                year += 1
+                month = 1
+            cursor = datetime.date(year, month, 1)
+        assert len(bucket_starts) == 20
+        timeline = SubsectionFinding(
+            subsection_id="score_gap_timeline",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="score_gap",
+            value=-0.08,
+            zone="typical",
+            trend="stable",
+            weekly_points_in_window=20,
+            sample_size=20,
+            sample_quality="rich",
+            is_headline_eligible=True,
+            dimension=None,
+            series=[TimePoint(bucket_start=bs, value=-0.05, n=20) for bs in bucket_starts],
+        )
+        tab = _fake_findings(filters, findings=[timeline])
+        prompt = _assemble_user_prompt(tab)
+
+        # Most recent 12 buckets are retained: 2024-11 .. 2025-10.
+        assert "2025-10-01" in prompt
+        assert "2024-11-01" in prompt
+        # Oldest 8 buckets are dropped: 2024-01 .. 2024-10.
+        assert "2024-01-01" not in prompt
+        assert "2024-10-01" not in prompt
+        # Exactly 12 series value lines (bucket_start entries, not the header).
+        series_lines = [ln for ln in prompt.splitlines() if ln.startswith(("2024-", "2025-"))]
+        assert len(series_lines) == 12
+
+    def test_last_3mo_series_block_skipped_when_all_time_series_present(self) -> None:
+        """v5 C5: last_3mo Series block is skipped when all_time Series is emitted.
+
+        The last_3mo scalar bullet stays (it's the current-state signal); only
+        the weekly Series block is suppressed. The all_time series already
+        rolls up those weeks at monthly resolution.
+        """
+        filters = _sample_filter_context()
+        all_time_series = [
+            TimePoint(bucket_start=f"2025-{month:02d}-01", value=-0.05, n=20)
+            for month in range(1, 11)
+        ]
+        last_3mo_series = [
+            TimePoint(bucket_start=f"2026-02-{day:02d}", value=-0.03, n=12)
+            for day in (2, 9, 16, 23)
+        ]
+        all_time_finding = SubsectionFinding(
+            subsection_id="score_gap_timeline",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="score_gap",
+            value=-0.05,
+            zone="typical",
+            trend="stable",
+            weekly_points_in_window=10,
+            sample_size=200,
+            sample_quality="rich",
+            is_headline_eligible=True,
+            dimension=None,
+            series=all_time_series,
+        )
+        last_3mo_finding = SubsectionFinding(
+            subsection_id="score_gap_timeline",
+            parent_subsection_id=None,
+            window="last_3mo",
+            metric="score_gap",
+            value=-0.03,
+            zone="typical",
+            trend="improving",
+            weekly_points_in_window=4,
+            sample_size=40,
+            sample_quality="adequate",
+            is_headline_eligible=True,
+            dimension=None,
+            series=last_3mo_series,
+        )
+        tab = _fake_findings(filters, findings=[all_time_finding, last_3mo_finding])
+        prompt = _assemble_user_prompt(tab)
+
+        # Both scalar bullets stay.
+        assert "- score_gap (all_time):" in prompt
+        assert "- score_gap (last_3mo):" in prompt
+        # all_time Series header + points present.
+        assert "### Series (score_gap, all_time, monthly)" in prompt
+        assert "2025-10-01" in prompt
+        # last_3mo Series header + points suppressed.
+        assert "### Series (score_gap, last_3mo, weekly)" not in prompt
+        assert "2026-02-09" not in prompt
+
+        # Control: with only last_3mo (no all_time series), last_3mo Series
+        # block is kept — suppression is conditional on the all_time twin.
+        tab_solo = _fake_findings(filters, findings=[last_3mo_finding])
+        prompt_solo = _assemble_user_prompt(tab_solo)
+        assert "### Series (score_gap, last_3mo, weekly)" in prompt_solo
+        assert "2026-02-09" in prompt_solo
 
 
 # ---------------------------------------------------------------------------
@@ -710,7 +1007,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v4"
+        assert response.report.prompt_version == "endgame_v5"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -734,7 +1031,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v4"
+        assert log.response_json["prompt_version"] == "endgame_v5"
 
 
 class TestCacheBehavior:
@@ -757,7 +1054,7 @@ class TestCacheBehavior:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
         # Seed a cache-hit eligible row: error=None, response_json set,
-        # matching (findings_hash, prompt_version="endgame_v4", model="test").
+        # matching (findings_hash, prompt_version="endgame_v5", model="test").
         async with session_maker() as session:
             await _seed(
                 session,
@@ -928,7 +1225,7 @@ class TestRateLimit:
         # Seed 3 successful miss rows with an OLD prompt_version so they count
         # toward the rate-limit (count_recent_successful_misses does NOT filter
         # by prompt_version) but are NOT returned by get_latest_report_for_user
-        # (which filters by prompt_version="endgame_v4"), producing "no tier-2".
+        # (which filters by prompt_version="endgame_v5"), producing "no tier-2".
         now = datetime.datetime.now(datetime.UTC)
         # Build a valid report JSON for rows (avoids ValidationError in case tier-2
         # is somehow reached — but with the prompt_version mismatch it should not be).
@@ -1064,7 +1361,7 @@ class TestErrors:
             "overview": "ok",
             "sections": [],  # violates min_length=1
             "model_used": "test",
-            "prompt_version": "endgame_v4",
+            "prompt_version": "endgame_v5",
         }
         fake = Agent(
             TestModel(custom_output_args=bad_output),
