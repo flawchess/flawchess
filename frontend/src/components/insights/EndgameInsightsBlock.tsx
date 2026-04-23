@@ -187,12 +187,14 @@ function RenderedState({
         </div>
       )}
       {showOverview && (
-        <p
+        <div
           data-testid="insights-overview"
-          className="text-sm text-foreground leading-relaxed mb-3"
+          className="text-sm text-foreground leading-relaxed mb-3 space-y-3"
         >
-          {overview}
-        </p>
+          {overview.split(/\n\n+/).map((paragraph, idx) => (
+            <p key={idx}>{paragraph}</p>
+          ))}
+        </div>
       )}
       <div className="flex items-center gap-2">
         <Button
