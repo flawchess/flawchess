@@ -48,7 +48,6 @@ def _make_row(
         findings_hash=findings_hash,
         filter_context={"recency": "last_3mo"},
         flags=[],
-        system_prompt="You are FlawChess's endgame analyst.",
         user_prompt="Filters: recency=last_3mo...",
         response_json=response_json,
         input_tokens=1200,

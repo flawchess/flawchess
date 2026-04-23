@@ -39,7 +39,6 @@ def _build_payload(user_id: int, **overrides: Any) -> LlmLogCreate:
         findings_hash="a" * 64,
         filter_context={"recency": "last_3mo"},
         flags=[],
-        system_prompt="You are FlawChess's endgame analyst...",
         user_prompt="Filters: recency=last_3mo...",
         response_json={"overview": "ok", "sections": []},
         input_tokens=1200,

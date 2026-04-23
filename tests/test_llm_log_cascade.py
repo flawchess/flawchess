@@ -51,7 +51,6 @@ async def test_deleting_user_cascades_llm_logs(test_engine: Any) -> None:
         findings_hash="e" * 64,
         filter_context={},
         flags=[],
-        system_prompt="s",
         user_prompt="u",
         response_json={"overview": "ok", "sections": []},
         input_tokens=10,

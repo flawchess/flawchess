@@ -766,7 +766,6 @@ async def generate_insights(
             findings_hash=findings.findings_hash,
             filter_context=filter_context.model_dump(),
             flags=[],
-            system_prompt=_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             response_json=report.model_dump() if report is not None else None,
             input_tokens=in_tokens,

@@ -97,7 +97,6 @@ def _make_log_row(
         findings_hash=findings_hash,
         filter_context={"recency": "all_time"},
         flags=[],
-        system_prompt="system",
         user_prompt="user",
         response_json=response_json,
         input_tokens=100,

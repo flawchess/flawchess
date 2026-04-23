@@ -5,7 +5,7 @@ LLM features ship (Phase 65+ adds nothing; future milestones add more).
 
 All fields come from the caller:
   - user_id, endpoint, prompt_version, findings_hash, filter_context, flags,
-    system_prompt, user_prompt, cache_hit, error — request/context
+    user_prompt, cache_hit, error — request/context
   - model — the pydantic-ai model string (e.g. `anthropic:claude-haiku-4-5-20251001`)
   - response_json — parsed EndgameInsightsReport dict, or None on error
   - input_tokens, output_tokens — from pydantic-ai RunResult.usage()
@@ -32,7 +32,6 @@ class LlmLogCreate(BaseModel):
     findings_hash: str  # 64-char sha256 hex from insights_service.compute_findings (Phase 63)
     filter_context: dict[str, Any]
     flags: list[str]
-    system_prompt: str
     user_prompt: str
     response_json: dict[str, Any] | None
     input_tokens: int

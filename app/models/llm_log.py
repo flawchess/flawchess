@@ -59,7 +59,6 @@ class LlmLog(Base):
     findings_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # sha256 hex
     filter_context: Mapped[dict] = mapped_column(JSONB, nullable=False)
     flags: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
-    system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     user_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     response_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
