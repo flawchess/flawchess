@@ -20,6 +20,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 - `SubsectionFinding` gains optional `series: list[TimePoint] | None` for the four timeline subsections, populated with weekly (last_3mo) or monthly weighted-mean (all_time) resampled points (Phase 65).
 - Phase 63: Recovery gauge typical band re-centered to 0.25–0.35 per D-10 (previously 0.3–0.4)
+- Endgame insights prompt bumped to `endgame_v6`: rate/percent metrics rendered on the 0-100 scale end-to-end so narration matches the page (no more `0.65` prose next to `65%` charts); pawnless findings filtered from the LLM payload to match the hidden UI row; system prompt rewritten with a UI-vocabulary block, a `win_rate`-citation ban, and rules for staleness, latest-bucket anchoring, activity-gap narration, intra-type asymmetry hunting, grounding checks, and within-noise delta handling.
+- Endgame insights payload now ships precomputed signals so the LLM stops redoing math: `## Payload summary` header, `STALE:` markers on series trailing >6mo behind the newest bucket, `# trend:` direction tags under every series, `# asymmetry` flags on opposing-zone Conversion/Recovery pairs per endgame type, `# low-time gap` scalar on the time-pressure chart, `# delta` annotations for paired all_time↔last_3mo scalars with a `within-noise` flag on small-sample shifts.
 
 ## [v1.10] Advanced Analytics — 2026-04-19
 
