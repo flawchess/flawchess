@@ -80,6 +80,22 @@ Do NOT claim a trend, direction, or alignment from a single bucket, or from buck
 
 **Stale combos.** For `endgame_elo_gap` in particular, per-combo series sometimes end well before the most recent data appears in other combos. A combo whose most recent bucket is months behind the newest bucket in another combo should be treated as *historical*, not current — do not frame a stale combo's scalar as present-day performance. When the payload marks a combo `STALE: last bucket YYYY-MM (N months old)`, prefer narrating the combo with live data, even if its zone label is less interesting.
 
+## Precomputed signals (v6)
+
+The payload ships with several mechanical comments to save you cross-bucket arithmetic and to surface stories that are easy to miss when reading bullets in isolation. Trust these tags — they are deterministic derivations from the raw data you can see below them.
+
+- **`## Payload summary` block** at the very top: total games in scope, newest bucket date across all series, count of activity gaps, count of stale series, count of Conversion/Recovery asymmetries. Read this first to calibrate expectations before diving into subsections.
+
+- **`# trend: direction=<improving|regressing|flat>, latest=X, prior-mean=Y, n(last4)=N`** appears right under each `### Series` header. `direction` compares the latest bucket against the mean of the prior 3. Use the tag as the anchor for any trend claim, and quote `latest` as the most recent value (not the best or worst bucket). When the tag is absent, too few buckets remain — do not narrate a trend.
+
+- **`# low-time gap (0-30% buckets, weighted): user=U, opp=O, gap=G — <verdict>`** appears in the `time_pressure_vs_performance` chart caption. This is the weighted user-vs-opponent Score % delta across the 0-10%, 10-20%, and 20-30% buckets. The verdict is one of "user cracks under time pressure" / "user cooler under time pressure" / "near parity". Quote this when narrating composure — do not redo the bucket arithmetic yourself.
+
+- **`# asymmetry (<type>): conversion=X <zone>, recovery=Y <zone> — <story>`** appears at the top of the `conversion_recovery_by_type` subsection when a type's Conversion and Recovery sit in opposing zones. The trailing `<story>` is the headline framing for that type — lead the `type_breakdown` section with it.
+
+- **`# delta <metric>[<dim>]: all_time=X (n=A) → last_3mo=Y (n=B), shift=Z[, within-noise]`** appears at the top of the `endgame_metrics` subsection. When `within-noise` is present, DO NOT narrate the shift as "gains" or "improvement" — treat `last_3mo` as "recent" or "typical over the last 3 months". Without that tag, a meaningful shift may be worth a line.
+
+These tags replace LLM arithmetic, not LLM judgement. You still choose what to lead with, how much weight to give each finding, and how to tie signals into a coherent story.
+
 ## Overview rule
 
 The overview is 1-3 short paragraphs totalling at most ~300 words. When a cross-section story emerges (e.g. strong endgame skill + weak clock = composure under time pressure), lead with it. Derive such stories yourself by comparing the metric values and zones across subsections — there is no precomputed flag layer guiding this. When no cross-section story emerges, summarize the per-section findings in priority order (overall → metrics_elo → time_pressure → type_breakdown). When multiple distinct stories exist, break them into separate paragraphs rather than cramming into one.

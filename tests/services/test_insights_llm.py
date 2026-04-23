@@ -982,6 +982,233 @@ class TestPromptAssembly:
         assert "2026-02-09" in prompt_solo
 
 
+class TestV6Enrichments:
+    """Batch 2 (v6) payload enrichments: stale markers, trend tags, asymmetry
+    flags, low-time gap scalar, all_time↔last_3mo delta, payload summary."""
+
+    def _finding(
+        self,
+        *,
+        subsection_id: str,
+        metric: str,
+        window: str,
+        value: float,
+        zone: str = "typical",
+        sample_size: int = 100,
+        sample_quality: str = "rich",
+        dimension: dict[str, str] | None = None,
+        series: list[TimePoint] | None = None,
+    ) -> SubsectionFinding:
+        from typing import cast
+
+        from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Window, Zone
+
+        return SubsectionFinding(
+            subsection_id=cast(SubsectionId, subsection_id),
+            parent_subsection_id=None,
+            window=cast(Window, window),
+            metric=cast(MetricId, metric),
+            value=value,
+            zone=cast(Zone, zone),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=sample_size,
+            sample_quality=cast(SampleQuality, sample_quality),
+            is_headline_eligible=True,
+            dimension=dimension,
+            series=series,
+        )
+
+    def test_payload_summary_block_rendered(self) -> None:
+        """`## Payload summary` prepends the prompt with macro context."""
+        from app.schemas.endgames import EndgamePerformanceResponse, EndgameWDLSummary
+
+        filters = _sample_filter_context()
+        series_finding = self._finding(
+            subsection_id="score_gap_timeline",
+            metric="score_gap",
+            window="all_time",
+            value=-0.05,
+            series=[
+                TimePoint(bucket_start=f"2026-01-{week:02d}", value=-0.05, n=50)
+                for week in (5, 12, 19, 26)
+            ],
+        )
+        perf = EndgamePerformanceResponse(
+            endgame_wdl=EndgameWDLSummary(
+                wins=120, draws=40, losses=80, total=240, win_pct=50.0, draw_pct=16.7, loss_pct=33.3
+            ),
+            non_endgame_wdl=EndgameWDLSummary(
+                wins=300, draws=50, losses=350, total=700, win_pct=42.9, draw_pct=7.1, loss_pct=50.0
+            ),
+            endgame_win_rate=50.0,
+        )
+        tab = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=filters,
+            findings=[series_finding],
+            overall_performance=perf,
+            findings_hash="b" * 64,
+        )
+        prompt = _assemble_user_prompt(tab)
+        assert "## Payload summary" in prompt
+        assert "Total games in scope: 940" in prompt
+        assert "Newest bucket across all series: 2026-01-26" in prompt
+        # Summary appears BEFORE the Filters line.
+        assert prompt.index("## Payload summary") < prompt.index("Filters:")
+
+    def test_stale_marker_on_old_endgame_elo_gap(self) -> None:
+        """A combo whose series trails >6mo behind the newest bucket is STALE-tagged."""
+        filters = _sample_filter_context()
+        old_series = [
+            TimePoint(bucket_start=f"2023-{month:02d}-01", value=0.6, n=15)
+            for month in (9, 10, 11, 12)
+        ]
+        new_series = [
+            TimePoint(bucket_start=f"2026-{month:02d}-01", value=-0.42, n=20) for month in (1, 2)
+        ] + [
+            TimePoint(bucket_start=f"2025-{month:02d}-01", value=-0.42, n=20) for month in (11, 12)
+        ]
+        new_series.sort(key=lambda pt: pt.bucket_start)
+        blitz_old = self._finding(
+            subsection_id="endgame_elo_timeline",
+            metric="endgame_elo_gap",
+            window="all_time",
+            value=60.0,
+            dimension={"platform": "chess.com", "time_control": "blitz"},
+            series=old_series,
+            sample_size=60,
+        )
+        rapid_new = self._finding(
+            subsection_id="endgame_elo_timeline",
+            metric="endgame_elo_gap",
+            window="all_time",
+            value=-42.0,
+            dimension={"platform": "chess.com", "time_control": "rapid"},
+            series=new_series,
+            sample_size=70,
+        )
+        tab = _fake_findings(filters, findings=[blitz_old, rapid_new])
+        prompt = _assemble_user_prompt(tab)
+
+        # Stale blitz combo carries the marker, rapid combo does not.
+        blitz_line = next(ln for ln in prompt.splitlines() if "time_control=blitz" in ln)
+        rapid_line = next(ln for ln in prompt.splitlines() if "time_control=rapid" in ln)
+        assert "STALE:" in blitz_line
+        assert "STALE:" not in rapid_line
+        # Summary counts the stale series.
+        assert "Stale series" in prompt
+
+    def test_trend_tag_emitted_under_series_header(self) -> None:
+        """A `# trend: direction=...` line appears right after the Series header."""
+        filters = _sample_filter_context()
+        series = [
+            TimePoint(bucket_start=f"2026-01-{day:02d}", value=v, n=30)
+            for day, v in zip((5, 12, 19, 26), (-0.25, -0.20, -0.10, -0.02), strict=False)
+        ]
+        finding = self._finding(
+            subsection_id="score_gap_timeline",
+            metric="score_gap",
+            window="last_3mo",
+            value=-0.02,
+            series=series,
+        )
+        tab = _fake_findings(filters, findings=[finding])
+        prompt = _assemble_user_prompt(tab)
+
+        lines = prompt.splitlines()
+        series_idx = lines.index("### Series (score_gap, last_3mo, weekly)")
+        trend_line = lines[series_idx + 1]
+        assert trend_line.startswith("# trend: direction=")
+        assert "latest=-2.0" in trend_line or "latest=+-" in trend_line or "latest=" in trend_line
+        assert "improving" in trend_line  # latest -2 vs prior-mean -18.3 → improving
+
+    def test_asymmetry_line_emitted_for_strong_weak_split(self) -> None:
+        """Pawn with strong conversion + weak recovery emits `# asymmetry (pawn): ...`."""
+        filters = _sample_filter_context()
+        conv = self._finding(
+            subsection_id="conversion_recovery_by_type",
+            metric="conversion_win_pct",
+            window="all_time",
+            value=0.77,
+            zone="strong",
+            dimension={"endgame_class": "pawn", "bucket": "conversion"},
+        )
+        rec = self._finding(
+            subsection_id="conversion_recovery_by_type",
+            metric="recovery_save_pct",
+            window="all_time",
+            value=0.16,
+            zone="weak",
+            dimension={"endgame_class": "pawn", "bucket": "recovery"},
+        )
+        tab = _fake_findings(filters, findings=[conv, rec])
+        prompt = _assemble_user_prompt(tab)
+
+        assert "# asymmetry (pawn): conversion=77.0 strong, recovery=16.0 weak" in prompt
+        assert "closes winning endgames but bleeds losing ones" in prompt
+
+    def test_low_time_gap_line_emitted_in_time_pressure_chart(self) -> None:
+        """`# low-time gap (0-30% buckets, weighted):` appears in the chart caption."""
+        from app.schemas.endgames import TimePressureBucketPoint, TimePressureChartResponse
+
+        user_series = [
+            TimePressureBucketPoint(
+                bucket_index=i,
+                bucket_label=f"{i * 10}-{(i + 1) * 10}%",
+                score=0.30 + 0.03 * i,
+                game_count=100,
+            )
+            for i in range(10)
+        ]
+        opp_series = [
+            TimePressureBucketPoint(
+                bucket_index=i,
+                bucket_label=f"{i * 10}-{(i + 1) * 10}%",
+                score=0.50 + 0.01 * i,
+                game_count=100,
+            )
+            for i in range(10)
+        ]
+        chart = TimePressureChartResponse(
+            user_series=user_series, opp_series=opp_series, total_endgame_games=1000
+        )
+        tab = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[],
+            time_pressure_chart=chart,
+            findings_hash="b" * 64,
+        )
+        prompt = _assemble_user_prompt(tab)
+
+        assert "# low-time gap (0-30% buckets, weighted):" in prompt
+        assert "user cracks under time pressure" in prompt
+
+    def test_delta_line_emitted_for_paired_windows(self) -> None:
+        """Paired all_time + last_3mo scalars emit a `# delta ... within-noise` line."""
+        filters = _sample_filter_context()
+        at = self._finding(
+            subsection_id="endgame_metrics",
+            metric="endgame_skill",
+            window="all_time",
+            value=0.45,
+            sample_size=2948,
+        )
+        lm = self._finding(
+            subsection_id="endgame_metrics",
+            metric="endgame_skill",
+            window="last_3mo",
+            value=0.49,
+            sample_size=195,
+        )
+        tab = _fake_findings(filters, findings=[at, lm])
+        prompt = _assemble_user_prompt(tab)
+
+        assert "# delta endgame_skill: all_time=+45.0 (n=2948) → last_3mo=+49.0 (n=195)" in prompt
+        assert "within-noise" in prompt
+
+
 # ---------------------------------------------------------------------------
 # TestHappyPath
 # ---------------------------------------------------------------------------

@@ -41,12 +41,14 @@ from app.repositories.llm_log_repository import (
     get_latest_report_for_user,
     get_oldest_recent_miss_timestamp,
 )
+from app.schemas.endgames import TimePressureChartResponse
 from app.schemas.insights import (
     EndgameInsightsReport,
     EndgameInsightsResponse,
     EndgameTabFindings,
     FilterContext,
     SubsectionFinding,
+    TimePoint,
 )
 from app.schemas.llm_log import LlmLogCreate, LlmLogEndpoint
 from app.services.endgame_zones import BUCKETED_ZONE_REGISTRY, ZONE_REGISTRY, ZoneSpec
@@ -55,7 +57,7 @@ from app.services.insights_service import compute_findings
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v6"  # bumped from "endgame_v5": rate/percent metrics flipped to 0-100 scale end-to-end (values, zone bounds, chart tables), pawnless findings filtered to match the hidden UI row, system-prompt rewrite with UI vocabulary block, win_rate-citation ban, staleness / latest-bucket / activity-gap / asymmetry / grounding / sample-size-delta rules
+_PROMPT_VERSION = "endgame_v6"  # bumped from "endgame_v5": (1) rate/percent metrics flipped to the 0-100 scale end-to-end (values, zone bounds, chart tables), (2) pawnless findings filtered to match the hidden UI row, (3) system-prompt rewrite with UI vocabulary block and win_rate-citation ban, (4) new rules for staleness / latest-bucket / activity-gap / intra-type asymmetry / grounding / sample-size-delta, (5) precomputed signals: ## Payload summary header, STALE markers on stale series, # trend tags, # asymmetry flags, # low-time gap scalar, # delta all_time↔last_3mo annotations
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
@@ -89,6 +91,25 @@ _NON_FRACTIONAL_METRICS: frozenset[str] = frozenset(
 def _scale_for_metric(metric_id: str) -> float:
     """Multiplier applied to a raw metric value before rendering in the prompt."""
     return 1.0 if metric_id in _NON_FRACTIONAL_METRICS else 100.0
+
+
+# Batch 2 enrichment thresholds (v6).
+_STALE_SERIES_THRESHOLD_DAYS: int = 183  # ~6 months: a combo whose last bucket is this far behind the newest bucket across any series is flagged STALE.
+_TREND_MIN_POINTS: int = 4  # minimum retained buckets before we emit a # trend tag
+_TREND_FLAT_THRESHOLD: float = (
+    3.0  # on the 0-100 scale; |latest - mean(prior 3)| below this reads as flat
+)
+_LOW_TIME_BUCKETS: tuple[int, ...] = (0, 1, 2)  # 0-10%, 10-20%, 20-30%
+_LOW_TIME_GAP_DECISIVE: float = (
+    5.0  # on 0-100 scale; user vs opp gap below this reads as near-parity
+)
+_DELTA_WITHIN_NOISE_SHIFT: float = (
+    5.0  # |all_time → last_3mo| shift on 0-100 scale below this reads as within-noise
+)
+_DELTA_WITHIN_NOISE_ELO: float = (
+    50.0  # |Elo delta| below this reads as within-noise for endgame_elo_gap
+)
+_DELTA_SMALL_SAMPLE_RATIO: float = 0.20  # last_3mo_n / all_time_n below this → within-noise flag only fires with this much size mismatch
 
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
@@ -348,9 +369,12 @@ def _format_time_pressure_chart_block(findings: EndgameTabFindings) -> list[str]
         "Rows show Score % conditional on time remaining at endgame entry, "
         "for the user and the opponent separately (each side binned by their own clock). "
         "user_score / opp_score are on the 0-100 Score % scale (wins=100, draws=50).",
-        "| time_left | user_score | user_n | opp_score | opp_n |",
-        "| --------- | ---------- | ------ | ---------- | ------ |",
     ]
+    low_time_line = _low_time_gap_line(chart)
+    if low_time_line:
+        lines.append(low_time_line)
+    lines.append("| time_left | user_score | user_n | opp_score | opp_n |")
+    lines.append("| --------- | ---------- | ------ | ---------- | ------ |")
     lines.extend(rows)
     lines.append("")
     return lines
@@ -444,6 +468,242 @@ def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
     return lines
 
 
+# -- Batch 2 enrichments (v6): mechanical signals precomputed for the LLM --
+
+
+def _newest_bucket_date(findings: list[SubsectionFinding]) -> datetime.date | None:
+    """Return the most recent bucket date across every series in the payload."""
+    newest: datetime.date | None = None
+    for f in findings:
+        if f.series is None:
+            continue
+        for pt in f.series:
+            try:
+                d = datetime.date.fromisoformat(pt.bucket_start)
+            except ValueError:
+                continue
+            if newest is None or d > newest:
+                newest = d
+    return newest
+
+
+def _stale_marker(series: list[TimePoint] | None, newest_payload_date: datetime.date | None) -> str:
+    """Return 'STALE: last bucket YYYY-MM (N months old)' or '' if the series is live."""
+    if not series or newest_payload_date is None:
+        return ""
+    try:
+        last_date = datetime.date.fromisoformat(series[-1].bucket_start)
+    except ValueError:
+        return ""
+    delta_days = (newest_payload_date - last_date).days
+    if delta_days < _STALE_SERIES_THRESHOLD_DAYS:
+        return ""
+    # Approximate month count — good enough for a narration hint; we round to
+    # whole months (30d) rather than exact calendar months.
+    months = delta_days // 30
+    return f"STALE: last bucket {last_date.strftime('%Y-%m')} ({months} months old)"
+
+
+def _trend_tag(metric_id: str, points: list[TimePoint]) -> str:
+    """Emit a '# trend: direction=..., latest=..., prior-mean=..., n(last4)=...' comment.
+
+    Uses the last 4 retained points (post A4/C2/C6 filtering): the most recent
+    bucket plus its prior 3. Direction is flat when |latest - prior-mean| <
+    _TREND_FLAT_THRESHOLD, otherwise improving / regressing relative to the
+    prior-mean. Returns '' when fewer than _TREND_MIN_POINTS buckets remain —
+    the series interpretation rule in the system prompt already bars trend
+    claims on short windows; we simply don't hand the LLM a misleading tag.
+    """
+    if len(points) < _TREND_MIN_POINTS:
+        return ""
+    scale = _scale_for_metric(metric_id)
+    latest = points[-1].value * scale
+    prior_values = [pt.value * scale for pt in points[-4:-1]]
+    prior_mean = sum(prior_values) / len(prior_values)
+    diff = latest - prior_mean
+    if abs(diff) < _TREND_FLAT_THRESHOLD:
+        direction = "flat"
+    elif diff > 0:
+        direction = "improving"
+    else:
+        direction = "regressing"
+    n_last4 = sum(pt.n for pt in points[-4:])
+    return (
+        f"# trend: direction={direction}, latest={latest:+.1f}, "
+        f"prior-mean={prior_mean:+.1f}, n(last4)={n_last4}"
+    )
+
+
+def _asymmetry_lines(findings: list[SubsectionFinding]) -> list[str]:
+    """Detect per-type Conversion/Recovery zone splits (one strong + one weak).
+
+    Scans all_time `conversion_recovery_by_type` findings grouped by endgame
+    class. When the two metrics sit in opposing zones, emits a comment the LLM
+    should lead with for that type — the "you close winning pawn endgames but
+    bleed losing ones" story is easy to miss if both bullets are narrated flat.
+    Pawnless is skipped to stay consistent with the hidden-UI filter.
+    """
+    conv: dict[str, SubsectionFinding] = {}
+    rec: dict[str, SubsectionFinding] = {}
+    for f in findings:
+        if f.subsection_id != "conversion_recovery_by_type" or f.window != "all_time":
+            continue
+        if f.dimension is None:
+            continue
+        klass = f.dimension.get("endgame_class")
+        if klass is None or klass == "pawnless":
+            continue
+        if f.metric == "conversion_win_pct":
+            conv[klass] = f
+        elif f.metric == "recovery_save_pct":
+            rec[klass] = f
+    lines: list[str] = []
+    for klass in sorted(conv):
+        c = conv.get(klass)
+        r = rec.get(klass)
+        if c is None or r is None:
+            continue
+        if {c.zone, r.zone} != {"strong", "weak"}:
+            continue
+        c_val = c.value * 100.0
+        r_val = r.value * 100.0
+        if c.zone == "strong":
+            story = "closes winning endgames but bleeds losing ones"
+        else:
+            story = "defends losing endgames but mishandles winning ones"
+        lines.append(
+            f"# asymmetry ({klass}): conversion={c_val:.1f} {c.zone}, "
+            f"recovery={r_val:.1f} {r.zone} — {story}"
+        )
+    return lines
+
+
+def _low_time_gap_line(chart: TimePressureChartResponse | None) -> str:
+    """Weighted user-vs-opp Score % over the low-time buckets (0-30%)."""
+    if chart is None:
+        return ""
+    user_by_idx = {p.bucket_index: p for p in chart.user_series}
+    opp_by_idx = {p.bucket_index: p for p in chart.opp_series}
+    user_num = user_den = opp_num = opp_den = 0.0
+    for idx in _LOW_TIME_BUCKETS:
+        u = user_by_idx.get(idx)
+        o = opp_by_idx.get(idx)
+        if u is not None and u.score is not None and u.game_count >= _MIN_GAMES_FOR_RELIABLE_BUCKET:
+            user_num += u.score * u.game_count
+            user_den += u.game_count
+        if o is not None and o.score is not None and o.game_count >= _MIN_GAMES_FOR_RELIABLE_BUCKET:
+            opp_num += o.score * o.game_count
+            opp_den += o.game_count
+    if user_den == 0 or opp_den == 0:
+        return ""
+    user_avg = user_num / user_den * 100.0
+    opp_avg = opp_num / opp_den * 100.0
+    gap = user_avg - opp_avg
+    if gap < -_LOW_TIME_GAP_DECISIVE:
+        verdict = "user cracks under time pressure"
+    elif gap > _LOW_TIME_GAP_DECISIVE:
+        verdict = "user cooler under time pressure"
+    else:
+        verdict = "near parity"
+    return (
+        f"# low-time gap (0-30% buckets, weighted): user={user_avg:.1f}, opp={opp_avg:.1f}, "
+        f"gap={gap:+.1f} — {verdict}"
+    )
+
+
+def _delta_lines_for_subsection(members: list[SubsectionFinding]) -> list[str]:
+    """Emit '# delta <metric>[<dim>]: all_time=X → last_3mo=Y, shift=Z[, within-noise]'."""
+    by_key: dict[tuple[str, str], dict[str, SubsectionFinding]] = {}
+    for f in members:
+        if f.series is not None:
+            continue  # only scalar (non-timeline) findings
+        dim_key = (
+            ""
+            if f.dimension is None
+            else ",".join(f"{k}={v}" for k, v in sorted(f.dimension.items()))
+        )
+        by_key.setdefault((f.metric, dim_key), {})[f.window] = f
+
+    lines: list[str] = []
+    for (metric, dim_key), windows in by_key.items():
+        at = windows.get("all_time")
+        lm = windows.get("last_3mo")
+        if at is None or lm is None:
+            continue
+        scale = _scale_for_metric(metric)
+        at_val = at.value * scale
+        lm_val = lm.value * scale
+        shift = lm_val - at_val
+        noise_cap = (
+            _DELTA_WITHIN_NOISE_ELO if metric == "endgame_elo_gap" else _DELTA_WITHIN_NOISE_SHIFT
+        )
+        sample_mismatch = (
+            at.sample_size > 0 and (lm.sample_size / at.sample_size) < _DELTA_SMALL_SAMPLE_RATIO
+        )
+        noise_tag = ", within-noise" if abs(shift) < noise_cap and sample_mismatch else ""
+        dim_note = f" [{dim_key}]" if dim_key else ""
+        lines.append(
+            f"# delta {metric}{dim_note}: all_time={at_val:+.1f} (n={at.sample_size}) → "
+            f"last_3mo={lm_val:+.1f} (n={lm.sample_size}), shift={shift:+.1f}{noise_tag}"
+        )
+    return lines
+
+
+def _count_activity_gaps(findings: list[SubsectionFinding]) -> int:
+    """Count >90-day gaps between consecutive retained bucket pairs across all series."""
+    count = 0
+    for f in findings:
+        if f.series is None:
+            continue
+        prev: datetime.date | None = None
+        for pt in f.series:
+            if pt.n < MIN_BUCKET_N:
+                continue
+            try:
+                d = datetime.date.fromisoformat(pt.bucket_start)
+            except ValueError:
+                continue
+            if prev is not None and (d - prev).days > _ACTIVITY_GAP_DAYS:
+                count += 1
+            prev = d
+    return count
+
+
+def _payload_summary_lines(
+    findings: EndgameTabFindings,
+    *,
+    newest_date: datetime.date | None,
+    stale_series_count: int,
+    asymmetry_count: int,
+    activity_gap_count: int,
+) -> list[str]:
+    """Compact summary prepended to the prompt so macro context is always visible."""
+    lines: list[str] = ["## Payload summary"]
+    if findings.overall_performance is not None:
+        total_games = (
+            findings.overall_performance.endgame_wdl.total
+            + findings.overall_performance.non_endgame_wdl.total
+        )
+        if total_games > 0:
+            lines.append(f"- Total games in scope: {total_games}")
+    if newest_date is not None:
+        lines.append(f"- Newest bucket across all series: {newest_date.isoformat()}")
+    if activity_gap_count > 0:
+        lines.append(
+            f"- Activity gaps (>{_ACTIVITY_GAP_DAYS}d) across all series: {activity_gap_count}"
+        )
+    if stale_series_count > 0:
+        lines.append(
+            f"- Stale series (>{_STALE_SERIES_THRESHOLD_DAYS}d behind newest): {stale_series_count}"
+        )
+    if asymmetry_count > 0:
+        lines.append(f"- Conversion/Recovery asymmetries detected: {asymmetry_count}")
+    if len(lines) == 1:  # only the header line
+        return []
+    lines.append("")
+    return lines
+
+
 def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     """Render EndgameTabFindings as structured text for the LLM (D-29 format).
 
@@ -506,15 +766,37 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     today = datetime.date.today()
     all_time_cutoff = (today - datetime.timedelta(days=_ALL_TIME_CUTOFF_DAYS)).isoformat()
 
+    # Batch 2 pre-pass: compute cross-finding signals the LLM routinely misses.
+    newest_date = _newest_bucket_date(visible)
+    stale_markers: dict[int, str] = {}
+    stale_count = 0
+    for f in visible:
+        if f.series is None:
+            continue
+        marker = _stale_marker(f.series, newest_date)
+        if marker:
+            stale_markers[id(f)] = marker
+            stale_count += 1
+    asymmetry_lines = _asymmetry_lines(visible)
+    activity_gap_count = _count_activity_gaps(visible)
+
     # C1: group by subsection_id preserving first-seen order.
     groups: OrderedDict[str, list[SubsectionFinding]] = OrderedDict()
     for f in visible:
         groups.setdefault(f.subsection_id, []).append(f)
 
-    lines: list[str] = [
-        _format_filters_for_prompt(findings.filters),
-        "",
-    ]
+    lines: list[str] = []
+    lines.extend(
+        _payload_summary_lines(
+            findings,
+            newest_date=newest_date,
+            stale_series_count=stale_count,
+            asymmetry_count=len(asymmetry_lines),
+            activity_gap_count=activity_gap_count,
+        )
+    )
+    lines.append(_format_filters_for_prompt(findings.filters))
+    lines.append("")
 
     for subsection_id, members in groups.items():
         header = f"## Subsection: {subsection_id}"
@@ -527,6 +809,12 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
             header += f" (parent: {parent})"
         lines.append(header)
 
+        # v6 enrichments anchored to specific subsections.
+        if subsection_id == "endgame_metrics":
+            lines.extend(_delta_lines_for_subsection(members))
+        if subsection_id == "conversion_recovery_by_type" and asymmetry_lines:
+            lines.extend(asymmetry_lines)
+
         for f in members:
             dim = ""
             if f.dimension:
@@ -534,9 +822,10 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
             bounds = _format_zone_bounds(f.metric, f.dimension)
             zone_label = f"{f.zone} {bounds}".rstrip()
             value_scaled = f.value * _scale_for_metric(f.metric)
+            stale_suffix = f" | {stale_markers[id(f)]}" if id(f) in stale_markers else ""
             lines.append(
                 f"- {f.metric} ({f.window}): {value_scaled:+.1f} | {zone_label} | "
-                f"{f.sample_size} games | {f.sample_quality}{dim}"
+                f"{f.sample_size} games | {f.sample_quality}{dim}{stale_suffix}"
             )
 
             # Series rendering with A4/C2/C3/C5/C6 filters applied.
@@ -571,6 +860,9 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
                 else:
                     resolution = "monthly"
                 lines.append(f"### Series ({f.metric}, {f.window}, {resolution})")
+                trend_line = _trend_tag(f.metric, points)
+                if trend_line:
+                    lines.append(trend_line)
 
                 # C3: emit points with activity-gap markers between >90-day gaps.
                 series_scale = _scale_for_metric(f.metric)
