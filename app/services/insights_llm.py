@@ -55,7 +55,7 @@ from app.services.insights_service import compute_findings
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v5"  # bumped from "endgame_v4" when tone recalibrated, inline zone bounds added, overall scalar dropped when wdl chart present, all_time series capped, last_3mo series skipped when all_time present
+_PROMPT_VERSION = "endgame_v6"  # bumped from "endgame_v5": rate/percent metrics flipped to 0-100 scale end-to-end (values, zone bounds, chart tables), pawnless findings filtered to match the hidden UI row, system-prompt rewrite with UI vocabulary block, win_rate-citation ban, staleness / latest-bucket / activity-gap / asymmetry / grounding / sample-size-delta rules
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
@@ -75,6 +75,21 @@ _SKIPPED_SUBSECTIONS: frozenset[str] = frozenset({"time_pressure_vs_performance"
 # Mirror frontend MIN_GAMES_FOR_RELIABLE_STATS (frontend/src/lib/theme.ts) so
 # the LLM sees the same bucket gating as the rendered chart.
 _MIN_GAMES_FOR_RELIABLE_BUCKET: int = 10
+
+# Metrics already emitted on a non-fractional scale (Elo points or percentage points).
+# Everything else is a fraction in [0, 1] (or signed [-1, +1] for score_gap) at the
+# service layer and gets multiplied by 100 here so the LLM payload matches the UI's
+# 0-100 percentage scale (v6 shape). Keeping the registry/service layer fractional
+# keeps the frontend gauge codegen unchanged; the scale flip lives at the formatter only.
+_NON_FRACTIONAL_METRICS: frozenset[str] = frozenset(
+    {"endgame_elo_gap", "avg_clock_diff_pct", "net_timeout_rate"}
+)
+
+
+def _scale_for_metric(metric_id: str) -> float:
+    """Multiplier applied to a raw metric value before rendering in the prompt."""
+    return 1.0 if metric_id in _NON_FRACTIONAL_METRICS else 100.0
+
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
@@ -97,27 +112,29 @@ def _build_zone_threshold_appendix() -> str:
     )
     lines.append("")
     for metric_id, spec in ZONE_REGISTRY.items():
+        scale = _scale_for_metric(metric_id)
+        lo = spec.typical_lower * scale
+        hi = spec.typical_upper * scale
         if spec.direction == "higher_is_better":
             lines.append(
-                f"- `{metric_id}`: weak<{spec.typical_lower:.2f}, "
-                f"typical [{spec.typical_lower:.2f}, {spec.typical_upper:.2f}], "
-                f"strong>{spec.typical_upper:.2f}"
+                f"- `{metric_id}`: weak<{lo:.1f}, typical [{lo:.1f}, {hi:.1f}], strong>{hi:.1f}"
             )
         else:
             lines.append(
-                f"- `{metric_id}` (lower_is_better): strong<={spec.typical_lower:.2f}, "
-                f"typical [{spec.typical_lower:.2f}, {spec.typical_upper:.2f}], "
-                f"weak>{spec.typical_upper:.2f}"
+                f"- `{metric_id}` (lower_is_better): strong<={lo:.1f}, "
+                f"typical [{lo:.1f}, {hi:.1f}], "
+                f"weak>{hi:.1f}"
             )
     lines.append("")
     lines.append("Bucketed metrics (one band per MaterialBucket):")
     for metric_id, buckets in BUCKETED_ZONE_REGISTRY.items():
+        scale = _scale_for_metric(metric_id)
         lines.append(f"- `{metric_id}`:")
         for bucket, spec in buckets.items():
+            lo = spec.typical_lower * scale
+            hi = spec.typical_upper * scale
             lines.append(
-                f"  - {bucket}: weak<{spec.typical_lower:.2f}, "
-                f"typical [{spec.typical_lower:.2f}, {spec.typical_upper:.2f}], "
-                f"strong>{spec.typical_upper:.2f}"
+                f"  - {bucket}: weak<{lo:.1f}, typical [{lo:.1f}, {hi:.1f}], strong>{hi:.1f}"
             )
     return "\n".join(lines) + "\n"
 
@@ -260,8 +277,11 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
         spec = scalar[metric_id]
     if spec is None:
         return ""
+    scale = _scale_for_metric(metric_id)
+    lo = spec.typical_lower * scale
+    hi = spec.typical_upper * scale
     direction_note = ", lower is better" if spec.direction == "lower_is_better" else ""
-    return f"(typical {spec.typical_lower:+.2f} to {spec.typical_upper:+.2f}{direction_note})"
+    return f"(typical {lo:+.1f} to {hi:+.1f}{direction_note})"
 
 
 def _format_filters_for_prompt(filters: FilterContext) -> str:
@@ -308,12 +328,12 @@ def _format_time_pressure_chart_block(findings: EndgameTabFindings) -> list[str]
             continue
         label = u.bucket_label if u else (o.bucket_label if o else f"{idx * 10}-{(idx + 1) * 10}%")
         u_score = (
-            f"{u.score:.2f}"
+            f"{u.score * 100:.1f}"
             if u is not None and u.score is not None and u_n >= _MIN_GAMES_FOR_RELIABLE_BUCKET
             else "—"
         )
         o_score = (
-            f"{o.score:.2f}"
+            f"{o.score * 100:.1f}"
             if o is not None and o.score is not None and o_n >= _MIN_GAMES_FOR_RELIABLE_BUCKET
             else "—"
         )
@@ -326,7 +346,8 @@ def _format_time_pressure_chart_block(findings: EndgameTabFindings) -> list[str]
         "## Chart: time_pressure_vs_performance (all_time)",
         f"Total endgame games: {chart.total_endgame_games}. "
         "Rows show Score % conditional on time remaining at endgame entry, "
-        "for the user and the opponent separately (each side binned by their own clock).",
+        "for the user and the opponent separately (each side binned by their own clock). "
+        "user_score / opp_score are on the 0-100 Score % scale (wins=100, draws=50).",
         "| time_left | user_score | user_n | opp_score | opp_n |",
         "| --------- | ---------- | ------ | ---------- | ------ |",
     ]
@@ -354,13 +375,10 @@ def _format_overall_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
         total = summary.total
         if total < _MIN_GAMES_FOR_RELIABLE_BUCKET:
             continue
-        win_frac = summary.win_pct / 100.0
-        draw_frac = summary.draw_pct / 100.0
-        loss_frac = summary.loss_pct / 100.0
-        score_frac = (summary.wins + 0.5 * summary.draws) / total
+        score_pct = (summary.wins + 0.5 * summary.draws) / total * 100.0
         rows.append(
-            f"| {label:<11} | {total:<5} | {win_frac:.2f}    | {draw_frac:.2f}     | "
-            f"{loss_frac:.2f}     | {score_frac:.3f}     |"
+            f"| {label:<11} | {total:<5} | {summary.win_pct:.1f}   | {summary.draw_pct:.1f}    | "
+            f"{summary.loss_pct:.1f}    | {score_pct:.1f}     |"
         )
 
     if not rows:
@@ -369,7 +387,7 @@ def _format_overall_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
     lines: list[str] = [
         "## Chart: overall_wdl (all_time)",
         "Two-row WDL comparison for games that reached an endgame phase vs games that did not. "
-        "score_pct uses wins=1, draws=0.5, losses=0.",
+        "All columns are on the 0-100 percentage scale; score_pct uses wins=100, draws=50, losses=0.",
         "| series      | games | win_pct | draw_pct | loss_pct | score_pct |",
         "| ----------- | ----- | ------- | -------- | -------- | --------- |",
     ]
@@ -393,19 +411,21 @@ def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
     if not categories:
         return []
 
-    sorted_cats = sorted(categories, key=lambda c: c.total, reverse=True)
+    # Drop pawnless: hidden in the UI, so the LLM should not narrate it either.
+    sorted_cats = sorted(
+        (c for c in categories if c.endgame_class != "pawnless"),
+        key=lambda c: c.total,
+        reverse=True,
+    )
 
     rows: list[str] = []
     for cat in sorted_cats:
         if cat.total < _MIN_GAMES_FOR_RELIABLE_BUCKET:
             continue
-        win_frac = cat.win_pct / 100.0
-        draw_frac = cat.draw_pct / 100.0
-        loss_frac = cat.loss_pct / 100.0
-        score_frac = (cat.wins + 0.5 * cat.draws) / cat.total
+        score_pct = (cat.wins + 0.5 * cat.draws) / cat.total * 100.0
         rows.append(
-            f"| {cat.endgame_class:<13} | {cat.total:<5} | {win_frac:.2f}    | "
-            f"{draw_frac:.2f}     | {loss_frac:.2f}     | {score_frac:.3f}     |"
+            f"| {cat.endgame_class:<13} | {cat.total:<5} | {cat.win_pct:.1f}   | "
+            f"{cat.draw_pct:.1f}    | {cat.loss_pct:.1f}    | {score_pct:.1f}     |"
         )
 
     if not rows:
@@ -413,9 +433,9 @@ def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
 
     lines: list[str] = [
         "## Chart: results_by_endgame_type_wdl (all_time)",
-        "Per-endgame-type W/D/L and Score % for the user. opp_score_pct = 1 - score_pct "
-        "(both sides played the same games), so a score_pct above 0.50 means the user "
-        "outscores their opponents in that type.",
+        "Per-endgame-type W/D/L and Score % for the user. All columns are on the 0-100 "
+        "percentage scale. opp_score_pct = 100 - score_pct (both sides played the same "
+        "games), so a score_pct above 50 means the user outscores their opponents in that type.",
         "| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct |",
         "| ------------- | ----- | ------- | -------- | -------- | --------- |",
     ]
@@ -452,12 +472,16 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     type_wdl_block = _format_type_wdl_chart_block(findings)
 
     # A5 + A2: drop hidden subsections, NaN values, and thin empty findings.
+    # v6: also drop any finding dimensioned on endgame_class=pawnless — the UI
+    # hides pawnless rows (ENDGAME_CLASS_LABELS, Endgames.tsx) so the LLM must
+    # not narrate a type the user cannot see.
     visible: list[SubsectionFinding] = [
         f
         for f in findings.findings
         if f.subsection_id not in _SKIPPED_SUBSECTIONS
         and not math.isnan(f.value)
         and not (f.sample_size == 0 and f.sample_quality == "thin")
+        and not (f.dimension is not None and f.dimension.get("endgame_class") == "pawnless")
     ]
 
     # C4: drop the scalar `overall` subsection when the overall_wdl chart will
@@ -509,8 +533,9 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
                 dim = " [" + ", ".join(f"{k}={v}" for k, v in f.dimension.items()) + "]"
             bounds = _format_zone_bounds(f.metric, f.dimension)
             zone_label = f"{f.zone} {bounds}".rstrip()
+            value_scaled = f.value * _scale_for_metric(f.metric)
             lines.append(
-                f"- {f.metric} ({f.window}): {f.value:+.2f} | {zone_label} | "
+                f"- {f.metric} ({f.window}): {value_scaled:+.1f} | {zone_label} | "
                 f"{f.sample_size} games | {f.sample_quality}{dim}"
             )
 
@@ -548,6 +573,7 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
                 lines.append(f"### Series ({f.metric}, {f.window}, {resolution})")
 
                 # C3: emit points with activity-gap markers between >90-day gaps.
+                series_scale = _scale_for_metric(f.metric)
                 prev_date: datetime.date | None = None
                 prev_bucket_start: str | None = None
                 for pt in points:
@@ -558,7 +584,8 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
                         and (curr_date - prev_date).days > _ACTIVITY_GAP_DAYS
                     ):
                         lines.append(f"# Activity gap: {prev_bucket_start} → {pt.bucket_start}")
-                    lines.append(f"{pt.bucket_start}: {pt.value:+.3f} (n={pt.n})")
+                    pt_value = pt.value * series_scale
+                    lines.append(f"{pt.bucket_start}: {pt_value:+.1f} (n={pt.n})")
                     prev_date = curr_date
                     prev_bucket_start = pt.bucket_start
 

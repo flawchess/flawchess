@@ -60,7 +60,7 @@ def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameI
             ),
         ],
         model_used="test",
-        prompt_version="endgame_v5",
+        prompt_version="endgame_v6",
     )
 
 
@@ -84,7 +84,7 @@ def _make_log_row(
     error: str | None = None,
     response_json: dict[str, Any] | None = None,
     cache_hit: bool = False,
-    prompt_version: str = "endgame_v5",
+    prompt_version: str = "endgame_v6",
     model: str = "test",
     findings_hash: str = "b" * 64,
 ) -> LlmLog:
@@ -516,9 +516,10 @@ class TestPromptAssembly:
         assert "| series      | games | win_pct | draw_pct | loss_pct | score_pct |" in prompt
         assert "| endgame     | 240" in prompt
         assert "| non_endgame | 700" in prompt
-        # Score % computed as (W + 0.5*D)/total: endgame=140/240=0.583, non-endgame=325/700=0.464
-        assert "0.583" in prompt
-        assert "0.464" in prompt
+        # v6 0-100 scale: Score % = (W + 0.5*D)/total * 100.
+        # endgame = 140/240*100 = 58.3, non-endgame = 325/700*100 = 46.4
+        assert "58.3" in prompt
+        assert "46.4" in prompt
 
     def test_assemble_user_prompt_omits_overall_wdl_when_thin(self) -> None:
         """Rows below the 10-game floor are dropped; block omitted if all dropped."""
@@ -633,6 +634,98 @@ class TestPromptAssembly:
         # Queen (n=3) dropped by 10-game floor.
         assert "| queen" not in prompt
 
+    def test_pawnless_findings_are_filtered(self) -> None:
+        """v6: pawnless-dimensioned findings and chart rows are stripped.
+
+        The UI hides pawnless in ENDGAME_CLASS_LABELS (Endgames.tsx); the LLM
+        must not narrate a type the user cannot see. Applies to both per-type
+        findings (dimension.endgame_class == "pawnless") and the
+        results_by_endgame_type_wdl chart row.
+        """
+        from typing import cast
+
+        from app.schemas.endgames import ConversionRecoveryStats, EndgameCategoryStats
+        from app.schemas.insights import MetricId
+
+        filters = _sample_filter_context()
+        rook_finding = SubsectionFinding(
+            subsection_id="results_by_endgame_type",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="win_rate",
+            value=0.41,
+            zone="weak",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=100,
+            sample_quality="rich",
+            is_headline_eligible=True,
+            dimension={"endgame_class": "rook"},
+            series=None,
+        )
+        pawnless_finding = SubsectionFinding(
+            subsection_id="results_by_endgame_type",
+            parent_subsection_id=None,
+            window="all_time",
+            metric=cast(MetricId, "win_rate"),
+            value=0.58,
+            zone="strong",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=19,
+            sample_quality="adequate",
+            is_headline_eligible=True,
+            dimension={"endgame_class": "pawnless"},
+            series=None,
+        )
+        conv_stub = ConversionRecoveryStats.model_construct(
+            conversion_games=0,
+            conversion_wins=0,
+            conversion_pct=0.0,
+            recovery_games=0,
+            recovery_saves=0,
+            recovery_pct=0.0,
+        )
+        categories = [
+            EndgameCategoryStats(
+                endgame_class="rook",
+                label="Rook",
+                wins=41,
+                draws=12,
+                losses=47,
+                total=100,
+                win_pct=41.0,
+                draw_pct=12.0,
+                loss_pct=47.0,
+                conversion=conv_stub,
+            ),
+            EndgameCategoryStats(
+                endgame_class="pawnless",
+                label="Pawnless",
+                wins=11,
+                draws=5,
+                losses=3,
+                total=19,
+                win_pct=57.9,
+                draw_pct=26.3,
+                loss_pct=15.8,
+                conversion=conv_stub,
+            ),
+        ]
+        tab = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=filters,
+            findings=[rook_finding, pawnless_finding],
+            type_categories=categories,
+            findings_hash="b" * 64,
+        )
+        prompt = _assemble_user_prompt(tab)
+
+        assert "endgame_class=rook" in prompt
+        assert "endgame_class=pawnless" not in prompt
+        assert "| rook" in prompt
+        assert "| pawnless" not in prompt
+
     def test_bullet_includes_inline_zone_bounds(self) -> None:
         """v5: every finding bullet renders `(typical LO to UP)` next to its zone.
 
@@ -694,12 +787,12 @@ class TestPromptAssembly:
         tab = _fake_findings(filters, findings=[scalar, bucketed, timeout])
         prompt = _assemble_user_prompt(tab)
 
-        # Scalar metric: score_gap band is -0.10 to +0.10.
-        assert "weak (typical -0.10 to +0.10)" in prompt
-        # Bucketed metric: conversion bucket band is +0.65 to +0.75.
-        assert "weak (typical +0.65 to +0.75)" in prompt
-        # lower_is_better metric: net_timeout_rate band flagged accordingly.
-        assert "weak (typical -5.00 to +5.00, lower is better)" in prompt
+        # v6 0-100 scale: score_gap band is -10.0 to +10.0 pp.
+        assert "weak (typical -10.0 to +10.0)" in prompt
+        # v6 0-100 scale: conversion bucket band is +65.0 to +75.0.
+        assert "weak (typical +65.0 to +75.0)" in prompt
+        # lower_is_better metric: net_timeout_rate band (already pp) now rendered at .1f.
+        assert "weak (typical -5.0 to +5.0, lower is better)" in prompt
 
     def test_overall_subsection_dropped_when_wdl_chart_present(self) -> None:
         """v5 C4: scalar `overall` subsection is omitted when overall_wdl renders.
@@ -1006,7 +1099,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v5"
+        assert response.report.prompt_version == "endgame_v6"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -1030,7 +1123,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v5"
+        assert log.response_json["prompt_version"] == "endgame_v6"
 
 
 class TestCacheBehavior:
@@ -1053,7 +1146,7 @@ class TestCacheBehavior:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
         # Seed a cache-hit eligible row: error=None, response_json set,
-        # matching (findings_hash, prompt_version="endgame_v5", model="test").
+        # matching (findings_hash, prompt_version="endgame_v6", model="test").
         async with session_maker() as session:
             await _seed(
                 session,
@@ -1224,7 +1317,7 @@ class TestRateLimit:
         # Seed 3 successful miss rows with an OLD prompt_version so they count
         # toward the rate-limit (count_recent_successful_misses does NOT filter
         # by prompt_version) but are NOT returned by get_latest_report_for_user
-        # (which filters by prompt_version="endgame_v5"), producing "no tier-2".
+        # (which filters by prompt_version="endgame_v6"), producing "no tier-2".
         now = datetime.datetime.now(datetime.UTC)
         # Build a valid report JSON for rows (avoids ValidationError in case tier-2
         # is somehow reached — but with the prompt_version mismatch it should not be).
@@ -1360,7 +1453,7 @@ class TestErrors:
             "overview": "ok",
             "sections": [],  # violates min_length=1
             "model_used": "test",
-            "prompt_version": "endgame_v5",
+            "prompt_version": "endgame_v6",
         }
         fake = Agent(
             TestModel(custom_output_args=bad_output),
