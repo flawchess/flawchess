@@ -319,7 +319,10 @@ Plans:
   3. The `app/prompts/endgame_insights.md` prompt no longer carries the special `score_gap` framing rule at line ~290 (chart obviates the need); the `score_gap_timeline` "no [summary]" exception note is removed; all references to the old chart name are updated.
   4. The info popover for the chart no longer contains the "the Score Gap is a comparison, not an absolute measure" caveat paragraph — the two-line rendering makes the point self-evident.
   5. Existing insights snapshot tests pass (the rename doesn't change the LLM's narrative content, only the framing rule), and the endgame page renders correctly on mobile.
-**Plans:** 0 plans
+**Plans:** 4 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 68 to break down)
+- [ ] 68-01-backend-subsection-rename-PLAN.md — Rename score_gap_timeline → score_timeline subsection, emit two series (endgame + non_endgame), keep overall [summary score_gap] unchanged
+- [ ] 68-02-frontend-dual-line-chart-PLAN.md — Replace single-line chart with dual-line + shaded area fill (green when endgame leads, red when trails); rewrite info popover
+- [ ] 68-03-prompt-simplification-PLAN.md — Drop score_gap framing rule + summary-per-metric exception from endgame_insights.md; bump prompt to endgame_v13
+- [ ] 68-04-snapshot-and-changelog-PLAN.md — End-to-end integration test (findings → prompt assembly); CHANGELOG Unreleased bullet
