@@ -4,8 +4,8 @@ set -euo pipefail
 # Deploy to production via GitHub Actions (runs CI tests first, then deploys).
 # Usage: bin/deploy.sh
 
-echo "Uploading prod.env to server..."
-scp prod.env flawchess:/opt/flawchess/.env
+echo "Uploading .prod.env to server..."
+scp .prod.env flawchess:/opt/flawchess/.env
 
 echo "Triggering deploy workflow on main..."
 gh workflow run CI --ref main --field deploy=true
