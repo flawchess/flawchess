@@ -41,7 +41,7 @@ MetricId = Literal[
 
 SubsectionId = Literal[
     "overall",
-    "score_gap_timeline",
+    "score_timeline",
     "endgame_metrics",
     "endgame_elo_timeline",
     "time_pressure_at_entry",
@@ -207,7 +207,7 @@ BUCKETED_ZONE_REGISTRY: Mapping[BucketedMetricId, Mapping[MaterialBucket, ZoneSp
 
 SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
     "overall": (50, 200),
-    "score_gap_timeline": (10, 52),
+    "score_timeline": (10, 52),
     "endgame_metrics": (30, 100),
     "endgame_elo_timeline": (10, 40),
     "time_pressure_at_entry": (10, 50),

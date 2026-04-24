@@ -576,7 +576,7 @@ class TestSubsectionFindingSeries:
 
     def _minimal_kwargs(self) -> dict[str, Any]:
         return dict(
-            subsection_id="score_gap_timeline",
+            subsection_id="score_timeline",
             window="last_3mo",
             metric="score_gap",
             value=4.2,

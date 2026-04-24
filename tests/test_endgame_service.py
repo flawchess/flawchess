@@ -2693,10 +2693,22 @@ class TestComputeScoreGapTimeline:
         assert series[0].score_difference == pytest.approx(1.0)
         assert series[0].endgame_game_count == 10
         assert series[0].non_endgame_game_count == 10
+        # Phase 68: absolute per-side means persisted.
+        assert series[0].endgame_score == pytest.approx(1.0)
+        assert series[0].non_endgame_score == pytest.approx(0.0)
         assert series[1].date == "2026-01-12"
         assert series[1].score_difference == pytest.approx(0.25)
         assert series[1].endgame_game_count == 20
         assert series[1].non_endgame_game_count == 20
+        # endgame_mean = (10*1 + 10*0.5)/20 = 0.75
+        # non_endgame_mean = (10*0 + 10*1)/20 = 0.5
+        assert series[1].endgame_score == pytest.approx(0.75)
+        assert series[1].non_endgame_score == pytest.approx(0.5)
+        # Identity invariant: score_difference == endgame_score - non_endgame_score
+        for point in series:
+            assert abs(
+                (point.endgame_score - point.non_endgame_score) - point.score_difference
+            ) < 1e-9
 
     def test_rolling_window_caps_at_window_size(self):
         """window=10: week 2's diff reflects only week-2 games per side."""

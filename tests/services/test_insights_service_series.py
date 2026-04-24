@@ -288,7 +288,9 @@ def _make_minimal_response() -> EndgameOverviewResponse:
         total_games=200,
         endgame_games=100,
     )
-    # Score gap timeline with enough weekly points to test resampling
+    # Score gap timeline with enough weekly points to test resampling.
+    # Phase 68: endgame_score / non_endgame_score satisfy
+    # score_difference == endgame_score - non_endgame_score.
     score_gap_timeline = [
         ScoreGapTimelinePoint(
             date=f"2026-01-{i + 4:02d}",
@@ -296,6 +298,8 @@ def _make_minimal_response() -> EndgameOverviewResponse:
             endgame_game_count=10,
             non_endgame_game_count=10,
             per_week_total_games=20,
+            endgame_score=round(0.50 + 0.05 * (i + 1), 4),
+            non_endgame_score=0.50,
         )
         for i in range(13)  # 13 weekly points for last_3mo
     ]
@@ -396,7 +400,7 @@ def _make_conv_stats() -> ConversionRecoveryStats:
 # ---------------------------------------------------------------------------
 
 _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset({
-    "score_gap_timeline",
+    "score_timeline",
     "clock_diff_timeline",
     "endgame_elo_timeline",
     "type_win_rate_timeline",
@@ -430,8 +434,8 @@ class TestIntegration:
         ]
 
         # All 4 timeline subsections must have series populated
-        assert "score_gap_timeline" in timeline_with_series, (
-            "score_gap_timeline should have series populated"
+        assert "score_timeline" in timeline_with_series, (
+            "score_timeline should have series populated"
         )
         assert "clock_diff_timeline" in timeline_with_series, (
             "clock_diff_timeline should have series populated"
@@ -479,3 +483,83 @@ class TestIntegration:
                     f"type_win_rate_timeline last_3mo bucket_start {point.bucket_start!r} "
                     f"should be monthly (YYYY-MM-01) per D-05"
                 )
+
+    @pytest.mark.asyncio
+    async def test_score_timeline_emits_two_findings_per_window(self) -> None:
+        """Phase 68 B4c: score_timeline emits TWO findings per window (one per `part`).
+
+        Each finding carries its own per-side absolute-score series. Both
+        findings share metric='score_gap' and value=aggregate score_difference;
+        they're distinguished by dimension={'part': 'endgame'|'non_endgame'}.
+        The endgame finding emits first (deterministic order).
+        """
+        mock_response = _make_minimal_response()
+        with patch.object(
+            insights_module,
+            "get_endgame_overview",
+            new=AsyncMock(return_value=mock_response),
+        ):
+            result = await compute_findings(
+                FilterContext(), session=AsyncMock(), user_id=1,
+            )
+
+        for window in ("all_time", "last_3mo"):
+            st_findings = [
+                f for f in result.findings
+                if f.subsection_id == "score_timeline" and f.window == window
+            ]
+            assert len(st_findings) == 2, (
+                f"Expected exactly 2 score_timeline findings for window={window}, "
+                f"got {len(st_findings)}"
+            )
+            # Order: endgame first, then non_endgame.
+            assert st_findings[0].dimension == {"part": "endgame"}
+            assert st_findings[1].dimension == {"part": "non_endgame"}
+            # Both share metric=score_gap.
+            for f in st_findings:
+                assert f.metric == "score_gap"
+                assert f.series is not None
+                assert len(f.series) > 0
+            # Non-endgame is NEVER headline-eligible on its own.
+            assert st_findings[1].is_headline_eligible is False
+
+    @pytest.mark.asyncio
+    async def test_score_timeline_series_uses_absolute_per_side_values(self) -> None:
+        """Phase 68: endgame finding series values come from endgame_score,
+        non_endgame finding series values come from non_endgame_score.
+
+        Identity invariant: for matching buckets,
+        abs((endgame_value - non_endgame_value) - score_difference) < 1e-9.
+        """
+        mock_response = _make_minimal_response()
+        timeline = mock_response.score_gap_material.timeline
+        with patch.object(
+            insights_module,
+            "get_endgame_overview",
+            new=AsyncMock(return_value=mock_response),
+        ):
+            result = await compute_findings(
+                FilterContext(), session=AsyncMock(), user_id=1,
+            )
+
+        st_last_3mo = [
+            f for f in result.findings
+            if f.subsection_id == "score_timeline" and f.window == "last_3mo"
+        ]
+        assert len(st_last_3mo) == 2
+        endgame_f, non_endgame_f = st_last_3mo
+        assert endgame_f.series is not None
+        assert non_endgame_f.series is not None
+        # Series length matches the source timeline (weekly pass-through).
+        assert len(endgame_f.series) == len(timeline)
+        assert len(non_endgame_f.series) == len(timeline)
+        # Values come directly from endgame_score / non_endgame_score.
+        for pt, src in zip(endgame_f.series, timeline, strict=True):
+            assert pt.value == pytest.approx(src.endgame_score)
+        for pt, src in zip(non_endgame_f.series, timeline, strict=True):
+            assert pt.value == pytest.approx(src.non_endgame_score)
+        # Identity invariant per bucket.
+        for eg_pt, neg_pt, src in zip(
+            endgame_f.series, non_endgame_f.series, timeline, strict=True,
+        ):
+            assert abs((eg_pt.value - neg_pt.value) - src.score_difference) < 1e-9

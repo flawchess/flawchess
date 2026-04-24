@@ -181,7 +181,7 @@ class SubsectionFinding(BaseModel):
     is_headline_eligible: bool
     dimension: dict[str, str] | None = None
     # Phase 65 D-02: populated ONLY for the 4 timeline subsections
-    # (score_gap_timeline, clock_diff_timeline, endgame_elo_timeline,
+    # (score_timeline, clock_diff_timeline, endgame_elo_timeline,
     # type_win_rate_timeline). None for non-timeline findings — default
     # preserves existing callers unchanged. Append-only: reordering this
     # field above another existing field would churn findings_hash.
