@@ -169,11 +169,21 @@ function HeroState({
 
 function SkeletonBlock() {
   return (
-    <div data-testid="insights-skeleton" className="animate-pulse">
-      <div className="h-4 w-full bg-muted/30 rounded mb-2" />
-      <div className="h-4 w-11/12 bg-muted/30 rounded mb-2" />
-      <div className="h-4 w-3/4 bg-muted/30 rounded mb-3" />
-      <div className="h-8 w-32 bg-muted/30 rounded" />
+    <div data-testid="insights-skeleton">
+      <div
+        className="flex items-center gap-2 text-sm text-muted-foreground mb-3"
+        role="status"
+        aria-live="polite"
+      >
+        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        <span>Generating insights may take around 30 seconds...</span>
+      </div>
+      <div className="animate-pulse">
+        <div className="h-4 w-full bg-muted/30 rounded mb-2" />
+        <div className="h-4 w-11/12 bg-muted/30 rounded mb-2" />
+        <div className="h-4 w-3/4 bg-muted/30 rounded mb-3" />
+        <div className="h-8 w-32 bg-muted/30 rounded" />
+      </div>
     </div>
   );
 }
@@ -267,7 +277,14 @@ function RenderedState({
           </Button>
         </MaybeBlockedTooltip>
         {isPending && (
-          <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+          <div
+            className="flex items-center gap-2 text-sm text-muted-foreground"
+            role="status"
+            aria-live="polite"
+          >
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            <span>Generating insights may take around 30 seconds...</span>
+          </div>
         )}
       </div>
     </>
