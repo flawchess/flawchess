@@ -50,7 +50,7 @@ def _sample_report(overview: str = "FlawChess played solidly overall.") -> Endga
             )
         ],
         model_used="test",
-        prompt_version="endgame_v9",
+        prompt_version="endgame_v10",
     )
 
 
@@ -250,7 +250,7 @@ class TestHappyPath:
                     findings_hash="m" * 64,
                     error=None,
                     model="test",
-                    prompt_version="endgame_v9",
+                    prompt_version="endgame_v10",
                 ),
             )
 
@@ -385,7 +385,7 @@ class TestRateLimit:
                 _make_row(
                     user.id,
                     response_json=valid_report.model_dump(),
-                    prompt_version="endgame_v9",  # matches get_latest_report_for_user filter
+                    prompt_version="endgame_v10",  # matches get_latest_report_for_user filter
                     findings_hash="k" * 64,
                 ),
             )
@@ -574,9 +574,7 @@ class TestFilterPassing:
                 ({"rated": "true"}, "Rated"),
             ]
             for params, _label in cases:
-                response = await client.post(
-                    INSIGHTS_ENDPOINT, params=params, headers=headers
-                )
+                response = await client.post(INSIGHTS_ENDPOINT, params=params, headers=headers)
                 assert response.status_code == 400, f"expected 400 for params={params}"
                 body = response.json()
                 assert body["detail"]["error"] == "filters_not_supported"

@@ -57,7 +57,7 @@ from app.services.insights_service import compute_findings
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v9"  # bumped from "endgame_v8": (1) added first-class `player_profile` (paragraph) and `recommendations` (bullets) fields to EndgameInsightsReport — surfaced as stacked top-of-page cards above the data-analysis overview, (2) fixed score_gap scalar: `_finding_overall` always emits (no longer suppressed by overall_wdl chart) so the all-time aggregate matches the chart row math; the misleading score_gap_timeline scalar (latest weekly bucket mislabeled as `(all_time)`) is dropped from the prompt, (3) dropped always-on `Filters:` header — emit only the `## Scoping caveat` line when opponent_strength != "any", (4) dropped redundant `Conversion/Recovery asymmetries detected: N` count from payload summary; the per-type `# asymmetry` tags carry the actionable detail
+_PROMPT_VERSION = "endgame_v10"  # unified [summary] block format: bracketed inline tags ([summary], [series], [activity-gap], [low-time-gap], [asymmetry], [recovery-pattern], [weakest-type]) replace the markdown-H1-colliding `#` prefix, `# delta` / `# trend` / `# series stable` fold into [summary] with mean/std/trend/n/buckets/within-noise/stale/shift; Player profile uses the same format per-combo so stale combos (>183d) naturally emit "last_3mo : no data" instead of the old misleading "+N over 3 months" trajectory.
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
@@ -95,7 +95,7 @@ def _scale_for_metric(metric_id: str) -> float:
 
 # Batch 2 enrichment thresholds (v6).
 _STALE_SERIES_THRESHOLD_DAYS: int = 183  # ~6 months: a combo whose last bucket is this far behind the newest bucket across any series is flagged STALE.
-_TREND_MIN_POINTS: int = 4  # minimum retained buckets before we emit a # trend tag
+_TREND_MIN_POINTS: int = 4  # minimum retained buckets before we emit trend fields in [summary]
 _TREND_FLAT_THRESHOLD: float = (
     3.0  # on the 0-100 scale; |latest - mean(prior 3)| below this reads as flat
 )
@@ -344,22 +344,53 @@ def _format_filters_for_prompt(filters: FilterContext) -> list[str]:
 def _format_player_profile_block(
     profile: list[PlayerProfileEntry] | None,
 ) -> list[str]:
-    """Render the `## Player profile` block listing per-combo Elo context.
+    """Render the `## Player profile` block as per-combo [summary actual_elo] blocks.
 
-    Emits nothing when profile is None or empty. Each line is:
-    `- <platform> <time_control>: current <elo>, range <min>-<max> over
-    <window_days>d, <trajectory>`. Combos are already sorted by game count
-    desc upstream in compute_player_profile.
+    Each qualifying (platform, time_control) combo emits one [summary] block
+    whose format mirrors every other windowed metric: an all_time line with
+    current / min / max / mean / n / buckets / window / trend / std (plus
+    `stale: ...` when the combo hasn't been played in >183 days) and a
+    last_3mo line with mean / n / buckets / trend / std (or `no data` when
+    the combo has no calendar-recent activity). Combos are already sorted by
+    game count desc upstream in compute_player_profile.
     """
     if not profile:
         return []
     lines: list[str] = ["## Player profile"]
     for entry in profile:
-        lines.append(
-            f"- {entry.platform} {entry.time_control}: current {entry.current_elo}, "
-            f"range {entry.min_elo}-{entry.max_elo} over {entry.window_days}d, "
-            f"{entry.trajectory}"
+        header = (
+            f"[summary actual_elo | platform={entry.platform}, time_control={entry.time_control}]"
         )
+        lines.append(header)
+
+        at_parts = [
+            f"current={entry.current_elo}",
+            f"mean={entry.all_time_mean}",
+            f"min={entry.min_elo}",
+            f"max={entry.max_elo}",
+            f"n={entry.all_time_n}",
+            f"buckets={entry.all_time_buckets} (weekly)",
+            f"window={entry.window_days}d",
+            f"trend={entry.all_time_trend}",
+            f"std={entry.all_time_std}",
+        ]
+        if entry.stale_last_bucket and entry.stale_months is not None:
+            at_parts.append(f"stale: last {entry.stale_last_bucket} ({entry.stale_months} mo ago)")
+        lines.append("  all_time: " + ", ".join(at_parts))
+
+        if entry.last_3mo_mean is None:
+            lines.append("  last_3mo: no data")
+        else:
+            lm_parts = [
+                f"mean={entry.last_3mo_mean}",
+                f"n={entry.last_3mo_n}",
+                f"buckets={entry.last_3mo_buckets} (weekly)",
+            ]
+            if entry.last_3mo_trend is not None:
+                lm_parts.append(f"trend={entry.last_3mo_trend}")
+            if entry.last_3mo_std is not None:
+                lm_parts.append(f"std={entry.last_3mo_std}")
+            lines.append("  last_3mo: " + ", ".join(lm_parts))
     lines.append("")
     return lines
 
@@ -535,7 +566,12 @@ def _newest_bucket_date(findings: list[SubsectionFinding]) -> datetime.date | No
 
 
 def _stale_marker(series: list[TimePoint] | None, newest_payload_date: datetime.date | None) -> str:
-    """Return 'STALE: last bucket YYYY-MM (N months old)' or '' if the series is live."""
+    """Return 'stale: last YYYY-MM (N mo ago)' or '' if the series is live.
+
+    Consumed inline in [summary] window lines — a short, bracket-compatible
+    form. The threshold (_STALE_SERIES_THRESHOLD_DAYS) is unchanged; only the
+    rendered string format changed alongside the v10 tag unification.
+    """
     if not series or newest_payload_date is None:
         return ""
     try:
@@ -545,32 +581,30 @@ def _stale_marker(series: list[TimePoint] | None, newest_payload_date: datetime.
     delta_days = (newest_payload_date - last_date).days
     if delta_days < _STALE_SERIES_THRESHOLD_DAYS:
         return ""
-    # Approximate month count — good enough for a narration hint; we round to
-    # whole months (30d) rather than exact calendar months.
     months = delta_days // 30
-    return f"STALE: last bucket {last_date.strftime('%Y-%m')} ({months} months old)"
+    return f"stale: last {last_date.strftime('%Y-%m')} ({months} mo ago)"
 
 
-def _trend_tag(metric_id: str, points: list[TimePoint]) -> str:
-    """Emit a '# trend: direction=..., latest=..., prior-mean=..., n(last4)=...[, within-noise]' comment.
+def _trend_info(
+    metric_id: str, points: list[TimePoint]
+) -> tuple[str, float, float, int, bool] | None:
+    """Return (direction, mean_scaled, std_scaled, n_total, within_noise) or None.
 
-    Uses the last 4 retained points (post A4/C2/C6 filtering): the most recent
-    bucket plus its prior 3. Direction is flat when |latest - prior-mean| <
-    _TREND_FLAT_THRESHOLD, otherwise improving / regressing relative to the
-    prior-mean. Returns '' when fewer than _TREND_MIN_POINTS buckets remain —
-    the series interpretation rule in the system prompt already bars trend
-    claims on short windows; we simply don't hand the LLM a misleading tag.
-
-    v7: appends ", within-noise" when the shift is below the metric-appropriate
-    noise threshold even if the direction is improving/regressing. This catches
-    marginal Elo-combo regressions (e.g. -59 → -72) that don't warrant a
-    "regressed" narration.
+    Uses the full retained series (post A4/C2/C6 filtering). direction is
+    computed over the last 4 buckets (latest vs mean of prior 3) — flat when
+    |latest - prior-mean| < _TREND_FLAT_THRESHOLD, otherwise improving /
+    regressing. std is the stddev across all retained points (0.0 when fewer
+    than 2 points). within_noise mirrors the v7 rule: the last-4 shift is
+    below the metric's noise cap even if direction is not flat. Returns None
+    when fewer than _TREND_MIN_POINTS buckets remain — caller renders no
+    trend field.
     """
     if len(points) < _TREND_MIN_POINTS:
-        return ""
+        return None
     scale = _scale_for_metric(metric_id)
-    latest = points[-1].value * scale
-    prior_values = [pt.value * scale for pt in points[-4:-1]]
+    values = [pt.value * scale for pt in points]
+    latest = values[-1]
+    prior_values = values[-4:-1]
     prior_mean = sum(prior_values) / len(prior_values)
     diff = latest - prior_mean
     if abs(diff) < _TREND_FLAT_THRESHOLD:
@@ -579,43 +613,18 @@ def _trend_tag(metric_id: str, points: list[TimePoint]) -> str:
         direction = "improving"
     else:
         direction = "regressing"
-    n_last4 = sum(pt.n for pt in points[-4:])
+    series_mean = sum(values) / len(values)
+    series_std = (
+        (sum((v - series_mean) ** 2 for v in values) / (len(values) - 1)) ** 0.5
+        if len(values) >= 2
+        else 0.0
+    )
+    n_total = sum(pt.n for pt in points)
     noise_cap = (
         _DELTA_WITHIN_NOISE_ELO if metric_id == "endgame_elo_gap" else _DELTA_WITHIN_NOISE_SHIFT
     )
-    noise_suffix = ""
-    if direction != "flat" and abs(diff) < noise_cap:
-        noise_suffix = ", within-noise"
-    return (
-        f"# trend: direction={direction}, latest={latest:+.0f}, "
-        f"prior-mean={prior_mean:+.0f}, n(last4)={n_last4}{noise_suffix}"
-    )
-
-
-def _is_flat_stable(metric_id: str, points: list[TimePoint]) -> tuple[bool, float, int]:
-    """Check whether a series qualifies for flat-trend collapse (B4).
-
-    Returns (is_flat_stable, series_mean_scaled, total_n). A series is
-    collapsible when it has ≥ _TREND_MIN_POINTS buckets AND the trend is
-    direction=flat AND the full-series range (max - min) stays below the same
-    flat threshold — otherwise the visible shape is still worth showing even
-    if the latest-vs-prior comparison is flat.
-    """
-    if len(points) < _TREND_MIN_POINTS:
-        return False, 0.0, 0
-    scale = _scale_for_metric(metric_id)
-    values = [pt.value * scale for pt in points]
-    latest = values[-1]
-    prior = values[-4:-1]
-    prior_mean = sum(prior) / len(prior)
-    if abs(latest - prior_mean) >= _TREND_FLAT_THRESHOLD:
-        return False, 0.0, 0
-    # Also require the full window to be visually stable — no outlier buckets.
-    if max(values) - min(values) >= _TREND_FLAT_THRESHOLD * 2:
-        return False, 0.0, 0
-    series_mean = sum(values) / len(values)
-    total_n = sum(pt.n for pt in points)
-    return True, series_mean, total_n
+    within_noise = direction != "flat" and abs(diff) < noise_cap
+    return direction, series_mean, series_std, n_total, within_noise
 
 
 def _proximity_hint(metric_id: str, value_scaled: float, dimension: dict[str, str] | None) -> str:
@@ -674,8 +683,8 @@ def _weakest_type_tag(sorted_cats: list[object]) -> str:
     if next_score - weakest_score < _WEAKEST_TYPE_MIN_SEPARATION:
         return ""
     return (
-        f"# weakest type: {weakest_class} (score_pct={weakest_score:.0f}, "
-        f"next={next_score:.0f} {next_class})"
+        f"[weakest-type] {weakest_class} score_pct={weakest_score:.0f}, "
+        f"next={next_class} score_pct={next_score:.0f}"
     )
 
 
@@ -701,7 +710,7 @@ def _recovery_pattern_tag(findings: list[SubsectionFinding]) -> str:
     if len(weak_types) < _RECOVERY_PATTERN_MIN_WEAK_TYPES:
         return ""
     return (
-        f"# recovery pattern: weak across {len(weak_types)} of 5 types — "
+        f"[recovery-pattern] weak across {len(weak_types)} of 5 types — "
         "consistent defensive pattern, frame as one story not per-type crisis"
     )
 
@@ -744,7 +753,7 @@ def _asymmetry_lines(findings: list[SubsectionFinding]) -> list[str]:
         else:
             story = "defends losing endgames but mishandles winning ones"
         lines.append(
-            f"# asymmetry ({klass}): conversion={c_val:.0f} {c.zone}, "
+            f"[asymmetry type={klass}] conversion={c_val:.0f} {c.zone}, "
             f"recovery={r_val:.0f} {r.zone} — {story}"
         )
     return lines
@@ -778,59 +787,155 @@ def _low_time_gap_line(chart: TimePressureChartResponse | None) -> str:
     else:
         verdict = "near parity"
     return (
-        f"# low-time gap (0-30% buckets, weighted): user={user_avg:.0f}, opp={opp_avg:.0f}, "
+        f"[low-time-gap] 0-30% buckets, weighted: user={user_avg:.0f}, opp={opp_avg:.0f}, "
         f"gap={gap:+.0f} — {verdict}"
     )
 
 
-def _delta_lines_for_subsection(
-    members: list[SubsectionFinding],
-) -> tuple[list[str], set[tuple[str, str]]]:
-    """Emit '# delta <metric>[<dim>]: all_time=X → last_3mo=Y, shift=Z[, within-noise]'.
+def _dim_key_for_finding(f: SubsectionFinding) -> str:
+    """Return the canonical dim-key string used to group findings across windows."""
+    if f.dimension is None:
+        return ""
+    return ", ".join(f"{k}={v}" for k, v in sorted(f.dimension.items()))
 
-    v7: additionally returns the set of (metric, dim_key) pairs flagged
-    within-noise so the caller can suppress the redundant last_3mo bullet
-    (B5) — the all_time bullet already reflects current state when the shift
-    is noise.
+
+def _within_noise_shift(
+    metric: str,
+    all_time: SubsectionFinding,
+    last_3mo: SubsectionFinding,
+    shift: float,
+) -> bool:
+    """Shift is within-noise when it's below the metric cap AND the last_3mo window is much smaller."""
+    noise_cap = (
+        _DELTA_WITHIN_NOISE_ELO if metric == "endgame_elo_gap" else _DELTA_WITHIN_NOISE_SHIFT
+    )
+    sample_mismatch = (
+        all_time.sample_size > 0
+        and (last_3mo.sample_size / all_time.sample_size) < _DELTA_SMALL_SAMPLE_RATIO
+    )
+    return abs(shift) < noise_cap and sample_mismatch
+
+
+def _series_granularity(finding: SubsectionFinding) -> str:
+    """Weekly for last_3mo; monthly for all_time (and always monthly for type_win_rate_timeline)."""
+    if finding.subsection_id == "type_win_rate_timeline":
+        return "monthly"
+    return "weekly" if finding.window == "last_3mo" else "monthly"
+
+
+def _summary_window_line(
+    *,
+    window: str,
+    finding: SubsectionFinding,
+    series_points: list[TimePoint] | None,
+    stale_suffix: str,
+) -> str:
+    """Render one `  <window>: ...` line inside a [summary] block.
+
+    Pulls mean / zone / quality from the scalar finding, and (when series
+    points are provided and qualifying) buckets / granularity / trend / std
+    from the series. Appends `stale: ...` and `[near edge]` suffixes when
+    applicable. All numbers on the UI 0-100 scale (or Elo points).
     """
-    by_key: dict[tuple[str, str], dict[str, SubsectionFinding]] = {}
-    for f in members:
-        if f.series is not None:
-            continue  # only scalar (non-timeline) findings
-        dim_key = (
-            ""
-            if f.dimension is None
-            else ",".join(f"{k}={v}" for k, v in sorted(f.dimension.items()))
-        )
-        by_key.setdefault((f.metric, dim_key), {})[f.window] = f
+    scale = _scale_for_metric(finding.metric)
+    value_scaled = finding.value * scale
+    bounds = _format_zone_bounds(finding.metric, finding.dimension)
+    zone_part = f"zone={finding.zone}"
+    if bounds:
+        zone_part += f" {bounds}"
 
-    lines: list[str] = []
-    within_noise: set[tuple[str, str]] = set()
-    for (metric, dim_key), windows in by_key.items():
-        at = windows.get("all_time")
-        lm = windows.get("last_3mo")
-        if at is None or lm is None:
-            continue
-        scale = _scale_for_metric(metric)
-        at_val = at.value * scale
-        lm_val = lm.value * scale
-        shift = lm_val - at_val
-        noise_cap = (
-            _DELTA_WITHIN_NOISE_ELO if metric == "endgame_elo_gap" else _DELTA_WITHIN_NOISE_SHIFT
-        )
-        sample_mismatch = (
-            at.sample_size > 0 and (lm.sample_size / at.sample_size) < _DELTA_SMALL_SAMPLE_RATIO
-        )
-        is_noise = abs(shift) < noise_cap and sample_mismatch
-        noise_tag = ", within-noise" if is_noise else ""
-        if is_noise:
-            within_noise.add((metric, dim_key))
-        dim_note = f" [{dim_key}]" if dim_key else ""
+    parts: list[str] = [f"mean={value_scaled:+.0f}", f"n={finding.sample_size}"]
+    if series_points and len(series_points) >= _TREND_MIN_POINTS:
+        info = _trend_info(finding.metric, series_points)
+        if info is not None:
+            direction, _series_mean, series_std, _n_total, within_noise = info
+            granularity = _series_granularity(finding)
+            parts.append(f"buckets={len(series_points)} ({granularity})")
+            parts.append(zone_part)
+            parts.append(f"quality={finding.sample_quality}")
+            parts.append(f"trend={direction}")
+            parts.append(f"std={series_std:.0f}")
+            if within_noise:
+                parts.append("within-noise")
+            if stale_suffix:
+                parts.append(stale_suffix)
+            near = _proximity_hint(finding.metric, value_scaled, finding.dimension).strip()
+            suffix = f" {near}" if near else ""
+            return f"  {window}: " + ", ".join(parts) + suffix
+
+    # Scalar (or too-short series) fallback.
+    parts.append(zone_part)
+    parts.append(f"quality={finding.sample_quality}")
+    if stale_suffix:
+        parts.append(stale_suffix)
+    near = _proximity_hint(finding.metric, value_scaled, finding.dimension).strip()
+    suffix = f" {near}" if near else ""
+    return f"  {window}: " + ", ".join(parts) + suffix
+
+
+def _summary_shift_line(
+    metric: str,
+    all_time: SubsectionFinding,
+    last_3mo: SubsectionFinding,
+) -> str:
+    """Render `  shift=<Z>[, within-noise]` closing a [summary] block with paired windows."""
+    scale = _scale_for_metric(metric)
+    shift = (last_3mo.value - all_time.value) * scale
+    line = f"  shift={shift:+.0f}"
+    if _within_noise_shift(metric, all_time, last_3mo, shift):
+        line += ", within-noise"
+    return line
+
+
+def _render_summary_block(
+    metric: str,
+    dim_key: str,
+    *,
+    all_time: SubsectionFinding | None,
+    last_3mo: SubsectionFinding | None,
+    all_time_series: list[TimePoint] | None,
+    last_3mo_series: list[TimePoint] | None,
+    stale_markers: dict[int, str],
+) -> list[str]:
+    """Emit `[summary <metric>[ | dim]]` with all_time / last_3mo / shift lines.
+
+    The block's format is intentionally consistent across scalar, timeseries,
+    and per-dim metrics so the system prompt only needs to document one
+    shape. `no data` stands in on the last_3mo line when only the all_time
+    window has a finding (keeps the paired-line visual consistent).
+    """
+    header = f"[summary {metric}"
+    if dim_key:
+        header += f" | {dim_key}"
+    header += "]"
+    lines: list[str] = [header]
+
+    if all_time is not None:
+        stale = stale_markers.get(id(all_time), "")
         lines.append(
-            f"# delta {metric}{dim_note}: all_time={at_val:+.0f} (n={at.sample_size}) → "
-            f"last_3mo={lm_val:+.0f} (n={lm.sample_size}), shift={shift:+.0f}{noise_tag}"
+            _summary_window_line(
+                window="all_time",
+                finding=all_time,
+                series_points=all_time_series,
+                stale_suffix=stale,
+            )
         )
-    return lines, within_noise
+    if last_3mo is not None:
+        stale = stale_markers.get(id(last_3mo), "")
+        lines.append(
+            _summary_window_line(
+                window="last_3mo",
+                finding=last_3mo,
+                series_points=last_3mo_series,
+                stale_suffix=stale,
+            )
+        )
+    elif all_time is not None:
+        lines.append("  last_3mo: no data")
+
+    if all_time is not None and last_3mo is not None:
+        lines.append(_summary_shift_line(metric, all_time, last_3mo))
+    return lines
 
 
 def _count_activity_gaps(findings: list[SubsectionFinding]) -> int:
@@ -933,6 +1038,65 @@ _SECTION_LAYOUT: list[tuple[str, list[tuple[str, str]]]] = [
 ]
 
 
+def _retained_series_for_summary(
+    finding: SubsectionFinding,
+    *,
+    last_3mo_pairs: set[tuple[str, str]],
+    all_time_cutoff: str,
+) -> list[TimePoint] | None:
+    """Return the retained series points for a timeline finding, or None.
+
+    Applies the same A4/C2/C6 filter chain used for series emission, so the
+    [summary] block's buckets / trend / std all describe the exact window
+    the LLM sees in the [series ...] block below it. Returns None for
+    non-timeline subsections (scalar findings carry no series semantics).
+    """
+    if finding.series is None or finding.subsection_id not in _TIMELINE_SUBSECTION_IDS:
+        return None
+    points = [pt for pt in finding.series if pt.n >= MIN_BUCKET_N]
+    if (
+        finding.window == "all_time"
+        and (
+            finding.metric,
+            finding.subsection_id,
+        )
+        in last_3mo_pairs
+    ):
+        points = [pt for pt in points if pt.bucket_start < all_time_cutoff]
+    if finding.window == "all_time":
+        points = points[-_ALL_TIME_MAX_POINTS:]
+    return points
+
+
+def _render_series_block(finding: SubsectionFinding, points: list[TimePoint]) -> list[str]:
+    """Render `[series metric, window, granularity]` + raw points + `[activity-gap]` markers."""
+    granularity = _series_granularity(finding)
+    lines = [f"[series {finding.metric}, {finding.window}, {granularity}]"]
+    series_scale = _scale_for_metric(finding.metric)
+    emit_elo = finding.metric == "endgame_elo_gap"
+    prev_date: datetime.date | None = None
+    prev_bucket_start: str | None = None
+    for pt in points:
+        try:
+            curr_date = datetime.date.fromisoformat(pt.bucket_start)
+        except ValueError:
+            continue
+        if (
+            prev_date is not None
+            and prev_bucket_start is not None
+            and (curr_date - prev_date).days > _ACTIVITY_GAP_DAYS
+        ):
+            lines.append(f"[activity-gap] {prev_bucket_start} → {pt.bucket_start}")
+        pt_value = pt.value * series_scale
+        if emit_elo and pt.actual_elo is not None:
+            lines.append(f"{pt.bucket_start}: gap={pt_value:+.0f}, elo={pt.actual_elo} (n={pt.n})")
+        else:
+            lines.append(f"{pt.bucket_start}: {pt_value:+.0f} (n={pt.n})")
+        prev_date = curr_date
+        prev_bucket_start = pt.bucket_start
+    return lines
+
+
 def _render_subsection_block(
     *,
     subsection_id: str,
@@ -945,10 +1109,15 @@ def _render_subsection_block(
     asymmetry_lines: list[str],
     recovery_pattern: str,
 ) -> list[str]:
-    """Render one subsection (header + enrichment tags + bullets + series).
+    """Render one subsection: header + inline tags + [summary] blocks + [series] raw data.
 
-    Extracted from _assemble_user_prompt so the v8 section-based emission
-    loop can interleave subsections and chart blocks in UI order.
+    Findings are grouped by (metric, dim_key) so each pair produces exactly
+    one [summary] block carrying both windows plus optional shift. Timeline
+    findings also emit a `[series ...]` raw-data block below the summary.
+    `score_gap_timeline` is the sole exception: it emits only the series,
+    because its scalar `.value` is a latest-weekly-bucket mislabeled as an
+    aggregate; the authoritative score_gap aggregate lives in the `overall`
+    subsection.
     """
     lines: list[str] = []
     header = f"## Subsection: {subsection_id}"
@@ -960,117 +1129,101 @@ def _render_subsection_block(
         header += f" (parent: {parent})"
     lines.append(header)
 
-    within_noise_keys: set[tuple[str, str]] = set()
-    if subsection_id == "endgame_metrics":
-        delta_lines, within_noise_keys = _delta_lines_for_subsection(members)
-        lines.extend(delta_lines)
     if subsection_id == "conversion_recovery_by_type":
         if recovery_pattern:
             lines.append(recovery_pattern)
         if asymmetry_lines:
             lines.extend(asymmetry_lines)
 
-    recovery_note_emitted = False
-    # v9: suppress scalar bullets in score_gap_timeline. The finding's `value`
-    # is the latest WEEKLY bucket of the timeline (not an all-time aggregate)
-    # and `sample_size` is the count of weekly points (not games). Rendering
-    # it as `score_gap (all_time): X | ... | N games` mislabels both. The
-    # all-time aggregate is now emitted by the `overall` subsection.
-    suppress_scalar_bullets = subsection_id == "score_gap_timeline"
+    suppress_summary = subsection_id == "score_gap_timeline"
+
+    # Group findings by (metric, dim_key) → {window: finding}. Preserves the
+    # order in which metric/dim pairs first appear so the LLM sees them in
+    # the original payload order (matches the old bullet ordering).
+    groups: dict[tuple[str, str], dict[str, SubsectionFinding]] = {}
+    order: list[tuple[str, str]] = []
     for f in members:
-        dim = ""
-        if f.dimension:
-            dim = " [" + ", ".join(f"{k}={v}" for k, v in f.dimension.items()) + "]"
-        bounds = _format_zone_bounds(f.metric, f.dimension)
-        zone_label = f"{f.zone} {bounds}".rstrip()
-        value_scaled = f.value * _scale_for_metric(f.metric)
+        key = (f.metric, _dim_key_for_finding(f))
+        if key not in groups:
+            groups[key] = {}
+            order.append(key)
+        groups[key][f.window] = f
 
-        # v7 B5: drop last_3mo scalar bullets when the all_time → last_3mo
-        # delta is within-noise. The all_time bullet already reflects the
-        # current state; a second bullet invites separate "recent" framing.
-        if f.window == "last_3mo" and f.series is None:
-            dim_key = (
-                ""
-                if f.dimension is None
-                else ",".join(f"{k}={v}" for k, v in sorted(f.dimension.items()))
+    recovery_note_emitted = False
+    for key in order:
+        metric, dim_key = key
+        windows = groups[key]
+        all_time = windows.get("all_time")
+        last_3mo = windows.get("last_3mo")
+
+        all_time_series = (
+            _retained_series_for_summary(
+                all_time,
+                last_3mo_pairs=last_3mo_pairs,
+                all_time_cutoff=all_time_cutoff,
             )
-            if (f.metric, dim_key) in within_noise_keys:
-                continue
-
-        if not suppress_scalar_bullets:
-            stale_suffix = f" | {stale_markers[id(f)]}" if id(f) in stale_markers else ""
-            proximity = _proximity_hint(f.metric, value_scaled, f.dimension)
-            lines.append(
-                f"- {f.metric} ({f.window}): {value_scaled:+.0f} | {zone_label} | "
-                f"{f.sample_size} games | {f.sample_quality}{dim}{stale_suffix}{proximity}"
+            if all_time is not None
+            else None
+        )
+        last_3mo_series = (
+            _retained_series_for_summary(
+                last_3mo,
+                last_3mo_pairs=last_3mo_pairs,
+                all_time_cutoff=all_time_cutoff,
             )
-        if (
-            not recovery_note_emitted
-            and f.metric == "recovery_save_pct"
-            and subsection_id == "conversion_recovery_by_type"
-        ):
-            lines.append(
-                "  [typical band 25-35 is cohort-wide; weak here means at/below "
-                "population average, not absolute crisis]"
-            )
-            recovery_note_emitted = True
+            if last_3mo is not None
+            else None
+        )
 
-        if f.series is not None and f.subsection_id in _TIMELINE_SUBSECTION_IDS:
-            if f.window == "last_3mo" and (f.metric, f.subsection_id) in all_time_series_pairs:
-                continue
-            if id(f) in stale_markers and (f.metric, f.subsection_id) in live_series_metrics:
-                continue
-
-            points = [pt for pt in f.series if pt.n >= MIN_BUCKET_N]
-            if f.window == "all_time" and (f.metric, f.subsection_id) in last_3mo_pairs:
-                points = [pt for pt in points if pt.bucket_start < all_time_cutoff]
-            if f.window == "all_time":
-                points = points[-_ALL_TIME_MAX_POINTS:]
-
-            if not points:
-                continue
-
-            if f.subsection_id == "type_win_rate_timeline":
-                resolution = "monthly"
-            elif f.window == "last_3mo":
-                resolution = "weekly"
-            else:
-                resolution = "monthly"
-            lines.append(f"### Series ({f.metric}, {f.window}, {resolution})")
-
-            is_flat, series_mean, total_n = _is_flat_stable(f.metric, points)
-            if is_flat:
-                lines.append(
-                    f"# series stable around {series_mean:+.0f} (n={total_n} across "
-                    f"{len(points)} buckets)"
+        if not suppress_summary:
+            lines.extend(
+                _render_summary_block(
+                    metric,
+                    dim_key,
+                    all_time=all_time,
+                    last_3mo=last_3mo,
+                    all_time_series=all_time_series,
+                    last_3mo_series=last_3mo_series,
+                    stale_markers=stale_markers,
                 )
+            )
+            if (
+                not recovery_note_emitted
+                and metric == "recovery_save_pct"
+                and subsection_id == "conversion_recovery_by_type"
+            ):
+                lines.append(
+                    "  [typical band 25-35 is cohort-wide; weak here means at/below "
+                    "population average, not absolute crisis]"
+                )
+                recovery_note_emitted = True
+
+        # Raw [series ...] block below the summary. Same C5 / stale-live-twin
+        # gates as before: skip last_3mo series when an all_time series exists
+        # for the same (metric, subsection); skip stale combos when a live
+        # combo exists.
+        for candidate_finding, candidate_series in (
+            (all_time, all_time_series),
+            (last_3mo, last_3mo_series),
+        ):
+            if candidate_finding is None or not candidate_series:
                 continue
-
-            trend_line = _trend_tag(f.metric, points)
-            if trend_line:
-                lines.append(trend_line)
-
-            series_scale = _scale_for_metric(f.metric)
-            emit_elo = f.metric == "endgame_elo_gap"
-            prev_date: datetime.date | None = None
-            prev_bucket_start: str | None = None
-            for pt in points:
-                curr_date = datetime.date.fromisoformat(pt.bucket_start)
-                if (
-                    prev_date is not None
-                    and prev_bucket_start is not None
-                    and (curr_date - prev_date).days > _ACTIVITY_GAP_DAYS
-                ):
-                    lines.append(f"# Activity gap: {prev_bucket_start} → {pt.bucket_start}")
-                pt_value = pt.value * series_scale
-                if emit_elo and pt.actual_elo is not None:
-                    lines.append(
-                        f"{pt.bucket_start}: gap={pt_value:+.0f}, elo={pt.actual_elo} (n={pt.n})"
-                    )
-                else:
-                    lines.append(f"{pt.bucket_start}: {pt_value:+.0f} (n={pt.n})")
-                prev_date = curr_date
-                prev_bucket_start = pt.bucket_start
+            if (
+                candidate_finding.window == "last_3mo"
+                and (
+                    candidate_finding.metric,
+                    candidate_finding.subsection_id,
+                )
+                in all_time_series_pairs
+            ):
+                continue
+            if (
+                id(candidate_finding) in stale_markers
+                and (candidate_finding.metric, candidate_finding.subsection_id)
+                in live_series_metrics
+            ):
+                continue
+            lines.extend(_render_series_block(candidate_finding, candidate_series))
 
     lines.append("")
     return lines
@@ -1091,7 +1244,7 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     - A4: drop series points with n < MIN_BUCKET_N.
     - C2: for `all_time` series, drop points within last 90 days if a matching
       `last_3mo` series exists for the same (metric, subsection) pair.
-    - C3: insert `# Activity gap: ...` markers when consecutive retained
+    - C3: insert `[activity-gap] ...` markers when consecutive retained
       series points are > _ACTIVITY_GAP_DAYS apart.
     - C4: drop the scalar `overall` subsection when the overall_wdl chart
       renders — the 2-row chart already carries the framing.

@@ -62,7 +62,7 @@ def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameI
             ),
         ],
         model_used="test",
-        prompt_version="endgame_v9",
+        prompt_version="endgame_v10",
     )
 
 
@@ -86,7 +86,7 @@ def _make_log_row(
     error: str | None = None,
     response_json: dict[str, Any] | None = None,
     cache_hit: bool = False,
-    prompt_version: str = "endgame_v9",
+    prompt_version: str = "endgame_v10",
     model: str = "test",
     findings_hash: str = "b" * 64,
 ) -> LlmLog:
@@ -225,7 +225,7 @@ class TestPromptAssembly:
         assert "Flags:" not in prompt
         assert "## Subsection: overall" in prompt
         assert "## Subsection: score_gap_timeline" in prompt
-        assert "### Series (" in prompt
+        assert "[series score_gap, last_3mo, weekly]" in prompt
         assert "2026-01-06" in prompt
         assert "2026-01-13" in prompt
 
@@ -296,10 +296,11 @@ class TestPromptAssembly:
 
         # Must not leak NaN into the prompt (was: "+nan | typical | 0 games | thin").
         assert "nan" not in prompt.lower()
-        # The only bullet line should be the normal finding.
-        bullet_lines = [line for line in prompt.splitlines() if line.startswith("- ")]
-        assert len(bullet_lines) == 1
-        assert "score_gap" in bullet_lines[0]
+        # Only the normal finding produces a [summary] block; the NaN empty finding is dropped.
+        assert prompt.count("[summary ") == 1
+        assert "[summary score_gap]" in prompt
+        # No bullet lines in v10 — findings render as indented all_time/last_3mo lines.
+        assert not [line for line in prompt.splitlines() if line.startswith("- ")]
 
     def test_assemble_user_prompt_groups_by_subsection(self) -> None:
         """C1 (260422-tnb): multiple findings under one subsection share a single header."""
@@ -334,8 +335,10 @@ class TestPromptAssembly:
         prompt = _assemble_user_prompt(tab_findings)
 
         assert prompt.count("## Subsection: endgame_metrics") == 1
-        bullet_lines = [line for line in prompt.splitlines() if line.startswith("- ")]
-        assert len(bullet_lines) == 3
+        # Each of the 3 metrics emits exactly one [summary metric | dim] block.
+        assert prompt.count("[summary conversion_win_pct | bucket=conversion]") == 1
+        assert prompt.count("[summary parity_score_pct | bucket=parity]") == 1
+        assert prompt.count("[summary recovery_save_pct | bucket=recovery]") == 1
 
     def test_assemble_user_prompt_filters_sparse_series_points(self) -> None:
         """A4 (260422-tnb): series points with n < MIN_BUCKET_N (=3) are dropped."""
@@ -856,12 +859,12 @@ class TestPromptAssembly:
         )
         prompt = _assemble_user_prompt(tab)
 
-        # Chart renders AND the overall scalar bullet renders alongside it.
+        # Chart renders AND the overall [summary score_gap] block renders alongside it.
         assert "## Chart: overall_wdl" in prompt
         assert "## Subsection: overall" in prompt
-        assert "- score_gap (all_time):" in prompt
-        # The scalar value should be -15 (-0.15 * 100, rounded).
-        assert "score_gap (all_time): -15" in prompt
+        assert "[summary score_gap]" in prompt
+        # The scalar value should be -15 (-0.15 * 100, rounded) — rendered as mean=-15 on the all_time line.
+        assert "all_time: mean=-15" in prompt
 
     def test_all_time_series_trimmed_to_last_12_points(self) -> None:
         """v5 C6: all_time Series block is capped at the most-recent 12 buckets.
@@ -900,9 +903,7 @@ class TestPromptAssembly:
             is_headline_eligible=True,
             dimension=None,
             series=[
-                TimePoint(
-                    bucket_start=bs, value=-0.05 if i % 2 == 0 else -0.15, n=20
-                )
+                TimePoint(bucket_start=bs, value=-0.05 if i % 2 == 0 else -0.15, n=20)
                 for i, bs in enumerate(bucket_starts)
             ],
         )
@@ -977,25 +978,27 @@ class TestPromptAssembly:
         tab = _fake_findings(filters, findings=[all_time_finding, last_3mo_finding])
         prompt = _assemble_user_prompt(tab)
 
-        # v9: scalar bullets in score_gap_timeline are SUPPRESSED — the
+        # v10: [summary] blocks in score_gap_timeline are SUPPRESSED — the
         # finding's `value` is the latest weekly bucket (mislabeled as
         # `(all_time)`) and `sample_size` is the count of weekly points
-        # (not games). The `overall` subsection now carries the all-time
-        # aggregate; the timeline emits only the series + trend.
-        assert "- score_gap (all_time):" not in prompt
-        assert "- score_gap (last_3mo):" not in prompt
-        # all_time Series header + points present.
-        assert "### Series (score_gap, all_time, monthly)" in prompt
+        # (not games). The `overall` subsection carries the authoritative
+        # [summary score_gap]; score_gap_timeline emits only the raw [series].
+        # Verify the score_gap_timeline subsection contains no [summary] block.
+        timeline_start = prompt.index("## Subsection: score_gap_timeline")
+        timeline_chunk = prompt[timeline_start:]
+        assert "[summary score_gap]" not in timeline_chunk
+        # all_time [series] header + points present.
+        assert "[series score_gap, all_time, monthly]" in prompt
         assert "2025-10-01" in prompt
-        # last_3mo Series header + points suppressed.
-        assert "### Series (score_gap, last_3mo, weekly)" not in prompt
+        # last_3mo [series] header + points suppressed when an all_time twin exists.
+        assert "[series score_gap, last_3mo, weekly]" not in prompt
         assert "2026-02-09" not in prompt
 
-        # Control: with only last_3mo (no all_time series), last_3mo Series
+        # Control: with only last_3mo (no all_time series), last_3mo [series]
         # block is kept — suppression is conditional on the all_time twin.
         tab_solo = _fake_findings(filters, findings=[last_3mo_finding])
         prompt_solo = _assemble_user_prompt(tab_solo)
-        assert "### Series (score_gap, last_3mo, weekly)" in prompt_solo
+        assert "[series score_gap, last_3mo, weekly]" in prompt_solo
         assert "2026-02-09" in prompt_solo
 
 
@@ -1108,40 +1111,61 @@ class TestV6Enrichments:
         tab = _fake_findings(filters, findings=[blitz_old, rapid_new])
         prompt = _assemble_user_prompt(tab)
 
-        # Stale blitz combo carries the marker, rapid combo does not.
-        blitz_line = next(ln for ln in prompt.splitlines() if "time_control=blitz" in ln)
-        rapid_line = next(ln for ln in prompt.splitlines() if "time_control=rapid" in ln)
-        assert "STALE:" in blitz_line
-        assert "STALE:" not in rapid_line
+        # Stale blitz combo's all_time line carries the `stale:` marker;
+        # rapid combo's all_time line does not.
+        blitz_summary_idx = next(
+            i
+            for i, ln in enumerate(prompt.splitlines())
+            if ln == "[summary endgame_elo_gap | platform=chess.com, time_control=blitz]"
+        )
+        rapid_summary_idx = next(
+            i
+            for i, ln in enumerate(prompt.splitlines())
+            if ln == "[summary endgame_elo_gap | platform=chess.com, time_control=rapid]"
+        )
+        prompt_lines = prompt.splitlines()
+        # The `all_time:` line sits immediately below its [summary] header.
+        blitz_all_time_line = prompt_lines[blitz_summary_idx + 1]
+        rapid_all_time_line = prompt_lines[rapid_summary_idx + 1]
+        assert "stale:" in blitz_all_time_line
+        assert "stale:" not in rapid_all_time_line
         # Summary counts the stale series.
         assert "Stale series" in prompt
 
-    def test_trend_tag_emitted_under_series_header(self) -> None:
-        """A `# trend: direction=...` line appears right after the Series header."""
+    def test_trend_emitted_on_summary_window_line(self) -> None:
+        """v10: `trend=improving` rides the [summary] window line, not a separate tag.
+
+        score_gap_timeline is the only subsection whose [summary] block is
+        suppressed, so this test uses clock_diff_timeline to verify that
+        timeseries [summary] lines carry `trend=` / `std=` fields.
+        """
         filters = _sample_filter_context()
         series = [
             TimePoint(bucket_start=f"2026-01-{day:02d}", value=v, n=30)
-            for day, v in zip((5, 12, 19, 26), (-0.25, -0.20, -0.10, -0.02), strict=False)
+            for day, v in zip((5, 12, 19, 26), (-25.0, -20.0, -10.0, -2.0), strict=False)
         ]
         finding = self._finding(
-            subsection_id="score_gap_timeline",
-            metric="score_gap",
+            subsection_id="clock_diff_timeline",
+            metric="avg_clock_diff_pct",
             window="last_3mo",
-            value=-0.02,
+            value=-2.0,
             series=series,
         )
         tab = _fake_findings(filters, findings=[finding])
         prompt = _assemble_user_prompt(tab)
 
+        # The summary block's last_3mo line carries trend= and std=.
         lines = prompt.splitlines()
-        series_idx = lines.index("### Series (score_gap, last_3mo, weekly)")
-        trend_line = lines[series_idx + 1]
-        assert trend_line.startswith("# trend: direction=")
-        assert "latest=-2.0" in trend_line or "latest=+-" in trend_line or "latest=" in trend_line
-        assert "improving" in trend_line  # latest -2 vs prior-mean -18.3 → improving
+        summary_idx = lines.index("[summary avg_clock_diff_pct]")
+        last_3mo_line = lines[summary_idx + 1]
+        assert last_3mo_line.startswith("  last_3mo: ")
+        assert "trend=improving" in last_3mo_line  # latest -2 vs prior-mean -18.3 → improving
+        assert "std=" in last_3mo_line
+        # Raw [series ...] still emits for the timeline data.
+        assert "[series avg_clock_diff_pct, last_3mo, weekly]" in prompt
 
     def test_asymmetry_line_emitted_for_strong_weak_split(self) -> None:
-        """Pawn with strong conversion + weak recovery emits `# asymmetry (pawn): ...`."""
+        """Pawn with strong conversion + weak recovery emits `[asymmetry type=pawn] ...`."""
         filters = _sample_filter_context()
         conv = self._finding(
             subsection_id="conversion_recovery_by_type",
@@ -1162,11 +1186,11 @@ class TestV6Enrichments:
         tab = _fake_findings(filters, findings=[conv, rec])
         prompt = _assemble_user_prompt(tab)
 
-        assert "# asymmetry (pawn): conversion=77 strong, recovery=16 weak" in prompt
+        assert "[asymmetry type=pawn] conversion=77 strong, recovery=16 weak" in prompt
         assert "closes winning endgames but bleeds losing ones" in prompt
 
     def test_low_time_gap_line_emitted_in_time_pressure_chart(self) -> None:
-        """`# low-time gap (0-30% buckets, weighted):` appears in the chart caption."""
+        """`[low-time-gap] 0-30% buckets, weighted:` appears in the chart caption."""
         from app.schemas.endgames import TimePressureBucketPoint, TimePressureChartResponse
 
         user_series = [
@@ -1199,11 +1223,11 @@ class TestV6Enrichments:
         )
         prompt = _assemble_user_prompt(tab)
 
-        assert "# low-time gap (0-30% buckets, weighted):" in prompt
+        assert "[low-time-gap] 0-30% buckets, weighted:" in prompt
         assert "user cracks under time pressure" in prompt
 
-    def test_delta_line_emitted_for_paired_windows(self) -> None:
-        """Paired all_time + last_3mo scalars emit a `# delta ... within-noise` line."""
+    def test_summary_emitted_for_paired_windows(self) -> None:
+        """Paired all_time + last_3mo scalars fold into one [summary] block with a within-noise shift."""
         filters = _sample_filter_context()
         at = self._finding(
             subsection_id="endgame_metrics",
@@ -1222,8 +1246,95 @@ class TestV6Enrichments:
         tab = _fake_findings(filters, findings=[at, lm])
         prompt = _assemble_user_prompt(tab)
 
-        assert "# delta endgame_skill: all_time=+45 (n=2948) → last_3mo=+49 (n=195)" in prompt
-        assert "within-noise" in prompt
+        assert "[summary endgame_skill]" in prompt
+        assert "all_time: mean=+45, n=2948" in prompt
+        assert "last_3mo: mean=+49, n=195" in prompt
+        # Shift line closes the block with a within-noise flag.
+        assert "shift=+4, within-noise" in prompt
+
+    def test_player_profile_stale_combo_emits_no_recent_trajectory(self) -> None:
+        """A stale combo carries `stale: ...` on all_time and `last_3mo: no data`.
+
+        The old free-text trajectory ("+93 over 3 months") silently misled on
+        stale combos because it was anchored to the combo's last game date,
+        not calendar-now. v10 format replaces it with calendar-anchored
+        last_3mo stats, so a stale combo structurally cannot imply recent
+        activity.
+        """
+        from app.schemas.insights import PlayerProfileEntry
+
+        filters = _sample_filter_context()
+        stale_entry = PlayerProfileEntry(
+            platform="chess.com",
+            time_control="blitz",
+            games=820,
+            current_elo=1293,
+            min_elo=819,
+            max_elo=1300,
+            window_days=1099,
+            all_time_mean=1204,
+            all_time_n=820,
+            all_time_buckets=64,
+            all_time_trend="flat",
+            all_time_std=125,
+            last_3mo_mean=None,
+            last_3mo_n=None,
+            last_3mo_buckets=None,
+            last_3mo_trend=None,
+            last_3mo_std=None,
+            stale_last_bucket="2024-01",
+            stale_months=27,
+        )
+        live_entry = PlayerProfileEntry(
+            platform="lichess",
+            time_control="rapid",
+            games=450,
+            current_elo=1782,
+            min_elo=1655,
+            max_elo=1839,
+            window_days=161,
+            all_time_mean=1750,
+            all_time_n=450,
+            all_time_buckets=23,
+            all_time_trend="flat",
+            all_time_std=45,
+            last_3mo_mean=1775,
+            last_3mo_n=210,
+            last_3mo_buckets=12,
+            last_3mo_trend="flat",
+            last_3mo_std=30,
+        )
+        tab = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=filters,
+            findings=[],
+            player_profile=[stale_entry, live_entry],
+            findings_hash="b" * 64,
+        )
+        prompt = _assemble_user_prompt(tab)
+
+        # Stale blitz combo: all_time carries `stale:`, last_3mo reads "no data".
+        blitz_header = "[summary actual_elo | platform=chess.com, time_control=blitz]"
+        assert blitz_header in prompt
+        lines = prompt.splitlines()
+        blitz_idx = lines.index(blitz_header)
+        blitz_at_line = lines[blitz_idx + 1]
+        blitz_lm_line = lines[blitz_idx + 2]
+        assert blitz_at_line.startswith("  all_time: ")
+        assert "stale: last 2024-01 (27 mo ago)" in blitz_at_line
+        assert blitz_lm_line == "  last_3mo: no data"
+
+        # Live lichess combo: no `stale:` marker, populated last_3mo line.
+        live_header = "[summary actual_elo | platform=lichess, time_control=rapid]"
+        live_idx = lines.index(live_header)
+        live_at_line = lines[live_idx + 1]
+        live_lm_line = lines[live_idx + 2]
+        assert "stale:" not in live_at_line
+        assert live_lm_line.startswith("  last_3mo: ")
+        assert live_lm_line != "  last_3mo: no data"
+
+        # The old free-text trajectory must NOT appear anywhere in the prompt.
+        assert "over 3 months" not in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -1345,7 +1456,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v9"
+        assert response.report.prompt_version == "endgame_v10"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -1369,7 +1480,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v9"
+        assert log.response_json["prompt_version"] == "endgame_v10"
 
 
 class TestCacheBehavior:
@@ -1392,7 +1503,7 @@ class TestCacheBehavior:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
         # Seed a cache-hit eligible row: error=None, response_json set,
-        # matching (findings_hash, prompt_version="endgame_v9", model="test").
+        # matching (findings_hash, prompt_version="endgame_v10", model="test").
         async with session_maker() as session:
             await _seed(
                 session,
@@ -1563,7 +1674,7 @@ class TestRateLimit:
         # Seed 3 successful miss rows with an OLD prompt_version so they count
         # toward the rate-limit (count_recent_successful_misses does NOT filter
         # by prompt_version) but are NOT returned by get_latest_report_for_user
-        # (which filters by prompt_version="endgame_v9"), producing "no tier-2".
+        # (which filters by prompt_version="endgame_v10"), producing "no tier-2".
         now = datetime.datetime.now(datetime.UTC)
         # Build a valid report JSON for rows (avoids ValidationError in case tier-2
         # is somehow reached — but with the prompt_version mismatch it should not be).
@@ -1699,7 +1810,7 @@ class TestErrors:
             "overview": "ok",
             "sections": [],  # violates min_length=1
             "model_used": "test",
-            "prompt_version": "endgame_v9",
+            "prompt_version": "endgame_v10",
         }
         fake = Agent(
             TestModel(custom_output_args=bad_output),

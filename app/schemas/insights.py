@@ -231,10 +231,19 @@ class EndgameTabFindings(BaseModel):
 class PlayerProfileEntry(BaseModel):
     """One (platform, time_control) combo's Elo context for the LLM prompt.
 
-    Surfaces current rating, historical range, and recent trajectory so the
+    Surfaces current rating, historical range, and window-keyed stats so the
     LLM can adjust register (beginner vs intermediate vs advanced) without
     being told an explicit skill-level label. Populated by
     `compute_player_profile` from the endgame_elo timeline combos.
+
+    The new shape mirrors the unified `[summary]` block format used for all
+    other windowed metrics: an all_time line (mean / n / buckets / trend /
+    std) plus a last_3mo line anchored to calendar-now. When a combo has no
+    games in the last 90 calendar days, the last_3mo fields stay None and
+    the prompt emits "last_3mo : no data" — this replaces the old free-text
+    `trajectory` string ("+93 over 3 months") which was anchored to the
+    combo's last game date, not calendar-now, and silently misled on stale
+    combos.
     """
 
     platform: Literal["chess.com", "lichess"]
@@ -244,7 +253,27 @@ class PlayerProfileEntry(BaseModel):
     min_elo: int
     max_elo: int
     window_days: int  # span from first to last qualifying point
-    trajectory: str  # e.g. "+120 over 3 months", "stable", "-45 over 3 months"
+
+    # all_time window stats (always populated when the entry is emitted).
+    all_time_mean: int
+    all_time_n: int  # total endgame games across all weekly points
+    all_time_buckets: int  # count of qualifying weekly points
+    all_time_trend: Literal["improving", "regressing", "flat"]
+    all_time_std: int
+
+    # last_3mo (calendar-last-90d) window stats. None when the combo has no
+    # weekly points in the last 90 days — the prompt emits "no data" in that
+    # case so the LLM can't read stale combos as recent activity.
+    last_3mo_mean: int | None = None
+    last_3mo_n: int | None = None
+    last_3mo_buckets: int | None = None
+    last_3mo_trend: Literal["improving", "regressing", "flat"] | None = None
+    last_3mo_std: int | None = None
+
+    # Stale marker: populated when the combo's last weekly point is more
+    # than ~6 months behind calendar-now. Both fields are emitted as a pair.
+    stale_last_bucket: str | None = None  # YYYY-MM
+    stale_months: int | None = None
 
 
 class TimePoint(BaseModel):

@@ -40,6 +40,7 @@ import json
 import math
 import statistics
 from collections import defaultdict
+from typing import Literal
 
 import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -203,12 +204,43 @@ async def compute_findings(
 # ---------------------------------------------------------------------------
 
 # Minimum qualifying points a combo needs before it gets an entry in the
-# player profile. Below this, range/trajectory are too noisy to be useful.
+# player profile. Below this, window stats are too noisy to be useful.
 _PLAYER_PROFILE_MIN_POINTS: int = 20
 
-# Trajectory noise threshold (Elo). |last_90d mean - prior_90d mean| below
-# this reads as "stable" rather than "+N over 3 months".
-_PLAYER_PROFILE_TRAJECTORY_STABLE: float = 30.0
+# Calendar window for the last_3mo line of the player-profile summary.
+_PLAYER_PROFILE_LAST_3MO_DAYS: int = 90
+
+# Trend flat threshold for player-profile per-combo Elo series. Elo values
+# typically move 10-30 points between weekly buckets; a latest-vs-prior-mean
+# shift below this reads as flat.
+_PLAYER_PROFILE_TREND_FLAT_ELO: float = 15.0
+
+# Stale threshold: a combo whose last weekly point is more than this many
+# days before `today` is flagged STALE on its all_time summary line.
+_PLAYER_PROFILE_STALE_DAYS: int = 183
+
+# Minimum retained points before a trend direction is reported. Below this
+# the window emits no trend (caller renders no `trend=` field).
+_PLAYER_PROFILE_MIN_TREND_POINTS: int = 4
+
+
+def _elo_trend_direction(elos: list[int]) -> Literal["improving", "regressing", "flat"] | None:
+    """Return trend direction across the last 4 Elo points, or None if <4.
+
+    Uses the same last-4-buckets convention as `_trend_tag` in insights_llm:
+    compare the latest value to the mean of the prior 3. Player-profile
+    specific flat threshold (_PLAYER_PROFILE_TREND_FLAT_ELO) is looser than
+    the percentage-scale threshold because Elo swings 10-20 points weekly
+    are normal.
+    """
+    if len(elos) < _PLAYER_PROFILE_MIN_TREND_POINTS:
+        return None
+    latest = elos[-1]
+    prior_mean = statistics.mean(elos[-4:-1])
+    diff = latest - prior_mean
+    if abs(diff) < _PLAYER_PROFILE_TREND_FLAT_ELO:
+        return "flat"
+    return "improving" if diff > 0 else "regressing"
 
 
 def compute_player_profile(
@@ -219,19 +251,29 @@ def compute_player_profile(
     Uses the already-fetched `endgame_elo_timeline.combos` — no extra DB
     work. Each qualifying combo (>= _PLAYER_PROFILE_MIN_POINTS weekly points)
     yields one entry with current Elo, historical range, window length, and
-    recent trajectory. Combos are sorted by total game count desc so the LLM
-    sees the most-played combo first (the default anchor for tone).
+    paired all_time / last_3mo window stats (mean, n, buckets, trend, std).
+    Combos are sorted by total game count desc so the LLM sees the
+    most-played combo first (the default anchor for tone).
+
+    When a combo has no weekly points in the calendar-last-90d window, the
+    last_3mo fields stay None and the prompt emits "last_3mo : no data".
+    When the combo's last weekly point is >_PLAYER_PROFILE_STALE_DAYS old,
+    `stale_last_bucket` / `stale_months` are populated so the summary line
+    carries a STALE marker.
 
     Returns None when no combo qualifies — the caller renders no
     `## Player profile` block in the prompt.
     """
+    today = datetime.date.today()
+    cutoff_last_3mo = today - datetime.timedelta(days=_PLAYER_PROFILE_LAST_3MO_DAYS)
+
     entries: list[PlayerProfileEntry] = []
     for combo in combos:
         points = combo.points
         if len(points) < _PLAYER_PROFILE_MIN_POINTS:
             continue
         # Sort by date ASC (the endgame service already returns ASC, but be
-        # defensive — trajectory math depends on chronological order).
+        # defensive — trend math depends on chronological order).
         ordered = sorted(points, key=lambda p: p.date)
         elos = [p.actual_elo for p in ordered]
         current_elo = elos[-1]
@@ -243,11 +285,47 @@ def compute_player_profile(
             window_days = (last_date - first_date).days
         except ValueError:
             window_days = 0
-        if window_days == 0:
-            # Can't compute trajectory without a dated window; treat as stable.
-            trajectory = "stable"
-        else:
-            trajectory = _trajectory_for_combo(ordered, last_date)
+            last_date = today  # Defensive: treat undated combos as current.
+
+        # all_time window stats across every qualifying point.
+        all_time_mean = int(round(statistics.mean(elos)))
+        all_time_n = sum(p.per_week_endgame_games for p in ordered)
+        all_time_buckets = len(ordered)
+        all_time_std = int(round(statistics.stdev(elos))) if len(elos) >= 2 else 0
+        all_time_trend = _elo_trend_direction(elos) or "flat"
+
+        # last_3mo window: calendar-anchored. Empty when no weekly points
+        # fall in the last 90 days (stale combos will hit this branch).
+        recent_points: list[EndgameEloTimelinePoint] = []
+        for p in ordered:
+            try:
+                d = datetime.date.fromisoformat(p.date)
+            except ValueError:
+                continue
+            if d >= cutoff_last_3mo:
+                recent_points.append(p)
+        last_3mo_mean: int | None = None
+        last_3mo_n: int | None = None
+        last_3mo_buckets: int | None = None
+        last_3mo_trend: Literal["improving", "regressing", "flat"] | None = None
+        last_3mo_std: int | None = None
+        if recent_points:
+            recent_elos = [p.actual_elo for p in recent_points]
+            last_3mo_mean = int(round(statistics.mean(recent_elos)))
+            last_3mo_n = sum(p.per_week_endgame_games for p in recent_points)
+            last_3mo_buckets = len(recent_points)
+            last_3mo_std = int(round(statistics.stdev(recent_elos))) if len(recent_elos) >= 2 else 0
+            last_3mo_trend = _elo_trend_direction(recent_elos)
+
+        # Stale marker: combo's last weekly point sits far behind calendar-now.
+        stale_last_bucket: str | None = None
+        stale_months: int | None = None
+        if window_days > 0:
+            days_stale = (today - last_date).days
+            if days_stale > _PLAYER_PROFILE_STALE_DAYS:
+                stale_last_bucket = last_date.strftime("%Y-%m")
+                stale_months = days_stale // 30
+
         games = sum(p.per_week_endgame_games for p in ordered)
         entries.append(
             PlayerProfileEntry(
@@ -258,47 +336,24 @@ def compute_player_profile(
                 min_elo=min_elo,
                 max_elo=max_elo,
                 window_days=window_days,
-                trajectory=trajectory,
+                all_time_mean=all_time_mean,
+                all_time_n=all_time_n,
+                all_time_buckets=all_time_buckets,
+                all_time_trend=all_time_trend,
+                all_time_std=all_time_std,
+                last_3mo_mean=last_3mo_mean,
+                last_3mo_n=last_3mo_n,
+                last_3mo_buckets=last_3mo_buckets,
+                last_3mo_trend=last_3mo_trend,
+                last_3mo_std=last_3mo_std,
+                stale_last_bucket=stale_last_bucket,
+                stale_months=stale_months,
             )
         )
     if not entries:
         return None
     entries.sort(key=lambda e: e.games, reverse=True)
     return entries
-
-
-def _trajectory_for_combo(
-    ordered_points: list[EndgameEloTimelinePoint],
-    last_date: datetime.date,
-) -> str:
-    """Describe recent trajectory as '+120 over 3 months' / 'stable' / '-45 over 3 months'.
-
-    Compares the mean Elo in the last 90 days to the mean Elo in the 90 days
-    prior. Falls back to 'stable' when either window has no points or when
-    the delta is below the noise threshold.
-    """
-    cutoff_recent = last_date - datetime.timedelta(days=90)
-    cutoff_prior = last_date - datetime.timedelta(days=180)
-    recent: list[int] = []
-    prior: list[int] = []
-    for p in ordered_points:
-        try:
-            d = datetime.date.fromisoformat(p.date)
-        except ValueError:
-            continue
-        if d > cutoff_recent:
-            recent.append(p.actual_elo)
-        elif d > cutoff_prior:
-            prior.append(p.actual_elo)
-    if not recent or not prior:
-        return "stable"
-    recent_mean = statistics.mean(recent)
-    prior_mean = statistics.mean(prior)
-    delta = recent_mean - prior_mean
-    if abs(delta) < _PLAYER_PROFILE_TRAJECTORY_STABLE:
-        return "stable"
-    sign = "+" if delta > 0 else "-"
-    return f"{sign}{abs(round(delta))} over 3 months"
 
 
 # ---------------------------------------------------------------------------
