@@ -1,8 +1,58 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
-import { EndgameScoreOverTimeChart } from '../EndgamePerformanceSection';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
+import { cloneElement, isValidElement } from 'react';
+import type { ReactElement } from 'react';
 import type { ScoreGapTimelinePoint } from '@/types/endgames';
+
+// Recharts' <ResponsiveContainer> measures its parent with ResizeObserver;
+// in jsdom the parent has zero dimensions so the inner chart refuses to
+// render and all the downstream testids (score-band-above/below, axes) are
+// missing. Swap it for a fixed-size wrapper in tests that injects explicit
+// width/height into the chart child so Recharts skips its sizing guard.
+vi.mock('recharts', async () => {
+  const actual = await vi.importActual<typeof import('recharts')>('recharts');
+  return {
+    ...actual,
+    ResponsiveContainer: ({ children }: { children: ReactElement }) => (
+      <div style={{ width: 800, height: 400 }}>
+        {isValidElement(children)
+          ? cloneElement(children as ReactElement<{ width?: number; height?: number }>, {
+              width: 800,
+              height: 400,
+            })
+          : children}
+      </div>
+    ),
+  };
+});
+import { EndgameScoreOverTimeChart } from '../EndgamePerformanceSection';
+
+// jsdom ships without window.matchMedia; useIsMobile() inside the component
+// calls it synchronously at mount. Stub it before any render. Same deal with
+// ResizeObserver — Recharts' ResponsiveContainer relies on it at effect time.
+beforeAll(() => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+  class ResizeObserverStub {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  (globalThis as unknown as { ResizeObserver: typeof ResizeObserverStub }).ResizeObserver =
+    ResizeObserverStub;
+});
 
 // Vitest 4 does not auto-cleanup RTL mounts — rendered DOM from a previous
 // test bleeds into the next one's screen queries if we don't explicitly unmount.
@@ -101,11 +151,19 @@ describe('EndgameScoreOverTimeChart', () => {
     expect(screen.getByTestId('chart-legend-non-endgame')).toBeTruthy();
   });
 
-  it('renders the info popover with shading-explanation sentence and without legacy caveat', () => {
+  it('renders the info popover with shading-explanation sentence and without legacy caveat', async () => {
     render(<EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} window={100} />);
+    // Radix Popover only mounts Portal content when open. The trigger listens
+    // for pointer events; mousedown+pointerdown+click drives the open state.
+    const trigger = screen.getByTestId('score-timeline-info');
+    await act(async () => {
+      fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse' });
+      fireEvent.mouseDown(trigger, { button: 0 });
+      fireEvent.click(trigger);
+    });
     // Positive assertion — new sentence present.
     expect(
-      screen.getByText(/green when your endgame Score leads/i),
+      await screen.findByText(/green when your endgame Score leads/i),
     ).toBeTruthy();
     // Negative assertion — removed caveat is gone.
     expect(
