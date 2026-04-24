@@ -154,7 +154,9 @@ describe('EndgameInsightsBlock — beta enabled', () => {
     );
     const generate = screen.getByTestId('btn-generate-insights');
     expect(generate.textContent).toContain('Generate Insights');
-    expect(screen.queryByText(/Generate a short written summary/)).not.toBeNull();
+    expect(
+      screen.queryByText(/Generate a player profile, endgame data analysis, and recommendations/),
+    ).not.toBeNull();
     expect(screen.queryByTestId('insights-skeleton')).toBeNull();
     expect(screen.queryByTestId('insights-overview')).toBeNull();
   });

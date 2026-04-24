@@ -23,6 +23,10 @@ import {
   ZONE_SUCCESS,
 } from '@/lib/theme';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
+import {
+  SCORE_GAP_NEUTRAL_MIN,
+  SCORE_GAP_NEUTRAL_MAX,
+} from '@/generated/endgameZones';
 import type {
   EndgamePerformanceResponse,
   ScoreGapMaterialResponse,
@@ -39,11 +43,6 @@ interface EndgamePerformanceSectionProps {
   data: EndgamePerformanceResponse;
   scoreGap?: ScoreGapMaterialResponse;
 }
-
-// Neutral zone around zero for the endgame-vs-non-endgame score gap
-// bullet chart: ±0.10 marks near-parity between the two splits.
-const SCORE_GAP_NEUTRAL_MIN = -0.10;
-const SCORE_GAP_NEUTRAL_MAX = 0.10;
 
 // Bullet domain half-width for this metric. Population p05/p95 spans ~±0.16
 // (see reports/benchmarks-2026-04-16.md §1), so ±0.20 covers the observed

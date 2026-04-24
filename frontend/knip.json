@@ -14,8 +14,7 @@
   "ignore": [
     "src/components/ui/command.tsx",
     "src/components/ui/popover.tsx",
-    "src/components/ui/input-group.tsx",
-    "src/generated/endgameZones.ts"
+    "src/components/ui/input-group.tsx"
   ],
   "ignoreBinaries": ["cloudflared"]
 }

@@ -53,6 +53,17 @@ export const DEFAULT_GAUGE_ZONES: GaugeZone[] = [
   { from: 0.6, to: 1.0, color: GAUGE_SUCCESS },
 ];
 
+// Gauge bands are 3-tuples [weak, neutral, strong] across every endgame gauge;
+// numeric bounds come from the codegen'd registry (`@/generated/endgameZones`)
+// so colors live here as a positional triple the FE pairs with those bounds.
+export const GAUGE_ZONE_COLORS = [GAUGE_DANGER, GAUGE_NEUTRAL, GAUGE_SUCCESS] as const;
+
+// Pair numeric `{from, to}` bands from the Python-owned zone registry with
+// the FE-owned `GAUGE_ZONE_COLORS` triple. Caller must pass exactly 3 bands.
+export function colorizeGaugeZones(bands: readonly { from: number; to: number }[]): GaugeZone[] {
+  return bands.map((b, i) => ({ ...b, color: GAUGE_ZONE_COLORS[i] ?? GAUGE_NEUTRAL }));
+}
+
 // Minimum games required for reliable stats — rows/charts below this threshold are dimmed
 export const MIN_GAMES_FOR_RELIABLE_STATS = 10;
 

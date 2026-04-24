@@ -10,17 +10,11 @@ import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ENDGAME_VOLUME_BAR_COLOR, ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
+import {
+  NEUTRAL_PCT_THRESHOLD,
+  NEUTRAL_TIMEOUT_THRESHOLD,
+} from '@/generated/endgameZones';
 import type { ClockPressureResponse, ClockPressureTimelinePoint, ClockStatsRow } from '@/types/endgames';
-
-// Threshold (in % of base clock time) within which a clock-diff is considered
-// neutral and shown in the bullet-chart's blue zone color. Beyond this band,
-// red (user had less time) or green (user had more time).
-const NEUTRAL_PCT_THRESHOLD = 10;
-
-// Threshold (in percentage points) within which the net timeout rate is
-// considered neutral. Beyond this band, red (flagged more) or green (flagged
-// opponent more).
-const NEUTRAL_TIMEOUT_THRESHOLD = 5;
 
 // Clock-diff timeline chart (quick-260416-w3q): fixed ±30% Y-axis centered on 0.
 const TIMELINE_Y_DOMAIN: [number, number] = [-30, 30];

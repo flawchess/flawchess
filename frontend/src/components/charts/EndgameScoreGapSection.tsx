@@ -23,11 +23,13 @@ import {
   ZONE_DANGER,
   ZONE_NEUTRAL,
   ZONE_SUCCESS,
-  GAUGE_DANGER,
-  GAUGE_NEUTRAL,
-  GAUGE_SUCCESS,
+  colorizeGaugeZones,
   type GaugeZone,
 } from '@/lib/theme';
+import {
+  FIXED_GAUGE_ZONES as REGISTRY_FIXED_GAUGE_ZONES,
+  ENDGAME_SKILL_ZONES as REGISTRY_ENDGAME_SKILL_ZONES,
+} from '@/generated/endgameZones';
 import type {
   MaterialBucket,
   MaterialRow,
@@ -69,40 +71,26 @@ const BUCKET_DISPLAY_LABELS_WITH_METRIC: Record<MaterialBucket, string> = {
   recovery: 'Recovery (Save)',
 };
 
-// Fixed per-bucket gauge zones. The blue band marks the typical
-// skill-cohort range for each bucket; red below, green above. Boundaries
-// are deliberately stable across users, filters, and opponent pools —
-// this is the "fixed target" the opponent-calibrated design couldn't offer.
-// Bands calibrated from FlawChess prod data (users ±50 ELO vs opponents,
-// 0-2499 ELO brackets): conversion and recovery stay within ~4pp across
-// rating ranges, so a single rating-agnostic band is used for each bucket.
+// Fixed per-bucket gauge zones. Numeric boundaries come from the Python zone
+// registry via the codegen'd `@/generated/endgameZones` mirror; colors come
+// from the FE theme. The blue band marks the typical skill-cohort range for
+// each bucket; red below, green above. Bands are deliberately stable across
+// users, filters, and opponent pools — the "fixed target" the opponent-
+// calibrated design couldn't offer. Calibrated from FlawChess prod data
+// (users ±50 ELO vs opponents, 0-2499 ELO brackets): conversion and recovery
+// stay within ~4pp across rating ranges, so a single rating-agnostic band
+// is used for each bucket.
 const FIXED_GAUGE_ZONES: Record<MaterialBucket, GaugeZone[]> = {
-  conversion: [
-    { from: 0, to: 0.65, color: GAUGE_DANGER },
-    { from: 0.65, to: 0.75, color: GAUGE_NEUTRAL },
-    { from: 0.75, to: 1.0, color: GAUGE_SUCCESS },
-  ],
-  parity: [
-    { from: 0, to: 0.45, color: GAUGE_DANGER },
-    { from: 0.45, to: 0.55, color: GAUGE_NEUTRAL },
-    { from: 0.55, to: 1.0, color: GAUGE_SUCCESS },
-  ],
-  recovery: [
-    { from: 0, to: 0.25, color: GAUGE_DANGER },
-    { from: 0.25, to: 0.35, color: GAUGE_NEUTRAL },
-    { from: 0.35, to: 1.0, color: GAUGE_SUCCESS },
-  ],
+  conversion: colorizeGaugeZones(REGISTRY_FIXED_GAUGE_ZONES.conversion),
+  parity: colorizeGaugeZones(REGISTRY_FIXED_GAUGE_ZONES.parity),
+  recovery: colorizeGaugeZones(REGISTRY_FIXED_GAUGE_ZONES.recovery),
 };
 
 // Zones for the composite Endgame Skill gauge. The blue band mirrors the
 // Parity gauge (45–55%) so the color story stays consistent with the
 // per-bucket gauges users are already reading. Typical value lands around
 // 52% on FlawChess data, sitting in the middle of the blue band.
-const ENDGAME_SKILL_ZONES: GaugeZone[] = [
-  { from: 0, to: 0.45, color: GAUGE_DANGER },
-  { from: 0.45, to: 0.55, color: GAUGE_NEUTRAL },
-  { from: 0.55, to: 1.0, color: GAUGE_SUCCESS },
-];
+const ENDGAME_SKILL_ZONES: GaugeZone[] = colorizeGaugeZones(REGISTRY_ENDGAME_SKILL_ZONES);
 
 /** Format a 0.0-1.0 rate as an integer percent string, e.g. 0.684 -> "68%". */
 function formatScorePct(score: number): string {

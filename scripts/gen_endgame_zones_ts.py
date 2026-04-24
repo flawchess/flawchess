@@ -1,13 +1,12 @@
 """Generate frontend/src/generated/endgameZones.ts from the Python zone registry.
 
 Python (app/services/endgame_zones.py) is the authoritative source per Phase 63
-D-01. This script emits a TypeScript mirror that FE consumers will switch to in
-Phase 66. Until then, the consistency test in
-tests/services/test_endgame_zones_consistency.py guards against drift between
-the inline FE constants and the Python registry.
+D-01. This script emits a TypeScript mirror consumed by EndgameScoreGapSection,
+EndgameClockPressureSection, and EndgamePerformanceSection. CI runs
+`git diff --exit-code` on the generated file to block drift.
 
-The output shape matches what the current FE consumers expect so a future
-find-and-replace import switch is trivial (see D-03).
+Only constants with an FE consumer are emitted. `NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD`
+stays Python-only (backend-only usage in endgame_service.py).
 
 Usage (local dev):
     uv run python scripts/gen_endgame_zones_ts.py
@@ -29,7 +28,6 @@ from app.services.endgame_zones import (  # noqa: E402
     BUCKETED_ZONE_REGISTRY,
     NEUTRAL_PCT_THRESHOLD,
     NEUTRAL_TIMEOUT_THRESHOLD,
-    NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD,
     ZONE_REGISTRY,
 )
 
@@ -96,7 +94,6 @@ def _render() -> str:
         f"export const NEUTRAL_TIMEOUT_THRESHOLD = {NEUTRAL_TIMEOUT_THRESHOLD};\n"
         f"export const SCORE_GAP_NEUTRAL_MIN = {_SCORE_GAP_SPEC.typical_lower};\n"
         f"export const SCORE_GAP_NEUTRAL_MAX = {_SCORE_GAP_SPEC.typical_upper};\n"
-        f"export const NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD = {NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD};\n"
     )
 
 
