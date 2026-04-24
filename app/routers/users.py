@@ -80,6 +80,7 @@ async def get_profile(
         chess_com_game_count=counts.get("chess.com", 0),
         lichess_game_count=counts.get("lichess", 0),
         impersonation=impersonation,
+        beta_enabled=user.beta_enabled,
     )
 
 
@@ -103,6 +104,7 @@ async def update_profile(
         chess_com_game_count=counts.get("chess.com", 0),
         lichess_game_count=counts.get("lichess", 0),
         impersonation=None,
+        beta_enabled=updated.beta_enabled,
     )
 
 

@@ -94,7 +94,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ### Active
 
-_No active requirements — v1.10 shipped. Next milestone requirements will be defined via `/gsd-new-milestone`._
+_v1.11 LLM-first Endgame Insights — requirements defined in `.planning/REQUIREMENTS.md`._
 
 ### Out of Scope
 
@@ -105,13 +105,32 @@ _No active requirements — v1.10 shipped. Next milestone requirements will be d
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone
+## Current Milestone: v1.11 LLM-first Endgame Insights
 
-_v1.10 shipped. Next milestone TBD — start with `/gsd-new-milestone`._
+**Goal:** Ship an LLM-generated Insights block on the Endgame tab (overview paragraph + 4 Section insights) over a stripped-down findings pipeline, reusing the in-code gauge constants as the single zone source, observable via a generic `llm_logs` table, and rolled out behind a DB-side beta flag to a small hand-picked cohort.
+
+**Target features:**
+- Findings computation service that transforms the existing `/api/endgames/overview` composite into zone/trend/sample-quality findings and three deterministic cross-section flags
+- Zone assignment driven by the existing in-code gauge constants so insights narrative and chart visuals agree by construction
+- `POST /api/insights/endgame` backed by a pydantic-ai Agent with structured output, provider-agnostic model selection via `PYDANTIC_AI_MODEL_INSIGHTS`, findings-hash cache, and 3-miss/hr/user soft-fail rate limit
+- Generic Postgres `llm_logs` table (+ Alembic migration + async repo) capturing prompt, response, tokens, cost (via `genai-prices`), latency, cache-hit, error; designed to host future LLM features too
+- Frontend `EndgameInsightsBlock` rendering overview + 4 Section blocks inline on the Endgame tab, gated by a `users.insights_beta_enabled` DB flag (no user-settings UI)
+- Ground-truth regression test against the SEED-001 canonical user fixture plus admin-impersonation eyeball validation across 5+ real user profiles before the beta flag flips on
+
+**Source seed:** `.planning/seeds/SEED-003-llm-based-insights.md` (supersedes SEED-001 for v1.11; SEED-001 remains the v1.12+ reference for deferred archetype/role/era/stability/admin work).
+
+**Key context:**
+- SEED-001 and SEED-003 both triggered at v1.11; SEED-003 is the MVP path, SEED-001 becomes v1.12+ scope
+- Zones come from the existing in-code gauge constants — if a band needs adjusting, the gauge constant is the place to adjust it. The 2026-04-18 benchmark report is background context only.
+- Overview is always populated — no null overview in MVP. When there's no strong cross-section signal, the overview summarizes the per-section findings.
+- LLM output is not style-constrained (no em-dash/noun-label/prescriptive-advice rules). Correctness guardrails come from the three precomputed cross-section flags, not from prose policing.
+- Target size: 2–3 weeks of focused build; v1.11 may include additional parallel scope
 
 ## Current State
 
 v1.10 shipped 2026-04-19. Eleven milestones complete (v1.0–v1.10), 61 phases (+3 inserted), live at flawchess.com. v1.10 delivered an endgame-focused advanced analytics pass: consolidated `/api/endgames/overview` endpoint (8 queries → 2), endgame score gap + material breakdown table with opponent-based self-calibrating baseline, time pressure clock stats + score chart across 10 buckets, skill-adjusted Endgame ELO timeline per (platform, time-control) combo anchored on user's real rating with weekly volume bars, conv/recov 4-ply persistence filter + 100cp threshold, test suite hardening (TRUNCATE + seeded_user fixture + aggregation sanity tests), and admin user impersonation for superusers. Phase 56 cancelled (subsumed by 57), Phase 58 moved to backlog as 999.6.
+
+v1.11 in progress: Phase 63 (findings pipeline), Phase 64 (llm_logs table + async repo), and Phase 65 (LLM endpoint with pydantic-ai Agent) complete (2026-04-21). `POST /api/insights/endgame` ships with findings-hash cache, 3-miss/hr rate limit, soft-fail to last cached report, and startup validation of `PYDANTIC_AI_MODEL_INSIGHTS`. Phase 66 (frontend block + beta flag) and Phase 67 (validation + beta rollout) remain.
 
 ## Context
 
@@ -202,4 +221,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-19 after v1.10 Advanced Analytics milestone*
+*Last updated: 2026-04-20 — v1.11 LLM-first Endgame Insights milestone opened (source: SEED-003).*

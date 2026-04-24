@@ -106,7 +106,11 @@ export interface MaterialRow {
 
 /** Single point in the score-gap rolling-window time series.
  *  `date` is the Monday of an ISO week (YYYY-MM-DD).
- *  `score_difference` is endgame_score - non_endgame_score on a 0-1 scale (signed). */
+ *  `score_difference` is endgame_score - non_endgame_score on a 0-1 scale (signed).
+ *  `endgame_score` / `non_endgame_score` are the absolute per-side
+ *  rolling-window means (0-1). Phase 68 added them so the two-line chart
+ *  and the `score_timeline` insights subsection read absolute scores
+ *  directly instead of reconstructing them from `score_difference`. */
 export interface ScoreGapTimelinePoint {
   date: string;
   score_difference: number;
@@ -115,6 +119,10 @@ export interface ScoreGapTimelinePoint {
   // Count of games (endgame + non-endgame) played in THIS specific ISO week.
   // Drives the muted volume-bar series on the Score Gap timeline.
   per_week_total_games: number;
+  // Phase 68: absolute per-side rolling-window mean scores (0.0-1.0). Invariant:
+  // abs((endgame_score - non_endgame_score) - score_difference) < 1e-9 per bucket.
+  endgame_score: number;
+  non_endgame_score: number;
 }
 
 export interface ScoreGapMaterialResponse {

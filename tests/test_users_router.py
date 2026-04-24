@@ -11,6 +11,7 @@ import pytest
 import pytest_asyncio
 
 from app.main import app
+from app.models.user import User
 
 
 # ---------------------------------------------------------------------------
@@ -31,6 +32,25 @@ async def _register_and_login(client: httpx.AsyncClient, email: str, password: s
         data={"username": email, "password": password},
     )
     return login_resp.json()["access_token"]
+
+
+async def _register_login_and_get_id(
+    client: httpx.AsyncClient, email: str, password: str
+) -> tuple[int, str]:
+    """Register a user, login, and return (user_id, access_token).
+
+    Used by BETA-01 tests that need to flip `beta_enabled` via a direct DB
+    UPDATE — matches the "direct DB op only" contract from BETA-01 / T-66-04.
+    """
+    reg = await client.post(
+        "/api/auth/register", json={"email": email, "password": password}
+    )
+    user_id = int(reg.json()["id"])
+    login_resp = await client.post(
+        "/api/auth/jwt/login",
+        data={"username": email, "password": password},
+    )
+    return user_id, login_resp.json()["access_token"]
 
 
 # ---------------------------------------------------------------------------
@@ -169,3 +189,103 @@ class TestProfileUserIsolation:
         assert profile_b.status_code == 200
         assert profile_a.json()["email"] == email_a
         assert profile_b.json()["email"] == email_b
+
+
+# ---------------------------------------------------------------------------
+# BETA-01: beta_enabled flag round-trip through /users/me/profile
+# ---------------------------------------------------------------------------
+
+
+class TestProfileBetaEnabled:
+    @pytest.mark.asyncio
+    async def test_profile_returns_beta_enabled_default_false(self):
+        """BETA-01: a newly registered user has beta_enabled=False by default."""
+        email = unique_email("beta_default")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            token = await _register_and_login(client, email, password)
+            resp = await client.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "beta_enabled" in body
+        assert body["beta_enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_profile_returns_beta_enabled_true_after_db_flip(self):
+        """BETA-01: direct DB UPDATE is the only way to enable the flag — verified by round-trip."""
+        from sqlalchemy import update
+
+        from app.core.database import async_session_maker
+
+        email = unique_email("beta_flip")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id, token = await _register_login_and_get_id(client, email, password)
+
+            # Flip beta_enabled via direct DB op (the only legitimate path per BETA-01).
+            async with async_session_maker() as session:
+                await session.execute(
+                    update(User).where(User.id == user_id).values(beta_enabled=True)
+                )
+                await session.commit()
+
+            resp = await client.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["beta_enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_user_profile_update_does_not_change_beta_enabled(self):
+        """Threat T-66-02: UserProfileUpdate must not include beta_enabled.
+
+        PUT /users/me/profile with a payload carrying beta_enabled=false leaves the
+        DB-flipped True value unchanged because Pydantic v2 silently drops unknown
+        fields via its default extra="ignore".
+        """
+        from sqlalchemy import update
+
+        from app.core.database import async_session_maker
+
+        email = unique_email("beta_mass_assign")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id, token = await _register_login_and_get_id(client, email, password)
+            headers = {"Authorization": f"Bearer {token}"}
+
+            # Set the flag via direct DB op (the only legitimate path per BETA-01).
+            async with async_session_maker() as session:
+                await session.execute(
+                    update(User).where(User.id == user_id).values(beta_enabled=True)
+                )
+                await session.commit()
+
+            # Attempt to disable via PUT with a malicious payload.
+            put_resp = await client.put(
+                "/api/users/me/profile",
+                json={"chess_com_username": "legit", "beta_enabled": False},
+                headers=headers,
+            )
+            assert put_resp.status_code == 200
+            # beta_enabled stays True because UserProfileUpdate ignores unknown fields.
+            assert put_resp.json()["beta_enabled"] is True
+
+            # GET confirms persistence — the flag was not silently flipped.
+            get_resp = await client.get("/api/users/me/profile", headers=headers)
+            assert get_resp.status_code == 200
+            assert get_resp.json()["beta_enabled"] is True

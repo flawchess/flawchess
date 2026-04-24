@@ -12,9 +12,11 @@ from app.middleware.last_activity import LastActivityMiddleware
 from app.routers import openings, position_bookmarks, imports, auth
 from app.routers.admin import router as admin_router
 from app.routers.endgames import router as endgames_router
+from app.routers.insights import router as insights_router
 from app.routers.stats import router as stats_router
 from app.routers.users import router as users_router
 from app.services.import_service import cleanup_orphaned_jobs
+from app.services.insights_llm import get_insights_agent
 
 _DB_TRANSIENT_ERRORS = (ConnectionDoesNotExistError, CannotConnectNowError)
 _MAX_CAUSE_CHAIN_DEPTH = 5
@@ -41,6 +43,11 @@ def _sentry_before_send(event: dict, hint: dict) -> dict:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    # D-22: validate insights Agent FIRST — startup failure is a deploy-blocker.
+    # Orphan cleanup is best-effort and must not run if the app can't serve
+    # the insights endpoint. Any pydantic-ai UserError / ValueError
+    # propagates, aborting uvicorn startup (D-36).
+    get_insights_agent()
     await cleanup_orphaned_jobs()
     yield
 
@@ -75,6 +82,7 @@ app.include_router(openings.router, prefix="/api")
 app.include_router(position_bookmarks.router, prefix="/api")
 app.include_router(stats_router, prefix="/api")
 app.include_router(endgames_router, prefix="/api")
+app.include_router(insights_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 

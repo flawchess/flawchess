@@ -13,4 +13,6 @@ export interface UserProfile {
   // D-22: populated by backend when the request carries an impersonation JWT.
   // Frontend uses this to render the header pill (Plan 05).
   impersonation: ImpersonationContext | null;
+  // BETA-01: beta feature flag (e.g. Endgame Insights in v1.11). Default false; flipped via direct DB op.
+  beta_enabled: boolean;
 }

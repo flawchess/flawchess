@@ -614,12 +614,19 @@ def _compute_score_gap_timeline(
         diff = endgame_mean - non_endgame_mean
 
         monday = (played_at - timedelta(days=iso_weekday - 1)).date()
+        # sanity: score_difference == endgame_score - non_endgame_score within
+        # rounding (1e-9 target; all three rounded to 4 decimals here). Phase 68
+        # persists the absolute per-side values so the frontend two-line chart
+        # and the `score_timeline` insights subsection can read them directly
+        # instead of reconstructing them from the signed difference.
         data_by_week[(iso_year, iso_week)] = {
             "date": monday.isoformat(),
             "score_difference": round(diff, 4),
             "endgame_game_count": eg_count,
             "non_endgame_game_count": neg_count,
             "per_week_total_games": per_week_total[(iso_year, iso_week)],
+            "endgame_score": round(endgame_mean, 4),
+            "non_endgame_score": round(non_endgame_mean, 4),
         }
 
     return [

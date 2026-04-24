@@ -18,11 +18,13 @@ interface TooltipProps {
   side?: "top" | "bottom" | "left" | "right"
   /** Align with the trigger edge. Defaults to "center". */
   align?: "start" | "center" | "end"
+  /** Override the global hover delay (ms). Pass 0 for instant tooltips. */
+  delayDuration?: number
 }
 
 /** Hover tooltip with white-bg style matching InfoPopover.
  *  Replaces native `title=` attributes for consistent branding. */
-function Tooltip({ content, children, side = "top", align = "center" }: TooltipProps) {
+function Tooltip({ content, children, side = "top", align = "center", delayDuration }: TooltipProps) {
   // Suppress tooltip on touch interactions. Radix opens tooltips on hover
   // with a delay (setTimeout), so suppressing at the event level alone isn't
   // enough — the timer fires later and opens the tooltip. Instead we track
@@ -41,7 +43,7 @@ function Tooltip({ content, children, side = "top", align = "center" }: TooltipP
   }
 
   return (
-    <TooltipPrimitive.Root open={open} onOpenChange={handleOpenChange}>
+    <TooltipPrimitive.Root open={open} onOpenChange={handleOpenChange} delayDuration={delayDuration}>
       <TooltipPrimitive.Trigger
         asChild
         onPointerDown={trackPointer}

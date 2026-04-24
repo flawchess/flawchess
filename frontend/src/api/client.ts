@@ -64,7 +64,7 @@ apiClient.interceptors.response.use(
 // ─── Filter Params Builder ────────────────────────────────────────────────────
 
 /** Build query params object from standard filter parameters, omitting empty/default values. */
-function buildFilterParams(params: {
+export function buildFilterParams(params: {
   time_control?: string[] | null;
   platform?: string[] | null;
   recency?: string | null;

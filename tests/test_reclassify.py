@@ -65,6 +65,12 @@ async def _insert_game_with_null_positions(db_session, pgn: str = _FOOLS_MATE_PG
     """Insert a game row and NULL-metadata position rows. Returns game_id."""
     from app.repositories.game_repository import bulk_insert_games, bulk_insert_positions
     from app.services.zobrist import hashes_for_game
+    from tests.conftest import ensure_test_user
+
+    # Ensure the user_id=1 FK target exists. Previously this test relied on a
+    # prior seeded_user fixture having committed user id=1, but that coupling
+    # broke when test-order changed.
+    await ensure_test_user(db_session, 1)
 
     game_rows = [_make_game_row(pgn=pgn)]
     game_ids = await bulk_insert_games(db_session, game_rows)

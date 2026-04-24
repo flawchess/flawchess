@@ -185,8 +185,8 @@ export function EndgameEloTimelineSection({
           <strong>Endgame ELO</strong> is your Actual ELO shifted by how much your
           Endgame Skill exceeds (or falls short of) the 50% neutral mark. We compute it as
           <em> actual_elo + 400 &middot; log10(skill / (1 &minus; skill))</em>,
-          where skill is the composite of Conversion Win %, Parity Score %, and
-          Recovery Save % over your trailing 100 endgame games.
+          where skill is the composite of Conversion (Win), Parity (Score), and
+          Recovery (Save) over your trailing 100 endgame games.
         </p>
         <p>
           The solid bright line is your <strong>Actual ELO</strong> &mdash; your rating at
@@ -350,6 +350,7 @@ export function EndgameEloTimelineSection({
               yAxisId="elo"
               domain={yAxis.domain}
               ticks={yAxis.ticks}
+              interval={0}
               tick={{ fontSize: 12 }}
               width={44}
             />

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
-import { SlidersHorizontal, X, BarChart2Icon, Gamepad2Icon, HelpCircle } from 'lucide-react';
+import { SlidersHorizontal, X, BarChart2Icon, Gamepad2Icon, HelpCircle, Lightbulb } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
-import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES, ScoreGapTimelineChart } from '@/components/charts/EndgamePerformanceSection';
+import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES, EndgameScoreOverTimeChart } from '@/components/charts/EndgamePerformanceSection';
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
 import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
 import { EndgameScoreGapSection } from '@/components/charts/EndgameScoreGapSection';
@@ -27,8 +27,12 @@ import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelin
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
+import { EndgameInsightsBlock } from '@/components/insights/EndgameInsightsBlock';
+import { useEndgameInsights } from '@/hooks/useEndgameInsights';
+import { useActiveJobs } from '@/hooks/useImport';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
+import type { EndgameInsightsResponse, SectionId } from '@/types/insights';
 
 const PAGE_SIZE = 20;
 
@@ -68,6 +72,88 @@ export function EndgamesPage() {
   // Queries only fire when the sidebar/drawer closes and commits pending -> applied.
   const [appliedFilters, setAppliedFilters] = useFilterStore();
   const [pendingFilters, setPendingFilters] = useState<FilterState>(appliedFilters);
+
+  // ── Endgame Insights ────────────────────────────────────────────────────────
+  // Mutation state lifted here so per-section slots in each H2 can observe the
+  // same report without a context provider. No network request fires unless
+  // the user clicks Generate.
+  //
+  // Cache shape: a list of (filter-state, response) pairs. A report is rendered
+  // whenever the current filter state matches a cached entry (via
+  // areFiltersEqual), so toggling among previously-generated filter states
+  // brings back their reports without another click. New Generate calls
+  // upsert into the list. Import-completion clears the whole list because new
+  // games invalidate every cached report (findings_hash content-addresses the
+  // aggregates on the server side, but the client list is coarse-invalidated
+  // to avoid stale UI between an import landing and a regenerate click).
+  const insightsMutation = useEndgameInsights();
+  const [insightsCache, setInsightsCache] = useState<
+    Array<{ filters: FilterState; response: EndgameInsightsResponse }>
+  >([]);
+
+  const handleGenerateInsights = useCallback(async () => {
+    try {
+      const result = await insightsMutation.mutateAsync(appliedFilters);
+      setInsightsCache((prev) => {
+        const idx = prev.findIndex((entry) => areFiltersEqual(entry.filters, appliedFilters));
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = { filters: appliedFilters, response: result };
+          return next;
+        }
+        return [...prev, { filters: appliedFilters, response: result }];
+      });
+    } catch {
+      // Error is surfaced via insightsMutation.isError → EndgameInsightsBlock error state.
+      // Global MutationCache.onError in lib/queryClient.ts captures Sentry; do not
+      // add a local capture here (would double-report).
+    }
+  }, [insightsMutation, appliedFilters]);
+
+  // The rendered report is whichever cached entry matches the current filter
+  // state — switching back to a previously-generated filter set re-renders
+  // that report without a network call.
+  const matchingInsights: EndgameInsightsResponse | null = useMemo(() => {
+    const hit = insightsCache.find((entry) => areFiltersEqual(entry.filters, appliedFilters));
+    return hit?.response ?? null;
+  }, [insightsCache, appliedFilters]);
+
+  // Clear the cached insights when an import completes — new games change the
+  // findings, so every cached report no longer reflects current data. We watch
+  // the active-jobs count transition from >0 to 0 and invalidate on the edge.
+  // No effect fires on initial mount because prevJobsCountRef is seeded with
+  // the first observation.
+  const { data: activeJobsForInsights } = useActiveJobs(true);
+  const activeJobsCount = activeJobsForInsights?.length ?? 0;
+  const prevJobsCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevJobsCountRef.current === null) {
+      prevJobsCountRef.current = activeJobsCount;
+      return;
+    }
+    if (prevJobsCountRef.current > 0 && activeJobsCount === 0) {
+      setInsightsCache([]);
+    }
+    prevJobsCountRef.current = activeJobsCount;
+  }, [activeJobsCount]);
+
+  // Build a lookup for O(1) per-slot access during render. Null for sections
+  // the backend did not return — or whenever the cached report's filters no
+  // longer match the applied filters (see matchingInsights above).
+  const sectionBySection: Record<SectionId, { headline: string; bullets: string[] } | null> = {
+    overall: null,
+    metrics_elo: null,
+    time_pressure: null,
+    type_breakdown: null,
+  };
+  if (matchingInsights && !insightsMutation.isError) {
+    for (const section of matchingInsights.report.sections) {
+      sectionBySection[section.section_id] = {
+        headline: section.headline,
+        bullets: section.bullets,
+      };
+    }
+  }
 
   // Sync pending -> applied when the filter store changes from another page/tab
   useEffect(() => {
@@ -218,6 +304,12 @@ export function EndgamesPage() {
 
   const statisticsContent = (
     <div className="flex flex-col gap-4">
+      <EndgameInsightsBlock
+        appliedFilters={appliedFilters}
+        rendered={matchingInsights}
+        mutation={insightsMutation}
+        onGenerate={handleGenerateInsights}
+      />
       {overviewLoading ? (
         <div className="charcoal-texture rounded-md p-12 flex items-center justify-center">
           <p className="text-muted-foreground">Loading endgame analytics...</p>
@@ -280,12 +372,13 @@ export function EndgamesPage() {
               </div>
               {scoreGapData && scoreGapData.timeline.length > 0 && (
                 <div className="charcoal-texture rounded-md p-4">
-                  <ScoreGapTimelineChart
+                  <EndgameScoreOverTimeChart
                     timeline={scoreGapData.timeline}
                     window={scoreGapData.timeline_window}
                   />
                 </div>
               )}
+              <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
               {scoreGapData && (
                 <>
                   <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Metrics and ELO</h2>
@@ -302,6 +395,7 @@ export function EndgamesPage() {
                       isError={overviewError}
                     />
                   </div>
+                  <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                 </>
               )}
             </>
@@ -331,6 +425,7 @@ export function EndgamesPage() {
                   <EndgameTimePressureSection data={timePressureChartData} />
                 </div>
               )}
+              <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
             </>
           )}
 
@@ -352,6 +447,7 @@ export function EndgamesPage() {
               <EndgameTimelineChart data={timelineData} />
             </div>
           )}
+          <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />
         </>
       ) : overviewError ? (
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
@@ -589,6 +685,41 @@ export function EndgamesPage() {
           </Tabs>
         </div>
       </main>
+    </div>
+  );
+}
+
+// ── SectionInsightSlot ──────────────────────────────────────────────────────
+// Renders a per-section insight (headline + 0-2 bullets) above the first chart
+// card of each H2 group when the backend returned a matching section_id. Returns
+// null when no matching data exists, e.g. pre-generate state, or any section
+// the LLM chose to omit (Phase 65 min=1/max=4).
+function SectionInsightSlot({
+  sectionId,
+  data,
+}: {
+  sectionId: SectionId;
+  data: { headline: string; bullets: string[] } | null;
+}) {
+  if (!data) return null;
+  return (
+    <div
+      data-testid={`insights-section-${sectionId}`}
+      className="charcoal-texture rounded-md p-4"
+    >
+      <p className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+        <span className="insight-lightbulb" aria-hidden="true">
+          <Lightbulb className="size-4" />
+        </span>
+        {data.headline}
+      </p>
+      {data.bullets.length > 0 && (
+        <ul className="list-disc list-outside pl-5 space-y-1 text-sm text-muted-foreground">
+          {data.bullets.map((b, i) => (
+            <li key={i}>{b}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

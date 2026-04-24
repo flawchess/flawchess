@@ -1,0 +1,100 @@
+---
+phase: 66
+slug: frontend-endgameinsightsblock-beta-flag
+status: draft
+nyquist_compliant: false
+wave_0_complete: false
+created: 2026-04-21
+---
+
+# Phase 66 — Validation Strategy
+
+> Per-phase validation contract for feedback sampling during execution. See `66-RESEARCH.md` §Validation Architecture for the rationale behind each test-type decision.
+
+---
+
+## Test Infrastructure
+
+| Property | Value |
+|----------|-------|
+| **Framework (backend)** | pytest 8.x with pytest-asyncio |
+| **Framework (frontend)** | vitest 2.x (jsdom env) |
+| **Config file (backend)** | `pyproject.toml` (`[tool.pytest.ini_options]`) |
+| **Config file (frontend)** | `frontend/vitest.config.ts` |
+| **Quick run command (backend)** | `uv run pytest tests/test_users_router.py -x` |
+| **Quick run command (frontend)** | `cd frontend && npm test -- --run src/hooks/__tests__/useEndgameInsights.test.ts` |
+| **Full suite command (backend)** | `uv run ruff check . && uv run ruff format --check . && uv run ty check app/ tests/ && uv run pytest` |
+| **Full suite command (frontend)** | `cd frontend && npm run lint && npm run knip && npx tsc --noEmit && npm test -- --run` |
+| **Estimated runtime** | backend ~60s, frontend ~25s |
+
+---
+
+## Sampling Rate
+
+- **After every task commit:** Run the plan-local quick command (router test, hook test, or `npx tsc --noEmit`) — whichever is the nearest feedback loop for that file.
+- **After every plan wave:** Run full backend + full frontend suite (lint + types + tests).
+- **Before `/gsd-verify-work`:** Both full suites must be green plus manual mobile spot-check.
+- **Max feedback latency:** ≤ 30 seconds (unit / hook tests); ≤ 90 seconds (full suites).
+
+---
+
+## Per-Task Verification Map
+
+Rows are placeholders keyed by plan number — the planner fills in `Task ID`s once plans are drafted. Task IDs below are expected slots; mark ❌ W0 on any file the planner needs to stub before the first commit.
+
+| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
+|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
+| 66-01-01 | 01 (Backend: `users.beta_enabled` migration + model) | 1 | BETA-01 | — | Column defaults to `false`; no unauthenticated surface | unit (migration apply + downgrade) | `uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head` | ❌ W0 (migration file) | ⬜ pending |
+| 66-01-02 | 01 | 1 | BETA-02 | — | `/users/me/profile` returns `beta_enabled` from DB | integration (router) | `uv run pytest tests/test_users_router.py::test_profile_returns_beta_enabled -x` | ❌ W0 | ⬜ pending |
+| 66-01-03 | 01 | 1 | BETA-01 | — | New columns backfill to `false` for existing users | integration (router) | `uv run pytest tests/test_users_router.py::test_existing_user_beta_enabled_defaults_false -x` | ❌ W0 | ⬜ pending |
+| 66-02-01 | 02 (Frontend types + hook) | 2 | INS-01 | — | Hook POSTs with filter params; Literal-typed response envelope | unit (hook mock) | `cd frontend && npm test -- --run src/hooks/__tests__/useEndgameInsights.test.ts` | ❌ W0 | ⬜ pending |
+| 66-02-02 | 02 | 2 | INS-01 | — | `UserProfile` TS type exposes `beta_enabled: boolean` | type-check | `cd frontend && npx tsc --noEmit` | ✅ (tsc always runs) | ⬜ pending |
+| 66-03-01 | 03 (EndgameInsightsBlock component) | 2 | INS-01, BETA-02 | — | Component returns `null` when `!profile?.beta_enabled` | unit (RTL — optional Wave 0) | `cd frontend && npm test -- --run src/components/insights/__tests__/EndgameInsightsBlock.test.tsx` | ❌ W0 (if RTL added) | ⬜ pending |
+| 66-03-02 | 03 | 2 | INS-02 | — | Overview paragraph + up to 4 SectionInsight slots render on success | manual (see below) | n/a | n/a | ⬜ pending |
+| 66-03-03 | 03 | 2 | INS-02 | — | Locked failure copy + single `[Try again]` button render on any error status | manual (see below) | n/a | n/a | ⬜ pending |
+| 66-03-04 | 03 | 2 | INS-03 | — | Outdated indicator lights when `appliedFilters ≠ reportFilters`; cleared on Regenerate | manual (see below) | n/a | n/a | ⬜ pending |
+| 66-04-01 | 04 (Endgames.tsx integration) | 3 | INS-02 | — | Per-section SectionInsights slot into matching H2s; omitted section_id renders nothing | manual (see below) | n/a | n/a | ⬜ pending |
+| 66-04-02 | 04 | 3 | INS-02 | — | Suppressed H2 (e.g. Time Pressure off) drops its matching SectionInsight client-side | manual (see below) | n/a | n/a | ⬜ pending |
+| 66-05-01 | 05 (Docs alignment) | 3 | BETA-01 | — | `REQUIREMENTS.md` BETA-01 + `ROADMAP.md` Phase 66/67 say `beta_enabled` (not `insights_beta_enabled`) | grep | `! grep -n "insights_beta_enabled" .planning/REQUIREMENTS.md .planning/ROADMAP.md` | ✅ | ⬜ pending |
+
+*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+---
+
+## Wave 0 Requirements
+
+- [ ] `alembic/versions/{rev}_add_users_beta_enabled.py` — Alembic revision stub (autogenerated via `uv run alembic revision --autogenerate -m "add users.beta_enabled"`, reviewed for false positives, committed)
+- [ ] `tests/test_users_router.py` — add `test_profile_returns_beta_enabled` + `test_existing_user_beta_enabled_defaults_false` (extend existing file, don't create a new one if one already exists)
+- [ ] `frontend/src/hooks/__tests__/useEndgameInsights.test.ts` — hook unit test with mocked `apiClient.post`
+- [ ] `frontend/src/types/insights.ts` — new file; types mirror Phase 65 `EndgameInsightsResponse` + `InsightsErrorResponse` envelopes with `Literal` unions for `status` and `error`
+- [ ] **[Planner decision]** `@testing-library/react` + `@testing-library/jest-dom` devDeps — optional Wave 0 dependency install if the planner elects to ship FE render tests this phase (research §Validation Architecture recommends deferring RTL to Phase 67, but this is a judgment call)
+
+---
+
+## Manual-Only Verifications
+
+Pure UI assertions that are cheaper to eyeball than to encode in RTL for an MVP cohort. Phase 67's "5+ real user profiles eyeball validation" formally validates the same surface; Phase 66 only needs to confirm the rendering contract holds before that validation starts.
+
+| Behavior | Requirement | Why Manual | Test Instructions |
+|----------|-------------|------------|-------------------|
+| Pre-click hero card renders with H2 "Insights" + blurb + `btn-generate-insights` Button | INS-01 | Visual rhythm (spacing, weight) tested by eye; no assertion beats a screenshot | 1. Run `bin/run_local.sh`. 2. `UPDATE users SET beta_enabled=true WHERE email='{your_email}';` via `mcp__flawchess-db__query`. 3. Visit `/endgames?tab=statistics`. 4. Confirm the hero card renders above the first H2 exactly per UI-SPEC §Typography + §Copywriting. |
+| Post-click overview + 4 SectionInsights + Regenerate | INS-02 | Real LLM latency (5–15s) and live stats content are best-judged by eye | 1. Apply filters (e.g. time_control=bullet, recency=30d). 2. Click "Generate insights". 3. Wait for render. 4. Confirm: overview paragraph ≤150 words under "Insights" H2; each of the 4 H2 groups shows a ≤12-word headline + 0–2 bullets above its first chart card. 5. Confirm "Regenerate" button replaces "Generate insights". |
+| Outdated indicator + Regenerate clears it | INS-03 | The filter-diff + brand-brown dot is a live transition | 1. After step above, open Filter drawer, change recency, apply. 2. Confirm `insights-outdated-indicator` pill renders right of the "Insights" H2 with "Filters changed — click Regenerate to update". 3. Click Regenerate. 4. On success, confirm indicator disappears and overview text visibly changes. 5. Change `color` only. Click Regenerate. 6. Confirm backend returns fast (`status: "cache_hit"` — check Network tab) — cached path confirms INS-03 "color/rated_only does not force new LLM call". |
+| Locked failure copy + `[Try again]` | success criterion #5 | Real 429/502/503 rendering | 1. Use `mcp__flawchess-db__query` to temporarily lower the rate-limit threshold, OR mock via DevTools to return `{error: "rate_limit_exceeded", retry_after_seconds: 180}`. 2. Click Regenerate. 3. Confirm `insights-error` renders exactly: "Couldn't generate insights." / "Please try again in a moment." / "Try again in ~3 min." / `[Try again]` button. 4. Confirm SectionInsight slots render NOTHING on error. 5. Click `[Try again]` — 429 re-renders same UI. |
+| Stale-rate-limited banner (D-12) | success criterion #4 | Production state triggers rarely | 1. Generate once. 2. Exhaust rate-limit via repeated failed/distinct-filter hits. 3. Generate again — backend returns 200 with `status: "stale_rate_limited"` + `retry_after_seconds`. 4. Confirm muted banner "Showing your most recent insights. You've hit the hourly limit; try again in ~{N} min." renders above overview with `Info` icon. 5. Confirm overview + SectionInsights render normally (NOT error state). |
+| Mobile layout | success criterion #4 | Tailwind breakpoint rendering best confirmed on a real viewport | 1. Dev-server + Chrome DevTools → iPhone 12 viewport (390×844). 2. Confirm hero card full-width with `p-4` padding; Generate button intrinsic width; H2 + outdated indicator wrap cleanly. 3. Expand each H2 — confirm SectionInsight compact enough to not push first chart card off-screen. |
+| Non-beta user sees nothing | INS-01, BETA-02 | End-to-end gate | 1. `UPDATE users SET beta_enabled=false WHERE email='{your_email}';`. 2. Hard-refresh `/endgames`. 3. Confirm no `insights-block` in DOM (`document.querySelector('[data-testid=insights-block]')` → null). 4. Confirm all 4 existing H2s render with NO SectionInsight slots. |
+| Admin impersonation respects impersonated user's flag (D-19) | BETA-02 | Confirms Phase 62 claim-aware JWT works for the new column | 1. As admin, impersonate a user with `beta_enabled=false`. 2. Confirm block hidden. 3. Impersonate a user with `beta_enabled=true`. 4. Confirm block renders. |
+
+---
+
+## Validation Sign-Off
+
+- [ ] All tasks have `<automated>` verify or Wave 0 dependencies or entry in Manual-Only Verifications
+- [ ] Sampling continuity: no 3 consecutive tasks without automated verify OR manual gate
+- [ ] Wave 0 covers all MISSING references (migration revision file, router tests, hook test, `insights.ts` types)
+- [ ] No watch-mode flags — `vitest --run`, not `--watch`
+- [ ] Feedback latency ≤ 30s for unit / hook tests
+- [ ] `nyquist_compliant: true` set in frontmatter after gsd-plan-checker passes
+
+**Approval:** pending

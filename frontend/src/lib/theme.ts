@@ -53,6 +53,17 @@ export const DEFAULT_GAUGE_ZONES: GaugeZone[] = [
   { from: 0.6, to: 1.0, color: GAUGE_SUCCESS },
 ];
 
+// Gauge bands are 3-tuples [weak, neutral, strong] across every endgame gauge;
+// numeric bounds come from the codegen'd registry (`@/generated/endgameZones`)
+// so colors live here as a positional triple the FE pairs with those bounds.
+export const GAUGE_ZONE_COLORS = [GAUGE_DANGER, GAUGE_NEUTRAL, GAUGE_SUCCESS] as const;
+
+// Pair numeric `{from, to}` bands from the Python-owned zone registry with
+// the FE-owned `GAUGE_ZONE_COLORS` triple. Caller must pass exactly 3 bands.
+export function colorizeGaugeZones(bands: readonly { from: number; to: number }[]): GaugeZone[] {
+  return bands.map((b, i) => ({ ...b, color: GAUGE_ZONE_COLORS[i] ?? GAUGE_NEUTRAL }));
+}
+
 // Minimum games required for reliable stats — rows/charts below this threshold are dimmed
 export const MIN_GAMES_FOR_RELIABLE_STATS = 10;
 
@@ -99,9 +110,31 @@ export const ELO_COMBO_COLORS: Record<EloComboKey, { bright: string; dark: strin
   lichess_classical:   { bright: 'oklch(0.60 0.18 340)', dark: 'oklch(0.40 0.14 340)' },
 };
 
+// Insights lightbulb — gold color + glow hue used by the `.insight-lightbulb`
+// utility in index.css. Drop-shadow layers reference the same hue to keep the
+// glow and the icon tint matched.
+export const INSIGHT_GOLD = 'oklch(0.82 0.17 85)';
+
 // Endgame ELO Timeline volume bars (Phase 57.1). Muted gray with alpha so the
 // bars read as "context, not data" on the charcoal-texture card surface.
 // L=0.55 / chroma=0 keeps the bar visually distinct from all 8 ELO_COMBO_COLORS
 // hues; alpha=0.25 lets the texture noise show through, reinforcing the
 // passive-context reading. Locked per 57.1-RESEARCH.md Pitfall 3.
 export const ENDGAME_VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';
+
+// Phase 68 — Endgame vs Non-Endgame Score timeline.
+// Two line strokes (endgame + non-endgame) with a colored shaded band between
+// them indicating which side leads. Low alpha on the fills (0.18) so the
+// grid, axis labels, and the two primary lines remain dominant while still
+// conveying the sign of the gap at a glance.
+// - LINE_ENDGAME reuses MY_SCORE_COLOR (brand blue) — keeps "user's endgame"
+//   visually anchored to the same hue used on the Time Pressure chart.
+// - LINE_NON_ENDGAME uses a muted neutral (matches WDL_DRAW) to read as a
+//   passive partner line, not a competing signal.
+// - FILL_ABOVE (green) and FILL_BELOW (red) reuse WDL win/loss hues at 0.18
+//   alpha. Sign convention: above == endgame > non_endgame (green), below ==
+//   endgame < non_endgame (red).
+export const SCORE_TIMELINE_LINE_ENDGAME = MY_SCORE_COLOR;
+export const SCORE_TIMELINE_LINE_NON_ENDGAME = 'oklch(0.60 0.02 260)';
+export const SCORE_TIMELINE_FILL_ABOVE = 'oklch(0.50 0.14 145 / 0.18)';
+export const SCORE_TIMELINE_FILL_BELOW = 'oklch(0.50 0.15 25 / 0.18)';

@@ -13,6 +13,7 @@
 - ✅ **v1.8 Guest Access** — Phases 44-47 (shipped 2026-04-06)
 - ✅ **v1.9 UI/UX Restructuring** — Phases 49-51 (shipped 2026-04-10) — see [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md)
 - ✅ **v1.10 Advanced Analytics** — Phases 48, 52-55, 57, 57.1, 59-62 (shipped 2026-04-19) — see [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md)
+- 🚧 **v1.11 LLM-first Endgame Insights** — Phases 63-68 (in progress)
 
 ## Phases
 
@@ -150,6 +151,93 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 
 </details>
 
+### 🚧 v1.11 LLM-first Endgame Insights (Phases 63-68)
+
+- [x] **Phase 63: Findings Pipeline & Zone Wiring** — Transform `/api/endgames/overview` composite into zone/trend/sample-quality findings and cross-section flags (complete 2026-04-20, 5/5 plans)
+- [x] **Phase 64: `llm_logs` Table & Async Repo** — Generic Postgres log table (+ Alembic migration + async repo) designed for reuse across future LLM features (complete 2026-04-20, 3/3 plans)
+- [x] **Phase 65: LLM Endpoint with pydantic-ai Agent** — `POST /api/insights/endgame` with versioned prompt, findings-hash cache, rate limit, soft-fail (completed 2026-04-21)
+- [x] **Phase 66: Frontend EndgameInsightsBlock & Beta Flag** — Overview + 4 Section blocks inline on the Endgame tab, gated by `users.beta_enabled` (complete 2026-04-22, 5/5 plans)
+- [ ] **Phase 67: Validation & Beta Rollout** — Ground-truth regression test + admin-impersonation eyeball validation across 5+ real user profiles
+- [ ] **Phase 68: Endgame Score Timeline (dual-line + shaded gap)** — Replace single-line Score Gap chart with two-line Endgame vs Non-Endgame Score chart + shaded gap fill; simplify prompt framing rule
+
+## Phase Details
+
+### Phase 63: Findings Pipeline & Zone Wiring
+**Goal**: Backend produces deterministic findings (zone, trend, sample_quality, cross-section flags) from existing `/api/endgames/overview` data so the LLM has pre-validated numbers and correctness guardrails to reason over.
+**Depends on**: Nothing in v1.11 (consumes existing v1.10 endgame service)
+**Requirements**: FIND-01, FIND-02, FIND-03, FIND-04, FIND-05
+**Success Criteria** (what must be TRUE):
+  1. Given a fixed user + filter context, the findings service returns a stable `EndgameTabFindings` object with per-subsection-per-window findings covering both `all_time` and `last_3mo` windows
+  2. Every subsection finding is assigned a zone (`weak`/`typical`/`strong` — 3-zone MVP per CONTEXT.md D-05; 5-zone schema deferred to v1.12 alongside SEED-002 population baselines) using the SAME in-code gauge constants that drive the chart visuals — a developer can verify narrative and visuals agree by construction
+  3. The three cross-section flags (`baseline_lift_mutes_score_gap`, `clock_entry_advantage`, `no_clock_entry_advantage`) fire deterministically against the SEED-001 canonical user fixture
+  4. Trend returns `n_a` when weekly-points-in-window is below the threshold; `findings_hash` is stable across Python sessions and unchanged across days (`as_of` excluded)
+**Plans**: 5 plans
+- [x] 63-01-PLAN.md — Zone Registry & Recovery Band Edit (endgame_zones.py, Recovery re-center, zone unit tests)
+- [x] 63-02-PLAN.md — TS Codegen & CI Drift Guard (gen script, generated TS, knip ignore, CI step, FE consistency test)
+- [x] 63-03-PLAN.md — Insights Schemas (FilterContext, SubsectionFinding, EndgameTabFindings, FlagId, SectionId)
+- [x] 63-04-PLAN.md — Findings Service Compute (compute_findings, flags, trend, hash)
+- [x] 63-05-PLAN.md — Findings Service Tests (layering, flags, trend gate, hash stability)
+
+### Phase 64: `llm_logs` Table & Async Repo
+**Goal**: Generic Postgres log table with async write repository lands in prod so every LLM call (miss) can be captured with prompt, response, tokens, cost, latency, and error fields. Designed up-front to host future LLM features, not endgame-specific.
+**Depends on**: Nothing in v1.11 (parallel with Phase 63)
+**Requirements**: LOG-01, LOG-02, LOG-03, LOG-04
+**Success Criteria** (what must be TRUE):
+  1. `alembic upgrade head` creates `llm_logs` with all fields from LOG-01 (including `user_id` FK with `ON DELETE CASCADE`) plus the five indexes from LOG-03
+  2. A developer can call the async repo to insert a log row with prompt, response, token counts, and computed `cost_usd` (via `genai-prices`) and read it back
+  3. Deleting a user cascades to delete their `llm_logs` rows (verified by integration test)
+  4. `cost_usd` falls back to 0 with `error = "cost_unknown:<model>"` when `genai-prices` doesn't recognize the model, rather than failing the write
+**Plans**: 3 plans
+- [x] 64-01-PLAN.md — Scaffolding (genai-prices pin, LlmLogCreate schema, LlmLog model, fresh_test_user fixture)
+- [x] 64-02-PLAN.md — Migration (alembic/env.py registration, autogenerate + hand-edit for JSONB & DESC, dev-DB upgrade, migration smoke test)
+- [x] 64-03-PLAN.md — Repository & Tests (create_llm_log, get_latest_log_by_hash, cost_unknown fallback tests, FK cascade test)
+
+### Phase 65: LLM Endpoint with pydantic-ai Agent
+**Goal**: `POST /api/insights/endgame` returns a structured `EndgameInsightsReport` produced by a pydantic-ai Agent, cached on `findings_hash`, rate-limited per user, soft-failing to last cached report, and writing one `llm_logs` row per miss. This is where the prompt engineering harness comes alive.
+**Depends on**: Phase 63 (findings), Phase 64 (log table)
+**Requirements**: LLM-01, LLM-02, LLM-03, INS-04, INS-05, INS-06, INS-07
+**Success Criteria** (what must be TRUE):
+  1. Hitting the endpoint with a valid filter context returns a schema-validated `EndgameInsightsReport` whose `overview` is always a non-null paragraph and `sections` contains up to 4 Section insights
+  2. Hitting the endpoint twice with equivalent filter states produces a cache hit on the second call (no duplicate `llm_logs` row, no new LLM call) — cache key invalidates when `prompt_version` or `PYDANTIC_AI_MODEL_INSIGHTS` changes
+  3. Exceeding 3 cache misses per hour returns the user's last cached report (not an error) and does not write a new log row
+  4. Structured-output validation failures, provider errors, and startup misconfiguration (`PYDANTIC_AI_MODEL_INSIGHTS` missing/invalid) each surface via Sentry with `user_id / findings_hash / model` in `set_context` and return a client-side retry-affordance payload
+  5. The system prompt is loaded from `app/services/insights_prompts/endgame_v1.md` at startup — no string-literal prompts live inline in `.py` files
+**Plans**: 6 plans
+- [x] 65-01-PLAN.md — Dependency + config + prompt file + conftest env-var setup (Wave 1)
+- [x] 65-02-PLAN.md — Pydantic schema extensions: EndgameInsightsReport, SectionInsight, TimePoint, response/error envelopes, SubsectionFinding.series (Wave 1)
+- [x] 65-03-PLAN.md — Findings pipeline extension: weekly/monthly resampling, gap-only + sparse-combo Endgame ELO, series population (Wave 2)
+- [x] 65-04-PLAN.md — Repository read helpers: count_recent_successful_misses + get_latest_report_for_user (Wave 2)
+- [x] 65-05-PLAN.md — LLM orchestration service: Agent singleton, prompt assembly, generate_insights, Sentry wiring, tests (Wave 3)
+- [x] 65-06-PLAN.md — Router + lifespan wiring + end-to-end tests + CHANGELOG + SEED-004 close (Wave 4)
+
+### Phase 66: Frontend EndgameInsightsBlock & Beta Flag
+**Goal**: Users with `beta_enabled=true` see a "Generate insights" button on the Endgame tab and, on click, receive the overview paragraph plus 4 Section blocks rendered inline. Backend config can hide the overview independently while per-section insights stay live.
+**Depends on**: Phase 65 (endpoint)
+**Requirements**: INS-01, INS-02, INS-03, BETA-01, BETA-02
+**Success Criteria** (what must be TRUE):
+  1. A user with `beta_enabled=true` sees a "Generate insights" button on the Endgame tab; a user with the flag `false` does not see the button or the block at all
+  2. Clicking "Generate insights" renders an overview paragraph (≤150 words) above exactly up to 4 Section blocks, each with a ≤12-word headline and 0–2 bullets (≤20 words each)
+  3. Changing filters that affect findings (recency, opponent_strength, time_controls, platforms) and regenerating produces a visibly different insight; toggling `color` or `rated_only` alone does not force a new LLM call for the same underlying findings
+  4. When backend config hides the overview, the per-section blocks still render normally; the block works on mobile (matches existing Endgame tab mobile layout patterns)
+  5. The block surfaces a single retry affordance with the locked copy on any failure path rather than empty state or partial content
+**Plans**: 5 plans
+- [x] 66-01-PLAN.md — Backend: users.beta_enabled migration + UserProfileResponse extension + router tests (Wave 1)
+- [x] 66-02-PLAN.md — Frontend types + useEndgameInsights hook + buildFilterParams export (Wave 2)
+- [x] 66-03-PLAN.md — EndgameInsightsBlock component (hero / skeleton / overview / error states) + render tests (Wave 3)
+- [x] 66-04-PLAN.md — Endgames.tsx integration: mount block + 4 SectionInsight slots across H2 groups (Wave 4)
+- [x] 66-05-PLAN.md — Docs alignment: REQUIREMENTS.md BETA-01 + ROADMAP.md Phase 66/67 → `beta_enabled` (Wave 2)
+**UI hint**: yes
+
+### Phase 67: Validation & Beta Rollout
+**Goal**: Before any real user sees insights, we have an automated ground-truth regression passing against the canonical SEED-001 fixture AND we have manually eyeball-validated the LLM output against at least 5 real user profiles spanning different skill/sample/clock shapes via admin impersonation. The `beta_enabled` DB flag is flipped for the initial cohort only after both gates pass.
+**Depends on**: Phase 66 (frontend ships the block users will see)
+**Requirements**: VAL-01, VAL-02
+**Success Criteria** (what must be TRUE):
+  1. `pytest tests/services/test_insights_llm_snapshot.py` passes against the currently-configured `PYDANTIC_AI_MODEL_INSIGHTS`, asserting all 5 SEED-003 correctness behaviors (no "average" Score Gap, mentions strong Endgame Skill, no clock-management edge claim, mentions low-clock composure, no double-counting of Skill+ELO gap)
+  2. At least 5 real user profiles (high-skill, weak-skill, clock-skewed, thin-sample, all-typical) have been impersonated via the admin panel and their insight output documented in the PR description with any issues flagged
+  3. The `users.beta_enabled` flag has been flipped to `true` for the hand-picked beta cohort via direct DB operation; the rest of the user base continues to see no insights UI
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -174,6 +262,12 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 | 44-47. v1.8 phases | v1.8 | N/A | Complete | 2026-04-06 |
 | 49-51. v1.9 phases | v1.9 | 7/7 | Complete | 2026-04-10 |
 | 48, 52-62. v1.10 phases | v1.10 | 28/28 | Complete | 2026-04-19 |
+| 63. Findings Pipeline & Zone Wiring | v1.11 | 5/5 | Complete | 2026-04-20 |
+| 64. llm_logs Table & Async Repo | v1.11 | 2/3 | In progress | - |
+| 65. LLM Endpoint with pydantic-ai Agent | v1.11 | 6/6 | Complete    | 2026-04-21 |
+| 66. Frontend EndgameInsightsBlock & Beta Flag | v1.11 | 5/5 | Complete    | 2026-04-22 |
+| 67. Validation & Beta Rollout | v1.11 | 0/0 | Not started | - |
+| 68. Endgame Score Timeline (dual-line + shaded gap) | v1.11 | 0/0 | Not started | - |
 
 ## Backlog
 
@@ -181,7 +275,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/2 plans complete
+**Plans:** 6/6 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
@@ -213,3 +307,22 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 68: Endgame Score Timeline (dual-line + shaded gap)
+
+**Goal:** Replace the single-line "Endgame vs Non-Endgame Score Gap over Time" chart on the Endgame tab with a two-line "Endgame vs Non-Endgame Score over Time" chart (both absolute Score series, shaded area between them showing the gap) so users can distinguish endgame regression from non-endgame strength at a glance. Rename the backend `score_gap_timeline` subsection to `score_timeline` emitting both series, simplify the LLM prompt's `score_gap` framing rule (the chart now makes the framing self-evident), and drop the "Score Gap is a comparison, not an absolute measure" info-popover caveat.
+**Requirements**: None — scope defined by Success Criteria (chart rework, no new product requirements)
+**Depends on**: Phase 66 (current Endgame tab integration)
+**Success Criteria** (what must be TRUE):
+  1. The Endgame Overall Performance section renders one chart titled "Endgame vs Non-Endgame Score over Time" with two lines (endgame Score, non-endgame Score, both 0-100%) and a colored shaded area between them — green fill when endgame > non-endgame, red fill when below. The old "Score Gap over Time" single-line chart is removed.
+  2. The backend payload builder emits a `score_timeline` subsection (renamed from `score_gap_timeline`) carrying two series (`endgame` and `non_endgame`), each with their own `[series]` block. The `[summary score_gap]` aggregate in the `overall` subsection is unchanged.
+  3. The `app/prompts/endgame_insights.md` prompt no longer carries the special `score_gap` framing rule at line ~290 (chart obviates the need); the `score_gap_timeline` "no [summary]" exception note is removed; all references to the old chart name are updated.
+  4. The info popover for the chart no longer contains the "the Score Gap is a comparison, not an absolute measure" caveat paragraph — the two-line rendering makes the point self-evident.
+  5. Existing insights snapshot tests pass (the rename doesn't change the LLM's narrative content, only the framing rule), and the endgame page renders correctly on mobile.
+**Plans:** 4 plans
+
+Plans:
+- [x] 68-01-backend-subsection-rename-PLAN.md — Rename score_gap_timeline → score_timeline subsection, emit two series (endgame + non_endgame), keep overall [summary score_gap] unchanged
+- [x] 68-02-frontend-dual-line-chart-PLAN.md — Replace single-line chart with dual-line + shaded area fill (green when endgame leads, red when trails); rewrite info popover
+- [x] 68-03-prompt-simplification-PLAN.md — Drop score_gap framing rule + summary-per-metric exception from endgame_insights.md; bump prompt to endgame_v13
+- [x] 68-04-snapshot-and-changelog-PLAN.md — End-to-end integration test (findings → prompt assembly); CHANGELOG Unreleased bullet

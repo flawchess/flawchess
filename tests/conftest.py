@@ -1,5 +1,6 @@
 import asyncio
 import os
+import uuid
 
 # Disable Sentry before any app imports — must precede app.core.config which
 # reads SENTRY_DSN from env/.env.  Without this, test-triggered exceptions
@@ -11,13 +12,21 @@ os.environ["SENTRY_DSN"] = ""
 # "change-me-in-production" is 23 bytes, below RFC 7518 §3.2 minimum for HS256.
 os.environ["SECRET_KEY"] = "test-secret-key-32-bytes-exactly-ok-for-hs256-tests"
 
+# Pydantic-AI's built-in "test" provider prefix passes Agent(...) startup
+# validation without requiring any real API key. Individual tests override
+# via monkeypatch + TestModel/FunctionModel (see `fake_insights_agent`
+# fixture added in a later plan). Must precede any `from app...` import so
+# app/services/insights_llm module-level Agent construction (and the
+# lifespan-time get_insights_agent() call in app/main.py) see the env var.
+os.environ["PYDANTIC_AI_MODEL_INSIGHTS"] = "test"
+
 import chess
 import pytest
 import pytest_asyncio
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from collections.abc import AsyncGenerator
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
@@ -110,6 +119,7 @@ def override_get_async_session(test_engine):
     """
     import app.core.database as db_module
     import app.middleware.last_activity as activity_module
+    import app.repositories.llm_log_repository as llm_log_repo_module
     import app.users as users_module
     from app.core.database import get_async_session
     from app.main import app as fastapi_app
@@ -117,13 +127,16 @@ def override_get_async_session(test_engine):
     test_session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
     # Patch async_session_maker everywhere it's imported, so non-DI code
-    # (e.g. UserManager.on_after_login, LastActivityMiddleware) also uses the test DB.
+    # (e.g. UserManager.on_after_login, LastActivityMiddleware, create_llm_log's
+    # D-02 own-session write path) also uses the test DB.
     original_db_session_maker = db_module.async_session_maker
     original_users_session_maker = users_module.async_session_maker
     original_activity_session_maker = activity_module.async_session_maker
+    original_llm_log_repo_session_maker = llm_log_repo_module.async_session_maker
     db_module.async_session_maker = test_session_maker
     users_module.async_session_maker = test_session_maker
     activity_module.async_session_maker = test_session_maker
+    llm_log_repo_module.async_session_maker = test_session_maker
 
     async def _test_session_generator():
         async with test_session_maker() as session:
@@ -136,6 +149,7 @@ def override_get_async_session(test_engine):
     db_module.async_session_maker = original_db_session_maker
     users_module.async_session_maker = original_users_session_maker
     activity_module.async_session_maker = original_activity_session_maker
+    llm_log_repo_module.async_session_maker = original_llm_log_repo_session_maker
 
 
 @pytest.fixture
@@ -183,3 +197,73 @@ async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
         finally:
             await session.close()
             await conn.rollback()
+
+
+@pytest_asyncio.fixture
+async def fresh_test_user(test_engine) -> AsyncGenerator[User, None]:
+    """A committed User that survives outside the db_session rollback scope.
+
+    Required because create_llm_log (Phase 64 D-02) opens its OWN async session
+    via async_session_maker() and commits independently — the rollback-scoped
+    db_session fixture cannot observe its writes, and rows inserted against a
+    user_id FK must point at a user that actually exists in the DB, not one
+    that will disappear at transaction rollback.
+
+    On teardown, the user is deleted (not rolled back). ON DELETE CASCADE on
+    llm_logs.user_id (Phase 64 migration) removes any log rows created during
+    the test in the same teardown step.
+    """
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        user = User(
+            email=f"llm-log-test-{uuid.uuid4()}@example.com",
+            hashed_password="x",
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+    yield user
+    async with session_maker() as session:
+        await session.execute(delete(User).where(User.id == user.id))
+        await session.commit()
+
+
+@pytest.fixture
+def fake_insights_agent(monkeypatch: pytest.MonkeyPatch):
+    """Factory fixture that monkeypatches get_insights_agent() with a TestModel.
+
+    Usage:
+        def test_x(fake_insights_agent, sample_report):
+            fake_insights_agent(sample_report)  # any subsequent call to
+            # get_insights_agent() returns an Agent wrapping TestModel
+            # that yields sample_report.
+
+    Also clears the lru_cache on entry so prior cached Agents don't leak.
+    """
+    from pydantic_ai import Agent
+    from pydantic_ai.models.test import TestModel
+    from app.schemas.insights import EndgameInsightsReport
+    from app.services import insights_llm
+
+    # Save reference to the real cached function BEFORE monkeypatching so
+    # teardown can clear it (monkeypatch restores AFTER our yield teardown runs,
+    # so insights_llm.get_insights_agent would still be the lambda during teardown).
+    original_get_insights_agent = insights_llm.get_insights_agent
+
+    def _install(report: EndgameInsightsReport) -> None:
+        original_get_insights_agent.cache_clear()
+        fake = Agent(
+            TestModel(custom_output_args=report.model_dump()),
+            output_type=EndgameInsightsReport,
+        )
+        monkeypatch.setattr(
+            "app.services.insights_llm.get_insights_agent",
+            lambda: fake,
+        )
+
+    yield _install
+
+    # Teardown: clear cache on the original lru_cache function so the real
+    # Agent is rebuilt on next use. (monkeypatch restores the name binding
+    # after this teardown, so we must use the saved reference.)
+    original_get_insights_agent.cache_clear()

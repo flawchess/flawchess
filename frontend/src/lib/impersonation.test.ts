@@ -14,6 +14,7 @@ describe('isImpersonating', () => {
     chess_com_game_count: 0,
     lichess_game_count: 0,
     impersonation: null,
+    beta_enabled: false,
   };
 
   it('returns true when impersonation is an object', () => {

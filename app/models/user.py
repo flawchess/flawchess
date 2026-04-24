@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List
 
 from fastapi_users.db import SQLAlchemyBaseUserTable
-from sqlalchemy import DateTime, String, func, text
+from sqlalchemy import Boolean, DateTime, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -28,6 +28,15 @@ class User(SQLAlchemyBaseUserTable[int], Base):
 
     # Guest session flag — True for anonymous users created via POST /auth/guest/create
     is_guest: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+
+    # Beta feature flag — controls access to experimental features (e.g. Endgame Insights in v1.11).
+    # Default false; flipped via direct DB operation for a hand-picked cohort per BETA-01.
+    beta_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+        default=False,
+    )
 
     oauth_accounts: Mapped[List["OAuthAccount"]] = relationship(  # ty: ignore[unresolved-reference]
         "OAuthAccount", lazy="joined"
