@@ -322,7 +322,7 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 68-01-backend-subsection-rename-PLAN.md — Rename score_gap_timeline → score_timeline subsection, emit two series (endgame + non_endgame), keep overall [summary score_gap] unchanged
+- [x] 68-01-backend-subsection-rename-PLAN.md — Rename score_gap_timeline → score_timeline subsection, emit two series (endgame + non_endgame), keep overall [summary score_gap] unchanged
 - [ ] 68-02-frontend-dual-line-chart-PLAN.md — Replace single-line chart with dual-line + shaded area fill (green when endgame leads, red when trails); rewrite info popover
 - [ ] 68-03-prompt-simplification-PLAN.md — Drop score_gap framing rule + summary-per-metric exception from endgame_insights.md; bump prompt to endgame_v13
 - [ ] 68-04-snapshot-and-changelog-PLAN.md — End-to-end integration test (findings → prompt assembly); CHANGELOG Unreleased bullet
