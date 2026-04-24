@@ -50,10 +50,13 @@ const SCORE_GAP_NEUTRAL_MAX = 0.10;
 const SCORE_GAP_DOMAIN = 0.20;
 
 // Endgame vs Non-Endgame Score timeline (Phase 68). Absolute scores on a
-// 0-100 Y-axis. Epsilon band: when |endgame - non_endgame| <= 1 pp, neither
+// clamped Y-axis. Epsilon band: when |endgame - non_endgame| <= 1 pp, neither
 // shaded band renders — avoids flicker around the crossover.
-const SCORE_TIMELINE_Y_DOMAIN: [number, number] = [0, 100];
-const SCORE_TIMELINE_Y_TICKS = [0, 25, 50, 75, 100];
+// UAT feedback (Phase 68): clamp to 20-80% — typical score values sit in this
+// band; 0-100 wastes vertical space and flattens the lines. Matches the Time
+// Pressure vs Performance chart's Y_AXIS_DOMAIN treatment.
+const SCORE_TIMELINE_Y_DOMAIN: [number, number] = [20, 80];
+const SCORE_TIMELINE_Y_TICKS = [20, 30, 40, 50, 60, 70, 80];
 const SCORE_TIMELINE_EPSILON_PCT = 1;
 const MOBILE_BREAKPOINT_PX = 768;
 
