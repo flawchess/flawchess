@@ -46,7 +46,9 @@ jobs:
           git diff --exit-code frontend/src/generated/endgameZones.ts
 
       - name: Python vulnerability scan (pip-audit)
-        run: uv run --with pip-audit pip-audit --strict
+        # CVE-2026-3219 is in pip itself, pulled transitively by `--with pip-audit`.
+        # Not a project runtime dependency and no fix version exists yet. Revisit when upstream ships a fix.
+        run: uv run --with pip-audit pip-audit --strict --ignore-vuln CVE-2026-3219
 
       - name: Lint (ruff)
         run: uv run ruff check .
