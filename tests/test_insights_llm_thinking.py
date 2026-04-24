@@ -89,6 +89,10 @@ class TestGetInsightsAgentGoogleBranch:
             "PYDANTIC_AI_MODEL_INSIGHTS",
             "google-gla:gemini-3-flash-preview",
         )
+        # GoogleProvider.__init__ eagerly validates an API key. CI has no
+        # GOOGLE_API_KEY; set a placeholder so provider construction succeeds.
+        # The test only asserts agent/model wiring, never makes a real call.
+        monkeypatch.setenv("GOOGLE_API_KEY", "ci-test-placeholder")
         insights_llm.get_insights_agent.cache_clear()
         try:
             agent = insights_llm.get_insights_agent()
