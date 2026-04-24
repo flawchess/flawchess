@@ -50,7 +50,7 @@ from app.schemas.insights import (
     SubsectionFinding,
     TimePoint,
 )
-from app.schemas.llm_log import LlmLogCreate, LlmLogEndpoint
+from app.schemas.llm_log import LlmLogCreate, LlmLogEndpoint, LlmLogFilterContext
 from app.services.endgame_zones import BUCKETED_ZONE_REGISTRY, ZONE_REGISTRY, ZoneSpec
 from app.services.insights_service import compute_findings
 
@@ -1620,19 +1620,20 @@ def _maybe_stale_filters(
     fallback_log: LlmLog,
     current: FilterContext,
 ) -> FilterContext | None:
-    """Compare fallback's filter_context to current; return fallback if they differ.
+    """Compare fallback's opponent_strength to current; return fallback-scoped
+    FilterContext if they differ.
 
-    Equality ignores `color` and `rated_only` (same exclusion as the prompt --
-    those fields don't materially reshape findings for LLM purposes).
+    Log rows only persist `opponent_strength` (router enforces all other
+    filters to defaults, so they never vary across logs). The banner only
+    fires when that single field differs — all other FilterContext fields
+    are guaranteed to match.
+
     Returns None when filters match (banner not shown).
     """
-    fallback = FilterContext.model_validate(fallback_log.filter_context)
-    # Normalize out the ignored fields before comparison.
-    current_dict = current.model_dump(exclude={"color", "rated_only"})
-    fallback_dict = fallback.model_dump(exclude={"color", "rated_only"})
-    if current_dict == fallback_dict:
+    fallback_os = fallback_log.filter_context["opponent_strength"]
+    if fallback_os == current.opponent_strength:
         return None
-    return fallback
+    return current.model_copy(update={"opponent_strength": fallback_os})
 
 
 # -- Rate-limit retry-after computation (CONTEXT.md D-11, RESEARCH.md §4) --
@@ -1792,8 +1793,7 @@ async def generate_insights(
             model=model,
             prompt_version=_PROMPT_VERSION,
             findings_hash=findings.findings_hash,
-            filter_context=filter_context.model_dump(),
-            flags=[],
+            filter_context=LlmLogFilterContext(opponent_strength=filter_context.opponent_strength),
             user_prompt=user_prompt,
             response_json=report.model_dump() if report is not None else None,
             input_tokens=in_tokens,

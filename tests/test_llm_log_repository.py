@@ -37,9 +37,8 @@ def _build_payload(user_id: int, **overrides: Any) -> LlmLogCreate:
         model="anthropic:claude-haiku-4-5-20251001",  # known to genai-prices per Plan 01 smoke
         prompt_version="endgame_v1",
         findings_hash="a" * 64,
-        filter_context={"recency": "last_3mo"},
-        flags=[],
-        user_prompt="Filters: recency=last_3mo...",
+        filter_context={"opponent_strength": "any"},
+        user_prompt="Filters: opponent_strength=any...",
         response_json={"overview": "ok", "sections": []},
         input_tokens=1200,
         output_tokens=180,

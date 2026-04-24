@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.models.llm_log import LlmLog
 from app.models.user import User
 from app.repositories.llm_log_repository import create_llm_log
-from app.schemas.llm_log import LlmLogCreate
+from app.schemas.llm_log import LlmLogCreate, LlmLogFilterContext
 
 
 @pytest.mark.asyncio
@@ -49,8 +49,7 @@ async def test_deleting_user_cascades_llm_logs(test_engine: Any) -> None:
         model="anthropic:claude-haiku-4-5-20251001",
         prompt_version="endgame_v1",
         findings_hash="e" * 64,
-        filter_context={},
-        flags=[],
+        filter_context=LlmLogFilterContext(opponent_strength="any"),
         user_prompt="u",
         response_json={"overview": "ok", "sections": []},
         input_tokens=10,

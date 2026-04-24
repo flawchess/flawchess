@@ -30,7 +30,6 @@ async def test_llm_logs_table_exists_with_columns_indexes_and_cascade(test_engin
             "prompt_version",
             "findings_hash",
             "filter_context",
-            "flags",
             "user_prompt",
             "response_json",
             "input_tokens",
