@@ -69,6 +69,7 @@ Phase 67: Validation & Beta Rollout           — Not started
 - Phase 58 moved to backlog as Phase 999.6 (better fit for upcoming Opening Insights milestone)
 - Phase 57.1 inserted after Phase 57 to switch ELO anchor from rolling-mean to asof-join and add weekly volume bars (driven by UAT feedback)
 - v1.11 roadmap created 2026-04-20: Phases 63-67 derived from SEED-003 dependency order (findings + log infra parallel → LLM endpoint → frontend → validation)
+- Phase 68 added 2026-04-24: Endgame Score Timeline rework (dual-line + shaded gap) — replaces single-line Score Gap chart, simplifies LLM prompt's score_gap framing rule
 
 ### Decisions
 

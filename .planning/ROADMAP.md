@@ -13,7 +13,7 @@
 - ✅ **v1.8 Guest Access** — Phases 44-47 (shipped 2026-04-06)
 - ✅ **v1.9 UI/UX Restructuring** — Phases 49-51 (shipped 2026-04-10) — see [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md)
 - ✅ **v1.10 Advanced Analytics** — Phases 48, 52-55, 57, 57.1, 59-62 (shipped 2026-04-19) — see [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md)
-- 🚧 **v1.11 LLM-first Endgame Insights** — Phases 63-67 (in progress)
+- 🚧 **v1.11 LLM-first Endgame Insights** — Phases 63-68 (in progress)
 
 ## Phases
 
@@ -151,13 +151,14 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 
 </details>
 
-### 🚧 v1.11 LLM-first Endgame Insights (Phases 63-67)
+### 🚧 v1.11 LLM-first Endgame Insights (Phases 63-68)
 
 - [x] **Phase 63: Findings Pipeline & Zone Wiring** — Transform `/api/endgames/overview` composite into zone/trend/sample-quality findings and cross-section flags (complete 2026-04-20, 5/5 plans)
 - [x] **Phase 64: `llm_logs` Table & Async Repo** — Generic Postgres log table (+ Alembic migration + async repo) designed for reuse across future LLM features (complete 2026-04-20, 3/3 plans)
 - [x] **Phase 65: LLM Endpoint with pydantic-ai Agent** — `POST /api/insights/endgame` with versioned prompt, findings-hash cache, rate limit, soft-fail (completed 2026-04-21)
 - [x] **Phase 66: Frontend EndgameInsightsBlock & Beta Flag** — Overview + 4 Section blocks inline on the Endgame tab, gated by `users.beta_enabled` (complete 2026-04-22, 5/5 plans)
 - [ ] **Phase 67: Validation & Beta Rollout** — Ground-truth regression test + admin-impersonation eyeball validation across 5+ real user profiles
+- [ ] **Phase 68: Endgame Score Timeline (dual-line + shaded gap)** — Replace single-line Score Gap chart with two-line Endgame vs Non-Endgame Score chart + shaded gap fill; simplify prompt framing rule
 
 ## Phase Details
 
@@ -266,6 +267,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 | 65. LLM Endpoint with pydantic-ai Agent | v1.11 | 6/6 | Complete    | 2026-04-21 |
 | 66. Frontend EndgameInsightsBlock & Beta Flag | v1.11 | 5/5 | Complete    | 2026-04-22 |
 | 67. Validation & Beta Rollout | v1.11 | 0/0 | Not started | - |
+| 68. Endgame Score Timeline (dual-line + shaded gap) | v1.11 | 0/0 | Not started | - |
 
 ## Backlog
 
@@ -305,3 +307,19 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 68: Endgame Score Timeline (dual-line + shaded gap)
+
+**Goal:** Replace the single-line "Endgame vs Non-Endgame Score Gap over Time" chart on the Endgame tab with a two-line "Endgame vs Non-Endgame Score over Time" chart (both absolute Score series, shaded area between them showing the gap) so users can distinguish endgame regression from non-endgame strength at a glance. Rename the backend `score_gap_timeline` subsection to `score_timeline` emitting both series, simplify the LLM prompt's `score_gap` framing rule (the chart now makes the framing self-evident), and drop the "Score Gap is a comparison, not an absolute measure" info-popover caveat.
+**Requirements**: None — scope defined by Success Criteria (chart rework, no new product requirements)
+**Depends on**: Phase 66 (current Endgame tab integration)
+**Success Criteria** (what must be TRUE):
+  1. The Endgame Overall Performance section renders one chart titled "Endgame vs Non-Endgame Score over Time" with two lines (endgame Score, non-endgame Score, both 0-100%) and a colored shaded area between them — green fill when endgame > non-endgame, red fill when below. The old "Score Gap over Time" single-line chart is removed.
+  2. The backend payload builder emits a `score_timeline` subsection (renamed from `score_gap_timeline`) carrying two series (`endgame` and `non_endgame`), each with their own `[series]` block. The `[summary score_gap]` aggregate in the `overall` subsection is unchanged.
+  3. The `app/prompts/endgame_insights.md` prompt no longer carries the special `score_gap` framing rule at line ~290 (chart obviates the need); the `score_gap_timeline` "no [summary]" exception note is removed; all references to the old chart name are updated.
+  4. The info popover for the chart no longer contains the "the Score Gap is a comparison, not an absolute measure" caveat paragraph — the two-line rendering makes the point self-evident.
+  5. Existing insights snapshot tests pass (the rename doesn't change the LLM's narrative content, only the framing rule), and the endgame page renders correctly on mobile.
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 68 to break down)
