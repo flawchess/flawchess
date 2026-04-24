@@ -50,7 +50,7 @@ def _sample_report(overview: str = "FlawChess played solidly overall.") -> Endga
             )
         ],
         model_used="test",
-        prompt_version="endgame_v12",
+        prompt_version="endgame_v13",
     )
 
 
@@ -249,7 +249,7 @@ class TestHappyPath:
                     findings_hash="m" * 64,
                     error=None,
                     model="test",
-                    prompt_version="endgame_v12",
+                    prompt_version="endgame_v13",
                 ),
             )
 
@@ -384,7 +384,7 @@ class TestRateLimit:
                 _make_row(
                     user.id,
                     response_json=valid_report.model_dump(),
-                    prompt_version="endgame_v12",  # matches get_latest_report_for_user filter
+                    prompt_version="endgame_v13",  # matches get_latest_report_for_user filter
                     findings_hash="k" * 64,
                 ),
             )
