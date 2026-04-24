@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { FilterState } from '@/components/filters/FilterPanel';
@@ -14,12 +14,6 @@ import { EndgameInsightsBlock } from '../EndgameInsightsBlock';
 afterEach(() => {
   cleanup();
 });
-
-// Mock useUserProfile — the beta gate depends on it.
-vi.mock('@/hooks/useUserProfile', () => ({
-  useUserProfile: vi.fn(),
-}));
-import { useUserProfile } from '@/hooks/useUserProfile';
 
 // Mock useActiveJobs — v8 button gating reads active imports. Default: no
 // active jobs so the block renders its enabled happy path.
@@ -94,55 +88,7 @@ const RESPONSE_FRESH: EndgameInsightsResponse = {
   stale_filters: null,
 };
 
-const BETA_USER = {
-  email: 'u@example.com',
-  is_superuser: false,
-  is_guest: false,
-  chess_com_username: null,
-  lichess_username: null,
-  created_at: '2026-01-01T00:00:00Z',
-  last_login: null,
-  chess_com_game_count: 0,
-  lichess_game_count: 0,
-  impersonation: null,
-  beta_enabled: true,
-};
-
-describe('EndgameInsightsBlock — beta gate', () => {
-  it('returns null when profile is loading (data undefined)', () => {
-    vi.mocked(useUserProfile).mockReturnValue({ data: undefined } as never);
-    const { container } = render(
-      <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
-        rendered={null}
-        mutation={makeMutation()}
-        onGenerate={vi.fn()}
-      />,
-    );
-    expect(container.firstChild).toBeNull();
-  });
-
-  it('returns null when profile.beta_enabled is false', () => {
-    vi.mocked(useUserProfile).mockReturnValue({
-      data: { ...BETA_USER, beta_enabled: false },
-    } as never);
-    const { container } = render(
-      <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
-        rendered={null}
-        mutation={makeMutation()}
-        onGenerate={vi.fn()}
-      />,
-    );
-    expect(container.firstChild).toBeNull();
-  });
-});
-
-describe('EndgameInsightsBlock — beta enabled', () => {
-  beforeEach(() => {
-    vi.mocked(useUserProfile).mockReturnValue({ data: BETA_USER } as never);
-  });
-
+describe('EndgameInsightsBlock', () => {
   it('renders hero state with Generate button when idle and no report', () => {
     render(
       <EndgameInsightsBlock

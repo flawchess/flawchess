@@ -30,7 +30,6 @@ import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
 import { EndgameInsightsBlock } from '@/components/insights/EndgameInsightsBlock';
 import { useEndgameInsights } from '@/hooks/useEndgameInsights';
 import { useActiveJobs } from '@/hooks/useImport';
-import { useUserProfile } from '@/hooks/useUserProfile';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
 import type { EndgameInsightsResponse, SectionId } from '@/types/insights';
@@ -76,10 +75,8 @@ export function EndgamesPage() {
 
   // ── Endgame Insights ────────────────────────────────────────────────────────
   // Mutation state lifted here so per-section slots in each H2 can observe the
-  // same report without a context provider. Hook call is unconditional (non-beta
-  // users just never see the Generate CTA because EndgameInsightsBlock
-  // self-gates on profile.beta_enabled), so no network request fires unless the
-  // user clicks Generate.
+  // same report without a context provider. No network request fires unless
+  // the user clicks Generate.
   //
   // Cache shape: a list of (filter-state, response) pairs. A report is rendered
   // whenever the current filter state matches a cached entry (via
@@ -126,8 +123,7 @@ export function EndgamesPage() {
   // the active-jobs count transition from >0 to 0 and invalidate on the edge.
   // No effect fires on initial mount because prevJobsCountRef is seeded with
   // the first observation.
-  const { data: profileForInsights } = useUserProfile();
-  const { data: activeJobsForInsights } = useActiveJobs(!!profileForInsights?.beta_enabled);
+  const { data: activeJobsForInsights } = useActiveJobs(true);
   const activeJobsCount = activeJobsForInsights?.length ?? 0;
   const prevJobsCountRef = useRef<number | null>(null);
   useEffect(() => {
@@ -696,8 +692,8 @@ export function EndgamesPage() {
 // ── SectionInsightSlot ──────────────────────────────────────────────────────
 // Renders a per-section insight (headline + 0-2 bullets) above the first chart
 // card of each H2 group when the backend returned a matching section_id. Returns
-// null when no matching data exists — e.g. non-beta users (never fires Generate),
-// pre-generate state, or any section the LLM chose to omit (Phase 65 min=1/max=4).
+// null when no matching data exists, e.g. pre-generate state, or any section
+// the LLM chose to omit (Phase 65 min=1/max=4).
 function SectionInsightSlot({
   sectionId,
   data,

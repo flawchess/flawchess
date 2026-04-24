@@ -3,7 +3,6 @@ import { Info, Lightbulb, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { DEFAULT_FILTERS, type FilterState } from '@/components/filters/FilterPanel';
-import { useUserProfile } from '@/hooks/useUserProfile';
 import { useActiveJobs } from '@/hooks/useImport';
 import type {
   EndgameInsightsResponse,
@@ -11,16 +10,13 @@ import type {
 } from '@/types/insights';
 
 /**
- * Top-of-tab Insights card for beta-flagged users.
+ * Top-of-tab Insights card.
  *
  * Parent owns the mutation + rendered state and only passes `rendered` when
- * the cached report matches current filters — so this component never has to
+ * the cached report matches current filters, so this component never has to
  * reason about "outdated" reports. When filters drift away from what the
  * report was generated against, the parent clears it and we fall back to the
  * hero state with a single "Generate Insights" CTA.
- *
- * Beta gate: reads profile.beta_enabled from useUserProfile(); returns null
- * while loading and when beta_enabled !== true.
  *
  * Button gating: the Generate Insights button is disabled whenever any
  * non-default filter other than opponent_strength is set, or an import is
@@ -66,9 +62,7 @@ export function EndgameInsightsBlock({
   mutation,
   onGenerate,
 }: EndgameInsightsBlockProps) {
-  const { data: profile } = useUserProfile();
-  const { data: activeJobs } = useActiveJobs(!!profile?.beta_enabled);
-  if (!profile?.beta_enabled) return null;
+  const { data: activeJobs } = useActiveJobs(true);
 
   const isPending = mutation.isPending;
   const isError = mutation.isError;
