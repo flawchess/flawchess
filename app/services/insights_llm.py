@@ -57,7 +57,7 @@ from app.services.insights_service import compute_findings
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v12"  # v12 changes: (1) new `[anchor-combo platform=X, time_control=Y]` tag at the top of the `## Player profile` block naming the most-played live combo (stale combos are skipped) — LLM MUST lead player_profile with this combo instead of inferring from game count; (2) new `[weakest-types-tied]` tag fires when top 2 types are within ~2pp AND clearly separated from #3, licensing pawn-ending recs the same way `[weakest-type] pawn` does; (3) prompt rule additions: no cross-combo min/max range (different Glicko systems), mention all live combos when ≥3 exist, expanded cross-section story catalogue in Overview rule.
+_PROMPT_VERSION = "endgame_v13"  # v13 changes: (1) Endgame Score Gap timeline renamed to `score_timeline` and now emits TWO `[summary score_timeline]` blocks + TWO `[series score_gap, ..., weekly, part=endgame|non_endgame]` blocks per window (no emitter carve-out — same fanned-out shape as endgame_elo per-combo); (2) dropped the `score_gap` framing rule — the two-line chart (UI) + overall_wdl chart block (payload) together make composition self-evident; (3) dropped the `score_gap_timeline` "only exception to summary-per-metric" carve-out — the subsection follows the standard per-dimension emitter shape. Cache invalidation is automatic via prompt_version cache key.
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"

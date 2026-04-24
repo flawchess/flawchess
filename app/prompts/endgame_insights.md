@@ -134,9 +134,9 @@ The trailing shift line:
 - `shift=<Z>` compares `last_3mo.mean − all_time.mean`. `, within-noise` fires when the absolute shift is below the metric's noise cap AND the last_3mo sample is less than 20% of the all_time sample.
 - When the `last_3mo` window line carries `quality=thin`, do NOT narrate the shift at all — see the thin-last_3mo rule in "Grounding checks before recommending".
 
-Four subsections additionally emit a raw `[series <metric>, <window>, <granularity>]` block below their summary: `score_gap_timeline`, `clock_diff_timeline`, `endgame_elo_timeline`, `type_win_rate_timeline`. Each point has `bucket_start` (YYYY-MM-DD, weekly for last_3mo, first-of-month for all_time), `value` (whole-number %), and `n` (sample size). Points with `n < 3` are filtered out before you see them. The `all_time` series is trimmed to the most recent ~36 monthly buckets per series — the actual window observed across the payload is spelled out on the `All-time series window: YYYY-MM → YYYY-MM` line of the `## Payload summary` block; do not narrate trajectories beyond that window. Activity gaps are marked inline as `[activity-gap] YYYY-MM-DD → YYYY-MM-DD` between points — when a gap of more than ~6 months sits between an older stretch and the current stretch, acknowledge the gap in one short clause ("after a multi-month gap in play, …") rather than inflating it into its own story.
+Four subsections additionally emit a raw `[series <metric>, <window>, <granularity>]` block below their summary: `score_timeline`, `clock_diff_timeline`, `endgame_elo_timeline`, `type_win_rate_timeline`. Each point has `bucket_start` (YYYY-MM-DD, weekly for last_3mo, first-of-month for all_time), `value` (whole-number %), and `n` (sample size). Points with `n < 3` are filtered out before you see them. The `all_time` series is trimmed to the most recent ~36 monthly buckets per series — the actual window observed across the payload is spelled out on the `All-time series window: YYYY-MM → YYYY-MM` line of the `## Payload summary` block; do not narrate trajectories beyond that window. Activity gaps are marked inline as `[activity-gap] YYYY-MM-DD → YYYY-MM-DD` between points — when a gap of more than ~6 months sits between an older stretch and the current stretch, acknowledge the gap in one short clause ("after a multi-month gap in play, …") rather than inflating it into its own story.
 
-The `score_gap_timeline` subsection is the one exception to the summary-per-metric rule: it emits only the raw `[series ...]` block. Its scalar `value` is a weekly-latest bucket mislabeled as an aggregate; the authoritative score_gap aggregate lives in the `overall` subsection's `[summary score_gap]`.
+The `score_timeline` subsection emits TWO standard `[summary score_timeline]` blocks per window (one for `part=endgame`, one for `part=non_endgame`, both carrying the same aggregate `score_gap` mean but framed from each side) followed by TWO series blocks: `[series score_gap, <window>, weekly, part=endgame]` and `[series score_gap, <window>, weekly, part=non_endgame]`. The `endgame` block emits first in both pairs. Per-part series values are absolute Score percentages (0-100), not signed gaps — compare the two lines directly (e.g. "endgame side trending up from 55% to 60%, non-endgame flat at 50%") rather than reading a signed difference bucket-by-bucket. For the aggregate score_gap, quote `[summary score_gap]` in the `### Subsection: overall` block. Granularity is `weekly` across BOTH `all_time` and `last_3mo` windows for this subsection — do not resample to monthly when narrating.
 
 For the `endgame_elo_timeline` series specifically, each row carries two numbers: `gap=<int>` (endgame_elo − actual_elo, the zoned value) and `elo=<int>` (the user's actual rating at that bucket). A regressing gap paired with rising `elo` is NOT a decline — it means the player's rating is growing faster than their endgame skill composite. Read both columns together; never narrate the gap trend in isolation when `elo` is moving in the opposite direction.
 
@@ -294,8 +294,6 @@ Interpret each metric using the definitions below. These match the user-facing i
 
 - **score_gap**: the user's Score in games that reached an endgame phase **minus** their Score in games that did not. Within-user, relative signal — NOT a user-vs-opponent comparison. Positive = endgame stronger; negative = non-endgame stronger.
   - Scale: signed whole-number percentage in `[-100, +100]` (e.g. `+8` = endgame Score is 8% higher than non-endgame, narrated as "+8%").
-  - **Framing rule (important):** when narrating `score_gap`, first read the `overall_wdl` chart block. Compare the two `score_pct` values directly. If non-endgame `score_pct` is ≥ 58 (strong on its own), lead with "strong non-endgame play" before "weak endgame". If endgame `score_pct` is ≤ 42 (weak on its own), lead with endgame weakness. If both are moderate, describe the gap neutrally as a relative signal. Do NOT default to "weak endgame" just because `score_gap` is negative.
-  - **Source of the aggregate:** quote `[summary score_gap]` in the `### Subsection: overall` block — its `mean` exactly matches the chart math (`endgame.score_pct - non_endgame.score_pct`). The `### Subsection: score_gap_timeline` block emits only a raw `[series ...]` block with no `[summary]` — narrate a specific bucket from that series only when pointing at that bucket explicitly, never as "the aggregate".
 
 - **conversion_win_pct** (UI label: "Conversion (Win)"): user's **Win %** in the Conversion material bucket — games where the user entered the endgame leading by ≥ 1 point (persisted ≥ 2 full moves). Only wins count; draws do NOT count as half.
   - Scale: whole-number percentage in `[0, 100]`.
@@ -353,7 +351,7 @@ The payload groups content under `## Section:` headers that match the output `se
 | Subsection / Chart                   | section_id     |
 | ------------------------------------ | -------------- |
 | overall                              | overall        |
-| score_gap_timeline                   | overall        |
+| score_timeline                       | overall        |
 | Chart: overall_wdl                   | overall        |
 | endgame_metrics                      | metrics_elo    |
 | endgame_elo_timeline                 | metrics_elo    |
@@ -368,7 +366,7 @@ The payload groups content under `## Section:` headers that match the output `se
 Chart notes:
 
 - `time_pressure_vs_performance` (up to 10-row table) → part of the `time_pressure` section alongside `avg_clock_diff_pct` and `net_timeout_rate`.
-- `overall_wdl` (2-row table: endgame vs non_endgame) → part of the `overall` section alongside `score_gap` / `score_gap_timeline`. Use it to frame whether a negative or positive `score_gap` is driven by endgame weakness, non-endgame strength, or both — see the `score_gap` framing rule above.
+- `overall_wdl` (2-row table: endgame vs non_endgame) → part of the `overall` section alongside `score_gap` / `score_timeline`. Use it to frame whether a negative or positive `score_gap` is driven by endgame weakness, non-endgame strength, or both.
 - `results_by_endgame_type_wdl` (one row per endgame type) → part of the `type_breakdown` section. Use the `score_pct` column for the You-vs-Opponent comparison story (opponent Score = `100 - score_pct` since the same games are scored from both sides). The chart row's `score_pct` is the comparison the user actually sees on the page. When the `[weakest-type]` tag is present above the table, lead the section with that type.
 
 All other subsections not listed in the mapping table above are rendered by the frontend and will not appear in your user prompt.
