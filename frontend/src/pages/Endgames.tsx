@@ -17,7 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
-import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES, ScoreGapTimelineChart } from '@/components/charts/EndgamePerformanceSection';
+import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES, EndgameScoreOverTimeChart } from '@/components/charts/EndgamePerformanceSection';
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
 import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
 import { EndgameScoreGapSection } from '@/components/charts/EndgameScoreGapSection';
@@ -376,7 +376,7 @@ export function EndgamesPage() {
               </div>
               {scoreGapData && scoreGapData.timeline.length > 0 && (
                 <div className="charcoal-texture rounded-md p-4">
-                  <ScoreGapTimelineChart
+                  <EndgameScoreOverTimeChart
                     timeline={scoreGapData.timeline}
                     window={scoreGapData.timeline_window}
                   />

@@ -110,3 +110,20 @@ export const INSIGHT_GOLD = 'oklch(0.82 0.17 85)';
 // hues; alpha=0.25 lets the texture noise show through, reinforcing the
 // passive-context reading. Locked per 57.1-RESEARCH.md Pitfall 3.
 export const ENDGAME_VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';
+
+// Phase 68 — Endgame vs Non-Endgame Score timeline.
+// Two line strokes (endgame + non-endgame) with a colored shaded band between
+// them indicating which side leads. Low alpha on the fills (0.18) so the
+// grid, axis labels, and the two primary lines remain dominant while still
+// conveying the sign of the gap at a glance.
+// - LINE_ENDGAME reuses MY_SCORE_COLOR (brand blue) — keeps "user's endgame"
+//   visually anchored to the same hue used on the Time Pressure chart.
+// - LINE_NON_ENDGAME uses a muted neutral (matches WDL_DRAW) to read as a
+//   passive partner line, not a competing signal.
+// - FILL_ABOVE (green) and FILL_BELOW (red) reuse WDL win/loss hues at 0.18
+//   alpha. Sign convention: above == endgame > non_endgame (green), below ==
+//   endgame < non_endgame (red).
+export const SCORE_TIMELINE_LINE_ENDGAME = MY_SCORE_COLOR;
+export const SCORE_TIMELINE_LINE_NON_ENDGAME = 'oklch(0.60 0.02 260)';
+export const SCORE_TIMELINE_FILL_ABOVE = 'oklch(0.50 0.14 145 / 0.18)';
+export const SCORE_TIMELINE_FILL_BELOW = 'oklch(0.50 0.15 25 / 0.18)';

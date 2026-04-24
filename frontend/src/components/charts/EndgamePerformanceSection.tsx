@@ -7,12 +7,20 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { Area, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
-import { ENDGAME_VOLUME_BAR_COLOR, ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
+import {
+  SCORE_TIMELINE_FILL_ABOVE,
+  SCORE_TIMELINE_FILL_BELOW,
+  SCORE_TIMELINE_LINE_ENDGAME,
+  SCORE_TIMELINE_LINE_NON_ENDGAME,
+  ZONE_DANGER,
+  ZONE_NEUTRAL,
+  ZONE_SUCCESS,
+} from '@/lib/theme';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import type {
   EndgamePerformanceResponse,
@@ -41,19 +49,13 @@ const SCORE_GAP_NEUTRAL_MAX = 0.10;
 // range without making typical values look tiny against the default ±0.40.
 const SCORE_GAP_DOMAIN = 0.20;
 
-// Score-gap timeline (quick-260417-o2l): plot in percentage points (0.10 -> 10).
-// Zone band ±10 pp matches the table bullet chart's parity neutral threshold.
-const SCORE_GAP_TIMELINE_NEUTRAL_PCT = 10;
-const SCORE_GAP_TIMELINE_Y_DOMAIN: [number, number] = [-30, 30];
-const SCORE_GAP_TIMELINE_Y_TICKS = [-30, -20, -10, 0, 10, 20, 30];
-const SCORE_GAP_TIMELINE_ZONE_OPACITY = 0.15;
+// Endgame vs Non-Endgame Score timeline (Phase 68). Absolute scores on a
+// 0-100 Y-axis. Epsilon band: when |endgame - non_endgame| <= 1 pp, neither
+// shaded band renders — avoids flicker around the crossover.
+const SCORE_TIMELINE_Y_DOMAIN: [number, number] = [0, 100];
+const SCORE_TIMELINE_Y_TICKS = [0, 25, 50, 75, 100];
+const SCORE_TIMELINE_EPSILON_PCT = 1;
 const MOBILE_BREAKPOINT_PX = 768;
-
-function scoreGapZoneColor(gapPct: number): string {
-  if (gapPct > SCORE_GAP_TIMELINE_NEUTRAL_PCT) return ZONE_SUCCESS;
-  if (gapPct < -SCORE_GAP_TIMELINE_NEUTRAL_PCT) return ZONE_DANGER;
-  return ZONE_NEUTRAL;
-}
 
 function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(() =>
@@ -113,7 +115,6 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
               <div className="space-y-2">
                 <p>Compares your win/draw/loss rates in games that reached an endgame phase versus those that did not. Only endgames that span at least 3 full moves (6 half-moves) are counted. Shorter tactical transitions from middlegame into a checkmate are treated as &quot;no endgame&quot;.</p>
                 <p>The <strong>Score Gap</strong> column shows the signed gap between your endgame Score and non-endgame Score (green = endgame stronger, red = endgame weaker, blue = near parity).</p>
-                <p>The Score Gap is a comparison, not an absolute measure. A positive value can mean stronger endgames <em>or</em> weaker non-endgame play; a negative value, the reverse. Compare the two Score rows to see which side is driving it.</p>
               </div>
             </InfoPopover>
           </span>
@@ -253,75 +254,96 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
   );
 }
 
-export interface ScoreGapTimelineChartProps {
+export interface EndgameScoreOverTimeChartProps {
   timeline: ScoreGapTimelinePoint[];
   window: number;
 }
 
-interface ScoreGapChartPoint {
+interface ScoreOverTimeChartPoint {
   date: string;
-  gap_pct: number;
+  endgame: number;       // 0-100 whole-number percentage
+  non_endgame: number;   // 0-100 whole-number percentage
   endgame_game_count: number;
   non_endgame_game_count: number;
-  per_week_total_games: number;
+  // Ranged tuple [low, high] — Recharts renders an <Area> as a band between
+  // the two values. Null when the sign/epsilon rule says this band is absent
+  // at this point, which makes Recharts skip the segment cleanly.
+  band_above: [number, number] | null;
+  band_below: [number, number] | null;
 }
 
-export function ScoreGapTimelineChart({ timeline, window }: ScoreGapTimelineChartProps) {
+/**
+ * Phase 68: two-line absolute Score timeline (endgame + non-endgame) with
+ * a sign-aware shaded band in between.
+ *
+ * Shading:
+ * - band_above (green): endgame leads non-endgame by > 1 pp.
+ * - band_below (red):   endgame trails non-endgame by > 1 pp.
+ * - Within ±1 pp: neither band renders (epsilon neutral — avoids flicker
+ *   at the crossover).
+ *
+ * Each `<Area>` is wrapped in a testid-carrying `<g>` so tests assert on
+ * testid presence rather than computed fill color (jsdom + oklch tokens
+ * don't compute reliably). If ALL points at the band's dataKey are null,
+ * the wrapping `<g>` is not rendered at all, letting the epsilon/all-above/
+ * all-below fixtures assert presence/absence deterministically.
+ */
+export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOverTimeChartProps) {
   const isMobile = useIsMobile();
 
   if (timeline.length === 0) return null;
 
-  const data: ScoreGapChartPoint[] = timeline.map((p) => ({
-    date: p.date,
-    // Convert 0-1 score to percentage points for plotting (0.05 -> 5).
-    gap_pct: p.score_difference * 100,
-    endgame_game_count: p.endgame_game_count,
-    non_endgame_game_count: p.non_endgame_game_count,
-    per_week_total_games: p.per_week_total_games,
-  }));
+  const data: ScoreOverTimeChartPoint[] = timeline.map((p) => {
+    // Plan 01 guarantees endgame_score / non_endgame_score are present
+    // on every point — no fallback needed.
+    const endgame = Math.round(p.endgame_score * 100);
+    const non_endgame = Math.round(p.non_endgame_score * 100);
+    const diff = endgame - non_endgame;
+
+    const band_above: [number, number] | null =
+      diff > SCORE_TIMELINE_EPSILON_PCT ? [non_endgame, endgame] : null;
+    const band_below: [number, number] | null =
+      diff < -SCORE_TIMELINE_EPSILON_PCT ? [endgame, non_endgame] : null;
+
+    return {
+      date: p.date,
+      endgame,
+      non_endgame,
+      endgame_game_count: p.endgame_game_count,
+      non_endgame_game_count: p.non_endgame_game_count,
+      band_above,
+      band_below,
+    };
+  });
+
+  // If every point's band_above is null, omit the entire `<g data-testid=
+  // "score-band-above">` wrapper — tests assert on the wrapper's presence.
+  // Same for band_below. This is cleaner than relying on Recharts to suppress
+  // empty paths.
+  const hasAboveBand = data.some((p) => p.band_above !== null);
+  const hasBelowBand = data.some((p) => p.band_below !== null);
 
   const dates = data.map((p) => p.date);
   const formatDateTick = createDateTickFormatter(dates);
 
-  // Extend the Y domain symmetrically when data exceeds the default ±20 band,
-  // so dots never overflow the plot area.
-  const values = data.map((p) => p.gap_pct);
-  const dataMax = values.length > 0 ? Math.max(...values) : SCORE_GAP_TIMELINE_Y_DOMAIN[1];
-  const dataMin = values.length > 0 ? Math.min(...values) : SCORE_GAP_TIMELINE_Y_DOMAIN[0];
-  const yMax = Math.max(SCORE_GAP_TIMELINE_Y_DOMAIN[1], Math.ceil(dataMax));
-  const yMin = Math.min(SCORE_GAP_TIMELINE_Y_DOMAIN[0], Math.floor(dataMin));
-  const yDomain: [number, number] = [yMin, yMax];
-
-  // Volume-bar Y-axis envelope. domain={[0, barMax * 5]} pins the tallest
-  // bar to the bottom 20% of the chart canvas (Pattern 3 from 57.1-RESEARCH.md).
-  // Math.max(..., 1) avoids a [0, 0] domain when no week has any games.
-  const barMax = Math.max(1, ...data.map((p) => p.per_week_total_games));
-
   return (
-    <div data-testid="score-gap-timeline-section">
+    <div data-testid="endgame-score-timeline-chart">
       <div className="mb-3">
         <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">
-            Endgame vs Non-Endgame Score Gap over Time
+            Endgame vs Non-Endgame Score over Time
             <InfoPopover
-              ariaLabel="Endgame vs non-endgame score gap timeline info"
-              testId="score-gap-timeline-info"
+              ariaLabel="Endgame vs non-endgame score timeline info"
+              testId="score-timeline-info"
               side="top"
             >
               <p>
-                Gap between your endgame Score and non-endgame Score
-                over the trailing {window} games, sampled once per week.
+                Your endgame Score and non-endgame Score over the trailing {window} games,
+                sampled once per week.
               </p>
               <p className="mt-1">
-                This is a relative signal. A rising gap could mean endgames
-                are improving, non-endgame play is declining, or both. For
-                absolute endgame skill, compare against the Endgame ELO
-                timeline.
-              </p>
-              <p className="mt-1">
-                Dots are colored by zone: green when the gap exceeds
-                +{SCORE_GAP_TIMELINE_NEUTRAL_PCT}%, red when it&apos;s below
-                -{SCORE_GAP_TIMELINE_NEUTRAL_PCT}%, blue in between.
+                The shaded area between the lines is color-coded: green when your
+                endgame Score leads your non-endgame Score, red when it trails.
               </p>
               <p className="mt-1">
                 Early weeks where either side has fewer than 10 games in the
@@ -340,130 +362,145 @@ export function ScoreGapTimelineChart({ timeline, window }: ScoreGapTimelineChar
             className="flex items-center text-xs text-muted-foreground shrink-0 pt-33 -mr-1"
             style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
           >
-            Score gap
+            Score
           </div>
         )}
         <ChartContainer
           config={{}}
           className="w-full h-72"
-          data-testid="score-gap-timeline-chart"
+          data-testid="endgame-score-timeline-chart-container"
         >
           <ComposedChart
             data={data}
             margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
           >
             <CartesianGrid vertical={false} />
-            <ReferenceArea
-              yAxisId="value"
-              y1={yDomain[0]}
-              y2={-SCORE_GAP_TIMELINE_NEUTRAL_PCT}
-              fill={ZONE_DANGER}
-              fillOpacity={SCORE_GAP_TIMELINE_ZONE_OPACITY}
-            />
-            <ReferenceArea
-              yAxisId="value"
-              y1={-SCORE_GAP_TIMELINE_NEUTRAL_PCT}
-              y2={SCORE_GAP_TIMELINE_NEUTRAL_PCT}
-              fill={ZONE_NEUTRAL}
-              fillOpacity={SCORE_GAP_TIMELINE_ZONE_OPACITY}
-            />
-            <ReferenceArea
-              yAxisId="value"
-              y1={SCORE_GAP_TIMELINE_NEUTRAL_PCT}
-              y2={yDomain[1]}
-              fill={ZONE_SUCCESS}
-              fillOpacity={SCORE_GAP_TIMELINE_ZONE_OPACITY}
-            />
             <XAxis dataKey="date" tickFormatter={formatDateTick} />
             <YAxis
-              yAxisId="value"
-              domain={yDomain}
-              ticks={SCORE_GAP_TIMELINE_Y_TICKS}
+              domain={SCORE_TIMELINE_Y_DOMAIN}
+              ticks={SCORE_TIMELINE_Y_TICKS}
               allowDataOverflow={false}
-              tickFormatter={(v: number) =>
-                v > 0 ? `+${v}%` : `${v}%`
-              }
+              tickFormatter={(v: number) => `${v}%`}
               width={44}
             />
-            {/* Hidden right Y-axis dedicated to volume bars.
-                domain={[0, barMax * 5]} pins the tallest bar to the bottom 20%
-                of the chart canvas (Pattern 3 in 57.1-RESEARCH.md). */}
-            <YAxis yAxisId="bars" orientation="right" hide domain={[0, barMax * 5]} />
-            <ReferenceLine yAxisId="value" y={0} stroke="var(--border)" strokeDasharray="3 3" />
             <ChartTooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;
                 const point = payload.find(
-                  (p) => (p.payload as ScoreGapChartPoint | undefined)?.date !== undefined,
-                )?.payload as ScoreGapChartPoint | undefined;
+                  (p) => (p.payload as ScoreOverTimeChartPoint | undefined)?.date !== undefined,
+                )?.payload as ScoreOverTimeChartPoint | undefined;
                 if (!point) return null;
-                const gap = point.gap_pct;
-                const sign = gap > 0 ? '+' : '';
+                const gap = point.endgame - point.non_endgame;
+                const gapSign = gap > 0 ? '+' : '';
                 return (
                   <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
                     <div className="font-medium">
                       Week of {formatDateWithYear(label as string)}
                     </div>
-                    <div className="text-muted-foreground">
-                      Games this week: {point.per_week_total_games}
+                    <div className="flex items-center gap-1.5">
+                      <div
+                        className="h-2 w-2 shrink-0 rounded-[2px]"
+                        style={{ backgroundColor: SCORE_TIMELINE_LINE_ENDGAME }}
+                      />
+                      <span>
+                        Endgame: {point.endgame}%
+                        <span className="text-muted-foreground ml-1">
+                          (n={point.endgame_game_count})
+                        </span>
+                      </span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div
                         className="h-2 w-2 shrink-0 rounded-[2px]"
-                        style={{ backgroundColor: scoreGapZoneColor(gap) }}
+                        style={{ backgroundColor: SCORE_TIMELINE_LINE_NON_ENDGAME }}
                       />
                       <span>
-                        Score gap: {sign}
-                        {gap.toFixed(1)}%
+                        Non-endgame: {point.non_endgame}%
                         <span className="text-muted-foreground ml-1">
-                          (endgame {point.endgame_game_count} games, non-endgame {point.non_endgame_game_count} games)
+                          (n={point.non_endgame_game_count})
                         </span>
                       </span>
+                    </div>
+                    <div className="text-muted-foreground">
+                      Gap: {gapSign}{gap}%
                     </div>
                   </div>
                 );
               }}
             />
-            <Bar
-              yAxisId="bars"
-              dataKey="per_week_total_games"
-              fill={ENDGAME_VOLUME_BAR_COLOR}
-              legendType="none"
+            {hasAboveBand && (
+              <g data-testid="score-band-above">
+                <Area
+                  type="monotone"
+                  dataKey="band_above"
+                  fill={SCORE_TIMELINE_FILL_ABOVE}
+                  stroke="none"
+                  isAnimationActive={false}
+                  connectNulls={false}
+                  legendType="none"
+                />
+              </g>
+            )}
+            {hasBelowBand && (
+              <g data-testid="score-band-below">
+                <Area
+                  type="monotone"
+                  dataKey="band_below"
+                  fill={SCORE_TIMELINE_FILL_BELOW}
+                  stroke="none"
+                  isAnimationActive={false}
+                  connectNulls={false}
+                  legendType="none"
+                />
+              </g>
+            )}
+            <Line
+              type="monotone"
+              dataKey="endgame"
+              stroke={SCORE_TIMELINE_LINE_ENDGAME}
+              strokeWidth={2}
+              dot={false}
+              connectNulls={false}
               isAnimationActive={false}
-              data-testid="score-gap-volume-bars"
             />
             <Line
-              yAxisId="value"
               type="monotone"
-              dataKey="gap_pct"
-              stroke="var(--muted-foreground)"
+              dataKey="non_endgame"
+              stroke={SCORE_TIMELINE_LINE_NON_ENDGAME}
               strokeWidth={2}
-              connectNulls={true}
-              dot={(props: {
-                cx?: number;
-                cy?: number;
-                payload?: Record<string, unknown>;
-              }) => {
-                const { cx, cy, payload } = props;
-                if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) {
-                  return <g key={`nodot-${String(payload?.date ?? cx)}`} />;
-                }
-                const gap = (payload.gap_pct as number) ?? 0;
-                return (
-                  <circle
-                    key={`score-gap-dot-${payload.date as string}`}
-                    cx={cx}
-                    cy={cy}
-                    r={2.5}
-                    fill={scoreGapZoneColor(gap)}
-                  />
-                );
-              }}
+              dot={false}
+              connectNulls={false}
+              isAnimationActive={false}
             />
           </ComposedChart>
         </ChartContainer>
       </div>
-      <p className="text-xs text-muted-foreground text-center -mt-2">
+      {/* Custom legend rendered outside the chart so we can attach per-item
+          data-testid attributes. Recharts' default <Legend> doesn't expose
+          hooks for that without a custom `content` render prop, and this
+          approach avoids another indirection. */}
+      <div
+        className="flex flex-wrap items-center justify-center gap-4 mt-1 text-xs text-muted-foreground"
+        data-testid="endgame-score-timeline-legend"
+      >
+        <span className="inline-flex items-center gap-1.5" data-testid="chart-legend-endgame">
+          <span
+            className="inline-block h-2 w-2 rounded-[2px]"
+            style={{ backgroundColor: SCORE_TIMELINE_LINE_ENDGAME }}
+            aria-hidden="true"
+          />
+          Endgame
+        </span>
+        <span className="inline-flex items-center gap-1.5" data-testid="chart-legend-non-endgame">
+          <span
+            className="inline-block h-2 w-2 rounded-[2px]"
+            style={{ backgroundColor: SCORE_TIMELINE_LINE_NON_ENDGAME }}
+            aria-hidden="true"
+          />
+          Non-endgame
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground text-center mt-1">
         Week (rolling average of the last {window} games per side)
       </p>
     </div>
