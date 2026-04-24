@@ -2,6 +2,55 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v1.11 — LLM-first Endgame Insights
+
+**Shipped:** 2026-04-24
+**Phases:** 5 executed (63, 64, 65, 66, 68); Phase 67 descoped | **Plans:** 23 | **Delivered via:** PR #61 (squash merge)
+
+### What Was Built
+- First LLM-backed feature in the codebase: `POST /api/insights/endgame` returning a structured `EndgameInsightsReport` (overview + up to 4 Section insights) via a pydantic-ai Agent, cached on findings_hash, rate-limited 3 misses/hr/user, soft-failing to last cached report (Phase 65)
+- Deterministic findings pipeline: `compute_findings` transforms `/api/endgames/overview` into per-subsection-per-window `EndgameTabFindings` with zone/trend/sample-quality annotations + three cross-section flags, so the LLM reasons over pre-validated numbers (Phase 63)
+- Shared zone registry (`app/services/endgame_zones.py`) as single source of truth; Python→TypeScript codegen script + CI drift guard prevents narrative-vs-chart drift by construction (Phase 63)
+- Generic `llm_logs` table (18 cols, BigInteger PK, JSONB, FK CASCADE, 5 indexes including 3 composites with `created_at DESC`) designed up-front for every future LLM feature; async repo with `genai-prices` per-call cost accounting and `cost_unknown:<model>` soft-fallback (Phase 64)
+- Frontend `EndgameInsightsBlock` with parent-lifted mutation state (no Context) — `Endgames.tsx` holds one `useEndgameInsights` mutation; the block + 4 `SectionInsightSlot` instances all observe the same state; inline per-section slot placement achieves H2-ride-along suppression for free (Phase 66)
+- Dual-line "Endgame vs Non-Endgame Score over Time" chart with colored shaded gap replaces single-line Score Gap chart; prompt simplified (bumped to endgame_v14) since the chart makes gap composition self-evident (Phase 68)
+
+### What Worked
+- **Prompt versioning as the cache-invalidation handle** — bumping `_PROMPT_VERSION` (v6→v15 over the milestone) forced fresh generation without explicit cache flush. Iteration was cheap and auditable via git blame on the prompt file.
+- **Zone registry + CI drift guard** — Python-side authoritative constants with a codegen'd TS mirror caught divergence at PR time, not at user-report time. Worth the upfront scaffolding.
+- **Parent-lifted mutation state in Endgames.tsx** — avoided a Context provider; 4 slot instances observing the same mutation result was simpler than expected and cleanly survived H2-group re-renders.
+- **Generic `llm_logs` over feature-specific** — designing the table up-front for every future LLM feature meant Phase 66 UI + later Insights expansion (Openings/Global Stats) require zero schema changes.
+- **Pre-merge v1.11 milestone review by gsd-code-reviewer** — caught a critical failing test, a dead codegen pipeline (Phase 66 half-finished switchover), a stale prompt reference, and a stale CHANGELOG entry. Worth doing before every squash.
+- **Quick-task loops for UAT feedback** — 260422-tnb, 260423-a4a, 260424-pc6 quick tasks iterated the prompt/schema without spawning new phases. Right tool for small-but-visible refinements.
+
+### What Was Inefficient
+- **Phase 67 descope was implicit, not planned** — insights were enabled for all users via commit `c91478e` without updating the roadmap or requirements. Result: VAL-01 and VAL-02 remained formally unchecked with no explicit tech-debt entry until milestone close. The plan-deviation should have been logged as a roadmap update at decision time.
+- **Prompt revision churn inside the milestone** — v6→v15 across phases + multiple UAT quick tasks + a final cleanup pass bump (v15) suggests the initial prompt underspecified what the LLM needed to see. A spike might have paid for itself.
+- **Two add-then-drop migrations in the same milestone** (`system_prompt`, `flags` columns) — both columns shipped in Phase 64 and were dropped within days. Decision-by-implementation rather than decision-by-design.
+- **UAT artifacts are inconsistent** — Phase 68 HUMAN-UAT.md has 5 pending scenarios at close; Phase 66 VERIFICATION.md is `human_needed`. The `/gsd-verify-work` loop wasn't closed before merge.
+- **Stale requirement checkboxes** — LOG-02/LOG-04 were implemented in Phase 65 but left unchecked in REQUIREMENTS.md traceability until milestone close. Phase summaries didn't include "requirements-checkbox-updated" in their definition-of-done.
+- **Pre-existing ORM/DB column drift** (REAL→Float on 3 columns) surfaces on every Alembic autogenerate and was manually stripped from 3 v1.11 migrations. Deserves a dedicated cleanup migration, not ongoing handraising.
+
+### Patterns Established
+- **Prompt-as-file + prompt_version cache key** — all future LLM features should load system prompts from versioned files and include `prompt_version` in the cache key. Never string-literal prompts in `.py`.
+- **One generic log table per LLM feature class** — `llm_logs` hosts every Agent call; `endpoint` column distinguishes consumers. New LLM features don't require new tables.
+- **Environment-variable-driven model selection** — use `PYDANTIC_AI_MODEL_<FEATURE>` with startup validation (fail-fast on missing/invalid). Swap models for A/B without code changes.
+- **Findings-hash cache + soft-fail rate limit** — 3 misses/hr/user with fallback to last cached report is the pattern for any user-triggered LLM endpoint.
+- **Python-side registry with codegen'd TS mirror + CI drift guard** — every semantic constant shared between backend and frontend (zone thresholds, metric IDs, enum values) follows this pattern.
+- **Parent-lifted mutation state for multi-slot LLM renderers** — when an LLM result feeds multiple visual slots on one page, hold the mutation in the parent and pass the result down as props rather than using Context.
+
+### Key Lessons
+- **Plan-deviations deserve an explicit roadmap update at the moment of the decision, not at milestone close.** Phase 67 was skipped in practice weeks before it was documented as skipped.
+- **Every new LLM feature must ship with at least one snapshot regression test** — even if it's a single real-user fixture. Phase 67 was the guard that didn't happen; v1.12 should retrofit one.
+- **Zone/threshold constants have exactly one authoritative home — enforced by CI.** The v1.11 consolidation pass retired four-way restatement (Python + codegen'd TS + throwaway regex test + 3 inline FE const blocks) down to one codegen'd source.
+- **Pre-merge cohesion reviews catch things phase-level review misses** — files shipped but never imported, docstring-vs-code mismatches, CHANGELOG written before the final pivot. Worth running before every milestone squash.
+
+### Cost Observations
+- Prompt iteration (v6→v15) dominated API-cost variance; caching on findings_hash + prompt_version meant repeated testing at stable findings cost near-zero.
+- Thinking tokens: diagnosed `thinking_tokens=NULL` as a `GEMINI_THINKING_LEVEL=low` config choice (quick task 260423-a4a), not a code bug.
+
+---
+
 ## Milestone: v1.10 — Advanced Analytics
 
 **Shipped:** 2026-04-19

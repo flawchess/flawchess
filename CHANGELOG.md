@@ -8,6 +8,14 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.11] LLM-first Endgame Insights — 2026-04-24
+
+First LLM-backed feature. On-demand Endgame Insights via `POST /api/insights/endgame`,
+backed by a deterministic findings pipeline, a generic `llm_logs` Postgres table,
+and a dual-line Endgame vs Non-Endgame Score timeline chart. Phase 67
+(Validation & Beta Rollout) was descoped — insights shipped to all users rather
+than behind a beta cohort flag.
+
 ### Added
 - LLM-backed endgame insights endpoint (`POST /api/insights/endgame`) returning a structured `EndgameInsightsReport` (overview + up to 4 section insights). Cached on a findings hash, rate-limited to 3 misses/hr/user, soft-fails to the last cached report (Phase 65).
 - Phase 63: Findings pipeline foundation for LLM Endgame Insights — deterministic `compute_findings` service produces per-subsection-per-window `EndgameTabFindings` with zone, trend, and sample-quality annotations over the existing `/api/endgames/overview` data
@@ -294,7 +302,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.10...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.11...HEAD
+[v1.11]: https://github.com/flawchess/flawchess/compare/v1.10...v1.11
 [v1.10]: https://github.com/flawchess/flawchess/compare/v1.9...v1.10
 [v1.9]: https://github.com/flawchess/flawchess/compare/v1.8...v1.9
 [v1.8]: https://github.com/flawchess/flawchess/compare/v1.7...v1.8

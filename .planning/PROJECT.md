@@ -91,10 +91,17 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Endgame ELO Timeline — skill-adjusted rating per (platform, time-control) combination with asof-join anchor on user's real rating and weekly volume bars — v1.10 Phases 57, 57.1
 - ✓ Test suite hardening — TRUNCATE on session start, seeded_user fixture, aggregation sanity + material tally + router integration tests — v1.10 Phase 61
 - ✓ Admin user impersonation — superuser can impersonate any user via new /admin page, single auth_backend + ClaimAwareJWTStrategy, impersonation pill in header, last_login/last_activity frozen — v1.10 Phase 62
+- ✓ LLM-backed Endgame Insights endpoint — `POST /api/insights/endgame` returns a structured `EndgameInsightsReport` (overview + up to 4 Section insights) via pydantic-ai Agent, cached on findings_hash, rate-limited 3 misses/hr, soft-fails to last cached report — v1.11 Phase 65
+- ✓ Deterministic findings pipeline — `compute_findings` over `/api/endgames/overview` produces `SubsectionFinding` per subsection × window (`all_time`, `last_3mo`) with zone/trend/sample-quality annotations and three cross-section flags — v1.11 Phase 63
+- ✓ Shared zone registry (`endgame_zones.py`) — single source of truth for thresholds; Python→TypeScript codegen with CI drift guard — v1.11 Phase 63
+- ✓ Generic `llm_logs` Postgres table — designed for reuse across future LLM features (18 cols, JSONB, FK CASCADE, 5 indexes, genai-prices cost accounting with `cost_unknown:<model>` soft-fallback) — v1.11 Phase 64
+- ✓ Provider-agnostic model selection — `PYDANTIC_AI_MODEL_INSIGHTS` env var, startup validation, system prompt versioned in `app/prompts/endgame_insights.md` — v1.11 Phase 65
+- ✓ Frontend `EndgameInsightsBlock` — parent-lifted mutation state, overview + 4 inline Section blocks, single retry affordance on failure — v1.11 Phase 66
+- ✓ Dual-line Endgame vs Non-Endgame Score over Time chart — replaces single-line Score Gap chart with shaded gap fill (green when endgame leads, red when trails); prompt simplified — v1.11 Phase 68
 
 ### Active
 
-_v1.11 LLM-first Endgame Insights — requirements defined in `.planning/REQUIREMENTS.md`._
+_No active milestone. Next milestone goals TBD — start with `/gsd-new-milestone`._
 
 ### Out of Scope
 
@@ -105,32 +112,15 @@ _v1.11 LLM-first Endgame Insights — requirements defined in `.planning/REQUIRE
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: v1.11 LLM-first Endgame Insights
+## Current Milestone: None
 
-**Goal:** Ship an LLM-generated Insights block on the Endgame tab (overview paragraph + 4 Section insights) over a stripped-down findings pipeline, reusing the in-code gauge constants as the single zone source, observable via a generic `llm_logs` table, and rolled out behind a DB-side beta flag to a small hand-picked cohort.
-
-**Target features:**
-- Findings computation service that transforms the existing `/api/endgames/overview` composite into zone/trend/sample-quality findings and three deterministic cross-section flags
-- Zone assignment driven by the existing in-code gauge constants so insights narrative and chart visuals agree by construction
-- `POST /api/insights/endgame` backed by a pydantic-ai Agent with structured output, provider-agnostic model selection via `PYDANTIC_AI_MODEL_INSIGHTS`, findings-hash cache, and 3-miss/hr/user soft-fail rate limit
-- Generic Postgres `llm_logs` table (+ Alembic migration + async repo) capturing prompt, response, tokens, cost (via `genai-prices`), latency, cache-hit, error; designed to host future LLM features too
-- Frontend `EndgameInsightsBlock` rendering overview + 4 Section blocks inline on the Endgame tab, gated by a `users.insights_beta_enabled` DB flag (no user-settings UI)
-- Ground-truth regression test against the SEED-001 canonical user fixture plus admin-impersonation eyeball validation across 5+ real user profiles before the beta flag flips on
-
-**Source seed:** `.planning/seeds/SEED-003-llm-based-insights.md` (supersedes SEED-001 for v1.11; SEED-001 remains the v1.12+ reference for deferred archetype/role/era/stability/admin work).
-
-**Key context:**
-- SEED-001 and SEED-003 both triggered at v1.11; SEED-003 is the MVP path, SEED-001 becomes v1.12+ scope
-- Zones come from the existing in-code gauge constants — if a band needs adjusting, the gauge constant is the place to adjust it. The 2026-04-18 benchmark report is background context only.
-- Overview is always populated — no null overview in MVP. When there's no strong cross-section signal, the overview summarizes the per-section findings.
-- LLM output is not style-constrained (no em-dash/noun-label/prescriptive-advice rules). Correctness guardrails come from the three precomputed cross-section flags, not from prose policing.
-- Target size: 2–3 weeks of focused build; v1.11 may include additional parallel scope
+v1.11 shipped 2026-04-24. No active milestone — start the next one with `/gsd-new-milestone`.
 
 ## Current State
 
-v1.10 shipped 2026-04-19. Eleven milestones complete (v1.0–v1.10), 61 phases (+3 inserted), live at flawchess.com. v1.10 delivered an endgame-focused advanced analytics pass: consolidated `/api/endgames/overview` endpoint (8 queries → 2), endgame score gap + material breakdown table with opponent-based self-calibrating baseline, time pressure clock stats + score chart across 10 buckets, skill-adjusted Endgame ELO timeline per (platform, time-control) combo anchored on user's real rating with weekly volume bars, conv/recov 4-ply persistence filter + 100cp threshold, test suite hardening (TRUNCATE + seeded_user fixture + aggregation sanity tests), and admin user impersonation for superusers. Phase 56 cancelled (subsumed by 57), Phase 58 moved to backlog as 999.6.
+v1.11 LLM-first Endgame Insights shipped 2026-04-24. Twelve milestones complete (v1.0–v1.11), 66 phases (+3 inserted), live at flawchess.com. v1.11 delivered the first LLM-backed feature: `POST /api/insights/endgame` returns a structured `EndgameInsightsReport` (overview + up to 4 Section insights) via a pydantic-ai Agent, cached on a deterministic findings hash, rate-limited to 3 misses/hr/user with soft-fail to the last cached report. Zone assignment shares the in-code gauge constants with chart visuals via a new registry + Python→TypeScript codegen with CI drift guard. Generic `llm_logs` Postgres table (with JSONB, FK CASCADE, per-call cost accounting via `genai-prices`) was designed up-front to host every future LLM feature. Frontend ships an `EndgameInsightsBlock` with parent-lifted mutation state and inline per-section slots. Phase 68 replaced the single-line Score Gap chart with a dual-line Endgame vs Non-Endgame Score chart with shaded gap fill.
 
-v1.11 in progress: Phase 63 (findings pipeline), Phase 64 (llm_logs table + async repo), and Phase 65 (LLM endpoint with pydantic-ai Agent) complete (2026-04-21). `POST /api/insights/endgame` ships with findings-hash cache, 3-miss/hr rate limit, soft-fail to last cached report, and startup validation of `PYDANTIC_AI_MODEL_INSIGHTS`. Phase 66 (frontend block + beta flag) and Phase 67 (validation + beta rollout) remain.
+Phase 67 (Validation & Beta Rollout) was descoped: insights were enabled for all users via commit `c91478e` rather than gated behind the planned beta cohort. Recommended follow-up in v1.12: retrofit a snapshot regression test against one real production user fixture.
 
 ## Context
 
@@ -202,6 +192,14 @@ v1.11 in progress: Phase 63 (findings pipeline), Phase 64 (llm_logs table + asyn
 | Single auth_backend + ClaimAwareJWTStrategy | Zero changes to existing Depends(current_active_user) call sites | ✓ Good |
 | Truncate flawchess_test at pytest session start | Enables deterministic integer assertions via seeded_user fixture | ✓ Good |
 | Split time_control into base_time + increment | Time pressure % denominator per-game base time, clamped at 2x | ✓ Good |
+| pydantic-ai Agent with provider-agnostic model env var | `PYDANTIC_AI_MODEL_INSIGHTS` lets model swap without code changes; startup fails fast on missing/invalid | ✓ Good |
+| System prompt in file (`app/prompts/endgame_insights.md`), not string literal | Versioned, diff-readable, bumping `_PROMPT_VERSION` is the cache-invalidation handle | ✓ Good |
+| Generic `llm_logs` table, not `insights_llm_logs` | Designed up-front to host every future LLM feature; `endpoint` column distinguishes consumers | ✓ Good |
+| Findings-hash cache + 3-miss/hr/user rate limit with soft-fail | Equivalent filter states reuse cached report; over-limit returns last cached rather than error | ✓ Good |
+| Shared zone registry + Python→TS codegen with CI drift guard | Narrative and chart visuals agree by construction; no two-sided drift | ✓ Good |
+| Parent-lifted mutation state for EndgameInsightsBlock (no Context) | `useEndgameInsights` in Endgames.tsx; block + 4 slot instances observe same state | ✓ Good |
+| Dual-line Score chart over single-line Score Gap chart | Makes endgame-vs-non-endgame composition self-evident; eliminated the prompt's score_gap framing rule | ✓ Good |
+| Phase 67 descope — rollout to all users instead of beta cohort | Fast learning from real telemetry; tradeoff: no automated regression guard against prompt changes | ⚠️ Revisit (retrofit snapshot test in v1.12) |
 
 ## Evolution
 
@@ -221,4 +219,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-20 — v1.11 LLM-first Endgame Insights milestone opened (source: SEED-003).*
+*Last updated: 2026-04-24 — v1.11 LLM-first Endgame Insights shipped.*
