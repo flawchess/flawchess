@@ -124,9 +124,18 @@ class TestRegistrySanity:
 
     def test_all_scalar_metrics_have_entries(self) -> None:
         """ZONE_REGISTRY covers exactly the scalar metrics (bucketed metrics
-        live in BUCKETED_ZONE_REGISTRY)."""
+        live in BUCKETED_ZONE_REGISTRY).
+
+        Phase 68 v14 (260424-pc6) added `endgame_score` / `non_endgame_score`
+        entries with a full-range `[0, 1]` typical band (no calibrated cohort
+        band for per-part absolute scores — assign_zone always returns
+        "typical" for these). See `_format_zone_bounds` in insights_llm.py
+        for the matching bounds-suppression guard.
+        """
         assert set(ZONE_REGISTRY.keys()) == {
             "score_gap",
+            "endgame_score",
+            "non_endgame_score",
             "endgame_skill",
             "avg_clock_diff_pct",
             "net_timeout_rate",

@@ -57,7 +57,7 @@ from app.services.insights_service import compute_findings
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v13"  # v13 changes: (1) Endgame Score Gap timeline renamed to `score_timeline` and now emits TWO `[summary score_timeline]` blocks + TWO `[series score_gap, ..., weekly, part=endgame|non_endgame]` blocks per window (no emitter carve-out — same fanned-out shape as endgame_elo per-combo); (2) dropped the `score_gap` framing rule — the two-line chart (UI) + overall_wdl chart block (payload) together make composition self-evident; (3) dropped the `score_gap_timeline` "only exception to summary-per-metric" carve-out — the subsection follows the standard per-dimension emitter shape. Cache invalidation is automatic via prompt_version cache key.
+_PROMPT_VERSION = "endgame_v14"  # v14 changes (260424-pc6 UAT pass): (1) `score_timeline` subsection now emits THREE summary blocks + THREE series blocks — one per metric (`endgame_score`, `non_endgame_score`, `score_gap`) — instead of two `part`-dim-tagged `score_gap` blocks whose labels contradicted their per-part absolute-score payloads. Deterministic order: endgame_score, non_endgame_score, score_gap. No dimension fan-out needed — each metric is its own row. (2) `[series ...]` rows drop the per-point `(n=<N>)` suffix when N is constant across all points; a single `[n=<N> for every point]` disclosure line sits after the header. Trailing-window samples (e.g. score_timeline rolling-100) have constant N by construction; the endgame_elo_gap series keeps the per-point suffix because it also carries a per-point `elo=` field. (3) New MetricId entries `endgame_score` / `non_endgame_score` map to a `[0, 1]` no-op zone band (no calibrated cohort band for per-part absolute scores); `_format_zone_bounds` suppresses the `(typical …)` tag for these metrics so the prompt does not show meaningless bounds. Cache invalidation is automatic via prompt_version cache key.
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
@@ -309,7 +309,14 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
     recovery_save_pct) dispatch via `dimension['bucket']`; all other scalar
     metrics use ZONE_REGISTRY directly. Returns '' for unknown metric_ids
     (defensive — shouldn't fire for valid findings since MetricId is enumerated).
+
+    Phase 68 (260424-pc6): endgame_score / non_endgame_score have no
+    calibrated zone band — their registry entries span [0, 1] only so
+    assign_zone does not raise. Skip the bounds render for those two so
+    the prompt does not show a meaningless `(typical +0 to +100)` tag.
     """
+    if metric_id in ("endgame_score", "non_endgame_score"):
+        return ""
     spec: ZoneSpec | None = None
     bucket = dimension.get("bucket") if dimension else None
     bucketed = cast("dict[str, dict[str, ZoneSpec]]", dict(BUCKETED_ZONE_REGISTRY))
@@ -1300,6 +1307,15 @@ def _render_series_block(finding: SubsectionFinding, points: list[TimePoint]) ->
     same (metric, window, granularity) but different dims each get their
     own uniquely-labelled series block. This matches the grouping the
     `_dim_key_for_finding` helper already produces for summary blocks.
+
+    Phase 68 (260424-pc6, UAT pass): when every point carries the same
+    `n` — as happens for trailing-window series (e.g. score_timeline's
+    rolling 100-game window) — the repetitive `(n=<N>)` suffix is noise.
+    Emit a single `[n=<N> for every point]` disclosure line right after
+    the series header and omit the suffix from each bucket line. The
+    endgame_elo_gap variant (which also carries per-point `elo=`) always
+    keeps the per-point `(n=<N>)` suffix because its `elo=` field can
+    still vary per bucket — the disclosure shortcut would lose signal.
     """
     granularity = _series_granularity(finding)
     header = f"[series {finding.metric}, {finding.window}, {granularity}"
@@ -1310,6 +1326,13 @@ def _render_series_block(finding: SubsectionFinding, points: list[TimePoint]) ->
     lines = [header]
     series_scale = _scale_for_metric(finding.metric)
     emit_elo = finding.metric == "endgame_elo_gap"
+    # Constant-n suppression (260424-pc6 C): only applies when every point
+    # shares the same `n` AND this is NOT the endgame_elo_gap variant (whose
+    # per-point `elo=` field is the reason the full per-point line exists).
+    ns = [pt.n for pt in points]
+    n_is_constant = bool(ns) and not emit_elo and len(set(ns)) == 1
+    if n_is_constant:
+        lines.append(f"[n={ns[0]} for every point]")
     prev_date: datetime.date | None = None
     prev_bucket_start: str | None = None
     for pt in points:
@@ -1326,6 +1349,8 @@ def _render_series_block(finding: SubsectionFinding, points: list[TimePoint]) ->
         pt_value = pt.value * series_scale
         if emit_elo and pt.actual_elo is not None:
             lines.append(f"{pt.bucket_start}: gap={pt_value:+.0f}, elo={pt.actual_elo} (n={pt.n})")
+        elif n_is_constant:
+            lines.append(f"{pt.bucket_start}: {pt_value:+.0f}")
         else:
             lines.append(f"{pt.bucket_start}: {pt_value:+.0f} (n={pt.n})")
         prev_date = curr_date

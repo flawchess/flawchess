@@ -29,6 +29,15 @@ Window = Literal["all_time", "last_3mo"]
 
 MetricId = Literal[
     "score_gap",
+    # Phase 68 (260424-pc6): per-part absolute score metrics emitted by the
+    # score_timeline subsection. `score_gap` still carries the signed
+    # aggregate; `endgame_score` / `non_endgame_score` carry each side's
+    # absolute 0-100% score so the prompt narrates two absolute lines
+    # instead of two part-tagged score_gap blocks whose labels contradicted
+    # their series values. Neither has a calibrated zone band — callers
+    # render them as "typical" (see assign_zone NaN/unregistered handling).
+    "endgame_score",
+    "non_endgame_score",
     "endgame_skill",
     "conversion_win_pct",
     "parity_score_pct",
@@ -119,6 +128,25 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     "score_gap": ZoneSpec(
         typical_lower=-0.10,
         typical_upper=0.10,
+        direction="higher_is_better",
+    ),
+    # Phase 68 (260424-pc6): absolute per-part rolling Score % used by the
+    # score_timeline subsection's two-line chart. There is no calibrated
+    # cohort band for "your endgame Score in isolation" (the zoned signal is
+    # score_gap, not absolute score), so the typical band is defined to span
+    # the full [0, 1] range — every value resolves to "typical". Keeping
+    # entries here (rather than making assign_zone return "typical" for
+    # unknown metrics) preserves the MetricId-Literal invariant and the
+    # single-source-of-truth contract for all metrics referenced in
+    # compute_findings.
+    "endgame_score": ZoneSpec(
+        typical_lower=0.0,
+        typical_upper=1.0,
+        direction="higher_is_better",
+    ),
+    "non_endgame_score": ZoneSpec(
+        typical_lower=0.0,
+        typical_upper=1.0,
         direction="higher_is_better",
     ),
     # Endgame Skill: simple average of Conv/Parity/Recov rates (0.0-1.0).

@@ -485,13 +485,15 @@ class TestIntegration:
                 )
 
     @pytest.mark.asyncio
-    async def test_score_timeline_emits_two_findings_per_window(self) -> None:
-        """Phase 68 B4c: score_timeline emits TWO findings per window (one per `part`).
+    async def test_score_timeline_emits_three_findings_per_window(self) -> None:
+        """Phase 68 v14 (260424-pc6): score_timeline emits THREE findings per window.
 
-        Each finding carries its own per-side absolute-score series. Both
-        findings share metric='score_gap' and value=aggregate score_difference;
-        they're distinguished by dimension={'part': 'endgame'|'non_endgame'}.
-        The endgame finding emits first (deterministic order).
+        One finding per distinct metric (endgame_score, non_endgame_score,
+        score_gap). No `part` dim tag — each metric id is the unique key.
+        Deterministic order: endgame_score, non_endgame_score, score_gap.
+        Only the endgame_score finding is headline-eligible when the trend
+        gate passes; non_endgame_score and score_gap are never headlines
+        (score_gap's headline already lives on the `overall` subsection).
         """
         mock_response = _make_minimal_response()
         with patch.object(
@@ -508,28 +510,36 @@ class TestIntegration:
                 f for f in result.findings
                 if f.subsection_id == "score_timeline" and f.window == window
             ]
-            assert len(st_findings) == 2, (
-                f"Expected exactly 2 score_timeline findings for window={window}, "
+            assert len(st_findings) == 3, (
+                f"Expected exactly 3 score_timeline findings for window={window}, "
                 f"got {len(st_findings)}"
             )
-            # Order: endgame first, then non_endgame.
-            assert st_findings[0].dimension == {"part": "endgame"}
-            assert st_findings[1].dimension == {"part": "non_endgame"}
-            # Both share metric=score_gap.
+            # Order: endgame_score, non_endgame_score, score_gap.
+            assert st_findings[0].metric == "endgame_score"
+            assert st_findings[1].metric == "non_endgame_score"
+            assert st_findings[2].metric == "score_gap"
+            # No findings carry a `part` dim.
             for f in st_findings:
-                assert f.metric == "score_gap"
+                assert f.dimension is None, (
+                    f"score_timeline findings must not carry a dim tag; "
+                    f"got dimension={f.dimension} on metric={f.metric}"
+                )
                 assert f.series is not None
                 assert len(f.series) > 0
-            # Non-endgame is NEVER headline-eligible on its own.
+            # Headline eligibility: only the endgame_score row is eligible
+            # (and only when the trend gate passes — may still be False in
+            # the test fixture if the synthetic series is too short).
             assert st_findings[1].is_headline_eligible is False
+            assert st_findings[2].is_headline_eligible is False
 
     @pytest.mark.asyncio
     async def test_score_timeline_series_uses_absolute_per_side_values(self) -> None:
-        """Phase 68: endgame finding series values come from endgame_score,
-        non_endgame finding series values come from non_endgame_score.
+        """Phase 68 v14 (260424-pc6): per-metric series values come from the
+        matching source fields — endgame_score, non_endgame_score, and the
+        signed difference respectively.
 
         Identity invariant: for matching buckets,
-        abs((endgame_value - non_endgame_value) - score_difference) < 1e-9.
+        abs((endgame_value - non_endgame_value) - gap_value) < 1e-9.
         """
         mock_response = _make_minimal_response()
         timeline = mock_response.score_gap_material.timeline
@@ -546,22 +556,35 @@ class TestIntegration:
             f for f in result.findings
             if f.subsection_id == "score_timeline" and f.window == "last_3mo"
         ]
-        assert len(st_last_3mo) == 2
-        endgame_f, non_endgame_f = st_last_3mo
+        assert len(st_last_3mo) == 3
+        endgame_f, non_endgame_f, gap_f = st_last_3mo
+        assert endgame_f.metric == "endgame_score"
+        assert non_endgame_f.metric == "non_endgame_score"
+        assert gap_f.metric == "score_gap"
         assert endgame_f.series is not None
         assert non_endgame_f.series is not None
+        assert gap_f.series is not None
         # Series length matches the source timeline (weekly pass-through).
         assert len(endgame_f.series) == len(timeline)
         assert len(non_endgame_f.series) == len(timeline)
-        # Values come directly from endgame_score / non_endgame_score.
+        assert len(gap_f.series) == len(timeline)
+        # Values come directly from endgame_score / non_endgame_score; gap
+        # series is the per-bucket signed difference.
         for pt, src in zip(endgame_f.series, timeline, strict=True):
             assert pt.value == pytest.approx(src.endgame_score)
         for pt, src in zip(non_endgame_f.series, timeline, strict=True):
             assert pt.value == pytest.approx(src.non_endgame_score)
-        # Identity invariant per bucket.
-        for eg_pt, neg_pt, src in zip(
-            endgame_f.series, non_endgame_f.series, timeline, strict=True,
+        for pt, src in zip(gap_f.series, timeline, strict=True):
+            assert pt.value == pytest.approx(src.endgame_score - src.non_endgame_score)
+        # Identity invariant per bucket across the three series.
+        for eg_pt, neg_pt, gap_pt, src in zip(
+            endgame_f.series,
+            non_endgame_f.series,
+            gap_f.series,
+            timeline,
+            strict=True,
         ):
+            assert abs((eg_pt.value - neg_pt.value) - gap_pt.value) < 1e-9
             assert abs((eg_pt.value - neg_pt.value) - src.score_difference) < 1e-9
 
 
@@ -574,18 +597,19 @@ class TestIntegration:
 
 
 class TestScoreTimelineIntegration:
-    """Phase 68 Plan 04: findings → prompt assembly end-to-end payload shape."""
+    """Phase 68 v14 (260424-pc6): findings → prompt assembly end-to-end payload shape."""
 
     @pytest.mark.asyncio
     async def test_score_timeline_end_to_end_payload(self) -> None:
-        """Plan 01+02+03 compose: rendered prompt has TWO summary + TWO series
-        blocks per window, no `score_gap_timeline`, no `Framing rule`.
+        """v14 UAT-pass shape: rendered prompt has THREE summary + THREE
+        series blocks per window (one per metric), no `score_gap_timeline`,
+        no `Framing rule`, no `part=` dim tags.
 
-        B4 option c shape (post-Plan 01): the per-finding summary loop emits a
-        `[summary score_timeline]` block for each of the two findings (endgame
-        and non_endgame) per window — no suppression carve-out. Plan 03's
-        prompt bump then narrates from the two-line shape directly, so the
-        removed framing rule must not leak into the rendered prompt body.
+        The score_timeline subsection emits one finding per distinct metric
+        (endgame_score, non_endgame_score, score_gap). Weekly granularity
+        is pinned in both windows via `_series_granularity`. Constant-n
+        series (trailing-window sampling produces identical N per bucket)
+        emit a single `[n=<N> for every point]` disclosure line.
         """
         # _assemble_user_prompt is module-private; ruff/ty are OK with
         # intra-package relative imports in tests. The prompt body is the
@@ -597,10 +621,10 @@ class TestScoreTimelineIntegration:
         mock_response = _make_minimal_response()
         # Sanity: _make_minimal_response ships 13 weekly points with a mixed
         # endgame-leads-vs-trails pattern (score_difference = 0.05*(i+1) over
-        # i=0..12, all positive). Plan 04's guard is shape-level, not
-        # sign-level — the pattern's only role is producing a realistic
-        # non-trivial series in both all_time (resampled to monthly) and
-        # last_3mo (weekly pass-through).
+        # i=0..12, all positive). The guard is shape-level, not sign-level —
+        # the pattern's only role is producing a realistic non-trivial
+        # series in both all_time (resampled to monthly for other
+        # subsections) and last_3mo (weekly pass-through).
         with patch.object(
             insights_module,
             "get_endgame_overview",
@@ -610,34 +634,24 @@ class TestScoreTimelineIntegration:
                 FilterContext(), session=AsyncMock(), user_id=1,
             )
 
-        # --- Finding-level assertions (cross-check Plan 01 output) ---
+        # --- Finding-level assertions (cross-check compute_findings output) ---
         windows = ("all_time", "last_3mo")
         for window in windows:
             st_findings = [
                 f for f in findings.findings
                 if f.subsection_id == "score_timeline" and f.window == window
             ]
-            assert len(st_findings) == 2, (
-                f"Expected exactly 2 score_timeline findings for window={window}"
+            assert len(st_findings) == 3, (
+                f"Expected exactly 3 score_timeline findings for window={window}"
             )
-            assert st_findings[0].dimension == {"part": "endgame"}
-            assert st_findings[1].dimension == {"part": "non_endgame"}
+            assert st_findings[0].metric == "endgame_score"
+            assert st_findings[1].metric == "non_endgame_score"
+            assert st_findings[2].metric == "score_gap"
+            for f in st_findings:
+                assert f.dimension is None
 
-        # --- Prompt-level assertions (Plan 03 + emitter shape) ---
+        # --- Prompt-level assertions (v14 emitter shape) ---
         rendered = _assemble_user_prompt(findings)
-
-        # Emitter shape note (reconciles PLAN.md wording with reality):
-        # PLAN.md talks about `[summary score_timeline]` blocks "per window";
-        # the actual emitter format is `[summary <metric> | <dim>]` where
-        # <metric> is `score_gap` (not the subsection-id) and both windows
-        # are rendered inline (`all_time:` + `last_3mo:` lines) under a single
-        # subsection header. So the realised B4-option-c shape is:
-        #   - ONE `### Subsection: score_timeline` header (spans both windows).
-        #   - TWO `[summary score_gap | part=...]` blocks (endgame + non_endgame)
-        #     each listing `all_time:` + `last_3mo:` lines.
-        #   - TWO series blocks (one per part, all_time only — per the C5 rule
-        #     that drops the last_3mo series block when an all_time series
-        #     exists for the same (metric, subsection)).
 
         # One subsection header (shared across both windows — not one-per-window).
         assert rendered.count("### Subsection: score_timeline") == 1, (
@@ -645,46 +659,57 @@ class TestScoreTimelineIntegration:
             "(both windows render inline under one header)"
         )
 
-        # B4 option c: TWO summary blocks under score_timeline, one per `part`.
-        assert "[summary score_gap | part=endgame]" in rendered, (
-            "missing per-part summary for endgame side"
+        # Extract the score_timeline slice so assertions don't accidentally
+        # count summary blocks that live under other subsections (notably
+        # the `overall` block also emits `[summary score_gap]`).
+        timeline_start = rendered.index("### Subsection: score_timeline")
+        # Find the next "### " boundary (or end of string) to scope the slice.
+        next_header_search = rendered.find("### ", timeline_start + 1)
+        timeline_slice = (
+            rendered[timeline_start:next_header_search]
+            if next_header_search != -1
+            else rendered[timeline_start:]
         )
-        assert "[summary score_gap | part=non_endgame]" in rendered, (
-            "missing per-part summary for non_endgame side"
-        )
-        # Exactly two part-tagged summary blocks — no third-part leak, no
-        # duplicate emission from both windows producing separate blocks.
-        assert rendered.count("[summary score_gap | part=endgame]") == 1
-        assert rendered.count("[summary score_gap | part=non_endgame]") == 1
 
-        # Series blocks: two per-part all_time series (C5 dedupes last_3mo when
-        # all_time series exists for the same (metric, subsection)). Weekly
-        # granularity is pinned by Plan 01's `_series_granularity` branch
-        # regardless of window — Plan 01 W7 guard.
-        assert "[series score_gap, all_time, weekly, part=endgame]" in rendered
-        assert "[series score_gap, all_time, weekly, part=non_endgame]" in rendered
+        # v14: THREE summary blocks under score_timeline, one per metric.
+        assert timeline_slice.count("[summary endgame_score]") == 1
+        assert timeline_slice.count("[summary non_endgame_score]") == 1
+        assert timeline_slice.count("[summary score_gap]") == 1
 
-        # Never monthly for score_timeline — regression against Plan 01 W7.
-        assert "[series score_gap, all_time, monthly" not in rendered
-        assert "[series score_gap, last_3mo, monthly" not in rendered
+        # No part-dim-tagged summaries leak through anywhere.
+        assert "part=endgame" not in rendered
+        assert "part=non_endgame" not in rendered
+
+        # Series blocks: one per metric. Weekly granularity pinned regardless
+        # of window. C5 dedupe (drop last_3mo series when all_time exists for
+        # same (metric, subsection)) still applies — only the all_time series
+        # is emitted for each metric here.
+        assert "[series endgame_score, all_time, weekly]" in rendered
+        assert "[series non_endgame_score, all_time, weekly]" in rendered
+        assert "[series score_gap, all_time, weekly]" in rendered
+
+        # Never monthly for score_timeline — granularity pin regression guard.
+        for metric in ("endgame_score", "non_endgame_score", "score_gap"):
+            assert f"[series {metric}, all_time, monthly" not in rendered
+            assert f"[series {metric}, last_3mo, monthly" not in rendered
+
+        # Constant-n disclosure fires for score_timeline series (sample sizes
+        # per point are derived directly from the per-bucket game counts; in
+        # the synthetic fixture they are constant).
+        assert "[n=" in timeline_slice
+        assert "for every point]" in timeline_slice
 
         # Old subsection-id must not leak into the user prompt anywhere.
         assert "score_gap_timeline" not in rendered
-
-        # The dropped framing rule from Plan 03 must not leak through a
-        # stale cached layout or docstring either.
+        # The dropped framing rule from Plan 03 must not leak through.
         assert "Framing rule" not in rendered
 
         # Regression guard: the overall-subsection aggregate [summary score_gap]
-        # is preserved (Plan 01 explicitly kept the `overall` aggregate so the
-        # LLM can still quote the authoritative signed-difference number).
+        # is preserved (explicitly kept so the LLM can still quote the
+        # authoritative signed-difference number from overall).
         assert "### Subsection: overall" in rendered
-        # The bare `[summary score_gap]` (no per-part dim tag) lives under
-        # overall. Part-tagged summaries under score_timeline don't count here.
         overall_idx = rendered.index("### Subsection: overall")
-        score_timeline_idx = rendered.index("### Subsection: score_timeline")
-        # Extract the overall-section slice up to the next `###` boundary.
-        overall_slice = rendered[overall_idx:score_timeline_idx]
+        overall_slice = rendered[overall_idx:timeline_start]
         assert "[summary score_gap]" in overall_slice, (
             "overall subsection missing the bare [summary score_gap] aggregate"
         )

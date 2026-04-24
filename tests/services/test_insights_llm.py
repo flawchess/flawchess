@@ -62,7 +62,7 @@ def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameI
             ),
         ],
         model_used="test",
-        prompt_version="endgame_v13",
+        prompt_version="endgame_v14",
     )
 
 
@@ -86,7 +86,7 @@ def _make_log_row(
     error: str | None = None,
     response_json: dict[str, Any] | None = None,
     cache_hit: bool = False,
-    prompt_version: str = "endgame_v13",
+    prompt_version: str = "endgame_v14",
     model: str = "test",
     findings_hash: str = "b" * 64,
 ) -> LlmLog:
@@ -178,19 +178,21 @@ class TestStartupValidation:
 
 
 class TestPromptVersionAndBody:
-    """Phase 68 Plan 03 regression tests.
+    """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v13 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v14 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
-    - The new emitter-shape documentation describes the TWO-summary + TWO-series
-      score_timeline shape (part=endgame | part=non_endgame, weekly granularity).
+    - The UAT-pass emitter-shape documentation describes the THREE-summary +
+      THREE-series score_timeline shape keyed on distinct metrics
+      (endgame_score, non_endgame_score, score_gap) with weekly granularity
+      and the `[n=<N> for every point]` disclosure for constant-N series.
     """
 
-    def test_prompt_version_is_v13(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v13"
+    def test_prompt_version_is_v14(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v14"
 
     def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
         from pathlib import Path
@@ -198,20 +200,25 @@ class TestPromptVersionAndBody:
         prompt_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
         body = prompt_path.read_text(encoding="utf-8")
 
-        # Negative invariants — all removed in v13.
+        # Negative invariants — all removed in v13, plus v14 drops the old
+        # part-dim-tagged score_timeline emitter description.
         for forbidden in (
             "score_gap_timeline",
             "Framing rule (important)",
             "one exception to the summary-per-metric",
             "Score Gap over Time",
+            "TWO standard `[summary score_timeline]` blocks",
+            "part=endgame",
+            "part=non_endgame",
         ):
             assert forbidden not in body, f"prompt still contains forbidden string: {forbidden!r}"
 
-        # Positive invariants — renamed id + new emitter-shape documentation present.
+        # Positive invariants — renamed id + v14 emitter-shape documentation present.
         assert "score_timeline" in body
-        assert "[summary score_timeline]" in body
-        assert "part=endgame" in body
-        assert "part=non_endgame" in body
+        assert "[summary endgame_score]" in body
+        assert "[summary non_endgame_score]" in body
+        assert "[summary score_gap]" in body
+        assert "[n=<N> for every point]" in body
         assert "weekly" in body
 
     def test_subsection_mapping_table_renames_to_score_timeline(self) -> None:
@@ -229,6 +236,75 @@ class TestPromptVersionAndBody:
                 mapping_row = stripped
                 break
         assert mapping_row is not None, "missing `| score_timeline ... | overall |` row in mapping table"
+
+    def test_constant_n_series_emits_disclosure_and_drops_per_point_suffix(self) -> None:
+        """v14 (260424-pc6 C): when every point's `n` is equal, the series block
+        emits a single `[n=<N> for every point]` disclosure line after the
+        header and drops the per-point `(n=N)` suffix from every bucket row.
+        """
+        from app.services.insights_llm import _render_series_block
+
+        finding = SubsectionFinding(
+            subsection_id="score_timeline",
+            parent_subsection_id=None,
+            window="last_3mo",
+            metric="endgame_score",
+            value=0.55,
+            zone="typical",
+            trend="improving",
+            weekly_points_in_window=5,
+            sample_size=100,
+            sample_quality="adequate",
+            is_headline_eligible=True,
+            dimension=None,
+            series=[
+                TimePoint(bucket_start=f"2026-02-{day:02d}", value=0.55, n=42)
+                for day in (2, 9, 16, 23)
+            ],
+        )
+        assert finding.series is not None
+        rendered = "\n".join(_render_series_block(finding, finding.series))
+
+        # Disclosure line sits immediately after the header.
+        assert "[n=42 for every point]" in rendered
+        # Per-point (n=42) suffix must NOT appear on any bucket row.
+        assert "(n=42)" not in rendered
+        # Bucket rows still carry bucket_start + signed value.
+        assert "2026-02-02: +55" in rendered
+
+    def test_variable_n_series_keeps_per_point_suffix(self) -> None:
+        """v14 (260424-pc6 C): when per-point `n` varies, the disclosure
+        shortcut must NOT fire — every bucket keeps its own `(n=<N>)` tag
+        so the LLM can still reason about per-bucket sample weight.
+        """
+        from app.services.insights_llm import _render_series_block
+
+        finding = SubsectionFinding(
+            subsection_id="clock_diff_timeline",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="avg_clock_diff_pct",
+            value=-5.0,
+            zone="typical",
+            trend="stable",
+            weekly_points_in_window=5,
+            sample_size=200,
+            sample_quality="rich",
+            is_headline_eligible=True,
+            dimension=None,
+            series=[
+                TimePoint(bucket_start=f"2026-02-{day:02d}", value=-5.0, n=n)
+                for day, n in zip((2, 9, 16, 23), (40, 42, 44, 46), strict=True)
+            ],
+        )
+        assert finding.series is not None
+        rendered = "\n".join(_render_series_block(finding, finding.series))
+
+        # Disclosure line must NOT appear — n is not constant.
+        assert "for every point]" not in rendered
+        # Per-point (n=<N>) suffix is retained on every bucket.
+        for n in (40, 42, 44, 46):
+            assert f"(n={n})" in rendered
 
 
 # ---------------------------------------------------------------------------
@@ -256,22 +332,24 @@ class TestPromptAssembly:
             dimension=None,
             series=None,
         )
-        # Phase 68: score_timeline emits two findings per window (one per `part`).
+        # Phase 68 (260424-pc6): score_timeline emits THREE findings per
+        # window — one per metric (endgame_score, non_endgame_score,
+        # score_gap). No `part` dim; each metric id is the unique key.
         timeline_endgame = SubsectionFinding(
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
-            metric="score_gap",
-            value=3.5,
+            metric="endgame_score",
+            value=0.55,
             zone="typical",
             trend="improving",
             weekly_points_in_window=8,
             sample_size=8,
             sample_quality="adequate",
             is_headline_eligible=True,
-            dimension={"part": "endgame"},
+            dimension=None,
             series=[
-                TimePoint(bucket_start="2026-01-06", value=0.55, n=12),
+                TimePoint(bucket_start="2026-01-06", value=0.55, n=14),
                 TimePoint(bucket_start="2026-01-13", value=0.57, n=14),
             ],
         )
@@ -279,22 +357,41 @@ class TestPromptAssembly:
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
+            metric="non_endgame_score",
+            value=0.52,
+            zone="typical",
+            trend="stable",
+            weekly_points_in_window=8,
+            sample_size=8,
+            sample_quality="adequate",
+            is_headline_eligible=False,
+            dimension=None,
+            series=[
+                TimePoint(bucket_start="2026-01-06", value=0.52, n=14),
+                TimePoint(bucket_start="2026-01-13", value=0.52, n=14),
+            ],
+        )
+        timeline_gap = SubsectionFinding(
+            subsection_id="score_timeline",
+            parent_subsection_id=None,
+            window="last_3mo",
             metric="score_gap",
-            value=3.5,
+            value=0.035,
             zone="typical",
             trend="improving",
             weekly_points_in_window=8,
             sample_size=8,
             sample_quality="adequate",
             is_headline_eligible=False,
-            dimension={"part": "non_endgame"},
+            dimension=None,
             series=[
-                TimePoint(bucket_start="2026-01-06", value=0.52, n=12),
-                TimePoint(bucket_start="2026-01-13", value=0.52, n=14),
+                TimePoint(bucket_start="2026-01-06", value=0.03, n=28),
+                TimePoint(bucket_start="2026-01-13", value=0.05, n=28),
             ],
         )
         tab_findings = _fake_findings(
-            filters, findings=[non_timeline, timeline_endgame, timeline_non_endgame]
+            filters,
+            findings=[non_timeline, timeline_endgame, timeline_non_endgame, timeline_gap],
         )
         prompt = _assemble_user_prompt(tab_findings)
 
@@ -304,9 +401,13 @@ class TestPromptAssembly:
         assert "Flags:" not in prompt
         assert "### Subsection: overall" in prompt
         assert "### Subsection: score_timeline" in prompt
-        # Phase 68: two series blocks per part; both pinned to weekly granularity.
-        assert "[series score_gap, last_3mo, weekly, part=endgame]" in prompt
-        assert "[series score_gap, last_3mo, weekly, part=non_endgame]" in prompt
+        # Phase 68 (v14): three series blocks (one per metric), all pinned to weekly.
+        assert "[series endgame_score, last_3mo, weekly]" in prompt
+        assert "[series non_endgame_score, last_3mo, weekly]" in prompt
+        assert "[series score_gap, last_3mo, weekly]" in prompt
+        # No `part=` dim on any score_timeline series block.
+        assert "part=endgame" not in prompt
+        assert "part=non_endgame" not in prompt
         assert "2026-01-06" in prompt
         assert "2026-01-13" in prompt
 
@@ -1006,12 +1107,16 @@ class TestPromptAssembly:
         ]
         assert len(series_lines) == 36
 
-    def test_score_timeline_emits_two_summaries_two_series_deterministic_order(self) -> None:
-        """Phase 68 B4c: score_timeline subsection emits TWO [summary] + TWO [series] blocks.
+    def test_score_timeline_emits_three_summaries_three_series_deterministic_order(self) -> None:
+        """Phase 68 v14 (260424-pc6): score_timeline subsection emits THREE [summary] + THREE [series] blocks.
 
-        No suppression carve-out. Endgame block precedes non_endgame block
-        (deterministic order). Both series headers are pinned to `weekly`
-        granularity regardless of window.
+        One finding per distinct metric (endgame_score, non_endgame_score,
+        score_gap). No `part=` dim tag — each metric id is unique. Order:
+        endgame_score → non_endgame_score → score_gap. All three series are
+        pinned to weekly granularity regardless of window. When `n` is
+        constant across all points (as here, n=12 on every row), the series
+        block carries a single `[n=<N> for every point]` disclosure line and
+        drops the `(n=N)` suffix from each bucket row.
         """
         filters = _sample_filter_context()
         endgame_series = [
@@ -1030,60 +1135,90 @@ class TestPromptAssembly:
             )
             for i, day in enumerate((2, 9, 16, 23))
         ]
+        gap_series = [
+            TimePoint(
+                bucket_start=f"2026-02-{day:02d}",
+                value=0.05 + 0.005 * i,
+                n=24,
+            )
+            for i, day in enumerate((2, 9, 16, 23))
+        ]
         endgame_finding = SubsectionFinding(
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
-            metric="score_gap",
-            value=0.05,
+            metric="endgame_score",
+            value=0.565,
             zone="typical",
             trend="improving",
             weekly_points_in_window=4,
             sample_size=40,
             sample_quality="adequate",
             is_headline_eligible=True,
-            dimension={"part": "endgame"},
+            dimension=None,
             series=endgame_series,
         )
         non_endgame_finding = SubsectionFinding(
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
+            metric="non_endgame_score",
+            value=0.5075,
+            zone="typical",
+            trend="stable",
+            weekly_points_in_window=4,
+            sample_size=40,
+            sample_quality="adequate",
+            is_headline_eligible=False,
+            dimension=None,
+            series=non_endgame_series,
+        )
+        gap_finding = SubsectionFinding(
+            subsection_id="score_timeline",
+            parent_subsection_id=None,
+            window="last_3mo",
             metric="score_gap",
-            value=0.05,
+            value=0.0575,
             zone="typical",
             trend="improving",
             weekly_points_in_window=4,
             sample_size=40,
             sample_quality="adequate",
             is_headline_eligible=False,
-            dimension={"part": "non_endgame"},
-            series=non_endgame_series,
+            dimension=None,
+            series=gap_series,
         )
-        tab = _fake_findings(filters, findings=[endgame_finding, non_endgame_finding])
+        tab = _fake_findings(
+            filters,
+            findings=[endgame_finding, non_endgame_finding, gap_finding],
+        )
         prompt = _assemble_user_prompt(tab)
 
         timeline_start = prompt.index("### Subsection: score_timeline")
         timeline_chunk = prompt[timeline_start:]
 
-        # Exactly two [summary score_gap | part=X] blocks, one per part.
-        assert timeline_chunk.count("[summary score_gap | part=endgame]") == 1
-        assert timeline_chunk.count("[summary score_gap | part=non_endgame]") == 1
-        # No naked [summary score_gap] (without dim tag) — both findings carry a part dim.
-        # Exactly two [series ...] blocks, pinned weekly regardless of window.
-        assert (
-            timeline_chunk.count("[series score_gap, last_3mo, weekly, part=endgame]") == 1
-        )
-        assert (
-            timeline_chunk.count(
-                "[series score_gap, last_3mo, weekly, part=non_endgame]"
-            )
-            == 1
-        )
-        # Deterministic order: endgame summary precedes non_endgame summary.
-        endgame_idx = timeline_chunk.index("[summary score_gap | part=endgame]")
-        non_endgame_idx = timeline_chunk.index("[summary score_gap | part=non_endgame]")
-        assert endgame_idx < non_endgame_idx
+        # Exactly three [summary <metric>] blocks, one per metric, no dim tag.
+        assert timeline_chunk.count("[summary endgame_score]") == 1
+        assert timeline_chunk.count("[summary non_endgame_score]") == 1
+        assert timeline_chunk.count("[summary score_gap]") == 1
+        # No leftover part-dim-tagged summaries.
+        assert "part=endgame" not in timeline_chunk
+        assert "part=non_endgame" not in timeline_chunk
+        # Exactly three [series ...] blocks, pinned weekly regardless of window.
+        assert timeline_chunk.count("[series endgame_score, last_3mo, weekly]") == 1
+        assert timeline_chunk.count("[series non_endgame_score, last_3mo, weekly]") == 1
+        assert timeline_chunk.count("[series score_gap, last_3mo, weekly]") == 1
+        # Deterministic order: endgame_score → non_endgame_score → score_gap.
+        endgame_idx = timeline_chunk.index("[summary endgame_score]")
+        non_endgame_idx = timeline_chunk.index("[summary non_endgame_score]")
+        gap_idx = timeline_chunk.index("[summary score_gap]")
+        assert endgame_idx < non_endgame_idx < gap_idx
+        # Constant-n disclosure appears (n=12 for endgame/non_endgame, n=24 for gap)
+        # and no per-point (n=12) / (n=24) suffix leaks through.
+        assert "[n=12 for every point]" in timeline_chunk
+        assert "[n=24 for every point]" in timeline_chunk
+        assert "(n=12)" not in timeline_chunk
+        assert "(n=24)" not in timeline_chunk
         # No suppression carve-out left behind in the module.
         from app.services.insights_llm import _render_subsection_block as _rsb  # noqa: F401
         import inspect
@@ -1690,7 +1825,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v13"
+        assert response.report.prompt_version == "endgame_v14"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -1714,7 +1849,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v13"
+        assert log.response_json["prompt_version"] == "endgame_v14"
 
 
 class TestCacheBehavior:
@@ -1737,7 +1872,7 @@ class TestCacheBehavior:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
         # Seed a cache-hit eligible row: error=None, response_json set,
-        # matching (findings_hash, prompt_version="endgame_v13", model="test").
+        # matching (findings_hash, prompt_version="endgame_v14", model="test").
         async with session_maker() as session:
             await _seed(
                 session,
@@ -1908,7 +2043,7 @@ class TestRateLimit:
         # Seed 3 successful miss rows with an OLD prompt_version so they count
         # toward the rate-limit (count_recent_successful_misses does NOT filter
         # by prompt_version) but are NOT returned by get_latest_report_for_user
-        # (which filters by prompt_version="endgame_v13"), producing "no tier-2".
+        # (which filters by prompt_version="endgame_v14"), producing "no tier-2".
         now = datetime.datetime.now(datetime.UTC)
         # Build a valid report JSON for rows (avoids ValidationError in case tier-2
         # is somehow reached — but with the prompt_version mismatch it should not be).
@@ -2044,7 +2179,7 @@ class TestErrors:
             "overview": "ok",
             "sections": [],  # violates min_length=1
             "model_used": "test",
-            "prompt_version": "endgame_v13",
+            "prompt_version": "endgame_v14",
         }
         fake = Agent(
             TestModel(custom_output_args=bad_output),

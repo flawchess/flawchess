@@ -428,115 +428,138 @@ def _findings_score_timeline(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> list[SubsectionFinding]:
-    """score_timeline -> TWO findings per window, one per `part` (endgame, non_endgame).
+    """score_timeline -> THREE findings per window (endgame_score, non_endgame_score, score_gap).
 
-    Phase 68 (B4 option c): emits exactly two SubsectionFinding rows per
-    window, one with dimension={"part": "endgame"} carrying the absolute
-    endgame-side rolling score series, and one with
-    dimension={"part": "non_endgame"} carrying the absolute non-endgame-side
-    series. Both findings share `metric="score_gap"` — the zone mapping for
-    the aggregate gap (via the existing ZONE_REGISTRY entry) applies to both,
-    so the prompt narrates the same gap once per part. The two findings are
-    distinguished by their `dimension={"part": ...}` tag, not by metric.
+    Phase 68 (260424-pc6, UAT pass): replaces the prior B4-option-c
+    two-findings-with-part-dim shape. The old shape emitted two
+    `[summary score_gap | part=endgame|non_endgame]` blocks where the
+    series values were absolute per-part scores, not signed gaps — the
+    `score_gap` label lied about its payload and misled the LLM. The new
+    shape emits ONE finding per distinct metric, each with its own scalar
+    value, zone, trend, and series:
 
-    order matters: endgame first so prompt reads "your endgame side first",
-    non_endgame is the partner. The endgame finding is headline-eligible
-    when the trend gate passes; the non_endgame finding never becomes a
-    headline on its own (is_headline_eligible=False) — only the endgame
-    side drives an insight; non_endgame provides the partner context.
+    1. `metric="endgame_score"`: absolute endgame-side Score (0-1), series is
+       each week's endgame_score. Headline-eligible when trend gate passes
+       (this is the side that actually drives insight narration).
+    2. `metric="non_endgame_score"`: absolute non-endgame-side Score (0-1),
+       series is each week's non_endgame_score. Never headline-eligible on
+       its own — it is the partner context for the endgame side.
+    3. `metric="score_gap"`: signed aggregate gap (endgame - non_endgame),
+       series is each week's per-bucket gap. Never headline-eligible —
+       the `overall` subsection already emits the authoritative
+       `[summary score_gap]`; this row gives the LLM the gap's own
+       timeseries trajectory without forcing it to subtract two series.
+
+    Deterministic order: endgame_score, non_endgame_score, score_gap.
+    Findings carry no `dimension` — each metric id is unique, so no
+    per-dim fan-out is needed to keep summary headers distinct.
 
     Granularity stays WEEKLY in both windows (unlike other timelines that
     resample all_time to monthly) — the ISO-week bucketing is the natural
-    grain of the underlying `_compute_score_gap_timeline` series and the
-    two-line chart reads weekly points directly.
+    grain of `_compute_score_gap_timeline` and the two-line chart reads
+    weekly points directly. `_series_granularity` in insights_llm.py pins
+    this explicitly for subsection_id == "score_timeline".
     """
     timeline: list[ScoreGapTimelinePoint] = response.score_gap_material.timeline
     if not timeline:
         return [
-            _empty_finding(
-                "score_timeline",
-                window,
-                "score_gap",
-                dimension={"part": "endgame"},
-            ),
-            _empty_finding(
-                "score_timeline",
-                window,
-                "score_gap",
-                dimension={"part": "non_endgame"},
-            ),
+            _empty_finding("score_timeline", window, "endgame_score"),
+            _empty_finding("score_timeline", window, "non_endgame_score"),
+            _empty_finding("score_timeline", window, "score_gap"),
         ]
 
-    diffs = [p.score_difference for p in timeline]
-    trend, weekly_points = _compute_trend(diffs)
     sample_size = len(timeline)
     quality = sample_quality("score_timeline", sample_size)
-    # Both findings carry the aggregate gap % as their scalar `value`
-    # (response.score_gap_material.score_difference). The summary block
-    # narrates the same gap twice — once per part — and both findings
-    # resolve to the same zone because they share that value.
-    aggregate_value = response.score_gap_material.score_difference
-    aggregate_zone = assign_zone("score_gap", aggregate_value)
-    # Timeline headline-eligibility hinges on the trend gate (D-13), but
-    # only the endgame finding can become a headline. The non_endgame
-    # finding is the partner context and never drives an insight on its
-    # own.
-    is_headline_endgame = trend != "n_a"
 
-    # Per-part weekly tuples — each side carries its OWN absolute
-    # rolling-window score series (not the signed difference). This
-    # switches the narrative from "narrating the subtraction" to
-    # "narrating two absolute lines" so the prompt can drop the
-    # score_gap composition carve-out (handled in Plan 03).
+    # Per-part scalar means (authoritative values for each summary's
+    # `mean=` field). response.score_gap_material.score_difference stays
+    # the aggregate for score_gap so both the overall and score_timeline
+    # summaries quote the same source of truth.
+    endgame_mean = statistics.mean(p.endgame_score for p in timeline)
+    non_endgame_mean = statistics.mean(p.non_endgame_score for p in timeline)
+    gap_mean = response.score_gap_material.score_difference
+
+    # Per-part weekly tuples (absolute rolling Scores) and per-point gap
+    # tuples. Pass window="last_3mo" so `_weekly_points_to_time_points`
+    # takes the pass-through branch and preserves weekly grain in both
+    # windows — see docstring for rationale.
     endgame_weekly: list[tuple[str, float, int]] = [
         (p.date, p.endgame_score, p.endgame_game_count) for p in timeline
     ]
     non_endgame_weekly: list[tuple[str, float, int]] = [
         (p.date, p.non_endgame_score, p.non_endgame_game_count) for p in timeline
     ]
+    gap_weekly: list[tuple[str, float, int]] = [
+        (
+            p.date,
+            p.endgame_score - p.non_endgame_score,
+            p.endgame_game_count + p.non_endgame_game_count,
+        )
+        for p in timeline
+    ]
 
-    # Stay WEEKLY for both windows — pass "last_3mo" to
-    # `_weekly_points_to_time_points` so the helper falls through its
-    # pass-through branch instead of resampling to monthly. The series
-    # header emitter (Task 2) pins granularity="weekly" for this
-    # subsection so the payload is self-consistent.
     endgame_series = _weekly_points_to_time_points(endgame_weekly, "last_3mo")
     non_endgame_series = _weekly_points_to_time_points(non_endgame_weekly, "last_3mo")
+    gap_series = _weekly_points_to_time_points(gap_weekly, "last_3mo")
 
-    endgame_dim: dict[str, str] = {"part": "endgame"}
-    non_endgame_dim: dict[str, str] = {"part": "non_endgame"}
+    # Trend per side: each finding carries its own trajectory.
+    endgame_trend, endgame_weekly_points = _compute_trend(
+        [p.endgame_score for p in timeline]
+    )
+    non_endgame_trend, non_endgame_weekly_points = _compute_trend(
+        [p.non_endgame_score for p in timeline]
+    )
+    diffs = [p.score_difference for p in timeline]
+    gap_trend, gap_weekly_points = _compute_trend(diffs)
 
+    # Only the endgame_score finding is headline-eligible — the narrative
+    # convention says "endgame side drives the insight". non_endgame is
+    # the partner; score_gap's headline already lives on `overall`.
     return [
         SubsectionFinding(
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window=window,
-            metric="score_gap",
-            value=aggregate_value,
-            zone=aggregate_zone,
-            trend=trend,
-            weekly_points_in_window=weekly_points,
+            metric="endgame_score",
+            value=endgame_mean,
+            zone=assign_zone("endgame_score", endgame_mean),
+            trend=endgame_trend,
+            weekly_points_in_window=endgame_weekly_points,
             sample_size=sample_size,
             sample_quality=quality,
-            is_headline_eligible=is_headline_endgame,
-            dimension=endgame_dim,
+            is_headline_eligible=endgame_trend != "n_a",
+            dimension=None,
             series=endgame_series,
         ),
         SubsectionFinding(
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window=window,
-            metric="score_gap",
-            value=aggregate_value,
-            zone=aggregate_zone,
-            trend=trend,
-            weekly_points_in_window=weekly_points,
+            metric="non_endgame_score",
+            value=non_endgame_mean,
+            zone=assign_zone("non_endgame_score", non_endgame_mean),
+            trend=non_endgame_trend,
+            weekly_points_in_window=non_endgame_weekly_points,
             sample_size=sample_size,
             sample_quality=quality,
-            # Non-endgame partner: never a headline on its own.
             is_headline_eligible=False,
-            dimension=non_endgame_dim,
+            dimension=None,
             series=non_endgame_series,
+        ),
+        SubsectionFinding(
+            subsection_id="score_timeline",
+            parent_subsection_id=None,
+            window=window,
+            metric="score_gap",
+            value=gap_mean,
+            zone=assign_zone("score_gap", gap_mean),
+            trend=gap_trend,
+            weekly_points_in_window=gap_weekly_points,
+            sample_size=sample_size,
+            sample_quality=quality,
+            is_headline_eligible=False,
+            dimension=None,
+            series=gap_series,
         ),
     ]
 
