@@ -1,5 +1,5 @@
 import type { UseMutationResult } from '@tanstack/react-query';
-import { Info, Lightbulb, Loader2, Sparkles } from 'lucide-react';
+import { BarChart3, Info, Lightbulb, ListChecks, Loader2, Sparkles, UserCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { DEFAULT_FILTERS, type FilterState } from '@/components/filters/FilterPanel';
@@ -230,8 +230,9 @@ function RenderedState({
           <InsightsCard
             testId="insights-player-profile"
             title="Player Profile"
+            icon={UserCircle2}
           >
-            <div className="text-sm text-foreground leading-relaxed space-y-3">
+            <div className="text-sm text-muted-foreground leading-relaxed space-y-3">
               {playerProfile.split(/\n\n+/).map((paragraph, idx) => (
                 <p key={idx}>{paragraph}</p>
               ))}
@@ -242,8 +243,9 @@ function RenderedState({
           <InsightsCard
             testId="insights-overview"
             title="Data Analysis"
+            icon={BarChart3}
           >
-            <div className="text-sm text-foreground leading-relaxed space-y-3">
+            <div className="text-sm text-muted-foreground leading-relaxed space-y-3">
               {overview.split(/\n\n+/).map((paragraph, idx) => (
                 <p key={idx}>{paragraph}</p>
               ))}
@@ -254,8 +256,9 @@ function RenderedState({
           <InsightsCard
             testId="insights-recommendations"
             title="Recommendations"
+            icon={ListChecks}
           >
-            <ul className="text-sm text-foreground leading-relaxed list-disc pl-5 space-y-1">
+            <ul className="text-sm text-muted-foreground leading-relaxed list-disc pl-5 space-y-1">
               {recommendations.map((rec, idx) => (
                 <li key={idx}>{rec}</li>
               ))}
@@ -294,10 +297,12 @@ function RenderedState({
 function InsightsCard({
   testId,
   title,
+  icon: Icon,
   children,
 }: {
   testId: string;
   title: string;
+  icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
   children: React.ReactNode;
 }) {
   return (
@@ -305,7 +310,10 @@ function InsightsCard({
       data-testid={testId}
       className="rounded-md border border-border/40 bg-background/40 p-3"
     >
-      <h3 className="text-sm font-semibold text-foreground mb-2">{title}</h3>
+      <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-2">
+        <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        {title}
+      </h3>
       {children}
     </div>
   );
