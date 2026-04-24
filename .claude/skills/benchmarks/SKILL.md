@@ -36,7 +36,7 @@ Never assume a metric uses absolute units when the code uses relative ones, or v
 
 | Section | Metric | File | Constants |
 |---|---|---|---|
-| 1 | Endgame-vs-non-endgame score gap | `frontend/src/components/charts/EndgamePerformanceSection.tsx` | `SCORE_DIFF_NEUTRAL_MIN/MAX`, `SCORE_DIFF_DOMAIN` |
+| 1 | Endgame-vs-non-endgame score gap + timeline neutral zone | `frontend/src/components/charts/EndgamePerformanceSection.tsx` | `SCORE_GAP_NEUTRAL_MIN/MAX`, `SCORE_GAP_DOMAIN`, `SCORE_TIMELINE_Y_DOMAIN`, `SCORE_TIMELINE_EPSILON_PCT`, and any timeline-specific neutral-zone constants if present (e.g. `SCORE_TIMELINE_NEUTRAL_MIN/MAX`) |
 | 2 | Conversion / parity / recovery gauges + Endgame Skill gauge | `frontend/src/components/charts/EndgameScoreGapSection.tsx` | `FIXED_GAUGE_ZONES` (per bucket), `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`, `ENDGAME_SKILL_ZONES` (3-band: danger / neutral / success) |
 | 3 | Endgame ELO formula + window + clamp | `app/services/endgame_service.py` | `ENDGAME_ELO_TIMELINE_WINDOW` (=100), `_ENDGAME_ELO_SKILL_CLAMP_LO/HI` (=0.05/0.95), `MIN_GAMES_FOR_TIMELINE` (=10, in `openings_service.py`), `_MATERIAL_ADVANTAGE_THRESHOLD` (=100) |
 | 4 | Clock-diff neutral zone | `frontend/src/components/charts/EndgameClockPressureSection.tsx` | `NEUTRAL_PCT_THRESHOLD` (±pp of base time), `NEUTRAL_TIMEOUT_THRESHOLD` (±pp net timeout) |
@@ -100,11 +100,17 @@ Do **not** filter by `opponent_strength` or `recency` in benchmarks — populati
 
 ---
 
-## Section 1 — Score % Difference (Endgame vs Non-Endgame)
+## Section 1 — Endgame vs Non-Endgame Score Distributions
 
-**Question:** How big is the gap between a player's score in games that reached an endgame vs games that didn't, across the player base? Used to pick the neutral zone on the "score gap" gauge.
+**Question:** How do per-user **endgame scores** and **non-endgame scores** distribute across the player base, and how big is the gap between them? Used to calibrate two things at once:
 
-**Per-user metric:** `endgame_score − non_endgame_score`, where each `score` is the usual `win + draw/2` average.
+1. The **neutral zone on the new "Endgame vs Non-Endgame Score over Time" chart** — a horizontal band spanning the typical score range where most users' two timelines (endgame score + non-endgame score) spend their time. The old chart plotted a single gap line; the new chart plots the two scores as separate lines, so the neutral zone now describes the score itself, not the gap.
+2. The **score-gap gauge** (`SCORE_GAP_NEUTRAL_MIN/MAX`) — still driven by the per-user `eg_score − non_eg_score` distribution.
+
+**Per-user metrics:**
+- `eg_score` = user's average score across their endgame games (`win + draw/2`)
+- `non_eg_score` = same, for non-endgame games
+- `diff` = `eg_score − non_eg_score` (kept for the gap-gauge recommendation)
 
 ### Query
 ```sql
@@ -141,31 +147,62 @@ per_user AS (
 )
 SELECT
   count(*) AS n_users,
-  round(avg(eg_score - non_eg_score)::numeric, 4) AS mean_diff,
-  round(stddev_samp(eg_score - non_eg_score)::numeric, 4) AS std_diff,
-  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS p05,
-  round(percentile_cont(0.10) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS p10,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS p75,
-  round(percentile_cont(0.90) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS p90,
-  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS p95,
-  round(min(eg_score - non_eg_score)::numeric, 4) AS min_diff,
-  round(max(eg_score - non_eg_score)::numeric, 4) AS max_diff
+  -- Endgame score distribution (drives the endgame-line's neutral-zone boundary)
+  round(avg(eg_score)::numeric, 4) AS eg_mean,
+  round(stddev_samp(eg_score)::numeric, 4) AS eg_std,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p95,
+  -- Non-endgame score distribution (drives the non-endgame-line's neutral-zone boundary)
+  round(avg(non_eg_score)::numeric, 4) AS non_eg_mean,
+  round(stddev_samp(non_eg_score)::numeric, 4) AS non_eg_std,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY non_eg_score)::numeric, 4) AS non_eg_p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY non_eg_score)::numeric, 4) AS non_eg_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY non_eg_score)::numeric, 4) AS non_eg_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY non_eg_score)::numeric, 4) AS non_eg_p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY non_eg_score)::numeric, 4) AS non_eg_p95,
+  -- Per-user score-gap distribution (drives the gap-gauge neutral zone)
+  round(avg(eg_score - non_eg_score)::numeric, 4) AS diff_mean,
+  round(stddev_samp(eg_score - non_eg_score)::numeric, 4) AS diff_std,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS diff_p05,
+  round(percentile_cont(0.10) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS diff_p10,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS diff_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS diff_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS diff_p75,
+  round(percentile_cont(0.90) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS diff_p90,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS diff_p95
 FROM per_user;
 ```
 
 ### Currently set in code (grep before reporting)
 
-Read `frontend/src/components/charts/EndgamePerformanceSection.tsx` and record the literal values of `SCORE_DIFF_NEUTRAL_MIN`, `SCORE_DIFF_NEUTRAL_MAX`, and `SCORE_DIFF_DOMAIN`. Report them as "currently set: neutral ±X, domain ±Y" at the top of Section 1.
+Read `frontend/src/components/charts/EndgamePerformanceSection.tsx` and record the literal values of:
+- `SCORE_GAP_NEUTRAL_MIN` / `SCORE_GAP_NEUTRAL_MAX` and `SCORE_GAP_DOMAIN` — for the score-gap gauge.
+- `SCORE_TIMELINE_Y_DOMAIN` and `SCORE_TIMELINE_EPSILON_PCT` — for the new two-line timeline chart.
+- Any timeline-specific neutral-zone constants if present (e.g. `SCORE_TIMELINE_NEUTRAL_MIN/MAX`). If none exist yet, note "no neutral zone currently set on the timeline — this benchmark is proposing the initial bounds".
+
+Report each as "currently set: ..." at the top of Section 1.
 
 ### Output
-A single-row percentile table plus:
-- **Currently set in code:** `SCORE_DIFF_NEUTRAL_MIN..MAX` and `SCORE_DIFF_DOMAIN` — stated as-is.
-- **Recommended neutral zone:** `[p25, p75]` rounded to a readable width (e.g. ±0.03 → ±3 pp).
-- **Recommended gauge range:** `[p05, p95]` — covers almost the whole population without being dominated by tails.
-- **Verdict:** state whether the code's current zone matches the data-driven zone, and if not, whether to widen, narrow, or re-center.
-- Also dump the raw per-user list (user_id, eg_score, non_eg_score, diff, eg_games, non_eg_games) sorted by `diff` so we can eyeball who the tail users are.
+
+Present three percentile rows in one compact table (columns `n_users / mean / std / p05 / p25 / p50 / p75 / p95`):
+
+| Distribution | What it drives |
+|---|---|
+| Endgame score | Neutral-zone boundary for the endgame line on the timeline chart |
+| Non-endgame score | Neutral-zone boundary for the non-endgame line on the timeline chart |
+| Score diff (eg − non-eg) | Neutral zone for the score-gap gauge |
+
+Then:
+
+- **Currently set in code:** list every constant grepped above, as-is.
+- **Recommended timeline neutral zone** = the intersection of `[eg_p25, eg_p75]` and `[non_eg_p25, non_eg_p75]` (the score range where both lines typically sit). If the two intervals overlap substantially (≥ 50% of the narrower), collapse to a single unified band `[max(p25s), min(p75s)]`; otherwise propose two separate bands, one per line, and flag that the UI may need two zones. Round to a readable width (e.g. 0.48–0.54).
+- **Recommended timeline axis range** = `[min(eg_p05, non_eg_p05), max(eg_p95, non_eg_p95)]` padded slightly. Compare to `SCORE_TIMELINE_Y_DOMAIN` (currently `[20, 80]`) and state whether the observed distribution fits or sits squashed inside it.
+- **Recommended score-gap gauge neutral zone** = `[diff_p25, diff_p75]` rounded. Compare to `SCORE_GAP_NEUTRAL_MIN/MAX` (currently ±0.10) and state `keep` / `widen to X` / `narrow to Y` / `re-center at Z` with a one-line rationale.
+- **Recommended score-gap gauge range** = `[diff_p05, diff_p95]`. Compare to `SCORE_GAP_DOMAIN` (currently 0.20) and state whether the domain should grow or shrink.
+- **Sanity check:** confirm the gap-distribution median roughly equals `eg_p50 − non_eg_p50` (they're computed from the same per-user pairs, so should agree within rounding).
 
 ---
 
@@ -384,10 +421,6 @@ Below the tables:
 - **Slope by ELO:** state whether `p50` moves meaningfully across ELO buckets. If it does (e.g. > 5 pp between adjacent 500-wide buckets), note that a single pooled gauge will favor one ELO cohort over others — future work could consider ELO-stratified zones like `FIXED_GAUGE_ZONES`, but only if the slope is large enough to justify UI complexity.
 - **Verdict:** compare the code's current neutral band `[0.45, 0.55]` against the observed pooled p25/p75. State "keep", "widen to X", "narrow to Y", or "re-center at Z" with one-line rationale. Also flag whether the "typical value" code comment (52% last audited) still matches the pooled median within ±1 pp.
 
-### Per-user list (optional)
-
-After the summary, dump the top 20 and bottom 20 users by pooled skill (collapsed across their cells) with columns `user_id / skill / buckets_used_avg / total_games / dominant_tc` so outliers are eyeballable. Useful to spot data-quality problems (e.g. a user whose skill is 0.9 because they only have 3 parity games — the sample floor should already exclude them, but double-check).
-
 ---
 
 ## Section 3 — Endgame ELO vs Actual ELO Gap
@@ -574,10 +607,6 @@ Below the tables:
 - **Clamp saturation:** read `n_clamp_low` / `n_clamp_high` from the query. If more than 1 % of qualifying users saturate on either side, the clamp is doing heavy lifting — consider whether that's the intended behaviour (it caps the formula's blow-up) or a symptom of the skill definition being too coarse / the 30-game floor being too low.
 - **Recommended "notable divergence" threshold (forward-looking):** `|gap| > gap_p90_abs` pooled (roughly the top/bottom decile). Today's live UI doesn't expose a "your endgames are pulling your rating up/down notably" callout, but if a future phase adds one this gives it a data-driven threshold.
 - **Verdict on the 400-Elo scaling:** if the pooled `std_gap` lands in the 120–200 range, the formula's sensitivity looks reasonable. Much narrower (< 80) means the skill distribution is tightly concentrated around 0.5 and the log transform is squashing the signal. Much wider (> 300) means a handful of small-sample users with extreme skill are dominating despite the 30-game floor — consider raising the floor in a future revision.
-
-### Per-user list (optional)
-
-Dump the 20 largest positive gaps and 20 largest negative gaps with columns `user_id / platform / tc / skill / clamped_skill / actual_elo / endgame_elo / gap / total_games / buckets_used` so tail users are eyeballable. Useful to spot data-quality problems (e.g. a user at the clamp with only 30 games — borderline sample).
 
 ---
 
