@@ -26,7 +26,23 @@ vi.mock('recharts', async () => {
     ),
   };
 });
-import { EndgameScoreOverTimeChart } from '../EndgamePerformanceSection';
+import {
+  EndgameScoreOverTimeChart,
+  SCORE_BAND_ABOVE_CLASS,
+  SCORE_BAND_BELOW_CLASS,
+} from '../EndgamePerformanceSection';
+
+// Band presence is detected via the dedicated className on the rendered
+// Recharts <Area> layer. Querying by className (rather than by testid on a
+// wrapping <g>) is required because a plain <g> wrapper would hide the
+// <Area> from Recharts' `findAllByType` child scan and the band would never
+// actually render — see the diagnosis comment on EndgameScoreOverTimeChart.
+function queryBandAbove(container: HTMLElement): Element | null {
+  return container.querySelector(`.${SCORE_BAND_ABOVE_CLASS}`);
+}
+function queryBandBelow(container: HTMLElement): Element | null {
+  return container.querySelector(`.${SCORE_BAND_BELOW_CLASS}`);
+}
 
 // jsdom ships without window.matchMedia; useIsMobile() inside the component
 // calls it synchronously at mount. Stub it before any render. Same deal with
@@ -122,27 +138,53 @@ describe('EndgameScoreOverTimeChart', () => {
   });
 
   it('renders both shaded bands for mixed-sign fixture', () => {
-    render(<EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} window={100} />);
-    expect(screen.getByTestId('score-band-above')).toBeTruthy();
-    expect(screen.getByTestId('score-band-below')).toBeTruthy();
+    const { container } = render(
+      <EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} window={100} />,
+    );
+    expect(queryBandAbove(container)).not.toBeNull();
+    expect(queryBandBelow(container)).not.toBeNull();
   });
 
   it('renders only the above band when endgame leads throughout', () => {
-    render(<EndgameScoreOverTimeChart timeline={ENDGAME_LEADS_FIXTURE} window={100} />);
-    expect(screen.getByTestId('score-band-above')).toBeTruthy();
-    expect(screen.queryByTestId('score-band-below')).toBeNull();
+    const { container } = render(
+      <EndgameScoreOverTimeChart timeline={ENDGAME_LEADS_FIXTURE} window={100} />,
+    );
+    expect(queryBandAbove(container)).not.toBeNull();
+    expect(queryBandBelow(container)).toBeNull();
   });
 
   it('renders only the below band when endgame trails throughout', () => {
-    render(<EndgameScoreOverTimeChart timeline={ENDGAME_TRAILS_FIXTURE} window={100} />);
-    expect(screen.getByTestId('score-band-below')).toBeTruthy();
-    expect(screen.queryByTestId('score-band-above')).toBeNull();
+    const { container } = render(
+      <EndgameScoreOverTimeChart timeline={ENDGAME_TRAILS_FIXTURE} window={100} />,
+    );
+    expect(queryBandBelow(container)).not.toBeNull();
+    expect(queryBandAbove(container)).toBeNull();
   });
 
   it('renders neither band when all points are within ±1% epsilon', () => {
-    render(<EndgameScoreOverTimeChart timeline={EPSILON_NEUTRAL_FIXTURE} window={100} />);
-    expect(screen.queryByTestId('score-band-above')).toBeNull();
-    expect(screen.queryByTestId('score-band-below')).toBeNull();
+    const { container } = render(
+      <EndgameScoreOverTimeChart timeline={EPSILON_NEUTRAL_FIXTURE} window={100} />,
+    );
+    expect(queryBandAbove(container)).toBeNull();
+    expect(queryBandBelow(container)).toBeNull();
+  });
+
+  it('emits an SVG <path> inside each rendered band (regression: g-wrapper blocked Recharts discovery)', () => {
+    // Regression guard: earlier, each <Area> was wrapped in <g data-testid>
+    // which hid the Area from Recharts' `findAllByType` scan and the band
+    // never produced a <path>. Tests passed on the <g> wrapper alone. This
+    // test fails fast if that regression ever returns.
+    const { container } = render(
+      <EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} window={100} />,
+    );
+    const aboveLayer = queryBandAbove(container);
+    const belowLayer = queryBandBelow(container);
+    expect(aboveLayer).not.toBeNull();
+    expect(belowLayer).not.toBeNull();
+    // Each rendered Area layer must contain at least one <path> — that is
+    // the SVG output Recharts emits for the band fill.
+    expect(aboveLayer?.querySelector('path')).not.toBeNull();
+    expect(belowLayer?.querySelector('path')).not.toBeNull();
   });
 
   it('renders legend entries for both series', () => {

@@ -60,6 +60,12 @@ const SCORE_TIMELINE_Y_TICKS = [20, 30, 40, 50, 60, 70, 80];
 const SCORE_TIMELINE_EPSILON_PCT = 1;
 const MOBILE_BREAKPOINT_PX = 768;
 
+// Classes used to identify the two band <Area> elements in tests and DOM
+// inspection. See the diagnosis comment on EndgameScoreOverTimeChart for why
+// we do not use a `<g data-testid>` wrapper.
+export const SCORE_BAND_ABOVE_CLASS = 'score-band-above';
+export const SCORE_BAND_BELOW_CLASS = 'score-band-below';
+
 function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined'
@@ -285,11 +291,18 @@ interface ScoreOverTimeChartPoint {
  * - Within ±1 pp: neither band renders (epsilon neutral — avoids flicker
  *   at the crossover).
  *
- * Each `<Area>` is wrapped in a testid-carrying `<g>` so tests assert on
- * testid presence rather than computed fill color (jsdom + oklch tokens
- * don't compute reliably). If ALL points at the band's dataKey are null,
- * the wrapping `<g>` is not rendered at all, letting the epsilon/all-above/
- * all-below fixtures assert presence/absence deterministically.
+ * UAT diagnosis (Phase 68, 260424-pc6): the earlier `<g data-testid=...>`
+ * wrapper around each `<Area>` silently broke rendering. Recharts'
+ * `findAllByType` in `generateCategoricalChart` only inspects DIRECT
+ * children's `type.displayName`; a plain `<g>` wrapper hides the `<Area>`
+ * from that scan, so the area never registers with the chart axes and
+ * no `<path>` is emitted. Tests still passed because jsdom rendered the
+ * `<g data-testid>` node regardless of whether any `<Area>`-produced
+ * path lived inside it. Fix: render `<Area>` as a direct child and mark
+ * each band via a dedicated className (SCORE_BAND_ABOVE_CLASS /
+ * SCORE_BAND_BELOW_CLASS) that tests query against the rendered SVG.
+ * If ALL points at the band's dataKey are null, the `<Area>` is omitted
+ * so epsilon/all-above/all-below fixtures remain deterministic.
  */
 export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOverTimeChartProps) {
   const isMobile = useIsMobile();
@@ -432,30 +445,28 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
               }}
             />
             {hasAboveBand && (
-              <g data-testid="score-band-above">
-                <Area
-                  type="monotone"
-                  dataKey="band_above"
-                  fill={SCORE_TIMELINE_FILL_ABOVE}
-                  stroke="none"
-                  isAnimationActive={false}
-                  connectNulls={false}
-                  legendType="none"
-                />
-              </g>
+              <Area
+                type="monotone"
+                dataKey="band_above"
+                className={SCORE_BAND_ABOVE_CLASS}
+                fill={SCORE_TIMELINE_FILL_ABOVE}
+                stroke="none"
+                isAnimationActive={false}
+                connectNulls={false}
+                legendType="none"
+              />
             )}
             {hasBelowBand && (
-              <g data-testid="score-band-below">
-                <Area
-                  type="monotone"
-                  dataKey="band_below"
-                  fill={SCORE_TIMELINE_FILL_BELOW}
-                  stroke="none"
-                  isAnimationActive={false}
-                  connectNulls={false}
-                  legendType="none"
-                />
-              </g>
+              <Area
+                type="monotone"
+                dataKey="band_below"
+                className={SCORE_BAND_BELOW_CLASS}
+                fill={SCORE_TIMELINE_FILL_BELOW}
+                stroke="none"
+                isAnimationActive={false}
+                connectNulls={false}
+                legendType="none"
+              />
             )}
             <Line
               type="monotone"
