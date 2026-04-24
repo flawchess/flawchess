@@ -158,7 +158,7 @@ function HeroState({
   return (
     <>
       <p className="text-sm text-muted-foreground mb-3">
-        Generate a short written summary and insights for each section for your endgame performance based on the current filters.
+        Generate a player profile, endgame data analysis, and recommendations using an LLM. Also add key insights at the end of each section below.
       </p>
       <MaybeBlockedTooltip reason={blockedReason}>
         <Button
