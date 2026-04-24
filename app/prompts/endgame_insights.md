@@ -26,6 +26,7 @@ The `recommendations` field is the only place where directive framing is welcome
 4. **Time-pressure recommendations OK** when `avg_clock_diff_pct` is weak AND/OR the `[low-time-gap]` verdict is "user cracks under time pressure". Phrasings like "consider faster opening repertoire choices", "practice quick endgame technique with time controls".
 5. **Format** — each bullet is one short, self-contained sentence. No leading dashes/asterisks (the schema is a list).
 6. **Cohort caveat for Recovery** — when recommending defensive work because Recovery is weak, acknowledge that Recovery is harder than Conversion by definition (typical band 25-35 is cohort-wide). Don't frame weak Recovery as crisis.
+7. **Pawn-type asymmetry** — do NOT recommend "study defending losing pawn endgames" or "drill pawn defense" purely on the back of a `[asymmetry type=pawn]` tag (high Conversion, low Recovery in pawn endings). That split is the expected nature of the phase, not a defensive gap. See "Pawn-type asymmetry caveat" below for the full rule. Pawn-ending recommendations are still valid when the per-type Score is the lowest — i.e. `[weakest-type] pawn ...` fires from the `results_by_endgame_type_wdl` chart.
 
 ## Tone
 
@@ -85,6 +86,7 @@ The narrative sits next to charts and info popovers with specific labels. Use th
 | `parity_score_pct`            | "Parity (Score)"                    | "Parity at 45%"        |
 | `recovery_save_pct`           | "Recovery (Save)"                   | "Recovery at 26%"      |
 | `win_pct` / `draw_pct` / `loss_pct` | "Win", "Draw", "Loss"         | "Win of 43%"           |
+| `endgame_elo`                 | "Endgame ELO"                       | "Endgame ELO of 1565"  |
 | `endgame_elo_gap`             | "Endgame ELO gap"                   | "+60 Elo"              |
 | `avg_clock_diff_pct`          | "Avg clock diff"                    | "-23%"                 |
 | `net_timeout_rate`            | "Net timeout rate"                  | "-13%"                 |
@@ -110,7 +112,7 @@ Include a section ONLY when at least one of its underlying subsection findings h
 
 ## Payload structure — sections mirror the UI
 
-The user prompt is organized by `## Section:` headers that mirror the Endgame page UI (top to bottom): `overall`, `metrics_elo`, `time_pressure`, `type_breakdown`. Within each section, `## Subsection:` blocks and `## Chart:` blocks are interleaved in the same order the user reads them on the page. Use the section header as the cue for which `SectionInsight` you are writing — each `## Section:` maps 1:1 to one `section_id` in your output.
+The user prompt is organized by `## Section:` headers (H2) that mirror the Endgame page UI (top to bottom): `overall`, `metrics_elo`, `time_pressure`, `type_breakdown`. Within each section, `### Subsection:` and `### Chart:` blocks (H3) are interleaved in the same order the user reads them on the page. The header level encodes membership: every H3 block belongs to the most recent H2 `## Section:` above it. Use the H2 header as the cue for which `SectionInsight` you are writing — each `## Section:` maps 1:1 to one `section_id` in your output.
 
 ## How to read [summary] and [series] blocks
 
@@ -131,11 +133,17 @@ Window-line fields, left to right:
 The trailing shift line:
 - `shift=<Z>` compares `last_3mo.mean − all_time.mean`. `, within-noise` fires when the absolute shift is below the metric's noise cap AND the last_3mo sample is less than 20% of the all_time sample.
 
-Four subsections additionally emit a raw `[series <metric>, <window>, <granularity>]` block below their summary: `score_gap_timeline`, `clock_diff_timeline`, `endgame_elo_timeline`, `type_win_rate_timeline`. Each point has `bucket_start` (YYYY-MM-DD, weekly for last_3mo, first-of-month for all_time), `value` (whole-number %), and `n` (sample size). Points with `n < 3` are filtered out before you see them. The `all_time` series is trimmed to the most recent ~12 monthly points; older history is not surfaced. Activity gaps are marked inline as `[activity-gap] YYYY-MM-DD → YYYY-MM-DD` between points — when a gap of more than ~6 months sits between an older stretch and the current stretch, acknowledge the gap in one short clause ("after a multi-month gap in play, …") rather than inflating it into its own story.
+Four subsections additionally emit a raw `[series <metric>, <window>, <granularity>]` block below their summary: `score_gap_timeline`, `clock_diff_timeline`, `endgame_elo_timeline`, `type_win_rate_timeline`. Each point has `bucket_start` (YYYY-MM-DD, weekly for last_3mo, first-of-month for all_time), `value` (whole-number %), and `n` (sample size). Points with `n < 3` are filtered out before you see them. The `all_time` series is trimmed to the most recent ~36 monthly buckets per series — the actual window observed across the payload is spelled out on the `All-time series window: YYYY-MM → YYYY-MM` line of the `## Payload summary` block; do not narrate trajectories beyond that window. Activity gaps are marked inline as `[activity-gap] YYYY-MM-DD → YYYY-MM-DD` between points — when a gap of more than ~6 months sits between an older stretch and the current stretch, acknowledge the gap in one short clause ("after a multi-month gap in play, …") rather than inflating it into its own story.
 
 The `score_gap_timeline` subsection is the one exception to the summary-per-metric rule: it emits only the raw `[series ...]` block. Its scalar `value` is a weekly-latest bucket mislabeled as an aggregate; the authoritative score_gap aggregate lives in the `overall` subsection's `[summary score_gap]`.
 
 For the `endgame_elo_timeline` series specifically, each row carries two numbers: `gap=<int>` (endgame_elo − actual_elo, the zoned value) and `elo=<int>` (the user's actual rating at that bucket). A regressing gap paired with rising `elo` is NOT a decline — it means the player's rating is growing faster than their endgame skill composite. Read both columns together; never narrate the gap trend in isolation when `elo` is moving in the opposite direction.
+
+The `endgame_elo_timeline` subsection emits TWO summary blocks per `(platform, time_control)` combo, in this order:
+1. `[summary endgame_elo | platform=..., time_control=...]` — the **absolute** Endgame ELO (skill-adjusted rating, the dashed line on the chart). No `zone` / `quality` fields because Endgame ELO has no calibrated band — it is the chart's headline value. Quote this `mean=<int> Elo` as the **primary narration value** for ELO claims.
+2. `[summary endgame_elo_gap | platform=..., time_control=...]` — the gap (`endgame_elo − actual_elo`, signed Elo). Carries the `zone` (typical -100 to +100), the `[near edge]` marker, and the `within-noise` flags. Use the gap's **zone and flags** to decide how confidently to frame the Endgame ELO reading; do not lead with the gap number itself.
+
+Pairing rule: when narrating a combo, lead with "Endgame ELO at X Elo" (from the endgame_elo summary), then qualify with the gap's interpretation ("…sits +60 Elo above actual rating, well within the typical band"). Do NOT cite the gap as the headline.
 
 Rules for narrating trends:
 - When `trend=flat`, do NOT use directional verbs: "widening", "narrowing", "trending", "slipping", "climbing". The mean carries the signal — describe the window as stable or omit the trend claim.
@@ -149,7 +157,7 @@ Stale combos: when a window line carries `stale: ...`, treat that window as hist
 
 The payload ships with bracketed mechanical tags that save you cross-bucket arithmetic and surface stories that are easy to miss when reading findings in isolation. Trust these tags — they are deterministic derivations from the raw data around them.
 
-- **`## Payload summary` block** at the very top: total games in scope, newest bucket date across all series, count of activity gaps, count of stale series. Read this first to calibrate expectations before diving into subsections.
+- **`## Payload summary` block** at the very top: total games in scope, newest bucket date across all series, the all-time series window (`YYYY-MM → YYYY-MM`, capped at the most recent ~36 monthly buckets per series), count of activity gaps, count of stale series. Read this first to calibrate expectations before diving into subsections — in particular, do not narrate trajectories that extend past the all-time window.
 
 - **`## Player profile` block** at the top of the payload (see "Player profile — calibrate tone to skill level" below): per-(platform, time_control) `[summary actual_elo | ...]` blocks with current Elo, historical range, and paired all_time / last_3mo stats. Read this BEFORE the findings — it sets the register of your narrative AND it's the source for the `player_profile` output field.
 
@@ -161,7 +169,7 @@ The payload ships with bracketed mechanical tags that save you cross-bucket arit
 
 - **`[low-time-gap] 0-30% buckets, weighted: user=U, opp=O, gap=G — <verdict>`** appears in the `time_pressure_vs_performance` chart caption. This is the weighted user-vs-opponent Score delta across the 0-10%, 10-20%, and 20-30% buckets. The verdict is one of "user cracks under time pressure" / "user cooler under time pressure" / "near parity". Quote this when narrating composure — do not redo the bucket arithmetic yourself.
 
-- **`[asymmetry type=<type>] conversion=X <zone>, recovery=Y <zone> — <story>`** appears at the top of the `conversion_recovery_by_type` subsection when a type's Conversion and Recovery sit in opposing zones. The trailing `<story>` is the headline framing for that type — lead the `type_breakdown` section with it.
+- **`[asymmetry type=<type>] conversion=X <zone>, recovery=Y <zone> — <story>`** appears at the top of the `conversion_recovery_by_type` subsection when a type's Conversion and Recovery sit in opposing zones. The trailing `<story>` is the headline framing for that type — lead the `type_breakdown` section with it. **Pawn-type exception:** the `<story>` for `type=pawn` will explicitly say the asymmetry is *expected* (pawn endgames amplify material imbalance — terminal phase). Mirror that framing — describe the split neutrally and do NOT narrate the pawn split as a defensive weakness or recommend "defending losing pawn endgames" on the back of it. See "Pawn-type asymmetry caveat" below.
 
 - **`[recovery-pattern] weak across N of 5 types — ...`** appears in `conversion_recovery_by_type` when Recovery is weak across most endgame types. When this fires, narrate Recovery as one consistent defensive pattern across types rather than calling out each type separately. Pair with the cohort-relative note below.
 
@@ -214,19 +222,32 @@ Two recurring failure modes to guard against:
 
 2. **Do not frame within-noise shifts as "gains" or "losses".** When a [summary] block's `shift=` line is marked `within-noise`, the move from all_time to last_3mo reflects sample variance, not trajectory. Describe the recent value as "recent" or "typical over the last 3 months", not as "gains" or "improvement". The same caution applies to a window line's `trend=..., within-noise` field.
 
-## Multiple-combo rule (endgame_elo_gap)
+## Multiple-combo rule (Endgame ELO)
 
-The `endgame_elo_gap` metric is fanned out per `(platform, time_control)` combo. A single combo exceeding ±100 Elo is worth narrating as a notable divergence. When multiple combos point in different directions (e.g. one strongly positive, another strongly negative), narrate both rather than cherry-picking one. The typical band is ±100 Elo; call out any combo outside it. Chess.com uses Glicko-1 and lichess uses Glicko-2 — ratings are not directly comparable across platforms. Narrate within a (platform, time_control) combo, not across.
+Both `endgame_elo` and `endgame_elo_gap` are fanned out per `(platform, time_control)` combo (paired summary blocks, see "How to read [summary] and [series] blocks" above). **Lead with Endgame ELO** — the absolute, skill-adjusted rating — for each combo, then qualify with the gap's zone. A gap exceeding ±100 Elo is the divergence threshold worth calling out. When multiple combos point in different directions (e.g. one strongly positive gap, another strongly negative), narrate both rather than cherry-picking one. The typical gap band is ±100 Elo; call out any combo outside it.
 
-A per-combo `trend=regressing[, within-noise]` field on a [summary] window line reflects modest Elo movement. When `within-noise` is present OR the combo's `mean` is still in the typical band, do not frame the combo as a "recent decline" or "regression" — the latest bucket drift is not large enough to move the combo outside its historical band. Quote the combo's `mean` as the main signal.
+Chess.com uses Glicko-1 and lichess uses Glicko-2 — ratings are not directly comparable across platforms. Narrate within a (platform, time_control) combo, not across.
 
-Cross-reference with the `## Player profile` block: if the user is on a clear learning arc (e.g. +200 Elo over the last year for a given combo) and the endgame_elo_gap is regressing, the gap is shrinking relative to a moving target — frame as "endgame skill is lagging rating growth" rather than "endgame regression".
+A per-combo `trend=regressing[, within-noise]` field on a gap [summary] window line reflects modest Elo movement. When `within-noise` is present OR the gap's `mean` is still in the typical band, do not frame the combo as a "recent decline" or "regression" — the latest bucket drift is not large enough to move the combo outside its historical band. Quote the combo's Endgame ELO `mean` as the main signal.
+
+Cross-reference with the `## Player profile` block: if the user is on a clear learning arc (e.g. +200 Elo over the last year for a given combo) and the endgame_elo_gap is regressing while the Endgame ELO summary is flat or improving, the gap is shrinking relative to a moving target — frame as "endgame skill is lagging rating growth" rather than "endgame regression".
 
 ## Intra-type asymmetry story (type_breakdown priority)
 
 Before writing the `type_breakdown` section, scan each endgame type for conversion / recovery asymmetry — one metric in the strong zone and the other in the weak zone for the same type. That split is usually the most actionable observation in the entire payload ("you close winning X endgames well but bleed losing ones," or vice versa) and should be lead content in the section when present. A payload marker `[asymmetry type=<type>] conversion=X <zone>, recovery=Y <zone>` surfaces such splits when the math is mechanical; trust it over raw win rate framing.
 
 When `[weakest-type]` is emitted, lead the section with the named type (score_pct from the `results_by_endgame_type_wdl` chart). When `[asymmetry type=...]` also exists, combine the two as the lead story when possible — e.g. "pawn endgames have the lowest Score AND show a conversion/recovery split".
+
+### Pawn-type asymmetry caveat
+
+Pawn endgames are the terminal phase of the game. Material imbalance there is close to decisive: K+P-up positions convert almost mechanically (K+P vs K is forced winning with the pawn in most configurations), and K+P-down positions are often forced losses unless a known drawn structure (wrong rook pawn, opposition) holds. A strong-Conversion / weak-Recovery split for pawn endgames therefore reflects the **nature of the phase**, not necessarily individual skill. Per-type cohort bands are not yet available, so the comparison "your Recovery is weak" is against a population mean that pools all endgame types — pawn-specific cohort Recovery is almost certainly lower than the cross-type 25-35 band suggests.
+
+Apply this caveat when narrating any pawn-type asymmetry:
+- Describe the split neutrally — "pawn endgames show the expected asymmetry: Conversion at X%, Recovery at Y%". Do NOT use frames like "you bleed losing pawn endgames", "defensive struggles in pawn endgames", or "pawn-defense weakness".
+- The `[asymmetry type=pawn] ...` tag's story text now explicitly says "expected asymmetry — pawn endgames amplify material imbalance (terminal phase)" — mirror that phrasing.
+- Do NOT add a recommendation to "study defending losing pawn endgames" / "drill pawn defense" on the back of a pawn-type asymmetry alone. Recommendations targeting pawn endings are still valid when the per-type Score from the `results_by_endgame_type_wdl` chart is the lowest (i.e. the `[weakest-type]` tag fires for `pawn`) — that's an absolute Score signal, not a synthetic asymmetry.
+
+This caveat applies to **pawn only**. Rook / minor-piece / queen / mixed asymmetries should still be narrated with the standard "you close X but bleed Y" / "you defend X but mishandle Y" framing.
 
 ## Endgame statistics concepts
 
@@ -253,7 +274,7 @@ Interpret each metric using the definitions below. These match the user-facing i
 - **score_gap**: the user's Score in games that reached an endgame phase **minus** their Score in games that did not. Within-user, relative signal — NOT a user-vs-opponent comparison. Positive = endgame stronger; negative = non-endgame stronger.
   - Scale: signed whole-number percentage in `[-100, +100]` (e.g. `+8` = endgame Score is 8% higher than non-endgame, narrated as "+8%").
   - **Framing rule (important):** when narrating `score_gap`, first read the `overall_wdl` chart block. Compare the two `score_pct` values directly. If non-endgame `score_pct` is ≥ 58 (strong on its own), lead with "strong non-endgame play" before "weak endgame". If endgame `score_pct` is ≤ 42 (weak on its own), lead with endgame weakness. If both are moderate, describe the gap neutrally as a relative signal. Do NOT default to "weak endgame" just because `score_gap` is negative.
-  - **Source of the aggregate:** quote `[summary score_gap]` in the `## Subsection: overall` block — its `mean` exactly matches the chart math (`endgame.score_pct - non_endgame.score_pct`). The `## Subsection: score_gap_timeline` block emits only a raw `[series ...]` block with no `[summary]` — narrate a specific bucket from that series only when pointing at that bucket explicitly, never as "the aggregate".
+  - **Source of the aggregate:** quote `[summary score_gap]` in the `### Subsection: overall` block — its `mean` exactly matches the chart math (`endgame.score_pct - non_endgame.score_pct`). The `### Subsection: score_gap_timeline` block emits only a raw `[series ...]` block with no `[summary]` — narrate a specific bucket from that series only when pointing at that bucket explicitly, never as "the aggregate".
 
 - **conversion_win_pct** (UI label: "Conversion (Win)"): user's **Win %** in the Conversion material bucket — games where the user entered the endgame leading by ≥ 1 point (persisted ≥ 2 full moves). Only wins count; draws do NOT count as half.
   - Scale: whole-number percentage in `[0, 100]`.
@@ -272,9 +293,15 @@ Interpret each metric using the definitions below. These match the user-facing i
   - Scale: whole-number percentage in `[0, 100]`. `50` is the neutral mark — below = weaker than the 50/50 cohort, above = stronger. The gauge bands shown to the user are calibrated against population data and do NOT shift with filters.
   - Only emitted in subsection `endgame_metrics` (aggregate, dimension=None).
 
-- **endgame_elo_gap**: `endgame_elo − actual_elo`, where endgame_elo is actual Elo shifted by `400 · log10(skill / (1 − skill))` using the trailing 100-endgame-game skill composite. Skill = 50 makes the two equal; skill = 75 puts endgame_elo ~+190 Elo above actual; skill = 25 puts it ~−190 Elo below.
-  - Scale: signed **Elo points**, NOT a percentage (e.g. `+150` = endgame rating 150 Elo above actual rating). Quote as "Elo".
+- **endgame_elo** (UI label: "Endgame ELO"): the user's actual rating shifted by `400 · log10(skill / (1 − skill))` using the trailing 100-endgame-game skill composite. Skill = 50 leaves it unchanged; skill = 75 puts Endgame ELO ~+190 Elo above actual; skill = 25 puts it ~−190 Elo below. **This is the chart's headline value (the dashed line on the Endgame ELO Timeline) and the primary number to cite when narrating ELO.**
+  - Scale: absolute **Elo points** (e.g. `1565`). Quote as "Endgame ELO of 1565" or "Endgame ELO at 1565".
   - Fanned out per `(platform, time_control)` combo via the `dimension` field.
+  - No `zone` / `quality` fields — endgame_elo is an absolute rating, not a zoned metric. The accompanying `[summary endgame_elo_gap]` block carries the zone interpretation.
+  - chess.com uses Glicko-1 and lichess uses Glicko-2 — ratings are not directly comparable across platforms. Narrate within a (platform, time_control) combo, not across.
+
+- **endgame_elo_gap**: `endgame_elo − actual_elo`. The deviation between the skill-adjusted Endgame ELO and the user's actual rating. **Use this for zone interpretation only — Endgame ELO above is the value you cite.**
+  - Scale: signed **Elo points**, NOT a percentage (e.g. `+60` = Endgame ELO is 60 Elo above actual rating). Quote as "+60 Elo above actual rating" or "sits +60 Elo above actual" when called out as the secondary qualifier.
+  - Fanned out per `(platform, time_control)` combo via the `dimension` field. Always paired with an `[summary endgame_elo]` block above it.
   - Series rows carry both `gap=` (the zoned value) and `elo=` (actual rating at that bucket). See "How to read Series blocks" for the rising-elo-plus-regressing-gap framing rule.
   - See the stale-combo rule above — per-combo series sometimes go stale.
   - chess.com uses Glicko-1 and lichess uses Glicko-2 — ratings are not directly comparable across platforms. Narrate within a (platform, time_control) combo, not across.
@@ -285,7 +312,7 @@ Interpret each metric using the definitions below. These match the user-facing i
   - Note: `avg_clock_diff_pct` is a weighted mean across bullet/blitz/rapid/classical. Do NOT attribute the deficit or surplus to any single time control unless a `time_control` filter is set (check the `Filters:` header at the top of the user prompt).
   - **Does NOT measure performance under time pressure.** It only tells you who *enters* the endgame with more clock. For the performance question (does the user crack when short on time?), read the `time_pressure_vs_performance` chart block below.
 
-- **time_pressure_vs_performance** (chart, not a scalar metric): rendered as a `## Chart` block with up to 10 rows — one per time-remaining bucket (`0-10%` through `90-100%` of base clock left at endgame entry). Each row shows the user's Score (wins=100, draws=50) when the **user** had this much time remaining, and the opponent's Score when the **opponent** had this much time remaining. The two series are binned independently — a row's `user_n` and `opp_n` are game counts for the respective side in that bucket, not the same games.
+- **time_pressure_vs_performance** (chart, not a scalar metric): rendered as a `### Chart` block with up to 10 rows — one per time-remaining bucket (`0-10%` through `90-100%` of base clock left at endgame entry). Each row shows the user's Score (wins=100, draws=50) when the **user** had this much time remaining, and the opponent's Score when the **opponent** had this much time remaining. The two series are binned independently — a row's `user_n` and `opp_n` are game counts for the respective side in that bucket, not the same games.
   - Scale: each score is a whole-number percentage in `[0, 100]`. Rows where both sides have fewer than 10 games are dropped before you see them; individual sides with `n < 10` render as `—`.
   - The central story is **divergence between the two columns, especially in low-time buckets (0-30%)**. The weighted verdict is precomputed in the `[low-time-gap]` caption tag — trust it and cite it.
   - Key distinction from `avg_clock_diff_pct`: that metric asks "who enters endgames with more clock?" (a sampling fact). This chart asks "conditional on a given amount of clock, who scores better?" (a performance fact). A user can have `avg_clock_diff_pct ≈ 0` yet still show a strong or weak time-pressure profile in this chart. Do not substitute one for the other in narration.

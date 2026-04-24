@@ -62,7 +62,7 @@ def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameI
             ),
         ],
         model_used="test",
-        prompt_version="endgame_v10",
+        prompt_version="endgame_v11",
     )
 
 
@@ -86,7 +86,7 @@ def _make_log_row(
     error: str | None = None,
     response_json: dict[str, Any] | None = None,
     cache_hit: bool = False,
-    prompt_version: str = "endgame_v10",
+    prompt_version: str = "endgame_v11",
     model: str = "test",
     findings_hash: str = "b" * 64,
 ) -> LlmLog:
@@ -223,8 +223,8 @@ class TestPromptAssembly:
         # `## Scoping caveat` line appears when opponent_strength != "any".
         assert "Filters:" not in prompt
         assert "Flags:" not in prompt
-        assert "## Subsection: overall" in prompt
-        assert "## Subsection: score_gap_timeline" in prompt
+        assert "### Subsection: overall" in prompt
+        assert "### Subsection: score_gap_timeline" in prompt
         assert "[series score_gap, last_3mo, weekly]" in prompt
         assert "2026-01-06" in prompt
         assert "2026-01-13" in prompt
@@ -334,7 +334,7 @@ class TestPromptAssembly:
         tab_findings = _fake_findings(filters, findings=findings_list)
         prompt = _assemble_user_prompt(tab_findings)
 
-        assert prompt.count("## Subsection: endgame_metrics") == 1
+        assert prompt.count("### Subsection: endgame_metrics") == 1
         # Each of the 3 metrics emits exactly one [summary metric | dim] block.
         assert prompt.count("[summary conversion_win_pct | bucket=conversion]") == 1
         assert prompt.count("[summary parity_score_pct | bucket=parity]") == 1
@@ -405,7 +405,7 @@ class TestPromptAssembly:
         )
         tab_findings = _fake_findings(filters, findings=[hidden])
         prompt = _assemble_user_prompt(tab_findings)
-        assert "## Subsection: time_pressure_vs_performance" not in prompt
+        assert "### Subsection: time_pressure_vs_performance" not in prompt
 
     def test_assemble_user_prompt_renders_time_pressure_chart_block(self) -> None:
         """The 10-bucket chart is rendered as a `## Chart` table.
@@ -449,7 +449,7 @@ class TestPromptAssembly:
         )
         prompt = _assemble_user_prompt(tab_findings)
 
-        assert "## Chart: time_pressure_vs_performance" in prompt
+        assert "### Chart: time_pressure_vs_performance" in prompt
         assert "Total endgame games: 487" in prompt
         assert "| time_left | user_score | user_n | opp_score | opp_n |" in prompt
         # Buckets with >=10 games on both sides render scores.
@@ -474,7 +474,7 @@ class TestPromptAssembly:
             time_pressure_chart=empty_chart,
             findings_hash="b" * 64,
         )
-        assert "## Chart: time_pressure_vs_performance" not in _assemble_user_prompt(tab)
+        assert "### Chart: time_pressure_vs_performance" not in _assemble_user_prompt(tab)
 
         tab_none = EndgameTabFindings(
             as_of=datetime.datetime.now(datetime.UTC),
@@ -483,7 +483,7 @@ class TestPromptAssembly:
             time_pressure_chart=None,
             findings_hash="b" * 64,
         )
-        assert "## Chart: time_pressure_vs_performance" not in _assemble_user_prompt(tab_none)
+        assert "### Chart: time_pressure_vs_performance" not in _assemble_user_prompt(tab_none)
 
     def test_assemble_user_prompt_renders_overall_wdl_chart_block(self) -> None:
         """The endgame-vs-non-endgame WDL block is rendered when performance is set."""
@@ -519,7 +519,7 @@ class TestPromptAssembly:
         )
         prompt = _assemble_user_prompt(tab)
 
-        assert "## Chart: overall_wdl (all_time)" in prompt
+        assert "### Chart: overall_wdl (all_time)" in prompt
         assert "| series      | games | win_pct | draw_pct | loss_pct | score_pct |" in prompt
         assert "| endgame     | 240" in prompt
         assert "| non_endgame | 700" in prompt
@@ -560,7 +560,7 @@ class TestPromptAssembly:
             overall_performance=perf,
             findings_hash="b" * 64,
         )
-        assert "## Chart: overall_wdl" not in _assemble_user_prompt(tab)
+        assert "### Chart: overall_wdl" not in _assemble_user_prompt(tab)
 
         # None case
         tab_none = EndgameTabFindings(
@@ -570,7 +570,7 @@ class TestPromptAssembly:
             overall_performance=None,
             findings_hash="b" * 64,
         )
-        assert "## Chart: overall_wdl" not in _assemble_user_prompt(tab_none)
+        assert "### Chart: overall_wdl" not in _assemble_user_prompt(tab_none)
 
     def test_assemble_user_prompt_renders_type_wdl_chart_block(self) -> None:
         """Per-endgame-type WDL block is rendered, sorted by total descending."""
@@ -632,7 +632,7 @@ class TestPromptAssembly:
         )
         prompt = _assemble_user_prompt(tab)
 
-        assert "## Chart: results_by_endgame_type_wdl (all_time)" in prompt
+        assert "### Chart: results_by_endgame_type_wdl (all_time)" in prompt
         assert "| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct |" in prompt
         # Sorted by total descending: rook (100) before pawn (30).
         rook_idx = prompt.index("| rook")
@@ -860,23 +860,24 @@ class TestPromptAssembly:
         prompt = _assemble_user_prompt(tab)
 
         # Chart renders AND the overall [summary score_gap] block renders alongside it.
-        assert "## Chart: overall_wdl" in prompt
-        assert "## Subsection: overall" in prompt
+        assert "### Chart: overall_wdl" in prompt
+        assert "### Subsection: overall" in prompt
         assert "[summary score_gap]" in prompt
         # The scalar value should be -15 (-0.15 * 100, rounded) — rendered as mean=-15 on the all_time line.
         assert "all_time: mean=-15" in prompt
 
-    def test_all_time_series_trimmed_to_last_12_points(self) -> None:
-        """v5 C6: all_time Series block is capped at the most-recent 12 buckets.
+    def test_all_time_series_trimmed_to_last_36_points(self) -> None:
+        """v11: all_time Series block is capped at the most-recent 36 buckets.
 
-        Older monthly history consumes tokens without narrative value — the
-        Series interpretation rule already tells the LLM to focus on
-        multi-bucket direction, not deep history.
+        v5 originally capped at 12 to keep the payload short; v11 raised the
+        cap to 36 so the LLM can speak about multi-year trajectories without
+        overclaiming a 12-month window as "long-term". Older history beyond
+        36 months is still trimmed to keep tokens bounded.
         """
         filters = _sample_filter_context()
-        # 20 consecutive monthly buckets ending 2025-10: 2024-03 .. 2025-10.
+        # 40 consecutive monthly buckets ending 2025-10: 2022-07 .. 2025-10.
         bucket_starts: list[str] = []
-        cursor = datetime.date(2024, 3, 1)
+        cursor = datetime.date(2022, 7, 1)
         while cursor <= datetime.date(2025, 10, 1):
             bucket_starts.append(cursor.isoformat())
             # next month (first-of-month arithmetic)
@@ -885,7 +886,7 @@ class TestPromptAssembly:
                 year += 1
                 month = 1
             cursor = datetime.date(year, month, 1)
-        assert len(bucket_starts) == 20
+        assert len(bucket_starts) == 40
         # Values alternate between -0.05 and -0.15 so the flat-trend collapse
         # (v7 B4) doesn't trigger — the series must retain its per-bucket lines
         # for this test's date-presence assertions to make sense.
@@ -897,8 +898,8 @@ class TestPromptAssembly:
             value=-0.08,
             zone="typical",
             trend="stable",
-            weekly_points_in_window=20,
-            sample_size=20,
+            weekly_points_in_window=40,
+            sample_size=40,
             sample_quality="rich",
             is_headline_eligible=True,
             dimension=None,
@@ -910,15 +911,17 @@ class TestPromptAssembly:
         tab = _fake_findings(filters, findings=[timeline])
         prompt = _assemble_user_prompt(tab)
 
-        # Most recent 12 buckets are retained: 2024-11 .. 2025-10.
+        # Most recent 36 buckets are retained: 2022-11 .. 2025-10.
         assert "2025-10-01" in prompt
-        assert "2024-11-01" in prompt
-        # Oldest 8 buckets are dropped: 2024-01 .. 2024-10.
-        assert "2024-01-01" not in prompt
-        assert "2024-10-01" not in prompt
-        # Exactly 12 series value lines (bucket_start entries, not the header).
-        series_lines = [ln for ln in prompt.splitlines() if ln.startswith(("2024-", "2025-"))]
-        assert len(series_lines) == 12
+        assert "2022-11-01" in prompt
+        # Oldest 4 buckets are dropped: 2022-07 .. 2022-10.
+        assert "2022-07-01" not in prompt
+        assert "2022-10-01" not in prompt
+        # Exactly 36 series value lines (bucket_start entries, not the header).
+        series_lines = [
+            ln for ln in prompt.splitlines() if ln.startswith(("2022-", "2023-", "2024-", "2025-"))
+        ]
+        assert len(series_lines) == 36
 
     def test_last_3mo_series_block_skipped_when_all_time_series_present(self) -> None:
         """v5 C5: last_3mo Series block is skipped when all_time Series is emitted.
@@ -984,7 +987,7 @@ class TestPromptAssembly:
         # (not games). The `overall` subsection carries the authoritative
         # [summary score_gap]; score_gap_timeline emits only the raw [series].
         # Verify the score_gap_timeline subsection contains no [summary] block.
-        timeline_start = prompt.index("## Subsection: score_gap_timeline")
+        timeline_start = prompt.index("### Subsection: score_gap_timeline")
         timeline_chunk = prompt[timeline_start:]
         assert "[summary score_gap]" not in timeline_chunk
         # all_time [series] header + points present.
@@ -1165,7 +1168,12 @@ class TestV6Enrichments:
         assert "[series avg_clock_diff_pct, last_3mo, weekly]" in prompt
 
     def test_asymmetry_line_emitted_for_strong_weak_split(self) -> None:
-        """Pawn with strong conversion + weak recovery emits `[asymmetry type=pawn] ...`."""
+        """Pawn with strong conversion + weak recovery emits `[asymmetry type=pawn] ...`.
+
+        v11: pawn-type story text is the neutral "expected asymmetry" framing,
+        not the "closes winning ... bleeds losing" framing — pawn endgames
+        amplify material imbalance by nature.
+        """
         filters = _sample_filter_context()
         conv = self._finding(
             subsection_id="conversion_recovery_by_type",
@@ -1187,6 +1195,37 @@ class TestV6Enrichments:
         prompt = _assemble_user_prompt(tab)
 
         assert "[asymmetry type=pawn] conversion=77 strong, recovery=16 weak" in prompt
+        assert "expected asymmetry" in prompt
+        assert "pawn endgames amplify material imbalance" in prompt
+        # v11: the "closes winning ... bleeds losing" framing is reserved for
+        # non-pawn types (rook / minor_piece / queen / mixed) — narrating it
+        # for pawn endgames implies a defensive weakness that the data does
+        # not support without per-type cohort baselines.
+        assert "bleeds losing ones" not in prompt
+
+    def test_asymmetry_line_uses_standard_story_for_non_pawn_types(self) -> None:
+        """Rook with strong conversion + weak recovery uses the standard story text."""
+        filters = _sample_filter_context()
+        conv = self._finding(
+            subsection_id="conversion_recovery_by_type",
+            metric="conversion_win_pct",
+            window="all_time",
+            value=0.80,
+            zone="strong",
+            dimension={"endgame_class": "rook", "bucket": "conversion"},
+        )
+        rec = self._finding(
+            subsection_id="conversion_recovery_by_type",
+            metric="recovery_save_pct",
+            window="all_time",
+            value=0.18,
+            zone="weak",
+            dimension={"endgame_class": "rook", "bucket": "recovery"},
+        )
+        tab = _fake_findings(filters, findings=[conv, rec])
+        prompt = _assemble_user_prompt(tab)
+
+        assert "[asymmetry type=rook] conversion=80 strong, recovery=18 weak" in prompt
         assert "closes winning endgames but bleeds losing ones" in prompt
 
     def test_low_time_gap_line_emitted_in_time_pressure_chart(self) -> None:
@@ -1336,6 +1375,108 @@ class TestV6Enrichments:
         # The old free-text trajectory must NOT appear anywhere in the prompt.
         assert "over 3 months" not in prompt
 
+    def test_endgame_elo_summary_emitted_before_gap_summary(self) -> None:
+        """v11: `[summary endgame_elo | ...]` precedes `[summary endgame_elo_gap | ...]`.
+
+        The Endgame ELO Timeline chart's headline value is the absolute
+        skill-adjusted Endgame ELO (dashed line), not the gap. The derived
+        endgame_elo summary is computed from the same retained series points
+        as the gap summary (mean = weighted mean of actual_elo + gap), and
+        rendered immediately above the gap summary so the LLM cites the
+        chart's primary value, not the derived deviation.
+        """
+        filters = _sample_filter_context()
+        # Series of 4 buckets so trend is computed: actual_elo rising 1450 →
+        # 1500, gap holding around -40. Weighted mean endgame_elo per bucket
+        # = actual_elo + gap.
+        series = [
+            TimePoint(bucket_start="2025-10-01", value=-40.0, n=10, actual_elo=1450),
+            TimePoint(bucket_start="2025-11-01", value=-45.0, n=20, actual_elo=1470),
+            TimePoint(bucket_start="2025-12-01", value=-40.0, n=15, actual_elo=1490),
+            TimePoint(bucket_start="2026-01-01", value=-35.0, n=15, actual_elo=1500),
+        ]
+        finding = self._finding(
+            subsection_id="endgame_elo_timeline",
+            metric="endgame_elo_gap",
+            window="all_time",
+            value=-40.0,
+            zone="typical",
+            dimension={"platform": "chess.com", "time_control": "rapid"},
+            series=series,
+            sample_size=60,
+        )
+        tab = _fake_findings(filters, findings=[finding])
+        prompt = _assemble_user_prompt(tab)
+
+        elo_header = "[summary endgame_elo | platform=chess.com, time_control=rapid]"
+        gap_header = "[summary endgame_elo_gap | platform=chess.com, time_control=rapid]"
+        assert elo_header in prompt
+        assert gap_header in prompt
+        elo_idx = prompt.index(elo_header)
+        gap_idx = prompt.index(gap_header)
+        assert elo_idx < gap_idx, "endgame_elo summary must precede endgame_elo_gap summary"
+
+        # Weighted mean endgame_elo: (1410*10 + 1425*20 + 1450*15 + 1465*15) / 60
+        # = (14100 + 28500 + 21750 + 21975) / 60 = 86325 / 60 ≈ 1439.
+        elo_block_lines = prompt[elo_idx:].splitlines()
+        all_time_line = elo_block_lines[1]
+        assert all_time_line.startswith("  all_time: ")
+        assert "mean=+1439 Elo" in all_time_line
+        assert "buckets=4 (monthly)" in all_time_line
+        # endgame_elo summary has no zone/quality fields (no calibrated band).
+        assert "zone=" not in all_time_line
+        assert "quality=" not in all_time_line
+
+    def test_endgame_elo_summary_skipped_when_actual_elo_missing(self) -> None:
+        """No endgame_elo summary emitted if series points lack actual_elo.
+
+        Defensive: actual_elo is only populated for endgame_elo_timeline series
+        upstream. If the upstream pipeline regresses and stops setting it, the
+        derived summary should silently fall back to gap-only rather than
+        emitting a meaningless block.
+        """
+        filters = _sample_filter_context()
+        series = [
+            TimePoint(bucket_start=f"2026-01-{day:02d}", value=-40.0, n=15)
+            for day in (5, 12, 19, 26)
+        ]
+        finding = self._finding(
+            subsection_id="endgame_elo_timeline",
+            metric="endgame_elo_gap",
+            window="all_time",
+            value=-40.0,
+            dimension={"platform": "chess.com", "time_control": "rapid"},
+            series=series,
+        )
+        tab = _fake_findings(filters, findings=[finding])
+        prompt = _assemble_user_prompt(tab)
+
+        assert "[summary endgame_elo |" not in prompt
+        assert "[summary endgame_elo_gap |" in prompt
+
+    def test_payload_summary_includes_all_time_window(self) -> None:
+        """v11: payload summary spells out the all-time series window bounds."""
+        filters = _sample_filter_context()
+        series = [
+            TimePoint(bucket_start=f"2024-{month:02d}-01", value=-0.05, n=20)
+            for month in (1, 4, 7, 10)
+        ] + [
+            TimePoint(bucket_start=f"2026-{month:02d}-01", value=-0.05, n=20) for month in (1, 2, 3)
+        ]
+        finding = self._finding(
+            subsection_id="score_gap_timeline",
+            metric="score_gap",
+            window="all_time",
+            value=-0.05,
+            series=series,
+        )
+        tab = _fake_findings(filters, findings=[finding])
+        prompt = _assemble_user_prompt(tab)
+
+        assert "All-time series window: 2024-01 → 2026-03" in prompt
+        # Cap value is mentioned so the LLM knows the trim policy.
+        assert "capped at 36 monthly buckets per series" in prompt
+
 
 # ---------------------------------------------------------------------------
 # TestHappyPath
@@ -1456,7 +1597,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v10"
+        assert response.report.prompt_version == "endgame_v11"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -1480,7 +1621,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v10"
+        assert log.response_json["prompt_version"] == "endgame_v11"
 
 
 class TestCacheBehavior:
@@ -1503,7 +1644,7 @@ class TestCacheBehavior:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
         # Seed a cache-hit eligible row: error=None, response_json set,
-        # matching (findings_hash, prompt_version="endgame_v10", model="test").
+        # matching (findings_hash, prompt_version="endgame_v11", model="test").
         async with session_maker() as session:
             await _seed(
                 session,
@@ -1674,7 +1815,7 @@ class TestRateLimit:
         # Seed 3 successful miss rows with an OLD prompt_version so they count
         # toward the rate-limit (count_recent_successful_misses does NOT filter
         # by prompt_version) but are NOT returned by get_latest_report_for_user
-        # (which filters by prompt_version="endgame_v10"), producing "no tier-2".
+        # (which filters by prompt_version="endgame_v11"), producing "no tier-2".
         now = datetime.datetime.now(datetime.UTC)
         # Build a valid report JSON for rows (avoids ValidationError in case tier-2
         # is somehow reached — but with the prompt_version mismatch it should not be).
@@ -1810,7 +1951,7 @@ class TestErrors:
             "overview": "ok",
             "sections": [],  # violates min_length=1
             "model_used": "test",
-            "prompt_version": "endgame_v10",
+            "prompt_version": "endgame_v11",
         }
         fake = Agent(
             TestModel(custom_output_args=bad_output),
