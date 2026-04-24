@@ -563,3 +563,129 @@ class TestIntegration:
             endgame_f.series, non_endgame_f.series, timeline, strict=True,
         ):
             assert abs((eg_pt.value - neg_pt.value) - src.score_difference) < 1e-9
+
+
+# ---------------------------------------------------------------------------
+# TestScoreTimelineIntegration — Phase 68 Plan 04 end-to-end payload guard.
+# Spans compute_findings → _assemble_user_prompt so a cross-plan regression
+# (e.g. backend rename landed but prompt-rendered text still references the
+# old id) surfaces here even when per-plan unit tests pass.
+# ---------------------------------------------------------------------------
+
+
+class TestScoreTimelineIntegration:
+    """Phase 68 Plan 04: findings → prompt assembly end-to-end payload shape."""
+
+    @pytest.mark.asyncio
+    async def test_score_timeline_end_to_end_payload(self) -> None:
+        """Plan 01+02+03 compose: rendered prompt has TWO summary + TWO series
+        blocks per window, no `score_gap_timeline`, no `Framing rule`.
+
+        B4 option c shape (post-Plan 01): the per-finding summary loop emits a
+        `[summary score_timeline]` block for each of the two findings (endgame
+        and non_endgame) per window — no suppression carve-out. Plan 03's
+        prompt bump then narrates from the two-line shape directly, so the
+        removed framing rule must not leak into the rendered prompt body.
+        """
+        # _assemble_user_prompt is module-private; ruff/ty are OK with
+        # intra-package relative imports in tests. The prompt body is the
+        # load-bearing artifact, so we reach for the private helper rather
+        # than spinning up the whole `generate_insights` machinery (which
+        # would pull in a live pydantic-ai Agent + LLM call).
+        from app.services.insights_llm import _assemble_user_prompt
+
+        mock_response = _make_minimal_response()
+        # Sanity: _make_minimal_response ships 13 weekly points with a mixed
+        # endgame-leads-vs-trails pattern (score_difference = 0.05*(i+1) over
+        # i=0..12, all positive). Plan 04's guard is shape-level, not
+        # sign-level — the pattern's only role is producing a realistic
+        # non-trivial series in both all_time (resampled to monthly) and
+        # last_3mo (weekly pass-through).
+        with patch.object(
+            insights_module,
+            "get_endgame_overview",
+            new=AsyncMock(return_value=mock_response),
+        ):
+            findings = await compute_findings(
+                FilterContext(), session=AsyncMock(), user_id=1,
+            )
+
+        # --- Finding-level assertions (cross-check Plan 01 output) ---
+        windows = ("all_time", "last_3mo")
+        for window in windows:
+            st_findings = [
+                f for f in findings.findings
+                if f.subsection_id == "score_timeline" and f.window == window
+            ]
+            assert len(st_findings) == 2, (
+                f"Expected exactly 2 score_timeline findings for window={window}"
+            )
+            assert st_findings[0].dimension == {"part": "endgame"}
+            assert st_findings[1].dimension == {"part": "non_endgame"}
+
+        # --- Prompt-level assertions (Plan 03 + emitter shape) ---
+        rendered = _assemble_user_prompt(findings)
+
+        # Emitter shape note (reconciles PLAN.md wording with reality):
+        # PLAN.md talks about `[summary score_timeline]` blocks "per window";
+        # the actual emitter format is `[summary <metric> | <dim>]` where
+        # <metric> is `score_gap` (not the subsection-id) and both windows
+        # are rendered inline (`all_time:` + `last_3mo:` lines) under a single
+        # subsection header. So the realised B4-option-c shape is:
+        #   - ONE `### Subsection: score_timeline` header (spans both windows).
+        #   - TWO `[summary score_gap | part=...]` blocks (endgame + non_endgame)
+        #     each listing `all_time:` + `last_3mo:` lines.
+        #   - TWO series blocks (one per part, all_time only — per the C5 rule
+        #     that drops the last_3mo series block when an all_time series
+        #     exists for the same (metric, subsection)).
+
+        # One subsection header (shared across both windows — not one-per-window).
+        assert rendered.count("### Subsection: score_timeline") == 1, (
+            "### Subsection: score_timeline must appear exactly once "
+            "(both windows render inline under one header)"
+        )
+
+        # B4 option c: TWO summary blocks under score_timeline, one per `part`.
+        assert "[summary score_gap | part=endgame]" in rendered, (
+            "missing per-part summary for endgame side"
+        )
+        assert "[summary score_gap | part=non_endgame]" in rendered, (
+            "missing per-part summary for non_endgame side"
+        )
+        # Exactly two part-tagged summary blocks — no third-part leak, no
+        # duplicate emission from both windows producing separate blocks.
+        assert rendered.count("[summary score_gap | part=endgame]") == 1
+        assert rendered.count("[summary score_gap | part=non_endgame]") == 1
+
+        # Series blocks: two per-part all_time series (C5 dedupes last_3mo when
+        # all_time series exists for the same (metric, subsection)). Weekly
+        # granularity is pinned by Plan 01's `_series_granularity` branch
+        # regardless of window — Plan 01 W7 guard.
+        assert "[series score_gap, all_time, weekly, part=endgame]" in rendered
+        assert "[series score_gap, all_time, weekly, part=non_endgame]" in rendered
+
+        # Never monthly for score_timeline — regression against Plan 01 W7.
+        assert "[series score_gap, all_time, monthly" not in rendered
+        assert "[series score_gap, last_3mo, monthly" not in rendered
+
+        # Old subsection-id must not leak into the user prompt anywhere.
+        assert "score_gap_timeline" not in rendered
+
+        # The dropped framing rule from Plan 03 must not leak through a
+        # stale cached layout or docstring either.
+        assert "Framing rule" not in rendered
+
+        # Regression guard: the overall-subsection aggregate [summary score_gap]
+        # is preserved (Plan 01 explicitly kept the `overall` aggregate so the
+        # LLM can still quote the authoritative signed-difference number).
+        assert "### Subsection: overall" in rendered
+        # The bare `[summary score_gap]` (no per-part dim tag) lives under
+        # overall. Part-tagged summaries under score_timeline don't count here.
+        overall_idx = rendered.index("### Subsection: overall")
+        score_timeline_idx = rendered.index("### Subsection: score_timeline")
+        # Extract the overall-section slice up to the next `###` boundary.
+        overall_slice = rendered[overall_idx:score_timeline_idx]
+        assert "[summary score_gap]" in overall_slice, (
+            "overall subsection missing the bare [summary score_gap] aggregate"
+        )
+
