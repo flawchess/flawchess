@@ -1715,8 +1715,11 @@ async def _run_agent(
     Latency is measured ONLY around agent.run() per D-25.
     """
     agent = get_insights_agent()
-    t0 = time.monotonic()
     try:
+        # WR-02 (phase 68 review): start the timer inside the try so latency
+        # measures only the agent.run() call itself, not the small gap
+        # between timer-start and the await.
+        t0 = time.monotonic()
         result = await agent.run(user_prompt)
     except UnexpectedModelBehavior as exc:
         latency_ms = int((time.monotonic() - t0) * 1000)
