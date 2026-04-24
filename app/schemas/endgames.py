@@ -204,6 +204,15 @@ class ScoreGapTimelinePoint(BaseModel):
     endgame_game_count: games in the trailing endgame window (<= timeline_window).
     non_endgame_game_count: games in the trailing non-endgame window
         (<= timeline_window).
+    endgame_score: absolute rolling-window mean score (0.0-1.0) for endgame
+        games only — persists the per-side value so both the frontend
+        two-line chart (Phase 68) and the insights `score_timeline`
+        subsection can read absolute scores directly instead of
+        reconstructing them from `score_difference`.
+    non_endgame_score: absolute rolling-window mean score (0.0-1.0) for
+        non-endgame games only — mirror of `endgame_score`. Invariant:
+        abs((endgame_score - non_endgame_score) - score_difference) < 1e-9
+        per bucket.
     """
 
     date: str
@@ -215,6 +224,11 @@ class ScoreGapTimelinePoint(BaseModel):
     # timeline so users see at a glance whether a weekly point is well-supported
     # or marginal. Mirrors the per_week_* fields on the other endgame timelines.
     per_week_total_games: int
+    # Phase 68: absolute per-side rolling-window mean scores (0.0-1.0). Drives
+    # the two-line Endgame vs Non-Endgame Score chart and the
+    # `score_timeline` insights subsection's two per-part series blocks.
+    endgame_score: float
+    non_endgame_score: float
 
 
 class ScoreGapMaterialResponse(BaseModel):
