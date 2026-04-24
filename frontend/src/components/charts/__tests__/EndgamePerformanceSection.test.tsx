@@ -7,9 +7,9 @@ import type { ScoreGapTimelinePoint } from '@/types/endgames';
 
 // Recharts' <ResponsiveContainer> measures its parent with ResizeObserver;
 // in jsdom the parent has zero dimensions so the inner chart refuses to
-// render and all the downstream testids (score-band-above/below, axes) are
-// missing. Swap it for a fixed-size wrapper in tests that injects explicit
-// width/height into the chart child so Recharts skips its sizing guard.
+// render and all the downstream testids (score-band, axes) are missing. Swap
+// it for a fixed-size wrapper in tests that injects explicit width/height
+// into the chart child so Recharts skips its sizing guard.
 vi.mock('recharts', async () => {
   const actual = await vi.importActual<typeof import('recharts')>('recharts');
   return {
@@ -28,20 +28,33 @@ vi.mock('recharts', async () => {
 });
 import {
   EndgameScoreOverTimeChart,
-  SCORE_BAND_ABOVE_CLASS,
-  SCORE_BAND_BELOW_CLASS,
+  SCORE_BAND_CLASS,
 } from '../EndgamePerformanceSection';
+import {
+  SCORE_TIMELINE_FILL_ABOVE,
+  SCORE_TIMELINE_FILL_BELOW,
+} from '@/lib/theme';
 
 // Band presence is detected via the dedicated className on the rendered
 // Recharts <Area> layer. Querying by className (rather than by testid on a
 // wrapping <g>) is required because a plain <g> wrapper would hide the
 // <Area> from Recharts' `findAllByType` child scan and the band would never
 // actually render — see the diagnosis comment on EndgameScoreOverTimeChart.
-function queryBandAbove(container: HTMLElement): Element | null {
-  return container.querySelector(`.${SCORE_BAND_ABOVE_CLASS}`);
+function queryBand(container: HTMLElement): Element | null {
+  return container.querySelector(`.${SCORE_BAND_CLASS}`);
 }
-function queryBandBelow(container: HTMLElement): Element | null {
-  return container.querySelector(`.${SCORE_BAND_BELOW_CLASS}`);
+
+function gradientStopColors(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll('linearGradient stop')).map(
+    (s) => s.getAttribute('stop-color') ?? '',
+  );
+}
+
+function gradientStops(container: HTMLElement): Array<{ offset: string; color: string }> {
+  return Array.from(container.querySelectorAll('linearGradient stop')).map((s) => ({
+    offset: s.getAttribute('offset') ?? '',
+    color: s.getAttribute('stop-color') ?? '',
+  }));
 }
 
 // jsdom ships without window.matchMedia; useIsMobile() inside the component
@@ -96,7 +109,7 @@ function makePoint(
   };
 }
 
-// Endgame leads non-endgame by >1% on every point.
+// Endgame leads non-endgame throughout.
 const ENDGAME_LEADS_FIXTURE: ScoreGapTimelinePoint[] = [
   makePoint('2025-01-06', 0.60, 0.50),
   makePoint('2025-01-13', 0.62, 0.51),
@@ -104,7 +117,7 @@ const ENDGAME_LEADS_FIXTURE: ScoreGapTimelinePoint[] = [
   makePoint('2025-01-27', 0.59, 0.50),
 ];
 
-// Endgame trails non-endgame by >1% on every point.
+// Endgame trails non-endgame throughout.
 const ENDGAME_TRAILS_FIXTURE: ScoreGapTimelinePoint[] = [
   makePoint('2025-01-06', 0.45, 0.55),
   makePoint('2025-01-13', 0.44, 0.56),
@@ -112,7 +125,8 @@ const ENDGAME_TRAILS_FIXTURE: ScoreGapTimelinePoint[] = [
   makePoint('2025-01-27', 0.43, 0.55),
 ];
 
-// Endgame leads in first half, trails in second half — both bands should render.
+// Endgame leads in first half, trails in second half — gradient should carry
+// both colors and flip once.
 const MIXED_SIGN_FIXTURE: ScoreGapTimelinePoint[] = [
   makePoint('2025-01-06', 0.60, 0.50),
   makePoint('2025-01-13', 0.62, 0.51),
@@ -122,12 +136,14 @@ const MIXED_SIGN_FIXTURE: ScoreGapTimelinePoint[] = [
   makePoint('2025-02-10', 0.43, 0.55),
 ];
 
-// |endgame - non_endgame| <= 1% on every point — neither band should render.
-const EPSILON_NEUTRAL_FIXTURE: ScoreGapTimelinePoint[] = [
-  makePoint('2025-01-06', 0.500, 0.500),
-  makePoint('2025-01-13', 0.505, 0.500),
-  makePoint('2025-01-20', 0.500, 0.505),
-  makePoint('2025-01-27', 0.500, 0.500),
+// Gradual crossover: diff sequence +5pp, +0.5pp (rounds to 0, still green side),
+// −0.5pp (rounds to 0, crossover consumed), −5pp. Guards against the previous
+// epsilon-based gap right around the crossover.
+const GRADUAL_CROSSOVER_FIXTURE: ScoreGapTimelinePoint[] = [
+  makePoint('2025-01-06', 0.55, 0.50),
+  makePoint('2025-01-13', 0.51, 0.50),
+  makePoint('2025-01-20', 0.49, 0.50),
+  makePoint('2025-01-27', 0.45, 0.50),
 ];
 
 describe('EndgameScoreOverTimeChart', () => {
@@ -137,39 +153,58 @@ describe('EndgameScoreOverTimeChart', () => {
     expect(screen.getByText('Endgame vs Non-Endgame Score over Time')).toBeTruthy();
   });
 
-  it('renders both shaded bands for mixed-sign fixture', () => {
+  it('renders a single shaded band layer and gradient carries both colors for mixed-sign fixture', () => {
     const { container } = render(
       <EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} window={100} />,
     );
-    expect(queryBandAbove(container)).not.toBeNull();
-    expect(queryBandBelow(container)).not.toBeNull();
+    expect(queryBand(container)).not.toBeNull();
+    const colors = gradientStopColors(container);
+    expect(colors).toContain(SCORE_TIMELINE_FILL_ABOVE);
+    expect(colors).toContain(SCORE_TIMELINE_FILL_BELOW);
   });
 
-  it('renders only the above band when endgame leads throughout', () => {
+  it('gradient has only the leads color when endgame leads throughout', () => {
     const { container } = render(
       <EndgameScoreOverTimeChart timeline={ENDGAME_LEADS_FIXTURE} window={100} />,
     );
-    expect(queryBandAbove(container)).not.toBeNull();
-    expect(queryBandBelow(container)).toBeNull();
+    expect(queryBand(container)).not.toBeNull();
+    const colors = gradientStopColors(container);
+    expect(colors.length).toBeGreaterThan(0);
+    expect(new Set(colors)).toEqual(new Set([SCORE_TIMELINE_FILL_ABOVE]));
   });
 
-  it('renders only the below band when endgame trails throughout', () => {
+  it('gradient has only the trails color when endgame trails throughout', () => {
     const { container } = render(
       <EndgameScoreOverTimeChart timeline={ENDGAME_TRAILS_FIXTURE} window={100} />,
     );
-    expect(queryBandBelow(container)).not.toBeNull();
-    expect(queryBandAbove(container)).toBeNull();
+    expect(queryBand(container)).not.toBeNull();
+    const colors = gradientStopColors(container);
+    expect(colors.length).toBeGreaterThan(0);
+    expect(new Set(colors)).toEqual(new Set([SCORE_TIMELINE_FILL_BELOW]));
   });
 
-  it('renders neither band when all points are within ±1% epsilon', () => {
+  it('gradient emits instant-flip stop pair at the crossover (no unshaded gap)', () => {
     const { container } = render(
-      <EndgameScoreOverTimeChart timeline={EPSILON_NEUTRAL_FIXTURE} window={100} />,
+      <EndgameScoreOverTimeChart timeline={GRADUAL_CROSSOVER_FIXTURE} window={100} />,
     );
-    expect(queryBandAbove(container)).toBeNull();
-    expect(queryBandBelow(container)).toBeNull();
+    // An "instant flip" is two consecutive stops at the same offset with
+    // different colors. That is the mechanism that closes the previous
+    // epsilon-band gap at the crossover.
+    const stops = gradientStops(container);
+    const flipPair = stops.find(
+      (s, i) =>
+        i > 0
+        && stops[i - 1]!.offset === s.offset
+        && stops[i - 1]!.color !== s.color,
+    );
+    expect(flipPair).toBeDefined();
+    // And both color ends of the flip must be the configured fill colors.
+    const colors = new Set(stops.map((s) => s.color));
+    expect(colors.has(SCORE_TIMELINE_FILL_ABOVE)).toBe(true);
+    expect(colors.has(SCORE_TIMELINE_FILL_BELOW)).toBe(true);
   });
 
-  it('emits an SVG <path> inside each rendered band (regression: g-wrapper blocked Recharts discovery)', () => {
+  it('emits an SVG <path> inside the band layer (regression: g-wrapper blocked Recharts discovery)', () => {
     // Regression guard: earlier, each <Area> was wrapped in <g data-testid>
     // which hid the Area from Recharts' `findAllByType` scan and the band
     // never produced a <path>. Tests passed on the <g> wrapper alone. This
@@ -177,14 +212,9 @@ describe('EndgameScoreOverTimeChart', () => {
     const { container } = render(
       <EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} window={100} />,
     );
-    const aboveLayer = queryBandAbove(container);
-    const belowLayer = queryBandBelow(container);
-    expect(aboveLayer).not.toBeNull();
-    expect(belowLayer).not.toBeNull();
-    // Each rendered Area layer must contain at least one <path> — that is
-    // the SVG output Recharts emits for the band fill.
-    expect(aboveLayer?.querySelector('path')).not.toBeNull();
-    expect(belowLayer?.querySelector('path')).not.toBeNull();
+    const bandLayer = queryBand(container);
+    expect(bandLayer).not.toBeNull();
+    expect(bandLayer?.querySelector('path')).not.toBeNull();
   });
 
   it('renders legend entries for both series', () => {

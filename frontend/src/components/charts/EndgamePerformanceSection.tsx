@@ -6,7 +6,7 @@
  * the associated EndgameGaugesSection and its gauge-zone constants were deleted.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Area, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -50,21 +50,17 @@ const SCORE_GAP_NEUTRAL_MAX = 0.10;
 const SCORE_GAP_DOMAIN = 0.20;
 
 // Endgame vs Non-Endgame Score timeline (Phase 68). Absolute scores on a
-// clamped Y-axis. Epsilon band: when |endgame - non_endgame| <= 1 pp, neither
-// shaded band renders — avoids flicker around the crossover.
-// UAT feedback (Phase 68): clamp to 20-80% — typical score values sit in this
-// band; 0-100 wastes vertical space and flattens the lines. Matches the Time
-// Pressure vs Performance chart's Y_AXIS_DOMAIN treatment.
+// clamped Y-axis: typical score values sit in 20-80%; 0-100 wastes vertical
+// space and flattens the lines. Matches the Time Pressure vs Performance
+// chart's Y_AXIS_DOMAIN treatment.
 const SCORE_TIMELINE_Y_DOMAIN: [number, number] = [20, 80];
 const SCORE_TIMELINE_Y_TICKS = [20, 30, 40, 50, 60, 70, 80];
-const SCORE_TIMELINE_EPSILON_PCT = 1;
 const MOBILE_BREAKPOINT_PX = 768;
 
-// Classes used to identify the two band <Area> elements in tests and DOM
-// inspection. See the diagnosis comment on EndgameScoreOverTimeChart for why
-// we do not use a `<g data-testid>` wrapper.
-export const SCORE_BAND_ABOVE_CLASS = 'score-band-above';
-export const SCORE_BAND_BELOW_CLASS = 'score-band-below';
+// Class used to identify the band <Area> element in tests and DOM inspection.
+// See the diagnosis comment on EndgameScoreOverTimeChart for why we do not
+// use a `<g data-testid>` wrapper.
+export const SCORE_BAND_CLASS = 'score-band';
 
 function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(() =>
@@ -275,69 +271,92 @@ interface ScoreOverTimeChartPoint {
   endgame_game_count: number;
   non_endgame_game_count: number;
   // Ranged tuple [low, high] — Recharts renders an <Area> as a band between
-  // the two values. Null when the sign/epsilon rule says this band is absent
-  // at this point, which makes Recharts skip the segment cleanly.
-  band_above: [number, number] | null;
-  band_below: [number, number] | null;
+  // the two values. Always populated so the Area path is continuous; color
+  // switching is handled by the horizontal linearGradient fill.
+  band: [number, number];
+}
+
+interface GradientStop {
+  offset: number;  // percentage 0..100 along the gradient's x-axis
+  color: string;
 }
 
 /**
- * Phase 68: two-line absolute Score timeline (endgame + non-endgame) with
- * a sign-aware shaded band in between.
+ * Phase 68: two-line absolute Score timeline (endgame + non-endgame) with a
+ * sign-aware shaded band in between.
  *
- * Shading:
- * - band_above (green): endgame leads non-endgame by > 1 pp.
- * - band_below (red):   endgame trails non-endgame by > 1 pp.
- * - Within ±1 pp: neither band renders (epsilon neutral — avoids flicker
- *   at the crossover).
+ * Shading strategy (Phase 68 UAT fix): a single <Area> renders the band
+ * between min(endgame, non_endgame) and max(endgame, non_endgame) and is
+ * filled by a horizontal <linearGradient> whose stop offsets are computed at
+ * each crossover x-position. At every sign flip two stops with identical
+ * offset but different stopColor produce an instant color switch, so the
+ * green and red regions meet exactly at the crossover with no gap. This
+ * replaces an earlier two-Area approach that used null masking plus an ±1 pp
+ * epsilon — that combination left a visible unshaded band across every
+ * crossover, which was the bug this wiring fixes.
  *
  * UAT diagnosis (Phase 68, 260424-pc6): the earlier `<g data-testid=...>`
  * wrapper around each `<Area>` silently broke rendering. Recharts'
  * `findAllByType` in `generateCategoricalChart` only inspects DIRECT
  * children's `type.displayName`; a plain `<g>` wrapper hides the `<Area>`
- * from that scan, so the area never registers with the chart axes and
- * no `<path>` is emitted. Tests still passed because jsdom rendered the
- * `<g data-testid>` node regardless of whether any `<Area>`-produced
- * path lived inside it. Fix: render `<Area>` as a direct child and mark
- * each band via a dedicated className (SCORE_BAND_ABOVE_CLASS /
- * SCORE_BAND_BELOW_CLASS) that tests query against the rendered SVG.
- * If ALL points at the band's dataKey are null, the `<Area>` is omitted
- * so epsilon/all-above/all-below fixtures remain deterministic.
+ * from that scan, so the area never registers with the chart axes and no
+ * `<path>` is emitted. The `<Area>` must remain a direct child of
+ * ComposedChart — tests now query by the `SCORE_BAND_CLASS` className.
  */
 export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOverTimeChartProps) {
   const isMobile = useIsMobile();
+  const rawId = useId();
+  const gradientId = `score-gap-gradient-${rawId.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+  const { data, gradientStops } = useMemo(() => {
+    const data: ScoreOverTimeChartPoint[] = timeline.map((p) => {
+      // Plan 01 guarantees endgame_score / non_endgame_score are present
+      // on every point — no fallback needed.
+      const endgame = Math.round(p.endgame_score * 100);
+      const non_endgame = Math.round(p.non_endgame_score * 100);
+      return {
+        date: p.date,
+        endgame,
+        non_endgame,
+        endgame_game_count: p.endgame_game_count,
+        non_endgame_game_count: p.non_endgame_game_count,
+        band: [Math.min(endgame, non_endgame), Math.max(endgame, non_endgame)] as [number, number],
+      };
+    });
+
+    const colorFor = (diff: number): string =>
+      diff >= 0 ? SCORE_TIMELINE_FILL_ABOVE : SCORE_TIMELINE_FILL_BELOW;
+
+    const stops: GradientStop[] = [];
+    const N = data.length;
+    if (N > 0) {
+      const first = data[0]!;
+      let currentColor = colorFor(first.endgame - first.non_endgame);
+      stops.push({ offset: 0, color: currentColor });
+      const denom = N > 1 ? N - 1 : 1;
+      for (let i = 0; i < N - 1; i++) {
+        const a = data[i]!;
+        const b = data[i + 1]!;
+        const dA = a.endgame - a.non_endgame;
+        const dB = b.endgame - b.non_endgame;
+        // Strict sign flip only — `dA * dB < 0` excludes the "touches zero"
+        // case, which doesn't need an instant color switch.
+        if (dA * dB < 0) {
+          const t = dA / (dA - dB); // in (0, 1)
+          const offsetPct = ((i + t) / denom) * 100;
+          const nextColor = colorFor(dB);
+          stops.push({ offset: offsetPct, color: currentColor });
+          stops.push({ offset: offsetPct, color: nextColor });
+          currentColor = nextColor;
+        }
+      }
+      stops.push({ offset: 100, color: currentColor });
+    }
+
+    return { data, gradientStops: stops };
+  }, [timeline]);
 
   if (timeline.length === 0) return null;
-
-  const data: ScoreOverTimeChartPoint[] = timeline.map((p) => {
-    // Plan 01 guarantees endgame_score / non_endgame_score are present
-    // on every point — no fallback needed.
-    const endgame = Math.round(p.endgame_score * 100);
-    const non_endgame = Math.round(p.non_endgame_score * 100);
-    const diff = endgame - non_endgame;
-
-    const band_above: [number, number] | null =
-      diff > SCORE_TIMELINE_EPSILON_PCT ? [non_endgame, endgame] : null;
-    const band_below: [number, number] | null =
-      diff < -SCORE_TIMELINE_EPSILON_PCT ? [endgame, non_endgame] : null;
-
-    return {
-      date: p.date,
-      endgame,
-      non_endgame,
-      endgame_game_count: p.endgame_game_count,
-      non_endgame_game_count: p.non_endgame_game_count,
-      band_above,
-      band_below,
-    };
-  });
-
-  // If every point's band_above is null, omit the entire `<g data-testid=
-  // "score-band-above">` wrapper — tests assert on the wrapper's presence.
-  // Same for band_below. This is cleaner than relying on Recharts to suppress
-  // empty paths.
-  const hasAboveBand = data.some((p) => p.band_above !== null);
-  const hasBelowBand = data.some((p) => p.band_below !== null);
 
   const dates = data.map((p) => p.date);
   const formatDateTick = createDateTickFormatter(dates);
@@ -444,30 +463,23 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
                 );
               }}
             />
-            {hasAboveBand && (
-              <Area
-                type="monotone"
-                dataKey="band_above"
-                className={SCORE_BAND_ABOVE_CLASS}
-                fill={SCORE_TIMELINE_FILL_ABOVE}
-                stroke="none"
-                isAnimationActive={false}
-                connectNulls={false}
-                legendType="none"
-              />
-            )}
-            {hasBelowBand && (
-              <Area
-                type="monotone"
-                dataKey="band_below"
-                className={SCORE_BAND_BELOW_CLASS}
-                fill={SCORE_TIMELINE_FILL_BELOW}
-                stroke="none"
-                isAnimationActive={false}
-                connectNulls={false}
-                legendType="none"
-              />
-            )}
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+                {gradientStops.map((s, i) => (
+                  <stop key={i} offset={`${s.offset}%`} stopColor={s.color} />
+                ))}
+              </linearGradient>
+            </defs>
+            <Area
+              type="monotone"
+              dataKey="band"
+              className={SCORE_BAND_CLASS}
+              fill={`url(#${gradientId})`}
+              stroke="none"
+              isAnimationActive={false}
+              connectNulls={false}
+              legendType="none"
+            />
             <Line
               type="monotone"
               dataKey="endgame"
