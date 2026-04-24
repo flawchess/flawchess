@@ -7,12 +7,13 @@
  */
 
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Area, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from 'recharts';
+import { Area, Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import {
+  ENDGAME_VOLUME_BAR_COLOR,
   SCORE_TIMELINE_FILL_ABOVE,
   SCORE_TIMELINE_FILL_BELOW,
   SCORE_TIMELINE_LINE_ENDGAME,
@@ -270,6 +271,7 @@ interface ScoreOverTimeChartPoint {
   non_endgame: number;   // 0-100 whole-number percentage
   endgame_game_count: number;
   non_endgame_game_count: number;
+  per_week_total_games: number;
   // Ranged tuple [low, high] — Recharts renders an <Area> as a band between
   // the two values. Always populated so the Area path is continuous; color
   // switching is handled by the horizontal linearGradient fill.
@@ -320,6 +322,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
         non_endgame,
         endgame_game_count: p.endgame_game_count,
         non_endgame_game_count: p.non_endgame_game_count,
+        per_week_total_games: p.per_week_total_games,
         band: [Math.min(endgame, non_endgame), Math.max(endgame, non_endgame)] as [number, number],
       };
     });
@@ -355,6 +358,11 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
 
     return { data, gradientStops: stops };
   }, [timeline]);
+
+  // Volume-bar Y-axis envelope. domain={[0, barMax * 5]} pins the tallest bar
+  // to the bottom 20% of the chart canvas (Pattern 3 in 57.1-RESEARCH.md).
+  // Math.max(..., 1) avoids a [0, 0] domain when no week has any games.
+  const barMax = Math.max(1, ...data.map((r) => r.per_week_total_games));
 
   if (timeline.length === 0) return null;
 
@@ -412,12 +420,17 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
             <CartesianGrid vertical={false} />
             <XAxis dataKey="date" tickFormatter={formatDateTick} />
             <YAxis
+              yAxisId="value"
               domain={SCORE_TIMELINE_Y_DOMAIN}
               ticks={SCORE_TIMELINE_Y_TICKS}
               allowDataOverflow={false}
               tickFormatter={(v: number) => `${v}%`}
               width={44}
             />
+            {/* Hidden right Y-axis dedicated to volume bars.
+                domain={[0, barMax * 5]} pins the tallest bar to the bottom
+                20% of the chart canvas (Pattern 3 in 57.1-RESEARCH.md). */}
+            <YAxis yAxisId="bars" orientation="right" hide domain={[0, barMax * 5]} />
             <ChartTooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;
@@ -459,6 +472,9 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
                     <div className="text-muted-foreground">
                       Gap: {gapSign}{gap}%
                     </div>
+                    <div className="text-muted-foreground">
+                      Games this week: {point.per_week_total_games}
+                    </div>
                   </div>
                 );
               }}
@@ -470,7 +486,16 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
                 ))}
               </linearGradient>
             </defs>
+            <Bar
+              yAxisId="bars"
+              dataKey="per_week_total_games"
+              fill={ENDGAME_VOLUME_BAR_COLOR}
+              legendType="none"
+              isAnimationActive={false}
+              data-testid="endgame-score-timeline-volume-bars"
+            />
             <Area
+              yAxisId="value"
               type="monotone"
               dataKey="band"
               className={SCORE_BAND_CLASS}
@@ -481,6 +506,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
               legendType="none"
             />
             <Line
+              yAxisId="value"
               type="monotone"
               dataKey="endgame"
               stroke={SCORE_TIMELINE_LINE_ENDGAME}
@@ -490,6 +516,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
               isAnimationActive={false}
             />
             <Line
+              yAxisId="value"
               type="monotone"
               dataKey="non_endgame"
               stroke={SCORE_TIMELINE_LINE_NON_ENDGAME}
