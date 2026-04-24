@@ -78,7 +78,6 @@ export function EndgameInsightsBlock({
     errorRetrySeconds !== null ? roundMinutes(errorRetrySeconds) : null;
 
   const isStale = hasRendered && rendered.status === 'stale_rate_limited';
-  const staleMinutes: number | null = null;
 
   return (
     <div
@@ -105,7 +104,6 @@ export function EndgameInsightsBlock({
         <RenderedState
           response={rendered}
           isStale={isStale}
-          staleMinutes={staleMinutes}
           isPending={isPending}
           blockedReason={blockedReason}
           onRegenerate={onGenerate}
@@ -183,14 +181,12 @@ function SkeletonBlock() {
 function RenderedState({
   response,
   isStale,
-  staleMinutes,
   isPending,
   blockedReason,
   onRegenerate,
 }: {
   response: EndgameInsightsResponse;
   isStale: boolean;
-  staleMinutes: number | null;
   isPending: boolean;
   blockedReason: string | null;
   onRegenerate: () => void;
@@ -199,10 +195,11 @@ function RenderedState({
   const showOverview = overview !== '';
   const showPlayerProfile = playerProfile !== '';
   const showRecommendations = recommendations.length > 0;
+  // WR-03 (phase 68 review): the 200 envelope does not include retry_after_seconds,
+  // so staleMinutes was always null. Dropped the dead "~N min" branch and kept
+  // the generic copy to match current behavior.
   const staleCopy =
-    staleMinutes !== null
-      ? `Showing your most recent insights. You've hit the hourly limit; try again in ~${staleMinutes} min.`
-      : "Showing your most recent insights. You've hit the hourly limit; try again in a moment.";
+    "Showing your most recent insights. You've hit the hourly limit; try again in a moment.";
 
   const disabled = isPending || blockedReason !== null;
 
