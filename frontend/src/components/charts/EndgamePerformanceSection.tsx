@@ -332,8 +332,21 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
     const stops: GradientStop[] = [];
     const N = data.length;
     if (N > 0) {
-      const first = data[0]!;
-      let currentColor = colorFor(first.endgame - first.non_endgame);
+      // Bug 260424: initialize the starting color from the first NON-ZERO
+      // diff, not `data[0]`. If the first sample rounds to `endgame === non_endgame`
+      // (diff=0), `colorFor(0)` returns green. The prior sign-flip detector
+      // then missed subsequent negative diffs because `0 * dB = 0` is not
+      // strictly `< 0`, so the whole band stayed green even where endgame
+      // trailed. Finding the first non-zero diff makes the initial color
+      // match the first visible band direction.
+      let currentColor = SCORE_TIMELINE_FILL_ABOVE;
+      for (const p of data) {
+        const d = p.endgame - p.non_endgame;
+        if (d !== 0) {
+          currentColor = colorFor(d);
+          break;
+        }
+      }
       stops.push({ offset: 0, color: currentColor });
       const denom = N > 1 ? N - 1 : 1;
       for (let i = 0; i < N - 1; i++) {
@@ -341,15 +354,20 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
         const b = data[i + 1]!;
         const dA = a.endgame - a.non_endgame;
         const dB = b.endgame - b.non_endgame;
-        // Strict sign flip only — `dA * dB < 0` excludes the "touches zero"
-        // case, which doesn't need an instant color switch.
-        if (dA * dB < 0) {
-          const t = dA / (dA - dB); // in (0, 1)
+        const colorA = colorFor(dA);
+        const colorB = colorFor(dB);
+        // Insert an instant color flip whenever the segment endpoints fall
+        // on different color sides. Using `colorA !== colorB` instead of the
+        // stricter `dA * dB < 0` correctly handles the zero-endpoint case:
+        // if dA=0 and dB<0 the linear t lands at 0 (start of segment),
+        // producing a coincident flip-stop that switches `currentColor`
+        // forward.
+        if (colorA !== colorB) {
+          const t = dA / (dA - dB); // in [0, 1] when colorA !== colorB
           const offsetPct = ((i + t) / denom) * 100;
-          const nextColor = colorFor(dB);
           stops.push({ offset: offsetPct, color: currentColor });
-          stops.push({ offset: offsetPct, color: nextColor });
-          currentColor = nextColor;
+          stops.push({ offset: offsetPct, color: colorB });
+          currentColor = colorB;
         }
       }
       stops.push({ offset: 100, color: currentColor });

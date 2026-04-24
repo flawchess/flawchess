@@ -146,6 +146,17 @@ const GRADUAL_CROSSOVER_FIXTURE: ScoreGapTimelinePoint[] = [
   makePoint('2025-01-27', 0.45, 0.50),
 ];
 
+// Bug 260424: first bucket rounds to endgame == non_endgame (diff=0), then
+// every subsequent bucket is firmly negative. Before the fix the gradient
+// stayed green across the whole series because `colorFor(0)` is green and
+// `dA * dB < 0` missed the zero-to-negative transition.
+const ZERO_START_NEGATIVE_FIXTURE: ScoreGapTimelinePoint[] = [
+  makePoint('2025-01-06', 0.499, 0.501), // endgame=50, non_endgame=50, diff=0
+  makePoint('2025-01-13', 0.45, 0.55),
+  makePoint('2025-01-20', 0.44, 0.56),
+  makePoint('2025-01-27', 0.43, 0.55),
+];
+
 describe('EndgameScoreOverTimeChart', () => {
   it('renders container and title', () => {
     render(<EndgameScoreOverTimeChart timeline={ENDGAME_LEADS_FIXTURE} window={100} />);
@@ -241,6 +252,24 @@ describe('EndgameScoreOverTimeChart', () => {
     expect(
       screen.queryByText(/Score Gap is a comparison, not an absolute measure/i),
     ).toBeNull();
+  });
+
+  it('gradient is red throughout when first bucket diff rounds to zero and rest are negative (bug 260424)', () => {
+    const { container } = render(
+      <EndgameScoreOverTimeChart timeline={ZERO_START_NEGATIVE_FIXTURE} window={100} />,
+    );
+    expect(queryBand(container)).not.toBeNull();
+    const stops = gradientStops(container);
+    // The final stop (offset 100) defines the color of the trailing region,
+    // which here is the whole visible band (first point has zero-thickness).
+    // Before the fix, this stop was green (FILL_ABOVE) because the stricter
+    // `dA * dB < 0` detector never fired.
+    const lastStop = stops[stops.length - 1];
+    expect(lastStop?.color).toBe(SCORE_TIMELINE_FILL_BELOW);
+    // Red must be present; green may or may not appear as a coincident
+    // flip-stop at offset 0 but must not be the dominant color.
+    const colors = stops.map((s) => s.color);
+    expect(colors).toContain(SCORE_TIMELINE_FILL_BELOW);
   });
 
   it('returns null when timeline is empty', () => {
