@@ -62,7 +62,7 @@ def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameI
             ),
         ],
         model_used="test",
-        prompt_version="endgame_v12",
+        prompt_version="endgame_v13",
     )
 
 
@@ -86,7 +86,7 @@ def _make_log_row(
     error: str | None = None,
     response_json: dict[str, Any] | None = None,
     cache_hit: bool = False,
-    prompt_version: str = "endgame_v12",
+    prompt_version: str = "endgame_v13",
     model: str = "test",
     findings_hash: str = "b" * 64,
 ) -> LlmLog:
@@ -170,6 +170,65 @@ class TestStartupValidation:
         agent = get_insights_agent()
         assert agent is not None
         insights_llm.get_insights_agent.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# TestPromptVersionAndBody
+# ---------------------------------------------------------------------------
+
+
+class TestPromptVersionAndBody:
+    """Phase 68 Plan 03 regression tests.
+
+    Guards:
+    - _PROMPT_VERSION is bumped to endgame_v13 so prior cached LLM reports invalidate.
+    - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
+      score_gap_timeline "only exception to summary-per-metric" carve-out, and
+      renamed every `score_gap_timeline` reference to `score_timeline`.
+    - The new emitter-shape documentation describes the TWO-summary + TWO-series
+      score_timeline shape (part=endgame | part=non_endgame, weekly granularity).
+    """
+
+    def test_prompt_version_is_v13(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v13"
+
+    def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
+        from pathlib import Path
+
+        prompt_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        body = prompt_path.read_text(encoding="utf-8")
+
+        # Negative invariants — all removed in v13.
+        for forbidden in (
+            "score_gap_timeline",
+            "Framing rule (important)",
+            "one exception to the summary-per-metric",
+            "Score Gap over Time",
+        ):
+            assert forbidden not in body, f"prompt still contains forbidden string: {forbidden!r}"
+
+        # Positive invariants — renamed id + new emitter-shape documentation present.
+        assert "score_timeline" in body
+        assert "[summary score_timeline]" in body
+        assert "part=endgame" in body
+        assert "part=non_endgame" in body
+        assert "weekly" in body
+
+    def test_subsection_mapping_table_renames_to_score_timeline(self) -> None:
+        from pathlib import Path
+
+        prompt_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        body = prompt_path.read_text(encoding="utf-8")
+
+        # The `Subsection → section_id mapping` table row must map score_timeline → overall,
+        # NOT score_gap_timeline → overall.
+        mapping_row = None
+        for line in body.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("| score_timeline") and "overall" in stripped:
+                mapping_row = stripped
+                break
+        assert mapping_row is not None, "missing `| score_timeline ... | overall |` row in mapping table"
 
 
 # ---------------------------------------------------------------------------
@@ -1631,7 +1690,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v12"
+        assert response.report.prompt_version == "endgame_v13"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -1655,7 +1714,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v12"
+        assert log.response_json["prompt_version"] == "endgame_v13"
 
 
 class TestCacheBehavior:
@@ -1678,7 +1737,7 @@ class TestCacheBehavior:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
         # Seed a cache-hit eligible row: error=None, response_json set,
-        # matching (findings_hash, prompt_version="endgame_v12", model="test").
+        # matching (findings_hash, prompt_version="endgame_v13", model="test").
         async with session_maker() as session:
             await _seed(
                 session,
@@ -1849,7 +1908,7 @@ class TestRateLimit:
         # Seed 3 successful miss rows with an OLD prompt_version so they count
         # toward the rate-limit (count_recent_successful_misses does NOT filter
         # by prompt_version) but are NOT returned by get_latest_report_for_user
-        # (which filters by prompt_version="endgame_v12"), producing "no tier-2".
+        # (which filters by prompt_version="endgame_v13"), producing "no tier-2".
         now = datetime.datetime.now(datetime.UTC)
         # Build a valid report JSON for rows (avoids ValidationError in case tier-2
         # is somehow reached — but with the prompt_version mismatch it should not be).
@@ -1985,7 +2044,7 @@ class TestErrors:
             "overview": "ok",
             "sections": [],  # violates min_length=1
             "model_used": "test",
-            "prompt_version": "endgame_v12",
+            "prompt_version": "endgame_v13",
         }
         fake = Agent(
             TestModel(custom_output_args=bad_output),
