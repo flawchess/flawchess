@@ -350,6 +350,7 @@ export function EndgameEloTimelineSection({
               yAxisId="elo"
               domain={yAxis.domain}
               ticks={yAxis.ticks}
+              interval={0}
               tick={{ fontSize: 12 }}
               width={44}
             />
