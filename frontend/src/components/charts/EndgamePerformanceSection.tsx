@@ -369,7 +369,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Is your endgame improving faster than the rest of your game?
+          Are your endgames a weakness or a strength, and is the gap closing?
         </p>
       </div>
       <div className={isMobile ? '' : 'flex items-stretch'}>
