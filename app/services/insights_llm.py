@@ -57,7 +57,7 @@ from app.services.insights_service import compute_findings
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v11"  # v11 changes: (1) `### Subsection:` / `### Chart:` headers (was H2) so section→subsection hierarchy is explicit; (2) all_time series cap raised from 12 → 36 monthly buckets; new `## Payload summary` line spells out the window (`All-time series window: YYYY-MM → YYYY-MM`); (3) `endgame_elo_timeline` emits `[summary endgame_elo]` (absolute, no zone) BEFORE `[summary endgame_elo_gap]` so the LLM leads narration with the chart's headline value; (4) pawn-type asymmetry tag uses neutral story text — pawn endgames amplify material imbalance by nature, so a Conversion-strong / Recovery-weak split is expected, not a defensive weakness.
+_PROMPT_VERSION = "endgame_v12"  # v12 changes: (1) new `[anchor-combo platform=X, time_control=Y]` tag at the top of the `## Player profile` block naming the most-played live combo (stale combos are skipped) — LLM MUST lead player_profile with this combo instead of inferring from game count; (2) new `[weakest-types-tied]` tag fires when top 2 types are within ~2pp AND clearly separated from #3, licensing pawn-ending recs the same way `[weakest-type] pawn` does; (3) prompt rule additions: no cross-combo min/max range (different Glicko systems), mention all live combos when ≥3 exist, expanded cross-section story catalogue in Overview rule.
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
@@ -364,6 +364,20 @@ def _format_player_profile_block(
     if not profile:
         return []
     lines: list[str] = ["## Player profile"]
+    # v12: emit an [anchor-combo] tag pointing at the most-played live combo
+    # (no stale marker). When every combo is stale, emit `all-stale` so the
+    # LLM frames the whole profile in past tense instead of fabricating a
+    # current-Elo read from a 27-month-old rating.
+    anchor: PlayerProfileEntry | None = next(
+        (e for e in profile if e.stale_last_bucket is None),
+        None,
+    )
+    if anchor is not None:
+        lines.append(
+            f"[anchor-combo platform={anchor.platform}, time_control={anchor.time_control}]"
+        )
+    else:
+        lines.append("[anchor-combo] all-stale — narrate in past tense")
     for entry in profile:
         header = (
             f"[summary actual_elo | platform={entry.platform}, time_control={entry.time_control}]"
@@ -694,12 +708,19 @@ def _proximity_hint(metric_id: str, value_scaled: float, dimension: dict[str, st
 
 
 def _weakest_type_tag(sorted_cats: list[object]) -> str:
-    """Emit '# weakest type: <class> (score_pct=X, next=Y <class>)' when one type stands out.
+    """Emit a weakest-type tag across the per-type WDL chart.
 
-    Deterministic lowest-score_pct pick across the per-type WDL chart. Gated by
-    _WEAKEST_TYPE_MIN_GAMES (ensures noise stays out) and
-    _WEAKEST_TYPE_MIN_SEPARATION (requires a clear gap over the runner-up so
-    close ties aren't framed as "weakest").
+    Three outcomes across the eligible types (>= _WEAKEST_TYPE_MIN_GAMES):
+
+    1. Clear single winner — the lowest score_pct is separated from #2 by
+       >= _WEAKEST_TYPE_MIN_SEPARATION. Emits `[weakest-type] <class> ...`.
+    2. Tied-weakest pair — top 2 are within the separation threshold BUT
+       the #3 type (when present) is separated from #2 by >= the threshold,
+       so the two lowest stand out together. Emits
+       `[weakest-types-tied] <a>, <b> score_pct=X, Y — next=<c> score_pct=Z`
+       (v12). Releases pawn-ending recommendations the same way a clear
+       `[weakest-type] pawn` would.
+    3. No clear bottom — no tag emitted.
     """
     # EndgameCategoryStats is imported lazily to keep the helper cheap when no
     # type chart is emitted. Using `object` in the signature and casting here
@@ -718,11 +739,22 @@ def _weakest_type_tag(sorted_cats: list[object]) -> str:
     eligible.sort(key=lambda t: t[0])
     weakest_score, weakest_class = eligible[0]
     next_score, next_class = eligible[1]
-    if next_score - weakest_score < _WEAKEST_TYPE_MIN_SEPARATION:
+    if next_score - weakest_score >= _WEAKEST_TYPE_MIN_SEPARATION:
+        return (
+            f"[weakest-type] {weakest_class} score_pct={weakest_score:.0f}, "
+            f"next={next_class} score_pct={next_score:.0f}"
+        )
+    # Tied-weakest: require a #3 type that is clearly separated from #2,
+    # else the whole field is bunched and no "weakest" story is defensible.
+    if len(eligible) < 3:
+        return ""
+    third_score, third_class = eligible[2]
+    if third_score - next_score < _WEAKEST_TYPE_MIN_SEPARATION:
         return ""
     return (
-        f"[weakest-type] {weakest_class} score_pct={weakest_score:.0f}, "
-        f"next={next_class} score_pct={next_score:.0f}"
+        f"[weakest-types-tied] {weakest_class}, {next_class} "
+        f"score_pct={weakest_score:.0f}, {next_score:.0f} — "
+        f"next={third_class} score_pct={third_score:.0f}"
     )
 
 

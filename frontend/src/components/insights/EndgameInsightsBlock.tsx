@@ -2,11 +2,7 @@ import type { UseMutationResult } from '@tanstack/react-query';
 import { Info, Lightbulb, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
-import {
-  areFiltersEqual,
-  DEFAULT_FILTERS,
-  type FilterState,
-} from '@/components/filters/FilterPanel';
+import { DEFAULT_FILTERS, type FilterState } from '@/components/filters/FilterPanel';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useActiveJobs } from '@/hooks/useImport';
 import type {
@@ -15,41 +11,36 @@ import type {
 } from '@/types/insights';
 
 /**
- * Top-of-tab Insights card for beta-flagged users (BETA-01).
+ * Top-of-tab Insights card for beta-flagged users.
  *
- * Parent owns the mutation + rendered state (Plan 04) — this component receives
- * the slice it needs and renders the hero / skeleton / overview-with-regenerate /
- * error states per 66-UI-SPEC.md.
+ * Parent owns the mutation + rendered state and only passes `rendered` when
+ * the cached report matches current filters — so this component never has to
+ * reason about "outdated" reports. When filters drift away from what the
+ * report was generated against, the parent clears it and we fall back to the
+ * hero state with a single "Generate Insights" CTA.
  *
- * Beta gate: reads profile.beta_enabled from useUserProfile(); returns null both
- * while loading and when beta_enabled !== true (D-17). Single source of truth —
- * Plan 04's per-section slots observe the same mutation state and conditionally
- * render inside each H2.
+ * Beta gate: reads profile.beta_enabled from useUserProfile(); returns null
+ * while loading and when beta_enabled !== true.
  *
- * v8 button gating: the Generate / Regenerate button is disabled whenever any
+ * Button gating: the Generate Insights button is disabled whenever any
  * non-default filter other than opponent_strength is set, or an import is
- * running. The tooltip surfaces the first-blocking reason so the user knows
- * exactly which filter to change.
+ * running. The tooltip surfaces the first-blocking reason.
  */
 export interface EndgameInsightsBlockProps {
   appliedFilters: FilterState;
   rendered: EndgameInsightsResponse | null;
-  reportFilters: FilterState | null;
   mutation: UseMutationResult<EndgameInsightsResponse, InsightsAxiosError, FilterState>;
   onGenerate: () => void;
 }
 
-/** Minute rounding — 66-UI-SPEC D-14. */
 function roundMinutes(retryAfterSeconds: number): number {
   return Math.max(1, Math.ceil(retryAfterSeconds / 60));
 }
 
 /**
  * Returns the first-blocking reason that prevents generating an insights
- * report, or null when the button should be enabled. Priority follows the
- * plan's order: active import → recency → time control → platform → rated
- * → opponent type → match side. opponent_strength is intentionally allowed
- * (it's a valid cross-section the prompt scopes to).
+ * report, or null when the button should be enabled. opponent_strength is
+ * intentionally allowed (it's a valid cross-section the prompt scopes to).
  */
 function getBlockedReason(
   filters: FilterState,
@@ -72,35 +63,26 @@ function getBlockedReason(
 export function EndgameInsightsBlock({
   appliedFilters,
   rendered,
-  reportFilters,
   mutation,
   onGenerate,
 }: EndgameInsightsBlockProps) {
   const { data: profile } = useUserProfile();
   const { data: activeJobs } = useActiveJobs(!!profile?.beta_enabled);
-  // D-17: gate returns null both while profile is loading (undefined) and when flag false.
   if (!profile?.beta_enabled) return null;
 
   const isPending = mutation.isPending;
   const isError = mutation.isError;
   const hasRendered = rendered !== null;
-  const isOutdated =
-    hasRendered &&
-    reportFilters !== null &&
-    !areFiltersEqual(reportFilters, appliedFilters);
 
   const hasActiveImport = (activeJobs?.length ?? 0) > 0;
   const blockedReason = getBlockedReason(appliedFilters, hasActiveImport);
 
-  // Error-state: extract retry_after_seconds from AxiosError response body.
   const errorBody = mutation.error?.response?.data;
   const is429 = errorBody?.error === 'rate_limit_exceeded';
   const errorRetrySeconds = is429 ? errorBody?.retry_after_seconds ?? null : null;
   const errorRetryMinutes =
     errorRetrySeconds !== null ? roundMinutes(errorRetrySeconds) : null;
 
-  // Stale-rate-limited: Phase 65 200-envelope does not expose retry_after_seconds,
-  // so the "in ~{N} min" branch is unreachable today; fall back to "in a moment".
   const isStale = hasRendered && rendered.status === 'stale_rate_limited';
   const staleMinutes: number | null = null;
 
@@ -109,7 +91,6 @@ export function EndgameInsightsBlock({
       data-testid="insights-block"
       className="charcoal-texture rounded-md p-4"
     >
-      {/* H2 row with optional outdated indicator (inline-right on desktop, wraps on narrow viewports) */}
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <h2 className="text-lg font-semibold text-foreground mt-2 flex items-center gap-2">
           <span className="insight-lightbulb" aria-hidden="true">
@@ -117,19 +98,8 @@ export function EndgameInsightsBlock({
           </span>
           Insights
         </h2>
-        {isOutdated && !isError && (
-          <div
-            data-testid="insights-outdated-indicator"
-            role="status"
-            className="flex items-center gap-2 text-xs text-muted-foreground font-medium"
-          >
-            <span className="size-1.5 rounded-full bg-brand-brown" aria-hidden="true" />
-            <span>Filters changed — click Regenerate to update</span>
-          </div>
-        )}
       </div>
 
-      {/* Body — state machine */}
       {isError ? (
         <ErrorState
           retryMinutes={errorRetryMinutes}
@@ -159,10 +129,7 @@ export function EndgameInsightsBlock({
 
 // ─── State components ──────────────────────────────────────────────────
 
-/** Wrap a disabled button in a Tooltip that explains the blocking reason.
- *  Native `disabled` buttons swallow pointer events, so Radix Tooltip won't
- *  fire on them directly — wrapping in a `<span>` gives us a hoverable
- *  surface while the underlying `<Button>` stays disabled. */
+/** Wrap a disabled button in a Tooltip that explains the blocking reason. */
 function MaybeBlockedTooltip({
   reason,
   children,
@@ -235,7 +202,6 @@ function RenderedState({
   onRegenerate: () => void;
 }) {
   const { player_profile: playerProfile, overview, recommendations } = response.report;
-  // BETA-02: empty overview string = hide paragraph, keep Regenerate row.
   const showOverview = overview !== '';
   const showPlayerProfile = playerProfile !== '';
   const showRecommendations = recommendations.length > 0;
@@ -299,13 +265,14 @@ function RenderedState({
       <div className="flex items-center gap-2">
         <MaybeBlockedTooltip reason={blockedReason}>
           <Button
-            variant="default"
+            variant="brand-outline"
             onClick={onRegenerate}
             disabled={disabled}
             aria-busy={isPending}
-            data-testid="btn-regenerate-insights"
+            data-testid="btn-generate-insights"
           >
-            Regenerate
+            <Sparkles className="h-4 w-4" />
+            Generate Insights
           </Button>
         </MaybeBlockedTooltip>
         {isPending && (

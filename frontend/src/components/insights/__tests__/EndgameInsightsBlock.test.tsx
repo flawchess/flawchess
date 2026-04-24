@@ -115,7 +115,6 @@ describe('EndgameInsightsBlock — beta gate', () => {
       <EndgameInsightsBlock
         appliedFilters={BASE_FILTERS}
         rendered={null}
-        reportFilters={null}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
       />,
@@ -131,7 +130,6 @@ describe('EndgameInsightsBlock — beta gate', () => {
       <EndgameInsightsBlock
         appliedFilters={BASE_FILTERS}
         rendered={null}
-        reportFilters={null}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
       />,
@@ -150,7 +148,6 @@ describe('EndgameInsightsBlock — beta enabled', () => {
       <EndgameInsightsBlock
         appliedFilters={BASE_FILTERS}
         rendered={null}
-        reportFilters={null}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
       />,
@@ -167,7 +164,6 @@ describe('EndgameInsightsBlock — beta enabled', () => {
       <EndgameInsightsBlock
         appliedFilters={BASE_FILTERS}
         rendered={null}
-        reportFilters={null}
         mutation={makeMutation({ isPending: true })}
         onGenerate={vi.fn()}
       />,
@@ -176,12 +172,11 @@ describe('EndgameInsightsBlock — beta enabled', () => {
     expect(screen.queryByTestId('btn-generate-insights')).toBeNull();
   });
 
-  it('renders overview + Regenerate when report landed', () => {
+  it('renders overview + Generate Insights button when report landed', () => {
     render(
       <EndgameInsightsBlock
         appliedFilters={BASE_FILTERS}
         rendered={RESPONSE_FRESH}
-        reportFilters={BASE_FILTERS}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
       />,
@@ -189,7 +184,7 @@ describe('EndgameInsightsBlock — beta enabled', () => {
     expect(screen.getByTestId('insights-overview').textContent).toContain(
       'You converted winning endgames at 62% in the last 90 days.',
     );
-    expect(screen.getByTestId('btn-regenerate-insights').textContent).toContain('Regenerate');
+    expect(screen.getByTestId('btn-generate-insights').textContent).toContain('Generate Insights');
     expect(screen.queryByTestId('insights-stale-banner')).toBeNull();
   });
 
@@ -198,7 +193,6 @@ describe('EndgameInsightsBlock — beta enabled', () => {
       <EndgameInsightsBlock
         appliedFilters={BASE_FILTERS}
         rendered={RESPONSE_FRESH}
-        reportFilters={BASE_FILTERS}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
       />,
@@ -224,13 +218,12 @@ describe('EndgameInsightsBlock — beta enabled', () => {
       <EndgameInsightsBlock
         appliedFilters={BASE_FILTERS}
         rendered={response}
-        reportFilters={BASE_FILTERS}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
       />,
     );
     expect(screen.queryByTestId('insights-overview')).toBeNull();
-    expect(screen.queryByTestId('btn-regenerate-insights')).not.toBeNull();
+    expect(screen.queryByTestId('btn-generate-insights')).not.toBeNull();
   });
 
   it('renders stale banner on stale_rate_limited', () => {
@@ -239,7 +232,6 @@ describe('EndgameInsightsBlock — beta enabled', () => {
       <EndgameInsightsBlock
         appliedFilters={BASE_FILTERS}
         rendered={stale}
-        reportFilters={BASE_FILTERS}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
       />,
@@ -250,20 +242,20 @@ describe('EndgameInsightsBlock — beta enabled', () => {
     expect(banner.textContent).toMatch(/try again in a moment/);
   });
 
-  it('renders outdated indicator when appliedFilters differ from reportFilters', () => {
-    const differentFilters: FilterState = { ...BASE_FILTERS, recency: '90d' };
+  it('does NOT render a cache-mismatch indicator (parent gates the rendered prop)', () => {
+    // Filter-mismatch gating now lives in the parent (Endgames.tsx) — it only
+    // passes `rendered` when the cached report matches current filters. The
+    // component therefore has no notion of "outdated" and never shows that
+    // indicator.
     render(
       <EndgameInsightsBlock
-        appliedFilters={differentFilters}
+        appliedFilters={BASE_FILTERS}
         rendered={RESPONSE_FRESH}
-        reportFilters={BASE_FILTERS}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
       />,
     );
-    expect(screen.getByTestId('insights-outdated-indicator').textContent).toContain(
-      'Filters changed — click Regenerate to update',
-    );
+    expect(screen.queryByTestId('insights-outdated-indicator')).toBeNull();
   });
 
   it('renders error state with locked copy and Try again button', () => {
@@ -275,7 +267,6 @@ describe('EndgameInsightsBlock — beta enabled', () => {
       <EndgameInsightsBlock
         appliedFilters={BASE_FILTERS}
         rendered={null}
-        reportFilters={null}
         mutation={makeMutation({ isError: true, error: axiosError })}
         onGenerate={vi.fn()}
       />,
@@ -296,7 +287,6 @@ describe('EndgameInsightsBlock — beta enabled', () => {
       <EndgameInsightsBlock
         appliedFilters={BASE_FILTERS}
         rendered={null}
-        reportFilters={null}
         mutation={makeMutation({ isError: true, error: axiosError })}
         onGenerate={vi.fn()}
       />,
@@ -320,8 +310,7 @@ describe('EndgameInsightsBlock — beta enabled', () => {
         <EndgameInsightsBlock
           appliedFilters={BASE_FILTERS}
           rendered={null}
-          reportFilters={null}
-          mutation={makeMutation({ isError: true, error: axiosError })}
+            mutation={makeMutation({ isError: true, error: axiosError })}
           onGenerate={vi.fn()}
         />,
       );

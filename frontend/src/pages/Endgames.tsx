@@ -29,6 +29,8 @@ import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
 import { EndgameInsightsBlock } from '@/components/insights/EndgameInsightsBlock';
 import { useEndgameInsights } from '@/hooks/useEndgameInsights';
+import { useActiveJobs } from '@/hooks/useImport';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
 import type { EndgameInsightsResponse, SectionId } from '@/types/insights';
@@ -72,21 +74,38 @@ export function EndgamesPage() {
   const [appliedFilters, setAppliedFilters] = useFilterStore();
   const [pendingFilters, setPendingFilters] = useState<FilterState>(appliedFilters);
 
-  // ── Endgame Insights (Phase 66) ─────────────────────────────────────────────
+  // ── Endgame Insights ────────────────────────────────────────────────────────
   // Mutation state lifted here so per-section slots in each H2 can observe the
-  // same report without a context provider. See 66-03-PLAN architecture note.
-  // Hook call is unconditional (non-beta users just never see the Generate CTA
-  // because EndgameInsightsBlock self-gates on profile.beta_enabled), so no
-  // network request fires unless the user clicks Generate.
+  // same report without a context provider. Hook call is unconditional (non-beta
+  // users just never see the Generate CTA because EndgameInsightsBlock
+  // self-gates on profile.beta_enabled), so no network request fires unless the
+  // user clicks Generate.
+  //
+  // Cache shape: a list of (filter-state, response) pairs. A report is rendered
+  // whenever the current filter state matches a cached entry (via
+  // areFiltersEqual), so toggling among previously-generated filter states
+  // brings back their reports without another click. New Generate calls
+  // upsert into the list. Import-completion clears the whole list because new
+  // games invalidate every cached report (findings_hash content-addresses the
+  // aggregates on the server side, but the client list is coarse-invalidated
+  // to avoid stale UI between an import landing and a regenerate click).
   const insightsMutation = useEndgameInsights();
-  const [renderedInsights, setRenderedInsights] = useState<EndgameInsightsResponse | null>(null);
-  const [insightsReportFilters, setInsightsReportFilters] = useState<FilterState | null>(null);
+  const [insightsCache, setInsightsCache] = useState<
+    Array<{ filters: FilterState; response: EndgameInsightsResponse }>
+  >([]);
 
   const handleGenerateInsights = useCallback(async () => {
     try {
       const result = await insightsMutation.mutateAsync(appliedFilters);
-      setRenderedInsights(result);
-      setInsightsReportFilters(appliedFilters);
+      setInsightsCache((prev) => {
+        const idx = prev.findIndex((entry) => areFiltersEqual(entry.filters, appliedFilters));
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = { filters: appliedFilters, response: result };
+          return next;
+        }
+        return [...prev, { filters: appliedFilters, response: result }];
+      });
     } catch {
       // Error is surfaced via insightsMutation.isError → EndgameInsightsBlock error state.
       // Global MutationCache.onError in lib/queryClient.ts captures Sentry; do not
@@ -94,16 +113,45 @@ export function EndgamesPage() {
     }
   }, [insightsMutation, appliedFilters]);
 
-  // Build a lookup for O(1) per-slot access during render. Null for sections the
-  // backend did not return (including all 4 when no report has been generated).
+  // The rendered report is whichever cached entry matches the current filter
+  // state — switching back to a previously-generated filter set re-renders
+  // that report without a network call.
+  const matchingInsights: EndgameInsightsResponse | null = useMemo(() => {
+    const hit = insightsCache.find((entry) => areFiltersEqual(entry.filters, appliedFilters));
+    return hit?.response ?? null;
+  }, [insightsCache, appliedFilters]);
+
+  // Clear the cached insights when an import completes — new games change the
+  // findings, so every cached report no longer reflects current data. We watch
+  // the active-jobs count transition from >0 to 0 and invalidate on the edge.
+  // No effect fires on initial mount because prevJobsCountRef is seeded with
+  // the first observation.
+  const { data: profileForInsights } = useUserProfile();
+  const { data: activeJobsForInsights } = useActiveJobs(!!profileForInsights?.beta_enabled);
+  const activeJobsCount = activeJobsForInsights?.length ?? 0;
+  const prevJobsCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevJobsCountRef.current === null) {
+      prevJobsCountRef.current = activeJobsCount;
+      return;
+    }
+    if (prevJobsCountRef.current > 0 && activeJobsCount === 0) {
+      setInsightsCache([]);
+    }
+    prevJobsCountRef.current = activeJobsCount;
+  }, [activeJobsCount]);
+
+  // Build a lookup for O(1) per-slot access during render. Null for sections
+  // the backend did not return — or whenever the cached report's filters no
+  // longer match the applied filters (see matchingInsights above).
   const sectionBySection: Record<SectionId, { headline: string; bullets: string[] } | null> = {
     overall: null,
     metrics_elo: null,
     time_pressure: null,
     type_breakdown: null,
   };
-  if (renderedInsights && !insightsMutation.isError) {
-    for (const section of renderedInsights.report.sections) {
+  if (matchingInsights && !insightsMutation.isError) {
+    for (const section of matchingInsights.report.sections) {
       sectionBySection[section.section_id] = {
         headline: section.headline,
         bullets: section.bullets,
@@ -262,8 +310,7 @@ export function EndgamesPage() {
     <div className="flex flex-col gap-4">
       <EndgameInsightsBlock
         appliedFilters={appliedFilters}
-        rendered={renderedInsights}
-        reportFilters={insightsReportFilters}
+        rendered={matchingInsights}
         mutation={insightsMutation}
         onGenerate={handleGenerateInsights}
       />
