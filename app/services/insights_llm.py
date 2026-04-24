@@ -292,7 +292,7 @@ def get_insights_agent() -> Agent[None, EndgameInsightsReport]:
 # Subsections that produce Series blocks in the prompt (MUST match Plan 03's _TIMELINE_SUBSECTION_IDS).
 _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
-        "score_gap_timeline",
+        "score_timeline",
         "clock_diff_timeline",
         "endgame_elo_timeline",
         "type_win_rate_timeline",
@@ -896,9 +896,19 @@ def _within_noise_shift(
 
 
 def _series_granularity(finding: SubsectionFinding) -> str:
-    """Weekly for last_3mo; monthly for all_time (and always monthly for type_win_rate_timeline)."""
+    """Weekly for last_3mo; monthly for all_time.
+
+    Exceptions:
+    - type_win_rate_timeline: always monthly (5-way split makes weekly noise).
+    - score_timeline (Phase 68): always weekly (ISO-week is the natural grain
+      of the underlying `_compute_score_gap_timeline`; the two-line chart
+      reads weekly points directly and the insights series is built without
+      monthly resampling — see `_findings_score_timeline`).
+    """
     if finding.subsection_id == "type_win_rate_timeline":
         return "monthly"
+    if finding.subsection_id == "score_timeline":
+        return "weekly"
     return "weekly" if finding.window == "last_3mo" else "monthly"
 
 
@@ -1221,7 +1231,7 @@ _SECTION_LAYOUT: list[tuple[str, list[tuple[str, str]]]] = [
             # Scalar `overall` subsection emits only when the overall_wdl chart
             # does NOT (C4 gate below suppresses it when both exist).
             ("subsection", "overall"),
-            ("subsection", "score_gap_timeline"),
+            ("subsection", "score_timeline"),
         ],
     ),
     (
@@ -1282,9 +1292,22 @@ def _retained_series_for_summary(
 
 
 def _render_series_block(finding: SubsectionFinding, points: list[TimePoint]) -> list[str]:
-    """Render `[series metric, window, granularity]` + raw points + `[activity-gap]` markers."""
+    """Render `[series metric, window, granularity[, dim_key]]` + raw points + `[activity-gap]` markers.
+
+    Phase 68: when a finding carries a dimension (e.g. `{"part": "endgame"}`
+    or `{"platform": "chess.com", "time_control": "blitz"}`), the series
+    header gets a trailing dim_key suffix so two findings that share the
+    same (metric, window, granularity) but different dims each get their
+    own uniquely-labelled series block. This matches the grouping the
+    `_dim_key_for_finding` helper already produces for summary blocks.
+    """
     granularity = _series_granularity(finding)
-    lines = [f"[series {finding.metric}, {finding.window}, {granularity}]"]
+    header = f"[series {finding.metric}, {finding.window}, {granularity}"
+    dim_key = _dim_key_for_finding(finding)
+    if dim_key:
+        header += f", {dim_key}"
+    header += "]"
+    lines = [header]
     series_scale = _scale_for_metric(finding.metric)
     emit_elo = finding.metric == "endgame_elo_gap"
     prev_date: datetime.date | None = None
@@ -1327,10 +1350,10 @@ def _render_subsection_block(
     Findings are grouped by (metric, dim_key) so each pair produces exactly
     one [summary] block carrying both windows plus optional shift. Timeline
     findings also emit a `[series ...]` raw-data block below the summary.
-    `score_gap_timeline` is the sole exception: it emits only the series,
-    because its scalar `.value` is a latest-weekly-bucket mislabeled as an
-    aggregate; the authoritative score_gap aggregate lives in the `overall`
-    subsection.
+    Phase 68 (B4 option c): `score_timeline` emits TWO findings per window
+    (one per `part`) so the subsection naturally renders two summary blocks
+    + two series blocks via the existing per-dimension grouping — no special
+    suppression carve-out.
     """
     lines: list[str] = []
     header = f"### Subsection: {subsection_id}"
@@ -1347,8 +1370,6 @@ def _render_subsection_block(
             lines.append(recovery_pattern)
         if asymmetry_lines:
             lines.extend(asymmetry_lines)
-
-    suppress_summary = subsection_id == "score_gap_timeline"
 
     # Group findings by (metric, dim_key) → {window: finding}. Preserves the
     # order in which metric/dim pairs first appear so the LLM sees them in
@@ -1388,42 +1409,41 @@ def _render_subsection_block(
             else None
         )
 
-        if not suppress_summary:
-            # v11: in endgame_elo_timeline, lead each combo with the derived
-            # absolute Endgame ELO summary (the chart's headline value), then
-            # the gap summary (which carries the zone interpretation).
-            if subsection_id == "endgame_elo_timeline" and metric == "endgame_elo_gap":
-                lines.extend(
-                    _render_endgame_elo_summary_block(
-                        dim_key=dim_key,
-                        all_time_finding=all_time,
-                        last_3mo_finding=last_3mo,
-                        all_time_series=all_time_series,
-                        last_3mo_series=last_3mo_series,
-                        stale_markers=stale_markers,
-                    )
-                )
+        # v11: in endgame_elo_timeline, lead each combo with the derived
+        # absolute Endgame ELO summary (the chart's headline value), then
+        # the gap summary (which carries the zone interpretation).
+        if subsection_id == "endgame_elo_timeline" and metric == "endgame_elo_gap":
             lines.extend(
-                _render_summary_block(
-                    metric,
-                    dim_key,
-                    all_time=all_time,
-                    last_3mo=last_3mo,
+                _render_endgame_elo_summary_block(
+                    dim_key=dim_key,
+                    all_time_finding=all_time,
+                    last_3mo_finding=last_3mo,
                     all_time_series=all_time_series,
                     last_3mo_series=last_3mo_series,
                     stale_markers=stale_markers,
                 )
             )
-            if (
-                not recovery_note_emitted
-                and metric == "recovery_save_pct"
-                and subsection_id == "conversion_recovery_by_type"
-            ):
-                lines.append(
-                    "  [typical band 25-35 is cohort-wide; weak here means at/below "
-                    "population average, not absolute crisis]"
-                )
-                recovery_note_emitted = True
+        lines.extend(
+            _render_summary_block(
+                metric,
+                dim_key,
+                all_time=all_time,
+                last_3mo=last_3mo,
+                all_time_series=all_time_series,
+                last_3mo_series=last_3mo_series,
+                stale_markers=stale_markers,
+            )
+        )
+        if (
+            not recovery_note_emitted
+            and metric == "recovery_save_pct"
+            and subsection_id == "conversion_recovery_by_type"
+        ):
+            lines.append(
+                "  [typical band 25-35 is cohort-wide; weak here means at/below "
+                "population average, not absolute crisis]"
+            )
+            recovery_note_emitted = True
 
         # Raw [series ...] block below the summary. Same C5 / stale-live-twin
         # gates as before: skip last_3mo series when an all_time series exists
@@ -1505,15 +1525,13 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
         and not (f.dimension is not None and f.dimension.get("endgame_class") == "pawnless")
     ]
 
-    # v9: previously C4 dropped the scalar `overall` finding when the chart
-    # fired, leaving only the score_gap_timeline subsection's bullet — but
-    # that bullet's `value` is the latest WEEKLY bucket of the timeline,
-    # mislabeled `(all_time)`. We now keep both: the chart shows the WDL
-    # decomposition, the `overall` scalar shows the all-time aggregate
+    # v9/Phase 68: the `overall` subsection carries the authoritative
+    # aggregate `[summary score_gap]` alongside the overall_wdl chart
     # (matches chart row math: endgame.score_pct - non_endgame.score_pct).
-    # The score_gap_timeline scalar bullet is suppressed below in
-    # `_render_subsection_block` so the misleading value never reaches the
-    # LLM (the series + trend tag still carry the timeline shape).
+    # The renamed `score_timeline` subsection emits TWO findings per window
+    # (one per `part`: endgame, non_endgame), each with its own absolute
+    # rolling-window series — the prompt reads two lines instead of
+    # narrating the signed difference as a scalar.
 
     last_3mo_pairs: set[tuple[str, str]] = {
         (f.metric, f.subsection_id) for f in visible if f.window == "last_3mo"

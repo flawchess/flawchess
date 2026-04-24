@@ -197,8 +197,9 @@ class TestPromptAssembly:
             dimension=None,
             series=None,
         )
-        timeline = SubsectionFinding(
-            subsection_id="score_gap_timeline",
+        # Phase 68: score_timeline emits two findings per window (one per `part`).
+        timeline_endgame = SubsectionFinding(
+            subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
             metric="score_gap",
@@ -209,13 +210,33 @@ class TestPromptAssembly:
             sample_size=8,
             sample_quality="adequate",
             is_headline_eligible=True,
-            dimension=None,
+            dimension={"part": "endgame"},
             series=[
-                TimePoint(bucket_start="2026-01-06", value=2.1, n=12),
-                TimePoint(bucket_start="2026-01-13", value=3.5, n=14),
+                TimePoint(bucket_start="2026-01-06", value=0.55, n=12),
+                TimePoint(bucket_start="2026-01-13", value=0.57, n=14),
             ],
         )
-        tab_findings = _fake_findings(filters, findings=[non_timeline, timeline])
+        timeline_non_endgame = SubsectionFinding(
+            subsection_id="score_timeline",
+            parent_subsection_id=None,
+            window="last_3mo",
+            metric="score_gap",
+            value=3.5,
+            zone="typical",
+            trend="improving",
+            weekly_points_in_window=8,
+            sample_size=8,
+            sample_quality="adequate",
+            is_headline_eligible=False,
+            dimension={"part": "non_endgame"},
+            series=[
+                TimePoint(bucket_start="2026-01-06", value=0.52, n=12),
+                TimePoint(bucket_start="2026-01-13", value=0.52, n=14),
+            ],
+        )
+        tab_findings = _fake_findings(
+            filters, findings=[non_timeline, timeline_endgame, timeline_non_endgame]
+        )
         prompt = _assemble_user_prompt(tab_findings)
 
         # v9: Filters: header is no longer always emitted; only the
@@ -223,8 +244,10 @@ class TestPromptAssembly:
         assert "Filters:" not in prompt
         assert "Flags:" not in prompt
         assert "### Subsection: overall" in prompt
-        assert "### Subsection: score_gap_timeline" in prompt
-        assert "[series score_gap, last_3mo, weekly]" in prompt
+        assert "### Subsection: score_timeline" in prompt
+        # Phase 68: two series blocks per part; both pinned to weekly granularity.
+        assert "[series score_gap, last_3mo, weekly, part=endgame]" in prompt
+        assert "[series score_gap, last_3mo, weekly, part=non_endgame]" in prompt
         assert "2026-01-06" in prompt
         assert "2026-01-13" in prompt
 
@@ -343,7 +366,7 @@ class TestPromptAssembly:
         """A4 (260422-tnb): series points with n < MIN_BUCKET_N (=3) are dropped."""
         filters = _sample_filter_context()
         timeline = SubsectionFinding(
-            subsection_id="score_gap_timeline",
+            subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
             metric="score_gap",
@@ -354,7 +377,7 @@ class TestPromptAssembly:
             sample_size=4,
             sample_quality="thin",
             is_headline_eligible=False,
-            dimension=None,
+            dimension={"part": "endgame"},
             series=[
                 TimePoint(bucket_start="2026-02-02", value=0.01, n=1),  # drop
                 TimePoint(bucket_start="2026-02-09", value=0.04, n=5),  # keep
@@ -805,7 +828,7 @@ class TestPromptAssembly:
         """v9: scalar `overall` subsection is now emitted EVEN WHEN the chart fires.
 
         Previously (v5 C4) the scalar was dropped when the chart rendered, leaving
-        only the score_gap_timeline subsection's bullet — but that bullet's
+        only the score_timeline subsection's bullet — but that bullet's
         `value` is the latest weekly bucket of the rolling timeline, mislabeled
         as `(all_time)`. v9 keeps both: the chart shows the WDL decomposition,
         and the `overall` scalar reports the all-time aggregate that exactly
@@ -874,6 +897,8 @@ class TestPromptAssembly:
         36 months is still trimmed to keep tokens bounded.
         """
         filters = _sample_filter_context()
+        # Uses clock_diff_timeline (still monthly for all_time) since Phase 68
+        # pinned score_timeline at weekly granularity across both windows.
         # 40 consecutive monthly buckets ending 2025-10: 2022-07 .. 2025-10.
         bucket_starts: list[str] = []
         cursor = datetime.date(2022, 7, 1)
@@ -886,15 +911,15 @@ class TestPromptAssembly:
                 month = 1
             cursor = datetime.date(year, month, 1)
         assert len(bucket_starts) == 40
-        # Values alternate between -0.05 and -0.15 so the flat-trend collapse
+        # Values alternate between -5 and -15 so the flat-trend collapse
         # (v7 B4) doesn't trigger — the series must retain its per-bucket lines
         # for this test's date-presence assertions to make sense.
         timeline = SubsectionFinding(
-            subsection_id="score_gap_timeline",
+            subsection_id="clock_diff_timeline",
             parent_subsection_id=None,
             window="all_time",
-            metric="score_gap",
-            value=-0.08,
+            metric="avg_clock_diff_pct",
+            value=-8.0,
             zone="typical",
             trend="stable",
             weekly_points_in_window=40,
@@ -903,7 +928,7 @@ class TestPromptAssembly:
             is_headline_eligible=True,
             dimension=None,
             series=[
-                TimePoint(bucket_start=bs, value=-0.05 if i % 2 == 0 else -0.15, n=20)
+                TimePoint(bucket_start=bs, value=-5.0 if i % 2 == 0 else -15.0, n=20)
                 for i, bs in enumerate(bucket_starts)
             ],
         )
@@ -922,86 +947,89 @@ class TestPromptAssembly:
         ]
         assert len(series_lines) == 36
 
-    def test_last_3mo_series_block_skipped_when_all_time_series_present(self) -> None:
-        """v5 C5: last_3mo Series block is skipped when all_time Series is emitted.
+    def test_score_timeline_emits_two_summaries_two_series_deterministic_order(self) -> None:
+        """Phase 68 B4c: score_timeline subsection emits TWO [summary] + TWO [series] blocks.
 
-        The last_3mo scalar bullet stays (it's the current-state signal); only
-        the weekly Series block is suppressed. The all_time series already
-        rolls up those weeks at monthly resolution.
+        No suppression carve-out. Endgame block precedes non_endgame block
+        (deterministic order). Both series headers are pinned to `weekly`
+        granularity regardless of window.
         """
         filters = _sample_filter_context()
-        # Varied values so the v7 B4 flat-trend collapse doesn't suppress the series.
-        all_time_series = [
-            TimePoint(
-                bucket_start=f"2025-{month:02d}-01",
-                value=-0.05 if month % 2 == 0 else -0.15,
-                n=20,
-            )
-            for month in range(1, 11)
-        ]
-        last_3mo_series = [
+        endgame_series = [
             TimePoint(
                 bucket_start=f"2026-02-{day:02d}",
-                value=-0.03 if i % 2 == 0 else -0.13,
+                value=0.55 + 0.01 * i,
                 n=12,
             )
             for i, day in enumerate((2, 9, 16, 23))
         ]
-        all_time_finding = SubsectionFinding(
-            subsection_id="score_gap_timeline",
-            parent_subsection_id=None,
-            window="all_time",
-            metric="score_gap",
-            value=-0.05,
-            zone="typical",
-            trend="stable",
-            weekly_points_in_window=10,
-            sample_size=200,
-            sample_quality="rich",
-            is_headline_eligible=True,
-            dimension=None,
-            series=all_time_series,
-        )
-        last_3mo_finding = SubsectionFinding(
-            subsection_id="score_gap_timeline",
+        non_endgame_series = [
+            TimePoint(
+                bucket_start=f"2026-02-{day:02d}",
+                value=0.50 + 0.005 * i,
+                n=12,
+            )
+            for i, day in enumerate((2, 9, 16, 23))
+        ]
+        endgame_finding = SubsectionFinding(
+            subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
             metric="score_gap",
-            value=-0.03,
+            value=0.05,
             zone="typical",
             trend="improving",
             weekly_points_in_window=4,
             sample_size=40,
             sample_quality="adequate",
             is_headline_eligible=True,
-            dimension=None,
-            series=last_3mo_series,
+            dimension={"part": "endgame"},
+            series=endgame_series,
         )
-        tab = _fake_findings(filters, findings=[all_time_finding, last_3mo_finding])
+        non_endgame_finding = SubsectionFinding(
+            subsection_id="score_timeline",
+            parent_subsection_id=None,
+            window="last_3mo",
+            metric="score_gap",
+            value=0.05,
+            zone="typical",
+            trend="improving",
+            weekly_points_in_window=4,
+            sample_size=40,
+            sample_quality="adequate",
+            is_headline_eligible=False,
+            dimension={"part": "non_endgame"},
+            series=non_endgame_series,
+        )
+        tab = _fake_findings(filters, findings=[endgame_finding, non_endgame_finding])
         prompt = _assemble_user_prompt(tab)
 
-        # v10: [summary] blocks in score_gap_timeline are SUPPRESSED — the
-        # finding's `value` is the latest weekly bucket (mislabeled as
-        # `(all_time)`) and `sample_size` is the count of weekly points
-        # (not games). The `overall` subsection carries the authoritative
-        # [summary score_gap]; score_gap_timeline emits only the raw [series].
-        # Verify the score_gap_timeline subsection contains no [summary] block.
-        timeline_start = prompt.index("### Subsection: score_gap_timeline")
+        timeline_start = prompt.index("### Subsection: score_timeline")
         timeline_chunk = prompt[timeline_start:]
-        assert "[summary score_gap]" not in timeline_chunk
-        # all_time [series] header + points present.
-        assert "[series score_gap, all_time, monthly]" in prompt
-        assert "2025-10-01" in prompt
-        # last_3mo [series] header + points suppressed when an all_time twin exists.
-        assert "[series score_gap, last_3mo, weekly]" not in prompt
-        assert "2026-02-09" not in prompt
 
-        # Control: with only last_3mo (no all_time series), last_3mo [series]
-        # block is kept — suppression is conditional on the all_time twin.
-        tab_solo = _fake_findings(filters, findings=[last_3mo_finding])
-        prompt_solo = _assemble_user_prompt(tab_solo)
-        assert "[series score_gap, last_3mo, weekly]" in prompt_solo
-        assert "2026-02-09" in prompt_solo
+        # Exactly two [summary score_gap | part=X] blocks, one per part.
+        assert timeline_chunk.count("[summary score_gap | part=endgame]") == 1
+        assert timeline_chunk.count("[summary score_gap | part=non_endgame]") == 1
+        # No naked [summary score_gap] (without dim tag) — both findings carry a part dim.
+        # Exactly two [series ...] blocks, pinned weekly regardless of window.
+        assert (
+            timeline_chunk.count("[series score_gap, last_3mo, weekly, part=endgame]") == 1
+        )
+        assert (
+            timeline_chunk.count(
+                "[series score_gap, last_3mo, weekly, part=non_endgame]"
+            )
+            == 1
+        )
+        # Deterministic order: endgame summary precedes non_endgame summary.
+        endgame_idx = timeline_chunk.index("[summary score_gap | part=endgame]")
+        non_endgame_idx = timeline_chunk.index("[summary score_gap | part=non_endgame]")
+        assert endgame_idx < non_endgame_idx
+        # No suppression carve-out left behind in the module.
+        from app.services.insights_llm import _render_subsection_block as _rsb  # noqa: F401
+        import inspect
+        source = inspect.getsource(_rsb)
+        assert "suppress_summary" not in source
 
 
 class TestV6Enrichments:
@@ -1047,10 +1075,11 @@ class TestV6Enrichments:
 
         filters = _sample_filter_context()
         series_finding = self._finding(
-            subsection_id="score_gap_timeline",
+            subsection_id="score_timeline",
             metric="score_gap",
             window="all_time",
             value=-0.05,
+            dimension={"part": "endgame"},
             series=[
                 TimePoint(bucket_start=f"2026-01-{week:02d}", value=-0.05, n=50)
                 for week in (5, 12, 19, 26)
@@ -1137,9 +1166,11 @@ class TestV6Enrichments:
     def test_trend_emitted_on_summary_window_line(self) -> None:
         """v10: `trend=improving` rides the [summary] window line, not a separate tag.
 
-        score_gap_timeline is the only subsection whose [summary] block is
-        suppressed, so this test uses clock_diff_timeline to verify that
-        timeseries [summary] lines carry `trend=` / `std=` fields.
+        Phase 68 dropped the score_gap_timeline suppression carve-out, so
+        every timeline subsection emits a [summary] block now. This test
+        uses clock_diff_timeline to verify that timeseries [summary] lines
+        carry `trend=` / `std=` fields (the same format score_timeline
+        now also emits for each per-part finding).
         """
         filters = _sample_filter_context()
         series = [
@@ -1454,19 +1485,23 @@ class TestV6Enrichments:
         assert "[summary endgame_elo_gap |" in prompt
 
     def test_payload_summary_includes_all_time_window(self) -> None:
-        """v11: payload summary spells out the all-time series window bounds."""
+        """v11: payload summary spells out the all-time series window bounds.
+
+        Uses clock_diff_timeline (still monthly for all_time) since Phase 68
+        pinned score_timeline at weekly granularity across both windows.
+        """
         filters = _sample_filter_context()
         series = [
-            TimePoint(bucket_start=f"2024-{month:02d}-01", value=-0.05, n=20)
+            TimePoint(bucket_start=f"2024-{month:02d}-01", value=-5.0, n=20)
             for month in (1, 4, 7, 10)
         ] + [
-            TimePoint(bucket_start=f"2026-{month:02d}-01", value=-0.05, n=20) for month in (1, 2, 3)
+            TimePoint(bucket_start=f"2026-{month:02d}-01", value=-5.0, n=20) for month in (1, 2, 3)
         ]
         finding = self._finding(
-            subsection_id="score_gap_timeline",
-            metric="score_gap",
+            subsection_id="clock_diff_timeline",
+            metric="avg_clock_diff_pct",
             window="all_time",
-            value=-0.05,
+            value=-5.0,
             series=series,
         )
         tab = _fake_findings(filters, findings=[finding])
