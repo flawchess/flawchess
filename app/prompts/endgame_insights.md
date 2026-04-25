@@ -26,7 +26,6 @@ The `recommendations` field is the only place where directive framing is welcome
 4. **Time-pressure recommendations OK** when `avg_clock_diff_pct` is weak AND/OR the `[low-time-gap]` verdict is "user cracks under time pressure". Phrasings like "consider faster opening repertoire choices", "practice quick endgame technique with time controls".
 5. **Format** — each bullet is one short, self-contained sentence. No leading dashes/asterisks (the schema is a list).
 6. **Cohort caveat for Recovery** — when recommending defensive work because Recovery is weak, acknowledge that Recovery is harder than Conversion by definition (typical band 25-35 is cohort-wide). Don't frame weak Recovery as crisis.
-7. **Pawn-type asymmetry** — do NOT recommend "study defending losing pawn endgames" or "drill pawn defense" purely on the back of a `[asymmetry type=pawn]` tag (high Conversion, low Recovery in pawn endings). That split is the expected nature of the phase, not a defensive gap. See "Pawn-type asymmetry caveat" below for the full rule. Pawn-ending recommendations are still valid when the per-type Score is the lowest — i.e. `[weakest-type] pawn ...` fires from the `results_by_endgame_type_wdl` chart.
 
 ## Tone
 
@@ -174,7 +173,7 @@ The payload ships with bracketed mechanical tags that save you cross-bucket arit
 
 - **`[low-time-gap] 0-30% buckets, weighted: user=U, opp=O, gap=G — <verdict>`** appears in the `time_pressure_vs_performance` chart caption. This is the weighted user-vs-opponent Score delta across the 0-10%, 10-20%, and 20-30% buckets. The verdict is one of "user cracks under time pressure" / "user cooler under time pressure" / "near parity". Quote this when narrating composure — do not redo the bucket arithmetic yourself.
 
-- **`[asymmetry type=<type>] conversion=X <zone>, recovery=Y <zone> — <story>`** appears at the top of the `conversion_recovery_by_type` subsection when a type's Conversion and Recovery sit in opposing zones. The trailing `<story>` is the headline framing for that type — lead the `type_breakdown` section with it. **Pawn-type exception:** the `<story>` for `type=pawn` will explicitly say the asymmetry is *expected* (pawn endgames amplify material imbalance — terminal phase). Mirror that framing — describe the split neutrally and do NOT narrate the pawn split as a defensive weakness or recommend "defending losing pawn endgames" on the back of it. See "Pawn-type asymmetry caveat" below.
+- **`[asymmetry type=<type>] conversion=X <zone>, recovery=Y <zone> — <story>`** appears at the top of the `conversion_recovery_by_type` subsection when a type's Conversion and Recovery sit in opposing zones. The trailing `<story>` is the headline framing for that type — lead the `type_breakdown` section with it.
 
 - **`[recovery-pattern] weak across N of 5 types — ...`** appears in `conversion_recovery_by_type` when Recovery is weak across most endgame types. When this fires, narrate Recovery as one consistent defensive pattern across types rather than calling out each type separately. Pair with the cohort-relative note below.
 
@@ -260,17 +259,6 @@ Cross-reference with the `## Player profile` block: if the user is on a clear le
 Before writing the `type_breakdown` section, scan each endgame type for conversion / recovery asymmetry — one metric in the strong zone and the other in the weak zone for the same type. That split is usually the most actionable observation in the entire payload ("you close winning X endgames well but bleed losing ones," or vice versa) and should be lead content in the section when present. A payload marker `[asymmetry type=<type>] conversion=X <zone>, recovery=Y <zone>` surfaces such splits when the math is mechanical; trust it over raw win rate framing.
 
 When `[weakest-type]` is emitted, lead the section with the named type (score_pct from the `results_by_endgame_type_wdl` chart). When `[weakest-types-tied]` is emitted instead, lead with both named classes as tied-weakest ("pawn and minor-piece share the lowest Score at 42-43%"). When `[asymmetry type=...]` also exists, combine with the weakest-type lead when possible — e.g. "pawn endgames have the lowest Score AND show a conversion/recovery split".
-
-### Pawn-type asymmetry caveat
-
-Pawn endgames are the terminal phase of the game. Material imbalance there is close to decisive: K+P-up positions convert almost mechanically (K+P vs K is forced winning with the pawn in most configurations), and K+P-down positions are often forced losses unless a known drawn structure (wrong rook pawn, opposition) holds. A strong-Conversion / weak-Recovery split for pawn endgames therefore reflects the **nature of the phase**, not necessarily individual skill. Per-type cohort bands are not yet available, so the comparison "your Recovery is weak" is against a population mean that pools all endgame types — pawn-specific cohort Recovery is almost certainly lower than the cross-type 25-35 band suggests.
-
-Apply this caveat when narrating any pawn-type asymmetry:
-- Describe the split neutrally — "pawn endgames show the expected asymmetry: Conversion at X%, Recovery at Y%". Do NOT use frames like "you bleed losing pawn endgames", "defensive struggles in pawn endgames", or "pawn-defense weakness".
-- The `[asymmetry type=pawn] ...` tag's story text now explicitly says "expected asymmetry — pawn endgames amplify material imbalance (terminal phase)" — mirror that phrasing.
-- Do NOT add a recommendation to "study defending losing pawn endgames" / "drill pawn defense" on the back of a pawn-type asymmetry alone. Recommendations targeting pawn endings are still valid when the per-type Score from the `results_by_endgame_type_wdl` chart is the lowest — i.e. `[weakest-type] pawn` fires, OR `[weakest-types-tied]` names pawn among the tied-weakest classes. Both are absolute Score signals, not synthetic asymmetries.
-
-This caveat applies to **pawn only**. Rook / minor-piece / queen / mixed asymmetries should still be narrated with the standard "you close X but bleed Y" / "you defend X but mishandle Y" framing.
 
 ## Endgame statistics concepts
 

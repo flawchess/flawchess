@@ -58,7 +58,7 @@ from app.services.insights_service import compute_findings
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v15"  # v15 (v1.11 cleanup pass): dropped stale "check the `Filters:` header" parenthetical from the avg_clock_diff_pct glossary entry — the `Filters:` header was removed in v9 and the insights router rejects non-default time_control filters, so the instruction pointed at nothing. Cache invalidation is automatic via prompt_version cache key. See `app/prompts/endgame_insights.md`. v14 (260424-pc6 UAT pass) introduced the three-metric score_timeline emitter (endgame_score / non_endgame_score / score_gap) plus constant-N disclosure and no-op zone bands for per-part absolute scores.
+_PROMPT_VERSION = "endgame_v16"  # v16 (260425 benchmarks pass): dropped the pawn-type asymmetry special case in both the prompt and the `[asymmetry type=...]` tag generator — Section 6 benchmark data shows queen has the largest conversion/recovery asymmetry (52 pp) and pawn recovery (34%) sits at the top of the typical 25-35 band, contradicting the v11 "expected asymmetry, pawn-specific cohort recovery is lower than 25-35" rationale. All endgame classes now use the standard "closes winning / defends losing" story framing. v15 (v1.11 cleanup pass): dropped stale "check the `Filters:` header" parenthetical from the avg_clock_diff_pct glossary entry — the `Filters:` header was removed in v9 and the insights router rejects non-default time_control filters, so the instruction pointed at nothing. Cache invalidation is automatic via prompt_version cache key. See `app/prompts/endgame_insights.md`. v14 (260424-pc6 UAT pass) introduced the three-metric score_timeline emitter (endgame_score / non_endgame_score / score_gap) plus constant-N disclosure and no-op zone bands for per-part absolute scores.
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
@@ -832,16 +832,7 @@ def _asymmetry_lines(findings: list[SubsectionFinding]) -> list[str]:
             continue
         c_val = c.value * 100.0
         r_val = r.value * 100.0
-        # v11: pawn endgames amplify material imbalance by their nature (K+P vs K
-        # is mechanical to convert, K vs K+P is often forced loss). Until we have
-        # per-type cohort bands, a strong-Conversion / weak-Recovery split for
-        # pawn endgames should be narrated neutrally, not as a defensive weakness.
-        if klass == "pawn":
-            story = (
-                "expected asymmetry — pawn endgames amplify material imbalance "
-                "(terminal phase); narrate neutrally, do not frame as defensive weakness"
-            )
-        elif c.zone == "strong":
+        if c.zone == "strong":
             story = "closes winning endgames but bleeds losing ones"
         else:
             story = "defends losing endgames but mishandles winning ones"

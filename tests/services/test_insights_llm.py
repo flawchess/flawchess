@@ -62,7 +62,7 @@ def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameI
             ),
         ],
         model_used="test",
-        prompt_version="endgame_v15",
+        prompt_version="endgame_v16",
     )
 
 
@@ -86,7 +86,7 @@ def _make_log_row(
     error: str | None = None,
     response_json: dict[str, Any] | None = None,
     cache_hit: bool = False,
-    prompt_version: str = "endgame_v15",
+    prompt_version: str = "endgame_v16",
     model: str = "test",
     findings_hash: str = "b" * 64,
     opponent_strength: str = "any",
@@ -182,7 +182,7 @@ class TestPromptVersionAndBody:
     """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v15 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v16 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
@@ -192,8 +192,8 @@ class TestPromptVersionAndBody:
       and the `[n=<N> for every point]` disclosure for constant-N series.
     """
 
-    def test_prompt_version_is_v14(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v15"
+    def test_prompt_version_is_v16(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v16"
 
     def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
         from pathlib import Path
@@ -1402,9 +1402,11 @@ class TestV6Enrichments:
     def test_asymmetry_line_emitted_for_strong_weak_split(self) -> None:
         """Pawn with strong conversion + weak recovery emits `[asymmetry type=pawn] ...`.
 
-        v11: pawn-type story text is the neutral "expected asymmetry" framing,
-        not the "closes winning ... bleeds losing" framing — pawn endgames
-        amplify material imbalance by nature.
+        v16: pawn now uses the standard "closes winning / defends losing"
+        framing alongside every other endgame class. Section 6 benchmark
+        data shows queen has the largest conversion/recovery asymmetry, not
+        pawn — the v11 pawn special case was reasoned from chess theory, not
+        from population data, and the data does not back it.
         """
         filters = _sample_filter_context()
         conv = self._finding(
@@ -1427,13 +1429,12 @@ class TestV6Enrichments:
         prompt = _assemble_user_prompt(tab)
 
         assert "[asymmetry type=pawn] conversion=77 strong, recovery=16 weak" in prompt
-        assert "expected asymmetry" in prompt
-        assert "pawn endgames amplify material imbalance" in prompt
-        # v11: the "closes winning ... bleeds losing" framing is reserved for
-        # non-pawn types (rook / minor_piece / queen / mixed) — narrating it
-        # for pawn endgames implies a defensive weakness that the data does
-        # not support without per-type cohort baselines.
-        assert "bleeds losing ones" not in prompt
+        assert "closes winning endgames but bleeds losing ones" in prompt
+        # v16: the v11 "expected asymmetry — pawn endgames amplify material
+        # imbalance" framing is gone. Pawn now uses the same story text as
+        # every other class.
+        assert "expected asymmetry" not in prompt
+        assert "amplify material imbalance" not in prompt
 
     def test_asymmetry_line_uses_standard_story_for_non_pawn_types(self) -> None:
         """Rook with strong conversion + weak recovery uses the standard story text."""
@@ -1833,7 +1834,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v15"
+        assert response.report.prompt_version == "endgame_v16"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -1857,7 +1858,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v15"
+        assert log.response_json["prompt_version"] == "endgame_v16"
 
 
 class TestCacheBehavior:
@@ -1883,7 +1884,7 @@ class TestCacheBehavior:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
         # Seed a cache-hit eligible row: error=None, response_json set,
-        # matching (user_id, prompt_version="endgame_v15", model="test",
+        # matching (user_id, prompt_version="endgame_v16", model="test",
         # opponent_strength="any" via filter_context).
         async with session_maker() as session:
             await _seed(
@@ -2311,7 +2312,7 @@ class TestRateLimit:
         # Seed 3 successful miss rows with an OLD prompt_version so they count
         # toward the rate-limit (count_recent_successful_misses does NOT filter
         # by prompt_version) but are NOT returned by get_latest_report_for_user
-        # (which filters by prompt_version="endgame_v15"), producing "no tier-2".
+        # (which filters by prompt_version="endgame_v16"), producing "no tier-2".
         now = datetime.datetime.now(datetime.UTC)
         # Build a valid report JSON for rows (avoids ValidationError in case tier-2
         # is somehow reached — but with the prompt_version mismatch it should not be).
@@ -2451,7 +2452,7 @@ class TestErrors:
             "overview": "ok",
             "sections": [],  # violates min_length=1
             "model_used": "test",
-            "prompt_version": "endgame_v15",
+            "prompt_version": "endgame_v16",
         }
         fake = Agent(
             TestModel(custom_output_args=bad_output),
