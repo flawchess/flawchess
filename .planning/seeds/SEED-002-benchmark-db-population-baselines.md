@@ -71,6 +71,7 @@ Do NOT surface during v1.11. v1.11 is the Insights milestone (SEED-001) which co
 - Same methodology: t=100 + 4-ply persistence vs Stockfish eval u=100 on the same game subset, per endgame type.
 - Report format: write to `reports/classifier-validation-benchmark-YYYY-MM-DD.md`. Structure should parallel the 2026-04-07 report so side-by-side comparison is trivial.
 - **Replication check**: do the systematic-offset estimates (conversion +2-8pp, recovery -4-6pp) hold when sample sizes are 10-100x larger? If yes, the existing conclusion is confirmed with much higher confidence. If no, investigate why small-sample estimates drifted.
+- **Quantitative gate for "materially different"** (Phase B is a checkpoint per Notes section): per-endgame-type offset estimates from the benchmark DB are materially different from the 2026-04-07 report when (a) the new point estimate falls outside the 2026-04-07 95% CI for that cell, AND (b) the magnitude of disagreement exceeds 2pp absolute. Both conditions must hold to trigger the "pause and investigate" branch. Single-cell breaches with small magnitudes (e.g., Queen, where the 2026-04-07 CI was already wide) do not gate Phases C-E. Pawn / Rook / Minor cells breaching the gate do gate, since those drove the original conclusion.
 
 ### Phase C: Rating-stratified validation (new analysis)
 
@@ -90,6 +91,7 @@ Do NOT surface during v1.11. v1.11 is the Insights milestone (SEED-001) which co
 - Skill computes per-(rating_bucket × TC × platform × endgame_type) baseline rates: Conversion, Parity, Recovery, composite Endgame Skill, average clock at endgame entry, timeout rates, and any other metrics that currently use self-referential comparison.
 - Skill also computes rating-specific zone thresholds (currently Conversion 50/70, Recovery 15/35, Endgame Skill 40/60 are global). Calibration target: median user at their rating lands at the warning/success boundary (same rule the 2026-04-07 report used for recalibrating global thresholds). Apply per rating bucket.
 - Output report drives manual updates to gauge zone constants and any in-app baseline references. No prod-side lookup table or live benchmark-DB queries from prod — calculations happen in the skill, results land in code/config as needed.
+- **Phase E is complete only when the manual zone-threshold updates have landed in code, not when the skill emits the report.** Concretely: the report from the upgraded `/benchmarks` skill drives edits to `frontend/src/lib/theme.ts` (or wherever the rating-bucketed zone constants ultimately live — current globals are in theme), with the new constants reviewed in PR. Shipping the skill upgrade without applying its output would leave the milestone half-done. If the rating-bucketed thresholds prove to require larger UI plumbing than a constants edit (e.g., user-rating-aware lookup at render time), split that into Phase F during the milestone discuss rather than expanding Phase E mid-flight.
 - Percentile badges (e.g., "top 20% Parity at your rating") deferred to v1.13+ — motivational flavor, not core to the milestone.
 
 ### Optional (defer unless validation surfaces a need)
