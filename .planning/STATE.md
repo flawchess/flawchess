@@ -2,15 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.12
 milestone_name: Benchmark DB & Population Baselines
-status: ready-to-plan
-last_updated: "2026-04-25T18:00:00Z"
-last_activity: 2026-04-25 -- Roadmap created for v1.12 (Phases 69-73). Phase 70 is a documented gate.
+status: planning
+last_updated: "2026-04-25T19:30:30.942Z"
+last_activity: 2026-04-25 — Roadmap created for v1.12 (Phases 69-73). Phase 70 is a documented gate.
 progress:
-  total_phases: 5
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
 ---
 
 # Project State: FlawChess
@@ -80,5 +79,6 @@ Accepted at v1.11 milestone close on 2026-04-24:
 | 260425-nlv | Restructure GameCard and PositionBookmarkCard layouts (full-width identifier line on top, board left + content right below) | 2026-04-25 | 5a7ad30 | [260425-nlv-restructure-gamecard-and-positionbookmar](./quick/260425-nlv-restructure-gamecard-and-positionbookmar/) |
 
 ---
-Last activity: 2026-04-25 — Completed quick task 260425-nlv: GameCard and PositionBookmarkCard restructured so the identifier line (player names + platform link / bookmark label) spans the full card width on top, with the mini chessboard below-left and remaining content below-right; mobile-only opponent variant and JS truncateLabel helper removed in favor of CSS truncation.
+Last activity: 2026-04-25 — Phase 69 (Benchmark DB Infrastructure & Ingestion Pipeline) context captured. 15 decisions locked (D-01..D-15). Sample unit pivoted to distinct players per cell, reusing existing Lichess import pipeline (U1). Resume: `.planning/phases/69-benchmark-db-infrastructure-ingestion-pipeline/69-CONTEXT.md`.
 | 2026-04-25 | fast | Mobile full-width Overview rating charts | done |
+| 2026-04-25 | discuss-phase | Phase 69 context gathered (D-01..D-15) | done |
