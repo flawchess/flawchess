@@ -51,14 +51,14 @@ const NAV_ITEMS = [
   { to: '/import', label: 'Import', Icon: DownloadIcon },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
-  { to: '/global-stats', label: 'Overview', Icon: BarChart3Icon },
+  { to: '/overview', label: 'Overview', Icon: BarChart3Icon },
 ] as const;
 
 const BOTTOM_NAV_ITEMS = [
   { to: '/import', label: 'Import', Icon: DownloadIcon },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
-  { to: '/global-stats', label: 'Overview', Icon: BarChart3Icon },
+  { to: '/overview', label: 'Overview', Icon: BarChart3Icon },
 ] as const;
 
 // D-16: Admin nav item appended at render time when profile.is_superuser === true.
@@ -71,7 +71,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/import': 'Import',
   '/openings': 'Openings',
   '/endgames': 'Endgames',
-  '/global-stats': 'Overview',
+  '/overview': 'Overview',
   '/admin': 'Admin',
 };
 
@@ -444,8 +444,9 @@ function AppRoutes() {
           <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />
           <Route path="/openings/*" element={<OpeningsPage />} />
           <Route path="/endgames/*" element={<EndgamesPage />} />
-          <Route path="/rating" element={<Navigate to="/global-stats" replace />} />
-          <Route path="/global-stats" element={<GlobalStatsPage />} />
+          <Route path="/rating" element={<Navigate to="/overview" replace />} />
+          <Route path="/global-stats" element={<Navigate to="/overview" replace />} />
+          <Route path="/overview" element={<GlobalStatsPage />} />
           <Route path="/admin" element={<SuperuserRoute><AdminPage /></SuperuserRoute>} />
         </Route>
         {/* Catch-all redirects to homepage */}
