@@ -80,3 +80,4 @@ Accepted at v1.11 milestone close on 2026-04-24:
 
 ---
 Last activity: 2026-04-25 — Completed quick task 260425-lwz: when chess.com's archives-list endpoint silently 404s for a real account (e.g. wasterram), the import client now enumerates monthly archive URLs from the player's joined date and feeds them into the existing per-archive fetch loop, recovering imports that previously failed with "couldn't return games right now".
+| 2026-04-25 | fast | Mobile full-width Overview rating charts | done |
