@@ -89,6 +89,7 @@ def _make_log_row(
     prompt_version: str = "endgame_v15",
     model: str = "test",
     findings_hash: str = "b" * 64,
+    opponent_strength: str = "any",
 ) -> LlmLog:
     """Build a minimal LlmLog row for seeding rate-limit tests."""
     kwargs: dict[str, Any] = dict(
@@ -97,7 +98,7 @@ def _make_log_row(
         model=model,
         prompt_version=prompt_version,
         findings_hash=findings_hash,
-        filter_context={"opponent_strength": "any"},
+        filter_context={"opponent_strength": opponent_strength},
         user_prompt="user",
         response_json=response_json,
         input_tokens=100,
@@ -197,7 +198,9 @@ class TestPromptVersionAndBody:
     def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
         from pathlib import Path
 
-        prompt_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        prompt_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
         body = prompt_path.read_text(encoding="utf-8")
 
         # Negative invariants — all removed in v13, plus v14 drops the old
@@ -224,7 +227,9 @@ class TestPromptVersionAndBody:
     def test_subsection_mapping_table_renames_to_score_timeline(self) -> None:
         from pathlib import Path
 
-        prompt_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        prompt_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
         body = prompt_path.read_text(encoding="utf-8")
 
         # The `Subsection → section_id mapping` table row must map score_timeline → overall,
@@ -235,7 +240,9 @@ class TestPromptVersionAndBody:
             if stripped.startswith("| score_timeline") and "overall" in stripped:
                 mapping_row = stripped
                 break
-        assert mapping_row is not None, "missing `| score_timeline ... | overall |` row in mapping table"
+        assert mapping_row is not None, (
+            "missing `| score_timeline ... | overall |` row in mapping table"
+        )
 
     def test_constant_n_series_emits_disclosure_and_drops_per_point_suffix(self) -> None:
         """v14 (260424-pc6 C): when every point's `n` is equal, the series block
@@ -1222,6 +1229,7 @@ class TestPromptAssembly:
         # No suppression carve-out left behind in the module.
         from app.services.insights_llm import _render_subsection_block as _rsb  # noqa: F401
         import inspect
+
         source = inspect.getsource(_rsb)
         assert "suppress_summary" not in source
 
@@ -1863,16 +1871,20 @@ class TestCacheBehavior:
     ) -> None:
         """A seeded cache row (error=None) causes the next call to return cache_hit.
 
-        Note: the test provider "test" is unknown to genai-prices, so any row
-        written by generate_insights itself gets error="cost_unknown:test" and
-        would NOT be found by get_latest_log_by_hash (which filters error IS NULL).
-        We seed a clean cache row manually to test the cache-hit branch directly.
+        Note: the cache key is now structural (260425-dxh): the lookup runs via
+        get_latest_successful_log_for_user on (user_id, prompt_version, model,
+        opponent_strength) — findings_hash is no longer part of the key. The
+        test provider "test" is unknown to genai-prices, so any row written by
+        generate_insights itself gets error="cost_unknown:test" and would NOT
+        be returned by the lookup (which filters error IS NULL). We seed a
+        clean cache row manually to test the cache-hit branch directly.
         """
         report = _sample_report()
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
         # Seed a cache-hit eligible row: error=None, response_json set,
-        # matching (findings_hash, prompt_version="endgame_v15", model="test").
+        # matching (user_id, prompt_version="endgame_v15", model="test",
+        # opponent_strength="any" via filter_context).
         async with session_maker() as session:
             await _seed(
                 session,
@@ -1968,6 +1980,257 @@ class TestCacheBehavior:
         assert r.status == "fresh"
 
 
+class TestStructuralCacheInvalidation:
+    """Tests for the 260425-dxh structural cache:
+    (user_id, prompt_version, model, opponent_strength) + import freshness + 30d TTL.
+    """
+
+    @pytest.mark.asyncio
+    async def test_import_with_new_games_invalidates_cache(
+        self,
+        fake_insights_agent: Any,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A completed import with games_imported > 0 after the cached row
+        was written invalidates the cache: next call must be fresh."""
+        from sqlalchemy import delete
+
+        from app.models.import_job import ImportJob
+
+        report = _sample_report()
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        old = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=2)
+        newer = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)
+        async with session_maker() as session:
+            await _seed(
+                session,
+                _make_log_row(
+                    fresh_test_user.id,
+                    created_at=old,
+                    response_json=report.model_dump(),
+                ),
+            )
+            session.add(
+                ImportJob(
+                    id="job-with-games",
+                    user_id=fresh_test_user.id,
+                    platform="chess.com",
+                    username="dxhuser",
+                    status="completed",
+                    games_fetched=42,
+                    games_imported=42,
+                    started_at=newer,
+                    completed_at=newer,
+                )
+            )
+            await session.commit()
+
+        fake_insights_agent(report)
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid),
+        )
+
+        async with session_maker() as session:
+            r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
+        assert r.status == "fresh"
+
+        # Cleanup the seeded ImportJob row.
+        async with session_maker() as session:
+            await session.execute(delete(ImportJob).where(ImportJob.id == "job-with-games"))
+            await session.commit()
+
+    @pytest.mark.asyncio
+    async def test_no_op_import_does_not_invalidate(
+        self,
+        fake_insights_agent: Any,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A completed import with games_imported = 0 (daily resync that
+        fetched nothing new) must NOT invalidate the cache."""
+        from sqlalchemy import delete
+
+        from app.models.import_job import ImportJob
+
+        report = _sample_report()
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        old = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=2)
+        newer = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)
+        async with session_maker() as session:
+            await _seed(
+                session,
+                _make_log_row(
+                    fresh_test_user.id,
+                    created_at=old,
+                    response_json=report.model_dump(),
+                ),
+            )
+            session.add(
+                ImportJob(
+                    id="job-no-games",
+                    user_id=fresh_test_user.id,
+                    platform="chess.com",
+                    username="dxhuser",
+                    status="completed",
+                    games_fetched=0,
+                    games_imported=0,
+                    started_at=newer,
+                    completed_at=newer,
+                )
+            )
+            await session.commit()
+
+        fake_insights_agent(report)
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid),
+        )
+
+        async with session_maker() as session:
+            r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
+        assert r.status == "cache_hit"
+
+        async with session_maker() as session:
+            await session.execute(delete(ImportJob).where(ImportJob.id == "job-no-games"))
+            await session.commit()
+
+    @pytest.mark.asyncio
+    async def test_ttl_expiry_misses(
+        self,
+        fake_insights_agent: Any,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A cached row older than INSIGHTS_CACHE_MAX_AGE_DAYS is treated as a miss."""
+        from app.services.insights_llm import INSIGHTS_CACHE_MAX_AGE_DAYS
+
+        report = _sample_report()
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        too_old = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+            days=INSIGHTS_CACHE_MAX_AGE_DAYS + 1
+        )
+        async with session_maker() as session:
+            await _seed(
+                session,
+                _make_log_row(
+                    fresh_test_user.id,
+                    created_at=too_old,
+                    response_json=report.model_dump(),
+                ),
+            )
+
+        fake_insights_agent(report)
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid),
+        )
+
+        async with session_maker() as session:
+            r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
+        assert r.status == "fresh"
+
+    @pytest.mark.asyncio
+    async def test_other_users_log_not_returned(
+        self,
+        fake_insights_agent: Any,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A log row owned by a different user must not be served as cache hit
+        (regression test for the missing user_id filter on the old hash-based lookup)."""
+        import uuid as _uuid
+
+        from sqlalchemy import delete
+
+        report = _sample_report()
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        # Create a real second user (FK constraint prevents fabricated ids).
+        async with session_maker() as session:
+            other_user = User(
+                email=f"other-user-{_uuid.uuid4()}@example.com",
+                hashed_password="x",
+            )
+            session.add(other_user)
+            await session.commit()
+            await session.refresh(other_user)
+            other_user_id = other_user.id
+
+        try:
+            async with session_maker() as session:
+                await _seed(
+                    session,
+                    _make_log_row(
+                        other_user_id,
+                        response_json=report.model_dump(),
+                    ),
+                )
+
+            fake_insights_agent(report)
+            monkeypatch.setattr(
+                "app.services.insights_llm.compute_findings",
+                lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid),
+            )
+
+            async with session_maker() as session:
+                r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
+            assert r.status == "fresh"
+        finally:
+            async with session_maker() as session:
+                # ON DELETE CASCADE on llm_logs.user_id removes the seeded log row.
+                await session.execute(delete(User).where(User.id == other_user_id))
+                await session.commit()
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_skips_compute_findings(
+        self,
+        fake_insights_agent: Any,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Cache hit must NOT invoke compute_findings (the whole point of the rewrite)."""
+        report = _sample_report()
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        async with session_maker() as session:
+            await _seed(
+                session,
+                _make_log_row(
+                    fresh_test_user.id,
+                    response_json=report.model_dump(),
+                ),
+            )
+
+        called = {"count": 0}
+
+        async def _raising_compute_findings(
+            fc: FilterContext, sess: AsyncSession, uid: int
+        ) -> EndgameTabFindings:
+            called["count"] += 1
+            raise AssertionError("compute_findings must not be called on cache hit")
+
+        fake_insights_agent(report)
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            _raising_compute_findings,
+        )
+
+        async with session_maker() as session:
+            r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
+        assert r.status == "cache_hit"
+        assert called["count"] == 0
+
+
 # ---------------------------------------------------------------------------
 # TestRateLimit
 # ---------------------------------------------------------------------------
@@ -1990,8 +2253,11 @@ class TestRateLimit:
         # Seed 3 successful miss rows (consuming the quota) + 1 tier-2 fallback.
         # All rows use valid EndgameInsightsReport JSON (get_latest_report_for_user
         # returns the most recent one, which may be any of these — that's fine as
-        # long as it parses). Use distinct findings_hashes != "b"*64 so tier-1
-        # lookup for the current "b"*64 hash does not find them.
+        # long as it parses).
+        # 260425-dxh: seed with opponent_strength="stronger" so the structural
+        # cache lookup (which queries with the call's opp_strength="any") MISSES
+        # — but rate-limit count and tier-2 fallback do NOT filter by
+        # opp_strength, so they still pick up these rows.
         now = datetime.datetime.now(datetime.UTC)
         valid_report_json = report.model_dump()
         async with session_maker() as session:
@@ -2003,6 +2269,7 @@ class TestRateLimit:
                         created_at=now - datetime.timedelta(minutes=10 + i),
                         findings_hash="c" * 64,
                         response_json=valid_report_json,
+                        opponent_strength="stronger",
                     ),
                 )
             # Tier-2 fallback: oldest successful row (get_latest returns newest,
@@ -2016,6 +2283,7 @@ class TestRateLimit:
                     created_at=now - datetime.timedelta(minutes=30),
                     findings_hash="d" * 64,
                     response_json=valid_report_json,
+                    opponent_strength="stronger",
                 ),
             )
 
@@ -2084,7 +2352,10 @@ class TestRateLimit:
         report = _sample_report()
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
-        # Seed 3 misses with created_at >61 minutes ago (outside the 1h window)
+        # Seed 3 misses with created_at >61 minutes ago (outside the 1h window).
+        # 260425-dxh: use opponent_strength="stronger" so the structural cache
+        # lookup misses (the call uses default "any") — otherwise these rows
+        # would serve as a cache hit before the rate-limit check ran.
         old_time = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=61)
         async with session_maker() as session:
             for _ in range(3):
@@ -2095,6 +2366,7 @@ class TestRateLimit:
                         created_at=old_time,
                         response_json={"ok": True},
                         findings_hash="e" * 64,
+                        opponent_strength="stronger",
                     ),
                 )
 

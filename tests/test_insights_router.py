@@ -79,6 +79,7 @@ def _make_row(
     prompt_version: str = "endgame_v1",
     model: str = "test",
     findings_hash: str = "a" * 64,
+    opponent_strength: str = "any",
 ) -> LlmLog:
     """Build a minimal-valid LlmLog row for seeding rate-limit tests."""
     kwargs: dict[str, Any] = dict(
@@ -87,7 +88,7 @@ def _make_row(
         model=model,
         prompt_version=prompt_version,
         findings_hash=findings_hash,
-        filter_context={"opponent_strength": "any"},
+        filter_context={"opponent_strength": opponent_strength},
         user_prompt="user",
         response_json=response_json,
         input_tokens=100,
@@ -380,12 +381,17 @@ class TestRateLimit:
                     prompt_version="endgame_v0",
                     findings_hash="j" * 64,
                 ),
-                # Tier-2 fallback: current prompt_version row
+                # Tier-2 fallback: current prompt_version row.
+                # 260425-dxh: use opponent_strength="stronger" so the structural
+                # cache lookup misses (the request uses default "any") — but
+                # tier-2 fallback (get_latest_report_for_user) does NOT filter
+                # by opponent_strength, so this row is still the served fallback.
                 _make_row(
                     user.id,
                     response_json=valid_report.model_dump(),
                     prompt_version="endgame_v15",  # matches get_latest_report_for_user filter
                     findings_hash="k" * 64,
+                    opponent_strength="stronger",
                 ),
             )
 
