@@ -77,7 +77,8 @@ Accepted at v1.11 milestone close on 2026-04-24:
 | 260425-dxh | Replace endgame insights findings_hash cache with structural cache | 2026-04-25 | 9029f7e | [260425-dxh-implement-endgame-insights-structural-ca](./quick/260425-dxh-implement-endgame-insights-structural-ca/) |
 | 260425-lii | Fix misleading "chess.com user not found" error during import | 2026-04-25 | 22d561f | [260425-lii-fix-misleading-chess-com-user-not-found-](./quick/260425-lii-fix-misleading-chess-com-user-not-found-/) |
 | 260425-lwz | Fallback to month enumeration when chess.com archives-list endpoint 404s for an existing user | 2026-04-25 | af64f66 | [260425-lwz-fallback-to-month-enumeration-when-chess](./quick/260425-lwz-fallback-to-month-enumeration-when-chess/) |
+| 260425-nlv | Restructure GameCard and PositionBookmarkCard layouts (full-width identifier line on top, board left + content right below) | 2026-04-25 | 5a7ad30 | [260425-nlv-restructure-gamecard-and-positionbookmar](./quick/260425-nlv-restructure-gamecard-and-positionbookmar/) |
 
 ---
-Last activity: 2026-04-25 — Completed quick task 260425-lwz: when chess.com's archives-list endpoint silently 404s for a real account (e.g. wasterram), the import client now enumerates monthly archive URLs from the player's joined date and feeds them into the existing per-archive fetch loop, recovering imports that previously failed with "couldn't return games right now".
+Last activity: 2026-04-25 — Completed quick task 260425-nlv: GameCard and PositionBookmarkCard restructured so the identifier line (player names + platform link / bookmark label) spans the full card width on top, with the mini chessboard below-left and remaining content below-right; mobile-only opponent variant and JS truncateLabel helper removed in favor of CSS truncation.
 | 2026-04-25 | fast | Mobile full-width Overview rating charts | done |
