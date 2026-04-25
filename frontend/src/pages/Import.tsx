@@ -25,6 +25,26 @@ import { apiClient } from '@/api/client';
 
 const GAME_COUNT_REFRESH_INTERVAL_MS = 5000;
 
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+function formatLastSync(iso: string | null): string | null {
+  if (!iso) return null;
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return null;
+  const diffMs = Math.max(0, Date.now() - then);
+  if (diffMs < HOUR_MS) {
+    const minutes = Math.max(1, Math.floor(diffMs / (60 * 1000)));
+    return `last sync: ${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`;
+  }
+  if (diffMs < DAY_MS) {
+    const hours = Math.max(1, Math.floor(diffMs / HOUR_MS));
+    return `last sync: ${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  }
+  const days = Math.floor(diffMs / DAY_MS);
+  return `last sync: ${days} ${days === 1 ? 'day' : 'days'} ago`;
+}
+
 interface ImportPageProps {
   onImportStarted: (jobId: string) => void;
   activeJobIds: string[];
@@ -238,6 +258,9 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
                   {profile && (
                     <span className="text-xs text-muted-foreground" data-testid="import-game-count-chess-com">
                       {profile.chess_com_game_count} games
+                      {formatLastSync(profile.chess_com_last_sync_at) && (
+                        <> ({formatLastSync(profile.chess_com_last_sync_at)})</>
+                      )}
                     </span>
                   )}
                 </div>
@@ -281,6 +304,9 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
                   {profile && (
                     <span className="text-xs text-muted-foreground" data-testid="import-game-count-lichess">
                       {profile.lichess_game_count} games
+                      {formatLastSync(profile.lichess_last_sync_at) && (
+                        <> ({formatLastSync(profile.lichess_last_sync_at)})</>
+                      )}
                     </span>
                   )}
                 </div>

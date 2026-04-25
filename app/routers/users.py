@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_async_session
 from app.models.user import User
-from app.repositories import game_repository, user_repository
+from app.repositories import game_repository, import_job_repository, user_repository
 from app.schemas.admin import ImpersonationContext
 from app.schemas.users import GameCountResponse, UserProfileResponse, UserProfileUpdate
 from app.users import current_active_user
@@ -69,6 +69,7 @@ async def get_profile(
     """
     profile = await user_repository.get_profile(session, user.id)
     counts = await game_repository.count_games_by_platform(session, user.id)
+    last_syncs = await import_job_repository.get_last_completed_at_by_platform(session, user.id)
     return UserProfileResponse(
         email=user.email,
         is_superuser=user.is_superuser,
@@ -79,6 +80,8 @@ async def get_profile(
         last_login=profile.last_login,
         chess_com_game_count=counts.get("chess.com", 0),
         lichess_game_count=counts.get("lichess", 0),
+        chess_com_last_sync_at=last_syncs.get("chess.com"),
+        lichess_last_sync_at=last_syncs.get("lichess"),
         impersonation=impersonation,
         beta_enabled=user.beta_enabled,
     )
@@ -93,6 +96,7 @@ async def update_profile(
     """Update the authenticated user's platform usernames."""
     updated = await user_repository.update_profile(session, user.id, body.model_dump())
     counts = await game_repository.count_games_by_platform(session, user.id)
+    last_syncs = await import_job_repository.get_last_completed_at_by_platform(session, user.id)
     return UserProfileResponse(
         email=user.email,
         is_superuser=user.is_superuser,
@@ -103,6 +107,8 @@ async def update_profile(
         last_login=updated.last_login,
         chess_com_game_count=counts.get("chess.com", 0),
         lichess_game_count=counts.get("lichess", 0),
+        chess_com_last_sync_at=last_syncs.get("chess.com"),
+        lichess_last_sync_at=last_syncs.get("lichess"),
         impersonation=None,
         beta_enabled=updated.beta_enabled,
     )

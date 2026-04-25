@@ -173,6 +173,26 @@ async def fail_orphaned_jobs(session: AsyncSession) -> int:
     return result.rowcount  # ty: ignore[unresolved-attribute]  # SQLAlchemy async execute returns Result; rowcount is available on DML results
 
 
+async def get_last_completed_at_by_platform(
+    session: AsyncSession, user_id: int
+) -> dict[str, datetime]:
+    """Return MAX(completed_at) per platform for the user's completed imports.
+
+    Used by the profile endpoint to render "last sync: X ago" labels in the
+    Import tab. Returns a dict keyed by platform ('chess.com', 'lichess');
+    platforms with no completed import are absent from the result.
+    """
+    result = await session.execute(
+        select(ImportJob.platform, func.max(ImportJob.completed_at))
+        .where(
+            ImportJob.user_id == user_id,
+            ImportJob.status == "completed",
+        )
+        .group_by(ImportJob.platform)
+    )
+    return {platform: ts for platform, ts in result.all() if ts is not None}
+
+
 async def get_latest_completed_import_with_games_at(
     session: AsyncSession, user_id: int
 ) -> datetime | None:

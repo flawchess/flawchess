@@ -13,6 +13,8 @@ describe('isImpersonating', () => {
     last_login: null,
     chess_com_game_count: 0,
     lichess_game_count: 0,
+    chess_com_last_sync_at: null,
+    lichess_last_sync_at: null,
     impersonation: null,
     beta_enabled: false,
   };

@@ -19,6 +19,8 @@ class UserProfileResponse(BaseModel):
     last_login: datetime | None
     chess_com_game_count: int
     lichess_game_count: int
+    chess_com_last_sync_at: datetime | None = None
+    lichess_last_sync_at: datetime | None = None
     # D-22: populated when the request's JWT has is_impersonation=true.
     # Frontend uses this to render the header pill (phase 62).
     impersonation: ImpersonationContext | None = None

@@ -10,6 +10,8 @@ export interface UserProfile {
   last_login: string | null;
   chess_com_game_count: number;
   lichess_game_count: number;
+  chess_com_last_sync_at: string | null;
+  lichess_last_sync_at: string | null;
   // D-22: populated by backend when the request carries an impersonation JWT.
   // Frontend uses this to render the header pill (Plan 05).
   impersonation: ImpersonationContext | null;
