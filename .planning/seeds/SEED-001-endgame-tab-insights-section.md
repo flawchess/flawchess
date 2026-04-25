@@ -1,14 +1,17 @@
 ---
 id: SEED-001
-status: dormant
+status: closed_partially_superseded_by_v1_11
 planted: 2026-04-18
 refined: 2026-04-19
+closed: 2026-04-25
 planted_during: v1.10 Advanced Analytics (executing, 82% complete at plant time)
 trigger_when: milestone v1.11 opens
 scope: large
 ---
 
 # SEED-001: Insights section on Endgame tab (and later other tabs)
+
+> **Closed 2026-04-25 — partially superseded by milestone v1.11 (shipped 2026-04-24).** v1.11 followed SEED-003's LLM-first MVP path instead of this seed's deterministic pipeline. The user-facing Endgame Insights section (per-tab headline + bullets, multi-window computation, filter-aware framing, AI narration) is live. The deterministic features designed here remain candidates for v1.12+: deterministic 8-class archetype classification, role taxonomy (effect/mechanism/confound/corroboration/null_signal), era comparison / regime detection, stability matrix across windows, template phrase library, admin raw-data validation mode, and extension to Openings and Stats tabs. Kept on disk because v1.12 milestone planning may draw from these designs. Do not auto-surface during `/gsd-new-milestone` until the user signals interest in deterministic post-LLM hardening.
 
 ## Why This Matters
 

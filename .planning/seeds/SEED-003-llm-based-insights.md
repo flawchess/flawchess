@@ -1,7 +1,8 @@
 ---
 id: SEED-003
-status: dormant
+status: closed_implemented_in_v1_11
 planted: 2026-04-20
+closed: 2026-04-25
 planted_during: v1.10 Advanced Analytics (executing, post-Phase 57.1)
 trigger_when: milestone v1.11 opens
 scope: milestone
@@ -9,6 +10,8 @@ supersedes_for_v1_11: SEED-001 (SEED-001 becomes v1.12+ scope)
 ---
 
 # SEED-003: LLM-first Insights MVP for the Endgame tab
+
+> **Closed 2026-04-25 — implemented as milestone v1.11 (LLM-first Endgame Insights), shipped 2026-04-24.** The MVP path described here (LLM narration via pydantic-ai over a stripped-down findings pipeline, two-window computation, deferred archetypes/era comparison/admin raw-data mode) was executed across Phases 63–67. SEED-001's deferred deterministic features remain candidates for v1.12+. SEED-002 (benchmark DB) and SEED-004 (closed, superseded by Phase 65) are the related seeds. Kept on disk for design-rationale reference; do not re-surface.
 
 ## Why This Matters
 

@@ -60,7 +60,7 @@ Do NOT surface during v1.11. v1.11 is the Insights milestone (SEED-001) which co
 - Bulk ingestion mode that reads Lichess monthly PGN dumps from `database.lichess.org` (not per-username API fetches — lichess monthly dumps cover the whole population naturally).
 - Filter for `%eval` presence during ingestion; skip games without evals.
 - Stratified subsampling: target ~25K-50K games per (rating_bucket × TC) cell on first pass. Rating buckets: 800-1200, 1200-1600, 1600-2000, 2000-2400, 2400+ (5). TC: bullet, blitz, rapid, classical (4). Grid: 20 cells.
-- Storage target for v1.12 MVP: 20-50 GB. Scale to 200 GB if tighter CIs are needed post-validation.
+- Storage target for v1.12 MVP: 50-100 GB. 
 - Parse `%eval` tags via python-chess; centipawn vs pawn-units convention verified against known sample before scaling.
 
 ### Phase B: Replication of 2026-04-07 classifier validation at large scale
