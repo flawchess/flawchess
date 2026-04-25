@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
-import { BookOpen, Calendar, Clock, ExternalLink, Hash, Swords } from 'lucide-react';
+import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus, Swords } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
@@ -49,6 +50,7 @@ const RESULT_CLASSES: Record<UserResult, string> = {
   draw: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
   loss: 'bg-red-600/20 text-red-400 border-red-600/30',
 };
+const RESULT_ICONS: Record<UserResult, LucideIcon> = { win: Plus, draw: Equal, loss: Minus };
 const BORDER_CLASSES: Record<UserResult, string> = {
   win: 'border-l-green-600',
   draw: 'border-l-gray-500',
@@ -106,15 +108,18 @@ export function GameCard({ game }: GameCardProps) {
     </span>
   );
 
-  // Mobile badge: stretches vertically to span both player-name lines, larger letter.
-  const mobileResultBadge = (
+  // Mobile result indicator: small colored chip with +/=/− icon — replaces the
+  // swords icon next to termination so the W/D/L cue lives on the termination row.
+  const ResultIcon = RESULT_ICONS[game.user_result];
+  const mobileResultIndicator = (
     <span
       className={cn(
-        'flex items-center justify-center rounded border px-2.5 text-lg font-bold shrink-0',
+        'inline-flex items-center justify-center rounded border h-3.5 w-3.5 shrink-0',
         RESULT_CLASSES[game.user_result],
       )}
+      aria-label={game.user_result}
     >
-      {RESULT_LABELS[game.user_result]}
+      <ResultIcon className="h-2.5 w-2.5" strokeWidth={3} />
     </span>
   );
 
@@ -138,10 +143,10 @@ export function GameCard({ game }: GameCardProps) {
     </span>
   );
 
-  // Mobile: player names stack on two lines (no "vs" separator); badge stretches vertically.
+  // Mobile: player names stack on two lines (no "vs" separator); no W/D/L badge —
+  // the result is shown next to the termination row via a small +/=/− chip instead.
   const mobileIdentifier = (
-    <div className="flex items-stretch gap-2">
-      {mobileResultBadge}
+    <div className="flex items-center gap-2">
       <div className="flex-1 min-w-0 flex flex-col text-sm">
         <span className="text-foreground truncate">
           ■ {whiteName} {whiteRating}
@@ -195,9 +200,17 @@ export function GameCard({ game }: GameCardProps) {
     </span>
   );
 
-  const terminationItem = game.termination && game.termination !== 'unknown' && (
+  const desktopTerminationItem = game.termination && game.termination !== 'unknown' && (
     <span className="inline-flex items-center gap-1 capitalize" data-testid={`game-card-termination-${game.game_id}`}>
       <Swords className="h-3.5 w-3.5" />
+      {game.termination}
+    </span>
+  );
+
+  // Mobile termination: swords icon replaced with the W/D/L color indicator.
+  const mobileTerminationItem = game.termination && game.termination !== 'unknown' && (
+    <span className="inline-flex items-center gap-1 capitalize" data-testid={`game-card-termination-${game.game_id}`}>
+      {mobileResultIndicator}
       {game.termination}
     </span>
   );
@@ -207,7 +220,7 @@ export function GameCard({ game }: GameCardProps) {
     <div className="flex flex-col gap-1 text-sm text-muted-foreground">
       {dateItem}
       {timeControlItem}
-      {terminationItem}
+      {mobileTerminationItem}
     </div>
   );
 
@@ -216,7 +229,7 @@ export function GameCard({ game }: GameCardProps) {
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
       {dateItem}
       {timeControlItem}
-      {terminationItem}
+      {desktopTerminationItem}
       {game.move_count !== null && (
         <span className="inline-flex items-center gap-1">
           <Hash className="h-3.5 w-3.5" />
