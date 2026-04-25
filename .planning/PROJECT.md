@@ -101,7 +101,7 @@ Users can determine their success rate for any opening position they specify, fi
 
 ### Active
 
-- [ ] Benchmark ingestion pipeline (separate `flawchess-benchmark` Postgres + 3rd MCP server, Lichess monthly-dump ingest, `game_position_evals` table) — v1.12
+- [ ] Benchmark ingestion pipeline (separate `flawchess-benchmark` Postgres + 3rd MCP server, Lichess monthly-dump ingest, populates existing `game_positions.eval_cp`/`eval_mate` columns) — v1.12
 - [ ] Classifier validation replication at 10–100x scale (Phase B gate) — v1.12
 - [ ] Rating-stratified material-vs-eval offset analysis — v1.12
 - [ ] Parity proxy validation against Stockfish eval — v1.12
@@ -121,9 +121,8 @@ Users can determine their success rate for any opening position they specify, fi
 **Goal:** Replace self-referential endgame baselines with a Lichess-derived population dataset stratified by rating × time control, validate the material-vs-eval classifier at 10–100x larger scale, and recalibrate gauge zones per rating bucket.
 
 **Target features:**
-- Benchmark Postgres instance + 3rd MCP server (`flawchess-benchmark-db`)
+- Benchmark Postgres instance + 3rd MCP server (`flawchess-benchmark-db`); same canonical schema/migrations as dev/prod/test (no schema fork — Lichess `[%eval` populates existing `game_positions.eval_cp`/`eval_mate`)
 - Resumable Lichess monthly-dump ingestion with eval pre-filter and (rating × TC) stratification at the player-opportunity level
-- `game_position_evals` table (benchmark DB only)
 - Phase B classifier-validation replication at scale, with quantitative gate before C–E proceed
 - Rating-stratified material-vs-eval offset analysis
 - Parity proxy validation against Stockfish eval
