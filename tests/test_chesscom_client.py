@@ -139,9 +139,7 @@ class TestFetchChesscomGames:
     async def test_404_with_user_not_found_body_raises_not_found_error(self):
         """404 with body containing 'not found' text raises immediately without
         probing the player endpoint."""
-        archives_resp = _make_response(
-            {"message": 'User "unknown" not found.'}, status_code=404
-        )
+        archives_resp = _make_response({"message": 'User "unknown" not found.'}, status_code=404)
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=archives_resp)
