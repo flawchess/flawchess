@@ -1,6 +1,6 @@
 ---
 name: benchmarks
-description: Generate FlawChess population-level benchmarks from the prod or local dev database — per-user score-gap (endgame vs non-endgame), endgame Conversion/Parity/Recovery rates and composite Endgame Skill distribution bucketed by ELO (500-wide) and time control, Endgame ELO vs Actual ELO gap distribution per (platform, time-control) combo, time-pressure stats at endgame entry (avg clock diff, net timeout rate), and time-pressure-vs-performance curves across time controls. Use this skill whenever the user asks about endgame benchmarks, neutral zones, gauge ranges, "what's typical", baseline distributions, calibrating thresholds, comparing time controls, deciding whether to collapse time controls, setting conversion/recovery/parity/skill ranges, or calibrating Endgame ELO timeline expectations. Trigger on phrases like "benchmark", "benchmarks", "baseline", "neutral zone", "gauge range", "distribution of rates", "how are rates distributed", "score gap distribution", "conversion distribution", "endgame skill distribution", "endgame ELO distribution", "endgame ELO gap", "calibrate thresholds", "collapse time controls", "is collapsing TC justified". Writes a timestamped markdown report to reports/benchmarks-YYYY-MM-DD.md.
+description: Generate FlawChess population-level benchmarks from the prod or local dev database — per-user score-gap (endgame vs non-endgame), endgame Conversion/Parity/Recovery rates and composite Endgame Skill distribution bucketed by ELO (500-wide) and time control, Endgame ELO vs Actual ELO gap distribution per (platform, time-control) combo, time-pressure stats at endgame entry (avg clock diff, net timeout rate), time-pressure-vs-performance curves across time controls, and per-endgame-type (rook / minor_piece / pawn / queen / mixed / pawnless) score and conversion/recovery breakdowns by ELO bracket and time control. Use this skill whenever the user asks about endgame benchmarks, neutral zones, gauge ranges, "what's typical", baseline distributions, calibrating thresholds, comparing time controls, deciding whether to collapse time controls, setting conversion/recovery/parity/skill ranges, calibrating Endgame ELO timeline expectations, or breaking down stats by endgame class / endgame type. Trigger on phrases like "benchmark", "benchmarks", "baseline", "neutral zone", "gauge range", "distribution of rates", "how are rates distributed", "score gap distribution", "conversion distribution", "endgame skill distribution", "endgame ELO distribution", "endgame ELO gap", "calibrate thresholds", "collapse time controls", "is collapsing TC justified", "endgame type breakdown", "by endgame class", "rook vs minor piece", "per endgame type". Writes a timestamped markdown report to reports/benchmarks-YYYY-MM-DD.md.
 ---
 
 # Benchmarks
@@ -16,7 +16,7 @@ Generate population-level benchmarks for FlawChess endgame analytics. The goal i
 
 ## Report scope
 
-By default, run **all five** benchmark sections and write to `reports/benchmarks-YYYY-MM-DD.md` (UTC date). If the user only asks for one (e.g. "just the clock pressure benchmark"), run that section only and append to today's report — don't overwrite prior sections.
+By default, run **all six** benchmark sections and write to `reports/benchmarks-YYYY-MM-DD.md` (UTC date). If the user only asks for one (e.g. "just the clock pressure benchmark"), run that section only and append to today's report — don't overwrite prior sections.
 
 When writing the report, always include at the top:
 - Target DB (prod/local) and snapshot timestamp
@@ -41,6 +41,7 @@ Never assume a metric uses absolute units when the code uses relative ones, or v
 | 3 | Endgame ELO formula + window + clamp | `app/services/endgame_service.py` | `ENDGAME_ELO_TIMELINE_WINDOW` (=100), `_ENDGAME_ELO_SKILL_CLAMP_LO/HI` (=0.05/0.95), `MIN_GAMES_FOR_TIMELINE` (=10, in `openings_service.py`), `_MATERIAL_ADVANTAGE_THRESHOLD` (=100) |
 | 4 | Clock-diff neutral zone | `frontend/src/components/charts/EndgameClockPressureSection.tsx` | `NEUTRAL_PCT_THRESHOLD` (±pp of base time), `NEUTRAL_TIMEOUT_THRESHOLD` (±pp net timeout) |
 | 5 | Time-pressure chart pooling | `app/services/endgame_service.py::_compute_time_pressure_chart` + `frontend/src/components/charts/EndgameTimePressureSection.tsx` | `Y_AXIS_DOMAIN`, `X_AXIS_DOMAIN`, `MIN_GAMES_FOR_CLOCK_STATS` |
+| 6 | Per-endgame-type score-diff bullet gauge (Endgame Categories tab) | `frontend/src/components/charts/EndgameWDLChart.tsx` | `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`. The conv/recov chart (`EndgameConvRecovChart.tsx`) currently has no per-class neutral zones — Section 6 may propose initial bounds. |
 
 Grep with e.g. `rg "SCORE_DIFF_NEUTRAL|SCORE_DIFF_DOMAIN" frontend/src` (Grep tool, not bash) before writing each section. Record the literal values in the report.
 
@@ -97,6 +98,7 @@ Do **not** filter by `opponent_strength` or `recency` in benchmarks — populati
 | B3 Endgame ELO gap | 30 endgame games per user per (platform × TC) combo AND 100 total games per combo (matches `ENDGAME_ELO_TIMELINE_WINDOW`); user must also have at least one game with non-NULL `user_rating` so Actual ELO is defined |
 | B4 clock stats | 20 endgame games per user per TC |
 | B5 pressure-vs-performance | 100 games per (TC × time-remaining bucket) cell to show a point on the curve |
+| B6 endgame-type breakdown | 100 games in a (ELO × TC × endgame_class) cell to display the score; 30 advantage-entry games in the cell to display Conversion; 30 disadvantage-entry games in the cell to display Recovery. Multi-class per game per D-02 — a single game can contribute to multiple endgame classes. |
 
 ---
 
@@ -812,6 +814,161 @@ Verdict: if max per-bucket range < 0.05 (5 pp) across the reliable buckets, the 
 
 ---
 
+## Section 6 — Endgame Type Breakdown by ELO × TC
+
+**Question:** How do per-game **score**, **conversion** (win % from material advantage), and **recovery** (save % from material disadvantage) vary across the **six endgame classes** (rook / minor_piece / pawn / queen / mixed / pawnless), bucketed by ELO (500-wide) and time control? This mirrors Section 2's structure but adds the endgame-class dimension. Used to:
+
+1. Spot endgame classes where the population converts/recovers far above or below the pooled rates (e.g. "rook endgames are notoriously drawish — does the data confirm a parity-heavy distribution?").
+2. Inform potential future per-class neutral zones on the Endgame Categories tab. Today only the score-diff bullet gauge in `EndgameWDLChart.tsx` has zones (`NEUTRAL_ZONE_MIN/MAX = ±0.05`); the conv/recov chart has no zones at all.
+3. Detect ELO/TC dependencies that suggest the Endgame Categories tab needs stratified gauges rather than a single pooled neutral zone.
+
+**Per-cell metrics** (cell = ELO_bucket × TC × endgame_class):
+- `score` = pooled user score in games that spent ≥ ENDGAME_PLY_THRESHOLD (=6) plies in this endgame class. Multi-class per game (per D-02): a single game can contribute to multiple classes.
+- `score_diff` = `2·score − 1` (range −1 to +1). Equivalent to user_score − opp_score because opp_score = 1 − user_score per game. Reported alongside `score` for direct comparison against the live `±0.05` neutral zone.
+- `conversion` = win % within games that entered the class with material advantage (`entry_imb ≥ +100` AND `after_imb ≥ +100` where `after` is at `entry_ply + PERSISTENCE_PLIES (=4)` AND the position at that ply still belongs to the same endgame class).
+- `recovery` = save (win + draw) % within games that entered the class with material disadvantage (`entry_imb ≤ −100` AND `after_imb ≤ −100`, same persistence rule).
+
+**Multi-class semantics.** Per `query_endgame_entry_rows` (`app/repositories/endgame_repository.py`), each `(game, endgame_class)` span ≥ 6 plies contributes one row. So a single game that traverses, e.g., a queen endgame and then a rook endgame contributes once to each class's stats. This is the same convention used by the live Endgame Categories tab — keep it consistent so the benchmark reflects what users actually see.
+
+**Persistence approximation in SQL.** The repo enforces persistence via `array_agg` ordering and a contiguity check (`ply_at_position[5] == min_ply + 4`). The benchmark SQL below uses a simpler join — `game_positions` at `entry_ply + 4` with `endgame_class = THIS class` — which captures the same intent (the 5th-ply position is in the same class) for almost all cases. Note in the report that this is a small systematic approximation vs. the backend's stricter contiguity check.
+
+### Currently set in code (grep before reporting)
+
+Read `frontend/src/components/charts/EndgameWDLChart.tsx` and record:
+- `NEUTRAL_ZONE_MIN` / `NEUTRAL_ZONE_MAX` (per-class score-diff bullet gauge — currently `±0.05`).
+- `BULLET_DOMAIN` (currently `0.30`).
+
+Then check `frontend/src/components/charts/EndgameConvRecovChart.tsx`. As of last audit, the conv/recov chart **has no per-class neutral zones** — record this explicitly so Section 6's recommendations can frame any proposed bands as "initial bounds" rather than a tweak. If zones have been added since, grep for them and record the literals.
+
+Also record the backend constants `ENDGAME_PLY_THRESHOLD`, `PERSISTENCE_PLIES`, and `_MATERIAL_ADVANTAGE_THRESHOLD` from `app/services/endgame_service.py` and `app/repositories/endgame_repository.py` — they govern which spans qualify and what counts as advantage/disadvantage. Today: 6 / 4 / 100. If any of these have moved, the SQL below must be edited to match before re-running.
+
+### Query
+```sql
+WITH class_span AS (
+  -- Per-(game, endgame_class) span of >= ENDGAME_PLY_THRESHOLD plies. Multi-class per game per D-02.
+  SELECT
+    game_id,
+    endgame_class,
+    min(ply) AS entry_ply
+  FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id, endgame_class
+  HAVING count(*) >= 6
+),
+bucketed AS (
+  SELECT
+    g.id AS game_id,
+    g.user_id,
+    g.time_control_bucket AS tc,
+    cs.endgame_class AS endgame_class_int,
+    CASE WHEN g.user_color = 'white' THEN g.white_rating ELSE g.black_rating END AS user_rating,
+    CASE
+      WHEN (g.result='1-0' AND g.user_color='white')
+        OR (g.result='0-1' AND g.user_color='black') THEN 1.0
+      WHEN g.result='1/2-1/2' THEN 0.5
+      ELSE 0.0
+    END AS score,
+    CASE WHEN g.user_color='white' THEN 1 ELSE -1 END AS color_sign,
+    ep.material_imbalance AS entry_imb,
+    ap.material_imbalance AS after_imb
+  FROM games g
+  JOIN class_span cs ON cs.game_id = g.id
+  JOIN game_positions ep
+    ON ep.game_id = g.id AND ep.ply = cs.entry_ply
+  -- Persistence: position at entry+4 must still belong to the same endgame class.
+  -- Approximates the backend's stricter contiguity check (ply_at_position[5] == min_ply + 4).
+  LEFT JOIN game_positions ap
+    ON ap.game_id = g.id
+   AND ap.ply = cs.entry_ply + 4
+   AND ap.endgame_class = cs.endgame_class
+  WHERE g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket IS NOT NULL
+),
+classified AS (
+  SELECT
+    user_id,
+    tc,
+    endgame_class_int,
+    (floor(user_rating::numeric / 500) * 500)::int AS elo_bucket,
+    score,
+    -- Sign-flipped to user perspective (positive = user has more material).
+    (entry_imb * color_sign) AS user_entry_imb,
+    (after_imb * color_sign) AS user_after_imb
+  FROM bucketed
+  WHERE user_rating IS NOT NULL
+)
+SELECT
+  elo_bucket,
+  tc,
+  CASE endgame_class_int
+    WHEN 1 THEN 'rook'
+    WHEN 2 THEN 'minor_piece'
+    WHEN 3 THEN 'pawn'
+    WHEN 4 THEN 'queen'
+    WHEN 5 THEN 'mixed'
+    WHEN 6 THEN 'pawnless'
+  END AS endgame_class,
+  count(*) AS games,
+  count(DISTINCT user_id) AS users,
+  -- Score (pooled, game-weighted) and the trivially-derived score_diff = 2*score - 1.
+  round(avg(score)::numeric, 4) AS score,
+  round((avg(score) * 2 - 1)::numeric, 4) AS score_diff,
+  -- Conversion: win % among advantage-entry games with persistence.
+  count(*) FILTER (WHERE user_entry_imb >=  100 AND user_after_imb >=  100) AS conv_games,
+  round(
+    (avg(CASE WHEN score = 1.0 THEN 1.0 ELSE 0.0 END)
+       FILTER (WHERE user_entry_imb >=  100 AND user_after_imb >=  100))::numeric,
+    4
+  ) AS conversion,
+  -- Recovery: save (win + draw) % among disadvantage-entry games with persistence.
+  count(*) FILTER (WHERE user_entry_imb <= -100 AND user_after_imb <= -100) AS recov_games,
+  round(
+    (avg(CASE WHEN score >= 0.5 THEN 1.0 ELSE 0.0 END)
+       FILTER (WHERE user_entry_imb <= -100 AND user_after_imb <= -100))::numeric,
+    4
+  ) AS recovery
+FROM classified
+GROUP BY elo_bucket, tc, endgame_class_int
+ORDER BY
+  elo_bucket,
+  CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END,
+  endgame_class_int;
+```
+
+### Output
+
+Three tables, **one per metric** (score, conversion, recovery). Each table is structured the same way:
+- Rows = ELO bucket (`<500, 500–999, 1000–1499, 1500–1999, 2000–2499, 2500+`).
+- Columns = a `(TC × endgame_class)` pair grid: 4 TCs × 6 classes = 24 columns. If 24 columns is too wide, emit one sub-table per TC instead (rows = ELO, columns = 6 endgame classes); pick whichever fits the report.
+- Cell format:
+  - **Score table:** `score (n_games)` — e.g. `0.512 (1240)`. Suppress / grey out cells with `n_games < 100`.
+  - **Conversion table:** `conversion (n_conv_games)`. Suppress with `n_conv_games < 30`.
+  - **Recovery table:** `recovery (n_recov_games)`. Suppress with `n_recov_games < 30`.
+
+**Score Diff is presented inline with score**, not as a separate table — column header reads `score / score_diff` and the cell shows e.g. `0.512 / +0.024`. This makes the comparison against `NEUTRAL_ZONE_MIN/MAX = ±0.05` immediate without an extra table.
+
+After the three matrices, emit a **pooled-by-class summary** (collapses ELO and TC):
+
+| endgame_class | n_games | score | score_diff | n_conv | conversion | n_recov | recovery |
+|---|---|---|---|---|---|---|---|
+
+This is the row most likely to drive UI decisions (the Endgame Categories tab is shown without ELO/TC stratification).
+
+Below the tables:
+- **Currently set in code:** `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`, plus the explicit note about whether `EndgameConvRecovChart.tsx` has any zones today.
+- **Class spread on score_diff (pooled view):** report `max(score_diff) − min(score_diff)` across the six classes. If the spread exceeds `2 · NEUTRAL_ZONE_MAX = 0.10`, a single pooled neutral band cannot center every class — flag this as evidence for per-class zones.
+- **Class spread on conversion / recovery (pooled view):** report `max − min` across classes for each. Pawn endgames typically convert higher than minor-piece endgames, and rook endgames typically recover higher than queen endgames (drawish tendency). Confirm or refute with the data and quote the magnitudes.
+- **ELO slope per class:** for each endgame class, state whether `score`, `conversion`, and `recovery` move meaningfully across ELO buckets (e.g. ≥ 5 pp between adjacent 500-wide buckets in the same TC). Strong slope ⇒ stratified zones become more attractive; flat ⇒ pooled is fine.
+- **TC slope per class:** within a single ELO bucket, do the rates differ across TCs? Bullet typically suppresses recovery (insufficient time to defend). Confirm direction and magnitude.
+- **Recommended initial conv/recov bands (forward-looking):** if the per-class pooled values land within ±5 pp of each other AND within ±5 pp of the Section 2 pooled rates, no per-class bands are needed — recommend keeping the pooled-only display. Otherwise, propose `[p25, p75]`-style bands per class using the **per-user spread within each class** (re-aggregate from `classified` with one extra `per_user_class` CTE if needed; skip for cells with < 10 qualifying users).
+- **Verdict on the live `±0.05` score-diff zone:** state whether the pooled per-class `score_diff` values fit inside the band, sit at the edge, or exceed it. If any class's pooled score_diff exceeds `±0.05`, the live gauge will systematically color it as success/danger for the entire population — likely not the intended behaviour. Recommend `keep`, `widen to ±X`, or `make per-class`.
+
+### Optional second view — per-user distribution within each class
+
+For each `(ELO × TC × endgame_class)` cell with ≥ 10 users each having ≥ 10 games in the cell, emit `p25 / p50 / p75` of per-user score, conversion, and recovery. This shows *spread* within a cell — useful for statements like "at 1500 blitz in rook endgames, half of users score between 0.48 and 0.55". Skip cells that fail the floor; do not back-fill with low-confidence numbers.
+
+---
+
 ## Report file layout
 
 Write to `reports/benchmarks-YYYY-MM-DD.md` using today's UTC date. Layout:
@@ -837,6 +994,9 @@ Write to `reports/benchmarks-YYYY-MM-DD.md` using today's UTC date. Layout:
 ...
 
 ## 5. Time Pressure vs Performance — cross-TC comparison
+...
+
+## 6. Endgame Type Breakdown by ELO × TC
 ...
 
 ## Recommended thresholds summary
