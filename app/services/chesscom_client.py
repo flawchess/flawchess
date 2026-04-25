@@ -3,6 +3,12 @@
 Fetches game archives for a user and yields normalized game dicts.
 Rate limits are respected by sleeping 150ms between archive fetches,
 with a 60-second backoff on 429 responses.
+
+When chess.com's /games/archives index endpoint 404s for a real user (ambiguous
+body, player endpoint returns 200), the client falls back to enumerating monthly
+archive URLs from the player's joined date to the current month. Individual
+monthly archives that 404 are skipped; transient 5xx/429 errors are retried by
+the existing per-archive loop.
 """
 
 import asyncio
@@ -45,6 +51,10 @@ _RETRYABLE_STATUS_CODES = frozenset({500, 502, 503, 504})
 # than failing the entire import.
 _SKIPPABLE_ARCHIVE_STATUS_CODES = frozenset({404, 410})
 
+# chess.com launched in May 2007. Use January as a conservative floor for accounts
+# whose /pub/player response has no 'joined' field.
+_CHESSCOM_EARLIEST_ARCHIVE_YEAR_MONTH: tuple[int, int] = (2007, 1)
+
 
 async def _user_exists_on_chesscom(client: httpx.AsyncClient, api_username: str) -> bool | None:
     """Probe /pub/player/{username} to disambiguate a 404 on /games/archives.
@@ -67,6 +77,36 @@ async def _user_exists_on_chesscom(client: httpx.AsyncClient, api_username: str)
     if resp.status_code == 404:
         return False
     return None
+
+
+async def _fetch_chesscom_player_joined(
+    client: httpx.AsyncClient, api_username: str
+) -> datetime | None:
+    """Fetch the player's account creation date from /pub/player/{username}.
+
+    The chess.com player API returns a 'joined' field as a Unix timestamp in
+    seconds (not milliseconds). This helper converts it to a UTC datetime.
+
+    Returns:
+        A timezone-aware UTC datetime representing the month the user joined,
+        or None if the 'joined' field is absent, non-integer, the endpoint is
+        unreachable, or returns a non-200 status.
+    """
+    url = f"{BASE_URL}/{api_username}"
+    try:
+        resp = await client.get(url, headers=_HEADERS)
+    except _RETRYABLE_EXCEPTIONS:
+        return None
+    if resp.status_code != 200:
+        return None
+    try:
+        body = resp.json()
+        joined = body.get("joined") if isinstance(body, dict) else None
+        if joined is None:
+            return None
+        return datetime.fromtimestamp(int(joined), tz=timezone.utc)
+    except (ValueError, TypeError):
+        return None
 
 
 def _archive_before_timestamp(archive_url: str, since: datetime) -> bool:
@@ -99,6 +139,46 @@ def _archive_before_timestamp(archive_url: str, since: datetime) -> bool:
     return archive_end <= since
 
 
+def _current_year_month() -> tuple[int, int]:
+    """Return the current UTC (year, month) tuple.
+
+    Extracted as a separate function so tests can patch it without replacing
+    the entire ``datetime`` class (which would break ``datetime(y, m, 1, ...)``
+    constructor calls inside ``_archive_before_timestamp``).
+    """
+    now = datetime.now(timezone.utc)
+    return now.year, now.month
+
+
+def _enumerate_archive_urls(
+    api_username: str,
+    start_ym: tuple[int, int],
+    end_ym: tuple[int, int],
+) -> list[str]:
+    """Synthesize monthly archive URLs from start_ym to end_ym inclusive.
+
+    Args:
+        api_username: Lowercase chess.com username.
+        start_ym: (year, month) of the first archive to include.
+        end_ym: (year, month) of the last archive to include (inclusive).
+
+    Returns:
+        List of URLs in the form ``{BASE_URL}/{api_username}/games/YYYY/MM``,
+        one per calendar month from start_ym to end_ym inclusive.
+        Returns an empty list if start_ym > end_ym.
+    """
+    urls: list[str] = []
+    year, month = start_ym
+    end_year, end_month = end_ym
+    while (year, month) <= (end_year, end_month):
+        urls.append(f"{BASE_URL}/{api_username}/games/{year:04d}/{month:02d}")
+        if month == 12:
+            year, month = year + 1, 1
+        else:
+            month += 1
+    return urls
+
+
 async def fetch_chesscom_games(
     client: httpx.AsyncClient,
     username: str,
@@ -108,19 +188,24 @@ async def fetch_chesscom_games(
 ) -> AsyncIterator[NormalizedGame]:
     """Async generator that yields normalized NormalizedGame objects for a chess.com user.
 
+    When the archives-list endpoint 404s with an ambiguous body but the player endpoint
+    confirms the user exists, falls back to enumerating monthly archive URLs from the
+    player's joined date to the current month. All-empty results (every month 404s) are
+    treated as a normal success yielding zero games rather than raising.
+
     Args:
         client: Shared httpx.AsyncClient instance.
         username: The chess.com username to fetch games for.
         user_id: Internal database user ID (denormalized into each game dict).
         since_timestamp: If provided, skip archive months that ended before this time.
+            Also applies during month-enumeration fallback: enumeration starts at
+            max(joined_month, since_timestamp_month).
         on_game_fetched: Optional callback called once per yielded game (for progress tracking).
 
     Raises:
-        ValueError: Three distinct cases on archives-list failure:
+        ValueError: Two distinct cases on archives-list failure:
             - "user not found" — 404 with body identifying the user as absent, or
               404 with ambiguous body and player endpoint confirms user is absent.
-            - "couldn't return games right now" — 404 with ambiguous body and player
-              endpoint confirms user exists (no public archives or transient error).
             - "request failed" — non-200 archives response, or ambiguous 404 where
               the player probe also failed; last_synced_at is preserved in both cases.
         RuntimeError: If a per-archive fetch fails persistently (5xx after retries, or
@@ -174,24 +259,51 @@ async def fetch_chesscom_games(
         # Ambiguous body — confirm existence via the player endpoint.
         exists = await _user_exists_on_chesscom(client, api_username)
         if exists is True:
-            raise ValueError(
-                f"chess.com couldn't return games for '{username}' right now "
-                "(no public archives or temporary chess.com error). "
-                "Try again in a few minutes."
+            # Workaround: chess.com's /games/archives endpoint silently 404s for some
+            # real accounts (e.g. user 'wasterram', confirmed 2026-04-25) while the
+            # individual /games/YYYY/MM endpoints still return games normally. Rather
+            # than raising, enumerate months from the player's joined date to today and
+            # feed them into the existing per-archive loop. The loop already handles
+            # per-month 404/410 (skip), 5xx (retry), and 429 (backoff). Frequency is
+            # monitored via a Sentry info-level capture_message.
+            joined_at = await _fetch_chesscom_player_joined(client, api_username)
+            if joined_at is not None:
+                start_ym: tuple[int, int] = (joined_at.year, joined_at.month)
+            else:
+                start_ym = _CHESSCOM_EARLIEST_ARCHIVE_YEAR_MONTH
+
+            if since_timestamp is not None:
+                since_ym = (since_timestamp.year, since_timestamp.month)
+                start_ym = max(start_ym, since_ym)
+
+            archive_urls: list[str] = _enumerate_archive_urls(
+                api_username, start_ym, _current_year_month()
             )
-        if exists is False:
+
+            logger.info(
+                "chess.com archives-list 404 for %s, falling back to month enumeration (%d months)",
+                username,
+                len(archive_urls),
+            )
+            sentry_sdk.capture_message(
+                "chess.com archives-list 404 — falling back to month enumeration",
+                level="info",
+                tags={"source": "import", "platform": "chess.com"},
+            )
+        elif exists is False:
             raise ValueError(f"chess.com user '{username}' not found")
-        # exists is None — player endpoint also failed; treat as transient.
-        raise ValueError(
-            f"chess.com request failed (status 404, player endpoint unreachable) "
-            f"for user '{username}'"
-        )
-    if archives_resp.status_code != 200:
+        else:
+            # exists is None — player endpoint also failed; treat as transient.
+            raise ValueError(
+                f"chess.com request failed (status 404, player endpoint unreachable) "
+                f"for user '{username}'"
+            )
+    elif archives_resp.status_code != 200:
         raise ValueError(
             f"chess.com request failed (status {archives_resp.status_code}) for user '{username}'"
         )
-
-    archive_urls: list[str] = archives_resp.json().get("archives", [])
+    else:
+        archive_urls = archives_resp.json().get("archives", [])
 
     for archive_url in archive_urls:
         # Incremental sync: skip months that are entirely before since_timestamp

@@ -156,26 +156,43 @@ class TestFetchChesscomGames:
         assert mock_client.get.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_404_with_internal_error_body_and_player_200_raises_archives_unavailable(self):
+    async def test_404_with_internal_error_body_and_player_200_falls_back_to_enumeration(self):
         """404 with ambiguous internal-error body, player endpoint returns 200 (user exists).
-        Should raise a user-actionable 'archives unavailable' message, not 'user not found'."""
+        Should NOT raise — instead falls back to month enumeration (260425-lwz).
+        Player has no 'joined' field, so enumeration starts at 2007-01. 'now' is
+        patched to (2007, 1) to keep the test fast (only one month synthesized, which 404s).
+        """
         archives_resp = _make_response(
             {"message": "An internal error has occurred. Please contact support."},
             status_code=404,
         )
-        player_resp = _make_response(
+        # exists probe — 200 but no 'joined' field
+        exists_resp = _make_response(
             {"username": "wasterram", "player_id": 123456}, status_code=200
         )
+        # _fetch_chesscom_player_joined — same endpoint, also no 'joined' → None
+        joined_resp = _make_response(
+            {"username": "wasterram", "player_id": 123456}, status_code=200
+        )
+        # Synthesized archive 2007/01 → 404 (skipped)
+        archive_resp = _make_response({}, status_code=404)
 
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=[archives_resp, player_resp])
+        mock_client.get = AsyncMock(
+            side_effect=[archives_resp, exists_resp, joined_resp, archive_resp]
+        )
 
-        with pytest.raises(ValueError, match="chess.com couldn't return games for 'wasterram'"):
-            async for _ in fetch_chesscom_games(mock_client, "wasterram", user_id=1):
-                pass
+        with (
+            patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()),
+            patch("app.services.chesscom_client._current_year_month", return_value=(2007, 1)),
+        ):
+            results = []
+            async for game in fetch_chesscom_games(mock_client, "wasterram", user_id=1):
+                results.append(game)
 
-        # Archives call + player probe = 2 calls
-        assert mock_client.get.call_count == 2
+        # No raise; 0 games (archive 404'd); correct call count
+        assert results == []
+        assert mock_client.get.call_count == 4
 
     @pytest.mark.asyncio
     async def test_404_with_internal_error_body_and_player_404_falls_back_to_not_found(self):
@@ -520,8 +537,10 @@ class TestFetchChesscomGames:
         joined date to 'now' and yield games from those archives.
 
         wasterram joined 2026-03-22, 'now' frozen to 2026-04-25: expect 2026/03 and 2026/04.
+
+        Note: the player endpoint is called twice — once by _user_exists_on_chesscom
+        and once by _fetch_chesscom_player_joined. Both are mocked.
         """
-        import calendar
         from datetime import datetime, timezone as tz
 
         # Unix timestamp for 2026-03-22T00:00:00Z
@@ -531,7 +550,10 @@ class TestFetchChesscomGames:
             {"message": "An internal error has occurred."},
             status_code=404,
         )
-        player_resp = _make_response(
+        # First player call: _user_exists_on_chesscom (200, no joined needed)
+        exists_resp = _make_response({"username": "wasterram"}, status_code=200)
+        # Second player call: _fetch_chesscom_player_joined (200, with joined)
+        joined_resp = _make_response(
             {"username": "wasterram", "joined": joined_ts},
             status_code=200,
         )
@@ -540,24 +562,20 @@ class TestFetchChesscomGames:
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[archives_resp, player_resp, march_resp, april_resp]
+            side_effect=[archives_resp, exists_resp, joined_resp, march_resp, april_resp]
         )
-
-        frozen_now = datetime(2026, 4, 25, tzinfo=tz.utc)
 
         with (
             patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()),
-            patch("app.services.chesscom_client.datetime") as mock_dt,
+            patch("app.services.chesscom_client._current_year_month", return_value=(2026, 4)),
         ):
-            mock_dt.now.return_value = frozen_now
-            mock_dt.fromtimestamp.side_effect = datetime.fromtimestamp
-
             results = []
             async for game in fetch_chesscom_games(mock_client, "wasterram", user_id=1):
                 results.append(game)
 
         assert len(results) == 2
-        assert mock_client.get.call_count == 4
+        # archives + exists-probe + joined-probe + 2 months = 5
+        assert mock_client.get.call_count == 5
 
         called_urls = [call.args[0] for call in mock_client.get.call_args_list]
         assert any("/games/2026/03" in url for url in called_urls)
@@ -571,6 +589,8 @@ class TestFetchChesscomGames:
 
         joined = 2024-01-01, since_timestamp = 2026-03-01, now = 2026-04-25.
         Expect only 2026/03 and 2026/04 (not 28 months from 2024/01).
+
+        Note: player endpoint called twice (exists-probe + joined-probe).
         """
         from datetime import datetime, timezone as tz
 
@@ -580,7 +600,8 @@ class TestFetchChesscomGames:
             {"message": "An internal error has occurred."},
             status_code=404,
         )
-        player_resp = _make_response(
+        exists_resp = _make_response({"username": "wasterram"}, status_code=200)
+        joined_resp = _make_response(
             {"username": "wasterram", "joined": joined_ts},
             status_code=200,
         )
@@ -589,27 +610,23 @@ class TestFetchChesscomGames:
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[archives_resp, player_resp, march_resp, april_resp]
+            side_effect=[archives_resp, exists_resp, joined_resp, march_resp, april_resp]
         )
 
-        frozen_now = datetime(2026, 4, 25, tzinfo=tz.utc)
         since = datetime(2026, 3, 1, tzinfo=tz.utc)
 
         with (
             patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()),
-            patch("app.services.chesscom_client.datetime") as mock_dt,
+            patch("app.services.chesscom_client._current_year_month", return_value=(2026, 4)),
         ):
-            mock_dt.now.return_value = frozen_now
-            mock_dt.fromtimestamp.side_effect = datetime.fromtimestamp
-
             results = []
             async for game in fetch_chesscom_games(
                 mock_client, "wasterram", user_id=1, since_timestamp=since
             ):
                 results.append(game)
 
-        # Only 2 archive calls: 2026/03 and 2026/04
-        assert mock_client.get.call_count == 4  # archives + player + 2 months
+        # archives + exists-probe + joined-probe + 2 months = 5
+        assert mock_client.get.call_count == 5
         assert len(results) == 2
 
         called_urls = [call.args[0] for call in mock_client.get.call_args_list]
@@ -623,44 +640,43 @@ class TestFetchChesscomGames:
         _CHESSCOM_EARLIEST_ARCHIVE_YEAR_MONTH (2007, 1).
 
         Freeze 'now' to 2007-03-15 for a tight 3-month window. Every month 404s
-        (skipped by _fetch_archive_with_retries). Expect 0 games, no exception,
-        exactly 5 GET calls (archives, player, 3 months).
-        """
-        from datetime import datetime, timezone as tz
+        (skipped by _fetch_archive_with_retries). Expect 0 games, no exception.
 
+        Note: player endpoint called twice (exists-probe returns 200 without joined;
+        joined-probe also returns 200 without joined → None → fall back to 2007-01).
+        Total calls: archives + exists-probe + joined-probe + 3 months = 6.
+        """
         archives_resp = _make_response(
             {"message": "An internal error has occurred."},
             status_code=404,
         )
-        player_resp = _make_response({"username": "nojoined"}, status_code=200)
+        exists_resp = _make_response({"username": "nojoined"}, status_code=200)
+        joined_resp = _make_response({"username": "nojoined"}, status_code=200)
         not_found_resp = _make_response({}, status_code=404)
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
             side_effect=[
                 archives_resp,
-                player_resp,
+                exists_resp,
+                joined_resp,
                 not_found_resp,  # 2007/01
                 not_found_resp,  # 2007/02
                 not_found_resp,  # 2007/03
             ]
         )
 
-        frozen_now = datetime(2007, 3, 15, tzinfo=tz.utc)
-
         with (
             patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()),
-            patch("app.services.chesscom_client.datetime") as mock_dt,
+            patch("app.services.chesscom_client._current_year_month", return_value=(2007, 3)),
         ):
-            mock_dt.now.return_value = frozen_now
-            mock_dt.fromtimestamp.side_effect = datetime.fromtimestamp
-
             results = []
             async for game in fetch_chesscom_games(mock_client, "nojoined", user_id=1):
                 results.append(game)
 
         assert results == []
-        assert mock_client.get.call_count == 5
+        # archives + exists-probe + joined-probe + 3 months = 6
+        assert mock_client.get.call_count == 6
 
     @pytest.mark.asyncio
     async def test_fallback_per_month_404_skips_and_continues(self):
@@ -668,6 +684,8 @@ class TestFetchChesscomGames:
         month's archive is still fetched (no exception raised).
 
         2026/03 → 404 (skip), 2026/04 → 200 with one game. Expect 1 game.
+
+        Note: player endpoint called twice (exists-probe + joined-probe).
         """
         from datetime import datetime, timezone as tz
 
@@ -677,24 +695,20 @@ class TestFetchChesscomGames:
             {"message": "An internal error has occurred."},
             status_code=404,
         )
-        player_resp = _make_response({"username": "wasterram", "joined": joined_ts})
+        exists_resp = _make_response({"username": "wasterram"}, status_code=200)
+        joined_resp = _make_response({"username": "wasterram", "joined": joined_ts})
         march_404 = _make_response({}, status_code=404)
         april_resp = _make_response({"games": [_make_game(uuid="april-game")]})
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[archives_resp, player_resp, march_404, april_resp]
+            side_effect=[archives_resp, exists_resp, joined_resp, march_404, april_resp]
         )
-
-        frozen_now = datetime(2026, 4, 25, tzinfo=tz.utc)
 
         with (
             patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()),
-            patch("app.services.chesscom_client.datetime") as mock_dt,
+            patch("app.services.chesscom_client._current_year_month", return_value=(2026, 4)),
         ):
-            mock_dt.now.return_value = frozen_now
-            mock_dt.fromtimestamp.side_effect = datetime.fromtimestamp
-
             results = []
             async for game in fetch_chesscom_games(mock_client, "wasterram", user_id=1):
                 results.append(game)
@@ -707,6 +721,8 @@ class TestFetchChesscomGames:
         """When the month-enumeration fallback fires, sentry_sdk.capture_message must
         be called with level='info', tags containing source='import' and
         platform='chess.com', and a message containing 'archives-list 404'.
+
+        Note: player endpoint called twice (exists-probe + joined-probe).
         """
         from datetime import datetime, timezone as tz
 
@@ -716,26 +732,23 @@ class TestFetchChesscomGames:
             {"message": "An internal error has occurred."},
             status_code=404,
         )
-        player_resp = _make_response({"username": "wasterram", "joined": joined_ts})
+        exists_resp = _make_response({"username": "wasterram"}, status_code=200)
+        joined_resp = _make_response({"username": "wasterram", "joined": joined_ts})
         month_resp = _make_response({"games": []})
 
         mock_client = AsyncMock()
-        # archives + player + 2026/03 + 2026/04
+        # archives + exists-probe + joined-probe + 2026/03 + 2026/04 = 5
         mock_client.get = AsyncMock(
-            side_effect=[archives_resp, player_resp, month_resp, month_resp]
+            side_effect=[archives_resp, exists_resp, joined_resp, month_resp, month_resp]
         )
 
-        frozen_now = datetime(2026, 4, 25, tzinfo=tz.utc)
         capture_mock = MagicMock()
 
         with (
             patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()),
-            patch("app.services.chesscom_client.datetime") as mock_dt,
+            patch("app.services.chesscom_client._current_year_month", return_value=(2026, 4)),
             patch("app.services.chesscom_client.sentry_sdk.capture_message", capture_mock),
         ):
-            mock_dt.now.return_value = frozen_now
-            mock_dt.fromtimestamp.side_effect = datetime.fromtimestamp
-
             async for _ in fetch_chesscom_games(mock_client, "wasterram", user_id=1):
                 pass
 
@@ -761,11 +774,7 @@ class TestFetchChesscomPlayerJoined:
     @pytest.mark.asyncio
     async def test_returns_datetime_when_joined_present(self):
         """Player 200 with a valid 'joined' Unix timestamp returns a UTC datetime."""
-        from datetime import datetime, timezone as tz
-
-        from app.services.chesscom_client import _fetch_chesscom_player_joined
-
-        joined_ts = int(datetime(2020, 6, 15, tzinfo=tz.utc).timestamp())
+        joined_ts = int(datetime(2020, 6, 15, tzinfo=timezone.utc).timestamp())
         player_resp = _make_response({"username": "someone", "joined": joined_ts})
 
         mock_client = AsyncMock()
@@ -776,13 +785,11 @@ class TestFetchChesscomPlayerJoined:
         assert result is not None
         assert result.year == 2020
         assert result.month == 6
-        assert result.tzinfo == tz.utc
+        assert result.tzinfo == timezone.utc
 
     @pytest.mark.asyncio
     async def test_returns_none_when_joined_missing(self):
         """Player 200 without a 'joined' field returns None."""
-        from app.services.chesscom_client import _fetch_chesscom_player_joined
-
         player_resp = _make_response({"username": "someone"})
 
         mock_client = AsyncMock()
@@ -795,8 +802,6 @@ class TestFetchChesscomPlayerJoined:
     @pytest.mark.asyncio
     async def test_returns_none_on_404(self):
         """Player 404 returns None."""
-        from app.services.chesscom_client import _fetch_chesscom_player_joined
-
         player_resp = _make_response({}, status_code=404)
 
         mock_client = AsyncMock()
@@ -811,8 +816,6 @@ class TestFetchChesscomPlayerJoined:
         """Network exception on the player request returns None."""
         import httpx
 
-        from app.services.chesscom_client import _fetch_chesscom_player_joined
-
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
 
@@ -823,8 +826,6 @@ class TestFetchChesscomPlayerJoined:
     @pytest.mark.asyncio
     async def test_returns_none_on_non_int_joined(self):
         """Player 200 with a non-integer 'joined' value returns None."""
-        from app.services.chesscom_client import _fetch_chesscom_player_joined
-
         player_resp = _make_response({"username": "someone", "joined": "not-a-number"})
 
         mock_client = AsyncMock()
