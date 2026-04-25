@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: none
 milestone_name: (between milestones)
 status: idle
-last_updated: "2026-04-24T18:45:00Z"
-last_activity: 2026-04-24 -- v1.11 milestone shipped
+last_updated: "2026-04-25T08:20:00Z"
+last_activity: 2026-04-25 -- Completed quick task 260425-dxh: structural cache for endgame insights
 progress:
   total_phases: 0
   completed_phases: 0
@@ -70,5 +70,11 @@ Accepted at v1.11 milestone close on 2026-04-24:
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260425-dxh | Replace endgame insights findings_hash cache with structural cache | 2026-04-25 | 9029f7e | [260425-dxh-implement-endgame-insights-structural-ca](./quick/260425-dxh-implement-endgame-insights-structural-ca/) |
+
 ---
-Last activity: 2026-04-24 — v1.11 milestone shipped. PR #61 squash-merged to main (9721ae6), tagged v1.11. Next: `/gsd-new-milestone` when ready.
+Last activity: 2026-04-25 — Completed quick task 260425-dxh: replaced endgame insights findings_hash cache with structural cache (user_id + prompt_version + model + opponent_strength, import-since validity check, 30-day TTL).
