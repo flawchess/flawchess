@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: none
 milestone_name: (between milestones)
 status: idle
-last_updated: "2026-04-25T08:20:00Z"
-last_activity: 2026-04-25 -- Completed quick task 260425-dxh: structural cache for endgame insights
+last_updated: "2026-04-25T13:30:00Z"
+last_activity: 2026-04-25 -- Completed quick task 260425-lii: body-aware 404 handling for chess.com import errors
 progress:
   total_phases: 0
   completed_phases: 0
@@ -75,6 +75,7 @@ Accepted at v1.11 milestone close on 2026-04-24:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260425-dxh | Replace endgame insights findings_hash cache with structural cache | 2026-04-25 | 9029f7e | [260425-dxh-implement-endgame-insights-structural-ca](./quick/260425-dxh-implement-endgame-insights-structural-ca/) |
+| 260425-lii | Fix misleading "chess.com user not found" error during import | 2026-04-25 | 22d561f | [260425-lii-fix-misleading-chess-com-user-not-found-](./quick/260425-lii-fix-misleading-chess-com-user-not-found-/) |
 
 ---
-Last activity: 2026-04-25 — Completed quick task 260425-dxh: replaced endgame insights findings_hash cache with structural cache (user_id + prompt_version + model + opponent_strength, import-since validity check, 30-day TTL).
+Last activity: 2026-04-25 — Completed quick task 260425-lii: body-aware 404 handling on chess.com archives endpoint distinguishes genuine "user not found" from "real user, archives temporarily unavailable" via a player-endpoint probe.
