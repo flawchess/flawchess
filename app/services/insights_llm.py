@@ -33,11 +33,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.llm_log import LlmLog
+from app.repositories.import_job_repository import get_latest_completed_import_with_games_at
 from app.repositories.llm_log_repository import (
     count_recent_successful_misses,
     create_llm_log,
-    get_latest_log_by_hash,
     get_latest_report_for_user,
+    get_latest_successful_log_for_user,
     get_oldest_recent_miss_timestamp,
 )
 from app.schemas.endgames import TimePressureChartResponse
@@ -61,6 +62,12 @@ _PROMPT_VERSION = "endgame_v15"  # v15 (v1.11 cleanup pass): dropped stale "chec
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
+
+# Structural cache TTL safety net (260425-dxh): bounds the sliding 3-month
+# window narrative drift on cache hits. Lower to 14 if users complain about
+# stale narratives.
+INSIGHTS_CACHE_MAX_AGE_DAYS = 30
+INSIGHTS_CACHE_MAX_AGE = datetime.timedelta(days=INSIGHTS_CACHE_MAX_AGE_DAYS)
 
 # Series / prompt-assembly filter constants (260422-tnb A4/C3/A5/C2/C4/C5/C6).
 MIN_BUCKET_N: int = 3  # A4: drop timeline points with n<3
@@ -1777,7 +1784,12 @@ async def generate_insights(
     user_id: int,
     session: AsyncSession,
 ) -> EndgameInsightsResponse:
-    """Tier-1 cache -> rate-limit -> tier-2 soft-fail -> fresh LLM call.
+    """Tier-1 structural cache -> rate-limit -> tier-2 soft-fail -> fresh LLM call.
+
+    Cache key (260425-dxh): (user_id, prompt_version, model, opponent_strength).
+    Validity rule: row.created_at >= MAX(import_jobs.completed_at WHERE
+    games_imported > 0) for this user, AND row younger than
+    INSIGHTS_CACHE_MAX_AGE. Reordered so compute_findings only runs on miss.
 
     Returns EndgameInsightsResponse with status in {fresh, cache_hit,
     stale_rate_limited}. Raises InsightsRateLimitExceeded (router -> 429),
@@ -1789,16 +1801,38 @@ async def generate_insights(
     persist even if the caller's session rolls back.
     """
     model = settings.PYDANTIC_AI_MODEL_INSIGHTS
-    findings = await compute_findings(filter_context, session, user_id)
 
-    # Tier-1 cache lookup (CONTEXT.md D-08).
-    cached = await get_latest_log_by_hash(session, findings.findings_hash, _PROMPT_VERSION, model)
+    # Tier-1 STRUCTURAL cache lookup (260425-dxh): cheap query on
+    # (user_id, prompt_version, model, opponent_strength) + freshness checks.
+    # Runs BEFORE compute_findings so cache hits skip the heavy DB pipeline.
+    # Bug-fix note: the previous findings_hash-based lookup was unstable across
+    # days because EndgameTabFindings includes time-relative fields (sliding
+    # 3-month window stats and stale_months markers), so the hash drifted even
+    # with a frozen game corpus. The hash also wasn't user-scoped — a latent
+    # cross-user collision risk that the new helper closes by filtering on
+    # user_id directly.
+    cached = await get_latest_successful_log_for_user(
+        session,
+        user_id=user_id,
+        prompt_version=_PROMPT_VERSION,
+        model=model,
+        opponent_strength=filter_context.opponent_strength,
+        max_age=INSIGHTS_CACHE_MAX_AGE,
+    )
     if cached is not None:
-        report = EndgameInsightsReport.model_validate(cached.response_json)
-        return EndgameInsightsResponse(
-            report=_maybe_strip_overview(report),
-            status="cache_hit",
-        )
+        last_import_at = await get_latest_completed_import_with_games_at(session, user_id)
+        # Cache row valid only if no qualifying import has happened since it
+        # was written. games_imported=0 imports were intentionally excluded
+        # in the helper, so no-op resyncs do not invalidate the cache.
+        if last_import_at is None or last_import_at <= cached.created_at:
+            report = EndgameInsightsReport.model_validate(cached.response_json)
+            return EndgameInsightsResponse(
+                report=_maybe_strip_overview(report),
+                status="cache_hit",
+            )
+
+    # Cache miss path: now we pay for compute_findings.
+    findings = await compute_findings(filter_context, session, user_id)
 
     # Rate-limit check (CONTEXT.md D-09, D-10).
     misses = await count_recent_successful_misses(session, user_id, _RATE_LIMIT_WINDOW)

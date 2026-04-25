@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.import_job import ImportJob
@@ -68,9 +68,7 @@ async def get_import_job(session: AsyncSession, job_id: str) -> ImportJob | None
     Returns:
         ImportJob instance or None if not found.
     """
-    result = await session.execute(
-        select(ImportJob).where(ImportJob.id == job_id)
-    )
+    result = await session.execute(select(ImportJob).where(ImportJob.id == job_id))
     return result.scalar_one_or_none()
 
 
@@ -173,3 +171,24 @@ async def fail_orphaned_jobs(session: AsyncSession) -> int:
     )
     await session.flush()
     return result.rowcount  # ty: ignore[unresolved-attribute]  # SQLAlchemy async execute returns Result; rowcount is available on DML results
+
+
+async def get_latest_completed_import_with_games_at(
+    session: AsyncSession, user_id: int
+) -> datetime | None:
+    """Return MAX(completed_at) for the user's completed imports that fetched
+    new games (games_imported > 0), or None if none exist.
+
+    Used as the cache-invalidation timestamp for the structural insights cache
+    (260425-dxh): a cached LLM log row is invalid iff its created_at is older
+    than this timestamp. No-op resyncs (games_imported = 0) are intentionally
+    excluded so daily syncs that fetch zero games do NOT bust the cache.
+    """
+    result = await session.execute(
+        select(func.max(ImportJob.completed_at)).where(
+            ImportJob.user_id == user_id,
+            ImportJob.status == "completed",
+            ImportJob.games_imported > 0,
+        )
+    )
+    return result.scalar_one_or_none()

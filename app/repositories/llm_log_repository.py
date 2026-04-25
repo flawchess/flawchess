@@ -162,6 +162,59 @@ async def get_latest_log_by_hash(
     return result.scalar_one_or_none()
 
 
+async def get_latest_successful_log_for_user(
+    session: AsyncSession,
+    user_id: int,
+    prompt_version: str,
+    model: str,
+    opponent_strength: str,
+    max_age: datetime.timedelta,
+) -> LlmLog | None:
+    """Structural-cache lookup (260425-dxh) — replaces get_latest_log_by_hash on the hot path.
+
+    Returns the most recent successful log row for this user under the current
+    (prompt_version, model, opponent_strength) tuple, provided it is younger
+    than max_age. The caller is responsible for the additional "no qualifying
+    import since created_at" check (see app/services/insights_llm.py).
+
+    "Successful" means response_json IS NOT NULL AND error IS NULL — same rule
+    as get_latest_log_by_hash. cost_unknown / provider-error rows do NOT hit.
+
+    Index coverage: ix_llm_logs_user_id_created_at (user_id eq + created_at
+    DESC ordering + range on created_at). Remaining filters are cheap on the
+    small per-user-per-window slice.
+
+    Args:
+        session: caller-supplied AsyncSession (read path).
+        user_id: authenticated user (mandatory; this fixes the cross-user
+            collision latent in get_latest_log_by_hash).
+        prompt_version: current era key (e.g. "endgame_v15").
+        model: pydantic-ai provider:model string.
+        opponent_strength: matched against filter_context->>'opponent_strength'
+            via the JSONB text-extraction operator.
+        max_age: TTL for the structural cache (e.g. timedelta(days=30)).
+
+    Returns:
+        Most recent matching LlmLog, or None.
+    """
+    cutoff = datetime.datetime.now(datetime.UTC) - max_age
+    result = await session.execute(
+        select(LlmLog)
+        .where(
+            LlmLog.user_id == user_id,
+            LlmLog.prompt_version == prompt_version,
+            LlmLog.model == model,
+            LlmLog.filter_context["opponent_strength"].astext == opponent_strength,
+            LlmLog.created_at >= cutoff,
+            LlmLog.response_json.is_not(None),
+            LlmLog.error.is_(None),
+        )
+        .order_by(LlmLog.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def count_recent_successful_misses(
     session: AsyncSession,
     user_id: int,
