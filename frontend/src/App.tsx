@@ -10,7 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { DownloadIcon, BookOpenIcon, BarChart3Icon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield } from 'lucide-react';
+import { DownloadIcon, BookOpenIcon, LayoutDashboard, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
@@ -51,14 +51,14 @@ const NAV_ITEMS = [
   { to: '/import', label: 'Import', Icon: DownloadIcon },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
-  { to: '/overview', label: 'Overview', Icon: BarChart3Icon },
+  { to: '/overview', label: 'Overview', Icon: LayoutDashboard },
 ] as const;
 
 const BOTTOM_NAV_ITEMS = [
   { to: '/import', label: 'Import', Icon: DownloadIcon },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
-  { to: '/overview', label: 'Overview', Icon: BarChart3Icon },
+  { to: '/overview', label: 'Overview', Icon: LayoutDashboard },
 ] as const;
 
 // D-16: Admin nav item appended at render time when profile.is_superuser === true.
