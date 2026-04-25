@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
@@ -11,6 +11,22 @@ interface RatingChartProps {
 
 const TIME_CONTROLS = ['bullet', 'blitz', 'rapid', 'classical'];
 
+const MOBILE_BREAKPOINT_PX = 768;
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
+    const update = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isMobile;
+}
+
 const chartConfig = {
   bullet: { label: 'Bullet', color: 'oklch(0.60 0.22 30)' },
   blitz: { label: 'Blitz', color: 'oklch(0.65 0.20 260)' },
@@ -19,6 +35,7 @@ const chartConfig = {
 };
 
 export function RatingChart({ data, platform }: RatingChartProps) {
+  const isMobile = useIsMobile();
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
 
   const handleLegendClick = useCallback((dataKey: string) => {
@@ -118,14 +135,17 @@ export function RatingChart({ data, platform }: RatingChartProps) {
 
   return (
     <ChartContainer config={chartConfig} className="w-full h-72" data-testid={testId}>
-      <LineChart data={chartData}>
+      <LineChart
+        data={chartData}
+        margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
+      >
         <CartesianGrid vertical={false} />
         <XAxis
           dataKey="date"
           tickFormatter={formatDateTick}
           tick={{ fontSize: 12 }}
         />
-        <YAxis domain={yDomain} ticks={yTicks} interval={0} tick={{ fontSize: 12 }} />
+        <YAxis domain={yDomain} ticks={yTicks} interval={0} tick={{ fontSize: 12 }} width={44} />
         <ChartTooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
