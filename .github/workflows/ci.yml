@@ -10,6 +10,10 @@ name: CI
         type: boolean
         default: true
 
+env:
+  # Run JS-based actions (checkout, setup-node, etc.) on Node 24 ahead of GitHub's June 2026 default switch.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   test:
     runs-on: ubuntu-latest
