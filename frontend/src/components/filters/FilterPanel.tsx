@@ -347,7 +347,7 @@ export function FilterPanel({
         </Button>
         {showDeferredApplyHint && (
           <p
-            className="mt-2 text-[11px] leading-tight text-muted-foreground"
+            className="mt-2 text-xs leading-tight text-muted-foreground"
             data-testid="filter-deferred-apply-hint"
           >
             Filter changes apply on closing the filters panel.

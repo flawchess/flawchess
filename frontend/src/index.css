@@ -155,6 +155,17 @@
   .font-brand {
     font-family: 'Fredoka', sans-serif;
     }
+
+  /* Mobile typography bump.
+     Below the sm: breakpoint, lift Tailwind's default type scale by one tier so
+     small labels, filter chips, table captions, and body copy match typical
+     mobile-app sizing. Desktop (>=640px) is untouched. Spacing tokens are not
+     touched, so chess board, filter row, and grid layouts stay put. */
+  @media (max-width: 639.98px) {
+    .text-xs { font-size: 0.875rem; line-height: 1.25rem; }
+    .text-sm { font-size: 1rem; line-height: 1.5rem; }
+    .text-base { font-size: 1.125rem; line-height: 1.75rem; }
+  }
 }
 
 @layer components {
