@@ -88,102 +88,125 @@ export function GameCard({ game }: GameCardProps) {
   const whiteRating = game.white_rating !== null ? `(${game.white_rating})` : '';
   const blackRating = game.black_rating !== null ? `(${game.black_rating})` : '';
 
+  const identifierLine = (
+    <div className="flex items-center gap-2">
+      <span
+        className={cn(
+          'inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-semibold shrink-0',
+          RESULT_CLASSES[game.user_result],
+        )}
+      >
+        {RESULT_LABELS[game.user_result]}
+      </span>
+      <span className="text-sm truncate">
+        <span className="text-foreground">
+          ■ {whiteName} {whiteRating}
+        </span>
+        <span className="mx-1.5 text-muted-foreground">vs</span>
+        <span className="text-foreground">
+          □ {blackName} {blackRating}
+        </span>
+      </span>
+      <span className="ml-auto shrink-0 flex items-center gap-1.5 text-muted-foreground">
+        <PlatformIcon platform={game.platform} className="h-4 w-4" />
+        {game.platform_url ? (
+          <Tooltip content="Open game on platform">
+            <a
+              href={game.platform_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground transition-colors"
+              aria-label="Open game on platform"
+              data-testid={`game-card-link-${game.game_id}`}
+            >
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          </Tooltip>
+        ) : null}
+      </span>
+    </div>
+  );
+
+  const openingLine = (
+    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+      <BookOpen className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate" data-testid={`game-card-opening-${game.game_id}`}>
+        {game.opening_name ?? <span className="italic">Unknown Opening</span>}
+      </span>
+    </div>
+  );
+
+  const metadataLine = (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+      {/* Date — omit entirely if played_at is null */}
+      {game.played_at && (
+        <span className="inline-flex items-center gap-1">
+          <Calendar className="h-3.5 w-3.5" />
+          {formatDate(game.played_at)}
+        </span>
+      )}
+      {/* Time control — omit entirely if time_control_bucket is null */}
+      {game.time_control_bucket && (
+        <span className="inline-flex items-center gap-1" data-testid={`game-card-tc-${game.game_id}`}>
+          <Clock className="h-3.5 w-3.5" />
+          <span className="capitalize">{game.time_control_bucket}</span>
+          {game.time_control_str ? ` · ${formatTimeControl(game.time_control_str)}` : ''}
+        </span>
+      )}
+      {/* Termination — omit if null or 'unknown' */}
+      {game.termination && game.termination !== 'unknown' && (
+        <span className="inline-flex items-center gap-1 capitalize" data-testid={`game-card-termination-${game.game_id}`}>
+          <Swords className="h-3.5 w-3.5" />
+          {game.termination}
+        </span>
+      )}
+      {/* Move count — desktop only (hidden on mobile per UX feedback) */}
+      {game.move_count !== null && (
+        <span className="hidden sm:inline-flex items-center gap-1">
+          <Hash className="h-3.5 w-3.5" />
+          {game.move_count} moves
+        </span>
+      )}
+    </div>
+  );
+
   return (
     <div
       data-testid={`game-card-${game.game_id}`}
       className={cn(
-        'border-l-4 charcoal-texture border border-border/20 rounded px-4 py-3 flex flex-col gap-2',
+        'border-l-4 charcoal-texture border border-border/20 rounded px-4 py-3',
         BORDER_CLASSES[game.user_result],
       )}
     >
-      {/* Top row: Result badge + both players + platform link (full width) */}
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            'inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-semibold shrink-0',
-            RESULT_CLASSES[game.user_result],
+      {/* Mobile layout: identifier line full width on top, then board + opening/metadata below */}
+      <div className="flex flex-col gap-2 sm:hidden">
+        {identifierLine}
+        <div className="flex gap-3 items-start">
+          {game.result_fen && (
+            <LazyMiniBoard
+              fen={game.result_fen}
+              flipped={game.user_color === 'black'}
+            />
           )}
-        >
-          {RESULT_LABELS[game.user_result]}
-        </span>
-        <span className="text-sm truncate">
-          <span className="text-foreground">
-            ■ {whiteName} {whiteRating}
-          </span>
-          <span className="mx-1.5 text-muted-foreground">vs</span>
-          <span className="text-foreground">
-            □ {blackName} {blackRating}
-          </span>
-        </span>
-        <span className="ml-auto shrink-0 flex items-center gap-1.5 text-muted-foreground">
-          <PlatformIcon platform={game.platform} className="h-4 w-4" />
-          {game.platform_url ? (
-            <Tooltip content="Open game on platform">
-              <a
-                href={game.platform_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:text-foreground transition-colors"
-                aria-label="Open game on platform"
-                data-testid={`game-card-link-${game.game_id}`}
-              >
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            </Tooltip>
-          ) : null}
-        </span>
+          <div className="flex-1 min-w-0 flex flex-col gap-2">
+            {openingLine}
+            {metadataLine}
+          </div>
+        </div>
       </div>
 
-      {/* Body row: lazy-rendered minimap left, opening + metadata right */}
-      <div className="flex gap-3 items-start">
+      {/* Desktop layout: board left, identifier + opening + metadata stacked right */}
+      <div className="hidden sm:flex gap-3 items-center">
         {game.result_fen && (
           <LazyMiniBoard
             fen={game.result_fen}
             flipped={game.user_color === 'black'}
           />
         )}
-
-        <div className="flex-1 min-w-0 flex flex-col gap-2">
-          {/* Opening name with BookOpen icon */}
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <BookOpen className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate" data-testid={`game-card-opening-${game.game_id}`}>
-              {game.opening_name ?? <span className="italic">Unknown Opening</span>}
-            </span>
-          </div>
-
-          {/* Metadata with icons — date first, then time control */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-            {/* Date — omit entirely if played_at is null */}
-            {game.played_at && (
-              <span className="inline-flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5" />
-                {formatDate(game.played_at)}
-              </span>
-            )}
-            {/* Time control — omit entirely if time_control_bucket is null */}
-            {game.time_control_bucket && (
-              <span className="inline-flex items-center gap-1" data-testid={`game-card-tc-${game.game_id}`}>
-                <Clock className="h-3.5 w-3.5" />
-                <span className="capitalize">{game.time_control_bucket}</span>
-                {game.time_control_str ? ` · ${formatTimeControl(game.time_control_str)}` : ''}
-              </span>
-            )}
-            {/* Termination — omit if null or 'unknown' */}
-            {game.termination && game.termination !== 'unknown' && (
-              <span className="inline-flex items-center gap-1 capitalize" data-testid={`game-card-termination-${game.game_id}`}>
-                <Swords className="h-3.5 w-3.5" />
-                {game.termination}
-              </span>
-            )}
-            {/* Move count — omit if null */}
-            {game.move_count !== null && (
-              <span className="inline-flex items-center gap-1">
-                <Hash className="h-3.5 w-3.5" />
-                {game.move_count} moves
-              </span>
-            )}
-          </div>
+        <div className="min-w-0 flex-1 flex flex-col gap-2">
+          {identifierLine}
+          {openingLine}
+          {metadataLine}
         </div>
       </div>
     </div>
