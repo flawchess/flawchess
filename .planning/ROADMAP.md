@@ -169,7 +169,13 @@ See [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md) for full details.
 <details>
 <summary>🚧 v1.12 Benchmark DB & Population Baselines (Phases 69-73) — ACTIVE</summary>
 
-- [ ] Phase 69: Benchmark DB Infrastructure & Ingestion Pipeline (0 plans) — INFRA-01..03, INGEST-01..06
+- [ ] Phase 69: Benchmark DB Infrastructure & Ingestion Pipeline (6 plans) — INFRA-01..03, INGEST-01..06
+  - [ ] 69-01-PLAN.md — Benchmark DB Infrastructure (docker-compose, init SQL, lifecycle script)
+  - [ ] 69-02-PLAN.md — Alembic migration: eval_depth + eval_source_version on canonical games table
+  - [ ] 69-03-PLAN.md — MCP server registration + CLAUDE.md docs (manual)
+  - [ ] 69-04-PLAN.md — Selection scan + player bucketing (streaming dump scan)
+  - [ ] 69-05-PLAN.md — Ingestion orchestrator + per-user checkpoint
+  - [ ] 69-06-PLAN.md — Smoke + interim ingest run + verification report (manual checkpoints)
 - [ ] Phase 70: Classifier Validation Replication at Scale (GATE) (0 plans) — VALID-01, VALID-02
 - [ ] Phase 71: Rating-Stratified Offset Analysis (0 plans) — VALID-03
 - [ ] Phase 72: Parity Proxy Validation (0 plans) — VALID-04

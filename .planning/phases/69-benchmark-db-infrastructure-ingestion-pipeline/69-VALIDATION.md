@@ -1,9 +1,9 @@
 ---
 phase: 69
 slug: benchmark-db-infrastructure-ingestion-pipeline
-status: draft
+status: planned
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: false  # Plan 02 Task 02-01 builds the test scaffold
 created: 2026-04-25
 ---
 
@@ -47,23 +47,23 @@ Lint/format (run after edits):
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 69-01-XX | 01 (compose + init SQL) | 1 | INFRA-01 | T-69-01 | DB instance isolated by project/volume/port/user | manual smoke | `docker compose -f docker-compose.benchmark.yml -p flawchess-benchmark ps` (status = healthy) | ❌ W0 | ⬜ pending |
-| 69-01-XX | 01 (init SQL grants) | 1 | INFRA-01 | T-69-02 | RO role has SELECT only, no INSERT/UPDATE/DELETE | unit (psql) | `psql ... -c "SELECT has_table_privilege('flawchess_benchmark_ro', 'games', 'INSERT')"` returns `f` | ❌ W0 | ⬜ pending |
-| 69-02-XX | 02 (alembic migration eval_depth/source) | 1 | INFRA-02, INGEST-06 | — | Migration applies cleanly to dev/prod/test/benchmark uniformly | integration | `DATABASE_URL=postgresql+asyncpg://...:5433/flawchess_benchmark uv run alembic upgrade head` (exit 0; columns present) | ❌ W0 | ⬜ pending |
-| 69-02-XX | 02 (eval_source_version constant) | 2 | INGEST-06 | — | New Lichess imports populate `eval_source_version='lichess-pgn'`; chess.com leaves both NULL | unit | `uv run pytest tests/test_benchmark_ingest.py::test_eval_columns -x` | ❌ W0 | ⬜ pending |
-| 69-02-XX | 02 (centipawn convention note) | 2 | INGEST-06 | — | Documented agreement of signed-from-white centipawn parsing with a known sample | docstring/test | `uv run pytest tests/test_benchmark_ingest.py::test_centipawn_convention -x` OR `docs/benchmark-ingest-notes.md` references known FEN+eval sample | ❌ W0 | ⬜ pending |
-| 69-03-XX | 03 (MCP server registration) | 1 | INFRA-03 | T-69-02 | `flawchess-benchmark-db` MCP server registered, read-only | manual smoke | `mcp__flawchess-benchmark-db__query` returns `count(*)` from `games` and `game_positions` | ❌ W0 (manual) | ⬜ pending |
-| 69-04-XX | 04 (selection scan + parser) | 2 | INGEST-01 | T-69-07 | Streaming pre-filter extracts headers + `[%eval` flag without parsing moves | unit | `uv run pytest tests/test_benchmark_ingest.py::test_scan_dump_parser -x` | ❌ W0 | ⬜ pending |
-| 69-04-XX | 04 (player bucketing) | 2 | INGEST-02, INGEST-03 | — | Median Elo + modal TC assigns players to one (rating × TC) cell from grid | unit | `uv run pytest tests/test_benchmark_ingest.py::test_player_bucketing -x` | ❌ W0 | ⬜ pending |
-| 69-05-XX | 05 (orchestrator + checkpoint) | 3 | INGEST-04 | T-69-05 | SIGINT mid-import + resume yields identical row counts to uninterrupted run | integration/manual | Manual procedure in RESEARCH.md §11; row-count parity recorded in verification report | ❌ W0 (manual) | ⬜ pending |
-| 69-05-XX | 05 (stub User row creation) | 3 | INGEST-02 | — | Stub User satisfies FastAPI-Users invariants but never serves auth | unit | `uv run pytest tests/test_benchmark_ingest.py::test_stub_user_invariants -x` | ❌ W0 | ⬜ pending |
-| 69-05-XX | 05 (per-user 20k hard skip) | 3 | INGEST-02 | T-69-06 | Users with >20k window-bounded games are hard-skipped with audit log | unit | `uv run pytest tests/test_benchmark_ingest.py::test_outlier_skip -x` | ❌ W0 | ⬜ pending |
-| 69-06-XX | 06 (smoke + 100/cell + storage check) | 4 | INGEST-05 | — | Total benchmark DB size ≤ 100 GB after 100/cell run; queen cell ≥ 1k samples | manual / SQL | MCP `SELECT pg_size_pretty(pg_database_size('flawchess_benchmark'))` ≤ 100 GB; queen rowcount ≥ 1000 | ❌ post-ingest (manual) | ⬜ pending |
-| 69-06-XX | 06 (per-cell evidence for Phase 70) | 4 | INGEST-03, INGEST-05 | — | All 20 (rating × TC) cells populated; eval coverage rate computed | manual / SQL | Verification report contains §"Per-cell game counts" + §"Eval coverage per cell" tables | ❌ post-ingest | ⬜ pending |
+| 69-01-04 | 01 (compose + init SQL — checkpoint) | 1 | INFRA-01 | T-69-01 | DB instance isolated by project/volume/port/user | manual smoke | `docker compose -f docker-compose.benchmark.yml -p flawchess-benchmark ps` (status = healthy) | ❌ W0 | ⬜ pending |
+| 69-01-04 | 01 (init SQL grants — checkpoint) | 1 | INFRA-01 | T-69-02 | RO role has SELECT only, no INSERT/UPDATE/DELETE | unit (psql) | `psql ... -c "SELECT has_table_privilege('flawchess_benchmark_ro', 'games', 'INSERT')"` returns `f` | ❌ W0 | ⬜ pending |
+| 69-02-03 | 02 (alembic migration eval_depth/source) | 1 | INFRA-02, INGEST-06 | — | Migration applies cleanly to dev/prod/test/benchmark uniformly | integration | `DATABASE_URL=postgresql+asyncpg://...:5433/flawchess_benchmark uv run alembic upgrade head` (exit 0; columns present) | ❌ W0 | ⬜ pending |
+| 69-02-02 | 02 (eval_source_version constant) | 2 | INGEST-06 | — | New Lichess imports populate `eval_source_version='lichess-pgn'`; chess.com leaves both NULL | unit | `uv run pytest tests/test_benchmark_ingest.py::test_eval_columns -x` | ❌ W0 | ⬜ pending |
+| 69-02-01 | 02 (centipawn convention note) | 2 | INGEST-06 | — | Documented agreement of signed-from-white centipawn parsing with a known sample | docstring/test | `uv run pytest tests/test_benchmark_ingest.py::test_centipawn_convention -x` OR `docs/benchmark-ingest-notes.md` references known FEN+eval sample | ❌ W0 | ⬜ pending |
+| 69-03-02 | 03 (MCP server registration — checkpoint) | 1 | INFRA-03 | T-69-02 | `flawchess-benchmark-db` MCP server registered, read-only | manual smoke | `mcp__flawchess-benchmark-db__query` returns `count(*)` from `games` and `game_positions` | ❌ W0 (manual) | ⬜ pending |
+| 69-04-03 | 04 (selection scan + parser) | 2 | INGEST-01 | T-69-07 | Streaming pre-filter extracts headers + `[%eval` flag without parsing moves | unit | `uv run pytest tests/test_benchmark_ingest.py::test_scan_dump_parser -x` | ❌ W0 | ⬜ pending |
+| 69-04-02 | 04 (player bucketing) | 2 | INGEST-02, INGEST-03 | — | Median Elo + modal TC assigns players to one (rating × TC) cell from grid | unit | `uv run pytest tests/test_benchmark_ingest.py::test_player_bucketing -x` | ❌ W0 | ⬜ pending |
+| 69-06-04 | 05/06 (orchestrator + SIGINT resumability — manual checkpoint in Plan 06) | 3 | INGEST-04 | T-69-05 | SIGINT mid-import + resume yields identical row counts to uninterrupted run | integration/manual | Manual procedure in RESEARCH.md §11; row-count parity recorded in verification report | ❌ W0 (manual) | ⬜ pending |
+| 69-05-01 | 05 (stub User row creation) | 3 | INGEST-02 | — | Stub User satisfies FastAPI-Users invariants but never serves auth | unit | `uv run pytest tests/test_benchmark_ingest.py::test_stub_user_invariants -x` | ❌ W0 | ⬜ pending |
+| 69-05-01 | 05 (per-user 20k hard skip) | 3 | INGEST-02 | T-69-06 | Users with >20k window-bounded games are hard-skipped with audit log | unit | `uv run pytest tests/test_benchmark_ingest.py::test_outlier_skip -x` | ❌ W0 | ⬜ pending |
+| 69-06-05 | 06 (smoke + 100/cell + storage check) | 4 | INGEST-05 | — | Total benchmark DB size ≤ 100 GB after 100/cell run; queen cell ≥ 1k samples | manual / SQL | MCP `SELECT pg_size_pretty(pg_database_size('flawchess_benchmark'))` ≤ 100 GB; queen rowcount ≥ 1000 | ❌ post-ingest (manual) | ⬜ pending |
+| 69-06-07 | 06 (per-cell evidence for Phase 70) | 4 | INGEST-03, INGEST-05 | — | All 20 (rating × TC) cells populated; eval coverage rate computed | manual / SQL | Verification report contains §"Per-cell game counts" + §"Eval coverage per cell" tables | ❌ post-ingest | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
-> The planner MUST replace each `XX` task ID with the real task ID after PLAN.md creation. The checker will fail Dimension 8 if any phase requirement (INFRA-01..03, INGEST-01..06) is unmapped.
+> Task IDs replaced 2026-04-25 from PLAN.md task IDs. All 9 phase requirements (INFRA-01..03, INGEST-01..06) are mapped to at least one row above.
 
 ---
 
