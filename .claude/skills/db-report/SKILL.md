@@ -42,8 +42,11 @@ SELECT count(*) AS total_users, count(*) FILTER (WHERE NOT is_guest) AS register
 ```
 
 ### Query 0b — 10 most recent users with game and position counts
+
+PII (email, chess.com username, lichess username) is intentionally excluded — boolean flags below preserve the signal (does the user have a linked platform account?) without leaking identifiers into the report file.
+
 ```sql
-SELECT u.id, u.email, u.chess_com_username, u.lichess_username, u.is_guest, u.created_at, u.last_login, COALESCE(g.game_count, 0) AS games, COALESCE(gp.position_count, 0) AS positions FROM users u LEFT JOIN (SELECT user_id, count(*) AS game_count FROM games GROUP BY user_id) g ON g.user_id = u.id LEFT JOIN (SELECT user_id, count(*) AS position_count FROM game_positions GROUP BY user_id) gp ON gp.user_id = u.id ORDER BY u.created_at DESC LIMIT 10
+SELECT u.id, (u.chess_com_username IS NOT NULL) AS has_chess_com, (u.lichess_username IS NOT NULL) AS has_lichess, u.is_guest, u.created_at, u.last_login, COALESCE(g.game_count, 0) AS games, COALESCE(gp.position_count, 0) AS positions FROM users u LEFT JOIN (SELECT user_id, count(*) AS game_count FROM games GROUP BY user_id) g ON g.user_id = u.id LEFT JOIN (SELECT user_id, count(*) AS position_count FROM game_positions GROUP BY user_id) gp ON gp.user_id = u.id ORDER BY u.created_at DESC LIMIT 10
 ```
 
 ### Query 0c — Platform breakdown across all users
@@ -56,7 +59,7 @@ SELECT platform, count(DISTINCT user_id) AS users, count(*) AS games FROM games 
 Present results as:
 
 1. **User summary** — single-row table: total users, registered users, guest users
-2. **10 most recent users** — table with columns: email (truncated/masked if needed), chess.com username, lichess username, guest?, registered, last login, games, positions. Format dates as YYYY-MM-DD. For users with 0 games, this highlights signups that never imported.
+2. **10 most recent users** — table with columns: user id, has_chess_com, has_lichess, guest?, registered, last login, games, positions. Format dates as YYYY-MM-DD. Do NOT include email, chess.com username, or lichess username — these are PII and must not appear in the report file. The boolean flags are sufficient to spot signups that never linked a platform account or never imported games.
 3. **Platform breakdown** — table: platform, users, games
 
 End with a brief note on user activity (e.g., how many recent signups have actually imported games, guest vs registered ratio).
