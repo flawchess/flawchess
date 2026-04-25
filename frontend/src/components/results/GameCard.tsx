@@ -203,9 +203,10 @@ export function GameCard({ game }: GameCardProps) {
     </div>
   );
 
-  // Desktop: indicators wrap on a single row; order is date · tc · moves · termination.
+  // Desktop: indicators wrap on a single row; order is termination · date · tc · moves.
   const desktopMetadata = (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+      {terminationItem}
       {dateItem}
       {timeControlItem}
       {game.move_count !== null && (
@@ -214,7 +215,6 @@ export function GameCard({ game }: GameCardProps) {
           {game.move_count} moves
         </span>
       )}
-      {terminationItem}
     </div>
   );
 
