@@ -171,7 +171,7 @@ See [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md) for full details.
 
 - [ ] Phase 69: Benchmark DB Infrastructure & Ingestion Pipeline (6 plans) — INFRA-01..03, INGEST-01..06
   - [ ] 69-01-PLAN.md — Benchmark DB Infrastructure (docker-compose, init SQL, lifecycle script)
-  - [ ] 69-02-PLAN.md — Alembic migration: eval_depth + eval_source_version on canonical games table
+  - [x] 69-02-PLAN.md — Alembic migration: eval_depth + eval_source_version on canonical games table
   - [ ] 69-03-PLAN.md — MCP server registration + CLAUDE.md docs (manual)
   - [ ] 69-04-PLAN.md — Selection scan + player bucketing (streaming dump scan)
   - [ ] 69-05-PLAN.md — Ingestion orchestrator + per-user checkpoint
