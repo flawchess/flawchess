@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
-milestone: none
-milestone_name: (between milestones)
-status: idle
-last_updated: "2026-04-25T13:55:00Z"
-last_activity: 2026-04-25 -- Completed quick task 260425-lwz: month-enumeration fallback when chess.com archives-list 404s for real users
+milestone: v1.12
+milestone_name: Benchmark DB & Population Baselines
+status: defining-requirements
+last_updated: "2026-04-25T14:30:00Z"
+last_activity: 2026-04-25 -- Milestone v1.12 opened from SEED-002 (benchmark DB & population baselines)
 progress:
   total_phases: 0
   completed_phases: 0
@@ -17,21 +17,21 @@ progress:
 
 ## Current Position
 
-Milestone: (between milestones)
-Phase: none
-Plan: none
-Status: v1.11 shipped 2026-04-24. Awaiting `/gsd-new-milestone` to open the next cycle.
-Last activity: 2026-04-24 -- v1.11 LLM-first Endgame Insights milestone shipped (PR #61 squash-merged, tagged v1.11)
+Milestone: v1.12 Benchmark DB & Population Baselines
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-25 — Milestone v1.12 opened from SEED-002
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-04-24)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Awaiting next milestone. v1.12 candidates (from v1.11 deferred work): retrofit VAL-01 snapshot test; explore Insights for Openings and Global Stats tabs; rating-stratified population baselines (SEED-002).
+Current focus: v1.12 Benchmark DB & Population Baselines (SEED-002). Defining requirements before roadmap.
 
 ## Milestone Progress
 
-No active milestone. Twelve shipped (v1.0-v1.11).
+v1.12 active (defining requirements). Twelve milestones shipped (v1.0-v1.11).
 
 ## Key Context
 
