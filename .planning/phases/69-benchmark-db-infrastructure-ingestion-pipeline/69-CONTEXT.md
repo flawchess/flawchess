@@ -41,7 +41,12 @@ Phase boundary excludes any analysis or zone-calibration logic — those are Pha
 - **D-12:** Selection threshold filter — pick users from the dump scan who have **≥ K eval-bearing games** in the snapshot month (start with K=5, planning-time tunable). Filters out one-off players, biases the sample toward Lichess accounts that have opted into analysis (eval availability is sticky per account).
 - **D-13:** Per-user history bounded via Lichess API `since=` parameter set to **36 months back** from the selection-month dump end. Eval-bearing and non-eval games both ingested within window.
 - **D-14:** Hard skip (NOT warning) on any single user whose window-bounded ingest would exceed **20k games**. Logged with username + count for audit. 20k games in 36 months is >18/day — almost certainly a bot or eval-spam account.
-- **D-15:** N (players per cell, default 500) is a planning-time tunable. Run a small pilot (e.g. one cell) first, measure per-user game-count distribution, then resize N to land within an acceptable storage budget. INGEST-05's 50-100 GB target may need to relax to ~150-250 GB if N stays at 500; document the final number after the pilot.
+- **D-15 (revised 2026-04-25):** Ingestion is **staged via a `--per-cell N` flag** on the orchestrator script, not run once at a fixed N. Stages:
+  1. **Smoke stage** — `--per-cell 3` (60 users total) to verify the pipeline end-to-end on real data.
+  2. **Interim milestone** — `--per-cell 100` (2000 users total) is the v1.12 Phase 69 completion target. Top-up only (idempotent re-run brings each cell from 3 → 100).
+  3. **Decision gate** — after the 100/cell run completes, inspect per-cell game-count distributions, storage footprint, and any tail thinness for Phase 73's per-user-rate analytics. Then decide whether to push toward 500/cell (the original D-15 target) or hold at 100/cell. That decision is **out of Phase 69 scope** — Phase 69 ends when the 100/cell run is verified.
+  4. INGEST-05's 50-100 GB target very likely holds at 100/cell. If a future top-up pushes N higher, storage budget gets revisited at that decision point.
+- **D-15a (incremental top-up mechanics):** Selection-scan output is persisted once as a username list per cell (not regenerated per run). The orchestrator counts distinct users already imported per cell in the benchmark DB on startup, draws `N - current` additional usernames from the persisted pool, and imports them. Per-game `(platform, platform_game_id)` unique constraint makes already-imported games no-op on re-run. Per-user outer-loop checkpoint records "user X completed" so an interrupted run resumes mid-pool without re-counting.
 
 ### Schema migration scope (INGEST-06)
 
