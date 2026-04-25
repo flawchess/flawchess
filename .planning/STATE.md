@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.12
 milestone_name: Benchmark DB & Population Baselines
 status: planning
-last_updated: "2026-04-25T19:30:30.942Z"
+last_updated: "2026-04-25T20:25:44.554Z"
 last_activity: 2026-04-25 — Roadmap created for v1.12 (Phases 69-73). Phase 70 is a documented gate.
 progress:
   total_phases: 4
@@ -82,3 +82,5 @@ Accepted at v1.11 milestone close on 2026-04-24:
 Last activity: 2026-04-25 — Phase 69 (Benchmark DB Infrastructure & Ingestion Pipeline) context captured. 15 decisions locked (D-01..D-15). Sample unit pivoted to distinct players per cell, reusing existing Lichess import pipeline (U1). Resume: `.planning/phases/69-benchmark-db-infrastructure-ingestion-pipeline/69-CONTEXT.md`.
 | 2026-04-25 | fast | Mobile full-width Overview rating charts | done |
 | 2026-04-25 | discuss-phase | Phase 69 context gathered (D-01..D-15) | done |
+
+**Planned Phase:** 69 (Benchmark DB Infrastructure & Ingestion Pipeline) — 6 plans — 2026-04-25T20:25:44.551Z
