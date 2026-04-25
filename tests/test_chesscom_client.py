@@ -15,6 +15,7 @@ from app.services.chesscom_client import fetch_chesscom_games, _archive_before_t
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_game(
     uuid: str = "game-uuid-1",
     rules: str = "chess",
@@ -28,7 +29,7 @@ def _make_game(
     return {
         "uuid": uuid,
         "url": f"https://www.chess.com/game/live/{uuid}",
-        "pgn": "[White \"testuser\"]\n1. e4 e5 *",
+        "pgn": '[White "testuser"]\n1. e4 e5 *',
         "time_control": time_control,
         "rated": rated,
         "rules": rules,
@@ -60,6 +61,7 @@ def _make_response(json_data: dict, status_code: int = 200) -> MagicMock:
 # _archive_before_timestamp helper
 # ---------------------------------------------------------------------------
 
+
 class TestArchiveBeforeTimestamp:
     def test_old_archive_is_before(self):
         """An archive from 2020/01 should be before a 2024 timestamp."""
@@ -90,8 +92,8 @@ class TestArchiveBeforeTimestamp:
 # fetch_chesscom_games
 # ---------------------------------------------------------------------------
 
-class TestFetchChesscomGames:
 
+class TestFetchChesscomGames:
     @pytest.mark.asyncio
     async def test_valid_username_yields_normalized_games(self):
         """Should yield a normalized game dict for a standard chess game."""
@@ -205,9 +207,7 @@ class TestFetchChesscomGames:
         archives_resp = _make_response(
             {"archives": ["https://api.chess.com/pub/player/testuser/games/2024/03"]}
         )
-        games_resp = _make_response(
-            {"games": [_make_game(uuid="g1"), _make_game(uuid="g2")]}
-        )
+        games_resp = _make_response({"games": [_make_game(uuid="g1"), _make_game(uuid="g2")]})
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=[archives_resp, games_resp])
@@ -233,9 +233,7 @@ class TestFetchChesscomGames:
 
         mock_client = AsyncMock()
         # archives OK, first archive call → 429, retry → success
-        mock_client.get = AsyncMock(
-            side_effect=[archives_resp, rate_limited_resp, games_resp]
-        )
+        mock_client.get = AsyncMock(side_effect=[archives_resp, rate_limited_resp, games_resp])
 
         sleep_mock = AsyncMock()
         with patch("app.services.chesscom_client.asyncio.sleep", new=sleep_mock):
@@ -247,6 +245,25 @@ class TestFetchChesscomGames:
         sleep_calls = [call.args[0] for call in sleep_mock.call_args_list]
         assert 60 in sleep_calls
         assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_429_persistent_raises_runtime_error(self):
+        """Persistent 429 across all retries should raise RuntimeError, not silently
+        skip. Silent skip would advance last_synced_at and permanently lose any games
+        in that archive (see prod-import-missed-games debug session)."""
+        archives_resp = _make_response(
+            {"archives": ["https://api.chess.com/pub/player/testuser/games/2024/03"]}
+        )
+        rate_limited_resp = _make_response({}, status_code=429)
+
+        mock_client = AsyncMock()
+        # archives OK, then every retry returns 429
+        mock_client.get = AsyncMock(side_effect=[archives_resp] + [rate_limited_resp] * 10)
+
+        with patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()):
+            with pytest.raises(RuntimeError, match="rate-limited"):
+                async for _ in fetch_chesscom_games(mock_client, "testuser", user_id=1):
+                    pass
 
     @pytest.mark.asyncio
     async def test_empty_archives_yields_nothing(self):
@@ -273,9 +290,7 @@ class TestFetchChesscomGames:
 
         with patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()):
             with pytest.raises(ValueError, match="chess.com request failed"):
-                async for _ in fetch_chesscom_games(
-                    mock_client, "user@domain.com", user_id=1
-                ):
+                async for _ in fetch_chesscom_games(mock_client, "user@domain.com", user_id=1):
                     pass
 
     @pytest.mark.asyncio
@@ -288,9 +303,7 @@ class TestFetchChesscomGames:
 
         with patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()):
             with pytest.raises(ValueError, match="chess.com request failed"):
-                async for _ in fetch_chesscom_games(
-                    mock_client, "testuser", user_id=1
-                ):
+                async for _ in fetch_chesscom_games(mock_client, "testuser", user_id=1):
                     pass
 
     @pytest.mark.asyncio
@@ -303,32 +316,56 @@ class TestFetchChesscomGames:
 
         with patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()):
             with pytest.raises(ValueError, match="chess.com request failed"):
-                async for _ in fetch_chesscom_games(
-                    mock_client, "testuser", user_id=1
-                ):
+                async for _ in fetch_chesscom_games(mock_client, "testuser", user_id=1):
                     pass
 
     @pytest.mark.asyncio
-    async def test_500_on_archive_fetch_skips_archive(self):
-        """500 on a per-archive fetch should skip that archive, not raise."""
+    async def test_500_on_archive_fetch_retries_then_raises(self):
+        """Persistent 500 on a per-archive fetch should raise RuntimeError after
+        retries — NOT silently skip the archive. Silent-skip combined with
+        last_synced_at advancement caused permanent data loss in prod
+        (see prod-import-missed-games debug session)."""
         archives_resp = _make_response(
             {"archives": ["https://api.chess.com/pub/player/testuser/games/2024/03"]}
         )
         server_error_resp = _make_response({}, status_code=500)
 
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=[archives_resp, server_error_resp])
+        # archives OK, then every retry returns 500 (more 500s than _MAX_RETRIES)
+        mock_client.get = AsyncMock(side_effect=[archives_resp] + [server_error_resp] * 10)
+
+        with patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()):
+            with pytest.raises(RuntimeError, match="status 500"):
+                async for _ in fetch_chesscom_games(mock_client, "testuser", user_id=1):
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_503_on_archive_fetch_retries_then_succeeds(self):
+        """A transient 503 should retry and succeed when the next attempt returns 200.
+        This is the common Cloudflare/origin-hiccup scenario the silent-skip behavior
+        used to mask."""
+        archives_resp = _make_response(
+            {"archives": ["https://api.chess.com/pub/player/testuser/games/2024/03"]}
+        )
+        server_error_resp = _make_response({}, status_code=503)
+        games_resp = _make_response({"games": [_make_game()]})
+
+        mock_client = AsyncMock()
+        # archives OK, archive 503, retry → 200 with one game
+        mock_client.get = AsyncMock(side_effect=[archives_resp, server_error_resp, games_resp])
 
         with patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()):
             results = []
             async for game in fetch_chesscom_games(mock_client, "testuser", user_id=1):
                 results.append(game)
 
-        assert results == []
+        assert len(results) == 1
 
     @pytest.mark.asyncio
     async def test_410_on_archive_fetch_skips_archive(self):
-        """410 on a per-archive fetch should skip that archive gracefully."""
+        """410 on a per-archive fetch should skip that archive gracefully — this is a
+        permanent client error meaning the archive is gone, not a transient failure
+        that risks data loss for the rest of the import."""
         archives_resp = _make_response(
             {"archives": ["https://api.chess.com/pub/player/testuser/games/2024/03"]}
         )
@@ -343,3 +380,47 @@ class TestFetchChesscomGames:
                 results.append(game)
 
         assert results == []
+
+    @pytest.mark.asyncio
+    async def test_404_on_archive_fetch_skips_archive(self):
+        """404 on a per-archive fetch (e.g. archive disappeared) should skip rather
+        than fail the whole import."""
+        archives_resp = _make_response(
+            {
+                "archives": [
+                    "https://api.chess.com/pub/player/testuser/games/2024/03",
+                    "https://api.chess.com/pub/player/testuser/games/2024/04",
+                ]
+            }
+        )
+        not_found_resp = _make_response({}, status_code=404)
+        games_resp = _make_response({"games": [_make_game(uuid="april-game")]})
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[archives_resp, not_found_resp, games_resp])
+
+        with patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()):
+            results = []
+            async for game in fetch_chesscom_games(mock_client, "testuser", user_id=1):
+                results.append(game)
+
+        # 2024/03 was 404 (skipped), 2024/04 succeeded with one game
+        assert len(results) == 1
+        assert results[0].platform_game_id == "april-game"
+
+    @pytest.mark.asyncio
+    async def test_unexpected_status_on_archive_fetch_raises(self):
+        """An unexpected non-200 (e.g. 401) on a per-archive fetch should raise rather
+        than silently skip. We explicitly enumerate which statuses are safe to skip."""
+        archives_resp = _make_response(
+            {"archives": ["https://api.chess.com/pub/player/testuser/games/2024/03"]}
+        )
+        unauthorized_resp = _make_response({}, status_code=401)
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[archives_resp, unauthorized_resp])
+
+        with patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()):
+            with pytest.raises(RuntimeError, match="unexpected status 401"):
+                async for _ in fetch_chesscom_games(mock_client, "testuser", user_id=1):
+                    pass

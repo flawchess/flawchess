@@ -25,9 +25,20 @@ BASE_URL = "https://api.chess.com/pub/player"
 _HEADERS = {"User-Agent": USER_AGENT}
 _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE_SECONDS = 5
+_RATE_LIMIT_BACKOFF_SECONDS = 60
 
 # Transient network errors worth retrying (same set as lichess client)
 _RETRYABLE_EXCEPTIONS = (httpx.TimeoutException, httpx.RemoteProtocolError, httpx.ReadError)
+
+# Status codes that represent transient server-side failures and should be retried
+# with exponential backoff. We treat these like network errors — chess.com / Cloudflare
+# occasionally returns 5xx for a single archive while the rest of the API is healthy.
+_RETRYABLE_STATUS_CODES = frozenset({500, 502, 503, 504})
+
+# Status codes that mean "this archive is gone / not available" but the rest of the
+# user's archives may still be fetchable. Skip the archive with a warning rather
+# than failing the entire import.
+_SKIPPABLE_ARCHIVE_STATUS_CODES = frozenset({404, 410})
 
 
 def _archive_before_timestamp(archive_url: str, since: datetime) -> bool:
@@ -77,7 +88,12 @@ async def fetch_chesscom_games(
         on_game_fetched: Optional callback called once per yielded game (for progress tracking).
 
     Raises:
-        ValueError: If ``username`` is not found on chess.com (HTTP 404).
+        ValueError: If ``username`` is not found on chess.com (HTTP 404 on archives list).
+        RuntimeError: If a per-archive fetch fails persistently (5xx after retries, or
+            429 after retries, or unexpected non-200). Raising halts the import so the
+            job is marked ``failed`` and ``last_synced_at`` is preserved — preventing
+            silent data loss when chess.com / Cloudflare hiccups for a single archive.
+            See ``.planning/debug/prod-import-missed-games.md``.
     """
     # chess.com API requires lowercase usernames (returns 301 for mixed case)
     api_username = username.lower()
@@ -90,9 +106,12 @@ async def fetch_chesscom_games(
             if attempt < _MAX_RETRIES - 1:
                 backoff = _RETRY_BACKOFF_BASE_SECONDS * (2**attempt)
                 logger.warning(
-                    "chess.com archives list for %s failed (attempt %d/%d), "
-                    "retrying in %ds: %s",
-                    username, attempt + 1, _MAX_RETRIES, backoff, exc,
+                    "chess.com archives list for %s failed (attempt %d/%d), retrying in %ds: %s",
+                    username,
+                    attempt + 1,
+                    _MAX_RETRIES,
+                    backoff,
+                    exc,
                 )
                 await asyncio.sleep(backoff)
             else:
@@ -104,66 +123,150 @@ async def fetch_chesscom_games(
         raise ValueError(f"chess.com user '{username}' not found")
     if archives_resp.status_code != 200:
         raise ValueError(
-            f"chess.com request failed (status {archives_resp.status_code})"
-            f" for user '{username}'"
+            f"chess.com request failed (status {archives_resp.status_code}) for user '{username}'"
         )
 
     archive_urls: list[str] = archives_resp.json().get("archives", [])
 
     for archive_url in archive_urls:
         # Incremental sync: skip months that are entirely before since_timestamp
-        if since_timestamp is not None and _archive_before_timestamp(
-            archive_url, since_timestamp
-        ):
+        if since_timestamp is not None and _archive_before_timestamp(archive_url, since_timestamp):
             continue
 
         # Shared rate limiter: limits concurrent archive fetches across all users
         async with get_chesscom_semaphore():
-            # Rate-limit delay between requests
-            await asyncio.sleep(0.15)
+            resp = await _fetch_archive_with_retries(client, archive_url)
 
-            resp = None
-            for attempt in range(_MAX_RETRIES):
-                try:
-                    resp = await client.get(archive_url, headers=_HEADERS)
-                except _RETRYABLE_EXCEPTIONS as exc:
-                    if attempt < _MAX_RETRIES - 1:
-                        backoff = _RETRY_BACKOFF_BASE_SECONDS * (2**attempt)
-                        logger.warning(
-                            "chess.com archive %s failed (attempt %d/%d), "
-                            "retrying in %ds: %s",
-                            archive_url, attempt + 1, _MAX_RETRIES, backoff, exc,
-                        )
-                        await asyncio.sleep(backoff)
-                        continue
-                    # Sentry capture omitted — last-attempt error re-raises to run_import()
-                    # top-level handler which calls capture_exception (per D-02).
-                    raise
+        # _fetch_archive_with_retries returns None only for skippable client errors
+        # (404/410). Transient/persistent failures raise RuntimeError instead — this
+        # is the fix for the silent-data-loss bug where a transient 5xx on one
+        # archive completed the import with 0 games and advanced last_synced_at.
+        if resp is None:
+            continue
 
-                if resp.status_code == 429:
-                    logger.warning(
-                        "chess.com 429 rate-limited on %s, backing off 60s",
-                        archive_url,
-                    )
-                    # Report to Sentry so we can monitor if semaphore=3 is too aggressive
-                    sentry_sdk.capture_message(
-                        "chess.com 429 rate limit hit",
-                        level="warning",
-                        tags={"source": "import", "platform": "chess.com"},
-                    )
-                    await asyncio.sleep(60)
-                    continue
+        games = resp.json().get("games", [])
+        for game in games:
+            normalized = normalize_chesscom_game(game, username, user_id)
+            if normalized is not None:
+                yield normalized
+                if on_game_fetched is not None:
+                    on_game_fetched()
 
-                break
 
-            # Skip non-200 archive responses rather than crashing on .json()
-            if resp is None or resp.status_code != 200:
+async def _fetch_archive_with_retries(
+    client: httpx.AsyncClient, archive_url: str
+) -> httpx.Response | None:
+    """Fetch a single monthly archive with retry policy.
+
+    Returns:
+        The 200 response on success, or ``None`` if the archive returned a permanent
+        client error (404/410) that should be skipped without failing the import.
+
+    Raises:
+        RuntimeError: If retries are exhausted on a transient error (5xx or 429), or
+            an unexpected non-200 status is returned. Raising halts the import so the
+            job is marked failed and last_synced_at is preserved.
+        Exception: Re-raises the last network exception if all retry attempts threw
+            connection-level errors.
+    """
+    last_status: int | None = None
+    last_exc: Exception | None = None
+
+    for attempt in range(_MAX_RETRIES):
+        # Rate-limit delay between requests (also acts as inter-attempt pacing).
+        await asyncio.sleep(0.15)
+
+        try:
+            resp = await client.get(archive_url, headers=_HEADERS)
+        except _RETRYABLE_EXCEPTIONS as exc:
+            last_exc = exc
+            if attempt < _MAX_RETRIES - 1:
+                backoff = _RETRY_BACKOFF_BASE_SECONDS * (2**attempt)
+                logger.warning(
+                    "chess.com archive %s failed (attempt %d/%d), retrying in %ds: %s",
+                    archive_url,
+                    attempt + 1,
+                    _MAX_RETRIES,
+                    backoff,
+                    exc,
+                )
+                await asyncio.sleep(backoff)
                 continue
+            # Last attempt: re-raise so run_import() captures and fails the job.
+            raise
 
-            games = resp.json().get("games", [])
-            for game in games:
-                normalized = normalize_chesscom_game(game, username, user_id)
-                if normalized is not None:
-                    yield normalized
-                    if on_game_fetched is not None:
-                        on_game_fetched()
+        if resp.status_code == 200:
+            return resp
+
+        last_status = resp.status_code
+
+        # Permanent client errors — skip this archive but keep going. Visible in logs
+        # and Sentry (warning) so we can still notice if it becomes systemic.
+        if resp.status_code in _SKIPPABLE_ARCHIVE_STATUS_CODES:
+            logger.warning(
+                "chess.com archive %s returned %d, skipping",
+                archive_url,
+                resp.status_code,
+            )
+            sentry_sdk.capture_message(
+                "chess.com archive skipped",
+                level="warning",
+                tags={"source": "import", "platform": "chess.com"},
+            )
+            return None
+
+        # Rate-limited: back off and retry.
+        if resp.status_code == 429:
+            logger.warning(
+                "chess.com 429 rate-limited on %s (attempt %d/%d), backing off %ds",
+                archive_url,
+                attempt + 1,
+                _MAX_RETRIES,
+                _RATE_LIMIT_BACKOFF_SECONDS,
+            )
+            sentry_sdk.capture_message(
+                "chess.com 429 rate limit hit",
+                level="warning",
+                tags={"source": "import", "platform": "chess.com"},
+            )
+            if attempt < _MAX_RETRIES - 1:
+                await asyncio.sleep(_RATE_LIMIT_BACKOFF_SECONDS)
+                continue
+            # Final attempt still 429 — fail loudly rather than silently dropping
+            # the archive (would otherwise advance last_synced_at and lose games).
+            raise RuntimeError(
+                f"chess.com archive {archive_url} rate-limited after {_MAX_RETRIES} attempts"
+            )
+
+        # Transient server errors — retry with exponential backoff.
+        if resp.status_code in _RETRYABLE_STATUS_CODES:
+            if attempt < _MAX_RETRIES - 1:
+                backoff = _RETRY_BACKOFF_BASE_SECONDS * (2**attempt)
+                logger.warning(
+                    "chess.com archive %s returned %d (attempt %d/%d), retrying in %ds",
+                    archive_url,
+                    resp.status_code,
+                    attempt + 1,
+                    _MAX_RETRIES,
+                    backoff,
+                )
+                await asyncio.sleep(backoff)
+                continue
+            raise RuntimeError(
+                f"chess.com archive {archive_url} returned "
+                f"status {resp.status_code} after {_MAX_RETRIES} attempts"
+            )
+
+        # Any other unexpected non-200 (e.g. 401, 403). Don't silently skip — fail
+        # loudly so a regression in chess.com's API surface is investigated rather
+        # than masked as "0 games imported".
+        raise RuntimeError(
+            f"chess.com archive {archive_url} returned unexpected status {resp.status_code}"
+        )
+
+    # Loop exhausted without returning — shouldn't happen because each branch above
+    # either returns, continues, or raises. Treat as failure for safety.
+    raise RuntimeError(
+        f"chess.com archive {archive_url} fetch exhausted retries "
+        f"(last_status={last_status}, last_exc={last_exc!r})"
+    )

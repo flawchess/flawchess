@@ -5,7 +5,7 @@ Uses unittest.mock to simulate httpx streaming responses without real HTTP calls
 
 import json
 from collections.abc import AsyncIterator
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -226,3 +226,82 @@ class TestFetchLichessGames:
         call_kwargs = mock_client.stream.call_args[1]
         headers = call_kwargs.get("headers", {})
         assert headers.get("Accept") == "application/x-ndjson"
+
+    @pytest.mark.asyncio
+    async def test_503_retries_then_raises_runtime_error(self):
+        """Persistent 5xx must raise RuntimeError, not silently yield 0 games.
+
+        Regression for the silent-data-loss bug: previously the code skipped
+        the status check and treated the error body as NDJSON, advancing the
+        cursor with 0 games. Now it must propagate so the import job fails
+        and last_synced_at is preserved.
+        """
+        mock_client = MagicMock()
+        mock_client.stream = MagicMock(
+            return_value=_make_streaming_response([], status_code=503)
+        )
+
+        with patch("app.services.lichess_client.asyncio.sleep", new=AsyncMock()):
+            with pytest.raises(RuntimeError, match="failed after 3 retries"):
+                async for _ in fetch_lichess_games(mock_client, "testuser", user_id=1):
+                    pass
+
+        # Should have retried _MAX_RETRIES + 1 = 4 times before giving up
+        assert mock_client.stream.call_count == 4
+
+    @pytest.mark.asyncio
+    async def test_503_then_200_succeeds(self):
+        """Transient 5xx must be retried, and a subsequent 200 should succeed."""
+        game = _make_lichess_game()
+        success_lines = [json.dumps(game)]
+
+        mock_client = MagicMock()
+        mock_client.stream = MagicMock(
+            side_effect=[
+                _make_streaming_response([], status_code=503),
+                _make_streaming_response(success_lines, status_code=200),
+            ]
+        )
+
+        results = []
+        with patch("app.services.lichess_client.asyncio.sleep", new=AsyncMock()):
+            async for g in fetch_lichess_games(mock_client, "testuser", user_id=1):
+                results.append(g)
+
+        assert len(results) == 1
+        assert mock_client.stream.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_429_persistent_raises_runtime_error(self):
+        """Persistent 429 must raise after retries (not silently advance cursor)."""
+        mock_client = MagicMock()
+        mock_client.stream = MagicMock(
+            return_value=_make_streaming_response([], status_code=429)
+        )
+
+        with patch("app.services.lichess_client.asyncio.sleep", new=AsyncMock()):
+            with pytest.raises(RuntimeError, match="failed after 3 retries"):
+                async for _ in fetch_lichess_games(mock_client, "testuser", user_id=1):
+                    pass
+
+        assert mock_client.stream.call_count == 4
+
+    @pytest.mark.asyncio
+    async def test_unexpected_status_raises_runtime_error_immediately(self):
+        """Unexpected non-200 (e.g. 401) must fail loudly without retrying.
+
+        Only 5xx and 429 are retried. 401/403/etc. indicate a configuration
+        or auth problem and should fail loud on the first response.
+        """
+        mock_client = MagicMock()
+        mock_client.stream = MagicMock(
+            return_value=_make_streaming_response([], status_code=401)
+        )
+
+        with patch("app.services.lichess_client.asyncio.sleep", new=AsyncMock()):
+            with pytest.raises(RuntimeError, match="unexpected status 401"):
+                async for _ in fetch_lichess_games(mock_client, "testuser", user_id=1):
+                    pass
+
+        # Should NOT have retried — only one call.
+        assert mock_client.stream.call_count == 1

@@ -10,6 +10,7 @@ import logging
 from collections.abc import AsyncIterator, Callable
 
 import httpx
+import sentry_sdk
 
 from app.core.rate_limiters import get_lichess_semaphore
 from app.schemas.normalization import NormalizedGame
@@ -19,10 +20,31 @@ logger = logging.getLogger(__name__)
 
 LICHESS_API_URL = "https://lichess.org/api/games/user"
 
-# Retry config for transient stream errors (e.g. "peer closed connection").
-# Lichess NDJSON streams for large exports (10k+ games) can drop mid-transfer.
+# Retry config for transient stream errors (e.g. "peer closed connection") and
+# transient HTTP status failures (5xx, 429). Lichess NDJSON streams for large
+# exports (10k+ games) can drop mid-transfer.
 _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE_SECONDS = 5
+# Lichess docs: "If you receive an HTTP response with a 429 status, please wait
+# a full minute before resuming API usage."
+_RATE_LIMIT_BACKOFF_SECONDS = 60
+
+# Status codes that represent transient server-side failures and should be retried
+# with exponential backoff.
+_RETRYABLE_STATUS_CODES = frozenset({500, 502, 503, 504})
+
+
+class _RetryableStatusError(Exception):
+    """Internal sentinel raised when lichess returns a retryable transient status.
+
+    Caught by the retry loop in fetch_lichess_games. Distinct from RuntimeError
+    so that unexpected non-200 codes (e.g. 401/403) fail loudly without retry,
+    while 429/5xx are retried like stream-level connection drops.
+    """
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 async def fetch_lichess_games(
@@ -36,8 +58,8 @@ async def fetch_lichess_games(
 
     Streams NDJSON from the lichess API line-by-line using httpx streaming,
     so large exports never need to be buffered in memory. Retries on transient
-    connection drops — already-imported games are deduplicated downstream by
-    bulk_insert_games.
+    connection drops and 5xx/429 responses — already-imported games are
+    deduplicated downstream by bulk_insert_games.
 
     Args:
         client: Shared httpx.AsyncClient instance.
@@ -49,6 +71,13 @@ async def fetch_lichess_games(
 
     Raises:
         ValueError: If ``username`` is not found on lichess (HTTP 404).
+        RuntimeError: If lichess returns persistent failure (5xx after retries,
+            429 after retries, or unexpected non-200 such as 401/403). Raising
+            halts the import so the job is marked ``failed`` and ``last_synced_at``
+            is preserved — preventing silent data loss when an error body would
+            otherwise be parsed as "0 games" and the cursor advanced. See
+            ``.planning/debug/prod-import-missed-games.md`` for the chess.com
+            sibling of this bug.
     """
     # Do not pass perfType to the lichess API. The perfType filter is applied
     # server-side and excludes correspondence, chess960, and imported (fromPosition)
@@ -77,9 +106,17 @@ async def fetch_lichess_games(
 
     for attempt in range(_MAX_RETRIES + 1):
         if attempt > 0:
-            backoff = _RETRY_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
+            # Lichess asks for a full minute after a 429; use shorter exponential
+            # backoff for stream/5xx errors.
+            if (
+                isinstance(last_attempt_error, _RetryableStatusError)
+                and last_attempt_error.status_code == 429
+            ):
+                backoff = _RATE_LIMIT_BACKOFF_SECONDS
+            else:
+                backoff = _RETRY_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
             logger.warning(
-                "Lichess stream for %s dropped (attempt %d/%d), retrying in %ds: %s",
+                "Lichess fetch for %s failed (attempt %d/%d), retrying in %ds: %s",
                 username,
                 attempt,
                 _MAX_RETRIES,
@@ -98,6 +135,32 @@ async def fetch_lichess_games(
                 ) as response:
                     if response.status_code == 404:
                         raise ValueError(f"lichess user '{username}' not found")
+
+                    # Check status BEFORE iterating lines. httpx.stream() does not
+                    # auto-raise on non-2xx, and aiter_lines() on an error body
+                    # would silently produce 0 games and advance last_synced_at.
+                    if response.status_code != 200:
+                        if response.status_code == 429:
+                            sentry_sdk.capture_message(
+                                "lichess 429 rate limit hit",
+                                level="warning",
+                                tags={"source": "import", "platform": "lichess"},
+                            )
+                            raise _RetryableStatusError(
+                                f"lichess returned 429 for {username}",
+                                status_code=429,
+                            )
+                        if response.status_code in _RETRYABLE_STATUS_CODES:
+                            raise _RetryableStatusError(
+                                f"lichess returned {response.status_code} for {username}",
+                                status_code=response.status_code,
+                            )
+                        # Unexpected non-200 (401/403/etc). Fail loudly rather than
+                        # masking it as "0 games imported".
+                        raise RuntimeError(
+                            f"lichess request for {username} returned "
+                            f"unexpected status {response.status_code}"
+                        )
 
                     async for line in response.aiter_lines():
                         if not line.strip():
@@ -118,14 +181,22 @@ async def fetch_lichess_games(
             # Stream completed successfully — no retry needed
             return
 
-        except (httpx.RemoteProtocolError, httpx.ReadError) as exc:
-            # Transient stream errors (e.g. "peer closed connection without
-            # sending complete message body"). Safe to retry because
-            # bulk_insert_games deduplicates already-imported games.
-            # Sentry capture omitted — last-attempt error propagates to run_import()
-            # top-level handler which calls capture_exception (per D-02).
+        except (httpx.RemoteProtocolError, httpx.ReadError, _RetryableStatusError) as exc:
+            # Transient errors. Stream-level: "peer closed connection without
+            # sending complete message body". Status-level: 5xx / 429.
+            # Safe to retry because bulk_insert_games deduplicates already-
+            # imported games.
+            # Sentry capture omitted for stream errors — last-attempt error
+            # propagates to run_import() top-level handler which calls
+            # capture_exception (per D-02). Status-429 captures a warning above.
             last_attempt_error = exc
             continue
 
-    # All retries exhausted — re-raise the last error
+    # All retries exhausted. Convert internal _RetryableStatusError to RuntimeError
+    # so callers see a consistent failure surface (matches chesscom_client).
+    if isinstance(last_attempt_error, _RetryableStatusError):
+        raise RuntimeError(
+            f"lichess request for {username} failed after {_MAX_RETRIES} retries: "
+            f"status {last_attempt_error.status_code}"
+        ) from last_attempt_error
     raise last_attempt_error
