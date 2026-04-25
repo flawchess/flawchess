@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus, Swords } from 'lucide-react';
+import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -44,7 +44,6 @@ function LazyMiniBoard({ fen, flipped, size }: { fen: string; flipped: boolean; 
 const MOBILE_BOARD_SIZE = 105;
 const DESKTOP_BOARD_SIZE = 100;
 
-const RESULT_LABELS: Record<UserResult, string> = { win: 'W', draw: 'D', loss: 'L' };
 const RESULT_CLASSES: Record<UserResult, string> = {
   win: 'bg-green-600/20 text-green-400 border-green-600/30',
   draw: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
@@ -97,21 +96,10 @@ export function GameCard({ game }: GameCardProps) {
   const whiteRating = game.white_rating !== null ? `(${game.white_rating})` : '';
   const blackRating = game.black_rating !== null ? `(${game.black_rating})` : '';
 
-  const resultBadge = (
-    <span
-      className={cn(
-        'inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-semibold shrink-0',
-        RESULT_CLASSES[game.user_result],
-      )}
-    >
-      {RESULT_LABELS[game.user_result]}
-    </span>
-  );
-
-  // Mobile result indicator: small colored chip with +/=/− icon — replaces the
-  // swords icon next to termination so the W/D/L cue lives on the termination row.
+  // Result indicator: small colored chip with +/=/− icon — sits next to the
+  // termination text on both layouts to convey W/D/L without a separate badge.
   const ResultIcon = RESULT_ICONS[game.user_result];
-  const mobileResultIndicator = (
+  const resultIndicator = (
     <span
       className={cn(
         'inline-flex items-center justify-center rounded border h-3.5 w-3.5 shrink-0',
@@ -159,10 +147,9 @@ export function GameCard({ game }: GameCardProps) {
     </div>
   );
 
-  // Desktop: single-line "White vs Black".
+  // Desktop: single-line "White vs Black"; no W/D/L badge — termination row carries the result chip.
   const desktopIdentifier = (
     <div className="flex items-center gap-2">
-      {resultBadge}
       <span className="text-sm truncate">
         <span className="text-foreground">
           ■ {whiteName} {whiteRating}
@@ -200,17 +187,9 @@ export function GameCard({ game }: GameCardProps) {
     </span>
   );
 
-  const desktopTerminationItem = game.termination && game.termination !== 'unknown' && (
+  const terminationItem = game.termination && game.termination !== 'unknown' && (
     <span className="inline-flex items-center gap-1 capitalize" data-testid={`game-card-termination-${game.game_id}`}>
-      <Swords className="h-3.5 w-3.5" />
-      {game.termination}
-    </span>
-  );
-
-  // Mobile termination: swords icon replaced with the W/D/L color indicator.
-  const mobileTerminationItem = game.termination && game.termination !== 'unknown' && (
-    <span className="inline-flex items-center gap-1 capitalize" data-testid={`game-card-termination-${game.game_id}`}>
-      {mobileResultIndicator}
+      {resultIndicator}
       {game.termination}
     </span>
   );
@@ -220,22 +199,22 @@ export function GameCard({ game }: GameCardProps) {
     <div className="flex flex-col gap-1 text-sm text-muted-foreground">
       {dateItem}
       {timeControlItem}
-      {mobileTerminationItem}
+      {terminationItem}
     </div>
   );
 
-  // Desktop: indicators wrap on a single row; includes move count.
+  // Desktop: indicators wrap on a single row; order is date · tc · moves · termination.
   const desktopMetadata = (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
       {dateItem}
       {timeControlItem}
-      {desktopTerminationItem}
       {game.move_count !== null && (
         <span className="inline-flex items-center gap-1">
           <Hash className="h-3.5 w-3.5" />
           {game.move_count} moves
         </span>
       )}
+      {terminationItem}
     </div>
   );
 
