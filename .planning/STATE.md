@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: none
 milestone_name: (between milestones)
 status: idle
-last_updated: "2026-04-25T13:30:00Z"
-last_activity: 2026-04-25 -- Completed quick task 260425-lii: body-aware 404 handling for chess.com import errors
+last_updated: "2026-04-25T13:55:00Z"
+last_activity: 2026-04-25 -- Completed quick task 260425-lwz: month-enumeration fallback when chess.com archives-list 404s for real users
 progress:
   total_phases: 0
   completed_phases: 0
@@ -76,6 +76,7 @@ Accepted at v1.11 milestone close on 2026-04-24:
 |---|-------------|------|--------|-----------|
 | 260425-dxh | Replace endgame insights findings_hash cache with structural cache | 2026-04-25 | 9029f7e | [260425-dxh-implement-endgame-insights-structural-ca](./quick/260425-dxh-implement-endgame-insights-structural-ca/) |
 | 260425-lii | Fix misleading "chess.com user not found" error during import | 2026-04-25 | 22d561f | [260425-lii-fix-misleading-chess-com-user-not-found-](./quick/260425-lii-fix-misleading-chess-com-user-not-found-/) |
+| 260425-lwz | Fallback to month enumeration when chess.com archives-list endpoint 404s for an existing user | 2026-04-25 | af64f66 | [260425-lwz-fallback-to-month-enumeration-when-chess](./quick/260425-lwz-fallback-to-month-enumeration-when-chess/) |
 
 ---
-Last activity: 2026-04-25 — Completed quick task 260425-lii: body-aware 404 handling on chess.com archives endpoint distinguishes genuine "user not found" from "real user, archives temporarily unavailable" via a player-endpoint probe.
+Last activity: 2026-04-25 — Completed quick task 260425-lwz: when chess.com's archives-list endpoint silently 404s for a real account (e.g. wasterram), the import client now enumerates monthly archive URLs from the player's joined date and feeds them into the existing per-archive fetch loop, recovering imports that previously failed with "couldn't return games right now".
