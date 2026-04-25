@@ -30,6 +30,11 @@ _RATE_LIMIT_BACKOFF_SECONDS = 60
 # Transient network errors worth retrying (same set as lichess client)
 _RETRYABLE_EXCEPTIONS = (httpx.TimeoutException, httpx.RemoteProtocolError, httpx.ReadError)
 
+# Substring (case-insensitive) we expect in the chess.com 404 body when the user truly
+# does not exist. Anything else on a 404 is treated as ambiguous and probed via the
+# player endpoint. Avoids a magic string per CLAUDE.md "no magic numbers/strings".
+_CHESSCOM_NOT_FOUND_MARKER = "not found"
+
 # Status codes that represent transient server-side failures and should be retried
 # with exponential backoff. We treat these like network errors — chess.com / Cloudflare
 # occasionally returns 5xx for a single archive while the rest of the API is healthy.
@@ -39,6 +44,29 @@ _RETRYABLE_STATUS_CODES = frozenset({500, 502, 503, 504})
 # user's archives may still be fetchable. Skip the archive with a warning rather
 # than failing the entire import.
 _SKIPPABLE_ARCHIVE_STATUS_CODES = frozenset({404, 410})
+
+
+async def _user_exists_on_chesscom(client: httpx.AsyncClient, api_username: str) -> bool | None:
+    """Probe /pub/player/{username} to disambiguate a 404 on /games/archives.
+
+    Returns:
+        True  — player endpoint returned 200, user exists.
+        False — player endpoint returned 404, user truly absent.
+        None  — player endpoint returned anything else (5xx / network);
+                caller should treat as 'request failed' so the import is
+                marked failed and last_synced_at is preserved (f69842b).
+    """
+    url = f"{BASE_URL}/{api_username}"
+    try:
+        resp = await client.get(url, headers=_HEADERS)
+    except _RETRYABLE_EXCEPTIONS:
+        # Network-level error on the probe — surface as 'unknown'.
+        return None
+    if resp.status_code == 200:
+        return True
+    if resp.status_code == 404:
+        return False
+    return None
 
 
 def _archive_before_timestamp(archive_url: str, since: datetime) -> bool:
@@ -88,7 +116,13 @@ async def fetch_chesscom_games(
         on_game_fetched: Optional callback called once per yielded game (for progress tracking).
 
     Raises:
-        ValueError: If ``username`` is not found on chess.com (HTTP 404 on archives list).
+        ValueError: Three distinct cases on archives-list failure:
+            - "user not found" — 404 with body identifying the user as absent, or
+              404 with ambiguous body and player endpoint confirms user is absent.
+            - "couldn't return games right now" — 404 with ambiguous body and player
+              endpoint confirms user exists (no public archives or transient error).
+            - "request failed" — non-200 archives response, or ambiguous 404 where
+              the player probe also failed; last_synced_at is preserved in both cases.
         RuntimeError: If a per-archive fetch fails persistently (5xx after retries, or
             429 after retries, or unexpected non-200). Raising halts the import so the
             job is marked ``failed`` and ``last_synced_at`` is preserved — preventing
@@ -120,7 +154,38 @@ async def fetch_chesscom_games(
                 raise
 
     if archives_resp.status_code == 404:
-        raise ValueError(f"chess.com user '{username}' not found")
+        # chess.com returns 404 on /games/archives in TWO distinct cases:
+        #   1. User truly absent — body: {"message": "User \"X\" not found."}
+        #   2. Real user, archives unavailable (no public archives, or transient
+        #      chess.com error) — body: {"message": "An internal error has occurred..."}
+        # Pre-2026-04-25 this branch conflated both as "user not found", which sent
+        # users with valid accounts on a fruitless typo hunt. We now parse the body
+        # and, on ambiguity, probe /pub/player/{username} to disambiguate.
+        # See .planning/quick/260425-lii-fix-misleading-chess-com-user-not-found-.
+        try:
+            body = archives_resp.json()
+            message = str(body.get("message", "")) if isinstance(body, dict) else ""
+        except ValueError:
+            message = ""
+
+        if _CHESSCOM_NOT_FOUND_MARKER in message.lower():
+            raise ValueError(f"chess.com user '{username}' not found")
+
+        # Ambiguous body — confirm existence via the player endpoint.
+        exists = await _user_exists_on_chesscom(client, api_username)
+        if exists is True:
+            raise ValueError(
+                f"chess.com couldn't return games for '{username}' right now "
+                "(no public archives or temporary chess.com error). "
+                "Try again in a few minutes."
+            )
+        if exists is False:
+            raise ValueError(f"chess.com user '{username}' not found")
+        # exists is None — player endpoint also failed; treat as transient.
+        raise ValueError(
+            f"chess.com request failed (status 404, player endpoint unreachable) "
+            f"for user '{username}'"
+        )
     if archives_resp.status_code != 200:
         raise ValueError(
             f"chess.com request failed (status {archives_resp.status_code}) for user '{username}'"

@@ -117,14 +117,94 @@ class TestFetchChesscomGames:
 
     @pytest.mark.asyncio
     async def test_404_raises_value_error(self):
-        """Should raise ValueError when the chess.com user is not found."""
-        not_found_resp = _make_response({}, status_code=404)
+        """Should raise ValueError when the chess.com user is not found.
+
+        Empty-body 404 falls into the ambiguous branch (no 'not found' substring),
+        so the player endpoint is probed. Mock it as 404 to exercise the fallback
+        'not found' path.
+        """
+        # Archives endpoint: 404 with empty body (ambiguous — no "not found" text)
+        archives_not_found_resp = _make_response({}, status_code=404)
+        # Player endpoint: also 404 (user truly absent — fallback)
+        player_not_found_resp = _make_response({}, status_code=404)
 
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=not_found_resp)
+        mock_client.get = AsyncMock(side_effect=[archives_not_found_resp, player_not_found_resp])
 
         with pytest.raises(ValueError, match="chess.com user 'unknown_user' not found"):
             async for _ in fetch_chesscom_games(mock_client, "unknown_user", user_id=1):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_404_with_user_not_found_body_raises_not_found_error(self):
+        """404 with body containing 'not found' text raises immediately without
+        probing the player endpoint."""
+        archives_resp = _make_response({"message": 'User "unknown" not found.'}, status_code=404)
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=archives_resp)
+
+        with pytest.raises(ValueError, match="chess.com user 'unknown' not found"):
+            async for _ in fetch_chesscom_games(mock_client, "unknown", user_id=1):
+                pass
+
+        # Player endpoint must NOT be called — the body already disambiguates
+        assert mock_client.get.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_404_with_internal_error_body_and_player_200_raises_archives_unavailable(self):
+        """404 with ambiguous internal-error body, player endpoint returns 200 (user exists).
+        Should raise a user-actionable 'archives unavailable' message, not 'user not found'."""
+        archives_resp = _make_response(
+            {"message": "An internal error has occurred. Please contact support."},
+            status_code=404,
+        )
+        player_resp = _make_response(
+            {"username": "wasterram", "player_id": 123456}, status_code=200
+        )
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[archives_resp, player_resp])
+
+        with pytest.raises(ValueError, match="chess.com couldn't return games for 'wasterram'"):
+            async for _ in fetch_chesscom_games(mock_client, "wasterram", user_id=1):
+                pass
+
+        # Archives call + player probe = 2 calls
+        assert mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_404_with_internal_error_body_and_player_404_falls_back_to_not_found(self):
+        """404 with ambiguous body, player endpoint also 404: user truly absent.
+        Should raise the standard 'user not found' ValueError."""
+        archives_resp = _make_response(
+            {"message": "An internal error has occurred."},
+            status_code=404,
+        )
+        player_resp = _make_response({}, status_code=404)
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[archives_resp, player_resp])
+
+        with pytest.raises(ValueError, match="chess.com user 'ghostuser' not found"):
+            async for _ in fetch_chesscom_games(mock_client, "ghostuser", user_id=1):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_404_with_internal_error_body_and_player_500_raises_request_failed(self):
+        """404 with ambiguous body, player endpoint returns 5xx: treat as transient failure.
+        Should raise 'request failed' ValueError so last_synced_at is preserved."""
+        archives_resp = _make_response(
+            {"message": "An internal error has occurred."},
+            status_code=404,
+        )
+        player_resp = _make_response({}, status_code=500)
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[archives_resp, player_resp])
+
+        with pytest.raises(ValueError, match="chess.com request failed"):
+            async for _ in fetch_chesscom_games(mock_client, "testuser", user_id=1):
                 pass
 
     @pytest.mark.asyncio
