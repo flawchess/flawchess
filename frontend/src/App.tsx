@@ -51,14 +51,14 @@ const NAV_ITEMS = [
   { to: '/import', label: 'Import', Icon: DownloadIcon },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
-  { to: '/global-stats', label: 'Global Stats', Icon: BarChart3Icon },
+  { to: '/global-stats', label: 'Overview', Icon: BarChart3Icon },
 ] as const;
 
 const BOTTOM_NAV_ITEMS = [
   { to: '/import', label: 'Import', Icon: DownloadIcon },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
-  { to: '/global-stats', label: 'Global Stats', Icon: BarChart3Icon },
+  { to: '/global-stats', label: 'Overview', Icon: BarChart3Icon },
 ] as const;
 
 // D-16: Admin nav item appended at render time when profile.is_superuser === true.
@@ -71,7 +71,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/import': 'Import',
   '/openings': 'Openings',
   '/endgames': 'Endgames',
-  '/global-stats': 'Global Stats',
+  '/global-stats': 'Overview',
   '/admin': 'Admin',
 };
 
