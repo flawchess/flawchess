@@ -11,7 +11,7 @@ interface GameCardProps {
 }
 
 /** Renders MiniBoard only when the card scrolls into view. */
-function LazyMiniBoard({ fen, flipped }: { fen: string; flipped: boolean }) {
+function LazyMiniBoard({ fen, flipped, size }: { fen: string; flipped: boolean; size: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
 
@@ -30,11 +30,18 @@ function LazyMiniBoard({ fen, flipped }: { fen: string; flipped: boolean }) {
   }, []);
 
   return (
-    <div ref={ref} className="w-[100px] h-[100px] shrink-0 rounded overflow-hidden bg-muted">
-      {visible && <MiniBoard fen={fen} size={100} flipped={flipped} />}
+    <div
+      ref={ref}
+      className="shrink-0 rounded overflow-hidden bg-muted"
+      style={{ width: size, height: size }}
+    >
+      {visible && <MiniBoard fen={fen} size={size} flipped={flipped} />}
     </div>
   );
 }
+
+const MOBILE_BOARD_SIZE = 105;
+const DESKTOP_BOARD_SIZE = 100;
 
 const RESULT_LABELS: Record<UserResult, string> = { win: 'W', draw: 'D', loss: 'L' };
 const RESULT_CLASSES: Record<UserResult, string> = {
@@ -99,6 +106,18 @@ export function GameCard({ game }: GameCardProps) {
     </span>
   );
 
+  // Mobile badge: stretches vertically to span both player-name lines, larger letter.
+  const mobileResultBadge = (
+    <span
+      className={cn(
+        'flex items-center justify-center rounded border px-2.5 text-lg font-bold shrink-0',
+        RESULT_CLASSES[game.user_result],
+      )}
+    >
+      {RESULT_LABELS[game.user_result]}
+    </span>
+  );
+
   const platformIconAndLink = (
     <span className="ml-auto shrink-0 flex items-center gap-1.5 text-muted-foreground">
       <PlatformIcon platform={game.platform} className="h-4 w-4" />
@@ -119,10 +138,10 @@ export function GameCard({ game }: GameCardProps) {
     </span>
   );
 
-  // Mobile: player names stack on two lines (no "vs" separator).
+  // Mobile: player names stack on two lines (no "vs" separator); badge stretches vertically.
   const mobileIdentifier = (
-    <div className="flex items-start gap-2">
-      {resultBadge}
+    <div className="flex items-stretch gap-2">
+      {mobileResultBadge}
       <div className="flex-1 min-w-0 flex flex-col text-sm">
         <span className="text-foreground truncate">
           ■ {whiteName} {whiteRating}
@@ -223,6 +242,7 @@ export function GameCard({ game }: GameCardProps) {
             <LazyMiniBoard
               fen={game.result_fen}
               flipped={game.user_color === 'black'}
+              size={MOBILE_BOARD_SIZE}
             />
           )}
           <div className="flex-1 min-w-0 flex flex-col gap-1">
@@ -238,6 +258,7 @@ export function GameCard({ game }: GameCardProps) {
           <LazyMiniBoard
             fen={game.result_fen}
             flipped={game.user_color === 'black'}
+            size={DESKTOP_BOARD_SIZE}
           />
         )}
         <div className="min-w-0 flex-1 flex flex-col gap-2">
