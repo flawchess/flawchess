@@ -435,5 +435,7 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
         black_mistakes=black_analysis.get("mistake"),
         white_blunders=white_analysis.get("blunder"),
         black_blunders=black_analysis.get("blunder"),
+        eval_depth=None,
+        eval_source_version="lichess-pgn",
         played_at=played_at,
     )
