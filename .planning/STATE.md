@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.12
 milestone_name: Benchmark DB & Population Baselines
-status: defining-requirements
-last_updated: "2026-04-25T14:30:00Z"
-last_activity: 2026-04-25 -- Milestone v1.12 opened from SEED-002 (benchmark DB & population baselines)
+status: ready-to-plan
+last_updated: "2026-04-25T18:00:00Z"
+last_activity: 2026-04-25 -- Roadmap created for v1.12 (Phases 69-73). Phase 70 is a documented gate.
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -18,20 +18,20 @@ progress:
 ## Current Position
 
 Milestone: v1.12 Benchmark DB & Population Baselines
-Phase: Not started (defining requirements)
+Phase: Phase 69 (Benchmark DB Infrastructure & Ingestion Pipeline)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-25 — Milestone v1.12 opened from SEED-002
+Status: Ready to plan
+Last activity: 2026-04-25 — Roadmap created for v1.12 (Phases 69-73). Phase 70 is a documented gate.
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-04-24)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: v1.12 Benchmark DB & Population Baselines (SEED-002). Defining requirements before roadmap.
+Current focus: v1.12 Benchmark DB & Population Baselines (SEED-002). Phases 69-73 mapped; ready to plan Phase 69.
 
 ## Milestone Progress
 
-v1.12 active (defining requirements). Twelve milestones shipped (v1.0-v1.11).
+v1.12 active (5 phases mapped: 69-73, 0/5 complete). Twelve milestones shipped (v1.0-v1.11). Phase 70 is a hard quantitative gate that may pause Phases 71-73.
 
 ## Key Context
 

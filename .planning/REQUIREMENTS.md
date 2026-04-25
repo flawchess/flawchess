@@ -16,10 +16,10 @@
 
 - [ ] **INGEST-01**: Bulk ingestion script reads Lichess monthly PGN dumps from `database.lichess.org`, with eval-presence pre-filter via streaming text scan (zgrep or equivalent) BEFORE python-chess game-tree parsing — so the ~85% of dump games without `[%eval` headers never reach the structural parser. Eval values populate the existing `game_positions.eval_cp` / `game_positions.eval_mate` columns (no schema additions)
 - [ ] **INGEST-02**: Stratified subsampling on (rating_bucket × time_control) only — 5 rating buckets (800–1200, 1200–1600, 1600–2000, 2000–2400, 2400+) × 4 TCs (bullet/blitz/rapid/classical), uniformly at random within each cell, preserving natural endgame-type incidence
-- [ ] **INGEST-03**: Player-side bucketing — separate `WhiteElo` and `BlackElo` headers determine each side's rating bucket independently; aggregations over `game_position_evals` never roll up by a single game-level rating field
+- [ ] **INGEST-03**: Player-side bucketing — separate `WhiteElo` and `BlackElo` headers determine each side's rating bucket independently; aggregations over `game_positions` never roll up by a single game-level rating field
 - [ ] **INGEST-04**: Resumable ingest — checkpoint table keyed by `(dump_filename, byte_offset_or_game_index)`, idempotent inserts via existing `(platform, platform_game_id)` unique constraint, SIGINT-safe batch flush, per-batch skip / insert / error logging
 - [ ] **INGEST-05**: Storage target 50–100 GB for v1.12 MVP; per-cell game count clears the rarest endgame type's (queen, ~2%) min-sample threshold (10 games per `docs/endgame-analysis-v2.md` §5) by a comfortable margin
-- [ ] **INGEST-06**: Centipawn convention (signed from white's POV, units = centipawns vs pawn-units) verified against a known sample before scaling; verification documented in the ingestion script or a one-off validation note
+- [ ] **INGEST-06**: Add `eval_depth` (SmallInteger, nullable) and `eval_source_version` (String, nullable) columns to the canonical `games` table via Alembic migration (applies to dev/prod/test/benchmark uniformly). Populated by the import pipeline when the Lichess API surfaces this metadata; NULL when not provided. Centipawn convention (signed from white's POV, centipawns vs pawn-units) verified against a known sample before scaling; verification documented in the ingestion script or a one-off validation note
 
 ### Classifier & Parity Validation (VALID)
 
@@ -44,7 +44,6 @@ Deferred from SEED-002. Tracked but not in v1.12 scope.
 - **CHESS-COM-BL-01**: chess.com population baselines — option (b) from the seed: reuse Lichess baselines via an explicit Lichess→chess.com rating-conversion formula (e.g., ChessGoals equivalence tables). v1.12 explicitly defers chess.com to self-referential only (option (c)); v1.13 decides on (b) vs continued (c)
 - **HYBRID-CLASS-01**: Hybrid classifier (material + simple positional heuristics: king safety, pawn structure, piece activity) — only pursue if Phase B/C surfaces gaps that matter at the UI level
 - **CHESS-COM-EVAL-01**: chess.com engine analysis via local Stockfish — weeks of compute per million games; out of scope unless a specific question requires it
-- **EVAL-DEPTH-01**: Per-row eval-depth and source-version tracking (`eval_depth`, `eval_source_version`) added to the canonical `game_positions` schema via a uniform Alembic migration — only worth pursuing if Phase B/C analyses surface a need to filter by depth or re-derive across analyzer versions
 
 ## Out of Scope
 
@@ -63,29 +62,29 @@ Explicitly excluded for v1.12. Documented to prevent scope creep.
 
 ## Traceability
 
-Filled by `gsd-roadmapper` when ROADMAP.md is generated.
+Filled by `gsd-roadmapper` 2026-04-25.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | TBD | Not started |
-| INFRA-02 | TBD | Not started |
-| INFRA-03 | TBD | Not started |
-| INGEST-01 | TBD | Not started |
-| INGEST-02 | TBD | Not started |
-| INGEST-03 | TBD | Not started |
-| INGEST-04 | TBD | Not started |
-| INGEST-05 | TBD | Not started |
-| INGEST-06 | TBD | Not started |
-| VALID-01 | TBD | Not started |
-| VALID-02 | TBD | Not started |
-| VALID-03 | TBD | Not started |
-| VALID-04 | TBD | Not started |
-| BENCH-01 | TBD | Not started |
-| BENCH-02 | TBD | Not started |
-| BENCH-03 | TBD | Not started |
-| BENCH-04 | TBD | Not started |
+| INFRA-01 | Phase 69 | Not started |
+| INFRA-02 | Phase 69 | Not started |
+| INFRA-03 | Phase 69 | Not started |
+| INGEST-01 | Phase 69 | Not started |
+| INGEST-02 | Phase 69 | Not started |
+| INGEST-03 | Phase 69 | Not started |
+| INGEST-04 | Phase 69 | Not started |
+| INGEST-05 | Phase 69 | Not started |
+| INGEST-06 | Phase 69 | Not started |
+| VALID-01 | Phase 70 | Not started |
+| VALID-02 | Phase 70 | Not started |
+| VALID-03 | Phase 71 | Not started |
+| VALID-04 | Phase 72 | Not started |
+| BENCH-01 | Phase 73 | Not started |
+| BENCH-02 | Phase 73 | Not started |
+| BENCH-03 | Phase 73 | Not started |
+| BENCH-04 | Phase 73 | Not started |
 
 **Coverage:** 17 requirements total (3 INFRA, 6 INGEST, 4 VALID, 4 BENCH)
 
 ---
-*Last updated: 2026-04-25 — milestone open*
+*Last updated: 2026-04-25 — roadmap created, traceability filled (Phases 69-73).*
