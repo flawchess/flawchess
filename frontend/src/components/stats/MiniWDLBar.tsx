@@ -16,7 +16,7 @@ export function MiniWDLBar({ win_pct, draw_pct, loss_pct, heightClass = "h-5" }:
     <div className={`flex ${heightClass} w-full min-w-[80px] overflow-hidden rounded-sm`} data-testid="mini-wdl-bar">
       {win_pct > 0 && (
         <div
-          className="relative flex items-center justify-center text-[11px] font-medium"
+          className="relative flex items-center justify-center text-xs font-medium"
           style={{ width: `${win_pct}%`, backgroundColor: WDL_WIN }}
         >
           <div className="absolute inset-0" style={{ background: GLASS_OVERLAY }} />
@@ -27,7 +27,7 @@ export function MiniWDLBar({ win_pct, draw_pct, loss_pct, heightClass = "h-5" }:
       )}
       {draw_pct > 0 && (
         <div
-          className="relative flex items-center justify-center text-[11px] font-medium"
+          className="relative flex items-center justify-center text-xs font-medium"
           style={{ width: `${draw_pct}%`, backgroundColor: WDL_DRAW }}
         >
           <div className="absolute inset-0" style={{ background: GLASS_OVERLAY }} />
@@ -38,7 +38,7 @@ export function MiniWDLBar({ win_pct, draw_pct, loss_pct, heightClass = "h-5" }:
       )}
       {loss_pct > 0 && (
         <div
-          className="relative flex items-center justify-center text-[11px] font-medium"
+          className="relative flex items-center justify-center text-xs font-medium"
           style={{ width: `${loss_pct}%`, backgroundColor: WDL_LOSS }}
         >
           <div className="absolute inset-0" style={{ background: GLASS_OVERLAY }} />
