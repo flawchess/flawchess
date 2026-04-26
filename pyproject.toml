@@ -28,6 +28,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.4.0",
     "ty>=0.0.26",
+    "zstandard>=0.22",
 ]
 
 [tool.pytest.ini_options]
