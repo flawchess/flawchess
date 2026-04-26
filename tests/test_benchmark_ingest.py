@@ -155,3 +155,125 @@ def test_centipawn_convention_signed_from_white() -> None:
     assert pov2 is not None
     assert pov2.white().score(mate_score=None) is None
     assert pov2.white().mate() == 4
+
+
+# --- INGEST-02: player bucketing -------------------------------------------------
+
+
+def test_player_bucketing_basic() -> None:
+    """Median Elo + modal TC bucketing assigns each qualifying player to one cell."""
+    from scripts.select_benchmark_users import bucket_players
+
+    player_stats = {
+        "alice": {
+            "elos": [1450, 1500, 1550],
+            "tcs": ["blitz", "blitz", "rapid"],
+            "eval_count": 10,
+        },
+        "bob_low_eval": {
+            "elos": [1500, 1500],
+            "tcs": ["blitz", "blitz"],
+            "eval_count": 3,
+        },  # below K=5
+        "carol_under_800": {
+            "elos": [700, 750, 799],
+            "tcs": ["blitz"] * 3,
+            "eval_count": 10,
+        },
+        "dave_top": {
+            "elos": [2500, 2600],
+            "tcs": ["rapid", "rapid"],
+            "eval_count": 10,
+        },
+    }
+    out = bucket_players(player_stats, eval_threshold=5)
+
+    # alice -> (1200, "blitz") because median(1450,1500,1550)=1500 -> bucket 1200, modal "blitz"
+    assert "alice" in out.get((1200, "blitz"), [])
+    # bob excluded (eval_count < 5)
+    assert all("bob_low_eval" not in v for v in out.values())
+    # carol excluded (median elo < 800)
+    assert all("carol_under_800" not in v for v in out.values())
+    # dave -> (2400, "rapid")
+    assert "dave_top" in out.get((2400, "rapid"), [])
+
+
+def test_player_bucketing_boundaries() -> None:
+    """Bucket boundaries: 1199->800, 1200->1200, 1599->1200, 1600->1600, 2399->2000, 2400->2400."""
+    from scripts.select_benchmark_users import bucket_players
+
+    edge_cases = {
+        "p_1199": {"elos": [1199], "tcs": ["blitz"], "eval_count": 5},
+        "p_1200": {"elos": [1200], "tcs": ["blitz"], "eval_count": 5},
+        "p_1599": {"elos": [1599], "tcs": ["blitz"], "eval_count": 5},
+        "p_1600": {"elos": [1600], "tcs": ["blitz"], "eval_count": 5},
+        "p_2399": {"elos": [2399], "tcs": ["blitz"], "eval_count": 5},
+        "p_2400": {"elos": [2400], "tcs": ["blitz"], "eval_count": 5},
+    }
+    out = bucket_players(edge_cases, eval_threshold=5)
+    assert "p_1199" in out.get((800, "blitz"), [])
+    assert "p_1200" in out.get((1200, "blitz"), [])
+    assert "p_1599" in out.get((1200, "blitz"), [])
+    assert "p_1600" in out.get((1600, "blitz"), [])
+    assert "p_2399" in out.get((2000, "blitz"), [])
+    assert "p_2400" in out.get((2400, "blitz"), [])
+
+
+# --- INGEST-01: streaming PGN-header parser --------------------------------------
+
+
+def test_scan_dump_parser_extracts_headers_and_eval_flag() -> None:
+    """The streaming parser yields one record per game with headers + has_eval flag.
+
+    Operates on a synthetic decompressed text stream -- no real .zst file needed.
+    """
+    from scripts.select_benchmark_users import parse_pgn_stream
+
+    pgn_text = (
+        '[Event "Rated Blitz"]\n'
+        '[White "alice"]\n'
+        '[Black "bob"]\n'
+        '[WhiteElo "1500"]\n'
+        '[BlackElo "1450"]\n'
+        '[TimeControl "300+0"]\n'
+        '[Variant "Standard"]\n'
+        "\n"
+        "1. e4 { [%eval 0.20] } e5 1-0\n"
+        "\n"
+        '[Event "Rated Bullet"]\n'
+        '[White "carol"]\n'
+        '[Black "dave"]\n'
+        '[WhiteElo "1800"]\n'
+        '[BlackElo "1850"]\n'
+        '[TimeControl "60+1"]\n'
+        '[Variant "Standard"]\n'
+        "\n"
+        "1. e4 e5 1-0\n"
+        "\n"
+        '[Event "Rated Crazyhouse"]\n'
+        '[White "eve"]\n'
+        '[Black "frank"]\n'
+        '[WhiteElo "2000"]\n'
+        '[BlackElo "1950"]\n'
+        '[TimeControl "300+0"]\n'
+        '[Variant "Crazyhouse"]\n'
+        "\n"
+        "1. e4 e5 1-0\n"
+        "\n"
+    )
+
+    records = list(parse_pgn_stream(io.StringIO(pgn_text)))
+
+    # Crazyhouse must be filtered out (Standard-variant only)
+    assert len(records) == 2
+
+    r0, r1 = records
+    assert r0["white"] == "alice"
+    assert r0["black"] == "bob"
+    assert r0["white_elo"] == 1500
+    assert r0["black_elo"] == 1450
+    assert r0["time_control"] == "300+0"
+    assert r0["has_eval"] is True
+
+    assert r1["white"] == "carol"
+    assert r1["has_eval"] is False
