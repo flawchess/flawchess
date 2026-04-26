@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.12
 milestone_name: Benchmark DB Infrastructure & Ingestion Pipeline
-status: executing
-last_updated: "2026-04-26T08:14:58.415Z"
-last_activity: 2026-04-26 -- v1.12 scope reduced to Phase 69 only; Phases 70-73 deferred to SEED-006 (future milestone)
+status: "Phase 69 shipped — PR #65"
+last_updated: "2026-04-26T14:10:27.078Z"
+last_activity: 2026-04-26
 progress:
   total_phases: 1
   completed_phases: 0
@@ -18,8 +18,8 @@ progress:
 
 Milestone: v1.12 Benchmark DB Infrastructure & Ingestion Pipeline (scope-reduced 2026-04-26 — Phases 70-73 deferred)
 Phase: 69 (benchmark-db-infrastructure-ingestion-pipeline) — EXECUTING (Plan 6 of 6, 69-06 smoke + interim ingest)
-Status: Executing Phase 69
-Last activity: 2026-04-26 -- v1.12 scope-down: Phases 70-73 moved to SEED-006 (future milestone, surfaces when full benchmark ingest completes). Pipeline correctness is the v1.12 deliverable; populating the DB is operational, not a milestone gate.
+Status: Phase 69 shipped — PR #65
+Last activity: 2026-04-26
 
 ## Project Reference
 
