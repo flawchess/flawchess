@@ -10,7 +10,7 @@ _ARROW_TS = Path(__file__).resolve().parents[2] / "frontend/src/lib/arrowColor.t
 
 # Import lazily so the file is always collectable, but tests skip if service missing.
 try:
-    from app.services.opening_insights_service import DARK_THRESHOLD, LIGHT_THRESHOLD  # ty: ignore[unresolved-import]
+    from app.services.opening_insights_service import DARK_THRESHOLD, LIGHT_THRESHOLD
 
     _SERVICE_AVAILABLE = True
 except ImportError:
