@@ -24,31 +24,37 @@ The block is **templated-only** (no LLM, no Generate CTA) — auto-fetches on fi
 - **D-02:** **The block ignores the global `color` filter.** It always sends `color="all"` to `POST /api/insights/openings` regardless of what the user has selected as the active color filter for the rest of the openings page. Rationale: the four sections are the entire value of the block — filtering one out hides actionable signal. The filter difference between this block and the rest of the page is intentional and is documented in the InfoPopover for the block heading.
 - **D-03:** **Deep-link click updates the global `color` filter.** When the user clicks a finding's deep-link, the active color filter is set to `finding.color` as part of the navigation flow (see D-13). The block continues to render all four sections after the navigation completes (because filter is purely the block's input — the block keeps sending `color="all"`).
 
-### Bullet Content & Rendering
+### Finding Card Content & Rendering
 
-- **D-04:** **Each bullet renders as a two-row card with an inline 64–80px chessboard thumbnail on the left.** Row 1: `display_name (opening_eco)` in `text-sm font-semibold` (e.g. "Sicilian Defense, Najdorf (B90)"). Row 2: prose sentence including the trimmed move sequence and `n_games` (see D-05, D-06). Last row of the bullet: a deep-link button/anchor labeled "open in Move Explorer →" (see D-13). Bullet uses `flex gap-3 items-start` so thumbnail and text sit side-by-side.
-  - When `display_name` is the `<unnamed line>` sentinel (per Phase 70 D-23 / D-34, this case should be already dropped, but defensively handle), render `display_name` as italicized muted text.
-  - The minimap thumbnail is **always-visible inline**, NOT a hover popover — explicit user request (rejected the existing `MinimapPopover` hover pattern in favor of always-visible). Use `react-chessboard` `Chessboard` set to non-interactive (`allowDragging={false}`, no click handlers) at fixed size, with `boardOrientation` matching `finding.color` so the user views the position from the side they actually played as.
+- **D-04:** **Each finding renders as an `OpeningFindingCard`, modeled directly on `GameCard` (`frontend/src/components/results/GameCard.tsx`).** Card chrome: `border-l-4 charcoal-texture border border-border/20 rounded px-4 py-3`, with the `border-l-4` left accent colored by severity per D-07. Layout mirrors `GameCard`:
+  - **Desktop (`hidden sm:flex gap-3 items-center`):** `LazyMiniBoard` on the left (~100px), then a right-side `flex flex-col gap-2` containing: (a) header line with `display_name (opening_eco)` + deep-link affordance on the right, (b) prose sentence with trimmed move sequence + `(n=18)`, (c) optional metadata row (severity icon/label, candidate-move SAN chip — planner picks if useful).
+  - **Mobile (`flex flex-col gap-2 sm:hidden`):** header line on top full-width, then board + content row below (`LazyMiniBoard` ~105px on the left, content stacked on the right).
+  - When `display_name` is the `<unnamed line>` sentinel (per Phase 70 D-23 / D-34, normally dropped, but defensively handle), render in italicized muted text.
+  - Card is a single click target — clicking anywhere on the card triggers the deep-link (D-13). The card is a semantic `<a>` (or `<button>` styled as a card) with `data-testid="opening-finding-card-{idx}"`. The `LazyMiniBoard` inside has all interaction disabled (per D-21).
+- **D-04a:** **Reuse `LazyMiniBoard` from `GameCard.tsx`** — extract it into a shared module (`frontend/src/components/board/LazyMiniBoard.tsx` or similar) so both `GameCard` and `OpeningFindingCard` consume the same component. Configure it with `flipped={finding.color === 'black'}` so the user views the entry position from the side they actually played as, and `fen={finding.entry_fen}`. `IntersectionObserver` lazy-render keeps perf safe even with 16 cards rendered.
 - **D-05:** **Move-sequence trim = "last 2 entry plys + the candidate move", with leading ellipsis.** For `entry_sequence = ["e4", "c5", "Nf3", "d6", "d4", "cxd4"]` and `candidate = "Nxd4"`, render `"...3.d4 cxd4 4.Nxd4"`. Move numbering is preserved (white plys keep their `N.` prefix; if the trim starts on a black ply, use `N...` Black-on-move notation). Fewer than 3 plys total (entry-sequence shorter than 2 plys) → render the whole sequence without ellipsis. The trimmer is a pure helper function in `frontend/src/lib/openingInsights.ts` (or near `arrowColor.ts`), unit-tested for the edge cases (3+ plys, 2 plys, 1 ply, white-on-move, black-on-move start).
-- **D-06:** **Bullet prose template:**
+- **D-06:** **Card prose template** (rendered on the second/third row of the card body):
   ```
-  You {lose|win} {rate}% as {White|Black} after {trimmed_san_seq} (n={n_games}) → [open in Move Explorer]
+  You {lose|win} {rate}% as {White|Black} after {trimmed_san_seq} (n={n_games})
   ```
   - `{lose|win}` = "lose" for weaknesses, "win" for strengths.
   - `{rate}` = `Math.round(loss_rate * 100)` for weaknesses, `Math.round(win_rate * 100)` for strengths.
   - `{White|Black}` = capitalized `finding.color`.
-  - `(n={n_games})` is rendered inline, no W/D/L breakdown chip (explicit user choice — full counts are not surfaced anywhere in the bullet UI).
-- **D-07:** **Severity → text color shade.** The whole bullet's accent color (or the rate-percent number, planner picks) maps to the existing arrow color thresholds:
-  - `severity = "major"` (rate ≥ 60%) → dark green for strengths / dark red for weaknesses.
-  - `severity = "minor"` (55% < rate < 60%) → light green for strengths / light red for weaknesses.
-  - Color values come from `frontend/src/lib/theme.ts` (must use the existing WDL semantic color constants — no hard-coded hexes per CLAUDE.md "theme constants in theme.ts" rule). If the existing constants don't have light/dark variants, planner adds them in `theme.ts` referencing `arrowColor.ts` `LIGHT_COLOR_THRESHOLD = 55` / `DARK_COLOR_THRESHOLD = 60` semantics. No severity badge, no icon — color shade is the entire severity treatment.
-- **D-08:** **Cap rendering matches Phase 70 backend caps.** Backend already returns at most 5 weaknesses and 3 strengths per color. Frontend renders all returned findings without further trimming. No "show more" affordance needed in v1 (the visible ceiling is 5+5+3+3 = 16 bullets).
+  - `(n={n_games})` is rendered inline, no W/D/L breakdown chip (explicit user choice — full counts are not surfaced anywhere in the card UI).
+  - The "→ open in Move Explorer" call-to-action is NOT inline in the prose — it's the deep-link affordance on the card header (e.g. an `ExternalLink` icon on the right of the header line, mirroring `GameCard`'s `platformIconAndLink` pattern). The whole card is also click-targetable per D-04.
+- **D-07:** **Severity → `border-l-4` accent color + (optional) rate-percent text shade.** The card's left-border accent maps to the existing arrow color thresholds, mirroring `GameCard`'s `BORDER_CLASSES` pattern:
+  - `severity = "major"` (rate ≥ 60%) + `classification = "weakness"` → dark red border-left.
+  - `severity = "minor"` (55% < rate < 60%) + `classification = "weakness"` → light red border-left.
+  - `severity = "major"` + `classification = "strength"` → dark green border-left.
+  - `severity = "minor"` + `classification = "strength"` → light green border-left.
+  - Color values come from `frontend/src/lib/theme.ts` (must use the existing WDL semantic color constants — no hard-coded hexes per CLAUDE.md "theme constants in theme.ts" rule). If the existing constants don't have light/dark variants, planner adds them in `theme.ts` referencing `arrowColor.ts` `LIGHT_COLOR_THRESHOLD = 55` / `DARK_COLOR_THRESHOLD = 60` semantics. The rate-percent number in the prose MAY also be color-shaded (planner picks based on visual balance) but the `border-l-4` is the primary severity indicator. No severity badge, no icon.
+- **D-08:** **Cap rendering matches Phase 70 backend caps.** Backend already returns at most 5 weaknesses and 3 strengths per color. Frontend renders all returned findings without further trimming. No "show more" affordance needed in v1 (the visible ceiling is 5+5+3+3 = 16 cards). The card stack inside each section uses `space-y-3` (matching `GameCardList`).
 
 ### Loading, Error, Empty States
 
 - **D-09:** **Empty section copy** (per section): `"No {weakness|strength} findings cleared the threshold under your current filters."` muted small text. The block heading also surfaces the threshold once via an `InfoPopover` next to the block title: "Insights are computed from candidate moves with at least 20 games where your win or loss rate exceeds 55%."
 - **D-10:** **Empty block** (all four sections empty): single muted message at block level, replacing the four section headers — `"No opening findings cleared the threshold under your current filters. Try widening filters (longer recency window, more time controls) or import more games."` Same threshold copy as D-09.
-- **D-11:** **Loading state** = animated skeleton matching the eventual layout (4 section headers, 2-3 placeholder bullets each, 64–80px square placeholder where the minimap will be). Use `animate-pulse` with `bg-muted/30` per existing `EndgameInsightsBlock` skeleton (see `frontend/src/components/insights/EndgameInsightsBlock.tsx:170-189`). No spinner-only state — opening insights take measurable time on first load (~ a few hundred ms) and a skeleton conveys progress better.
+- **D-11:** **Loading state** = animated skeleton matching the eventual layout (4 section headers, 2-3 placeholder cards each — each placeholder card uses the `border-l-4` chrome with a muted neutral accent and a square ~100px placeholder where the `LazyMiniBoard` will render). Use `animate-pulse` with `bg-muted/30` per existing `EndgameInsightsBlock` skeleton (see `frontend/src/components/insights/EndgameInsightsBlock.tsx:170-189`). No spinner-only state — opening insights take measurable time on first load (~ a few hundred ms) and a skeleton conveys progress better.
 - **D-12:** **Error state** = inline `role="alert"` block: `"Failed to load opening insights. Something went wrong. Please try again in a moment."` + a "Try again" button (variant `brand-outline`) that calls `query.refetch()`. Pattern mirrors `EndgameInsightsBlock` `ErrorState` (line 322-352) but without the rate-limit / retry-minutes branch (no LLM rate limiting on this endpoint). Error capture goes through the global TanStack Query `QueryCache.onError` handler — do NOT add a duplicate `Sentry.captureException` in the component (per CLAUDE.md frontend Sentry rules).
 
 ### Deep-link to Move Explorer
@@ -60,7 +66,7 @@ The block is **templated-only** (no LLM, no Generate CTA) — auto-fetches on fi
   4. `navigate('/openings/explorer')`.
   5. `window.scrollTo({ top: 0 })`.
 - **D-14:** **No candidate-move highlight on arrival.** The user clicked the bullet; they know which move they intend to look at. The trimmed SAN sequence on the bullet plus the entry position is enough context. The Move Explorer's existing red/green arrows already render the candidate via `getArrowColor` — no additional emphasis is added. (Explicit user choice — rejected `hoveredMove` sticky-set, dedicated pinned arrow style, and pulse-on-arrival options.)
-- **D-15:** **Deep-link element = `<a>` styled as a button-link** with `data-testid="opening-finding-deeplink-{idx}"` (per CLAUDE.md browser automation rules). Use `<a>` because the destination is a navigable URL (semantic correctness: it's a navigation, not an action). Click handler calls `e.preventDefault()` then runs the D-13 sequence (we still want React Router-style client navigation, not a full page load). `aria-label` describes the target: `"Open {finding.display_name} ({finding.candidate_move_san}) in Move Explorer"`.
+- **D-15:** **Whole card is the deep-link**, rendered as an `<a href="/openings/explorer">` (or `<button>` if a route-without-true-href is preferable) with `data-testid="opening-finding-card-{idx}"` (per CLAUDE.md browser automation rules). Click handler calls `e.preventDefault()` then runs the D-13 sequence (we want React Router-style client navigation, not a full page reload). `aria-label` describes the target: `"Open {finding.display_name} ({finding.candidate_move_san}) in Move Explorer"`. An `ExternalLink` (or similar) icon sits on the right of the card header as a visual affordance, mirroring `GameCard`'s `platformIconAndLink` pattern. Hover style: subtle `hover:bg-muted/30` + cursor-pointer to make the card feel actionable.
 
 ### Fetch / Data Layer
 
@@ -75,17 +81,18 @@ The block is **templated-only** (no LLM, no Generate CTA) — auto-fetches on fi
 
 ### Mobile / Accessibility
 
-- **D-21:** **Mobile = same single-column rendering**, no separate desktop/mobile paths. The bullet's `flex gap-3` thumbnail-plus-text layout works at 375px width. The 64–80px thumbnail is small enough to leave readable line length on mobile. `data-testid` per CLAUDE.md frontend rules: `data-testid="opening-insights-block"` on the card, `data-testid="opening-finding-{idx}"` per bullet, `data-testid="opening-insights-section-{section_key}"` per section. Section keys: `white-weaknesses`, `black-weaknesses`, `white-strengths`, `black-strengths`.
-- **D-22:** **Touch targets ≥ 44px** for the deep-link element (per CLAUDE.md). The whole bullet card is also click-targetable as a deep-link (no nested interactive elements other than the `InfoPopover` trigger and the explicit deep-link anchor — minimap board has all interaction disabled).
+- **D-21:** **Mobile and desktop card layouts mirror `GameCard` exactly** (Mobile: header full-width on top, then board + content row; Desktop: board on the left, content stacked on the right). `LazyMiniBoard` size: 105px on mobile, 100px on desktop (matches `GameCard`'s `MOBILE_BOARD_SIZE` / `DESKTOP_BOARD_SIZE`). All card interactions disabled on the `LazyMiniBoard` (it's a non-interactive thumbnail). `data-testid` per CLAUDE.md frontend rules: `data-testid="opening-insights-block"` on the outer block card, `data-testid="opening-finding-card-{idx}"` per finding card, `data-testid="opening-insights-section-{section_key}"` per section. Section keys: `white-weaknesses`, `black-weaknesses`, `white-strengths`, `black-strengths`.
+- **D-22:** **Touch targets ≥ 44px** for the deep-link card (per CLAUDE.md). The card body is fully click-targetable; the only nested interactive is the block-heading `InfoPopover` trigger (sits outside the card stack). `LazyMiniBoard` has no click handlers and no drag affordance.
 
 ### Claude's Discretion
 
-- File layout: `frontend/src/components/insights/OpeningInsightsBlock.tsx` (alongside existing `EndgameInsightsBlock.tsx`). Hook in `frontend/src/hooks/useOpeningInsights.ts`. Helpers in `frontend/src/lib/openingInsights.ts` (move-sequence trim function, severity-color map). Type definitions in `frontend/src/types/insights.ts` extending the existing file (don't make a new types file).
-- Exact thumbnail size between 64px and 80px (planner picks based on visual balance once rendered). Consider 64px on mobile if 80px crowds the row at 375px width.
-- Whether the bullet is a `<li>` inside an `<ul>` per section (semantic correctness, recommended) or a flat `<div>` list (simpler styling). Lean toward `<ul>` + `<li>` since it's structurally a list of findings.
-- Whether to memoize the SAN-sequence trim and `getArrowColor`-derived class lookups (likely not needed — 16 bullets × cheap function calls).
+- File layout: `frontend/src/components/insights/OpeningInsightsBlock.tsx` and a new `frontend/src/components/insights/OpeningFindingCard.tsx` (alongside existing `EndgameInsightsBlock.tsx`). Hook in `frontend/src/hooks/useOpeningInsights.ts`. Helpers in `frontend/src/lib/openingInsights.ts` (move-sequence trim function, severity-color map). Type definitions in `frontend/src/types/insights.ts` extending the existing file (don't make a new types file). `LazyMiniBoard` extracted from `GameCard.tsx` into a shared module (`frontend/src/components/board/LazyMiniBoard.tsx` — planner picks the exact path) and consumed by both `GameCard` and `OpeningFindingCard`.
+- Whether sections render as `<ul>` + `<li>` (semantic correctness, recommended) or flat `<div>` lists. The existing `GameCardList` uses `<div>` with `space-y-3` — match that pattern for consistency.
+- Whether to memoize the SAN-sequence trim and severity-class lookups (likely not needed — 16 cards × cheap function calls).
 - Exact `staleTime` / `gcTime` for the TanStack Query hook. 30s staleTime is the existing convention; pick what's consistent.
+- Whether the rate-percent number in the prose gets its own color shade or inherits the muted-foreground default. Likely yes for emphasis, but pick based on visual balance against the `border-l-4` accent.
 - Whether to share the threshold copy ("≥ 20 games per move, > 55% win or loss rate") via a top-level constant in `frontend/src/lib/openingInsights.ts` to keep wording in sync between the InfoPopover (D-20) and the empty-state messages (D-09 / D-10). Recommended yes.
+- Whether the card is rendered as `<a href>` (true link semantics) or `<button>` (action semantics). The destination IS a route, so `<a>` with `e.preventDefault()` + React Router navigation is preferred.
 
 </decisions>
 
@@ -108,7 +115,9 @@ The block is **templated-only** (no LLM, no Generate CTA) — auto-fetches on fi
 ### Existing Frontend (read-only inputs / reuse points)
 - `frontend/src/components/insights/EndgameInsightsBlock.tsx` — visual conventions parallel: `charcoal-texture rounded-md p-4` card, `<Lightbulb>` heading, skeleton block (`animate-pulse` lines 170-189), `ErrorState` (lines 322-352), `InsightsCard` sub-component (lines 297-320). Phase 71 mirrors these patterns where applicable but has NO Generate button / no LLM rate-limit branch.
 - `frontend/src/pages/Openings.tsx` — host page. Stats tab content lives around lines 670-1008; deep-link target tab is `explorer` (lines 504, 616). `handleOpenGames` (line 492-498) is the prototype for the deep-link click handler (Phase 71's handler routes to `/openings/explorer` instead of `/openings/games`).
-- `frontend/src/components/stats/MinimapPopover.tsx` — existing minimap (hover popover). **Phase 71 does NOT use this component** — D-04 mandates always-visible inline minimaps. But the underlying `react-chessboard` rendering with `BOARD_DARK_SQUARE` / `BOARD_LIGHT_SQUARE` from `theme.ts` is the right reference.
+- `frontend/src/components/results/GameCard.tsx` — **Phase 71's `OpeningFindingCard` is modeled directly on this component** (D-04). Reuse: card chrome (`border-l-4 charcoal-texture border border-border/20 rounded px-4 py-3`), `LazyMiniBoard` IntersectionObserver lazy-render pattern (lines 14-42), `BORDER_CLASSES` color-coding via classification+severity, mobile vs desktop layouts (vertical stack on mobile, horizontal on desktop), `platformIconAndLink`-style header affordance.
+- `frontend/src/components/results/GameCardList.tsx` — list wrapper pattern (`space-y-3`); reuse for the section-internal card stack.
+- `frontend/src/components/stats/MinimapPopover.tsx` — existing minimap (hover popover). **Phase 71 does NOT use this component** — D-04 mandates always-visible cards with `LazyMiniBoard`. The underlying `react-chessboard` rendering with `BOARD_DARK_SQUARE` / `BOARD_LIGHT_SQUARE` from `theme.ts` is the right reference for board styling.
 - `frontend/src/lib/arrowColor.ts` — `LIGHT_COLOR_THRESHOLD = 55`, `DARK_COLOR_THRESHOLD = 60`, `getArrowColor`. The bullet severity colors must match these arrow-color shades exactly so the bullet color and the on-board arrow color align after deep-link.
 - `frontend/src/lib/theme.ts` — WDL semantic colors. Add light/dark variants here if missing (per D-07).
 - `frontend/src/hooks/useStats.ts::useMostPlayedOpenings` — pattern reference for the `useOpeningInsights` hook (filter-driven TanStack Query, debounced filter input).
@@ -127,10 +136,12 @@ The block is **templated-only** (no LLM, no Generate CTA) — auto-fetches on fi
 
 ### Reusable Assets
 
-- **`frontend/src/lib/arrowColor.ts`** — exports `getArrowColor(winPct, lossPct, gameCount, isHovered)` plus `LIGHT_COLOR_THRESHOLD = 55` and `DARK_COLOR_THRESHOLD = 60`. The same thresholds drive Phase 70's classifier and Phase 71's bullet shading. Severity-shade mapping logic should derive from these constants (or live alongside them in the same module) so a future arrow-color tweak updates both surfaces.
-- **`frontend/src/components/insights/EndgameInsightsBlock.tsx`** — visual chrome: `charcoal-texture rounded-md p-4` card, `Lightbulb` heading icon, `animate-pulse` skeleton, `ErrorState` with try-again button, `MaybeBlockedTooltip`, `InsightsCard` sub-component (rounded inner card with icon + title). Reuse the chrome patterns; skip the Generate-button / cache / mutation infrastructure.
+- **`frontend/src/lib/arrowColor.ts`** — exports `getArrowColor(winPct, lossPct, gameCount, isHovered)` plus `LIGHT_COLOR_THRESHOLD = 55` and `DARK_COLOR_THRESHOLD = 60`. The same thresholds drive Phase 70's classifier and Phase 71's `border-l-4` shading. Severity-shade mapping logic should derive from these constants (or live alongside them in the same module) so a future arrow-color tweak updates both surfaces.
+- **`frontend/src/components/results/GameCard.tsx`** — primary visual reference for `OpeningFindingCard`. Reuse: card chrome, `LazyMiniBoard`, `BORDER_CLASSES` pattern, mobile/desktop responsive layout, header affordance pattern.
+- **`frontend/src/components/results/GameCardList.tsx`** — `space-y-3` stack wrapper. Mirror for section-internal card lists.
+- **`frontend/src/components/insights/EndgameInsightsBlock.tsx`** — visual chrome for the OUTER block: `charcoal-texture rounded-md p-4` card, `Lightbulb` heading icon, `animate-pulse` skeleton, `ErrorState` with try-again button. Reuse the OUTER chrome; skip the Generate-button / cache / mutation infrastructure. INNER cards follow `GameCard`, not `InsightsCard`.
 - **`frontend/src/components/ui/InfoPopover`** — already used throughout the Stats tab for column / section explanations. Use for the block heading explainer (D-20).
-- **`react-chessboard` `Chessboard` component** — used in `Openings.tsx` and `MinimapPopover.tsx`. Configure for the inline thumbnail with `allowDragging={false}`, no click handlers, fixed `boardWidth={64..80}`, `customDarkSquareStyle` / `customLightSquareStyle` from `theme.ts`. `boardOrientation = finding.color`.
+- **`MiniBoard` (or whatever `LazyMiniBoard` wraps)** — used by `GameCard`. Configure for `OpeningFindingCard` with `flipped={finding.color === 'black'}`, `fen={finding.entry_fen}`, size 100/105 (desktop/mobile per D-21). Lazy-rendered via IntersectionObserver to keep perf safe with 16 cards.
 - **`useDebounce` / `debouncedFilters`** — already wired in `Openings.tsx`. The Phase 71 hook should consume the same `debouncedFilters` so a filter sweep doesn't fire 5 requests.
 - **`Openings.tsx::handleOpenGames`** — prototype pattern for deep-link click: load PGN, set boardFlipped, update filters, navigate. Phase 71's handler is a near-copy retargeted to `/openings/explorer`.
 
@@ -154,8 +165,8 @@ The block is **templated-only** (no LLM, no Generate CTA) — auto-fetches on fi
 <specifics>
 ## Specific Ideas
 
-- **Roadmap exemplar for the bullet copy:** "You lose 62% as Black after 1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 (n=18) → [open in Move Explorer]" — Phase 71's bullet is a trimmed variant of this exemplar (3-ply trim per D-05).
-- **Always-visible inline minimap** — explicit user request, in contrast to the existing `MinimapPopover` hover pattern. The user wants the position visible at a glance without interaction.
+- **Roadmap exemplar for the prose copy:** "You lose 62% as Black after 1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 (n=18) → [open in Move Explorer]" — Phase 71's card prose is a trimmed variant of this exemplar (3-ply trim per D-05); the deep-link is a card-level affordance, not inline in the prose.
+- **Render findings as cards, not bullets — modeled on `GameCard`** — explicit user request mid-discussion. `border-l-4` severity accent + `LazyMiniBoard` + mobile/desktop responsive layout.
 - **No candidate-move highlight on arrival in Move Explorer** — explicit user choice; the trimmed SAN + the entry position is enough context.
 - **Block ignores the global `color` filter** — explicit user choice; deep-link click updates the color filter.
 

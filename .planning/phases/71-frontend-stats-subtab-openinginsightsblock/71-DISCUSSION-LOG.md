@@ -114,6 +114,20 @@
 
 ---
 
+## Render Format Amendment (post-CONTEXT-write)
+
+After CONTEXT.md was first committed, user redirected: "Don't render the strengths and weaknesses as bullets, use cards, similar to the game cards."
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Two-row text bullets with inline minimap | Original D-04: bullet text with 64–80px inline thumbnail. | (rejected) |
+| `GameCard`-style finding cards | Card chrome with `border-l-4` severity accent, `LazyMiniBoard`, header + body/metadata rows, mobile/desktop responsive layouts mirroring `frontend/src/components/results/GameCard.tsx`. | ✓ |
+
+**User's choice:** Cards modeled on `GameCard`.
+**Notes:** Drives multiple downstream amendments: D-04 rewritten, new D-04a (extract `LazyMiniBoard` into a shared module so both `GameCard` and `OpeningFindingCard` consume it), D-07 severity treatment moves from text shade to `border-l-4` accent (mirroring `GameCard`'s `BORDER_CLASSES`), D-15 deep-link affordance becomes the whole-card click target with an `ExternalLink`-style icon affordance instead of a separate inline anchor, D-21 mobile/desktop layout follows `GameCard` exactly (105px / 100px boards), D-11 skeleton placeholder shape changes to match card chrome.
+
+---
+
 ## Filter Set on Deep-Link Click
 
 Locked without re-asking based on existing `handleOpenGames` pattern (Openings.tsx:492-498):
