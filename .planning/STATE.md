@@ -1,37 +1,36 @@
 ---
 gsd_state_version: 1.0
-milestone: none
-milestone_name: (between milestones)
-status: idle
-last_updated: "2026-04-25T13:55:00Z"
-last_activity: 2026-04-25 -- Completed quick task 260425-lwz: month-enumeration fallback when chess.com archives-list 404s for real users
+milestone: v1.12
+milestone_name: Benchmark DB & Population Baselines
+status: planning
+last_updated: "2026-04-25T20:25:44.554Z"
+last_activity: 2026-04-25 — Roadmap created for v1.12 (Phases 69-73). Phase 70 is a documented gate.
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: (between milestones)
-Phase: none
-Plan: none
-Status: v1.11 shipped 2026-04-24. Awaiting `/gsd-new-milestone` to open the next cycle.
-Last activity: 2026-04-24 -- v1.11 LLM-first Endgame Insights milestone shipped (PR #61 squash-merged, tagged v1.11)
+Milestone: v1.12 Benchmark DB & Population Baselines
+Phase: Phase 69 (Benchmark DB Infrastructure & Ingestion Pipeline)
+Plan: —
+Status: Ready to plan
+Last activity: 2026-04-25 — Roadmap created for v1.12 (Phases 69-73). Phase 70 is a documented gate.
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-04-24)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Awaiting next milestone. v1.12 candidates (from v1.11 deferred work): retrofit VAL-01 snapshot test; explore Insights for Openings and Global Stats tabs; rating-stratified population baselines (SEED-002).
+Current focus: v1.12 Benchmark DB & Population Baselines (SEED-002). Phases 69-73 mapped; ready to plan Phase 69.
 
 ## Milestone Progress
 
-No active milestone. Twelve shipped (v1.0-v1.11).
+v1.12 active (5 phases mapped: 69-73, 0/5 complete). Twelve milestones shipped (v1.0-v1.11). Phase 70 is a hard quantitative gate that may pause Phases 71-73.
 
 ## Key Context
 
@@ -80,5 +79,8 @@ Accepted at v1.11 milestone close on 2026-04-24:
 | 260425-nlv | Restructure GameCard and PositionBookmarkCard layouts (full-width identifier line on top, board left + content right below) | 2026-04-25 | 5a7ad30 | [260425-nlv-restructure-gamecard-and-positionbookmar](./quick/260425-nlv-restructure-gamecard-and-positionbookmar/) |
 
 ---
-Last activity: 2026-04-25 — Completed quick task 260425-nlv: GameCard and PositionBookmarkCard restructured so the identifier line (player names + platform link / bookmark label) spans the full card width on top, with the mini chessboard below-left and remaining content below-right; mobile-only opponent variant and JS truncateLabel helper removed in favor of CSS truncation.
+Last activity: 2026-04-25 — Phase 69 (Benchmark DB Infrastructure & Ingestion Pipeline) context captured. 15 decisions locked (D-01..D-15). Sample unit pivoted to distinct players per cell, reusing existing Lichess import pipeline (U1). Resume: `.planning/phases/69-benchmark-db-infrastructure-ingestion-pipeline/69-CONTEXT.md`.
 | 2026-04-25 | fast | Mobile full-width Overview rating charts | done |
+| 2026-04-25 | discuss-phase | Phase 69 context gathered (D-01..D-15) | done |
+
+**Planned Phase:** 69 (Benchmark DB Infrastructure & Ingestion Pipeline) — 6 plans — 2026-04-25T20:25:44.551Z

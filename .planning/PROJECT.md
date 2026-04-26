@@ -101,7 +101,11 @@ Users can determine their success rate for any opening position they specify, fi
 
 ### Active
 
-_No active milestone. Next milestone goals TBD — start with `/gsd-new-milestone`._
+- [ ] Benchmark ingestion pipeline (separate `flawchess-benchmark` Postgres + 3rd MCP server, Lichess monthly-dump ingest, populates existing `game_positions.eval_cp`/`eval_mate` columns) — v1.12
+- [ ] Classifier validation replication at 10–100x scale (Phase B gate) — v1.12
+- [ ] Rating-stratified material-vs-eval offset analysis — v1.12
+- [ ] Parity proxy validation against Stockfish eval — v1.12
+- [ ] `/benchmarks` skill upgrade — population baselines and rating-bucketed zone thresholds applied to `frontend/src/lib/theme.ts` — v1.12
 
 ### Out of Scope
 
@@ -112,9 +116,24 @@ _No active milestone. Next milestone goals TBD — start with `/gsd-new-mileston
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: None
+## Current Milestone: v1.12 Benchmark DB & Population Baselines
 
-v1.11 shipped 2026-04-24. No active milestone — start the next one with `/gsd-new-milestone`.
+**Goal:** Replace self-referential endgame baselines with a Lichess-derived population dataset stratified by rating × time control, validate the material-vs-eval classifier at 10–100x larger scale, and recalibrate gauge zones per rating bucket.
+
+**Target features:**
+- Benchmark Postgres instance + 3rd MCP server (`flawchess-benchmark-db`); same canonical schema/migrations as dev/prod/test (no schema fork — Lichess `[%eval` populates existing `game_positions.eval_cp`/`eval_mate`)
+- Resumable Lichess monthly-dump ingestion with eval pre-filter and (rating × TC) stratification at the player-opportunity level
+- Phase B classifier-validation replication at scale, with quantitative gate before C–E proceed
+- Rating-stratified material-vs-eval offset analysis
+- Parity proxy validation against Stockfish eval
+- `/benchmarks` skill upgrade producing population baselines and rating-bucketed zone thresholds; manual updates land in `frontend/src/lib/theme.ts`
+
+**Locked decisions** (from SEED-002 / 2026-04-19 design discussion):
+- Lichess-only ingestion; chess.com population baselines deferred to v1.13+
+- Self-referential analysis remains the primary UI signal — population data is an overlay
+- Bucket at the player-opportunity level (separate `WhiteElo`/`BlackElo`), never at game level
+- No prod-side lookup table or live prod→benchmark-DB queries; baselines computed in the skill, results land as code/config edits
+- Phase B is a hard checkpoint; per-cell offset gate (outside prior 95% CI AND |Δ| > 2pp on Pawn/Rook/Minor) controls whether C–E proceed
 
 ## Current State
 
@@ -219,4 +238,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-24 — v1.11 LLM-first Endgame Insights shipped.*
+*Last updated: 2026-04-25 — v1.12 Benchmark DB & Population Baselines milestone opened.*

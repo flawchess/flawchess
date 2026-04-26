@@ -51,17 +51,19 @@ Do NOT surface during v1.11. v1.11 is the Insights milestone (SEED-001) which co
 
 ## Scope Estimate
 
-**Milestone** — expected to span 5-7 phases. Decomposition:
+**Milestone** — expected to span 3-5 phases. Decomposition:
 
 ### Phase A: Benchmark ingestion pipeline
 
 - New PostgreSQL instance (`flawchess-benchmark`) with identical schema to prod + one additional table `game_position_evals` (game_position_id, eval_cp, mate_in_n, eval_depth, eval_source_version) keyed to `game_positions`.
 - New MCP server `flawchess-benchmark-db` parallel to existing two, so `/benchmarks` and classifier-validation skills can query it.
 - Bulk ingestion mode that reads Lichess monthly PGN dumps from `database.lichess.org` (not per-username API fetches — lichess monthly dumps cover the whole population naturally).
-- Filter for `%eval` presence during ingestion; skip games without evals.
-- Stratified subsampling: target ~25K-50K games per (rating_bucket × TC) cell on first pass. Rating buckets: 800-1200, 1200-1600, 1600-2000, 2000-2400, 2400+ (5). TC: bullet, blitz, rapid, classical (4). Grid: 20 cells.
-- Storage target for v1.12 MVP: 50-100 GB. 
+- **Pre-filter raw PGN text for `[%eval` presence before structural parsing.** python-chess game-tree construction is the bottleneck (~100-200 games/sec/core); running it across the full ~80M-game monthly dump just to discover that ~85% of games lack evals would be days of compute. A streaming text scan (zgrep or equivalent) extracts the ~14.7% eval-bearing games (per 2026-04-07 report's measured Lichess coverage) before python-chess sees them.
+- Stratified subsampling on (rating_bucket × TC) only. Rating buckets: 800-1200, 1200-1600, 1600-2000, 2000-2400, 2400+ (5). TC: bullet, blitz, rapid, classical (4). Grid: 20 cells. Within each cell, sample uniformly at random — do **not** stratify on endgame type. Endgame-type incidence (queen ~2%, rook ~30-40%, etc.) should be preserved at its natural population rate so the DB remains a valid population sample for any cross-cutting analysis. If a rare-endgame cell is under-populated post-ingest, the lever is "ingest another month of dumps at the same uniform rate," not "discard common endgames to make rare ones look denser."
+- Per-cell sizing target: enough total games per (rating × TC) cell that the rarest endgame type (queen, ~2%) clears the min-sample threshold from `docs/endgame-analysis-v2.md` §5 by a comfortable margin. At ~50K games/cell, queen endgames land at ~1K/cell (still 30x the 2026-04-07 report's per-cell counts); higher targets are cheap if storage permits.
+- Storage target for v1.12 MVP: 50-100 GB. Storage budget binds the uniform sample rate, not the per-endgame-type distribution.
 - Parse `%eval` tags via python-chess; centipawn vs pawn-units convention verified against known sample before scaling.
+- **Ingestion runs on the developer's local machine and must be resumable.** A full month of eval-bearing games is hours-to-days of wall time; the script will be interrupted (Ctrl-C, laptop sleep, OOM, transient errors) and must continue from where it stopped without redoing work or duplicating rows. Concretely: (a) commit ingest progress to a checkpoint table keyed by (dump_filename, byte_offset_or_game_index) at frequent batch boundaries; (b) make per-game inserts idempotent via the existing `(platform, platform_game_id)` unique constraint so re-runs no-op on already-imported games; (c) wrap the outer loop so SIGINT flushes the current batch and exits cleanly rather than corrupting mid-transaction state; (d) log skip / insert / error counts per batch so a resumed run is visibly continuing rather than silently restarting.
 
 ### Phase B: Replication of 2026-04-07 classifier validation at large scale
 
@@ -69,6 +71,7 @@ Do NOT surface during v1.11. v1.11 is the Insights milestone (SEED-001) which co
 - Same methodology: t=100 + 4-ply persistence vs Stockfish eval u=100 on the same game subset, per endgame type.
 - Report format: write to `reports/classifier-validation-benchmark-YYYY-MM-DD.md`. Structure should parallel the 2026-04-07 report so side-by-side comparison is trivial.
 - **Replication check**: do the systematic-offset estimates (conversion +2-8pp, recovery -4-6pp) hold when sample sizes are 10-100x larger? If yes, the existing conclusion is confirmed with much higher confidence. If no, investigate why small-sample estimates drifted.
+- **Quantitative gate for "materially different"** (Phase B is a checkpoint per Notes section): per-endgame-type offset estimates from the benchmark DB are materially different from the 2026-04-07 report when (a) the new point estimate falls outside the 2026-04-07 95% CI for that cell, AND (b) the magnitude of disagreement exceeds 2pp absolute. Both conditions must hold to trigger the "pause and investigate" branch. Single-cell breaches with small magnitudes (e.g., Queen, where the 2026-04-07 CI was already wide) do not gate Phases C-E. Pawn / Rook / Minor cells breaching the gate do gate, since those drove the original conclusion.
 
 ### Phase C: Rating-stratified validation (new analysis)
 
@@ -82,22 +85,13 @@ Do NOT surface during v1.11. v1.11 is the Insights milestone (SEED-001) which co
 - Does the proxy of "even material at endgame entry" correspond to "eval is in [-0.5, +0.5] at endgame entry"? What's the agreement rate, and is there a systematic offset analogous to Conversion/Recovery?
 - If Parity has a systematic offset of its own, document it and reassess the composite skill formula (current: `(Conv + Par + Rec) / 3` or similar, verify).
 
-### Phase E: Population baseline tables
+### Phase E: `/benchmarks` skill upgrade — population baselines and rating-specific zone calibration
 
-- Pre-compute per-(rating_bucket × TC × platform × endgame_type) baseline rates: Conversion, Parity, Recovery, composite Endgame Skill, average clock at endgame entry, timeout rates, and any other metrics that currently use self-referential comparison.
-- Store as a lookup table (`endgame_population_baselines`) in the prod DB, refreshed quarterly from the benchmark DB.
-- Baselines are shipped as static data, not computed live — prod doesn't query the benchmark DB.
-
-### Phase F: Rating-specific zone thresholds
-
-- Current zone thresholds (Conversion 50/70, Recovery 15/35, Endgame Skill 40/60) are global. With population baselines, they become rating-specific.
-- Calibration target: median user at their rating lands at the warning/success boundary (same rule the 2026-04-07 report used for recalibrating the global thresholds). Apply per rating bucket.
-- Update frontend gauge components to look up zone thresholds by the user's current rating for the active filter combo, not from hard-coded constants.
-
-### Phase G: `/benchmarks` skill upgrade + optional population overlay UI
-
-- `/benchmarks` queries the benchmark DB directly when admin/dev. Output reflects real population data instead of FlawChess-user-biased data.
-- Frontend (optional for v1.12, could defer): a secondary "peer comparison" overlay on the Endgame Metrics table. "Your Conversion is 72%; your opponents' 64% (self-referential); peers at your rating 66% (population)." Opt-in or passive display, not replacing the self-referential primary.
+- `/benchmarks` queries the benchmark DB directly. Output reflects real population data instead of FlawChess-user-biased data.
+- Skill computes per-(rating_bucket × TC × platform × endgame_type) baseline rates: Conversion, Parity, Recovery, composite Endgame Skill, average clock at endgame entry, timeout rates, and any other metrics that currently use self-referential comparison.
+- Skill also computes rating-specific zone thresholds (currently Conversion 50/70, Recovery 15/35, Endgame Skill 40/60 are global). Calibration target: median user at their rating lands at the warning/success boundary (same rule the 2026-04-07 report used for recalibrating global thresholds). Apply per rating bucket.
+- Output report drives manual updates to gauge zone constants and any in-app baseline references. No prod-side lookup table or live benchmark-DB queries from prod — calculations happen in the skill, results land in code/config as needed.
+- **Phase E is complete only when the manual zone-threshold updates have landed in code, not when the skill emits the report.** Concretely: the report from the upgraded `/benchmarks` skill drives edits to `frontend/src/lib/theme.ts` (or wherever the rating-bucketed zone constants ultimately live — current globals are in theme), with the new constants reviewed in PR. Shipping the skill upgrade without applying its output would leave the milestone half-done. If the rating-bucketed thresholds prove to require larger UI plumbing than a constants edit (e.g., user-rating-aware lookup at render time), split that into Phase F during the milestone discuss rather than expanding Phase E mid-flight.
 - Percentile badges (e.g., "top 20% Parity at your rating") deferred to v1.13+ — motivational flavor, not core to the milestone.
 
 ### Optional (defer unless validation surfaces a need)
@@ -114,8 +108,8 @@ The full design discussion happened in the conversation on 2026-04-19 preceding 
 - **Lichess-only ingestion for v1.12.** Chess.com has 0% eval coverage; adding it requires local Stockfish analysis which is out of scope for the milestone. The "can't directly compare chess.com population baselines" limitation is a documented v1.12 gap, not a blocker.
 - **Monthly PGN dumps, not per-username fetches.** `database.lichess.org` publishes all rated games monthly. Sampling from dumps is naturally population-distributed and avoids sampling selection effects from curated username lists.
 - **Benchmark DB is separate infra, not co-located with prod.** Different data lifecycle (refreshed quarterly, no user-generated rows), different query patterns (aggregation-heavy, not per-user), and different privacy considerations (lichess data is CC0; FlawChess user data is not).
-- **Baselines shipped as static tables to prod, not computed live.** Prod reads `endgame_population_baselines` as a simple lookup. No live connection from prod to benchmark DB.
-- **Self-referential stays primary; population is secondary overlay.** This is not a replacement — it's augmentation. Users still see "your rate vs your opponents' rate" as the headline; population context is an optional layer. See the 2026-04-19 design discussion for the full rationale.
+- **Population baselines computed in the `/benchmarks` skill, not shipped to prod.** The skill queries the benchmark DB and produces reports that drive manual updates to gauge zone constants and any in-app references. No prod-side lookup table, no live connection from prod to benchmark DB.
+- **Self-referential stays primary.** This is not a replacement — it's augmentation. Users still see "your rate vs your opponents' rate" as the headline; population context informs threshold calibration and skill-report comparisons rather than a parallel UI overlay. See the 2026-04-19 design discussion for the full rationale.
 
 ### Hybrid vs replacement
 
@@ -137,6 +131,7 @@ Population is layered on for:
 - **First pass: 20-50 GB, ~500K-1M games with evals.** Enough for 20-cell stratification with 25K-50K games per cell. Validates the pipeline end-to-end before committing to larger storage.
 - **Expansion to 200 GB deferred unless needed.** If Phase C (rating stratification) surfaces tight-CI cells that need more data, pull additional months of Lichess dumps. Most cells will likely be adequately populated at 50 GB.
 - **Stratify on ingestion, not post-hoc.** Random sampling from raw dumps would over-weight the dense middle (1400-1800 blitz) and under-weight the tails. Subsample to per-cell targets during ingest.
+- **Bucket at the player-opportunity level, not the game level.** Each Lichess game has separate `WhiteElo` and `BlackElo` headers that frequently straddle bucket boundaries (e.g., White 1590, Black 1610 splits across 1200-1600 and 1600-2000). Conversion / Parity / Recovery are per-side events: White's endgame stats bucket by `WhiteElo`, Black's by `BlackElo`. Aggregations over `game_position_evals` must respect this — never roll up by a single game-level rating field.
 - **Eval depth consistency.** Lichess runs analysis at depth ~18-20 (verify during implementation). Store `eval_depth` and `eval_source_version` alongside the eval value so future analyses can filter or re-derive.
 
 ### Schema additions
@@ -152,33 +147,18 @@ class GamePositionEval(Base):
     mate_in_n: Mapped[int | None]       # None unless forced mate detected
     eval_depth: Mapped[int | None]
     eval_source_version: Mapped[str]    # e.g., "lichess-sf-15-depth18"
-
-# New table, prod DB (populated from benchmark DB quarterly)
-class EndgamePopulationBaseline(Base):
-    __tablename__ = "endgame_population_baselines"
-    rating_bucket: Mapped[str] = mapped_column(primary_key=True)  # "1200-1599"
-    time_control: Mapped[str] = mapped_column(primary_key=True)
-    platform: Mapped[str] = mapped_column(primary_key=True)       # "lichess" only for v1.12
-    endgame_type: Mapped[str] = mapped_column(primary_key=True)
-    conversion_rate: Mapped[float]
-    parity_rate: Mapped[float]
-    recovery_rate: Mapped[float]
-    endgame_skill: Mapped[float]
-    median_clock_at_entry_pct: Mapped[float]
-    timeout_rate: Mapped[float]
-    games_in_sample: Mapped[int]
-    baseline_version: Mapped[str]       # snapshot date, for cache invalidation
 ```
+
+No prod-side schema changes. Population baselines are computed by the `/benchmarks` skill against the benchmark DB and surfaced via reports — not stored as a prod table.
 
 ### Open Questions for v1.12 Discuss Phase
 
 - **Rating bucket granularity.** 400-wide buckets (800-1200, 1200-1600, ...) are coarse; 200-wide would be finer but thin at the tails. 500-wide the benchmarks skill already uses. What's the right width for population baselines?
-- **Quarterly refresh cadence.** Rating inflation, meta drift, engine prep trickling down — baselines need recomputation. Is quarterly right, or should it be event-driven (e.g., when new Lichess dumps land)?
-- **Freshness vs stability trade-off.** If baselines refresh, user-facing gauge zones shift. Communicate the version somehow (tooltip: "baseline version 2026-Q2")?
+- **Refresh cadence.** Rating inflation, meta drift, engine prep trickling down — baselines need recomputation. Re-run the `/benchmarks` skill quarterly, or event-driven (e.g., when new Lichess dumps land)?
 - **Storage lifecycle.** Keep raw PGN dumps after ingestion, or discard and retain only the parsed `games` + `game_positions` + `game_position_evals` rows? Saves significant disk but loses reproducibility.
-- **Population-overlay UX placement.** Added to the Endgame Metrics table, or a new "Peer comparison" section? SEED-001 insights architecture has room for this as a `role=corroboration` cross-section finding with the population baseline as `ref_value`.
-- **Should classifier-validation replication (Phase B) be a gate before Phase C-G proceed?** If the benchmark-scale validation surfaces a material-vs-eval offset that differs significantly from the 2026-04-07 small-sample estimates, downstream work assumes a shifted foundation. Probably yes — Phase B should be a checkpoint.
-- **chess.com baselines — eventual, and how?** Options: (a) run local Stockfish on chess.com games (weeks of compute), (b) assume chess.com and lichess distributions are close enough to reuse lichess baselines for both, (c) accept chess.com has no population baseline and only self-referential analysis. (b) is probably wrong but cheapest; worth investigating in v1.13.
+- **Should classifier-validation replication (Phase B) be a gate before Phases C-E proceed?** If the benchmark-scale validation surfaces a material-vs-eval offset that differs significantly from the 2026-04-07 small-sample estimates, downstream work assumes a shifted foundation. Probably yes — Phase B should be a checkpoint.
+- **chess.com baselines — eventual, and how?** Options: (a) run local Stockfish on chess.com games (weeks of compute), (b) reuse Lichess baselines for chess.com users via a documented rating-conversion formula (e.g., ChessGoals equivalence tables — Lichess ratings sit ~300-400 ELO above chess.com at the lower buckets, less at the top), (c) accept chess.com has no population baseline and only self-referential analysis. **For v1.12, the answer is (c): chess.com users get self-referential baselines only, no Lichess-derived population overlay.** Naive Lichess→chess.com baseline reuse is not a "close-enough" approximation; it would hold a 1400 chess.com user to the standard of a 1700-1800 Lichess player. Option (b) with an explicit conversion is the v1.13 question.
+- **Engine-abuser contamination in Lichess dumps.** Monthly dumps include games from accounts not yet banned at dump time; engine cheats are over-represented in the 2000+ buckets and skew baselines toward "perfect play." Mitigation options: (i) use older / re-published dumps where bans have propagated, (ii) cross-reference Lichess's public bans list at ingestion time, (iii) add a per-game CPL outlier rejection step. Decide during Phase A. Worst case for v1.12 is a documented upward bias in the top rating bucket.
 - **Hybrid classifier: experiment or skip?** The 2026-04-07 report concluded material is good enough. If Phase C validation surfaces consistent rating-dependent errors, a hybrid classifier might help; otherwise skip. Decide mid-milestone.
 
 ### Not in Scope
@@ -200,13 +180,10 @@ class EndgamePopulationBaseline(Base):
 
 ### Services and modules that will change
 
-- `app/services/endgame_service.py` — current self-referential computations; will add population-overlay queries via the new `endgame_population_baselines` lookup.
-- `app/services/stats_service.py` — rating cohort determination for lookup key.
-- `app/repositories/query_utils.py` — `apply_game_filters()` pattern extends to benchmark DB queries.
+- `app/repositories/query_utils.py` — `apply_game_filters()` pattern extends to benchmark DB queries used by the `/benchmarks` skill.
 - `app/data/`, `scripts/` — new ingestion scripts for Lichess monthly dumps; new tables in benchmark DB migrations.
-- `frontend/src/components/charts/EndgameScoreGapSection.tsx`, `EndgamePerformanceSection.tsx` — add optional population-overlay rendering; rating-aware zone threshold lookups.
-- `frontend/src/lib/theme.ts` — if zone threshold constants are currently hard-coded here (verify), move them to a runtime lookup.
-- Skills: `/benchmarks` (significant upgrade to use benchmark DB), `/db-report` (add benchmark DB coverage).
+- `frontend/src/lib/theme.ts` and gauge components — gauge zone threshold constants get manually updated based on `/benchmarks` skill output (rating-bucketed calibration). No runtime lookup machinery.
+- Skills: `/benchmarks` (significant upgrade to use benchmark DB and emit population baselines + rating-bucketed zone thresholds), `/db-report` (add benchmark DB coverage).
 
 ### Infra additions
 
@@ -231,8 +208,8 @@ class EndgamePopulationBaseline(Base):
 
 - **Do not start before v1.11 Insights (SEED-001) lands.** Insights should ship against the current self-referential data first. Layering population baselines onto an unshipped insights pipeline creates too many moving parts — two milestones sequentially is safer than one entangled milestone.
 - **Reference chat context:** full design discussion spans two threads on 2026-04-19 — (1) critique of the self-referential approach and the Diff%-is-arithmetically-identical-to-Rec-Diff% finding, which reframed the statistical basis of the existing endgame analysis; (2) the benchmark DB proposal covering Lichess-only ingestion, monthly-dump-based sampling, schema additions, milestone decomposition, and the clarification that the 2026-04-07 report already performed the first-pass classifier validation (so v1.12 work extends rather than initiates this validation).
-- **Ground-truth prior**: the 2026-04-07 validation report's findings (systematic offset, relative-ranking preservation, pawn best, queen worst due to small samples) are the null hypothesis that Phase B replicates. Budget for the possibility that large-sample replication confirms the existing conclusions with minimal new information — this would be a successful outcome of Phase B, not a failure mode, and would let Phases C-G proceed without methodology changes.
-- **Phase B is a checkpoint.** If large-sample validation surfaces materially different offsets from the small-sample 2026-04-07 report, pause Phases C-G and investigate. If confirmed, proceed without further validation debate.
+- **Ground-truth prior**: the 2026-04-07 validation report's findings (systematic offset, relative-ranking preservation, pawn best, queen worst due to small samples) are the null hypothesis that Phase B replicates. Budget for the possibility that large-sample replication confirms the existing conclusions with minimal new information — this would be a successful outcome of Phase B, not a failure mode, and would let Phases C-E proceed without methodology changes.
+- **Phase B is a checkpoint.** If large-sample validation surfaces materially different offsets from the small-sample 2026-04-07 report, pause Phases C-E and investigate. If confirmed, proceed without further validation debate.
 - **Diff%-redundancy cleanup is a separate, earlier fix.** The 2026-04-19 discussion surfaced that `Conversion Diff%` and `Recovery Diff%` in the Endgame Metrics table are algebraically identical (both equal `Player Conv% + Player Rec% - 1`). This is a presentation-level bug that can ship independently of SEED-002, possibly as a v1.10 cleanup or a v1.11 tweak. It does not require the benchmark DB. Flag this in v1.11 backlog rather than bundling with v1.12.
 - **The `/benchmarks` skill is currently FlawChess-user-based.** After Phase E, it should query the benchmark DB as the authoritative population source, relegating FlawChess-user baselines to a comparison axis (useful for understanding how biased the FlawChess user base is, but not the primary reference).
 - **Revisit SEED-001 after Phase B completes.** If Phase B's rating-bucketed classifier validation surfaces differences that matter at the insights-narrative level, the insights pipeline's `Zone` thresholds and `PlayerArchetype` signature criteria may need rating-dependent variants. Add this as an explicit v1.12 cross-reference in SEED-001.

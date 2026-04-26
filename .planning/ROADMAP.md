@@ -14,6 +14,7 @@
 - ✅ **v1.9 UI/UX Restructuring** — Phases 49-51 (shipped 2026-04-10) — see [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md)
 - ✅ **v1.10 Advanced Analytics** — Phases 48, 52-55, 57, 57.1, 59-62 (shipped 2026-04-19) — see [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md)
 - ✅ **v1.11 LLM-first Endgame Insights** — Phases 63-68 (shipped 2026-04-24) — see [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md)
+- 🚧 **v1.12 Benchmark DB & Population Baselines** — Phases 69-73 (active) — see [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md)
 
 ## Phases
 
@@ -165,6 +166,29 @@ See [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md) for full details.
 
 </details>
 
+<details>
+<summary>🚧 v1.12 Benchmark DB & Population Baselines (Phases 69-73) — ACTIVE</summary>
+
+- [ ] Phase 69: Benchmark DB Infrastructure & Ingestion Pipeline (6 plans) — INFRA-01..03, INGEST-01..06
+  - [ ] 69-01-PLAN.md — Benchmark DB Infrastructure (docker-compose, init SQL, lifecycle script)
+  - [ ] 69-02-PLAN.md — Alembic migration: eval_depth + eval_source_version on canonical games table
+  - [ ] 69-03-PLAN.md — MCP server registration + CLAUDE.md docs (manual)
+  - [ ] 69-04-PLAN.md — Selection scan + player bucketing (streaming dump scan)
+  - [ ] 69-05-PLAN.md — Ingestion orchestrator + per-user checkpoint
+  - [ ] 69-06-PLAN.md — Smoke + interim ingest run + verification report (manual checkpoints)
+- [ ] Phase 70: Classifier Validation Replication at Scale (GATE) (0 plans) — VALID-01, VALID-02
+- [ ] Phase 71: Rating-Stratified Offset Analysis (0 plans) — VALID-03
+- [ ] Phase 72: Parity Proxy Validation (0 plans) — VALID-04
+- [ ] Phase 73: `/benchmarks` Skill Upgrade & Zone Re-Calibration (0 plans) — BENCH-01..04
+
+**Gate notice:** Phase 70 is a hard quantitative checkpoint. A FAIL verdict on Pawn / Rook / Minor cells (per-cell offset outside 2026-04-07 95% CI AND |delta| > 2pp) pauses Phases 71-73 until the offset shift is investigated. Progress reporting reflects this with a "Paused (gate)" status if it fires.
+
+**Out of v1.12 scope (related but not bundled):** v1.11 VAL-01 snapshot test retrofit (run as `/gsd-quick`), Diff%-redundancy cleanup (separate v1.11 cleanup).
+
+See [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md) for full details.
+
+</details>
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -190,6 +214,7 @@ See [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md) for full details.
 | 49-51. v1.9 phases | v1.9 | 7/7 | Complete | 2026-04-10 |
 | 48, 52-62. v1.10 phases | v1.10 | 28/28 | Complete | 2026-04-19 |
 | 63-68. v1.11 phases | v1.11 | 23/23 | Complete (Phase 67 descoped) | 2026-04-24 |
+| 69-73. v1.12 phases | v1.12 | 0/0 | Active (planning) | — |
 
 ## Backlog
 
@@ -198,24 +223,6 @@ See [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md) for full details.
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
 **Plans:** 6/6 plans complete
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.5: Hybrid Stockfish Eval for Conversion/Recovery (BACKLOG)
-
-**Goal:** Use Stockfish eval (`eval_cp`) as the advantage/disadvantage signal for conversion/recovery classification when available, falling back to material imbalance + 4-ply persistence for games without eval. Stockfish eval is the gold standard (no persistence filter needed since eval handles transient trades natively). Currently only ~15% of Lichess games have eval data and chess.com has 0%, but this improves automatically as more games get server-analyzed. Validated in `docs/endgame-conversion-recovery-analysis.md`: persistence closes 50-70% of the gap to Stockfish for pawn/mixed endgames, but a hybrid approach would eliminate the remaining 5-8pp offset for eval-available games.
-**Requirements:** TBD
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.4: Position-Based Most Played Openings via game_positions (BACKLOG)
-
-**Goal:** Redesign "Most Played Openings" to count how many games *passed through* each opening position (via `game_positions` Zobrist hash matching) instead of counting final opening name classifications from chess.com/lichess. Currently "1. e4" shows ~75 games (only games *classified* as "King's Pawn Game") while obscure specific lines rank higher. Position-based counting would show all ~2000+ games that played 1. e4, consistent with FlawChess's core Zobrist hash architecture. Requires JOIN from `openings` reference table to `game_positions` on FEN or precomputed hash, then `COUNT(DISTINCT game_id)`.
-**Requirements:** TBD
-**Plans:** 0 plans
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

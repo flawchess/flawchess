@@ -21,7 +21,7 @@ Pure documentation edit to `.planning/ROADMAP.md` and `.planning/STATE.md`. No c
 **Phase 58 — moved to backlog as Phase 999.6:**
 - v1.10 phase checklist line for Phase 58 deleted.
 - Detail section `### Phase 58: Opening Risk & Drawishness` and its fields deleted.
-- New `### Phase 999.6: Opening Risk & Drawishness (BACKLOG)` entry appended under existing Backlog section (after 999.4, before Phase 62). Includes `**Context:**` note explaining the move (v1.10 is endgame-focused; better fit for upcoming Opening Insights milestone).
+- New `### Phase 999.6: Opening Risk & Drawishness (BACKLOG)` entry appended under existing Backlog section (before Phase 62). Includes `**Context:**` note explaining the move (v1.10 is endgame-focused; better fit for upcoming Opening Insights milestone).
 
 ### STATE.md
 - Appended row for `260419-gjq` in "Quick Tasks Completed" table.
@@ -30,7 +30,7 @@ Pure documentation edit to `.planning/ROADMAP.md` and `.planning/STATE.md`. No c
 ## What did NOT change
 
 - Phase numbers 57, 57.1, 59, 60, 61 — preserved intact.
-- Phase 62 and backlog entries 999.1, 999.4, 999.5 — preserved intact.
+- Phase 62 and backlog entry 999.1 — preserved intact.
 - v1.10 milestone summary line (`○ **v1.10 Advanced Analytics** — Phases 48, 52-61 (in progress)`) — preserved; phase-level markers convey the cancelled/backlogged state.
 - No `.planning/phases/56-*/` or `.planning/phases/58-*/` directories exist, so none were touched.
 
