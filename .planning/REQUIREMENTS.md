@@ -1,8 +1,10 @@
-# Requirements: FlawChess v1.12 Benchmark DB & Population Baselines
+# Requirements: FlawChess v1.12 Benchmark DB Infrastructure & Ingestion Pipeline
 
 **Defined:** 2026-04-25
+**Scope-down:** 2026-04-26 — VALID-* and BENCH-* moved to a future milestone (SEED-006). See "Deferred to Future Milestone" below.
 **Source:** `.planning/seeds/SEED-002-benchmark-db-population-baselines.md`
-**Goal:** Replace self-referential endgame baselines with a Lichess-derived population dataset stratified by rating × time control, validate the material-vs-eval classifier at 10–100x larger scale, and recalibrate gauge zones per rating bucket.
+**Goal (v1.12, scoped):** Ship the benchmark DB infrastructure (separate Postgres instance, MCP server, eval-metadata migration) and a resumable Lichess monthly-dump ingestion pipeline stratified by rating × time control. Pipeline correctness verified by smoke test; populating the DB at full scale is operational, not a milestone gate.
+**Goal (deferred to SEED-006):** Validate the material-vs-eval classifier at 10–100x larger scale, surface rating-stratified offsets, validate the Parity proxy, and recalibrate gauge zones per rating bucket.
 
 ## v1.12 Requirements
 
@@ -18,13 +20,17 @@
 - [ ] **INGEST-02**: Stratified subsampling on (rating_bucket × time_control) only — 5 rating buckets (800–1200, 1200–1600, 1600–2000, 2000–2400, 2400+) × 4 TCs (bullet/blitz/rapid/classical), uniformly at random within each cell, preserving natural endgame-type incidence
 - [ ] **INGEST-03**: Player-side bucketing — separate `WhiteElo` and `BlackElo` headers determine each side's rating bucket independently; aggregations over `game_positions` never roll up by a single game-level rating field
 - [ ] **INGEST-04**: Resumable ingest — checkpoint table keyed by `(dump_filename, byte_offset_or_game_index)`, idempotent inserts via existing `(platform, platform_game_id)` unique constraint, SIGINT-safe batch flush, per-batch skip / insert / error logging
-- [ ] **INGEST-05**: Storage target 50–100 GB for v1.12 MVP; per-cell game count clears the rarest endgame type's (queen, ~2%) min-sample threshold (10 games per `docs/endgame-analysis-v2.md` §5) by a comfortable margin
+- [ ] **INGEST-05**: Per-cell user-pool sizing is parameterized at ingestion time via the `--per-cell` flag (default 500 distinct users per (rating × TC) cell), with per-player eval-bearing-game floor of K (default 10, per D-12). Storage and aggregate-sample-size targets are operational guidance for the actual ingest run, not v1.12 milestone gates — they become entry criteria for SEED-006 phases that consume the populated DB. (Original target language — 50–100 GB storage, ≥1k queen-endgame samples per cell — was dropped in the 2026-04-26 scope-down after the per-cell sample-unit pivoted from games-per-endgame-type to distinct-users-per-cell.)
 - [ ] **INGEST-06**: Add `eval_depth` (SmallInteger, nullable) and `eval_source_version` (String, nullable) columns to the canonical `games` table via Alembic migration (applies to dev/prod/test/benchmark uniformly). Populated by the import pipeline when the Lichess API surfaces this metadata; NULL when not provided. Centipawn convention (signed from white's POV, centipawns vs pawn-units) verified against a known sample before scaling; verification documented in the ingestion script or a one-off validation note
+
+## Deferred to Future Milestone (SEED-006)
+
+Moved out of v1.12 in the 2026-04-26 scope-down. These 8 requirements remain tracked and surface when the full benchmark DB ingest completes — see `.planning/seeds/SEED-006-benchmark-population-zone-recalibration.md`.
 
 ### Classifier & Parity Validation (VALID)
 
 - [ ] **VALID-01**: Replicated material-vs-eval classifier validation against the benchmark DB matching the 2026-04-07 methodology (t=100 centipawn threshold + 4-ply persistence vs Stockfish eval u=100); report written to `reports/classifier-validation-benchmark-YYYY-MM-DD.md` with structure parallel to the original report so side-by-side comparison is trivial
-- [ ] **VALID-02**: Quantitative checkpoint gate — per-(endgame_type) offset is materially different from the 2026-04-07 result when (a) the point estimate falls outside the prior 95% CI AND (b) |Δ| > 2pp absolute. Both must hold on Pawn / Rook / Minor cells to trigger pause-and-investigate. Gate-pass authorizes Phases C–E to proceed
+- [ ] **VALID-02**: Quantitative checkpoint gate — per-(endgame_type) offset is materially different from the 2026-04-07 result when (a) the point estimate falls outside the prior 95% CI AND (b) |Δ| > 2pp absolute. Both must hold on Pawn / Rook / Minor cells to trigger pause-and-investigate. Gate-pass authorizes downstream phases to proceed
 - [ ] **VALID-03**: Rating-stratified offset analysis — per-(rating_bucket × endgame_type) offset table; informs whether the `t=100 + 4-ply` proxy needs a rating-dependent correction
 - [ ] **VALID-04**: Parity proxy validation — agreement between "even material at endgame entry" and "Stockfish eval ∈ [-0.5, +0.5] at endgame entry"; agreement rate and any systematic offset documented; composite Endgame Skill formula reassessed if Parity has its own offset
 
@@ -32,10 +38,10 @@
 
 - [ ] **BENCH-01**: Upgraded `/benchmarks` skill queries the benchmark DB and produces per-(rating_bucket × TC × platform × endgame_type) population baselines for Conversion, Parity, Recovery, composite Endgame Skill, average clock at endgame entry, and timeout rates — replacing the current FlawChess-user-based baselines as the primary reference
 - [ ] **BENCH-02**: Skill computes rating-specific zone thresholds (Conversion 50/70, Recovery 15/35, Endgame Skill 40/60 are currently global) using the median-user-at-rating-on-warning/success-boundary rule, per rating bucket
-- [ ] **BENCH-03**: Rating-bucketed zone-threshold updates land in `frontend/src/lib/theme.ts` (or wherever the constants ultimately live); milestone is INCOMPLETE until the constants ship in code and are reviewed in PR. If rating-bucketed thresholds need larger UI plumbing than a constants edit (e.g., user-rating-aware lookup at render time), split into a follow-up phase via mid-milestone discuss
+- [ ] **BENCH-03**: Rating-bucketed zone-threshold updates land in `frontend/src/lib/theme.ts` (or wherever the constants ultimately live); SEED-006 milestone is INCOMPLETE until the constants ship in code and are reviewed in PR. If rating-bucketed thresholds need larger UI plumbing than a constants edit (e.g., user-rating-aware lookup at render time), split into a follow-up phase via mid-milestone discuss
 - [ ] **BENCH-04**: `/db-report` skill extended with benchmark-DB coverage so DB-health reports describe both prod and benchmark databases
 
-## Future Requirements (v1.13+)
+## Future Requirements (post-SEED-006)
 
 Deferred from SEED-002. Tracked but not in v1.12 scope.
 
@@ -62,29 +68,32 @@ Explicitly excluded for v1.12. Documented to prevent scope creep.
 
 ## Traceability
 
-Filled by `gsd-roadmapper` 2026-04-25.
+Filled by `gsd-roadmapper` 2026-04-25; updated 2026-04-26 for the Phase 70-73 deferral.
 
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| INFRA-01 | Phase 69 | Not started |
-| INFRA-02 | Phase 69 | Not started |
-| INFRA-03 | Phase 69 | Not started |
-| INGEST-01 | Phase 69 | Not started |
-| INGEST-02 | Phase 69 | Not started |
-| INGEST-03 | Phase 69 | Not started |
-| INGEST-04 | Phase 69 | Not started |
-| INGEST-05 | Phase 69 | Not started |
-| INGEST-06 | Phase 69 | Not started |
-| VALID-01 | Phase 70 | Not started |
-| VALID-02 | Phase 70 | Not started |
-| VALID-03 | Phase 71 | Not started |
-| VALID-04 | Phase 72 | Not started |
-| BENCH-01 | Phase 73 | Not started |
-| BENCH-02 | Phase 73 | Not started |
-| BENCH-03 | Phase 73 | Not started |
-| BENCH-04 | Phase 73 | Not started |
+| Requirement | Phase | Milestone | Status |
+|-------------|-------|-----------|--------|
+| INFRA-01 | Phase 69 | v1.12 | In progress |
+| INFRA-02 | Phase 69 | v1.12 | In progress |
+| INFRA-03 | Phase 69 | v1.12 | In progress |
+| INGEST-01 | Phase 69 | v1.12 | In progress |
+| INGEST-02 | Phase 69 | v1.12 | In progress |
+| INGEST-03 | Phase 69 | v1.12 | In progress |
+| INGEST-04 | Phase 69 | v1.12 | In progress |
+| INGEST-05 | Phase 69 | v1.12 | In progress |
+| INGEST-06 | Phase 69 | v1.12 | In progress |
+| VALID-01 | Phase 70 | Deferred (SEED-006) | Not started |
+| VALID-02 | Phase 70 | Deferred (SEED-006) | Not started |
+| VALID-03 | Phase 71 | Deferred (SEED-006) | Not started |
+| VALID-04 | Phase 72 | Deferred (SEED-006) | Not started |
+| BENCH-01 | Phase 73 | Deferred (SEED-006) | Not started |
+| BENCH-02 | Phase 73 | Deferred (SEED-006) | Not started |
+| BENCH-03 | Phase 73 | Deferred (SEED-006) | Not started |
+| BENCH-04 | Phase 73 | Deferred (SEED-006) | Not started |
 
-**Coverage:** 17 requirements total (3 INFRA, 6 INGEST, 4 VALID, 4 BENCH)
+**Coverage:**
+- v1.12 (active): 9 requirements (3 INFRA, 6 INGEST)
+- Deferred to SEED-006: 8 requirements (4 VALID, 4 BENCH)
+- Total tracked: 17
 
 ---
-*Last updated: 2026-04-25 — roadmap created, traceability filled (Phases 69-73).*
+*Last updated: 2026-04-26 — Phase 70-73 deferral; VALID-* and BENCH-* moved to Deferred section pointing at SEED-006.*

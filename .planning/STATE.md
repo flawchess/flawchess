@@ -1,36 +1,35 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.12
-milestone_name: Benchmark DB & Population Baselines
+milestone_name: Benchmark DB Infrastructure & Ingestion Pipeline
 status: executing
 last_updated: "2026-04-26T08:14:58.415Z"
-last_activity: 2026-04-26 -- Phase 69 execution started
+last_activity: 2026-04-26 -- v1.12 scope reduced to Phase 69 only; Phases 70-73 deferred to SEED-006 (future milestone)
 progress:
-  total_phases: 4
+  total_phases: 1
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 6
+  completed_plans: 5
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: v1.12 Benchmark DB & Population Baselines
-Phase: 69 (benchmark-db-infrastructure-ingestion-pipeline) — EXECUTING
-Plan: 1 of 6
+Milestone: v1.12 Benchmark DB Infrastructure & Ingestion Pipeline (scope-reduced 2026-04-26 — Phases 70-73 deferred)
+Phase: 69 (benchmark-db-infrastructure-ingestion-pipeline) — EXECUTING (Plan 6 of 6, 69-06 smoke + interim ingest)
 Status: Executing Phase 69
-Last activity: 2026-04-26 -- Phase 69 execution started
+Last activity: 2026-04-26 -- v1.12 scope-down: Phases 70-73 moved to SEED-006 (future milestone, surfaces when full benchmark ingest completes). Pipeline correctness is the v1.12 deliverable; populating the DB is operational, not a milestone gate.
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-04-24)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: v1.12 Benchmark DB & Population Baselines (SEED-002). Phases 69-73 mapped; ready to plan Phase 69.
+Current focus: v1.12 Benchmark DB Infrastructure & Ingestion Pipeline (SEED-002, Phase A only). Phase 69 in progress (Plan 69-06 — smoke test + interim ingest). v1.13 next (SEED-005, Opening Insights). SEED-006 holds Phases 70-73 until full benchmark ingest completes.
 
 ## Milestone Progress
 
-v1.12 active (5 phases mapped: 69-73, 0/5 complete). Twelve milestones shipped (v1.0-v1.11). Phase 70 is a hard quantitative gate that may pause Phases 71-73.
+v1.12 active, scoped to Phase 69 only after the 2026-04-26 scope-down (Plan 69-06 / 6 in progress). Twelve milestones shipped (v1.0-v1.11). Deferred work tracked in SEED-006 (Phases 70-73, gate logic, full design preserved).
 
 ## Key Context
 
