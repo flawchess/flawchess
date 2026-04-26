@@ -539,7 +539,12 @@ async def query_opening_transitions(
             # ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING covers all moves
             # up to (but not including) the current row — i.e. the entry's SAN sequence.
             # rows=(None, -1) maps to BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING in SQLAlchemy.
-            func.array_agg(GamePosition.move_san).over(
+            # FILTER (WHERE move_san IS NOT NULL) guards against NULL entries from
+            # corrupted imports: board.push_san(None) raises TypeError (not InvalidMoveError),
+            # which would propagate as a 500 rather than silently dropping the finding.
+            func.array_agg(GamePosition.move_san).filter(
+                GamePosition.move_san.isnot(None)
+            ).over(
                 partition_by=GamePosition.game_id,
                 order_by=GamePosition.ply,
                 rows=(None, -1),
