@@ -948,7 +948,7 @@ export function OpeningsPage() {
             <span className="inline-flex items-center gap-1">
               Most Played Openings as White
               <InfoPopover ariaLabel="White openings info" testId="mpo-white-info" side="top">
-                Your most frequently played openings as White, based on the lichess opening table. Only openings where White made the last move are shown here.
+                Your most frequently played openings as White, based on the lichess opening table. Games passing through each opening's position are counted, including games that continued into deeper variations. Openings under 3 half-moves are excluded, so trivial trunks like 1.d4 don't dominate. Rows prefixed with "vs." are openings defined by Black's move (e.g. "vs. Sicilian Defense") that you faced as White.
               </InfoPopover>
             </span>
           </h2>
@@ -980,7 +980,7 @@ export function OpeningsPage() {
             <span className="inline-flex items-center gap-1">
               Most Played Openings as Black
               <InfoPopover ariaLabel="Black openings info" testId="mpo-black-info" side="top">
-                Your most frequently played openings as Black, based on the lichess opening table. Only openings where Black made the last move are shown here.
+                Your most frequently played openings as Black, based on the lichess opening table. Games passing through each opening's position are counted, including games that continued into deeper variations. Openings under 3 half-moves are excluded, so trivial trunks like 1.e4 don't dominate. Rows prefixed with "vs." are openings defined by White's move (e.g. "vs. Blackmar-Diemer Gambit") that you faced as Black.
               </InfoPopover>
             </span>
           </h2>
