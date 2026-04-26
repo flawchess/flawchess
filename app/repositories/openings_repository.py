@@ -654,7 +654,8 @@ async def query_openings_by_hashes(
     rows = await session.execute(stmt)
     by_hash: dict[int, Opening] = {}
     for opening in rows.scalars():
-        assert opening.full_hash is not None  # for ty: covered by SQL is_not(None)
+        if opening.full_hash is None:
+            continue  # should be unreachable given SQL IS NOT NULL filter; guard for ty narrowing
         existing = by_hash.get(opening.full_hash)
         if existing is None or opening.ply_count > existing.ply_count:
             by_hash[opening.full_hash] = opening
