@@ -10,6 +10,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 - PRE-01: Top-10 most-played openings now include opponent-defined openings (e.g. `vs. Caro-Kann Defense: Hillbilly Attack` for a Black user) which were previously hidden by a ply-parity filter. Off-color rows render with a `vs. ` prefix; same-color rows are unchanged.
+- PRE-01 follow-up: Top-10 most-played openings now rank by position-based game count (games passing through the named position, including games that continued into deeper variations), matching the count displayed in the UI. Previously the ranking used per-name-tag count while the displayed number was position-based, so high-volume positions like `Blackmar-Diemer Gambit` (148 games for one dev user) could be excluded from the top-10 by lower-volume rows whose name tags happened to absorb more games. `MIN_PLY_WHITE` and `MIN_PLY_BLACK` raised from 1/2 to 3/3 so trivial trunks like `1.d4` and `1.e4` don't dominate the new ranking.
+
+### Changed
+- "Most Played Openings as White/Black" info popovers updated to describe position-based counting, the 3-half-move minimum, and the `vs.` prefix.
 
 ## [v1.11] LLM-first Endgame Insights — 2026-04-24
 
