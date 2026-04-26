@@ -152,6 +152,10 @@ Bookmarks are **excluded from the discovery algorithm** entirely (see D-18). The
 - **D-16:** **INSIGHT-CORE-04 floor moves from `n ≥ 10` to `n ≥ 20`.**
 - **D-17:** Apply all amendments by editing `.planning/REQUIREMENTS.md` (top of file) AND `.planning/milestones/v1.13-ROADMAP.md` Phase 70 success-criteria block in the same commit that lands the implementation, with a CHANGELOG.md `[Unreleased]` § Changed entry describing both the algorithm shift (top-N entry-source → first-principles transition aggregation) and the classifier alignment with arrow coloring.
 
+### Attribution Edge Cases (added during revision 2026-04-26)
+
+- **D-34:** Unmatched-lineage findings are **dropped, not sentinel-attributed.** When the entry hash matches no Opening AND the parent-lineage walk (D-23) exhausts without finding a named ancestor, the finding is omitted from the response entirely — never surfaced with an empty/sentinel `entry_fen` or with the `<unnamed line>` name as a fallback for an unreachable position. This replaces an earlier (BLOCKER-1, revision 2026-04-26) instruction in Plan 70-04 to fall back to `chess.Board().fen()` (the initial position FEN), which would have produced an incorrect deep-link target — a finding the user lands on the empty start position for is worse than no finding at all. The strict ply-3..16 entry window plus the seeded openings table covers the vast majority of practical cases; Phase 71 telemetry can revisit if the unmatched rate exceeds expectations. Sentry tag `openings.attribution.unmatched_dropped` may be set to track the rate.
+
 ### Claude's Discretion
 
 - Implementation file layout details: file paths above are recommendations; planner finalizes.

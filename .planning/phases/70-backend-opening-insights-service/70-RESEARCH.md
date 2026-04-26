@@ -673,22 +673,16 @@ These are the boundaries where bugs hide. Synthetic test data MUST include all o
 
 3. **`recency` Literal mismatch.** `app/services/openings_service.py::recency_cutoff()` accepts `"all"` (or None) for "no cutoff". The endgame `FilterContext` uses `"all_time"`. The planner needs to choose ONE for `OpeningInsightsRequest.recency` and document — recommendation: match `recency_cutoff()` accepted values (i.e., `"all" | "week" | "month" | ...` or `None`).
 
-### Open Questions
+### Open Questions (RESOLVED — 2026-04-26 revision)
 
-1. **Unnamed-line entry-FEN reconstruction strategy.**
-   - What we know: D-25 says entry FEN comes from SAN replay; D-23 says the parent-lineage walk is the attribution fallback.
-   - What's unclear: When NO ancestor matches `openings`, what SAN sequence do we replay? CONTEXT.md leaves this to the planner.
-   - Recommendation: Extend the transition CTE to `array_agg(move_san) OVER (PARTITION BY game_id ORDER BY ply ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)` for one example game per surviving entry_hash, take the first occurrence, slice to `entry_ply`, and replay with python-chess. Adds one extra column to the CTE; well within the index-only-scan plan.
+1. **Unnamed-line entry-FEN reconstruction strategy. — RESOLVED.**
+   - **Resolution:** Extend the transition CTE in Plan 70-03 with `array_agg(move_san) OVER (PARTITION BY game_id ORDER BY ply ROWS BETWEEN UNBOUNDED PRECEDING AND PREVIOUS ROW) AS entry_san_sequence` and surface `GamePosition.full_hash AS resulting_full_hash` (the candidate's full_hash, post-move). The service in Plan 70-04 reconstructs `entry_fen` by replaying the SAN sequence with python-chess, and walks back through the prefix hashes (computed via the verbatim `compute_position_hashes` / `ctypes.c_int64(chess.polyglot.zobrist_hash(board)).value` pattern from `app/services/zobrist.py:111-122`) to probe the openings table for ancestor matches. See new decision **D-34**: when neither direct attribution nor the lineage walk finds a match, the finding is dropped from the response (not surfaced with a sentinel/empty FEN).
 
-2. **Whether to skip the SQL query for unused color (D-12 optimization).**
-   - What we know: D-12 permits skipping the query for the off-color when `color != "all"`, returning empty lists for those two sections. Saves ~50% latency.
-   - What's unclear: Whether to ship this in Phase 70 or defer.
-   - Recommendation: Ship it. It's a 3-line conditional in the service; saves real time for narrowed-view users.
+2. **Whether to skip the SQL query for unused color (D-12 optimization). — RESOLVED.**
+   - **Resolution:** Ship the optimization in Plan 70-04. When `request.color != "all"`, only the requested color's `query_opening_transitions` call runs; the other two sections return empty lists. Implemented as a 3-line conditional building the `colors_to_query` list before the sequential await loop.
 
-3. **Whether the transition CTE should expose `parent_hash` for the lineage walk, or do it as a second query.**
-   - What we know: D-23 says the lineage walk is "fine either way".
-   - What's unclear: Single CTE vs. two queries.
-   - Recommendation: Two queries. After the transition CTE returns surviving findings, issue ONE batched `SELECT * FROM openings WHERE full_hash IN (entry_hashes)` (D-22), then for any entry_hash that didn't match, walk back via the SAN sequence (already replayed for entry_fen) and probe the openings table at successive depths. Keeps the main aggregation query simple.
+3. **Whether the transition CTE should expose `parent_hash` for the lineage walk, or do it as a second query. — RESOLVED.**
+   - **Resolution:** Use the SAN-sequence approach (Q1's resolution). The CTE surfaces `entry_san_sequence`; the service replays prefixes in Python and issues ONE additional batched `query_openings_by_hashes` covering all parent hashes across all unmatched findings (worst case: two attribution queries per request). Cast-to-Float in the HAVING clause uses the verbatim Pitfall 5 pattern: `cast(wins, Float) / cast(n_games, Float)`. The partial-index predicate `WHERE ply BETWEEN 1 AND 17` is verified to be honored by PostgreSQL via the `EXPLAIN` test in Plan 70-03 task 1 (`test_partial_index_predicate_alignment`).
 
 ## Project Skills Hookup
 
