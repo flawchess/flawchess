@@ -15,6 +15,49 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 - "Most Played Openings as White/Black" info popovers updated to describe position-based counting, the 3-half-move minimum, and the `vs.` prefix.
 
+## [v1.12] Benchmark DB Infrastructure & Ingestion Pipeline — 2026-04-26
+
+Developer-facing infrastructure milestone with no user-visible changes. Ships the
+groundwork for SEED-006 (population-based zone recalibration): a separate
+`flawchess-benchmark` PostgreSQL 18 instance, a third read-only MCP server, and a
+resumable Lichess monthly-dump ingestion pipeline that subsamples players
+stratified on (rating × time_control). v1.12 was scoped down from the original
+five-phase plan to Phase 69 only — the multi-day full ingest is operational, not
+a milestone gate, and the analytics phases (classifier validation, Parity
+proxy validation, zone recalibration, `/benchmarks` skill upgrade) move to a
+future SEED-006 milestone once the populated DB is ready.
+
+### Added
+- Phase 69: Isolated `flawchess-benchmark` PostgreSQL 18 container on `localhost:5433`
+  via `docker-compose.benchmark.yml`, with `bin/benchmark_db.sh start/stop/reset`
+  lifecycle wrapper. Same Alembic migration chain as dev/prod/test (no
+  benchmark-only schema additions on canonical tables). Read-only role
+  `flawchess_benchmark_ro` (SELECT-only, with `ALTER DEFAULT PRIVILEGES` for future tables).
+- Phase 69: Third MCP server `flawchess-benchmark-db` (read-only, queryable via
+  `mcp__flawchess-benchmark-db__query`) documented in CLAUDE.md §Database Access.
+  RO password lives in user-level `~/.claude.json` only; committed
+  `deploy/init-benchmark-db.sql` keeps a `<PASSWORD>` placeholder.
+- Phase 69: `scripts/select_benchmark_users.py` — streaming Lichess monthly-dump
+  scan (zstandard) that buckets players by median Elo and modal time control,
+  then persists a stratified selection into `benchmark_selected_users`.
+- Phase 69: `scripts/import_benchmark_users.py` — SIGINT-safe orchestrator that
+  re-uses the production import pipeline against synthetic stub users and
+  `import_jobs` rows, with checkpoint resume tracked in
+  `benchmark_ingest_checkpoints` (terminal-status idempotency).
+- Phase 69: `BenchmarkSelectedUser` and `BenchmarkIngestCheckpoint` ORM models
+  (benchmark-DB only, isolated from canonical schema).
+- Phase 69: `zstandard>=0.22` added to dev dependency group for streaming
+  decompression of Lichess monthly dumps.
+- Phase 69: Smoke-test verification report at
+  `reports/benchmark-db-phase69-verification-2026-04-26.md` (20-cell selection
+  ≈ 8.6k players, ~274k games, ~19.4M positions; pipeline correctness verified
+  in lieu of multi-day full ingest).
+
+### Tests
+- Phase 69: `tests/test_benchmark_ingest.py` — Wave-0 unit tests covering
+  centipawn convention, (Elo × TC) bucketing including boundaries, dump-scan PGN
+  parser, and ingest-orchestrator scaffolding.
+
 ## [v1.11] LLM-first Endgame Insights — 2026-04-24
 
 First LLM-backed feature. On-demand Endgame Insights via `POST /api/insights/endgame`,
@@ -309,7 +352,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.11...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.12...HEAD
+[v1.12]: https://github.com/flawchess/flawchess/compare/v1.11...v1.12
 [v1.11]: https://github.com/flawchess/flawchess/compare/v1.10...v1.11
 [v1.10]: https://github.com/flawchess/flawchess/compare/v1.9...v1.10
 [v1.9]: https://github.com/flawchess/flawchess/compare/v1.8...v1.9
