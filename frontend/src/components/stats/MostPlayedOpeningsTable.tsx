@@ -59,7 +59,8 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, maxTot
       >
         <div className="min-w-0">
           <div className="text-sm leading-tight">
-            {formatName(o.opening_name)}
+            {/* display_name carries a "vs. " prefix when the opening is defined by the off-color (PRE-01). */}
+            {formatName(o.display_name)}
           </div>
           {o.pgn && (
             <div className="text-xs text-muted-foreground mt-0.5 break-words sm:truncate">{o.pgn}</div>

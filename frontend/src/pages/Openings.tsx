@@ -121,7 +121,8 @@ function MobileMostPlayedRows({
                     testId={`${testIdPrefix}-minimap-${rowKey}`}
                   >
                     <span className="block text-sm font-medium leading-tight break-words">
-                      {o.opening_name}
+                      {/* display_name carries a "vs. " prefix when off-color (PRE-01). */}
+                      {o.display_name}
                     </span>
                   </MinimapPopover>
                 </div>
@@ -828,6 +829,8 @@ export function OpeningsPage() {
               const row: OpeningWDL = {
                 opening_eco: '',
                 opening_name: b.label,
+                // Bookmarks have no parity context: display_name === canonical name.
+                display_name: b.label,
                 label: b.label,
                 pgn: '',
                 fen: b.fen,

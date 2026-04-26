@@ -28,6 +28,8 @@ export interface GlobalStatsResponse {
 export interface OpeningWDL {
   opening_eco: string;
   opening_name: string;
+  /** Canonical name with "vs. " prefix when the opening is defined by the off-color (PRE-01). */
+  display_name: string;
   label: string;
   pgn: string;
   fen: string;
