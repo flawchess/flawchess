@@ -55,11 +55,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import sentry_sdk
-from sqlalchemy import select
+from sqlalchemy import Table, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import cast
 
 from app.core.config import settings
-from app.core.database import async_session_maker
+from app.core.database import async_session_maker, engine
 from app.models.benchmark_ingest_checkpoint import BenchmarkIngestCheckpoint
 from app.models.benchmark_selected_user import BenchmarkSelectedUser
 from app.models.import_job import ImportJob
@@ -143,6 +144,29 @@ def compute_deficit_users(pool: list[str], completed: set[str], target_n: int) -
         if u not in completed:
             out.append(u)
     return out
+
+
+# --------------------------------------------------------------------------------------
+# Table bootstrap (INFRA-02: benchmark-only tables are not in the canonical Alembic chain)
+# --------------------------------------------------------------------------------------
+
+
+async def _ensure_checkpoint_table() -> None:
+    """Create benchmark_ingest_checkpoints on first invocation (idempotent).
+
+    INFRA-02: benchmark-only tables are not in the canonical Alembic chain. The
+    sibling table benchmark_selected_users is created the same way by
+    select_benchmark_users.py. We pass the specific Table object via
+    metadata.create_all(tables=[...]) so unrelated canonical tables (already
+    created by Alembic) are not touched.
+    """
+    bench_table = cast(Table, BenchmarkIngestCheckpoint.__table__)
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            lambda sync_conn: BenchmarkIngestCheckpoint.metadata.create_all(
+                sync_conn, tables=[bench_table], checkfirst=True
+            )
+        )
 
 
 # --------------------------------------------------------------------------------------
@@ -481,6 +505,9 @@ async def main() -> None:
 
     _install_signal_handler()
     start_time = time.time()
+
+    # Ensure benchmark_ingest_checkpoints exists (INFRA-02: not in Alembic chain)
+    await _ensure_checkpoint_table()
 
     # Discover all (rating_bucket, tc_bucket) cells present in selected users
     async with async_session_maker() as session:
