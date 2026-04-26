@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.13
 milestone_name: Opening Insights
 status: planning
-last_updated: "2026-04-26T00:00:00.000Z"
+last_updated: "2026-04-26T16:30:00.000Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 5
@@ -76,7 +76,6 @@ Carried forward from v1.11 close (still relevant):
 
 ### Pending Todos
 
-- **PRE-01** (gating Phase 70) — Top-10 most-played-openings parity-filter fix (`app/repositories/stats_repository.py:264-265`). See `.planning/todos/pending/2026-04-26-top10-openings-parity-bug.md`.
 - **PRE-02** (gating Phase 70) — v1.11 VAL-01 insights snapshot test against canonical user fixture.
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
@@ -84,7 +83,7 @@ Carried forward from v1.11 close (still relevant):
 ### Blockers/Concerns
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
-- Phase 70 must NOT start until PRE-01 lands — the parity bug currently filters out ~half of eligible named openings per color, so the v1.13 scan input would be wrong if Phase 70 builds on the unfixed query.
+- Phase 70 still gated on PRE-02 (insights snapshot test); PRE-01 landed 2026-04-26.
 
 ### Quick Tasks Completed
 
@@ -94,6 +93,7 @@ Carried forward from v1.11 close (still relevant):
 | 260425-lii | Fix misleading "chess.com user not found" error during import | 2026-04-25 | 22d561f | [260425-lii-fix-misleading-chess-com-user-not-found-](./quick/260425-lii-fix-misleading-chess-com-user-not-found-/) |
 | 260425-lwz | Fallback to month enumeration when chess.com archives-list endpoint 404s for an existing user | 2026-04-25 | af64f66 | [260425-lwz-fallback-to-month-enumeration-when-chess](./quick/260425-lwz-fallback-to-month-enumeration-when-chess/) |
 | 260425-nlv | Restructure GameCard and PositionBookmarkCard layouts (full-width identifier line on top, board left + content right below) | 2026-04-25 | 5a7ad30 | [260425-nlv-restructure-gamecard-and-positionbookmar](./quick/260425-nlv-restructure-gamecard-and-positionbookmar/) |
+| 260426-pbo | Drop parity filter on top-10 openings, prefix off-color rows with "vs." (PRE-01) | 2026-04-26 | 3301ff5 | [260426-pbo-drop-parity-filter-on-top-10-openings-pr](./quick/260426-pbo-drop-parity-filter-on-top-10-openings-pr/) |
 
 ---
-Last activity: 2026-04-26 — v1.13 Opening Insights roadmap created. 5 phases (70-74), 20/20 active requirements mapped, Phases 73-74 stretch. Next: land PRE-01 + PRE-02 quick tasks, then `/gsd-discuss-phase 70`.
+Last activity: 2026-04-26 — Completed quick task 260426-pbo (PRE-01): dropped parity filter on top-10 openings, off-color rows now render with "vs." prefix. Next: PRE-02 (insights snapshot test), then `/gsd-discuss-phase 70`.
