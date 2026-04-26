@@ -14,7 +14,8 @@
 - ✅ **v1.9 UI/UX Restructuring** — Phases 49-51 (shipped 2026-04-10) — see [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md)
 - ✅ **v1.10 Advanced Analytics** — Phases 48, 52-55, 57, 57.1, 59-62 (shipped 2026-04-19) — see [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md)
 - ✅ **v1.11 LLM-first Endgame Insights** — Phases 63-68 (shipped 2026-04-24) — see [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md)
-- ✅ **v1.12 Benchmark DB Infrastructure & Ingestion Pipeline** — Phase 69 (shipped 2026-04-26). Phases 70-73 deferred to a future milestone — see [seeds/SEED-006](seeds/SEED-006-benchmark-population-zone-recalibration.md). Full archive: [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md)
+- ✅ **v1.12 Benchmark DB Infrastructure & Ingestion Pipeline** — Phase 69 (shipped 2026-04-26). The applied-analytics work originally scoped under v1.12 (classifier validation at scale, rating-stratified offsets, Parity validation, `/benchmarks` skill upgrade & zone recalibration) was deferred to a future milestone — see [seeds/SEED-006](seeds/SEED-006-benchmark-population-zone-recalibration.md). Full archive: [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md)
+- 🚧 **v1.13 Opening Insights** — Phases 70-74 (planning, opened 2026-04-26) — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md)
 
 ## Phases
 
@@ -171,11 +172,84 @@ See [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md) for full details.
 
 - [x] Phase 69: Benchmark DB Infrastructure & Ingestion Pipeline (6/6 plans) — completed 2026-04-26 via PR #65 — INFRA-01..03, INGEST-01..06
 
-**Scope-down (2026-04-26):** v1.12 was originally Phases 69-73. The applied-analytics phases (70-73: classifier validation at scale, rating-stratified offsets, Parity validation, `/benchmarks` skill upgrade & zone recalibration) were moved to a future milestone seeded at [seeds/SEED-006](seeds/SEED-006-benchmark-population-zone-recalibration.md). The full benchmark ingest is operational work (days of wall-clock time), not a milestone gate; treating it as one was blocking unrelated work like v1.13 opening insights. Pipeline correctness is the v1.12 deliverable; populating the DB is ops.
+**Scope-down (2026-04-26):** v1.12 was originally planned to include four follow-on applied-analytics phases (classifier validation at scale, rating-stratified offsets, Parity validation, `/benchmarks` skill upgrade & zone recalibration). They were moved to a future milestone seeded at [seeds/SEED-006](seeds/SEED-006-benchmark-population-zone-recalibration.md) with no phase numbers retained. The full benchmark ingest is operational work (days of wall-clock time), not a milestone gate; treating it as one was blocking unrelated work like v1.13 opening insights. Pipeline correctness is the v1.12 deliverable; populating the DB is ops. The phase-number range 70-74 was subsequently allocated to v1.13.
 
 See [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md) for full details.
 
 </details>
+
+<details open>
+<summary>🚧 v1.13 Opening Insights (Phases 70-74) — IN PLANNING (opened 2026-04-26)</summary>
+
+- [ ] Phase 70: Backend opening insights service — INSIGHT-CORE-01..09
+- [ ] Phase 71: Frontend Stats subtab — `OpeningInsightsBlock` — INSIGHT-STATS-01..06
+- [ ] Phase 72: Frontend Moves subtab — inline weakness/strength bullets — INSIGHT-MOVES-01..03
+- [ ] Phase 73 (stretch): Meta-recommendation aggregate finding — INSIGHT-META-01
+- [ ] Phase 74 (stretch): Bookmark-card weakness badge — INSIGHT-BADGE-01
+
+See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
+
+</details>
+
+## Phase Details (v1.13 active)
+
+### Phase 70: Backend opening insights service
+**Goal**: A user-scoped `opening_insights_service` produces ranked, deduplicated, structured `OpeningInsightFinding` payloads for every (entry_position, candidate_move) pair that classifies as a weakness or strength against the user's filtered game history.
+**Depends on**: PRE-01 fix landed (top-10 parity bug); reuses existing `query_top_openings_sql_wdl`, `apply_game_filters`, and `game_positions` Zobrist-hash schema. No new schema or migration.
+**Requirements**: INSIGHT-CORE-01, INSIGHT-CORE-02, INSIGHT-CORE-03, INSIGHT-CORE-04, INSIGHT-CORE-05, INSIGHT-CORE-06, INSIGHT-CORE-07, INSIGHT-CORE-08, INSIGHT-CORE-09
+**Success Criteria** (what must be TRUE):
+  1. `POST /api/insights/openings` (or equivalent) returns a structured `OpeningInsightFinding[]` payload for an authenticated user under their active filter set; equivalent filter states return equivalent rankings.
+  2. The scan input is exactly `top-10 most-played openings per color ∪ user bookmarks`, with the configurable min-games-per-entry floor enforced; scanning recurses **only** to the immediate next ply (no deep recursion).
+  3. Each (entry_position, candidate_move) pair with n ≥ 10 games is classified `weakness` (loss_rate ≥ 0.55), `strength` (score ≥ 0.60), or dropped as neutral; findings are deduplicated by Zobrist hash with deepest-opening attribution.
+  4. Findings are ranked by frequency × severity (formula resolved in Phase 70 `/gsd-discuss-phase`) and capped at the configurable display ceiling (default top 5 weaknesses + top 3 strengths).
+  5. Latency budget — typical user (≤ ~2k games) sees on-the-fly responses without precompute; service-layer caching is added only if heavy users (10k+) breach the budget.
+**Plans**: TBD
+
+### Phase 71: Frontend Stats subtab — `OpeningInsightsBlock`
+**Goal**: Users see ranked weakness and strength bullets on Openings → Stats subtab, with deep-links that navigate to Openings → Moves pre-loaded at the entry FEN with the candidate move highlighted.
+**Depends on**: Phase 70
+**Requirements**: INSIGHT-STATS-01, INSIGHT-STATS-02, INSIGHT-STATS-03, INSIGHT-STATS-04, INSIGHT-STATS-05, INSIGHT-STATS-06
+**Success Criteria** (what must be TRUE):
+  1. Authenticated user with at least one qualifying finding sees an `OpeningInsightsBlock` on Openings → Stats subtab with templated bullets like "You lose 62% as Black after 1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 (n=18) → [open in Move Explorer]" using the existing red/green semantic theme colors.
+  2. Clicking a finding's deep-link navigates to Openings → Moves with the chessboard pre-loaded at the entry FEN and the candidate move visibly highlighted.
+  3. When the active filter set yields no findings, the block renders a clear empty-state message naming the threshold and the min-games floor.
+  4. Changing filters (color, time_control, recency, opponent_type/strength, rated) refreshes the block; loading and error states match v1.11 EndgameInsightsBlock conventions.
+  5. Block renders cleanly inside the mobile drawer / single-column layout — verified at 375px width, no horizontal scroll, ≥ 44px touch targets, semantic HTML + `data-testid` per CLAUDE.md frontend rules.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 72: Frontend Moves subtab — inline weakness/strength bullets
+**Goal**: When the user is viewing a position on Openings → Moves that has at least one classified candidate-move finding, an inline bullet appears next to the existing red/green candidate-move arrow for that finding, scoped to the currently displayed position only.
+**Depends on**: Phase 70
+**Requirements**: INSIGHT-MOVES-01, INSIGHT-MOVES-02, INSIGHT-MOVES-03
+**Success Criteria** (what must be TRUE):
+  1. On Openings → Moves, when the displayed position matches a Phase-70 finding's `entry_fen`, a templated bullet renders inline next to the existing red/green candidate-move arrow for that finding's `candidate_move_san`.
+  2. Bullets are scoped to the currently displayed position only — no full-scan list and no deep-link affordance.
+  3. The same `OpeningInsightFinding` payload powers both this view and the Stats block; no second backend route or schema is introduced.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 73 (stretch): Meta-recommendation aggregate finding
+**Goal**: Above the per-finding list on the Stats subtab, render a single templated aggregate sentence summarizing the user's repertoire-level pattern (e.g. "You have weaknesses across 8 different openings — consider narrowing your repertoire").
+**Depends on**: Phase 70, Phase 71. Stretch — deferrable without affecting core delivery.
+**Requirements**: INSIGHT-META-01
+**Success Criteria** (what must be TRUE):
+  1. When the findings list contains weaknesses spanning multiple openings, the aggregate sentence appears above the per-finding bullets and reflects the active filter set.
+  2. The rule(s) that generate the sentence are pure templated logic over the findings list — no LLM call, no second backend round trip.
+  3. When findings are absent or below the meta-rule threshold, the aggregate sentence is suppressed.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 74 (stretch): Bookmark-card weakness badge
+**Goal**: A small visual indicator (red dot + count chip) appears on bookmark cards whose bookmarked opening surfaces ≥ 1 Phase-70 weakness finding under the active filter set, on both desktop bookmarks panel and mobile bookmarks drawer.
+**Depends on**: Phase 70. Stretch — deferrable without affecting core delivery.
+**Requirements**: INSIGHT-BADGE-01
+**Success Criteria** (what must be TRUE):
+  1. A bookmark card whose `entry_fen` matches at least one weakness finding shows a red dot + count chip badge; cards with no findings render unchanged.
+  2. The badge is present in both the desktop bookmarks panel (`PositionBookmarkCard`) and the mobile bookmarks drawer — applied consistently per CLAUDE.md "always apply changes to mobile too" rule.
+  3. The badge updates when filters change — same data source as the Stats block, so badge state stays consistent with the bullet list.
+**Plans**: TBD
+**UI hint**: yes
 
 ## Progress
 
@@ -202,7 +276,12 @@ See [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md) for full details.
 | 49-51. v1.9 phases | v1.9 | 7/7 | Complete | 2026-04-10 |
 | 48, 52-62. v1.10 phases | v1.10 | 28/28 | Complete | 2026-04-19 |
 | 63-68. v1.11 phases | v1.11 | 23/23 | Complete (Phase 67 descoped) | 2026-04-24 |
-| 69. Benchmark DB Infra & Ingestion Pipeline | v1.12 | 6/6 | Complete (Phases 70-73 deferred to SEED-006) | 2026-04-26 |
+| 69. Benchmark DB Infra & Ingestion Pipeline | v1.12 | 6/6 | Complete (follow-on phases deferred to SEED-006) | 2026-04-26 |
+| 70. Backend opening insights service | v1.13 | 0/0 | Not started | — |
+| 71. `OpeningInsightsBlock` (Stats subtab) | v1.13 | 0/0 | Not started | — |
+| 72. Inline bullets (Moves subtab) | v1.13 | 0/0 | Not started | — |
+| 73. Meta-recommendation (stretch) | v1.13 | 0/0 | Not started | — |
+| 74. Bookmark-card weakness badge (stretch) | v1.13 | 0/0 | Not started | — |
 
 ## Backlog
 

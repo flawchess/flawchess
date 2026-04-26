@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.13
 milestone_name: Opening Insights
 status: planning
-last_updated: "2026-04-26T15:44:20.159Z"
+last_updated: "2026-04-26T00:00:00.000Z"
 last_activity: 2026-04-26
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,30 +17,31 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 70 — Backend opening insights service (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-26 — Milestone v1.13 started
+Status: Roadmap created; awaiting `/gsd-discuss-phase 70` after PRE-01 lands
+Last activity: 2026-04-26 — v1.13 roadmap created (Phases 70-74)
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-04-26)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: Planning v1.13 (SEED-005 Opening Insights). SEED-006 (Benchmark population zone recalibration) holds Phases 70-73 until full benchmark ingest completes; v1.11 VAL-01 snapshot test is a pre-v1.13 `/gsd-quick` candidate.
+Current focus: v1.13 (SEED-005 Opening Insights). Roadmap covers Phases 70-74; pre-v1.13 quick tasks PRE-01 (top-10 parity-filter fix) and PRE-02 (v1.11 VAL-01 snapshot test) gate Phase 70's start. SEED-006 (Benchmark population zone recalibration) holds the deferred classifier-validation phases until full benchmark ingest completes.
 
 ## Milestone Progress
 
-v1.12 shipped 2026-04-26 with 1 phase (69), 6 plans, delivered via PR #65. Twelve milestones complete (v1.0-v1.12). Phases 70-73 deferred to SEED-006 (full design preserved with rating-bucketed zone recalibration framing).
+v1.12 shipped 2026-04-26 with 1 phase (69), 6 plans, delivered via PR #65. Twelve milestones complete (v1.0-v1.12). v1.13 opened 2026-04-26 with 5 phases (70-74), Phases 73-74 marked stretch. 0 plans committed yet (filled at `/gsd-plan-phase` time).
 
 ## Key Context
 
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
 - ORM: SQLAlchemy 2.x async + Alembic
 - Auth: FastAPI-Users 15.0.5 (Bearer JWT, Google SSO, guest sessions, admin impersonation)
-- Core algorithm: Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import
+- Core algorithm: Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import — Phase 70 reuses this directly for finding deduplication
 - Deployment: Docker Compose on Hetzner CX32 (4 vCPUs, 7.6 GB RAM + 2 GB swap)
-- v1.11 LLM stack: pydantic-ai Agent with env-var-driven model selection (`PYDANTIC_AI_MODEL_INSIGHTS`), `genai-prices` for cost accounting, generic `llm_logs` Postgres table as prompt-engineering harness
-- v1.12 Benchmark DB: separate PostgreSQL 18 instance on port 5433 (`docker-compose.benchmark.yml`), shares canonical Alembic chain with dev/prod/test, benchmark-only ops tables (`benchmark_selected_users`, `benchmark_ingest_checkpoints`) created via `Base.metadata.create_all()` against the benchmark engine on first invocation. Read-only MCP server `flawchess-benchmark-db` registered.
+- v1.11 LLM stack: pydantic-ai Agent with env-var-driven model selection (`PYDANTIC_AI_MODEL_INSIGHTS`), `genai-prices` for cost accounting, generic `llm_logs` Postgres table — v1.13 deliberately does NOT use the LLM layer (templated-only)
+- v1.12 Benchmark DB: separate PostgreSQL 18 instance on port 5433 — v1.13 deliberately does NOT consume this (book-move equality makes population baselines redundant for opening insights, per SEED-005)
+- v1.13 reuse points: `query_top_openings_sql_wdl` (must land PRE-01 fix first), `apply_game_filters`, `game_positions` Zobrist-hash schema, v1.11 in-tab insights placement idiom (red/green semantic colors, mobile drawer compatibility, EndgameInsightsBlock loading/error patterns)
 
 ## Accumulated Context
 
@@ -52,7 +53,7 @@ Acknowledged at v1.12 milestone close on 2026-04-26:
 |----------|------|--------|
 | requirements | Plan 69-06 sub-task 06-05 (`--per-cell 30` interim ingest) | Descoped — operational ops, not milestone gate (per 2026-04-26 v1.12 scope-down) |
 | requirements | Plan 69-06 sub-task 06-08 (manual cleanup of 2026-03 Lichess dump file) | Pending manual cleanup on Adrian's local disk |
-| requirements | VAL-01 from v1.11 (insights snapshot test) | Pre-v1.13 `/gsd-quick` candidate; no benchmark dependency |
+| requirements | VAL-01 from v1.11 (insights snapshot test) | Pre-v1.13 `/gsd-quick` candidate (PRE-02); no benchmark dependency |
 | requirements | VAL-01 / VAL-02 / VAL-03 / VAL-04 / BENCH-01..04 | Moved to SEED-006 (gated on full benchmark ingest) |
 | tech debt | Pre-existing ORM/DB column drift (game_positions.clock_seconds, games.white_accuracy, games.black_accuracy) | Deferred again — cleanup migration outstanding from v1.11 |
 | ops | Full benchmark DB ingest (`--per-cell 100`, ~205 GB projected) | Operational task; entry criterion for SEED-006 |
@@ -70,16 +71,20 @@ Carried forward from v1.11 close (still relevant):
 
 - v1.0–v1.12 shipped (see .planning/MILESTONES.md)
 - v1.12 shipped 2026-04-26 with 1 phase (69), 6 plans (Plan 69-06 sub-tasks 06-05/06-08 descoped). PR #65.
-- 2026-04-26: v1.12 mid-milestone scope-down moved Phases 70-73 to SEED-006 (Benchmark Population Zone Recalibration), gated on full benchmark ingest.
+- 2026-04-26: v1.12 mid-milestone scope-down moved the originally-planned follow-on classifier-validation phases to SEED-006 (Benchmark Population Zone Recalibration), gated on full benchmark ingest. Phase-number range 70-74 was subsequently allocated to v1.13.
+- 2026-04-26: v1.13 roadmap created — Phases 70-74, source SEED-005, 20/20 active requirements mapped, Phases 73-74 marked stretch.
 
 ### Pending Todos
 
+- **PRE-01** (gating Phase 70) — Top-10 most-played-openings parity-filter fix (`app/repositories/stats_repository.py:264-265`). See `.planning/todos/pending/2026-04-26-top10-openings-parity-bug.md`.
+- **PRE-02** (gating Phase 70) — v1.11 VAL-01 insights snapshot test against canonical user fixture.
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
 
 ### Blockers/Concerns
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
+- Phase 70 must NOT start until PRE-01 lands — the parity bug currently filters out ~half of eligible named openings per color, so the v1.13 scan input would be wrong if Phase 70 builds on the unfixed query.
 
 ### Quick Tasks Completed
 
@@ -91,4 +96,4 @@ Carried forward from v1.11 close (still relevant):
 | 260425-nlv | Restructure GameCard and PositionBookmarkCard layouts (full-width identifier line on top, board left + content right below) | 2026-04-25 | 5a7ad30 | [260425-nlv-restructure-gamecard-and-positionbookmar](./quick/260425-nlv-restructure-gamecard-and-positionbookmar/) |
 
 ---
-Last activity: 2026-04-26 — v1.12 Benchmark DB Infrastructure & Ingestion Pipeline shipped (PR #65 squash-merged). 1 phase, 6 plans. Phases 70-73 deferred to SEED-006. Next: `/gsd-new-milestone` for v1.13 (SEED-005 Opening Insights).
+Last activity: 2026-04-26 — v1.13 Opening Insights roadmap created. 5 phases (70-74), 20/20 active requirements mapped, Phases 73-74 stretch. Next: land PRE-01 + PRE-02 quick tasks, then `/gsd-discuss-phase 70`.

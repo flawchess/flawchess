@@ -60,10 +60,30 @@
 
 ## Traceability
 
-Filled by roadmapper.
+PRE-01 and PRE-02 are pre-v1.13 quick tasks gating Phase 70 — intentionally not mapped to a phase.
 
 | REQ-ID | Phase |
 |--------|-------|
+| INSIGHT-CORE-01 | 70 |
+| INSIGHT-CORE-02 | 70 |
+| INSIGHT-CORE-03 | 70 |
+| INSIGHT-CORE-04 | 70 |
+| INSIGHT-CORE-05 | 70 |
+| INSIGHT-CORE-06 | 70 |
+| INSIGHT-CORE-07 | 70 |
+| INSIGHT-CORE-08 | 70 |
+| INSIGHT-CORE-09 | 70 |
+| INSIGHT-STATS-01 | 71 |
+| INSIGHT-STATS-02 | 71 |
+| INSIGHT-STATS-03 | 71 |
+| INSIGHT-STATS-04 | 71 |
+| INSIGHT-STATS-05 | 71 |
+| INSIGHT-STATS-06 | 71 |
+| INSIGHT-MOVES-01 | 72 |
+| INSIGHT-MOVES-02 | 72 |
+| INSIGHT-MOVES-03 | 72 |
+| INSIGHT-META-01 | 73 (stretch) |
+| INSIGHT-BADGE-01 | 74 (stretch) |
 
 ---
-*Last updated: 2026-04-26 — v1.13 Opening Insights milestone opened.*
+*Last updated: 2026-04-26 — v1.13 roadmap created (Phases 70-74). Coverage: 20/20 active requirements mapped.*
