@@ -173,7 +173,7 @@ See [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md) for full details.
   - [x] 69-01-PLAN.md — Benchmark DB Infrastructure (docker-compose, init SQL, lifecycle script)
   - [x] 69-02-PLAN.md — Alembic migration: eval_depth + eval_source_version on canonical games table
   - [ ] 69-03-PLAN.md — MCP server registration + CLAUDE.md docs (manual)
-  - [ ] 69-04-PLAN.md — Selection scan + player bucketing (streaming dump scan)
+  - [x] 69-04-PLAN.md — Selection scan + player bucketing (streaming dump scan)
   - [ ] 69-05-PLAN.md — Ingestion orchestrator + per-user checkpoint
   - [ ] 69-06-PLAN.md — Smoke + interim ingest run + verification report (manual checkpoints)
 - [ ] Phase 70: Classifier Validation Replication at Scale (GATE) (0 plans) — VALID-01, VALID-02
