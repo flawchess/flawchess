@@ -8,6 +8,9 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Fixed
+- PRE-01: Top-10 most-played openings now include opponent-defined openings (e.g. `vs. Caro-Kann Defense: Hillbilly Attack` for a Black user) which were previously hidden by a ply-parity filter. Off-color rows render with a `vs. ` prefix; same-color rows are unchanged.
+
 ## [v1.11] LLM-first Endgame Insights — 2026-04-24
 
 First LLM-backed feature. On-demand Endgame Insights via `POST /api/insights/endgame`,
