@@ -1,25 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: null
-milestone_name: null
-status: "v1.12 shipped — planning next milestone"
-last_updated: "2026-04-26T14:25:00.000Z"
+milestone: v1.13
+milestone_name: Opening Insights
+status: planning
+last_updated: "2026-04-26T15:44:20.159Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 0
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: none active — v1.12 shipped 2026-04-26 (PR #65). Awaiting `/gsd-new-milestone` for v1.13.
-Phase: none active
-Status: v1.12 shipped — planning next milestone (v1.13 SEED-005 Opening Insights)
-Last activity: 2026-04-26
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-26 — Milestone v1.13 started
 
 ## Project Reference
 

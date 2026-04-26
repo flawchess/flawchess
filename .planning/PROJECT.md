@@ -104,9 +104,9 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Stratified subsampling at the player-opportunity level on (rating_bucket × time_control) — 5 buckets × 4 TCs, separate `WhiteElo` / `BlackElo` per side; smoke-validated via `--per-cell 3` ingest of 274k games / 19.4M positions in 3h 6min — v1.12 Phase 69
 - ✓ Centipawn convention (signed from white's POV, centipawns vs pawn-units) verified by `tests/test_benchmark_ingest.py::test_centipawn_convention_signed_from_white` running in CI — v1.12 Phase 69
 
-### Active
+### Active (v1.13)
 
-- [ ] Opening weakness and strength insights (SEED-005) — v1.13 (next milestone)
+- [ ] Opening weakness and strength insights (SEED-005) — v1.13 in flight
 
 ### Deferred (gated on full benchmark ingest — SEED-006)
 
@@ -124,18 +124,21 @@ Users can determine their success rate for any opening position they specify, fi
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Next Milestone Goals: v1.13 (SEED-005 — Opening Insights)
+## Current Milestone: v1.13 Opening Insights
 
-**Goal:** Surface opening-line strengths and weaknesses for each user. Build on top of the existing `game_positions` Zobrist-hash architecture, the LLM insights infrastructure shipped in v1.11, and the deterministic findings pipeline. Independent of the benchmark DB.
+**Goal:** Surface opening-line strengths and weaknesses for each user via auto-scanning of most-played and bookmarked openings, with templated findings and deep-links into the Move Explorer at the implicated entry position. Build on the existing `game_positions` Zobrist-hash architecture and the v1.11 in-tab insights placement idiom. **Independent of the benchmark DB** — opening positions are book theory (engine eval ≈ 0.0), so absolute under-/over-performance over n ≥ 10 games is actionable without population baselines.
 
-**Tentative target features** (locked at `/gsd-new-milestone` time):
-- Opening-line risk and drawishness metrics in the move explorer
-- Per-line strength/weakness diagnostics surfaced as findings + LLM narratives
-- Opening insight section in the existing insights endpoint or a sibling endpoint
-- Reuse the v1.11 prompt-versioning, `llm_logs`, and rate-limit infrastructure
+**Target features:**
+- Backend `opening_insights_service` — scans top-10 most-played openings per color + bookmarked positions, classifies each (entry_position, candidate_move) pair as weakness (loss_rate ≥ 0.55) / strength (score ≥ 0.60) at n ≥ 10 games, dedupes by Zobrist hash with deepest-opening attribution, ranks by frequency × severity (formula resolved in Phase A discuss)
+- Frontend `OpeningInsightsBlock` on Openings → Stats subtab — templated bullets with red/green semantics, deep-links navigate to Openings → Moves tab pre-loaded at the entry FEN with the candidate move highlighted
+- Inline weakness/strength bullets in Openings → Moves tab — scoped to the currently displayed position, alongside existing red/green candidate-move arrows
+- Pure templated/rule-based in v1 — no LLM. LLM wrap-up deferred to v1.13.x or v1.14 once findings are in real users' hands.
+- (Stretch) Meta-recommendation layer — aggregate finding across openings ("you have weaknesses across 8 openings — narrow your repertoire")
+- (Stretch) Bookmark-card weakness badge
 
-**Open dependencies:**
-- v1.11 VAL-01 (insights snapshot test against a canonical user fixture) — pre-v1.13 `/gsd-quick`. No dependency on benchmark infra.
+**Pre-v1.13 quick tasks:**
+- v1.11 VAL-01 — insights snapshot test against a canonical user fixture (no benchmark dependency)
+- Top-10 most-played-openings parity-filter fix — `query_top_openings_sql_wdl` excludes ~half of eligible named openings per color (white-defined openings invisible in black top-10 and vice versa); confirmed bug via Hillbilly Attack example. Phase A reuses this service-layer call, so fix it before v1.13 builds on it. See `.planning/todos/pending/2026-04-26-top10-openings-parity-bug.md`.
 
 ## Current State
 
@@ -255,4 +258,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-26 after v1.12 milestone — Benchmark DB infrastructure & ingestion pipeline shipped.*
+*Last updated: 2026-04-26 — v1.13 Opening Insights milestone opened.*
