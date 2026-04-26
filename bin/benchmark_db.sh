@@ -24,12 +24,29 @@ run_migrations() {
   DATABASE_URL="$BENCHMARK_DB_URL" uv run alembic upgrade head
 }
 
+# Ensures flawchess_benchmark_ro has SELECT on every current table + sequence,
+# regardless of which role created them. Idempotent — safe to run on every start.
+# Needed because ALTER DEFAULT PRIVILEGES only governs FUTURE objects from a given
+# role; tables that predate the grant fix (or were created by a different role)
+# would otherwise be unreadable to the RO user.
+ensure_ro_grants() {
+  echo "Ensuring read-only grants for flawchess_benchmark_ro..."
+  docker compose -f "$COMPOSE_FILE" -p "$PROJECT" exec -T db psql -U postgres -d flawchess_benchmark -v ON_ERROR_STOP=1 <<'SQL'
+GRANT USAGE ON SCHEMA public TO flawchess_benchmark_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO flawchess_benchmark_ro;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO flawchess_benchmark_ro;
+ALTER DEFAULT PRIVILEGES FOR ROLE flawchess_benchmark IN SCHEMA public GRANT SELECT ON TABLES TO flawchess_benchmark_ro;
+ALTER DEFAULT PRIVILEGES FOR ROLE flawchess_benchmark IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO flawchess_benchmark_ro;
+SQL
+}
+
 case "${1:-start}" in
   start)
     echo "Starting benchmark database (project=$PROJECT, port=5433)..."
     docker compose -f "$COMPOSE_FILE" -p "$PROJECT" up -d
     wait_healthy
     run_migrations
+    ensure_ro_grants
     echo "Done. Benchmark database is ready on localhost:5433."
     ;;
   stop)
@@ -42,6 +59,7 @@ case "${1:-start}" in
     docker compose -f "$COMPOSE_FILE" -p "$PROJECT" up -d
     wait_healthy
     run_migrations
+    ensure_ro_grants
     echo "Done. Benchmark database reset."
     ;;
   *)

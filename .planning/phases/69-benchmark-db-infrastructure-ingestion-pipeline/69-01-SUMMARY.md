@@ -43,8 +43,8 @@ patterns-established:
 requirements-completed: [INFRA-01]
 
 # Metrics
-duration: ~5min (paused at checkpoint, manual verification pending)
-completed: 2026-04-25
+duration: ~5min (code) + manual checkpoint resolution
+completed: 2026-04-26
 ---
 
 # Phase 69 Plan 01: Benchmark DB Infrastructure Summary
@@ -53,15 +53,15 @@ completed: 2026-04-25
 
 ## Status
 
-**PAUSED at checkpoint Task 01-04 (human-verify).** Tasks 01-01, 01-02, 01-03 complete and committed. Task 01-04 requires the user to start Docker Desktop / dev tooling locally and run `bin/benchmark_db.sh start` plus the privilege check queries documented in the plan. The orchestrator/user owns this verification step.
+**COMPLETE.** Tasks 01-01..01-03 committed by the executor. Task 01-04 (manual smoke verification) was run by the user; one finding (RO SELECT default-privileges scoping bug) was fixed during the checkpoint and verified live: container healthy on 5433, alembic_version + canonical tables present, `has_table_privilege(flawchess_benchmark_ro, games, SELECT)=t / INSERT=f`, ports 5432/5433 isolated.
 
 ## Performance
 
-- **Duration so far:** ~5 min
+- **Duration:** ~5 min code + ~10 min checkpoint round-trip (RO grant fix)
 - **Started:** 2026-04-25T20:30:00Z
-- **Paused at checkpoint:** 2026-04-25T20:33:00Z
-- **Tasks completed:** 3 of 4 (code tasks); Task 04 is manual checkpoint
-- **Files created:** 3
+- **Code tasks completed:** 3
+- **Manual checkpoint completed:** 2026-04-26 (with one fix landing during verification)
+- **Files created:** 3 (and a follow-up edit to two of them)
 
 ## Accomplishments
 
@@ -74,7 +74,7 @@ completed: 2026-04-25
 1. **Task 01-01: Create docker-compose.benchmark.yml** - `eb52b0f` (feat)
 2. **Task 01-02: Create deploy/init-benchmark-db.sql** - `78733c6` (feat)
 3. **Task 01-03: Create bin/benchmark_db.sh** - `20d6f87` (feat)
-4. **Task 01-04: Manual smoke verification** - **PENDING** (human-verify checkpoint, not executed by agent)
+4. **Task 01-04: Manual smoke verification** — RAN BY USER 2026-04-26. Step 4 (RO SELECT) initially returned `s=f`; fix landed in this commit (init SQL scoped + `ensure_ro_grants` step in lifecycle script). Re-verified `s=t, i=f` live; SELECT-then-INSERT behavioral probe also confirms read works and write is denied.
 
 ## Files Created/Modified
 
@@ -88,11 +88,14 @@ None beyond what the plan specified. The plan was prescriptive (exact SQL, exact
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+None at the structural level. One **fix applied during checkpoint verification**:
+- The original `init-benchmark-db.sql` set `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ...`. Without `FOR ROLE flawchess_benchmark`, the grant was scoped to the `postgres` session role running the init script. Tables created later by Alembic as `flawchess_benchmark` therefore did not inherit SELECT, and `has_table_privilege('flawchess_benchmark_ro', 'games', 'SELECT')` returned `f` instead of `t`.
+- Fix: scoped the `ALTER DEFAULT PRIVILEGES` to `FOR ROLE flawchess_benchmark` (covers both tables and sequences) AND added an idempotent `ensure_ro_grants()` step in `bin/benchmark_db.sh` that runs after every `start`/`reset`. The lifecycle step also retroactively grants SELECT on existing tables, so the user did not need a `reset` to recover. Verified live: `s=t, i=f`, and a behavioral SELECT-then-INSERT probe as `flawchess_benchmark_ro` confirmed read works and write is denied.
 
 ## Issues Encountered
 
-None. One transient verification false-negative: chaining a grep of `'$BENCHMARK_DB_URL'` with `&& ...` in Bash interpreted the variable in the chained command, masking a successful match. Re-running with `grep -F` confirmed the file content was correct. No code change needed; tracking here so future verifiers do not get confused by the same shell-quoting interaction.
+- See deviation above (default-privileges scoping bug, fixed at checkpoint).
+- One transient verification false-negative during executor self-check: chaining a grep of `'$BENCHMARK_DB_URL'` with `&& ...` in Bash interpreted the variable in the chained command, masking a successful match. Re-running with `grep -F` confirmed the file content was correct. No code change needed; tracking here so future verifiers do not get confused by the same shell-quoting interaction.
 
 ## Threat Model Coverage
 
