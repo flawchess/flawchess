@@ -287,10 +287,12 @@ async def get_most_played_openings(
         opponent_strength=opponent_strength,
         elo_threshold=elo_threshold,
     )
+    # Row tuple shape: (eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses)
+    # full_hash sits at index 5 after the display_name column was added (PRE-01).
     white_position_wdl = await query_position_wdl_batch(
         session,
         user_id,
-        [row[4] for row in white_rows if row[4] is not None],
+        [row[5] for row in white_rows if row[5] is not None],
         color="white",
         time_control=filter_params["time_control"],
         platform=filter_params["platform"],
@@ -303,7 +305,7 @@ async def get_most_played_openings(
     black_position_wdl = await query_position_wdl_batch(
         session,
         user_id,
-        [row[4] for row in black_rows if row[4] is not None],
+        [row[5] for row in black_rows if row[5] is not None],
         color="black",
         time_control=filter_params["time_control"],
         platform=filter_params["platform"],
@@ -319,7 +321,7 @@ async def get_most_played_openings(
         position_wdl: dict,
     ) -> list[OpeningWDL]:
         openings = []
-        for eco, name, pgn, fen, full_hash, total, wins, draws, losses in rows:
+        for eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses in rows:
             # Use position-based WDL if available, falling back to
             # opening-name WDL for openings without a hash
             pos = position_wdl.get(full_hash) if full_hash else None
@@ -335,6 +337,7 @@ async def get_most_played_openings(
                 OpeningWDL(
                     opening_eco=eco,
                     opening_name=name,
+                    display_name=display_name,
                     label=f"{name} ({eco})",
                     pgn=pgn,
                     fen=fen,

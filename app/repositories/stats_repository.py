@@ -17,6 +17,7 @@ from sqlalchemy import (
     case,
     cast,
     func,
+    literal,
     or_,
     select,
 )
@@ -223,8 +224,10 @@ async def query_top_openings_sql_wdl(
     """Return top openings with SQL-side WDL aggregation.
 
     JOINs games to openings_dedup to get pgn/fen and filter by min_ply.
-    Returns (eco, name, pgn, fen, total, wins, draws, losses) tuples.
-    Uses func.count().filter() for SQL-side WDL — no Python-side aggregation.
+    Returns (eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses)
+    tuples. `display_name` equals `name` when the opening's defining ply parity
+    matches `color`, else `f"vs. {name}"`. Uses func.count().filter() for SQL-side
+    WDL — no Python-side aggregation.
     """
     win_cond = or_(
         and_(Game.result == "1-0", Game.user_color == "white"),
@@ -236,10 +239,27 @@ async def query_top_openings_sql_wdl(
         and_(Game.result == "1-0", Game.user_color == "black"),
     )
 
+    # 2026-04-26 (PRE-01): the parity filter `ply_count % 2 == user_parity` was
+    # removed from the WHERE clause. Previously it excluded ~half of all named
+    # ECO openings per color (e.g. black users never saw white-defined openings
+    # like "Caro-Kann Defense: Hillbilly Attack" despite playing them). Off-color
+    # rows are now surfaced with a `vs. ` prefix on a new `display_name` column,
+    # so the row label still reads naturally without dropping coverage.
+    # White openings end on odd ply (white's last move), black on even ply.
+    user_parity = 1 if color == "white" else 0
+    display_name_col = case(
+        (
+            _openings_dedup.c.ply_count % 2 != user_parity,
+            literal("vs. ") + Game.opening_name,
+        ),
+        else_=Game.opening_name,
+    ).label("display_name")
+
     stmt = (
         select(
             Game.opening_eco,
             Game.opening_name,
+            display_name_col,
             _openings_dedup.c.pgn,
             _openings_dedup.c.fen,
             _openings_dedup.c.full_hash,
@@ -261,12 +281,15 @@ async def query_top_openings_sql_wdl(
             Game.opening_eco.is_not(None),
             Game.opening_name.is_not(None),
             _openings_dedup.c.ply_count >= min_ply,
-            # White openings end on odd ply (white's last move), black on even ply
-            _openings_dedup.c.ply_count % 2 == (1 if color == "white" else 0),
         )
         .group_by(
             Game.opening_eco,
             Game.opening_name,
+            # display_name is a deterministic CASE on opening_name + ply_count;
+            # PostgreSQL requires it (or its inputs) in GROUP BY. ply_count is
+            # functionally determined by (eco, name) within openings_dedup, so
+            # grouping by ply_count keeps the CASE evaluable per group.
+            _openings_dedup.c.ply_count,
             _openings_dedup.c.pgn,
             _openings_dedup.c.fen,
             _openings_dedup.c.full_hash,

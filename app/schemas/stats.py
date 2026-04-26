@@ -42,11 +42,12 @@ class OpeningWDL(BaseModel):
     """WDL stats for a single opening, with ECO code, PGN, FEN, and display label."""
 
     opening_eco: str
-    opening_name: str
-    label: str          # "Opening Name (ECO)" — precomputed for UI
-    pgn: str            # PGN move sequence for display
-    fen: str            # Full FEN (with side-to-move/castling) for miniboard and bookmark creation
-    full_hash: str      # String representation of 64-bit Zobrist full hash for synthetic bookmark construction
+    opening_name: str  # canonical name, used for FEN/bookmark lookups
+    display_name: str  # canonical name with "vs. " prefix when off-color (PRE-01)
+    label: str  # "Opening Name (ECO)" — precomputed for UI
+    pgn: str  # PGN move sequence for display
+    fen: str  # Full FEN (with side-to-move/castling) for miniboard and bookmark creation
+    full_hash: str  # String form of 64-bit Zobrist full hash, for synthetic bookmark construction
     wins: int
     draws: int
     losses: int
