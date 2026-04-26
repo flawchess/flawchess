@@ -117,14 +117,6 @@ class Game(Base):
     white_blunders: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     black_blunders: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
-    # Eval metadata, populated for Lichess imports; NULL for chess.com (Phase 69 INGEST-06).
-    # eval_depth is NULL for all current Lichess API imports: the /api/games/user
-    # endpoint does not expose depth in the NDJSON JSON object (evals=true only adds
-    # [%eval] PGN annotations). Column is ready if the API surfaces depth in future.
-    # eval_source_version is the constant "lichess-pgn" for Lichess imports, NULL otherwise.
-    eval_depth: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
-    eval_source_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
-
     # Timestamps
     played_at: Mapped[datetime.datetime | None]
     imported_at: Mapped[datetime.datetime] = mapped_column(

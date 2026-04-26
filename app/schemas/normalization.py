@@ -58,6 +58,3 @@ class NormalizedGame(BaseModel):
     black_mistakes: int | None = None
     white_blunders: int | None = None
     black_blunders: int | None = None
-    # Eval metadata, populated for Lichess imports; NULL for chess.com (Phase 69 INGEST-06)
-    eval_depth: int | None = None
-    eval_source_version: str | None = None
