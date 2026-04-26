@@ -19,14 +19,14 @@ progress:
 
 Phase: 70 — Backend opening insights service (not started)
 Plan: —
-Status: Roadmap created; awaiting `/gsd-discuss-phase 70` after PRE-01 lands
+Status: Roadmap created; PRE-01 landed; ready for `/gsd-discuss-phase 70`
 Last activity: 2026-04-26 — v1.13 roadmap created (Phases 70-74)
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-04-26)
 Core value: Users can determine their success rate for any opening position they specify
-Current focus: v1.13 (SEED-005 Opening Insights). Roadmap covers Phases 70-74; pre-v1.13 quick tasks PRE-01 (top-10 parity-filter fix) and PRE-02 (v1.11 VAL-01 snapshot test) gate Phase 70's start. SEED-006 (Benchmark population zone recalibration) holds the deferred classifier-validation phases until full benchmark ingest completes.
+Current focus: v1.13 (SEED-005 Opening Insights). Roadmap covers Phases 70-74; pre-v1.13 quick task PRE-01 (top-10 parity-filter fix) landed 2026-04-26; Phase 70 ready to start. SEED-006 (Benchmark population zone recalibration) holds the deferred classifier-validation phases until full benchmark ingest completes.
 
 ## Milestone Progress
 
@@ -53,7 +53,6 @@ Acknowledged at v1.12 milestone close on 2026-04-26:
 |----------|------|--------|
 | requirements | Plan 69-06 sub-task 06-05 (`--per-cell 30` interim ingest) | Descoped — operational ops, not milestone gate (per 2026-04-26 v1.12 scope-down) |
 | requirements | Plan 69-06 sub-task 06-08 (manual cleanup of 2026-03 Lichess dump file) | Pending manual cleanup on Adrian's local disk |
-| requirements | VAL-01 from v1.11 (insights snapshot test) | Pre-v1.13 `/gsd-quick` candidate (PRE-02); no benchmark dependency |
 | requirements | VAL-01 / VAL-02 / VAL-03 / VAL-04 / BENCH-01..04 | Moved to SEED-006 (gated on full benchmark ingest) |
 | tech debt | Pre-existing ORM/DB column drift (game_positions.clock_seconds, games.white_accuracy, games.black_accuracy) | Deferred again — cleanup migration outstanding from v1.11 |
 | ops | Full benchmark DB ingest (`--per-cell 100`, ~205 GB projected) | Operational task; entry criterion for SEED-006 |
@@ -76,14 +75,12 @@ Carried forward from v1.11 close (still relevant):
 
 ### Pending Todos
 
-- **PRE-02** (gating Phase 70) — v1.11 VAL-01 insights snapshot test against canonical user fixture.
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
 
 ### Blockers/Concerns
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
-- Phase 70 still gated on PRE-02 (insights snapshot test); PRE-01 landed 2026-04-26.
 
 ### Quick Tasks Completed
 
@@ -96,4 +93,4 @@ Carried forward from v1.11 close (still relevant):
 | 260426-pbo | Drop parity filter on top-10 openings, prefix off-color rows with "vs." (PRE-01) | 2026-04-26 | 3301ff5 | [260426-pbo-drop-parity-filter-on-top-10-openings-pr](./quick/260426-pbo-drop-parity-filter-on-top-10-openings-pr/) |
 
 ---
-Last activity: 2026-04-26 — Completed quick task 260426-pbo (PRE-01): dropped parity filter on top-10 openings, off-color rows now render with "vs." prefix. Next: PRE-02 (insights snapshot test), then `/gsd-discuss-phase 70`.
+Last activity: 2026-04-26 — Completed quick task 260426-pbo (PRE-01): dropped parity filter on top-10 openings, off-color rows now render with "vs." prefix. Next: `/gsd-discuss-phase 70`.

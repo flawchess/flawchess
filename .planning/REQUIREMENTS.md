@@ -41,7 +41,6 @@
 ## Pre-v1.13 Quick Tasks (gate before Phase A starts building on the algo)
 
 - [ ] **PRE-01**: Drop the parity filter from `query_top_openings_sql_wdl` (`app/repositories/stats_repository.py:264-265`). 48% of named ECO openings (1599 of 3301) are white-defined and currently invisible in the black top-10; verified against Hillbilly Attack (816 black games in dev DB, currently filtered out). See `.planning/todos/pending/2026-04-26-top10-openings-parity-bug.md`.
-- [ ] **PRE-02**: v1.11 VAL-01 — insights snapshot test against a canonical user fixture. Independent of v1.13 scope but a useful regression guard if v1.13 introduces shared insight infrastructure.
 
 ## Future Requirements (deferred)
 
@@ -60,7 +59,7 @@
 
 ## Traceability
 
-PRE-01 and PRE-02 are pre-v1.13 quick tasks gating Phase 70 — intentionally not mapped to a phase.
+PRE-01 is a pre-v1.13 quick task gating Phase 70 — intentionally not mapped to a phase.
 
 | REQ-ID | Phase |
 |--------|-------|
