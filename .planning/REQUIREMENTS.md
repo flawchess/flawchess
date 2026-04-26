@@ -11,7 +11,7 @@
 ### Benchmark DB Infrastructure (INFRA)
 
 - [ ] **INFRA-01**: Separate `flawchess-benchmark` PostgreSQL 18 instance, deployed via `docker-compose.benchmark.yml`, isolated from dev/prod
-- [ ] **INFRA-02**: Benchmark DB uses the **same canonical schema and Alembic migrations** as dev/prod/test — no schema fork, no benchmark-only tables. Lichess `[%eval` annotations populate the existing `game_positions.eval_cp` and `game_positions.eval_mate` columns
+- [ ] **INFRA-02**: Benchmark DB uses the **same canonical analytical schema and Alembic migrations** as dev/prod/test — no fork or benchmark-only variant of the games / game_positions tables. Lichess `[%eval` annotations populate the existing `game_positions.eval_cp` and `game_positions.eval_mate` columns. Benchmark-only **ops tables** (currently `benchmark_selected_users`, `benchmark_ingest_checkpoints`) that exist solely to drive the ingest orchestrator are exempt: they live only in the benchmark DB, are created via `Base.metadata.create_all()` against the benchmark engine on first invocation, and are never touched by dev/prod/test. Decision rationale: RESEARCH.md §15 Q3, plans 69-04 / 69-05.
 - [ ] **INFRA-03**: Read-only MCP server `flawchess-benchmark-db` configured and documented in `CLAUDE.md` §Database Access alongside the existing two MCP DB servers
 
 ### Ingestion Pipeline (INGEST)
