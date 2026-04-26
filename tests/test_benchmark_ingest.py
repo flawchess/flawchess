@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 
 import chess.pgn
+import pytest
 
 from app.schemas.normalization import NormalizedGame
 
@@ -277,3 +278,78 @@ def test_scan_dump_parser_extracts_headers_and_eval_flag() -> None:
 
     assert r1["white"] == "carol"
     assert r1["has_eval"] is False
+
+
+# --- INGEST-04: stub User invariants, outlier skip, cell deficit ---------------------
+
+
+@pytest.mark.asyncio
+async def test_stub_user_invariants() -> None:
+    """create_stub_user returns an int id; row passes FastAPI-Users invariants but cannot auth.
+
+    Idempotent: calling with the same username returns the same id without inserting twice.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    from scripts.import_benchmark_users import create_stub_user
+
+    # First call: no existing row -> returns new id
+    session = MagicMock()
+    session.execute = AsyncMock()
+    # Mock the SELECT for existing user to return None
+    no_user_result = MagicMock()
+    no_user_result.scalar_one_or_none = MagicMock(return_value=None)
+    session.execute.return_value = no_user_result
+    session.add = MagicMock()
+    session.flush = AsyncMock()
+
+    # Capture the User object that gets added
+    from app.models.user import User as _User
+
+    added_user: dict[str, _User] = {}
+
+    def _capture(obj: _User) -> None:
+        added_user["obj"] = obj
+        # Simulate flush assigning an id
+        obj.id = 42
+
+    session.add.side_effect = _capture
+
+    new_id = await create_stub_user(session, "alice")
+
+    assert new_id == 42
+    user_obj = added_user["obj"]
+    assert user_obj.email == "lichess-alice@benchmark.flawchess.local"
+    assert user_obj.lichess_username == "alice"
+    assert user_obj.is_active is False
+    assert user_obj.hashed_password == "!BENCHMARK_NO_AUTH"
+    assert user_obj.is_guest is False
+
+
+def test_outlier_hard_skip_threshold() -> None:
+    """_should_hard_skip returns True at >= 20_000 games (D-14)."""
+    from scripts.import_benchmark_users import _should_hard_skip
+
+    assert _should_hard_skip(19_999) is False
+    assert _should_hard_skip(20_000) is True
+    assert _should_hard_skip(20_001) is True
+    assert _should_hard_skip(0) is False
+
+
+def test_compute_deficit_users_skips_completed_in_pool_order() -> None:
+    """compute_deficit_users draws (N - completed_in_cell) usernames in pool order."""
+    from scripts.import_benchmark_users import compute_deficit_users
+
+    pool = ["u1", "u2", "u3", "u4", "u5"]
+    completed = {"u1", "u2"}
+    # Deficit = 3 - 2 (already completed in pool) = 1; draw next from pool skipping completed
+    out = compute_deficit_users(pool=pool, completed=completed, target_n=3)
+    assert out == ["u3"]
+
+    # If target already met: empty list
+    out2 = compute_deficit_users(pool=pool, completed={"u1", "u2", "u3"}, target_n=3)
+    assert out2 == []
+
+    # If pool is exhausted before target: return what is available
+    out3 = compute_deficit_users(pool=["u1", "u2"], completed=set(), target_n=10)
+    assert out3 == ["u1", "u2"]
