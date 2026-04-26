@@ -203,7 +203,12 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
   3. Each (entry_position, candidate_move) pair with n ≥ 10 games is classified `weakness` (loss_rate ≥ 0.55), `strength` (score ≥ 0.60), or dropped as neutral; findings are deduplicated by Zobrist hash with deepest-opening attribution.
   4. Findings are ranked by frequency × severity (formula resolved in Phase 70 `/gsd-discuss-phase`) and capped at the configurable display ceiling (default top 5 weaknesses + top 3 strengths).
   5. Latency budget — typical user (≤ ~2k games) sees on-the-fly responses without precompute; service-layer caching is added only if heavy users (10k+) breach the budget.
-**Plans**: TBD
+**Plans**: 5 plans
+  - [x] 70-01-PLAN.md — Pydantic schemas (Request/Finding/Response) + Wave 0 test scaffolding
+  - [x] 70-02-PLAN.md — Alembic CONCURRENTLY migration adding ix_gp_user_game_ply + GamePosition.__table_args__
+  - [x] 70-03-PLAN.md — Repository: query_opening_transitions (LAG CTE) + query_openings_by_hashes
+  - [x] 70-04-PLAN.md — Service: compute_insights() classify/attribute/dedupe/rank/cap pipeline
+  - [x] 70-05-PLAN.md — Router POST /openings + REQUIREMENTS/ROADMAP/CHANGELOG amendments per D-15/D-16/D-17
 
 ### Phase 71: Frontend Stats subtab — `OpeningInsightsBlock`
 **Goal**: Users see ranked weakness and strength bullets on Openings → Stats subtab, with deep-links that navigate to Openings → Moves pre-loaded at the entry FEN with the candidate move highlighted.
@@ -277,7 +282,7 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
 | 48, 52-62. v1.10 phases | v1.10 | 28/28 | Complete | 2026-04-19 |
 | 63-68. v1.11 phases | v1.11 | 23/23 | Complete (Phase 67 descoped) | 2026-04-24 |
 | 69. Benchmark DB Infra & Ingestion Pipeline | v1.12 | 6/6 | Complete (follow-on phases deferred to SEED-006) | 2026-04-26 |
-| 70. Backend opening insights service | v1.13 | 0/0 | Not started | — |
+| 70. Backend opening insights service | v1.13 | 5/5 | Complete   | 2026-04-26 |
 | 71. `OpeningInsightsBlock` (Stats subtab) | v1.13 | 0/0 | Not started | — |
 | 72. Inline bullets (Moves subtab) | v1.13 | 0/0 | Not started | — |
 | 73. Meta-recommendation (stretch) | v1.13 | 0/0 | Not started | — |
@@ -289,7 +294,7 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 6/6 plans complete
+**Plans:** 5/5 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

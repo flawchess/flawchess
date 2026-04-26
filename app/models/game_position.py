@@ -32,6 +32,20 @@ class GamePosition(Base):
             postgresql_where=text("endgame_class IS NOT NULL"),
             postgresql_include=["material_imbalance"],
         ),
+        # Phase 70 (v1.13): partial composite covering index for the
+        # opening_insights_service transition aggregation. COLUMN ORDER
+        # (user_id, game_id, ply) is LOAD-BEARING — matches LAG's
+        # PARTITION BY game_id ORDER BY ply, so PostgreSQL streams rows
+        # from the index without a re-sort (Index Only Scan, Heap Fetches: 0).
+        # Do NOT reorder for symmetry with sibling ix_gp_user_* indexes.
+        # See alembic migration 20260426_201533_80e22b38993a_add_gp_user_game_ply_index.py
+        # for full rationale and verified perf numbers (Hikaru 65k games -> 816 ms).
+        Index(
+            "ix_gp_user_game_ply",
+            "user_id", "game_id", "ply",
+            postgresql_where=text("ply BETWEEN 1 AND 17"),
+            postgresql_include=["full_hash", "move_san"],
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

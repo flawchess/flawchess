@@ -99,13 +99,13 @@ async def _seed_game(
         from sqlalchemy import select as _select
         from app.models.game_position import GamePosition
         from app.repositories.stats_repository import _openings_dedup
-        result = await session.execute(
+        opening_lookup = await session.execute(
             _select(_openings_dedup.c.full_hash, _openings_dedup.c.ply_count)
             .where(_openings_dedup.c.eco == opening_eco)
             .where(_openings_dedup.c.name == opening_name)
             .limit(1)
         )
-        row = result.first()
+        row = opening_lookup.first()
         if row is not None:
             full_hash, ply_count = row
             session.add(

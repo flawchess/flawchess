@@ -14,6 +14,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 - "Most Played Openings as White/Black" info popovers updated to describe position-based counting, the 3-half-move minimum, and the `vs.` prefix.
+- **Phase 70**: Reframed opening insights discovery algorithm from a top-10-most-played x per-position next-moves scan to a single first-principles SQL transition aggregation over `game_positions` for entry plies in `[3, 16]` with `n_games >= 20` evidence floor. Classifier `score = (W + D/2)/n >= 0.55` replaced by separate `loss_rate > 0.55` (weakness) / `win_rate > 0.55` (strength) thresholds, aligning with the strict `>` boundary in `frontend/src/lib/arrowColor.ts`. Bookmarks are no longer consumed by the discovery algorithm. Adds new partial composite covering index `ix_gp_user_game_ply` to keep heaviest users (~5.7M positions) inside the <1 s latency budget without precompute.
 
 ## [v1.12] Benchmark DB Infrastructure & Ingestion Pipeline — 2026-04-26
 
