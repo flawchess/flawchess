@@ -18,8 +18,10 @@ import pytest
 
 from app.models.opening import Opening
 from app.schemas.opening_insights import OpeningInsightsRequest, OpeningInsightsResponse
+from app.services.opening_insights_constants import (
+    OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE as MIN_GAMES_PER_CANDIDATE,
+)
 from app.services.opening_insights_service import (
-    MIN_GAMES_PER_CANDIDATE,
     WEAKNESS_CAP_PER_COLOR,
     STRENGTH_CAP_PER_COLOR,
     _classify_row,
