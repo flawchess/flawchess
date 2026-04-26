@@ -106,7 +106,7 @@ def _install_signal_handler() -> None:
 def _log(msg: str = "") -> None:
     """Print a message prefixed with a UTC timestamp (second precision)."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{ts}] {msg}")
+    print(f"[{ts}] {msg}", flush=True)
 
 
 # --------------------------------------------------------------------------------------
