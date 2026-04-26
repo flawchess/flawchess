@@ -4,14 +4,24 @@ import datetime
 from collections.abc import Sequence
 from typing import Any, Literal
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import Float, and_, case, cast, func, or_, select
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.models.opening import Opening
 from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD, apply_game_filters
+
+# Phase 70 (v1.13) — opening insights transition aggregation. Mirrors
+# frontend/src/lib/arrowColor.ts thresholds (CI-enforced via
+# tests/services/test_opening_insights_arrow_consistency.py).
+# The service module re-imports these so there is exactly ONE definition.
+OPENING_INSIGHTS_MIN_ENTRY_PLY: int = 3
+OPENING_INSIGHTS_MAX_ENTRY_PLY: int = 16
+OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE: int = 20
+OPENING_INSIGHTS_LIGHT_THRESHOLD: float = 0.55
 
 # Maps match_side values to the corresponding GamePosition hash column.
 HASH_COLUMN_MAP = {
@@ -479,3 +489,171 @@ async def query_transposition_counts(
 
     rows = await session.execute(stmt)
     return {row.result_hash: row.transposition_count for row in rows}
+
+
+async def query_opening_transitions(
+    session: AsyncSession,
+    user_id: int,
+    color: Literal["white", "black"],
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    recency_cutoff: datetime.datetime | None,
+    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+) -> list[Row[Any]]:
+    """Aggregate (entry_hash, candidate_san) transitions for one user & color.
+
+    Single CTE with a LAG window function derives entry_hash from the prior
+    ply within each game. The outer query joins to games, applies user
+    filters, groups by (entry_hash, candidate_san), and HAVING-filters to
+    n>=20 candidates whose win_rate or loss_rate strictly exceeds 0.55.
+
+    Returns one Row per surviving (entry_hash, move_san) pair with attrs:
+        entry_hash: int        (BIGINT in PG, never NULL in output)
+        move_san: str          (the candidate move SAN, never NULL)
+        resulting_full_hash: int  (candidate position's full_hash, for D-21 dedupe)
+        entry_san_sequence: list[str]  (SAN tokens from start up to entry position,
+                                        candidate move excluded; for D-34 FEN replay)
+        n: int                 (count of distinct games)
+        w: int, d: int, l: int (filtered counts)
+
+    Returns [] when the user has no qualifying transitions. Uses
+    PostgreSQL ix_gp_user_game_ply for an index-only scan (Heap Fetches: 0).
+    See CONTEXT.md D-30, D-31, D-32, D-33 and RESEARCH.md Pattern 2.
+    """
+    transitions_cte = (
+        select(
+            GamePosition.game_id.label("game_id"),
+            GamePosition.ply.label("ply"),
+            GamePosition.move_san.label("move_san"),
+            # Per BLOCKER-6 / D-21: surface the candidate's full_hash so the service
+            # can dedupe within section by `resulting_full_hash`.
+            GamePosition.full_hash.label("resulting_full_hash"),
+            func.lag(GamePosition.full_hash).over(
+                partition_by=GamePosition.game_id,
+                order_by=GamePosition.ply,
+            ).label("entry_hash"),
+            # Per BLOCKER-1 / D-25 / D-34: the SAN tokens up to and including the
+            # ENTRY position (NOT the candidate). The service replays this with
+            # python-chess to reconstruct entry_fen and to walk the parent-hash
+            # lineage when direct attribution misses.
+            # ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING covers all moves
+            # up to (but not including) the current row — i.e. the entry's SAN sequence.
+            # rows=(None, -1) maps to BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING in SQLAlchemy.
+            func.array_agg(GamePosition.move_san).over(
+                partition_by=GamePosition.game_id,
+                order_by=GamePosition.ply,
+                rows=(None, -1),
+            ).label("entry_san_sequence"),
+        )
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.ply.between(1, OPENING_INSIGHTS_MAX_ENTRY_PLY + 1),  # 1..17 — matches partial index predicate
+        )
+        .cte("transitions")
+    )
+
+    # Win/Loss/Draw conditions copied from stats_repository.query_top_openings_sql_wdl:240-248.
+    win_cond = or_(
+        and_(Game.result == "1-0", Game.user_color == "white"),
+        and_(Game.result == "0-1", Game.user_color == "black"),
+    )
+    draw_cond = Game.result == "1/2-1/2"
+    loss_cond = or_(
+        and_(Game.result == "0-1", Game.user_color == "white"),
+        and_(Game.result == "1-0", Game.user_color == "black"),
+    )
+
+    n_games = func.count(func.distinct(Game.id))
+    wins = func.count(func.distinct(Game.id)).filter(win_cond)
+    draws = func.count(func.distinct(Game.id)).filter(draw_cond)
+    losses = func.count(func.distinct(Game.id)).filter(loss_cond)
+
+    stmt = (
+        select(
+            transitions_cte.c.entry_hash.label("entry_hash"),
+            transitions_cte.c.move_san.label("move_san"),
+            # BLOCKER-6: pass through the candidate's full_hash for dedupe (D-21).
+            # All games with the same (entry_hash, move_san) lead to the same resulting
+            # position, so min() is a safe deterministic aggregate.
+            func.min(transitions_cte.c.resulting_full_hash).label("resulting_full_hash"),
+            # BLOCKER-1 / D-34: pass through the entry SAN sequence so the service
+            # can both reconstruct entry_fen via python-chess replay AND walk the
+            # parent-hash lineage when direct attribution misses. Aggregated at
+            # GROUP BY level via min() — identical sequences across game instances
+            # of the same (entry_hash, move_san) all share the same prefix.
+            func.min(transitions_cte.c.entry_san_sequence).label("entry_san_sequence"),
+            n_games.label("n"),
+            wins.label("w"),
+            draws.label("d"),
+            losses.label("l"),
+        )
+        .select_from(transitions_cte)
+        .join(Game, Game.id == transitions_cte.c.game_id)
+        .where(
+            Game.user_id == user_id,
+            Game.user_color == color,                             # explicit per-color filter (RESEARCH.md anti-pattern note)
+            transitions_cte.c.entry_hash.is_not(None),           # drops first-ply rows
+            transitions_cte.c.move_san.is_not(None),             # drops final-position rows
+            transitions_cte.c.ply.between(
+                OPENING_INSIGHTS_MIN_ENTRY_PLY + 1,              # candidate ply 4..17 (entry ply 3..16)
+                OPENING_INSIGHTS_MAX_ENTRY_PLY + 1,
+            ),
+        )
+        .group_by(transitions_cte.c.entry_hash, transitions_cte.c.move_san)
+        .having(
+            and_(
+                n_games >= OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
+                or_(
+                    cast(wins, Float) / cast(n_games, Float) > OPENING_INSIGHTS_LIGHT_THRESHOLD,
+                    cast(losses, Float) / cast(n_games, Float) > OPENING_INSIGHTS_LIGHT_THRESHOLD,
+                ),
+            )
+        )
+    )
+    # Embed shared filter helpers AFTER the join so user_color overlap doesn't double-filter.
+    # color=None passed to apply_game_filters because per-color is already explicit above.
+    stmt = apply_game_filters(
+        stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        color=None,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
+    )
+
+    result = await session.execute(stmt)
+    return list(result.all())
+
+
+async def query_openings_by_hashes(
+    session: AsyncSession,
+    full_hashes: list[int],
+) -> dict[int, Opening]:
+    """Return {full_hash: deepest matching Opening} for each input hash.
+
+    "Deepest" = MAX(ply_count) among rows whose Opening.full_hash matches.
+    Hashes with no match are absent from the result dict (the service
+    falls back to lineage walk per D-23).
+
+    See CONTEXT.md D-22, RESEARCH.md Pitfall 6 (NULL full_hash filter).
+    """
+    if not full_hashes:
+        return {}
+    stmt = select(Opening).where(
+        Opening.full_hash.is_not(None),
+        Opening.full_hash.in_(full_hashes),
+    )
+    rows = await session.execute(stmt)
+    by_hash: dict[int, Opening] = {}
+    for opening in rows.scalars():
+        assert opening.full_hash is not None  # for ty: covered by SQL is_not(None)
+        existing = by_hash.get(opening.full_hash)
+        if existing is None or opening.ply_count > existing.ply_count:
+            by_hash[opening.full_hash] = opening
+    return by_hash
