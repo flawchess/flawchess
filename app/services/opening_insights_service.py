@@ -31,18 +31,19 @@ from app.schemas.opening_insights import (
     OpeningInsightsRequest,
     OpeningInsightsResponse,
 )
+from app.services.opening_insights_constants import (
+    OPENING_INSIGHTS_LIGHT_THRESHOLD as LIGHT_THRESHOLD,
+)
 from app.services.openings_service import recency_cutoff
 
 # ---------------------------------------------------------------------------
 # Phase 70 thresholds. Mirror frontend/src/lib/arrowColor.ts so opening
 # insights and board arrow colors stay in lock-step (CI-enforced via
 # tests/services/test_opening_insights_arrow_consistency.py).
+# Shared thresholds (also used by the SQL HAVING clause in the repository)
+# are imported from app.services.opening_insights_constants above.
 # ---------------------------------------------------------------------------
 
-MIN_ENTRY_PLY: int = 3
-MAX_ENTRY_PLY: int = 16
-MIN_GAMES_PER_CANDIDATE: int = 20
-LIGHT_THRESHOLD: float = 0.55  # arrowColor.ts LIGHT_COLOR_THRESHOLD/100
 DARK_THRESHOLD: float = 0.60  # arrowColor.ts DARK_COLOR_THRESHOLD/100
 WEAKNESS_CAP_PER_COLOR: int = 5
 STRENGTH_CAP_PER_COLOR: int = 3

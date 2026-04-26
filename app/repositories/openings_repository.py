@@ -13,15 +13,12 @@ from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.models.opening import Opening
 from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD, apply_game_filters
-
-# Phase 70 (v1.13) — opening insights transition aggregation. Mirrors
-# frontend/src/lib/arrowColor.ts thresholds (CI-enforced via
-# tests/services/test_opening_insights_arrow_consistency.py).
-# The service module re-imports these so there is exactly ONE definition.
-OPENING_INSIGHTS_MIN_ENTRY_PLY: int = 3
-OPENING_INSIGHTS_MAX_ENTRY_PLY: int = 16
-OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE: int = 20
-OPENING_INSIGHTS_LIGHT_THRESHOLD: float = 0.55
+from app.services.opening_insights_constants import (
+    OPENING_INSIGHTS_LIGHT_THRESHOLD,
+    OPENING_INSIGHTS_MAX_ENTRY_PLY,
+    OPENING_INSIGHTS_MIN_ENTRY_PLY,
+    OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
+)
 
 # Maps match_side values to the corresponding GamePosition hash column.
 HASH_COLUMN_MAP = {
