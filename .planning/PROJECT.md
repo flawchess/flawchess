@@ -98,14 +98,22 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Provider-agnostic model selection — `PYDANTIC_AI_MODEL_INSIGHTS` env var, startup validation, system prompt versioned in `app/prompts/endgame_insights.md` — v1.11 Phase 65
 - ✓ Frontend `EndgameInsightsBlock` — parent-lifted mutation state, overview + 4 inline Section blocks, single retry affordance on failure — v1.11 Phase 66
 - ✓ Dual-line Endgame vs Non-Endgame Score over Time chart — replaces single-line Score Gap chart with shaded gap fill (green when endgame leads, red when trails); prompt simplified — v1.11 Phase 68
+- ✓ Isolated `flawchess-benchmark` PostgreSQL 18 instance on port 5433, deployed via `docker-compose.benchmark.yml` with read-only MCP role, `bin/benchmark_db.sh` lifecycle script, and Alembic-driven schema parity with dev/prod/test (no schema fork) — v1.12 Phase 69
+- ✓ Third read-only MCP server `flawchess-benchmark-db` registered and documented in `CLAUDE.md` Database Access section — v1.12 Phase 69
+- ✓ Resumable Lichess monthly-dump ingestion pipeline with `zgrep`-streaming eval pre-filter, per-user checkpoint, idempotent inserts via existing `(platform, platform_game_id)` unique constraint, SIGINT + SIGKILL safety — v1.12 Phase 69
+- ✓ Stratified subsampling at the player-opportunity level on (rating_bucket × time_control) — 5 buckets × 4 TCs, separate `WhiteElo` / `BlackElo` per side; smoke-validated via `--per-cell 3` ingest of 274k games / 19.4M positions in 3h 6min — v1.12 Phase 69
+- ✓ Centipawn convention (signed from white's POV, centipawns vs pawn-units) verified by `tests/test_benchmark_ingest.py::test_centipawn_convention_signed_from_white` running in CI — v1.12 Phase 69
 
 ### Active
 
-- [ ] Benchmark ingestion pipeline (separate `flawchess-benchmark` Postgres + 3rd MCP server, Lichess monthly-dump ingest, populates existing `game_positions.eval_cp`/`eval_mate` columns) — v1.12
-- [ ] Classifier validation replication at 10–100x scale (Phase B gate) — v1.12
-- [ ] Rating-stratified material-vs-eval offset analysis — v1.12
-- [ ] Parity proxy validation against Stockfish eval — v1.12
-- [ ] `/benchmarks` skill upgrade — population baselines and rating-bucketed zone thresholds applied to `frontend/src/lib/theme.ts` — v1.12
+- [ ] Opening weakness and strength insights (SEED-005) — v1.13 (next milestone)
+
+### Deferred (gated on full benchmark ingest — SEED-006)
+
+- [ ] Classifier validation replication at 10–100x scale (Phase B gate)
+- [ ] Rating-stratified material-vs-eval offset analysis
+- [ ] Parity proxy validation against Stockfish eval
+- [ ] `/benchmarks` skill upgrade — population baselines and rating-bucketed zone thresholds applied to `frontend/src/lib/theme.ts`
 
 ### Out of Scope
 
@@ -116,40 +124,40 @@ Users can determine their success rate for any opening position they specify, fi
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: v1.12 Benchmark DB & Population Baselines
+## Next Milestone Goals: v1.13 (SEED-005 — Opening Insights)
 
-**Goal:** Replace self-referential endgame baselines with a Lichess-derived population dataset stratified by rating × time control, validate the material-vs-eval classifier at 10–100x larger scale, and recalibrate gauge zones per rating bucket.
+**Goal:** Surface opening-line strengths and weaknesses for each user. Build on top of the existing `game_positions` Zobrist-hash architecture, the LLM insights infrastructure shipped in v1.11, and the deterministic findings pipeline. Independent of the benchmark DB.
 
-**Target features:**
-- Benchmark Postgres instance + 3rd MCP server (`flawchess-benchmark-db`); same canonical schema/migrations as dev/prod/test (no schema fork — Lichess `[%eval` populates existing `game_positions.eval_cp`/`eval_mate`)
-- Resumable Lichess monthly-dump ingestion with eval pre-filter and (rating × TC) stratification at the player-opportunity level
-- Phase B classifier-validation replication at scale, with quantitative gate before C–E proceed
-- Rating-stratified material-vs-eval offset analysis
-- Parity proxy validation against Stockfish eval
-- `/benchmarks` skill upgrade producing population baselines and rating-bucketed zone thresholds; manual updates land in `frontend/src/lib/theme.ts`
+**Tentative target features** (locked at `/gsd-new-milestone` time):
+- Opening-line risk and drawishness metrics in the move explorer
+- Per-line strength/weakness diagnostics surfaced as findings + LLM narratives
+- Opening insight section in the existing insights endpoint or a sibling endpoint
+- Reuse the v1.11 prompt-versioning, `llm_logs`, and rate-limit infrastructure
 
-**Locked decisions** (from SEED-002 / 2026-04-19 design discussion):
-- Lichess-only ingestion; chess.com population baselines deferred to v1.13+
-- Self-referential analysis remains the primary UI signal — population data is an overlay
-- Bucket at the player-opportunity level (separate `WhiteElo`/`BlackElo`), never at game level
-- No prod-side lookup table or live prod→benchmark-DB queries; baselines computed in the skill, results land as code/config edits
-- Phase B is a hard checkpoint; per-cell offset gate (outside prior 95% CI AND |Δ| > 2pp on Pawn/Rook/Minor) controls whether C–E proceed
+**Open dependencies:**
+- v1.11 VAL-01 (insights snapshot test against a canonical user fixture) — pre-v1.13 `/gsd-quick`. No dependency on benchmark infra.
 
 ## Current State
 
-v1.11 LLM-first Endgame Insights shipped 2026-04-24. Twelve milestones complete (v1.0–v1.11), 66 phases (+3 inserted), live at flawchess.com. v1.11 delivered the first LLM-backed feature: `POST /api/insights/endgame` returns a structured `EndgameInsightsReport` (overview + up to 4 Section insights) via a pydantic-ai Agent, cached on a deterministic findings hash, rate-limited to 3 misses/hr/user with soft-fail to the last cached report. Zone assignment shares the in-code gauge constants with chart visuals via a new registry + Python→TypeScript codegen with CI drift guard. Generic `llm_logs` Postgres table (with JSONB, FK CASCADE, per-call cost accounting via `genai-prices`) was designed up-front to host every future LLM feature. Frontend ships an `EndgameInsightsBlock` with parent-lifted mutation state and inline per-section slots. Phase 68 replaced the single-line Score Gap chart with a dual-line Endgame vs Non-Endgame Score chart with shaded gap fill.
+v1.12 Benchmark DB Infrastructure & Ingestion Pipeline shipped 2026-04-26 (PR #65). Twelve milestones complete (v1.0–v1.12), 67 phases (+3 inserted), live at flawchess.com.
 
-Phase 67 (Validation & Beta Rollout) was descoped: insights were enabled for all users via commit `c91478e` rather than gated behind the planned beta cohort. Recommended follow-up in v1.12: retrofit a snapshot regression test against one real production user fixture.
+v1.12 delivered the operational half of SEED-002: a separate `flawchess-benchmark` PostgreSQL 18 instance on port 5433, a third read-only MCP server (`flawchess-benchmark-db`), Alembic-driven schema parity with dev/prod/test (no fork), a streaming `zgrep` eval pre-filter that drops the ~85% of Lichess dump games without `[%eval` headers before they hit python-chess, a stratified subsampling pipeline at the player-opportunity level on (rating × TC) with separate `WhiteElo`/`BlackElo` per side, and a SIGINT/SIGKILL-resumable per-user checkpoint orchestrator. Smoke-validated end-to-end via a `--per-cell 3` ingest of 274k games / 19.4M positions in 3h 6min. Verification report at `reports/benchmark-db-phase69-verification-2026-04-26.md`.
+
+The milestone was scoped down on 2026-04-26 from 5 phases (69-73) to 1 (69). Phases 70-73 (classifier validation at scale, rating-stratified offsets, Parity validation, `/benchmarks` skill upgrade & rating-bucketed zone recalibration) moved to SEED-006, gated on the full benchmark ingest. Pipeline correctness was the v1.12 deliverable; populating the DB is operational ops work, not a milestone gate.
+
+A hot-patch mid-Phase 69 dropped two dead columns (`games.eval_depth` and `games.eval_source_version`) added by plan 69-02's migration, after the smoke confirmed Lichess's `/api/games/user` endpoint emits bare `[%eval cp]` annotations with no depth field. Lesson: don't trust documentation about "depth available in PGN" — Lichess **dump** exports include depth, **API** exports do not. Verify with a sample before specifying schema.
 
 ## Context
 
-- **Current state:** v1.10 shipped 2026-04-19. 60 phases complete across 11 milestones. Live at flawchess.com with CI/CD and Sentry.
+- **Current state:** v1.12 shipped 2026-04-26. 67 phases complete across 12 milestones. Live at flawchess.com with CI/CD and Sentry.
 - **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui (Command, Popover)
 - **Auth:** FastAPI-Users (JWT + Google SSO + guest sessions with is_guest flag + impersonation via ClaimAwareJWTStrategy)
 - **Core algorithm:** Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import for indexed integer equality lookups
 - **PWA:** vite-plugin-pwa + Workbox (NetworkOnly for API routes), vaul drawer, tailwindcss-safe-area
 - **Analytics:** Consolidated `/api/endgames/overview` serves every endgame chart in one round trip on a single AsyncSession; deferred filter apply on desktop (matches mobile)
-- **Known issues:** react-chessboard v5 arrow clearing workaround (clearArrowsOnPositionChange: false), BoardArrow local type definition, touch drag disabled (click-to-move only on mobile), Phase 60/61 have incomplete SUMMARY.md artifacts (no functional impact)
+- **LLM stack (v1.11):** pydantic-ai Agent with env-var-driven model selection (`PYDANTIC_AI_MODEL_INSIGHTS`), `genai-prices` for cost accounting, generic `llm_logs` Postgres table as prompt-engineering harness
+- **Benchmark DB (v1.12):** separate PostgreSQL 18 instance on port 5433 (`docker-compose.benchmark.yml`), shares canonical Alembic chain with dev/prod/test, benchmark-only ops tables (`benchmark_selected_users`, `benchmark_ingest_checkpoints`) created via `Base.metadata.create_all()` against the benchmark engine on first invocation
+- **Known issues:** react-chessboard v5 arrow clearing workaround (clearArrowsOnPositionChange: false), BoardArrow local type definition, touch drag disabled (click-to-move only on mobile), Phase 60/61 have incomplete SUMMARY.md artifacts (no functional impact); pre-existing ORM/DB column drift (`game_positions.clock_seconds`, `games.white_accuracy`, `games.black_accuracy` REAL→Float) on every Alembic autogenerate — deferred cleanup migration outstanding
 
 ## Constraints
 
@@ -218,7 +226,16 @@ Phase 67 (Validation & Beta Rollout) was descoped: insights were enabled for all
 | Shared zone registry + Python→TS codegen with CI drift guard | Narrative and chart visuals agree by construction; no two-sided drift | ✓ Good |
 | Parent-lifted mutation state for EndgameInsightsBlock (no Context) | `useEndgameInsights` in Endgames.tsx; block + 4 slot instances observe same state | ✓ Good |
 | Dual-line Score chart over single-line Score Gap chart | Makes endgame-vs-non-endgame composition self-evident; eliminated the prompt's score_gap framing rule | ✓ Good |
-| Phase 67 descope — rollout to all users instead of beta cohort | Fast learning from real telemetry; tradeoff: no automated regression guard against prompt changes | ⚠️ Revisit (retrofit snapshot test in v1.12) |
+| Phase 67 descope — rollout to all users instead of beta cohort | Fast learning from real telemetry; tradeoff: no automated regression guard against prompt changes | — Pending (snapshot test deferred to pre-v1.13) |
+| Separate `flawchess-benchmark` Postgres instance, not a schema in dev/prod | Isolation from prod; safe to wipe and reseed; second MCP server with read-only role keeps the analysis interactive | ✓ Good |
+| Same canonical Alembic chain as dev/prod/test (no schema fork) | Lichess `[%eval` populates the existing `game_positions.eval_cp`/`eval_mate` columns; no benchmark-only games / game_positions variant to maintain | ✓ Good |
+| Benchmark-only ops tables via `Base.metadata.create_all()` | `benchmark_selected_users` and `benchmark_ingest_checkpoints` exist solely to drive the orchestrator; carving them out of Alembic keeps the analytical schema clean | ✓ Good |
+| Streaming `zgrep` eval pre-filter before python-chess | Drops the ~85% of dump games without `[%eval` headers an order of magnitude faster than structural parsing | ✓ Good |
+| Player-side bucketing on `WhiteElo` / `BlackElo` separately | Each side belongs to its own rating cell; aggregations over `game_positions` never roll up by a single game-level rating field | ✓ Good |
+| Per-user checkpoint table + idempotent `(platform, platform_game_id)` inserts | SIGINT/SIGKILL-resumable without dedup logic at the application layer; duplicates blocked by the existing unique constraint | ✓ Good |
+| v1.12 scope-down to Phase 69 only (Phases 70-73 → SEED-006) | Full benchmark ingest is days of wall-clock ops work, not a milestone gate; treating it as one was blocking unrelated work like v1.13 opening insights | ✓ Good |
+| Smoke-from-`--per-cell 3` over interim `--per-cell 30` ingest | Pipeline-correctness evidence collected from a small smoke run rather than blocking on a multi-day full ingest; aligns with the scope-down framing | ✓ Good |
+| Hot-patch drop of `eval_depth` + `eval_source_version` mid-Phase 69 | Post-smoke sampling proved both columns were dead (Lichess API emits bare `[%eval cp]` with no depth field); lighter than running a corrective phase | ✓ Good |
 
 ## Evolution
 
@@ -238,4 +255,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-25 — v1.12 Benchmark DB & Population Baselines milestone opened.*
+*Last updated: 2026-04-26 after v1.12 milestone — Benchmark DB infrastructure & ingestion pipeline shipped.*

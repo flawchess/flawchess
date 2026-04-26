@@ -14,7 +14,7 @@
 - ✅ **v1.9 UI/UX Restructuring** — Phases 49-51 (shipped 2026-04-10) — see [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md)
 - ✅ **v1.10 Advanced Analytics** — Phases 48, 52-55, 57, 57.1, 59-62 (shipped 2026-04-19) — see [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md)
 - ✅ **v1.11 LLM-first Endgame Insights** — Phases 63-68 (shipped 2026-04-24) — see [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md)
-- 🚧 **v1.12 Benchmark DB Infrastructure & Ingestion Pipeline** — Phase 69 (active) — see [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md). Phases 70-73 deferred to a future milestone — see [seeds/SEED-006](seeds/SEED-006-benchmark-population-zone-recalibration.md)
+- ✅ **v1.12 Benchmark DB Infrastructure & Ingestion Pipeline** — Phase 69 (shipped 2026-04-26). Phases 70-73 deferred to a future milestone — see [seeds/SEED-006](seeds/SEED-006-benchmark-population-zone-recalibration.md). Full archive: [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md)
 
 ## Phases
 
@@ -167,19 +167,11 @@ See [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md) for full details.
 </details>
 
 <details>
-<summary>🚧 v1.12 Benchmark DB Infrastructure & Ingestion Pipeline (Phase 69) — ACTIVE</summary>
+<summary>✅ v1.12 Benchmark DB Infrastructure & Ingestion Pipeline (Phase 69) — SHIPPED 2026-04-26</summary>
 
-- [ ] Phase 69: Benchmark DB Infrastructure & Ingestion Pipeline (6 plans) — INFRA-01..03, INGEST-01..06
-  - [x] 69-01-PLAN.md — Benchmark DB Infrastructure (docker-compose, init SQL, lifecycle script)
-  - [x] 69-02-PLAN.md — Alembic migration: eval_depth + eval_source_version on canonical games table
-  - [x] 69-03-PLAN.md — MCP server registration + CLAUDE.md docs (manual)
-  - [x] 69-04-PLAN.md — Selection scan + player bucketing (streaming dump scan)
-  - [x] 69-05-PLAN.md — Ingestion orchestrator + per-user checkpoint
-  - [ ] 69-06-PLAN.md — Smoke + interim ingest run + verification report (manual checkpoints)
+- [x] Phase 69: Benchmark DB Infrastructure & Ingestion Pipeline (6/6 plans) — completed 2026-04-26 via PR #65 — INFRA-01..03, INGEST-01..06
 
 **Scope-down (2026-04-26):** v1.12 was originally Phases 69-73. The applied-analytics phases (70-73: classifier validation at scale, rating-stratified offsets, Parity validation, `/benchmarks` skill upgrade & zone recalibration) were moved to a future milestone seeded at [seeds/SEED-006](seeds/SEED-006-benchmark-population-zone-recalibration.md). The full benchmark ingest is operational work (days of wall-clock time), not a milestone gate; treating it as one was blocking unrelated work like v1.13 opening insights. Pipeline correctness is the v1.12 deliverable; populating the DB is ops.
-
-**Out of v1.12 scope (related but not bundled):** v1.11 VAL-01 snapshot test retrofit (run as `/gsd-quick`), Diff%-redundancy cleanup (separate v1.11 cleanup).
 
 See [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md) for full details.
 
@@ -210,7 +202,7 @@ See [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md) for full details.
 | 49-51. v1.9 phases | v1.9 | 7/7 | Complete | 2026-04-10 |
 | 48, 52-62. v1.10 phases | v1.10 | 28/28 | Complete | 2026-04-19 |
 | 63-68. v1.11 phases | v1.11 | 23/23 | Complete (Phase 67 descoped) | 2026-04-24 |
-| 69. Benchmark DB Infra & Ingestion Pipeline | v1.12 | 5/6 | Active | — |
+| 69. Benchmark DB Infra & Ingestion Pipeline | v1.12 | 6/6 | Complete (Phases 70-73 deferred to SEED-006) | 2026-04-26 |
 
 ## Backlog
 

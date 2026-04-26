@@ -2,6 +2,53 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v1.12 — Benchmark DB Infrastructure & Ingestion Pipeline
+
+**Shipped:** 2026-04-26
+**Phases:** 1 executed (69) | **Plans:** 6 (5 fully executed + 1 with descoped sub-tasks) | **Delivered via:** PR #65 (squash merge)
+**Stats:** 98 files changed, +13,440 / -1,740 lines, 51 commits over 2 days
+
+### What Was Built
+- Isolated `flawchess-benchmark` PostgreSQL 18 instance on port 5433, deployed via `docker-compose.benchmark.yml` with read-only MCP role and `bin/benchmark_db.sh` lifecycle script. Same canonical Alembic chain as dev/prod/test (no schema fork) — Lichess `[%eval` annotations populate the existing `game_positions.eval_cp` / `eval_mate` columns (Phase 69-01)
+- Third read-only MCP server `flawchess-benchmark-db` registered and documented in `CLAUDE.md` Database Access section (Phase 69-03)
+- Eval-presence pre-filter via streaming `zgrep` over the Lichess monthly PGN dump — the ~85% of dump games without `[%eval` headers never reach python-chess; selection scan walltime drops by an order of magnitude (Phase 69-04)
+- Stratified subsampling at the player-opportunity level on (rating_bucket × time_control). 5 rating buckets × 4 TCs, separate `WhiteElo` / `BlackElo` per side; 90M games scanned, 491k qualifying (K=10 eval-bearing-game floor), 8,628 distinct players persisted across 20 cells (17/20 cells hit the 500-user cap) (Phase 69-04)
+- Resumable per-user checkpoint orchestrator with idempotent inserts via the existing `(platform, platform_game_id)` unique constraint, SIGINT + SIGKILL safety, in-flight users picked up first on resume (Phase 69-05)
+- Smoke-test ingest at `--per-cell 3` ran end-to-end against the live Lichess API. 60 terminal rows: 56 completed, 3 over_20k_games skips, 1 unexplained failure (deferred to SEED-006); 274,143 games and 19.4M positions imported in 3h 6min (Phase 69-06)
+- Verification report at `reports/benchmark-db-phase69-verification-2026-04-26.md` covering all four Dimension-8 evidence sections plus storage budget projection (~205 GB at full `--per-cell 100` ingest, flagged for SEED-006 disk sizing) (Phase 69-06)
+
+### What Worked
+- **Mid-milestone scope-down was the right call.** Originally Phases 69-73; the realization (2026-04-26, 2 days before close) that the full benchmark ingest is days of wall-clock ops work, not a milestone gate, freed up v1.13 work and let v1.12 ship on a clean pipeline-correctness criterion. Treating ops work as a milestone gate was actively blocking unrelated planning.
+- **Smoke-vs-spec catches design slips that discuss-phase can't.** The `eval_depth` + `eval_source_version` columns looked correct in plan 69-02 + decision context (D-12 etc.) — both assumed the Lichess API surfaces depth metadata. The smoke output proved otherwise immediately. Hot-patching the columns out (one Alembic migration, 5 source files) was lighter than running a corrective phase.
+- **Player-opportunity bucketing on separate `WhiteElo`/`BlackElo`.** Each side independently classified into its own rating cell, never aggregated by a game-level rating field. Caught early in `/gsd-discuss-phase` (D-10/D-11), saved a structural rework downstream.
+- **Per-user checkpoint table over byte-offset checkpoint.** Idempotent inserts on `(platform, platform_game_id)` made resumability trivial; SIGKILL during a batch leaves the user as `pending` and the resume logic picks it up first. Zero application-layer dedup needed.
+- **`zgrep` eval pre-filter as the first stage.** Most of the Lichess dump (~85% of games) lacks `[%eval` headers entirely; pre-filtering at the text layer before python-chess sees the game cut selection-scan time from "overnight" to "morning coffee."
+- **Phase 69 not split into 69 + 69.1.** Infrastructure (INFRA-01..03) and ingestion pipeline (INGEST-01..06) are tightly coupled (eval pre-filter presupposes schema decision; resumability checkpoint lives in the benchmark DB itself). Splitting would have forced a fake handoff.
+
+### What Was Inefficient
+- **Two add-then-drop columns inside the same milestone.** `games.eval_depth` and `games.eval_source_version` were added in plan 69-02 (migration `b11018499e4f`) and dropped in `6809b7c79eb3` after the smoke. The discuss-phase context (D-12) assumed Lichess API PGN includes depth like the dump exports do — it doesn't. A 5-minute `curl` against the API during discuss-phase would have prevented both the migration and the hot-patch. Lesson: **verify external API output with a sample before specifying schema**, especially when the source has multiple export channels (dump vs API).
+- **Original v1.12 scope was overpacked.** 5 phases bundling infrastructure (1 phase) with applied analytics (4 phases) on a milestone whose hard dependency between halves is "the DB is fully populated" — a multi-day operational step. Should have split into v1.12 (infra + smoke) and a future milestone (analytics) at planning time, not 2 days before close.
+- **Storage projection blew past INGEST-05's 50-100 GB target by 2x at modest `--per-cell 100`.** The original storage target was based on a per-endgame-type sample-unit before the 2026-04-25 pivot to per-cell distinct users (D-12). Should have re-derived storage at pivot time.
+
+### Patterns Established
+- **Verification-from-smoke.** Pipeline-correctness evidence comes from a small smoke run (e.g., `--per-cell 3`) rather than blocking on a full operational run. Document evidence in a per-phase verification report under `reports/`. Use this whenever the "real" run is operationally heavy and the smoke captures the same correctness invariants.
+- **Hot-patch-mid-plan over corrective phase.** When a smoke run reveals a small surgical schema issue, hot-patch via Alembic + small source-file edits rather than spawning a corrective phase. Threshold: if the patch fits in <10 files and one migration, hot-patch; otherwise, plan a phase.
+- **Streaming text pre-filter before structural parsing.** When ingesting from large external dumps with mixed-quality content, layer a streaming text filter (`zgrep`, ripgrep, etc.) before the heavy parser to drop unqualified rows early.
+- **Ops tables via `create_all()` against the secondary engine.** When a benchmark/ops DB needs auxiliary tables that have no place in the canonical analytical schema (here: `benchmark_selected_users`, `benchmark_ingest_checkpoints`), create them via `Base.metadata.create_all()` against the secondary engine on first invocation. Don't pollute the canonical Alembic chain.
+- **Same Alembic chain across dev/prod/test/benchmark.** Resist the temptation to fork the schema for the benchmark DB — keep one canonical chain and let the analytical columns serve both prod analysis and benchmark analysis.
+
+### Key Lessons
+- **Verify external API output with a sample before specifying schema.** Documentation about "depth available in PGN" was true for Lichess **dump** exports and false for **API** exports. A 5-minute sampling during discuss-phase would have saved one migration round-trip.
+- **Operational steps don't belong in milestone gates.** Multi-day wall-clock work that doesn't change source code (population ingest, large data backfills) should live as ops scripts with their own SOPs, not as a phase a downstream milestone is gated on.
+- **Plan smoke + ops as separate artifacts.** A smoke test proves correctness; the full-scale run is a separate operational task. Don't bundle them.
+
+### Cost Observations
+- Phase 69 spanned 2 days of focused work (2026-04-24 → 2026-04-26) plus the 3h 6min smoke wall-clock and ~3h discuss-phase context-gathering on 2026-04-25.
+- Sessions: ~5 main sessions (4 plan-execute, 1 discuss + 1 close).
+- Notable: the scope-down on 2026-04-26 happened mid-milestone via `/gsd-remove-phase` and a roadmap update. Keeping the deferred work in SEED-006 (rather than backlog or out-of-scope) preserved the design rationale for whenever the full ingest does run.
+
+---
+
 ## Milestone: v1.11 — LLM-first Endgame Insights
 
 **Shipped:** 2026-04-24
