@@ -27,12 +27,17 @@ from app.schemas.insights import (
     FilterContext,
     InsightsErrorResponse,
 )
+from app.schemas.opening_insights import (
+    OpeningInsightsRequest,
+    OpeningInsightsResponse,
+)
 from app.services import insights_llm
 from app.services.insights_llm import (
     InsightsProviderError,
     InsightsRateLimitExceeded,
     InsightsValidationFailure,
 )
+from app.services.opening_insights_service import compute_insights
 from app.users import current_active_user
 
 router = APIRouter(prefix="/insights", tags=["insights"])
@@ -137,3 +142,24 @@ async def get_endgame_insights(
                 retry_after_seconds=None,
             ).model_dump(),
         )
+
+
+@router.post("/openings", response_model=OpeningInsightsResponse)
+async def get_opening_insights(
+    request: OpeningInsightsRequest,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> OpeningInsightsResponse:
+    """Phase 70 (v1.13) opening insights — POST /api/insights/openings.
+
+    Authenticated, user-scoped. Returns a four-section
+    OpeningInsightsResponse under the active filter set.
+
+    Per CONTEXT.md D-14, this route does NOT inherit
+    _validate_full_history_filters — every filter reshapes findings.
+    """
+    return await compute_insights(
+        session=session,
+        user_id=user.id,
+        request=request,
+    )

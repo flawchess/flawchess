@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
 
@@ -13,7 +13,13 @@ class OpeningInsightsRequest(BaseModel):
     Mirrors the existing /openings/* and /stats/most-played-openings filter
     surface. Does NOT extend or import app.schemas.insights.FilterContext —
     decoupling avoids cross-feature breakage when one filter shape evolves (D-11).
+
+    extra="forbid" gates injection of unknown fields (T-70-05-02 / V4 ASVS):
+    any unknown key in the request body returns 422 Unprocessable Entity.
+    The router derives the user's identity from current_active_user only.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     recency: (
         Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"]
