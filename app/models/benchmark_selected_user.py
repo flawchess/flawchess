@@ -36,9 +36,7 @@ class BenchmarkSelectedUser(Base):
 
     __tablename__ = "benchmark_selected_users"
     __table_args__ = (
-        UniqueConstraint(
-            "lichess_username", name="uq_benchmark_selected_users_username"
-        ),
+        UniqueConstraint("lichess_username", name="uq_benchmark_selected_users_username"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -47,7 +45,5 @@ class BenchmarkSelectedUser(Base):
     tc_bucket: Mapped[str] = mapped_column(String(20), nullable=False)
     median_elo: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     eval_game_count: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    selected_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
-    )
+    selected_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
     dump_month: Mapped[str] = mapped_column(String(7), nullable=False)
