@@ -12,6 +12,12 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      # Pin PGDATA to the conventional path. The postgres:18 image defaults to
+      # /var/lib/postgresql/18/docker, which would NOT be on the named volume
+      # below, so data would silently live in the container's writable layer
+      # and be lost on `docker compose down`. Keep this aligned with the volume
+      # mount path.
+      PGDATA: /var/lib/postgresql/data
     ports:
       - "5433:5432"
     volumes:
