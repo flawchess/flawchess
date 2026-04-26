@@ -455,7 +455,7 @@ class TestQueryTopOpeningsSqlWDL:
         # Find the King's Pawn Game row
         kpg = [r for r in rows if r[0] == "B00" and r[1] == "King's Pawn Game"]
         assert len(kpg) == 1
-        eco, name, pgn, fen, full_hash, total, wins, draws, losses = kpg[0]
+        eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses = kpg[0]
         assert wins == 3
         assert draws == 2
         assert losses == 0
@@ -464,6 +464,9 @@ class TestQueryTopOpeningsSqlWDL:
         assert fen  # non-empty FEN from openings_dedup
         assert "/" in fen  # FEN has rank separators
         assert full_hash is not None  # precomputed Zobrist hash from openings_dedup
+        # King's Pawn Game has ply_count=1 (white-defined). For a white user this
+        # is same-color, so display_name has no "vs. " prefix.
+        assert display_name == "King's Pawn Game"
 
     @pytest.mark.asyncio
     async def test_sql_wdl_excludes_below_min_games(self, db_session: AsyncSession) -> None:
@@ -492,7 +495,8 @@ class TestQueryTopOpeningsSqlWDL:
             time_control=["blitz"])
         kpg = [r for r in rows if r[0] == "B00" and r[1] == "King's Pawn Game"]
         assert len(kpg) == 1
-        assert kpg[0][5] == 10  # total = 10 blitz games only (index shifted by full_hash column)
+        # Tuple shape: (eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses)
+        assert kpg[0][6] == 10  # total = 10 blitz games only
 
     @pytest.mark.asyncio
     async def test_sql_wdl_ply_threshold_excludes_short_openings(self, db_session: AsyncSession) -> None:
@@ -506,3 +510,59 @@ class TestQueryTopOpeningsSqlWDL:
             db_session, user_id=99999, color="white", min_games=1, limit=10, min_ply=5)
         kpg = [r for r in rows if r[0] == "B00" and r[1] == "King's Pawn Game"]
         assert len(kpg) == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("color", ["white", "black"])
+    async def test_top_openings_includes_off_color_with_vs_prefix(
+        self, db_session: AsyncSession, color: str
+    ) -> None:
+        """PRE-01: parity filter removed — off-color openings appear with `vs. ` prefix.
+
+        Seeds two openings with known parity:
+        - "King's Pawn Game" (B00, ply_count=1, odd) — white-defined
+        - "Caro-Kann Defense" (B10, ply_count=2, even) — black-defined
+
+        For each user color, both openings should appear in the result. The
+        opening whose defining ply parity differs from the user's color must
+        carry a `display_name` of `f"vs. {opening_name}"`; the same-color
+        opening must keep its canonical name.
+        """
+        # Seed enough games for each opening to clear min_games. Use the same
+        # user_color for both openings (the "user color" determines whose
+        # perspective we're showing — the parity filter previously hid
+        # off-color openings for that perspective).
+        for _ in range(5):
+            await _seed_game(
+                db_session, user_id=99999, result="1-0", user_color=color,
+                opening_eco="B00", opening_name="King's Pawn Game",
+            )
+            await _seed_game(
+                db_session, user_id=99999, result="1-0", user_color=color,
+                opening_eco="B10", opening_name="Caro-Kann Defense",
+            )
+
+        # min_ply=1 ensures both ply=1 (B00) and ply=2 (B10) qualify.
+        rows = await query_top_openings_sql_wdl(
+            db_session, user_id=99999,
+            color="white" if color == "white" else "black",
+            min_games=1, limit=10, min_ply=1,
+        )
+
+        by_eco = {r[0]: r for r in rows}
+        assert "B00" in by_eco, "King's Pawn Game (white-defined) should appear"
+        assert "B10" in by_eco, "Caro-Kann Defense (black-defined) should appear"
+
+        # display_name is the 3rd column (index 2)
+        kpg_display_name = by_eco["B00"][2]
+        ckd_display_name = by_eco["B10"][2]
+
+        if color == "white":
+            # White user: B00 (white-defined) is same-color → no prefix
+            #             B10 (black-defined) is off-color → "vs. " prefix
+            assert kpg_display_name == "King's Pawn Game"
+            assert ckd_display_name == "vs. Caro-Kann Defense"
+        else:
+            # Black user: B00 (white-defined) is off-color → "vs. " prefix
+            #             B10 (black-defined) is same-color → no prefix
+            assert kpg_display_name == "vs. King's Pawn Game"
+            assert ckd_display_name == "Caro-Kann Defense"
