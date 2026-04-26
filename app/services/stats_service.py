@@ -30,9 +30,13 @@ MIN_GAMES_FOR_OPENING = 1
 # Maximum number of top openings to return per color.
 TOP_OPENINGS_LIMIT = 10
 
-# Minimum ply count for an opening to be included: white needs 1 ply, black needs 2.
-MIN_PLY_WHITE = 1
-MIN_PLY_BLACK = 2
+# Minimum ply count for a named opening position to be considered: ply 3 keeps
+# named gambits/systems like Blackmar-Diemer (1.d4 d5 2.e4) but cuts trivial
+# trunks like "Queen's Pawn Game" (1.d4) and "King's Pawn Game" (1.e4) which
+# would otherwise dominate position-based ranking — every d4/e4 game would
+# count toward them.
+MIN_PLY_WHITE = 3
+MIN_PLY_BLACK = 3
 
 # Ordered time control buckets for consistent output ordering.
 _TIME_CONTROL_ORDER = ["bullet", "blitz", "rapid", "classical"]

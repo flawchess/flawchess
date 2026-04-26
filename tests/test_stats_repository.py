@@ -90,6 +90,35 @@ async def _seed_game(
     game.played_at = played_at
     session.add(game)
     await session.flush()
+
+    # If the game is tagged with a named opening, seed a matching game_positions
+    # row carrying that opening's full_hash. The top-openings query (post
+    # PRE-01.1) ranks by COUNT(DISTINCT game) joined through game_positions —
+    # without this row the JOIN would drop the game and the count would be 0.
+    if opening_eco is not None and opening_name is not None:
+        from sqlalchemy import select as _select
+        from app.models.game_position import GamePosition
+        from app.repositories.stats_repository import _openings_dedup
+        result = await session.execute(
+            _select(_openings_dedup.c.full_hash, _openings_dedup.c.ply_count)
+            .where(_openings_dedup.c.eco == opening_eco)
+            .where(_openings_dedup.c.name == opening_name)
+            .limit(1)
+        )
+        row = result.first()
+        if row is not None:
+            full_hash, ply_count = row
+            session.add(
+                GamePosition(
+                    game_id=game.id,
+                    user_id=user_id,
+                    ply=ply_count,
+                    full_hash=full_hash,
+                    white_hash=0,
+                    black_hash=0,
+                )
+            )
+            await session.flush()
     return game
 
 

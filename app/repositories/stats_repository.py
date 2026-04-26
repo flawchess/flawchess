@@ -221,13 +221,21 @@ async def query_top_openings_sql_wdl(
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
     elo_threshold: int = DEFAULT_ELO_THRESHOLD,
 ) -> list[Row[Any]]:
-    """Return top openings with SQL-side WDL aggregation.
+    """Return top openings with SQL-side WDL aggregation, ranked by position count.
 
-    JOINs games to openings_dedup to get pgn/fen and filter by min_ply.
+    Counts distinct games passing through each named opening's position
+    (`game_positions.full_hash`), not games tagged with that opening name. This
+    matches the count displayed in the UI (which is also position-based — see
+    `query_position_wdl_batch` in the service layer) so ranking and display
+    agree. Without this, the deepest-name-tag aggregation pre-PRE-01 happened
+    to look right only because the parity filter coincidentally hid most deep
+    sub-variation rows.
+
     Returns (eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses)
     tuples. `display_name` equals `name` when the opening's defining ply parity
-    matches `color`, else `f"vs. {name}"`. Uses func.count().filter() for SQL-side
-    WDL — no Python-side aggregation.
+    matches `color`, else `f"vs. {name}"`. WDL is COUNT(DISTINCT game_id) FILTER
+    per condition — game-level columns are stable across a game's
+    `game_positions` rows so DISTINCT collapses correctly.
     """
     win_cond = or_(
         and_(Game.result == "1-0", Game.user_color == "white"),
@@ -239,63 +247,58 @@ async def query_top_openings_sql_wdl(
         and_(Game.result == "1-0", Game.user_color == "black"),
     )
 
-    # 2026-04-26 (PRE-01): the parity filter `ply_count % 2 == user_parity` was
-    # removed from the WHERE clause. Previously it excluded ~half of all named
-    # ECO openings per color (e.g. black users never saw white-defined openings
-    # like "Caro-Kann Defense: Hillbilly Attack" despite playing them). Off-color
-    # rows are now surfaced with a `vs. ` prefix on a new `display_name` column,
-    # so the row label still reads naturally without dropping coverage.
-    # White openings end on odd ply (white's last move), black on even ply.
+    # 2026-04-26 (PRE-01): off-color rows are surfaced with `vs. ` prefix so
+    # labels read naturally without dropping coverage. White openings end on
+    # odd ply (white's last move), black on even ply.
     user_parity = 1 if color == "white" else 0
     display_name_col = case(
         (
             _openings_dedup.c.ply_count % 2 != user_parity,
-            literal("vs. ") + Game.opening_name,
+            literal("vs. ") + _openings_dedup.c.name,
         ),
-        else_=Game.opening_name,
+        else_=_openings_dedup.c.name,
     ).label("display_name")
+
+    distinct_game_count = func.count(func.distinct(Game.id))
 
     stmt = (
         select(
-            Game.opening_eco,
-            Game.opening_name,
+            _openings_dedup.c.eco,
+            _openings_dedup.c.name,
             display_name_col,
             _openings_dedup.c.pgn,
             _openings_dedup.c.fen,
             _openings_dedup.c.full_hash,
-            func.count().label("total"),
-            func.count().filter(win_cond).label("wins"),
-            func.count().filter(draw_cond).label("draws"),
-            func.count().filter(loss_cond).label("losses"),
+            distinct_game_count.label("total"),
+            distinct_game_count.filter(win_cond).label("wins"),
+            distinct_game_count.filter(draw_cond).label("draws"),
+            distinct_game_count.filter(loss_cond).label("losses"),
         )
+        .select_from(_openings_dedup)
         .join(
-            _openings_dedup,
+            GamePosition,
             and_(
-                Game.opening_eco == _openings_dedup.c.eco,
-                Game.opening_name == _openings_dedup.c.name,
+                GamePosition.full_hash == _openings_dedup.c.full_hash,
+                # Match the (user_id, full_hash) index — keeps the JOIN cheap.
+                GamePosition.user_id == user_id,
             ),
         )
+        .join(Game, Game.id == GamePosition.game_id)
         .where(
             Game.user_id == user_id,
             Game.user_color == color,
-            Game.opening_eco.is_not(None),
-            Game.opening_name.is_not(None),
             _openings_dedup.c.ply_count >= min_ply,
         )
         .group_by(
-            Game.opening_eco,
-            Game.opening_name,
-            # display_name is a deterministic CASE on opening_name + ply_count;
-            # PostgreSQL requires it (or its inputs) in GROUP BY. ply_count is
-            # functionally determined by (eco, name) within openings_dedup, so
-            # grouping by ply_count keeps the CASE evaluable per group.
+            _openings_dedup.c.eco,
+            _openings_dedup.c.name,
             _openings_dedup.c.ply_count,
             _openings_dedup.c.pgn,
             _openings_dedup.c.fen,
             _openings_dedup.c.full_hash,
         )
-        .having(func.count() >= min_games)
-        .order_by(func.count().desc())
+        .having(distinct_game_count >= min_games)
+        .order_by(distinct_game_count.desc())
         .limit(limit)
     )
 
