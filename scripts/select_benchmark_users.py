@@ -62,10 +62,10 @@ from app.models.benchmark_selected_user import BenchmarkSelectedUser
 
 # Tunables
 DEFAULT_PER_CELL = 500
-DEFAULT_EVAL_THRESHOLD = 5  # D-12: K=5
+DEFAULT_EVAL_THRESHOLD = 10  # D-12: K=5
 RATING_BUCKETS = (800, 1200, 1600, 2000, 2400)  # REQUIREMENTS.md INGEST-02
 TC_BUCKETS = ("bullet", "blitz", "rapid", "classical")
-PROGRESS_LOG_INTERVAL = 1_000_000  # log every 1M games
+PROGRESS_LOG_INTERVAL = 100_000  # log every x games
 TC_INCREMENT_WEIGHT = 40  # canonical estimated_seconds = base + 40 * increment
 EVAL_GAME_COUNT_CAP = 32_000  # SmallInteger upper bound (signed 16-bit max 32_767)
 
