@@ -1,6 +1,9 @@
 # Internal documents (competitive analysis, notes, etc.)
 /docs
 
+# Temp folder
+/temp
+
 # Source screenshots (raw, unprocessed)
 /screenshots
 
