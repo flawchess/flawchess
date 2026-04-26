@@ -271,7 +271,7 @@ async def compute_insights(
         }
 
         for color in colors_to_query:
-            color_literal: Literal["white", "black"] = color  # type: ignore[assignment]
+            color_literal: Literal["white", "black"] = color
             for row in rows_by_color[color]:
                 cls = _classify_row(row)
                 if cls is None:
