@@ -304,12 +304,14 @@ async def test_stub_user_invariants() -> None:
     session.flush = AsyncMock()
 
     # Capture the User object that gets added
-    added_user: dict[str, object] = {}
+    from app.models.user import User as _User
 
-    def _capture(obj: object) -> None:
+    added_user: dict[str, _User] = {}
+
+    def _capture(obj: _User) -> None:
         added_user["obj"] = obj
         # Simulate flush assigning an id
-        obj.id = 42  # type: ignore[attr-defined]
+        obj.id = 42
 
     session.add.side_effect = _capture
 
@@ -317,11 +319,11 @@ async def test_stub_user_invariants() -> None:
 
     assert new_id == 42
     user_obj = added_user["obj"]
-    assert user_obj.email == "lichess-alice@benchmark.flawchess.local"  # type: ignore[attr-defined]
-    assert user_obj.lichess_username == "alice"  # type: ignore[attr-defined]
-    assert user_obj.is_active is False  # type: ignore[attr-defined]
-    assert user_obj.hashed_password == "!BENCHMARK_NO_AUTH"  # type: ignore[attr-defined]
-    assert user_obj.is_guest is False  # type: ignore[attr-defined]
+    assert user_obj.email == "lichess-alice@benchmark.flawchess.local"
+    assert user_obj.lichess_username == "alice"
+    assert user_obj.is_active is False
+    assert user_obj.hashed_password == "!BENCHMARK_NO_AUTH"
+    assert user_obj.is_guest is False
 
 
 def test_outlier_hard_skip_threshold() -> None:
