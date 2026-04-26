@@ -17,7 +17,7 @@ Edit `.planning/ROADMAP.md` to mark Phase 56 as cancelled and move Phase 58 to t
 - Phase 58 (Opening Risk & Drawishness) is unimplemented. v1.10 is endgame-focused, so opening-related work is a better fit for an upcoming Opening Insights milestone.
 - `/gsd-remove-phase` cannot be used because it renumbers subsequent phases, which would corrupt shipped phases.
 - No stub directories exist at `.planning/phases/56-*/` or `.planning/phases/58-*/` — pure ROADMAP edit.
-- Existing backlog entries: 999.1, 999.4, 999.5. Next number: **999.6**.
+- Existing backlog entries: 999.1. Next number: **999.6**.
 
 ## Tasks
 
@@ -35,7 +35,7 @@ Edit `.planning/ROADMAP.md`:
 
 - **v1.10 phase checklist (line 141):** delete the `- [ ] **Phase 58: Opening Risk & Drawishness** - ...` line.
 - **Phase 58 detail section (lines 287-297):** delete the entire `### Phase 58: Opening Risk & Drawishness` block including all its fields, and the separator blank line before Phase 59.
-- **Backlog section (after Phase 999.4, before the blank lines at line 449):** append:
+- **Backlog section (after the existing entries, before the blank lines at line 449):** append:
 
   ```
   ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)

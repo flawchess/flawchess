@@ -83,12 +83,13 @@ gh pr checks <pr-number>        # Check PR status
 
 ## Database Access (MCP)
 
-Two PostgreSQL MCP servers are configured for direct database queries:
+Three PostgreSQL MCP servers are configured for direct database queries:
 
 - **`flawchess-db`** — local dev database (Docker on `localhost:5432`). Requires dev DB running: `docker compose -f docker-compose.dev.yml -p flawchess-dev up -d`
 - **`flawchess-prod-db`** — production database via read-only user. Requires SSH tunnel: `bin/prod_db_tunnel.sh` (forwards `localhost:15432` → prod DB on port 5432). Stop with `bin/prod_db_tunnel.sh stop`.
+- **`flawchess-benchmark-db`** — benchmark database (Docker on `localhost:5433`). Requires benchmark DB running: `bin/benchmark_db.sh start` (or `docker compose -f docker-compose.benchmark.yml -p flawchess-benchmark up -d`). Read-only role `flawchess_benchmark_ro`; password is set locally and is not committed to git (the same `<PASSWORD>` placeholder pattern as the prod read-only user). Stop with `bin/benchmark_db.sh stop`.
 
-Both are read-only query tools (`mcp__flawchess-db__query`, `mcp__flawchess-prod-db__query`).
+All three are read-only query tools (`mcp__flawchess-db__query`, `mcp__flawchess-prod-db__query`, `mcp__flawchess-benchmark-db__query`). The first is read-write at the SQL level (it uses the app user) but the MCP wrapper is query-only by design; the latter two use dedicated read-only DB roles.
 
 ## Architecture
 
