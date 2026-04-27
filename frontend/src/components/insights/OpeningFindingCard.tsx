@@ -1,5 +1,6 @@
-import { ExternalLink } from 'lucide-react';
+import { ArrowRightLeft, FolderOpen } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
+import { Tooltip } from '@/components/ui/tooltip';
 import { getSeverityBorderColor, trimMoveSequence } from '@/lib/openingInsights';
 import type { OpeningInsightFinding } from '@/types/insights';
 
@@ -7,13 +8,19 @@ interface OpeningFindingCardProps {
   finding: OpeningInsightFinding;
   idx: number;
   onFindingClick: (finding: OpeningInsightFinding) => void;
+  onOpenGames: (finding: OpeningInsightFinding) => void;
 }
 
 const MOBILE_BOARD_SIZE = 105;
 const DESKTOP_BOARD_SIZE = 100;
 const UNNAMED_SENTINEL = '<unnamed line>';
 
-export function OpeningFindingCard({ finding, idx, onFindingClick }: OpeningFindingCardProps) {
+export function OpeningFindingCard({
+  finding,
+  idx,
+  onFindingClick,
+  onOpenGames,
+}: OpeningFindingCardProps) {
   const isWeakness = finding.classification === 'weakness';
   const ratePercent = Math.round(
     (isWeakness ? finding.loss_rate : finding.win_rate) * 100,
@@ -42,12 +49,6 @@ export function OpeningFindingCard({ finding, idx, onFindingClick }: OpeningFind
           <span className="ml-1 text-muted-foreground">({finding.opening_eco})</span>
         )}
       </span>
-      <span
-        className="ml-auto shrink-0 text-muted-foreground"
-        aria-hidden="true"
-      >
-        <ExternalLink className="h-4 w-4" />
-      </span>
     </div>
   );
 
@@ -58,24 +59,47 @@ export function OpeningFindingCard({ finding, idx, onFindingClick }: OpeningFind
         {ratePercent}%
       </span>{' '}
       as {colorLabel} after{' '}
-      <span className="font-mono text-foreground">{trimmedSequence}</span>{' '}
-      <span className="text-muted-foreground">(n={finding.n_games})</span>
+      <span className="font-mono text-foreground">{trimmedSequence}</span>
     </p>
   );
 
+  const linksRow = (
+    <div className="flex items-center gap-4">
+      <Tooltip content={`Open ${finding.display_name} in the Move Explorer`}>
+        <button
+          type="button"
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          aria-label={`Open ${finding.display_name} in the Move Explorer`}
+          data-testid={`opening-finding-card-${idx}-moves`}
+          onClick={() => onFindingClick(finding)}
+        >
+          <ArrowRightLeft className="h-3.5 w-3.5" />
+          <span>Moves</span>
+        </button>
+      </Tooltip>
+      <Tooltip content={`View ${finding.n_games} games for ${finding.opening_name}`}>
+        <button
+          type="button"
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          aria-label={`View ${finding.n_games} games for ${finding.opening_name}`}
+          data-testid={`opening-finding-card-${idx}-games`}
+          onClick={() => onOpenGames(finding)}
+        >
+          <span className="tabular-nums">{finding.n_games}</span>
+          <span>Games</span>
+          <FolderOpen className="h-3.5 w-3.5" />
+        </button>
+      </Tooltip>
+    </div>
+  );
+
   return (
-    <a
-      href="/openings/explorer"
+    <div
       data-testid={`opening-finding-card-${idx}`}
-      aria-label={`Open ${finding.display_name} (${finding.candidate_move_san}) in Move Explorer`}
-      onClick={(e) => {
-        e.preventDefault();
-        onFindingClick(finding);
-      }}
-      className="block border-l-4 charcoal-texture border border-border/20 rounded px-4 py-3 cursor-pointer hover:bg-muted/30 transition-colors"
+      className="block border-l-4 charcoal-texture border border-border/20 rounded px-4 py-3"
       style={{ borderLeftColor }}
     >
-      {/* Mobile: header full-width on top, board + prose row below */}
+      {/* Mobile: header full-width on top, board + prose row below, links row last */}
       <div className="flex flex-col gap-2 sm:hidden">
         {headerLine}
         <div className="flex gap-3 items-start">
@@ -86,9 +110,10 @@ export function OpeningFindingCard({ finding, idx, onFindingClick }: OpeningFind
           />
           <div className="flex-1 min-w-0 flex flex-col gap-1">{proseLine}</div>
         </div>
+        {linksRow}
       </div>
 
-      {/* Desktop: board left, header + prose stacked right */}
+      {/* Desktop: board left, header + prose + links stacked right */}
       <div className="hidden sm:flex gap-3 items-center">
         <LazyMiniBoard
           fen={finding.entry_fen}
@@ -98,8 +123,9 @@ export function OpeningFindingCard({ finding, idx, onFindingClick }: OpeningFind
         <div className="min-w-0 flex-1 flex flex-col gap-2">
           {headerLine}
           {proseLine}
+          {linksRow}
         </div>
       </div>
-    </a>
+    </div>
   );
 }

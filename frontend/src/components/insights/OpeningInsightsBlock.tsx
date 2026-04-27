@@ -14,6 +14,7 @@ const INITIAL_VISIBLE_PER_SECTION = 3;
 interface OpeningInsightsBlockProps {
   debouncedFilters: FilterState;
   onFindingClick: (finding: OpeningInsightFinding) => void;
+  onOpenGames: (finding: OpeningInsightFinding) => void;
 }
 
 type SectionKind = 'weakness' | 'strength';
@@ -59,7 +60,7 @@ const SECTIONS: SectionMeta[] = [
   },
 ];
 
-export function OpeningInsightsBlock({ debouncedFilters, onFindingClick }: OpeningInsightsBlockProps) {
+export function OpeningInsightsBlock({ debouncedFilters, onFindingClick, onOpenGames }: OpeningInsightsBlockProps) {
   const query = useOpeningInsights({
     recency: debouncedFilters.recency,
     timeControls: debouncedFilters.timeControls,
@@ -98,7 +99,7 @@ export function OpeningInsightsBlock({ debouncedFilters, onFindingClick }: Openi
       ) : allEmpty ? (
         <EmptyBlock />
       ) : (
-        <SectionsContent data={data!} onFindingClick={onFindingClick} />
+        <SectionsContent data={data!} onFindingClick={onFindingClick} onOpenGames={onOpenGames} />
       )}
     </div>
   );
@@ -148,9 +149,11 @@ function EmptyBlock() {
 function SectionsContent({
   data,
   onFindingClick,
+  onOpenGames,
 }: {
   data: OpeningInsightsResponse;
   onFindingClick: (finding: OpeningInsightFinding) => void;
+  onOpenGames: (finding: OpeningInsightFinding) => void;
 }) {
   // Compute per-section start indices so each card gets a globally unique idx for data-testid.
   // White weaknesses start at 0; each subsequent section starts after the previous section's count.
@@ -170,6 +173,7 @@ function SectionsContent({
           findings={data[section.findingsKey]}
           startIdx={sectionStartIdxs[sectionIdx] ?? 0}
           onFindingClick={onFindingClick}
+          onOpenGames={onOpenGames}
         />
       ))}
     </div>
@@ -181,11 +185,13 @@ function FindingsSection({
   findings,
   startIdx,
   onFindingClick,
+  onOpenGames,
 }: {
   section: SectionMeta;
   findings: OpeningInsightFinding[];
   startIdx: number;
   onFindingClick: (finding: OpeningInsightFinding) => void;
+  onOpenGames: (finding: OpeningInsightFinding) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const swatchClass = section.color === 'white' ? 'bg-white' : 'bg-zinc-900';
@@ -222,6 +228,7 @@ function FindingsSection({
                 finding={finding}
                 idx={startIdx + i}
                 onFindingClick={onFindingClick}
+                onOpenGames={onOpenGames}
               />
             ))}
           </div>

@@ -522,6 +522,22 @@ export function OpeningsPage() {
     [chess, navigate, setFilters],
   );
 
+  /** Same as handleOpenFinding but routes to the Games subtab (filtered to the finding). */
+  const handleOpenFindingGames = useCallback(
+    (finding: OpeningInsightFinding) => {
+      chess.loadMoves(finding.entry_san_sequence);
+      setBoardFlipped(finding.color === 'black');
+      setFilters((prev) => ({
+        ...prev,
+        color: finding.color,
+        matchSide: 'both' as MatchSide,
+      }));
+      navigate('/openings/games');
+      window.scrollTo({ top: 0 });
+    },
+    [chess, navigate, setFilters],
+  );
+
   const handleLoadBookmark = useCallback((bkm: PositionBookmarkResponse) => {
     chess.loadMoves(bkm.moves);
     setBoardFlipped(bkm.is_flipped ?? false);
@@ -816,6 +832,7 @@ export function OpeningsPage() {
         <OpeningInsightsBlock
           debouncedFilters={debouncedFilters}
           onFindingClick={handleOpenFinding}
+          onOpenGames={handleOpenFindingGames}
         />
       ) : (
         <p className="text-sm text-muted-foreground" data-testid="opening-insights-no-games">

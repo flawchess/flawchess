@@ -17,6 +17,11 @@ vi.mock('react-chessboard', () => ({
   Chessboard: vi.fn(() => null),
 }));
 
+// Stub the Tooltip primitive so card renders don't need a TooltipProvider wrapper.
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+}));
+
 import { OpeningInsightsBlock } from './OpeningInsightsBlock';
 import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/insights';
 import type { FilterState } from '@/components/filters/FilterPanel';
@@ -93,7 +98,7 @@ describe('OpeningInsightsBlock', () => {
     const Wrapper = createWrapper();
     render(
       <Wrapper>
-        <OpeningInsightsBlock debouncedFilters={DEFAULT_FILTERS} onFindingClick={() => {}} />
+        <OpeningInsightsBlock debouncedFilters={DEFAULT_FILTERS} onFindingClick={() => {}} onOpenGames={() => {}} />
       </Wrapper>,
     );
     expect(screen.getByTestId('opening-insights-block')).toBeTruthy();
@@ -107,7 +112,7 @@ describe('OpeningInsightsBlock', () => {
     const Wrapper = createWrapper();
     render(
       <Wrapper>
-        <OpeningInsightsBlock debouncedFilters={DEFAULT_FILTERS} onFindingClick={() => {}} />
+        <OpeningInsightsBlock debouncedFilters={DEFAULT_FILTERS} onFindingClick={() => {}} onOpenGames={() => {}} />
       </Wrapper>,
     );
     await waitFor(() => {
@@ -121,7 +126,7 @@ describe('OpeningInsightsBlock', () => {
     const Wrapper = createWrapper();
     render(
       <Wrapper>
-        <OpeningInsightsBlock debouncedFilters={DEFAULT_FILTERS} onFindingClick={() => {}} />
+        <OpeningInsightsBlock debouncedFilters={DEFAULT_FILTERS} onFindingClick={() => {}} onOpenGames={() => {}} />
       </Wrapper>,
     );
     await waitFor(() => {
@@ -142,7 +147,7 @@ describe('OpeningInsightsBlock', () => {
     const Wrapper = createWrapper();
     render(
       <Wrapper>
-        <OpeningInsightsBlock debouncedFilters={DEFAULT_FILTERS} onFindingClick={() => {}} />
+        <OpeningInsightsBlock debouncedFilters={DEFAULT_FILTERS} onFindingClick={() => {}} onOpenGames={() => {}} />
       </Wrapper>,
     );
     await waitFor(() => {
@@ -162,7 +167,7 @@ describe('OpeningInsightsBlock', () => {
     const Wrapper = createWrapper();
     render(
       <Wrapper>
-        <OpeningInsightsBlock debouncedFilters={DEFAULT_FILTERS} onFindingClick={() => {}} />
+        <OpeningInsightsBlock debouncedFilters={DEFAULT_FILTERS} onFindingClick={() => {}} onOpenGames={() => {}} />
       </Wrapper>,
     );
     await waitFor(() => {
@@ -172,7 +177,7 @@ describe('OpeningInsightsBlock', () => {
     });
   });
 
-  it('delegates card click to onFindingClick prop', async () => {
+  it('delegates Moves link click to onFindingClick prop', async () => {
     const finding = makeFinding({ color: 'white', display_name: 'Click Me' });
     (apiClient.post as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: { ...EMPTY_RESPONSE, white_weaknesses: [finding] },
@@ -181,14 +186,44 @@ describe('OpeningInsightsBlock', () => {
     const Wrapper = createWrapper();
     render(
       <Wrapper>
-        <OpeningInsightsBlock debouncedFilters={DEFAULT_FILTERS} onFindingClick={onFindingClick} />
+        <OpeningInsightsBlock
+          debouncedFilters={DEFAULT_FILTERS}
+          onFindingClick={onFindingClick}
+          onOpenGames={() => {}}
+        />
       </Wrapper>,
     );
     await waitFor(() => {
       expect(screen.getByTestId('opening-finding-card-0')).toBeTruthy();
     });
-    fireEvent.click(screen.getByTestId('opening-finding-card-0'));
+    // Mobile + desktop layouts both render — click the first Moves button.
+    const movesBtns = screen.getAllByTestId('opening-finding-card-0-moves');
+    fireEvent.click(movesBtns[0]!);
     expect(onFindingClick).toHaveBeenCalledWith(finding);
+  });
+
+  it('delegates Games link click to onOpenGames prop', async () => {
+    const finding = makeFinding({ color: 'white', display_name: 'Games Click', n_games: 42 });
+    (apiClient.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { ...EMPTY_RESPONSE, white_weaknesses: [finding] },
+    });
+    const onOpenGames = vi.fn();
+    const Wrapper = createWrapper();
+    render(
+      <Wrapper>
+        <OpeningInsightsBlock
+          debouncedFilters={DEFAULT_FILTERS}
+          onFindingClick={() => {}}
+          onOpenGames={onOpenGames}
+        />
+      </Wrapper>,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('opening-finding-card-0')).toBeTruthy();
+    });
+    const gamesBtns = screen.getAllByTestId('opening-finding-card-0-games');
+    fireEvent.click(gamesBtns[0]!);
+    expect(onOpenGames).toHaveBeenCalledWith(finding);
   });
 
 });

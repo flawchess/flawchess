@@ -15,6 +15,12 @@ vi.mock('react-chessboard', () => ({
   Chessboard: vi.fn(() => null),
 }));
 
+// Stub the Tooltip primitive so renders don't need a TooltipProvider wrapper.
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) => children,
+}));
+import type * as React from 'react';
+
 import { OpeningFindingCard } from './OpeningFindingCard';
 import type { OpeningInsightFinding } from '@/types/insights';
 import { DARK_RED, LIGHT_RED, DARK_GREEN, LIGHT_GREEN } from '@/lib/arrowColor';
@@ -48,23 +54,30 @@ afterEach(() => {
 });
 
 describe('OpeningFindingCard', () => {
-  it('renders weakness prose: "You lose {rate}% as {Color} after {seq} (n={n})"', () => {
+  it('renders weakness prose: "You lose {rate}% as {Color} after {seq}" without (n=…)', () => {
     const finding = makeFinding({
       classification: 'weakness',
       color: 'black',
       loss_rate: 0.62,
       n_games: 18,
     });
-    render(<OpeningFindingCard finding={finding} idx={0} onFindingClick={() => {}} />);
-    // Prose contains "lose", "62%", "Black", "(n=18)"
-    const text = screen.getByTestId('opening-finding-card-0').textContent ?? '';
+    render(
+      <OpeningFindingCard
+        finding={finding}
+        idx={0}
+        onFindingClick={() => {}}
+        onOpenGames={() => {}}
+      />,
+    );
+    const card = screen.getByTestId('opening-finding-card-0');
+    const text = card.textContent ?? '';
     expect(text).toMatch(/lose/i);
     expect(text).toMatch(/62%/);
     expect(text).toMatch(/Black/);
-    expect(text).toMatch(/\(n=18\)/);
+    expect(text).not.toMatch(/\(n=/);
   });
 
-  it('renders strength prose: "You win {rate}% as {Color} after {seq} (n={n})"', () => {
+  it('renders strength prose: "You win {rate}% as {Color} after {seq}" without (n=…)', () => {
     const finding = makeFinding({
       classification: 'strength',
       severity: 'minor',
@@ -72,12 +85,20 @@ describe('OpeningFindingCard', () => {
       win_rate: 0.58,
       n_games: 25,
     });
-    render(<OpeningFindingCard finding={finding} idx={1} onFindingClick={() => {}} />);
-    const text = screen.getByTestId('opening-finding-card-1').textContent ?? '';
+    render(
+      <OpeningFindingCard
+        finding={finding}
+        idx={1}
+        onFindingClick={() => {}}
+        onOpenGames={() => {}}
+      />,
+    );
+    const card = screen.getByTestId('opening-finding-card-1');
+    const text = card.textContent ?? '';
     expect(text).toMatch(/win/i);
     expect(text).toMatch(/58%/);
     expect(text).toMatch(/White/);
-    expect(text).toMatch(/\(n=25\)/);
+    expect(text).not.toMatch(/\(n=/);
   });
 
   it('applies DARK_RED border-left for major weakness', () => {
@@ -86,10 +107,10 @@ describe('OpeningFindingCard', () => {
         finding={makeFinding({ classification: 'weakness', severity: 'major' })}
         idx={2}
         onFindingClick={() => {}}
+        onOpenGames={() => {}}
       />,
     );
     const card = screen.getByTestId('opening-finding-card-2');
-    // borderLeftColor inline style is the hex from arrowColor.ts
     expect(card.style.borderLeftColor).toBe(hexToRgb(DARK_RED));
   });
 
@@ -99,6 +120,7 @@ describe('OpeningFindingCard', () => {
         finding={makeFinding({ classification: 'weakness', severity: 'minor' })}
         idx={3}
         onFindingClick={() => {}}
+        onOpenGames={() => {}}
       />,
     );
     const card = screen.getByTestId('opening-finding-card-3');
@@ -111,6 +133,7 @@ describe('OpeningFindingCard', () => {
         finding={makeFinding({ classification: 'strength', severity: 'major' })}
         idx={4}
         onFindingClick={() => {}}
+        onOpenGames={() => {}}
       />,
     );
     const card = screen.getByTestId('opening-finding-card-4');
@@ -123,30 +146,74 @@ describe('OpeningFindingCard', () => {
         finding={makeFinding({ classification: 'strength', severity: 'minor' })}
         idx={5}
         onFindingClick={() => {}}
+        onOpenGames={() => {}}
       />,
     );
     const card = screen.getByTestId('opening-finding-card-5');
     expect(card.style.borderLeftColor).toBe(hexToRgb(LIGHT_GREEN));
   });
 
-  it('calls onFindingClick with the finding when clicked, prevents default navigation', () => {
-    const handleClick = vi.fn();
+  it('Moves link calls onFindingClick with the finding', () => {
+    const onFindingClick = vi.fn();
     const finding = makeFinding();
-    render(<OpeningFindingCard finding={finding} idx={6} onFindingClick={handleClick} />);
-    const card = screen.getByTestId('opening-finding-card-6');
-    fireEvent.click(card);
-    expect(handleClick).toHaveBeenCalledWith(finding);
+    render(
+      <OpeningFindingCard
+        finding={finding}
+        idx={6}
+        onFindingClick={onFindingClick}
+        onOpenGames={() => {}}
+      />,
+    );
+    // Two layouts (mobile + desktop) both render — query all matching test ids and click the first.
+    const movesBtns = screen.getAllByTestId('opening-finding-card-6-moves');
+    fireEvent.click(movesBtns[0]!);
+    expect(onFindingClick).toHaveBeenCalledWith(finding);
+  });
+
+  it('Games link calls onOpenGames with the finding and shows the n_games count', () => {
+    const onOpenGames = vi.fn();
+    const finding = makeFinding({ n_games: 42 });
+    render(
+      <OpeningFindingCard
+        finding={finding}
+        idx={7}
+        onFindingClick={() => {}}
+        onOpenGames={onOpenGames}
+      />,
+    );
+    const gamesBtns = screen.getAllByTestId('opening-finding-card-7-games');
+    expect(gamesBtns[0]!.textContent).toMatch(/42/);
+    expect(gamesBtns[0]!.textContent).toMatch(/Games/);
+    fireEvent.click(gamesBtns[0]!);
+    expect(onOpenGames).toHaveBeenCalledWith(finding);
+  });
+
+  it('clicking the card body itself does not trigger any callbacks (no whole-card deeplink)', () => {
+    const onFindingClick = vi.fn();
+    const onOpenGames = vi.fn();
+    render(
+      <OpeningFindingCard
+        finding={makeFinding()}
+        idx={8}
+        onFindingClick={onFindingClick}
+        onOpenGames={onOpenGames}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('opening-finding-card-8'));
+    expect(onFindingClick).not.toHaveBeenCalled();
+    expect(onOpenGames).not.toHaveBeenCalled();
   });
 
   it('renders the display_name + ECO in the header line', () => {
     render(
       <OpeningFindingCard
         finding={makeFinding({ display_name: 'Caro-Kann Defense', opening_eco: 'B10' })}
-        idx={7}
+        idx={9}
         onFindingClick={() => {}}
+        onOpenGames={() => {}}
       />,
     );
-    const card = screen.getByTestId('opening-finding-card-7');
+    const card = screen.getByTestId('opening-finding-card-9');
     expect(card.textContent).toContain('Caro-Kann Defense');
     expect(card.textContent).toContain('B10');
   });
@@ -158,26 +225,15 @@ describe('OpeningFindingCard', () => {
           opening_name: '<unnamed line>',
           display_name: '<unnamed line>',
         })}
-        idx={8}
+        idx={10}
         onFindingClick={() => {}}
+        onOpenGames={() => {}}
       />,
     );
-    const card = screen.getByTestId('opening-finding-card-8');
+    const card = screen.getByTestId('opening-finding-card-10');
     const italicEl = card.querySelector('.italic');
     expect(italicEl).not.toBeNull();
     expect(italicEl?.textContent).toContain('<unnamed line>');
-  });
-
-  it('has aria-label naming the deep-link target', () => {
-    const finding = makeFinding({
-      display_name: 'Sicilian Defense',
-      candidate_move_san: 'Nxd4',
-    });
-    render(<OpeningFindingCard finding={finding} idx={9} onFindingClick={() => {}} />);
-    const card = screen.getByTestId('opening-finding-card-9');
-    expect(card.getAttribute('aria-label')).toBe(
-      'Open Sicilian Defense (Nxd4) in Move Explorer',
-    );
   });
 
   it('renders the trimmed SAN sequence (D-05) in the prose', () => {
@@ -185,9 +241,15 @@ describe('OpeningFindingCard', () => {
       entry_san_sequence: ['e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4'],
       candidate_move_san: 'Nxd4',
     });
-    render(<OpeningFindingCard finding={finding} idx={10} onFindingClick={() => {}} />);
-    const text = screen.getByTestId('opening-finding-card-10').textContent ?? '';
-    // trimMoveSequence yields "...3.d4 cxd4 4.Nxd4"
+    render(
+      <OpeningFindingCard
+        finding={finding}
+        idx={11}
+        onFindingClick={() => {}}
+        onOpenGames={() => {}}
+      />,
+    );
+    const text = screen.getByTestId('opening-finding-card-11').textContent ?? '';
     expect(text).toContain('...3.d4 cxd4 4.Nxd4');
   });
 });
