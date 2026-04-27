@@ -245,6 +245,24 @@
   animation-fill-mode: forwards;
 }
 
+/* Deep-link row-highlight pulse. Background-color is animated between three
+   inline CSS variables so the keyframe is colorblind to the row's specific
+   severity hex — MoveExplorer sets --row-highlight-low/high/rest from the
+   shared constants in src/lib/highlightPulse.ts. animation-duration and
+   animation-iteration-count are also supplied inline (paired with the arrow
+   pulse) so both pulses stay in sync. */
+@keyframes row-highlight-pulse {
+  0%   { background-color: var(--row-highlight-low); }
+  50%  { background-color: var(--row-highlight-high); }
+  100% { background-color: var(--row-highlight-rest); }
+}
+
+.animate-row-highlight-pulse {
+  animation-name: row-highlight-pulse;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: forwards;
+}
+
 /* Mobile typography bump.
    Below the sm: breakpoint, lift Tailwind's default type scale by one tier so
    labels, filter chips, table captions, and body copy match typical mobile-app

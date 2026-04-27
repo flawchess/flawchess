@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { arrowSortKey } from '../../lib/arrowColor';
 import { darkSquareStyle, lightSquareStyle, BOARD_DARK_SQUARE, BOARD_LIGHT_SQUARE } from '../../lib/theme';
+import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '../../lib/highlightPulse';
 
 interface BoardArrow {
   startSquare: string;
@@ -57,10 +58,10 @@ const ARROW_HOVER_SCALE = 1.3;
 const ARROW_TIP_OVERSHOOT = 0.15;
 // Arrow highlight-pulse animation. The .animate-arrow-pulse helper in
 // src/index.css encodes a CSS keyframe driven by these constants — keep the
-// CSS rule in sync if the values change.
-const ARROW_PULSE_ITERATIONS = 7;
-const ARROW_PULSE_DURATION_MS = 700;
-// Total pulse window = ARROW_PULSE_ITERATIONS × ARROW_PULSE_DURATION_MS = 4900 ms (~5 s).
+// CSS rule in sync if the values change. Total pulse window =
+// HIGHLIGHT_PULSE_ITERATIONS × HIGHLIGHT_PULSE_DURATION_MS (~5 s).
+// Constants live in lib/highlightPulse.ts so the MoveExplorer row-pulse
+// stays driven by the same timing.
 const ARROW_PULSE_CLASS = 'animate-arrow-pulse';
 
 const FILES = 'abcdefgh';
@@ -166,8 +167,8 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
         // count are not duplicated as magic numbers.
         const pulseStyle: React.CSSProperties | undefined = arrow.isHighlightPulse
           ? {
-              animationDuration: `${ARROW_PULSE_DURATION_MS}ms`,
-              animationIterationCount: ARROW_PULSE_ITERATIONS,
+              animationDuration: `${HIGHLIGHT_PULSE_DURATION_MS}ms`,
+              animationIterationCount: HIGHLIGHT_PULSE_ITERATIONS,
             }
           : undefined;
 

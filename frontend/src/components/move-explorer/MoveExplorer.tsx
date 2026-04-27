@@ -3,6 +3,13 @@ import { Chess } from 'chess.js';
 import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
+import {
+  HIGHLIGHT_PULSE_DURATION_MS,
+  HIGHLIGHT_PULSE_ITERATIONS,
+  HIGHLIGHT_BG_LOW_ALPHA,
+  HIGHLIGHT_BG_HIGH_ALPHA,
+  HIGHLIGHT_BG_REST_ALPHA,
+} from '@/lib/highlightPulse';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { cn } from '@/lib/utils';
@@ -34,10 +41,10 @@ interface MoveExplorerProps {
 
 const IS_TOUCH = typeof window !== 'undefined' && 'ontouchstart' in window;
 
-// Alpha suffix appended to the severity hex for the highlighted-row background tint.
-// 0x26 / 0xFF ≈ 15% — matches the existing `bg-blue-500/15` selection brightness so
-// the deep-link tint reads at the same intensity as the mobile-tap selection.
-const HIGHLIGHT_BG_ALPHA_HEX = '26';
+// Background-tint pulse for the highlighted row. The keyframe lives in
+// index.css (`@keyframes row-highlight-pulse`); MoveRow supplies the three
+// color stops via inline CSS variables and the duration/iteration count
+// inline so the pulse stays in sync with the chessboard arrow pulse.
 
 export function MoveExplorer({
   moves,
@@ -226,12 +233,24 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
   const isBelowThreshold = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
 
-  // Merge the unreliable-row opacity (if any) with the highlight background tint.
-  // The tint reuses the severity hex with a ~15% alpha suffix so it sits at the
-  // same brightness as the existing blue selection background but never duplicates it.
+  // Merge the unreliable-row opacity with the highlight pulse. When highlighted,
+  // we set a static fallback backgroundColor (final keyframe value) AND drive
+  // the @keyframes row-highlight-pulse animation via inline CSS variables —
+  // this stays in sync with the chessboard arrow pulse (same constants).
   const rowStyle: React.CSSProperties = {};
   if (isBelowThreshold) rowStyle.opacity = UNRELIABLE_OPACITY;
-  if (highlightColor !== null) rowStyle.backgroundColor = `${highlightColor}${HIGHLIGHT_BG_ALPHA_HEX}`;
+  if (highlightColor !== null) {
+    rowStyle.backgroundColor = `${highlightColor}${HIGHLIGHT_BG_REST_ALPHA}`;
+    rowStyle.animationDuration = `${HIGHLIGHT_PULSE_DURATION_MS}ms`;
+    rowStyle.animationIterationCount = HIGHLIGHT_PULSE_ITERATIONS;
+    // CSS custom properties for the keyframe stops; resolved by index.css.
+    (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-low'] =
+      `${highlightColor}${HIGHLIGHT_BG_LOW_ALPHA}`;
+    (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-high'] =
+      `${highlightColor}${HIGHLIGHT_BG_HIGH_ALPHA}`;
+    (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-rest'] =
+      `${highlightColor}${HIGHLIGHT_BG_REST_ALPHA}`;
+  }
 
   // The highlighted row reuses the existing data-testid (`move-explorer-row-${san}`) —
   // no NEW interactive element is added (the row remains the same <tr>), so per
@@ -246,6 +265,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
         // hover:bg-blue-500/15 sticks on mobile after tap, causing two highlighted rows
         !IS_TOUCH && 'hover:bg-blue-500/15',
         selectedMove === entry.move_san && 'bg-blue-500/15',
+        highlightColor !== null && 'animate-row-highlight-pulse',
       )}
       style={Object.keys(rowStyle).length > 0 ? rowStyle : undefined}
       role="button"
