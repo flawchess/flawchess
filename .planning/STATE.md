@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.13
 milestone_name: Opening Insights
-status: executing
-last_updated: "2026-04-27T03:58:47.279Z"
-last_activity: 2026-04-27 -- Phase 71 execution started
+status: Phase 71.1 inserted (urgent UI refactor)
+last_updated: "2026-04-27T13:55:47.825Z"
+last_activity: 2026-04-27 -- Inserted Phase 71.1 (Openings subnav layout refactor) via /gsd-insert-phase
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 0
   total_plans: 11
-  completed_plans: 0
-  percent: 0
+  completed_plans: 5
+  percent: 45
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 71 (frontend-stats-subtab-openinginsightsblock) — EXECUTING
+Phase: 71.1 (openings-subnav-layout-refactor-match-endgames-pattern) — INSERTED, NOT PLANNED
 Plan: 1 of 6
-Status: Executing Phase 71
-Last activity: 2026-04-27 -- Phase 71 execution started
+Status: Phase 71.1 inserted (urgent UI refactor)
+Last activity: 2026-04-27 -- Inserted Phase 71.1 (Openings subnav layout refactor) via /gsd-insert-phase
 
 ## Project Reference
 
@@ -72,6 +72,7 @@ Carried forward from v1.11 close (still relevant):
 - v1.12 shipped 2026-04-26 with 1 phase (69), 6 plans (Plan 69-06 sub-tasks 06-05/06-08 descoped). PR #65.
 - 2026-04-26: v1.12 mid-milestone scope-down moved the originally-planned follow-on classifier-validation phases to SEED-006 (Benchmark Population Zone Recalibration), gated on full benchmark ingest. Phase-number range 70-74 was subsequently allocated to v1.13.
 - 2026-04-26: v1.13 roadmap created — Phases 70-74, source SEED-005, 20/20 active requirements mapped, Phases 73-74 marked stretch.
+- Phase 71.1 inserted after Phase 71: Openings subnav layout refactor — match Endgames pattern (frontend-only UI restructuring; design notes at .planning/notes/openings-subnav-refactor.md) (URGENT)
 
 ### Pending Todos
 
