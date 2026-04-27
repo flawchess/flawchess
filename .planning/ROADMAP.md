@@ -14,8 +14,8 @@
 - ✅ **v1.9 UI/UX Restructuring** — Phases 49-51 (shipped 2026-04-10) — see [milestones/v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md)
 - ✅ **v1.10 Advanced Analytics** — Phases 48, 52-55, 57, 57.1, 59-62 (shipped 2026-04-19) — see [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md)
 - ✅ **v1.11 LLM-first Endgame Insights** — Phases 63-68 (shipped 2026-04-24) — see [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md)
-- ✅ **v1.12 Benchmark DB Infrastructure & Ingestion Pipeline** — Phase 69 (shipped 2026-04-26). The applied-analytics work originally scoped under v1.12 (classifier validation at scale, rating-stratified offsets, Parity validation, `/benchmarks` skill upgrade & zone recalibration) was deferred to a future milestone — see [seeds/SEED-006](seeds/SEED-006-benchmark-population-zone-recalibration.md). Full archive: [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md)
-- 🚧 **v1.13 Opening Insights** — Phases 70, 71, 71.1 (opened 2026-04-26; Phases 72-74 descoped 2026-04-27 — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md))
+- ✅ **v1.12 Benchmark DB Infrastructure & Ingestion Pipeline** — Phase 69 (shipped 2026-04-26) — see [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md)
+- ✅ **v1.13 Opening Insights** — Phases 70, 71, 71.1 (shipped 2026-04-27; Phases 72-74 descoped) — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md)
 
 ## Phases
 
@@ -160,7 +160,7 @@ See [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md) for full details.
 - [x] Phase 64: `llm_logs` Table & Async Repo (3/3 plans) — completed 2026-04-20
 - [x] Phase 65: LLM Endpoint with pydantic-ai Agent (6/6 plans) — completed 2026-04-21
 - [x] Phase 66: Frontend EndgameInsightsBlock & Beta Flag (5/5 plans) — completed 2026-04-22
-- [~] Phase 67: Validation & Beta Rollout — **descoped**, replaced by public rollout for all users (commit c91478e)
+- [~] Phase 67: Validation & Beta Rollout — descoped, replaced by public rollout for all users (commit c91478e)
 - [x] Phase 68: Endgame Score Timeline (dual-line + shaded gap) (4/4 plans) — completed 2026-04-24
 
 See [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md) for full details.
@@ -172,104 +172,33 @@ See [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md) for full details.
 
 - [x] Phase 69: Benchmark DB Infrastructure & Ingestion Pipeline (6/6 plans) — completed 2026-04-26 via PR #65 — INFRA-01..03, INGEST-01..06
 
-**Scope-down (2026-04-26):** v1.12 was originally planned to include four follow-on applied-analytics phases (classifier validation at scale, rating-stratified offsets, Parity validation, `/benchmarks` skill upgrade & zone recalibration). They were moved to a future milestone seeded at [seeds/SEED-006](seeds/SEED-006-benchmark-population-zone-recalibration.md) with no phase numbers retained. The full benchmark ingest is operational work (days of wall-clock time), not a milestone gate; treating it as one was blocking unrelated work like v1.13 opening insights. Pipeline correctness is the v1.12 deliverable; populating the DB is ops. The phase-number range 70-74 was subsequently allocated to v1.13.
-
 See [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md) for full details.
 
 </details>
 
-<details open>
-<summary>🚧 v1.13 Opening Insights (Phases 70, 71, 71.1) — IN PLANNING (opened 2026-04-26)</summary>
+<details>
+<summary>✅ v1.13 Opening Insights (Phases 70, 71, 71.1) — SHIPPED 2026-04-27</summary>
 
-- [x] Phase 70: Backend opening insights service — INSIGHT-CORE-01..09 (shipped, PR #66)
-- [x] Phase 71: Frontend Stats subtab — `OpeningInsightsBlock` — INSIGHT-STATS-01..06 (shipped, PR #67)
-- [x] Phase 71.1: Openings subnav layout refactor — match Endgames pattern (shipped, PR #68)
-- ~~Phase 72: Frontend Moves subtab — inline weakness/strength bullets~~ — descoped 2026-04-27 (covered by existing MoveExplorer row tint via `getArrowColor`; INSIGHT-MOVES-01..03 marked Out of Scope)
-- ~~Phase 73 (stretch): Meta-recommendation aggregate finding~~ — descoped 2026-04-27 (per-finding cards in Phase 71 deliver the actionable signal; INSIGHT-META-01 marked Out of Scope)
-- ~~Phase 74 (stretch): Bookmark-card weakness badge~~ — descoped 2026-04-27 (badge density already high in nav; INSIGHT-BADGE-01 marked Out of Scope)
+- [x] Phase 70: Backend opening insights service (5/5 plans) — completed 2026-04-26 via PR #66 — INSIGHT-CORE-01..09
+- [x] Phase 71: Frontend Stats subtab — `OpeningInsightsBlock` (6/6 plans) — completed 2026-04-27 via PR #67 — INSIGHT-STATS-01..06
+- [x] Phase 71.1: Openings subnav layout refactor — match Endgames pattern (3/3 plans, INSERTED) — completed 2026-04-27 via PR #68
+- [~] Phase 72: Frontend Moves subtab — inline weakness/strength bullets — descoped 2026-04-27 (covered by MoveExplorer row tint via `getArrowColor`)
+- [~] Phase 73: Meta-recommendation aggregate finding (stretch) — descoped 2026-04-27 (per-finding cards in Phase 71 already deliver actionable signal)
+- [~] Phase 74: Bookmark-card weakness badge (stretch) — descoped 2026-04-27 (alert-fatigue concern with existing nav notification dots)
 
 See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
 
 </details>
 
-## Phase Details (v1.13 active)
+### 📋 v1.14 (Planning)
 
-### Phase 70: Backend opening insights service
-**Goal**: A user-scoped `opening_insights_service` produces ranked, deduplicated, structured `OpeningInsightFinding` payloads for every (entry_position, candidate_move) pair that classifies as a weakness or strength against the user's filtered game history.
-**Depends on**: PRE-01 fix landed (top-10 parity bug); reuses existing `query_top_openings_sql_wdl`, `apply_game_filters`, and `game_positions` Zobrist-hash schema. No new schema or migration.
-**Requirements**: INSIGHT-CORE-01, INSIGHT-CORE-02, INSIGHT-CORE-03, INSIGHT-CORE-04, INSIGHT-CORE-05, INSIGHT-CORE-06, INSIGHT-CORE-07, INSIGHT-CORE-08, INSIGHT-CORE-09
-**Success Criteria** (what must be TRUE):
-  1. `POST /api/insights/openings` (or equivalent) returns a structured `OpeningInsightFinding[]` payload for an authenticated user under their active filter set; equivalent filter states return equivalent rankings.
-  2. The scan input is exactly `top-10 most-played openings per color ∪ user bookmarks`, with the configurable min-games-per-entry floor enforced; scanning recurses **only** to the immediate next ply (no deep recursion).
-  3. Each (entry_position, candidate_move) pair with n ≥ 10 games is classified `weakness` (loss_rate ≥ 0.55), `strength` (score ≥ 0.60), or dropped as neutral; findings are deduplicated by Zobrist hash with deepest-opening attribution.
-  4. Findings are ranked by frequency × severity (formula resolved in Phase 70 `/gsd-discuss-phase`) and capped at the configurable display ceiling (default top 5 weaknesses + top 3 strengths).
-  5. Latency budget — typical user (≤ ~2k games) sees on-the-fly responses without precompute; service-layer caching is added only if heavy users (10k+) breach the budget.
-**Plans**: 5 plans
-  - [x] 70-01-PLAN.md — Pydantic schemas (Request/Finding/Response) + Wave 0 test scaffolding
-  - [x] 70-02-PLAN.md — Alembic CONCURRENTLY migration adding ix_gp_user_game_ply + GamePosition.__table_args__
-  - [x] 70-03-PLAN.md — Repository: query_opening_transitions (LAG CTE) + query_openings_by_hashes
-  - [x] 70-04-PLAN.md — Service: compute_insights() classify/attribute/dedupe/rank/cap pipeline
-  - [x] 70-05-PLAN.md — Router POST /openings + REQUIREMENTS/ROADMAP/CHANGELOG amendments per D-15/D-16/D-17
-
-### Phase 71: Frontend Stats subtab — `OpeningInsightsBlock`
-**Goal**: Users see ranked weakness and strength bullets on Openings → Stats subtab, with deep-links that navigate to Openings → Moves pre-loaded at the entry FEN with the candidate move highlighted.
-**Depends on**: Phase 70
-**Requirements**: INSIGHT-STATS-01, INSIGHT-STATS-02, INSIGHT-STATS-03, INSIGHT-STATS-04, INSIGHT-STATS-05, INSIGHT-STATS-06
-**Success Criteria** (what must be TRUE):
-  1. Authenticated user with at least one qualifying finding sees an `OpeningInsightsBlock` on Openings → Stats subtab with templated bullets like "You lose 62% as Black after 1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 (n=18) → [open in Move Explorer]" using the existing red/green semantic theme colors.
-  2. Clicking a finding's deep-link navigates to Openings → Moves with the chessboard pre-loaded at the entry FEN and the candidate move visibly highlighted.
-  3. When the active filter set yields no findings, the block renders a clear empty-state message naming the threshold and the min-games floor.
-  4. Changing filters (color, time_control, recency, opponent_type/strength, rated) refreshes the block; loading and error states match v1.11 EndgameInsightsBlock conventions.
-  5. Block renders cleanly inside the mobile drawer / single-column layout — verified at 375px width, no horizontal scroll, ≥ 44px touch targets, semantic HTML + `data-testid` per CLAUDE.md frontend rules.
-**Plans**: 6 plans
-  - [x] 71-01-PLAN.md — Phase 70 contract amendment: add entry_san_sequence to OpeningInsightFinding
-  - [x] 71-02-PLAN.md — Extract LazyMiniBoard from GameCard into shared module
-  - [x] 71-03-PLAN.md — Types, openingInsights helpers (trim, severity-color, threshold copy), useOpeningInsights hook
-  - [x] 71-04-PLAN.md — OpeningFindingCard component (per-finding card with severity border, dual layout, prose)
-  - [x] 71-05-PLAN.md — OpeningInsightsBlock component (outer block, 4 sections, loading/error/empty/populated states)
-  - [ ] 71-06-PLAN.md — Stats tab integration + handleOpenFinding deep-link wiring + manual UAT
-**UI hint**: yes
-
-### Phase 71.1: Openings subnav layout refactor — match Endgames pattern (INSERTED)
-
-**Goal:** Refactor `frontend/src/pages/Openings.tsx` so its subnav and mobile shape match the Endgames page pattern. Desktop subnav lifts to span the full right side of `SidebarLayout` (board column + main content). Mobile gets a sticky subnav with a filter button, the chevron-fold sticky board is removed, the board becomes non-sticky on Moves + Games, and is hidden entirely on Stats + Insights — all per the locked decisions in 71.1-CONTEXT.md.
-**Depends on:** Phase 71
-**Requirements**: N/A (frontend layout refactor — decisions live in `71.1-CONTEXT.md`, not `REQUIREMENTS.md`)
-**Success Criteria** (what must be TRUE):
-  1. Desktop (≥ 1024px): subnav spans the full width of `(board column + main content)` above both. Right-of-board settings column visible only on Moves + Games. Board column visible on all 4 subtabs. Left sidebar strip + slide-out panel unchanged.
-  2. Mobile (< 1024px): sticky subnav at top with 4 subtabs + filter button on the right edge. Filter drawer opens from this new button. Chevron fold + grid-rows collapse animation removed. Board, controls, moves field non-sticky and scroll with the page on Moves + Games. Stats + Insights hide the board, controls, and moves field entirely. Subtab switching resets scroll to top.
-  3. No horizontal scroll at 375px viewport. Tabs + filter button have ≥ 44px touch targets. All interactive elements have `data-testid` per CLAUDE.md frontend rules; mobile and desktop changes are applied symmetrically per "always apply changes to mobile too".
-  4. `npm run knip` in `frontend/` reports no new dead exports — chevron/fold cleanup is complete.
-  5. Phase 71 plans (`OpeningInsightsBlock`, deep-links, etc.) still render correctly inside the new layout — no Phase 71 regression.
-**Plans:** 3/3 plans complete
-  - [x] 71.1-01-PLAN.md — Desktop subnav lift: wrap SidebarLayout in Tabs, render TabsList above board column + main content (D-01, D-04, D-13)
-  - [x] 71.1-02-PLAN.md — Mobile rework: sticky subnav with filter button, non-sticky board conditional on Moves/Games, chevron-fold removed (D-05..D-11, D-13)
-  - [x] 71.1-03-PLAN.md — Cleanup: delete chevron-fold dead state, run knip/lint/build/test gates, manual UAT at 375px (D-12)
-**UI hint**: yes
-
-### ~~Phase 72: Frontend Moves subtab — inline weakness/strength bullets~~ (DESCOPED 2026-04-27)
-**Status:** Descoped. The Move Explorer already tints every reliable candidate row by win/loss rate via `getArrowColor` (`MoveExplorer.tsx:228-230`), and the deep-link landing case is handled by the sticky severity tint + one-shot pulse from quick-task 260427-j41. Adding a bullet on top of an already-tinted row was redundant signal in an already-dense table. Requirements INSIGHT-MOVES-01..03 marked Out of Scope in REQUIREMENTS.md.
-
-### ~~Phase 73 (stretch): Meta-recommendation aggregate finding~~ (DESCOPED 2026-04-27)
-**Status:** Descoped. The per-finding cards shipped in Phase 71 already convey actionable per-opening weakness/strength signal; an aggregate sentence on top adds little. Revisit if real-user feedback shows the aggregate framing is missed. Requirement INSIGHT-META-01 marked Out of Scope.
-
-### ~~Phase 74 (stretch): Bookmark-card weakness badge~~ (DESCOPED 2026-04-27)
-**Status:** Descoped. Notification-dot density on the nav is already high (Endgames + Openings dots); a third on individual bookmark cards risks alert fatigue. Requirement INSIGHT-BADGE-01 marked Out of Scope.
+Next milestone goals defined via `/gsd-new-milestone`.
 
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Data Foundation | v1.0 | 2/2 | Complete | 2024-03-11 |
-| 2. Import Pipeline | v1.0 | 4/4 | Complete | 2024-03-12 |
-| 3. Analysis API | v1.0 | 2/2 | Complete | 2024-03-12 |
-| 4. Frontend and Auth | v1.0 | 3/3 | Complete | 2024-03-12 |
-| 5. Position Bookmarks | v1.0 | 5/5 | Complete | 2024-03-13 |
-| 6. Browser Automation | v1.0 | 2/2 | Complete | 2024-03-13 |
-| 7. Game Statistics | v1.0 | 3/3 | Complete | 2024-03-14 |
-| 8. Bookmark Tab Rework | v1.0 | 3/3 | Complete | 2024-03-14 |
-| 9. Game Cards & Import | v1.0 | 8/8 | Complete | 2024-03-15 |
-| 10. Auto Bookmarks | v1.0 | 4/4 | Complete | 2024-03-15 |
+| 1-10. v1.0 phases | v1.0 | 36/36 | Complete | 2024-03-15 |
 | 11-16. v1.1 phases | v1.1 | 14/14 | Complete | 2024-03-18 |
 | 17-19. v1.2 phases | v1.2 | 5/5 | Complete | 2024-03-21 |
 | 20-23. v1.3 phases | v1.3 | 10/10 | Complete | 2026-03-22 |
@@ -281,14 +210,11 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
 | 49-51. v1.9 phases | v1.9 | 7/7 | Complete | 2026-04-10 |
 | 48, 52-62. v1.10 phases | v1.10 | 28/28 | Complete | 2026-04-19 |
 | 63-68. v1.11 phases | v1.11 | 23/23 | Complete (Phase 67 descoped) | 2026-04-24 |
-| 69. Benchmark DB Infra & Ingestion Pipeline | v1.12 | 6/6 | Complete (follow-on phases deferred to SEED-006) | 2026-04-26 |
-| 70. Backend opening insights service | v1.13 | 5/5 | Complete | 2026-04-26 |
-| 71. `OpeningInsightsBlock` (Stats subtab) | v1.13 | 6/6 | Complete | 2026-04-27 |
-| 71.1. Openings subnav layout refactor | v1.13 | 3/3 | Complete | 2026-04-27 |
-| ~~72. Inline bullets (Moves subtab)~~ | v1.13 | — | Descoped 2026-04-27 (covered by row tint) | — |
-| ~~73. Meta-recommendation (stretch)~~ | v1.13 | — | Descoped 2026-04-27 | — |
-| ~~74. Bookmark-card weakness badge (stretch)~~ | v1.13 | — | Descoped 2026-04-27 | — |
+| 69. Benchmark DB Infra & Ingestion | v1.12 | 6/6 | Complete (follow-on phases → SEED-006) | 2026-04-26 |
+| 70-71.1. v1.13 phases | v1.13 | 14/14 | Complete (Phases 72/73/74 descoped) | 2026-04-27 |
 
+</content>
+</invoke>
 ## Backlog
 
 ### Phase 999.1: Password Reset (BACKLOG)

@@ -103,10 +103,16 @@ Users can determine their success rate for any opening position they specify, fi
 - ✓ Resumable Lichess monthly-dump ingestion pipeline with `zgrep`-streaming eval pre-filter, per-user checkpoint, idempotent inserts via existing `(platform, platform_game_id)` unique constraint, SIGINT + SIGKILL safety — v1.12 Phase 69
 - ✓ Stratified subsampling at the player-opportunity level on (rating_bucket × time_control) — 5 buckets × 4 TCs, separate `WhiteElo` / `BlackElo` per side; smoke-validated via `--per-cell 3` ingest of 274k games / 19.4M positions in 3h 6min — v1.12 Phase 69
 - ✓ Centipawn convention (signed from white's POV, centipawns vs pawn-units) verified by `tests/test_benchmark_ingest.py::test_centipawn_convention_signed_from_white` running in CI — v1.12 Phase 69
+- ✓ Backend `opening_insights_service` with `POST /api/insights/openings` — single SQL transition aggregation per (user, color) over `game_positions` for entry plies in [3, 16], LAG-window CTE + windowed `array_agg` passes `entry_san_sequence` to the service. Strict `>` 0.55 win/loss boundary, `MIN_GAMES_PER_CANDIDATE = 20` evidence floor, severity tier major (≥ 0.60) / minor — v1.13 Phase 70
+- ✓ Two-pass attribution with parent-prefix Zobrist lookup (ctypes c_int64 signed-int64 conversion to match polyglot hashes); unmatched findings dropped, never surfaced as `<unnamed line>` placeholders — v1.13 Phase 70
+- ✓ Partial composite covering index `ix_gp_user_game_ply` via Alembic `postgresql_concurrently=True` + `autocommit_block` — keeps the LAG-window scan an Index Only Scan with Heap Fetches: 0 at ~9% of `game_positions` size — v1.13 Phase 70
+- ✓ Frontend `OpeningInsightsBlock` on Openings → Stats subtab with severity-accented `OpeningFindingCard` (DARK_RED / LIGHT_RED / DARK_GREEN / LIGHT_GREEN from `arrowColor.ts`), shared `LazyMiniBoard` thumbnail, four-state rendering. CI test `test_opening_insights_arrow_consistency` enforces backend/frontend threshold lock-step — v1.13 Phase 71
+- ✓ Deep-link wiring — clicking a finding's Moves link replays `entry_san_sequence`, flips the board if needed, applies the matching color filter, navigates to Move Explorer with sticky severity tint + one-shot pulse on the candidate row — v1.13 Phase 71
+- ✓ Openings page subnav layout refactor — desktop subnav lifts above `SidebarLayout`; mobile gains a sticky 4-tab subnav with filter button, board becomes non-sticky on Moves/Games and hidden on Stats/Insights, chevron-fold collapsible removed — v1.13 Phase 71.1
 
-### Active (v1.13)
+### Active (v1.14)
 
-- [ ] Opening weakness and strength insights (SEED-005) — v1.13 in flight
+- [ ] (TBD — next milestone goals defined via `/gsd-new-milestone`)
 
 ### Deferred (gated on full benchmark ingest — SEED-006)
 
@@ -124,37 +130,36 @@ Users can determine their success rate for any opening position they specify, fi
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: v1.13 Opening Insights
+## Current Milestone: TBD (planning v1.14 next)
 
-**Goal:** Surface opening-line strengths and weaknesses for each user via auto-scanning of most-played and bookmarked openings, with templated findings and deep-links into the Move Explorer at the implicated entry position. Build on the existing `game_positions` Zobrist-hash architecture and the v1.11 in-tab insights placement idiom. **Independent of the benchmark DB** — opening positions are book theory (engine eval ≈ 0.0), so absolute under-/over-performance over n ≥ 10 games is actionable without population baselines.
-
-**Target features:**
-- Backend `opening_insights_service` — scans top-10 most-played openings per color + bookmarked positions, classifies each (entry_position, candidate_move) pair as weakness (loss_rate ≥ 0.55) / strength (score ≥ 0.60) at n ≥ 10 games, dedupes by Zobrist hash with deepest-opening attribution, ranks by frequency × severity (formula resolved in Phase A discuss)
-- Frontend `OpeningInsightsBlock` on Openings → Stats subtab — templated bullets with red/green semantics, deep-links navigate to Openings → Moves tab pre-loaded at the entry FEN with the candidate move highlighted
-- Pure templated/rule-based in v1 — no LLM. LLM wrap-up deferred to v1.13.x or v1.14 once findings are in real users' hands.
-
-**Descoped 2026-04-27** (after Phases 70 + 71 + 71.1 shipped):
-- ~~Inline weakness/strength bullets on Openings → Moves~~ — covered by existing `MoveExplorer` row tint via `getArrowColor`; bullet on top of tint was redundant signal.
-- ~~(Stretch) Meta-recommendation aggregate finding~~ — Phase 71's per-finding cards already deliver actionable per-opening signal at finer granularity.
-- ~~(Stretch) Bookmark-card weakness badge~~ — nav notification-dot density already high; a third badge channel risks alert fatigue.
-
-**Pre-v1.13 quick tasks:**
-- v1.11 VAL-01 — insights snapshot test against a canonical user fixture (no benchmark dependency)
-- Top-10 most-played-openings parity-filter fix — `query_top_openings_sql_wdl` excludes ~half of eligible named openings per color (white-defined openings invisible in black top-10 and vice versa); confirmed bug via Hillbilly Attack example. Phase A reuses this service-layer call, so fix it before v1.13 builds on it. See `.planning/todos/pending/2026-04-26-top10-openings-parity-bug.md`.
+v1.13 closed 2026-04-27. The next milestone goals are defined via `/gsd-new-milestone`.
 
 ## Current State
 
-v1.12 Benchmark DB Infrastructure & Ingestion Pipeline shipped 2026-04-26 (PR #65). Twelve milestones complete (v1.0–v1.12), 67 phases (+3 inserted), live at flawchess.com.
+v1.13 Opening Insights shipped 2026-04-27 (PRs #66, #67, #68). Thirteen milestones complete (v1.0–v1.13), 70 phases (+3 inserted), live at flawchess.com.
 
-v1.12 delivered the operational half of SEED-002: a separate `flawchess-benchmark` PostgreSQL 18 instance on port 5433, a third read-only MCP server (`flawchess-benchmark-db`), Alembic-driven schema parity with dev/prod/test (no fork), a streaming `zgrep` eval pre-filter that drops the ~85% of Lichess dump games without `[%eval` headers before they hit python-chess, a stratified subsampling pipeline at the player-opportunity level on (rating × TC) with separate `WhiteElo`/`BlackElo` per side, and a SIGINT/SIGKILL-resumable per-user checkpoint orchestrator. Smoke-validated end-to-end via a `--per-cell 3` ingest of 274k games / 19.4M positions in 3h 6min. Verification report at `reports/benchmark-db-phase69-verification-2026-04-26.md`.
+v1.13 fulfilled SEED-005 with a templated/rule-based opening-insights pipeline. Backend `opening_insights_service` scans every (entry_position, candidate_move) pair across entry plies [3, 16] via a single LAG-window CTE per (user, color) over `game_positions`, deduplicates by Zobrist hash with deepest-opening attribution, applies an `n ≥ 20` evidence floor and a strict `>` 0.55 win/loss boundary, and emits `OpeningInsightFinding[]` with `entry_san_sequence` so the frontend can replay the line on demand. Frontend `OpeningInsightsBlock` on Openings → Stats renders severity-accented per-finding cards with deep-links into the Move Explorer pre-positioned at the entry FEN. Phase 71.1 refactored the Openings page subnav to match the Endgames pattern (desktop subnav above `SidebarLayout`, sticky mobile subnav with filter button, non-sticky board on Moves/Games, hidden on Stats/Insights).
 
-The milestone was scoped down on 2026-04-26 from 5 phases (69-73) to 1 (69). Phases 70-73 (classifier validation at scale, rating-stratified offsets, Parity validation, `/benchmarks` skill upgrade & rating-bucketed zone recalibration) moved to SEED-006, gated on the full benchmark ingest. Pipeline correctness was the v1.12 deliverable; populating the DB is operational ops work, not a milestone gate.
+Mid-milestone scope-down on 2026-04-27 dropped Phases 72 (Moves-subtab inline bullets), 73 (meta-recommendation, stretch), and 74 (bookmark-card weakness badge, stretch) after Phases 70+71+71.1 shipped. Move Explorer row tinting via `getArrowColor` already conveys the signal at the displayed position; per-finding cards convey actionable per-opening signal at finer granularity than an aggregate sentence would; alert-fatigue concern on a third nav badge channel.
 
-A hot-patch mid-Phase 69 dropped two dead columns (`games.eval_depth` and `games.eval_source_version`) added by plan 69-02's migration, after the smoke confirmed Lichess's `/api/games/user` endpoint emits bare `[%eval cp]` annotations with no depth field. Lesson: don't trust documentation about "depth available in PGN" — Lichess **dump** exports include depth, **API** exports do not. Verify with a sample before specifying schema.
+v1.13 deliberately did NOT consume the v1.12 benchmark DB — opening positions are book theory (engine eval ≈ 0.0), so absolute under-/over-performance over n ≥ 20 is actionable without population baselines. LLM narration of opening insights is deferred to v1.13.x or v1.14 once templated findings are in real users' hands.
+
+<details>
+<summary>Previous milestone snapshots (v1.12, etc.)</summary>
+
+v1.12 Benchmark DB Infrastructure & Ingestion Pipeline shipped 2026-04-26 (PR #65). Twelve milestones complete at that point (v1.0–v1.12), 67 phases.
+
+v1.12 delivered the operational half of SEED-002: a separate `flawchess-benchmark` PostgreSQL 18 instance on port 5433, a third read-only MCP server (`flawchess-benchmark-db`), Alembic-driven schema parity with dev/prod/test (no fork), a streaming `zgrep` eval pre-filter that drops the ~85% of Lichess dump games without `[%eval` headers before they hit python-chess, a stratified subsampling pipeline at the player-opportunity level on (rating × TC) with separate `WhiteElo`/`BlackElo` per side, and a SIGINT/SIGKILL-resumable per-user checkpoint orchestrator. Smoke-validated end-to-end via a `--per-cell 3` ingest of 274k games / 19.4M positions in 3h 6min.
+
+The milestone was scoped down on 2026-04-26 from 5 phases (69-73) to 1 (69). Phases 70-73 (classifier validation at scale, rating-stratified offsets, Parity validation, `/benchmarks` skill upgrade & rating-bucketed zone recalibration) moved to SEED-006, gated on the full benchmark ingest. The phase-number range 70-74 was subsequently reallocated to v1.13.
+
+A hot-patch mid-Phase 69 dropped two dead columns (`games.eval_depth` and `games.eval_source_version`) after the smoke confirmed Lichess's `/api/games/user` endpoint emits bare `[%eval cp]` annotations with no depth field. Lesson: don't trust documentation about "depth available in PGN" — Lichess **dump** exports include depth, **API** exports do not. Verify with a sample before specifying schema.
+
+</details>
 
 ## Context
 
-- **Current state:** v1.12 shipped 2026-04-26. 67 phases complete across 12 milestones. Live at flawchess.com with CI/CD and Sentry.
+- **Current state:** v1.13 shipped 2026-04-27. 70 phases complete across 13 milestones. Live at flawchess.com with CI/CD and Sentry.
 - **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui (Command, Popover)
 - **Auth:** FastAPI-Users (JWT + Google SSO + guest sessions with is_guest flag + impersonation via ClaimAwareJWTStrategy)
 - **Core algorithm:** Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import for indexed integer equality lookups
@@ -241,6 +246,23 @@ A hot-patch mid-Phase 69 dropped two dead columns (`games.eval_depth` and `games
 | v1.12 scope-down to Phase 69 only (Phases 70-73 → SEED-006) | Full benchmark ingest is days of wall-clock ops work, not a milestone gate; treating it as one was blocking unrelated work like v1.13 opening insights | ✓ Good |
 | Smoke-from-`--per-cell 3` over interim `--per-cell 30` ingest | Pipeline-correctness evidence collected from a small smoke run rather than blocking on a multi-day full ingest; aligns with the scope-down framing | ✓ Good |
 | Hot-patch drop of `eval_depth` + `eval_source_version` mid-Phase 69 | Post-smoke sampling proved both columns were dead (Lichess API emits bare `[%eval cp]` with no depth field); lighter than running a corrective phase | ✓ Good |
+| Single SQL transition aggregation per (user, color) over `game_positions` | LAG-window CTE on `(user_id, game_id, ply)` index streams transitions without re-sort; HAVING enforces evidence floor and threshold at SQL level — no Python-side post-filter | ✓ Good |
+| `entry_san_sequence` via `array_agg` window with `BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING` | Frontend can replay the line on the chessboard without a separate roundtrip; sequence is "everything before the entry move" by construction | ✓ Good |
+| Strict `>` 0.55 win/loss boundary mirroring `frontend/src/lib/arrowColor.ts` | CI test `test_opening_insights_arrow_consistency` asserts threshold lock-step; eliminates classifier/visual divergence | ✓ Good |
+| Severity tier `major (≥ 0.60) / minor (>0.55, <0.60)` with arrowColor border mapping | Severity becomes a visual axis (DARK_RED / LIGHT_RED / DARK_GREEN / LIGHT_GREEN) consistent with arrow stroke colors | ✓ Good |
+| Two-pass attribution (direct + parent-prefix lookup) with drop-on-miss | Avoids `<unnamed line>` placeholders; ctypes c_int64 conversion required to match python-chess polyglot signed-int64 hashes (BLOCKER-2) | ✓ Good |
+| `MIN_GAMES_PER_CANDIDATE = 20` as `MIN_GAMES_PER_CANDIDATE` (was n=10 in original spec) | n=10 was too noisy in real-world testing; n=20 settles WDL into a believable rate before classification | ✓ Good |
+| Bookmarks NOT consumed as algorithmic input | Bookmarks remain a UI feature for explicit user tracking; opening insights operate on actual play frequency, not curated picks | ✓ Good |
+| Constants in tiny `opening_insights_constants.py` module (16 lines) | Avoids circular import between repository (uses constants in SQL) and service (uses constants in classification) | ✓ Good |
+| Repository owns module-level threshold constants, service re-exports | Single source of truth on the SQL boundary; constants colocate with the queries that embed them | ✓ Good |
+| Partial composite covering index `ix_gp_user_game_ply` with `INCLUDE (full_hash, move_san)` | Index Only Scan with Heap Fetches: 0; partial predicate `ply BETWEEN 1 AND 17` keeps the index ~9% of `game_positions` size | ✓ Good |
+| First project use of `postgresql_concurrently=True` + `autocommit_block` | Required for index creation on a write-heavy table without locking out import; rationale captured inline so future autogenerate doesn't reorder columns | ✓ Good |
+| `LazyMiniBoard` extracted from inline `GameCard` function into shared `frontend/src/components/board/` module | Reused by `OpeningFindingCard` (deep-link card) and the future Insights bookmark surfaces; IntersectionObserver lazy render preserved byte-for-byte | ✓ Good |
+| Single `<a href>` whole-card touch target on `OpeningFindingCard` | Originally split, then collapsed to the whole card; reverted in quick-task 260427-h3u to explicit "Moves" + "Games" links because the whole-card target obscured which subtab opened | ⚠️ Revisit (link semantics may evolve) |
+| Phase 71.1 inserted mid-milestone (Openings subnav refactor to match Endgames pattern) | Frontend layout debt surfaced during Phase 71 UAT; cheaper to fix in-milestone than carry the diverging desktop/mobile shapes into v1.14 | ✓ Good |
+| v1.13 scope-down to Phases 70+71+71.1 (72/73/74 descoped) | Move Explorer row tint already conveys the signal at the displayed position; per-finding cards already deliver per-opening actionable signal at finer granularity than an aggregate; bookmark-badge density risked alert fatigue | ✓ Good |
+| Templated/rule-based v1, no LLM | Defer LLM narration until templated findings are in real users' hands and we know which findings are worth narrating; v1.11 LLM stack remains available for v1.13.x or v1.14 | ✓ Good |
+| v1.13 deliberately does NOT consume v1.12 benchmark DB | Opening positions are book theory (engine eval ≈ 0.0); absolute under-/over-performance over n ≥ 20 is actionable without population baselines per SEED-005 § Why Self-Referential Is Sufficient | ✓ Good |
 
 ## Evolution
 
@@ -260,4 +282,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-27 — v1.13 Phases 72/73/74 descoped after Phases 70 + 71 + 71.1 shipped; milestone ready for close.*
+*Last updated: 2026-04-27 after v1.13 milestone close (PRs #66, #67, #68; Phases 72/73/74 descoped).*

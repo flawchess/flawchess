@@ -8,13 +8,45 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
-### Fixed
-- PRE-01: Top-10 most-played openings now include opponent-defined openings (e.g. `vs. Caro-Kann Defense: Hillbilly Attack` for a Black user) which were previously hidden by a ply-parity filter. Off-color rows render with a `vs. ` prefix; same-color rows are unchanged.
-- PRE-01 follow-up: Top-10 most-played openings now rank by position-based game count (games passing through the named position, including games that continued into deeper variations), matching the count displayed in the UI. Previously the ranking used per-name-tag count while the displayed number was position-based, so high-volume positions like `Blackmar-Diemer Gambit` (148 games for one dev user) could be excluded from the top-10 by lower-volume rows whose name tags happened to absorb more games. `MIN_PLY_WHITE` and `MIN_PLY_BLACK` raised from 1/2 to 3/3 so trivial trunks like `1.d4` and `1.e4` don't dominate the new ranking.
+## [v1.13] Opening Insights — 2026-04-27
+
+First user-facing analytics layer for openings. Each user gets a curated list of
+their opening weaknesses (loss rate > 55%) and strengths (win rate > 55%) with
+deep-links into the Move Explorer pre-positioned at the implicated entry FEN
+and the candidate move highlighted. Pure templated/rule-based; LLM narration
+is deliberately deferred. v1.13 also restructures the Openings page subnav to
+match the Endgames pattern. Phases 72 (inline bullets on Moves), 73
+(meta-recommendation, stretch), and 74 (bookmark-card weakness badge, stretch)
+were descoped on close after the live UI showed Phases 70 + 71 + 71.1 already
+delivered the actionable signal.
+
+### Added
+- Phase 70: `POST /api/insights/openings` returning `OpeningInsightFinding[]`. Single SQL transition aggregation per (user, color) over `game_positions` for entry plies in `[3, 16]`, `MIN_GAMES_PER_CANDIDATE = 20` evidence floor enforced at SQL HAVING level, strict `>` 0.55 win/loss boundary classifying weakness / strength, severity tier major (`>= 0.60`) / minor in `(0.55, 0.60)`. Two-pass attribution (direct hash lookup plus parent-prefix walk via `ctypes.c_int64`-converted polyglot Zobrist hashes) drops findings that match neither rather than surfacing `<unnamed line>` placeholders. Findings are deduplicated by entry hash with deepest-opening attribution and ranked by `(severity desc, n_games desc)` capped at 5 weaknesses + 3 strengths per color.
+- Phase 70: Alembic migration `80e22b38993a_add_gp_user_game_ply_index` — partial composite covering index `ix_gp_user_game_ply (user_id, game_id, ply) INCLUDE (full_hash, move_san) WHERE ply BETWEEN 1 AND 17`. First project use of `postgresql_concurrently=True` + `autocommit_block`. Keeps the LAG-window scan an Index Only Scan with Heap Fetches: 0 at ~9% of `game_positions` size.
+- Phase 71: `OpeningInsightsBlock` component on Openings → Stats subtab — charcoal-texture card with four-state rendering (loading skeleton, error, empty block with threshold copy, populated four-section grid: white weaknesses, black weaknesses, white strengths, black strengths).
+- Phase 71: `OpeningFindingCard` per-finding card with severity-accented border (DARK_RED / LIGHT_RED / DARK_GREEN / LIGHT_GREEN from `frontend/src/lib/arrowColor.ts`), dual mobile/desktop layout, opening name + ECO + entry SAN sequence prose, and explicit "Moves" + "Games" deep-links.
+- Phase 71: `LazyMiniBoard` shared module extracted from the inline `GameCard` definition into `frontend/src/components/board/LazyMiniBoard.tsx` for reuse by `OpeningFindingCard` and future insight surfaces. IntersectionObserver lazy render preserved byte-for-byte.
+- Phase 71: `useOpeningInsights` TanStack Query hook + `frontend/src/lib/openingInsights.ts` helpers (`trimMoveSequence`, `getSeverityBorderColor`, threshold copy constants).
+- Phase 71: Deep-link wiring in `Openings.tsx` — clicking the Moves link replays `entry_san_sequence` through `chess.loadMoves()`, flips the board if the finding is for the black side, applies the matching color filter with `matchSide: 'both'`, navigates to Openings → Move Explorer, and scrolls to top.
+- Phase 71.1: Openings page subnav restructured to match the Endgames pattern. Desktop: `<Tabs>` now wraps `<SidebarLayout>` with `<TabsList>` spanning the full board column + main content above. Mobile: sticky 4-tab subnav with an icon-only filter button on the right edge; the chevron-fold collapsible board is gone; the board, controls, and moves field are non-sticky on Moves + Games and hidden entirely on Stats + Insights. Subtab switching resets scroll to top on both viewports.
+- Phase 71.1: Notification dot on the Openings tab gated behind first-import state (lights up after first game import completes); Endgames-tab dot similarly gated. Non-Import tabs lock until first game import completes.
+- Tests: `tests/services/test_opening_insights_service.py` covers classification boundaries, evidence floor, deduplication, attribution (direct and parent-prefix), ranking formula, caps per color, color-optimization short-circuits, and bookmarks-not-consumed regression. `tests/services/test_opening_insights_arrow_consistency.py` enforces backend/frontend threshold lock-step via a CI gate. Plus `tests/repositories/test_opening_insights_repository.py` and `tests/routers/test_insights_openings.py`.
 
 ### Changed
-- "Most Played Openings as White/Black" info popovers updated to describe position-based counting, the 3-half-move minimum, and the `vs.` prefix.
-- **Phase 70**: Reframed opening insights discovery algorithm from a top-10-most-played x per-position next-moves scan to a single first-principles SQL transition aggregation over `game_positions` for entry plies in `[3, 16]` with `n_games >= 20` evidence floor. Classifier `score = (W + D/2)/n >= 0.55` replaced by separate `loss_rate > 0.55` (weakness) / `win_rate > 0.55` (strength) thresholds, aligning with the strict `>` boundary in `frontend/src/lib/arrowColor.ts`. Bookmarks are no longer consumed by the discovery algorithm. Adds new partial composite covering index `ix_gp_user_game_ply` to keep heaviest users (~5.7M positions) inside the <1 s latency budget without precompute.
+- "Most Played Openings as White/Black" info popovers describe position-based counting, the 3-half-move minimum, and the `vs.` prefix introduced by PRE-01.
+- Endgames repository: replaced fragile self-joins with `array_agg` aggregation for endgame-class series queries, prepping the analytics layer for further per-class breakdowns.
+- Backend: opening-insights algorithm reframed mid-Phase-70 from a top-10-most-played × per-position next-moves scan to a single first-principles SQL transition aggregation over `game_positions` for entry plies in `[3, 16]` with `n_games >= 20` evidence floor. Classifier `score = (W + D/2)/n >= 0.55` replaced by separate `loss_rate > 0.55` (weakness) / `win_rate > 0.55` (strength) thresholds aligned with `frontend/src/lib/arrowColor.ts`. Bookmarks no longer consumed by the discovery algorithm.
+
+### Fixed
+- PRE-01: Top-10 most-played openings now include opponent-defined openings (e.g. `vs. Caro-Kann Defense: Hillbilly Attack` for a Black user) which were previously hidden by a ply-parity filter. Off-color rows render with a `vs. ` prefix; same-color rows are unchanged. 1599 of 3301 white-defined ECO openings were previously invisible in the black top-10 (and vice versa).
+- PRE-01 follow-up: Top-10 most-played openings now rank by position-based game count (games passing through the named position, including games that continued into deeper variations), matching the count displayed in the UI. `MIN_PLY_WHITE` and `MIN_PLY_BLACK` raised from 1/2 to 3/3 so trivial trunks like `1.d4` and `1.e4` don't dominate the new ranking.
+- Opening insights `IllegalMoveError` when `entry_san_sequence` does not start from the initial position (#71 hotfix). Quick task `260427-g4a`.
+- Mobile: Moves/Games links beside the mini board in `OpeningFindingCard` (whole-card target reverted to explicit links). Quick task `260427-h3u`.
+- Move Explorer: candidate row carries a sticky severity-colored border and one-shot pulsating arrow when arriving from an Insights deep-link; highlight clears on position or filter change. Quick task `260427-j41`.
+
+### Removed
+- Database: dropped the redundant `ix_gp_user_full_hash` and the unused `ix_gp_user_endgame_class` indexes.
+- Frontend: chevron-fold collapsible board state on Openings mobile (`boardCollapsed`, `setBoardCollapsed`, `touchStartY`, `handleHandleTouchStart`, `handleHandleTouchEnd`, `MIN_SWIPE_DISTANCE`) removed entirely along with the associated swipe-handler logic.
 
 ## [v1.12] Benchmark DB Infrastructure & Ingestion Pipeline — 2026-04-26
 
@@ -353,7 +385,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.12...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.13...HEAD
+[v1.13]: https://github.com/flawchess/flawchess/compare/v1.12...v1.13
 [v1.12]: https://github.com/flawchess/flawchess/compare/v1.11...v1.12
 [v1.11]: https://github.com/flawchess/flawchess/compare/v1.10...v1.11
 [v1.10]: https://github.com/flawchess/flawchess/compare/v1.9...v1.10

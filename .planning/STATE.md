@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.13
 milestone_name: Opening Insights
-status: "Phases 72/73/74 descoped — v1.13 ready for close (70 + 71 + 71.1 shipped)"
-last_updated: "2026-04-27T18:00:00.000Z"
+status: completed
+last_updated: "2026-04-27T18:17:45.874Z"
 last_activity: 2026-04-27
 progress:
-  total_phases: 3
+  total_phases: 7
   completed_phases: 3
   total_plans: 14
   completed_plans: 14
@@ -46,6 +46,20 @@ v1.12 shipped 2026-04-26 with 1 phase (69), 6 plans, delivered via PR #65. Twelv
 ## Accumulated Context
 
 ### Deferred Items
+
+Acknowledged at v1.13 milestone close on 2026-04-27:
+
+| Category | Item | Status |
+|----------|------|--------|
+| requirements | INSIGHT-MOVES-01..03, INSIGHT-META-01, INSIGHT-BADGE-01 | Descoped 2026-04-27 (covered by Move Explorer row tint + per-finding cards; alert-fatigue concern on bookmark badge) |
+| uat | Phase 71 UAT — 18 open scenarios | Deferred — phase shipped via PR #67; remaining UAT scenarios captured in 71-UAT.md, not blocking close |
+| uat | Phase 71.1 HUMAN-UAT — 9 open scenarios | Deferred — phase shipped via PR #68; remaining UAT scenarios captured in 71.1-HUMAN-UAT.md, not blocking close |
+| verification | Phase 71.1 VERIFICATION — `human_needed` | Deferred — automated gates green; manual verification not blocking close |
+| audit | 8 stale debug session entries (diagnosed/awaiting_human_verify, March-April) | Carried forward from v1.12; not relevant to v1.13 active work |
+| audit | 129 quick-task directory entries without status frontmatter | Historical archive (already merged in git); audit misclassifies as open |
+| todos | bitboard-storage-for-partial-position-queries (database) | Carried forward — long-range idea, not v1.14 candidate yet |
+| todos | phase-70-requirements-roadmap-amendments (planning) | Closed — amendments landed in Plan 70-05 commit |
+| seeds | SEED-002 (benchmark population baselines), SEED-006 (zone recalibration), SEED-005 (opening insights) | Dormant — SEED-005 fulfilled by v1.13; SEED-002/006 await full benchmark ingest |
 
 Acknowledged at v1.12 milestone close on 2026-04-26:
 

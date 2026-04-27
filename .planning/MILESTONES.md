@@ -1,5 +1,31 @@
 # Milestones: FlawChess
 
+## v1.13 Opening Insights (Shipped: 2026-04-27)
+
+**Phases completed:** 3 phases (70, 71, 71.1), 14 plans, delivered via PRs #66, #67, #68 (squash merges). Phases 72, 73, 74 descoped 2026-04-27.
+**Stats:** 106 files changed, +19,246 / -561 lines over 2 days (2026-04-26 → 2026-04-27)
+**Source:** SEED-005 — Opening weakness and strength insights, fulfilled by templated/rule-based v1; LLM narration deferred.
+
+**Key accomplishments:**
+
+- Backend `opening_insights_service` with `POST /api/insights/openings` — single SQL transition aggregation per (user, color) over `game_positions` for entry plies in [3, 16], LAG-window CTE + `array_agg` over windowed rows passes `entry_san_sequence` straight to the service. Strict `>` 0.55 win/loss threshold, `MIN_GAMES_PER_CANDIDATE = 20` evidence floor, severity tier major (≥ 0.60) / minor (Phase 70)
+- Two-pass attribution with parent-prefix Zobrist lookup (ctypes c_int64 signed-int64 conversion to match python-chess polyglot hashes). Findings with neither direct nor parent-lineage match are dropped, never surfaced as `<unnamed line>` placeholders. Sentry tag captures unmatched drops for diagnosis (Phase 70)
+- Database migration `80e22b38993a_add_gp_user_game_ply_index` — first project use of `postgresql_concurrently=True` + `autocommit_block`. Partial composite covering index `ix_gp_user_game_ply (user_id, game_id, ply) INCLUDE (full_hash, move_san) WHERE ply BETWEEN 1 AND 17` keeps the LAG-window scan an Index Only Scan with Heap Fetches: 0 at ~9% of table size (Phase 70)
+- Frontend `OpeningInsightsBlock` on Openings → Stats subtab — per-finding cards (`OpeningFindingCard`) with severity-accented border (DARK_RED / LIGHT_RED / DARK_GREEN / LIGHT_GREEN from `arrowColor.ts` for stroke-aligned colors), shared `LazyMiniBoard` thumbnail extracted from `GameCard`, dual mobile/desktop layout, four-state rendering (loading skeleton, error, empty, populated). CI test `test_opening_insights_arrow_consistency` enforces backend/frontend threshold lock-step (Phase 71)
+- Deep-link wiring — clicking a finding's Moves link replays `entry_san_sequence` through `chess.loadMoves()`, flips the board if the finding is for the black side, applies the matching color filter with `matchSide: 'both'`, navigates to Openings → Move Explorer pre-positioned at the entry FEN with the candidate move highlighted (sticky severity tint + one-shot pulse from quick-task 260427-j41) (Phase 71)
+- Openings page subnav layout refactor — desktop subnav lifts above `SidebarLayout` to span the full board+main columns mirroring Endgames; mobile gains a sticky 4-tab subnav with filter button, board becomes non-sticky on Moves+Games and hidden on Stats+Insights, chevron-fold collapsible removed entirely. Subtab switching resets scroll to top on both desktop and mobile (Phase 71.1)
+- Pre-v1.13 quick task PRE-01 — dropped the parity filter from `query_top_openings_sql_wdl`, surfacing 1599 of 3301 white-defined ECO openings in the black top-10 (e.g. Hillbilly Attack — 816 black games previously invisible). Off-color rows now prefixed with `vs.` for clarity
+
+**Known deferred items:**
+
+- INSIGHT-MOVES-01..03 (inline weakness/strength bullets on Moves subtab), INSIGHT-META-01 (meta-recommendation aggregate finding), INSIGHT-BADGE-01 (bookmark-card weakness badge) — all descoped 2026-04-27. Move Explorer row tinting via `getArrowColor` already conveys the signal at the displayed position; per-finding cards in Phase 71 deliver the actionable signal at finer granularity than an aggregate; bookmark-badge density risked alert fatigue with Endgames + Openings nav dots already present
+- Phase 71 UAT (18 open scenarios), Phase 71.1 HUMAN-UAT (9 open scenarios), Phase 71.1 VERIFICATION (`human_needed`) — automated gates green, deferred for asynchronous review; phases shipped via PRs #67 and #68
+- LLM narration of opening insights — revisit as v1.13.x or v1.14 once templated findings are in real users' hands and we know which findings are worth narrating
+- Population-relative weakness signals — gated on full benchmark ingest (SEED-006); deliberately not part of v1.13 because book-move equality makes population baselines redundant for opening insights
+- Carried forward: 8 stale debug session entries (March-April), 129 quick-task directory entries without status frontmatter (audit misclassifies as open — both historical), pre-existing ORM/DB column drift, `_compute_score_gap_timeline` / `_finding_time_pressure_vs_performance` grep noise from v1.11
+
+---
+
 ## v1.12 Benchmark DB Infrastructure & Ingestion Pipeline (Shipped: 2026-04-26)
 
 **Phases completed:** 1 phase (69), 6 plans (5 fully executed + 1 with descoped sub-tasks), delivered via PR #65 (squash merge).
