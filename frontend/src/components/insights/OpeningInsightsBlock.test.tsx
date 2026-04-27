@@ -3,6 +3,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+
+// IntersectionObserver is not available in jsdom — stub it for LazyMiniBoard inside OpeningFindingCard.
+class MockIntersectionObserver {
+  observe = vi.fn();
+  disconnect = vi.fn();
+  unobserve = vi.fn();
+}
+vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
+
+// Avoid SVG/canvas rendering of the mini-board in jsdom.
+vi.mock('react-chessboard', () => ({
+  Chessboard: vi.fn(() => null),
+}));
+
 import { OpeningInsightsBlock } from './OpeningInsightsBlock';
 import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/insights';
 import type { FilterState } from '@/components/filters/FilterPanel';
