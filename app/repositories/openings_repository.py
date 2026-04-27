@@ -1,9 +1,12 @@
 """Openings repository: DB queries for position-based W/D/L lookups."""
 
+import ctypes
 import datetime
 from collections.abc import Sequence
 from typing import Any, Literal
 
+import chess
+import chess.polyglot
 from sqlalchemy import Float, and_, case, cast, func, or_, select
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +29,17 @@ HASH_COLUMN_MAP = {
     "black": GamePosition.black_hash,
     "full": GamePosition.full_hash,
 }
+
+# Phase 71 hotfix (#71): opening insights replays entry_san_sequence from
+# chess.Board(); games imported with a non-standard starting FEN
+# (e.g. chess.com themed events / puzzles whose PGN carries [SetUp "1"][FEN ...])
+# store a SAN prefix that is unreachable from the initial position and would
+# 500 the endpoint when min(array_agg(...)) lexicographically picks such a
+# chain over a legal one. We filter those games out of the CTE by checking
+# the ply-0 full_hash against the standard initial-position Zobrist hash.
+# Signed int64 conversion mirrors GamePosition.full_hash storage (see
+# opening_insights_service._compute_prefix_hashes line 129).
+STARTING_POSITION_HASH: int = ctypes.c_int64(chess.polyglot.zobrist_hash(chess.Board())).value
 
 
 def _build_base_query(
@@ -351,12 +365,7 @@ async def query_matching_games(
             .limit(limit)
         )
     else:
-        page_stmt = (
-            dedup_subq
-            .order_by(Game.played_at.desc())
-            .offset(offset)
-            .limit(limit)
-        )
+        page_stmt = dedup_subq.order_by(Game.played_at.desc()).offset(offset).limit(limit)
     result = await session.execute(page_stmt)
     games = list(result.scalars().all())
 
@@ -433,8 +442,15 @@ async def query_next_moves(
     )
 
     stmt = apply_game_filters(
-        stmt, time_control, platform, rated, opponent_type, recency_cutoff, color,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        color,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     rows = await session.execute(stmt)
@@ -480,8 +496,15 @@ async def query_transposition_counts(
     )
 
     stmt = apply_game_filters(
-        stmt, time_control, platform, rated, opponent_type, recency_cutoff, color,
-        opponent_strength=opponent_strength, elo_threshold=elo_threshold,
+        stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        color,
+        opponent_strength=opponent_strength,
+        elo_threshold=elo_threshold,
     )
 
     rows = await session.execute(stmt)
@@ -530,16 +553,40 @@ async def query_opening_transitions(
     # synthetic test factories but mis-aligned against real game_positions data.
     # That bug surfaced as `chess.IllegalMoveError` during Phase 71 UAT because
     # entry_san_sequence then started one move late and replay failed.
+    #
+    # Phase 71 hotfix (this commit): include only games whose ply-0 position
+    # IS the standard starting position. Games imported from chess.com themed
+    # events / puzzles carry [SetUp "1"][FEN ...] PGN headers and store a SAN
+    # prefix that is unreachable from chess.Board(); this would crash the
+    # replay in opening_insights_service._compute_prefix_hashes when
+    # min(array_agg(...)) lexicographically picks such a chain. Games missing
+    # a ply-0 row entirely (data corruption — should not occur) are also
+    # excluded by the EXISTS predicate.
+    gp_root = aliased(GamePosition, name="gp_root")
+    has_standard_start = (
+        select(1)
+        .where(
+            gp_root.game_id == GamePosition.game_id,
+            gp_root.user_id == GamePosition.user_id,
+            gp_root.ply == 0,
+            gp_root.full_hash == STARTING_POSITION_HASH,
+        )
+        .exists()
+    )
     transitions_cte = (
         select(
             GamePosition.game_id.label("game_id"),
             GamePosition.ply.label("ply"),
-            GamePosition.move_san.label("move_san"),                # candidate move played from entry
-            GamePosition.full_hash.label("entry_hash"),             # entry position hash IS the current row's hash
-            func.lead(GamePosition.full_hash).over(
+            GamePosition.move_san.label("move_san"),  # candidate move played from entry
+            GamePosition.full_hash.label(
+                "entry_hash"
+            ),  # entry position hash IS the current row's hash
+            func.lead(GamePosition.full_hash)
+            .over(
                 partition_by=GamePosition.game_id,
                 order_by=GamePosition.ply,
-            ).label("resulting_full_hash"),                          # position after the candidate move (LEAD by one ply)
+            )
+            .label("resulting_full_hash"),  # position after the candidate move (LEAD by one ply)
             # Per BLOCKER-1 / D-25 / D-34: the SAN tokens needed to replay the
             # entry position from the start of the game. At an entry row at
             # ply X, entry_san_sequence must contain the X moves played at
@@ -557,19 +604,25 @@ async def query_opening_transitions(
             # FILTER (WHERE move_san IS NOT NULL) guards against NULL entries
             # from corrupted imports: board.push_san(None) raises TypeError
             # (not InvalidMoveError), which would propagate as a 500.
-            func.array_agg(GamePosition.move_san).filter(
-                GamePosition.move_san.isnot(None)
-            ).over(
+            func.array_agg(GamePosition.move_san)
+            .filter(GamePosition.move_san.isnot(None))
+            .over(
                 partition_by=GamePosition.game_id,
                 order_by=GamePosition.ply,
                 rows=(None, -1),
-            ).label("entry_san_sequence"),
+            )
+            .label("entry_san_sequence"),
         )
         .where(
             GamePosition.user_id == user_id,
             # Need ply 0 for the partition (so its move_san enters entry_san_sequence)
             # and ply MAX_ENTRY_PLY+1 so LEAD has a row to read for entries at MAX_ENTRY_PLY.
             GamePosition.ply.between(0, OPENING_INSIGHTS_MAX_ENTRY_PLY + 1),
+            # Phase 71 hotfix: include only games whose ply-0 position is the
+            # standard starting position (chess.com [SetUp "1"] PGN tags etc.
+            # are excluded) — their SAN prefix is unreachable from chess.Board()
+            # and would crash the replay in opening_insights_service.
+            has_standard_start,
         )
         .cte("transitions")
     )
@@ -613,11 +666,15 @@ async def query_opening_transitions(
         .join(Game, Game.id == transitions_cte.c.game_id)
         .where(
             Game.user_id == user_id,
-            Game.user_color == color,                             # explicit per-color filter (RESEARCH.md anti-pattern note)
-            transitions_cte.c.move_san.is_not(None),              # drops final-position rows (no candidate to count)
-            transitions_cte.c.resulting_full_hash.is_not(None),   # drops final-position rows where LEAD is NULL
+            Game.user_color == color,  # explicit per-color filter (RESEARCH.md anti-pattern note)
+            transitions_cte.c.move_san.is_not(
+                None
+            ),  # drops final-position rows (no candidate to count)
+            transitions_cte.c.resulting_full_hash.is_not(
+                None
+            ),  # drops final-position rows where LEAD is NULL
             transitions_cte.c.ply.between(
-                OPENING_INSIGHTS_MIN_ENTRY_PLY,                   # entry ply 3..16 (current row IS entry)
+                OPENING_INSIGHTS_MIN_ENTRY_PLY,  # entry ply 3..16 (current row IS entry)
                 OPENING_INSIGHTS_MAX_ENTRY_PLY,
             ),
         )
