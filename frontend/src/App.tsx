@@ -31,8 +31,14 @@ import { AdminPage } from '@/pages/Admin';
 import { PrivacyPage } from '@/pages/Privacy';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
 import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
+import type { UserProfile } from '@/types/users';
 
 const FLAG_ENDGAMES_VISITED = 'endgames_visited';
+const IMPORT_REQUIRED_MESSAGE = 'Import your games first to unlock this feature.';
+
+function profileHasCompletedImport(profile: UserProfile | null | undefined): boolean {
+  return profile != null && (profile.chess_com_last_sync_at !== null || profile.lichess_last_sync_at !== null);
+}
 
 // ─── Non-visual job completion watcher ────────────────────────────────────────
 
@@ -96,9 +102,7 @@ function NavHeader() {
   const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
   // Backed by completed-import timestamps so the dot waits for the first
   // import to actually finish (game counts can climb mid-import).
-  const hasCompletedImport =
-    profile != null &&
-    (profile.chess_com_last_sync_at !== null || profile.lichess_last_sync_at !== null);
+  const hasCompletedImport = profileHasCompletedImport(profile);
   const showEndgamesDot = hasCompletedImport && !endgamesVisited;
   // D-16: Admin tab rightmost for superusers, absent otherwise.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
@@ -112,13 +116,19 @@ function NavHeader() {
             <span className="text-lg tracking-tight text-foreground font-brand">FlawChess</span>
           </Link>
           <nav aria-label="Main navigation" className="flex items-stretch h-full">
-            {navItems.map(({ to, label, Icon }) => (
+            {navItems.map(({ to, label, Icon }) => {
+              const locked = to !== '/import' && profile != null && !hasCompletedImport;
+              return (
               <Link
                 key={to}
                 to={to}
                 data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
+                aria-disabled={locked || undefined}
+                title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
+                onClick={locked ? (e) => { e.preventDefault(); toast.info(IMPORT_REQUIRED_MESSAGE); } : undefined}
                 className={cn(
                   'relative flex items-center gap-1.5 px-3 text-sm transition-colors',
+                  locked && 'opacity-40 cursor-not-allowed',
                   isActive(to, location.pathname)
                     ? 'font-medium bg-white/10 text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
@@ -145,7 +155,8 @@ function NavHeader() {
                   </span>
                 )}
               </Link>
-            ))}
+              );
+            })}
           </nav>
         </div>
         <div className="flex items-center gap-2">
@@ -219,9 +230,7 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
   const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
   const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
   // See NavHeader — gate on completed-import timestamps, not game counts.
-  const hasCompletedImport =
-    profile != null &&
-    (profile.chess_com_last_sync_at !== null || profile.lichess_last_sync_at !== null);
+  const hasCompletedImport = profileHasCompletedImport(profile);
   const showEndgamesDot = hasCompletedImport && !endgamesVisited;
 
   return (
@@ -230,13 +239,19 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
       data-testid="mobile-bottom-bar"
       className="fixed bottom-0 inset-x-0 flex sm:hidden z-40 bg-background border-t border-border pb-safe"
     >
-      {BOTTOM_NAV_ITEMS.map(({ to, label, Icon }) => (
+      {BOTTOM_NAV_ITEMS.map(({ to, label, Icon }) => {
+        const locked = to !== '/import' && profile != null && !hasCompletedImport;
+        return (
         <Link
           key={to}
           to={to}
           data-testid={`mobile-nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
+          aria-disabled={locked || undefined}
+          title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
+          onClick={locked ? (e) => { e.preventDefault(); toast.info(IMPORT_REQUIRED_MESSAGE); } : undefined}
           className={cn(
             'relative flex flex-1 flex-col items-center gap-1 py-2',
+            locked && 'opacity-40 cursor-not-allowed',
             isActive(to, location.pathname) ? 'text-primary' : 'text-muted-foreground',
           )}
         >
@@ -261,7 +276,8 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
             </span>
           )}
         </Link>
-      ))}
+        );
+      })}
       <button
         onClick={onMoreClick}
         data-testid="mobile-nav-more"
@@ -281,6 +297,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
   const location = useLocation();
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
+  const hasCompletedImport = profileHasCompletedImport(profile);
   // D-17: Admin entry surfaced in the More drawer (not the bottom bar) for superusers.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
@@ -294,20 +311,27 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
         </DrawerHeader>
         <div className="px-4 pb-4">
           <nav className="flex flex-col gap-1">
-            {navItems.map(({ to, label }) => (
+            {navItems.map(({ to, label }) => {
+              const locked = to !== '/import' && profile != null && !hasCompletedImport;
+              return (
               <DrawerClose key={to} asChild>
                 <Link
                   to={to}
                   data-testid={`drawer-nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
+                  aria-disabled={locked || undefined}
+                  title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
+                  onClick={locked ? (e) => { e.preventDefault(); toast.info(IMPORT_REQUIRED_MESSAGE); } : undefined}
                   className={cn(
                     'rounded-md px-3 py-2 text-base',
+                    locked && 'opacity-40 cursor-not-allowed',
                     isActive(to, location.pathname) ? 'text-primary font-medium' : 'text-foreground',
                   )}
                 >
                   {label}
                 </Link>
               </DrawerClose>
-            ))}
+              );
+            })}
           </nav>
           <div className="my-2 border-t border-border" />
           <DrawerClose asChild>
@@ -385,6 +409,34 @@ function ProtectedLayout() {
       <InstallPromptBanner />
     </>
   );
+}
+
+// ─── Import-required route guard ──────────────────────────────────────────────
+
+/**
+ * Locks non-Import pages until at least one game import has finished successfully.
+ * Backed by completed-import timestamps on the profile (chess_com_last_sync_at /
+ * lichess_last_sync_at), so users can browse the rest of the app only after their
+ * first import returns. Redirects to /import with a toast when locked.
+ */
+function ImportRequiredRoute({ children }: { children: React.ReactNode }) {
+  const { data: profile, isLoading } = useUserProfile();
+  const hasCompletedImport = profileHasCompletedImport(profile);
+  const shouldRedirect = !isLoading && profile != null && !hasCompletedImport;
+
+  useEffect(() => {
+    if (shouldRedirect) {
+      toast.info(IMPORT_REQUIRED_MESSAGE);
+    }
+  }, [shouldRedirect]);
+
+  if (isLoading) {
+    return <div className="p-6 text-muted-foreground" data-testid="import-required-loading">Loading...</div>;
+  }
+  if (shouldRedirect) {
+    return <Navigate to="/import" replace />;
+  }
+  return <>{children}</>;
 }
 
 // ─── Superuser route guard ────────────────────────────────────────────────────
@@ -483,12 +535,12 @@ function AppRoutes() {
         {/* Protected layout wraps all authenticated pages */}
         <Route element={<ProtectedLayout />}>
           <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />
-          <Route path="/openings/*" element={<OpeningsPage />} />
-          <Route path="/endgames/*" element={<EndgamesPage />} />
+          <Route path="/openings/*" element={<ImportRequiredRoute><OpeningsPage /></ImportRequiredRoute>} />
+          <Route path="/endgames/*" element={<ImportRequiredRoute><EndgamesPage /></ImportRequiredRoute>} />
           <Route path="/rating" element={<Navigate to="/overview" replace />} />
           <Route path="/global-stats" element={<Navigate to="/overview" replace />} />
-          <Route path="/overview" element={<GlobalStatsPage />} />
-          <Route path="/admin" element={<SuperuserRoute><AdminPage /></SuperuserRoute>} />
+          <Route path="/overview" element={<ImportRequiredRoute><GlobalStatsPage /></ImportRequiredRoute>} />
+          <Route path="/admin" element={<SuperuserRoute><ImportRequiredRoute><AdminPage /></ImportRequiredRoute></SuperuserRoute>} />
         </Route>
         {/* Catch-all redirects to homepage */}
         <Route path="*" element={<Navigate to="/" replace />} />
