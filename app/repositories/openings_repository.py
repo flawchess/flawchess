@@ -520,28 +520,43 @@ async def query_opening_transitions(
     PostgreSQL ix_gp_user_game_ply for an index-only scan (Heap Fetches: 0).
     See CONTEXT.md D-30, D-31, D-32, D-33 and RESEARCH.md Pattern 2.
     """
+    # Phase 71 hotfix (#71): the entry position IS the current row's position.
+    # GamePosition.move_san at ply X is "the move played FROM ply X to ply X+1"
+    # (see app/services/zobrist.py and the GamePosition.move_san model docstring).
+    # That means at row ply X, current row's full_hash IS the entry hash, current
+    # row's move_san IS the candidate move played from entry, and the resulting
+    # position's hash is at ply X+1 (LEAD). The original Phase 70 query used LAG
+    # for entry_hash (one ply too shallow) — internally consistent against the
+    # synthetic test factories but mis-aligned against real game_positions data.
+    # That bug surfaced as `chess.IllegalMoveError` during Phase 71 UAT because
+    # entry_san_sequence then started one move late and replay failed.
     transitions_cte = (
         select(
             GamePosition.game_id.label("game_id"),
             GamePosition.ply.label("ply"),
-            GamePosition.move_san.label("move_san"),
-            # Per BLOCKER-6 / D-21: surface the candidate's full_hash so the service
-            # can dedupe within section by `resulting_full_hash`.
-            GamePosition.full_hash.label("resulting_full_hash"),
-            func.lag(GamePosition.full_hash).over(
+            GamePosition.move_san.label("move_san"),                # candidate move played from entry
+            GamePosition.full_hash.label("entry_hash"),             # entry position hash IS the current row's hash
+            func.lead(GamePosition.full_hash).over(
                 partition_by=GamePosition.game_id,
                 order_by=GamePosition.ply,
-            ).label("entry_hash"),
-            # Per BLOCKER-1 / D-25 / D-34: the SAN tokens up to and including the
-            # ENTRY position (NOT the candidate). The service replays this with
-            # python-chess to reconstruct entry_fen and to walk the parent-hash
-            # lineage when direct attribution misses.
+            ).label("resulting_full_hash"),                          # position after the candidate move (LEAD by one ply)
+            # Per BLOCKER-1 / D-25 / D-34: the SAN tokens needed to replay the
+            # entry position from the start of the game. At an entry row at
+            # ply X, entry_san_sequence must contain the X moves played at
+            # plies 0..X-1 (move_san at ply Y is the move played FROM ply Y).
+            #
+            # The CTE WHERE clause includes ply 0 — without it, the move played
+            # from the start position (always White's first move) is missing
+            # from the partition and `_replay_san_sequence` fails with
+            # chess.IllegalMoveError on every finding.
+            #
             # ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING covers all moves
-            # up to (but not including) the current row — i.e. the entry's SAN sequence.
-            # rows=(None, -1) maps to BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING in SQLAlchemy.
-            # FILTER (WHERE move_san IS NOT NULL) guards against NULL entries from
-            # corrupted imports: board.push_san(None) raises TypeError (not InvalidMoveError),
-            # which would propagate as a 500 rather than silently dropping the finding.
+            # up to (but not including) the current row — i.e. plies 0..X-1.
+            # rows=(None, -1) maps to that boundary in SQLAlchemy.
+            #
+            # FILTER (WHERE move_san IS NOT NULL) guards against NULL entries
+            # from corrupted imports: board.push_san(None) raises TypeError
+            # (not InvalidMoveError), which would propagate as a 500.
             func.array_agg(GamePosition.move_san).filter(
                 GamePosition.move_san.isnot(None)
             ).over(
@@ -552,7 +567,9 @@ async def query_opening_transitions(
         )
         .where(
             GamePosition.user_id == user_id,
-            GamePosition.ply.between(1, OPENING_INSIGHTS_MAX_ENTRY_PLY + 1),  # 1..17 — matches partial index predicate
+            # Need ply 0 for the partition (so its move_san enters entry_san_sequence)
+            # and ply MAX_ENTRY_PLY+1 so LEAD has a row to read for entries at MAX_ENTRY_PLY.
+            GamePosition.ply.between(0, OPENING_INSIGHTS_MAX_ENTRY_PLY + 1),
         )
         .cte("transitions")
     )
@@ -597,11 +614,11 @@ async def query_opening_transitions(
         .where(
             Game.user_id == user_id,
             Game.user_color == color,                             # explicit per-color filter (RESEARCH.md anti-pattern note)
-            transitions_cte.c.entry_hash.is_not(None),           # drops first-ply rows
-            transitions_cte.c.move_san.is_not(None),             # drops final-position rows
+            transitions_cte.c.move_san.is_not(None),              # drops final-position rows (no candidate to count)
+            transitions_cte.c.resulting_full_hash.is_not(None),   # drops final-position rows where LEAD is NULL
             transitions_cte.c.ply.between(
-                OPENING_INSIGHTS_MIN_ENTRY_PLY + 1,              # candidate ply 4..17 (entry ply 3..16)
-                OPENING_INSIGHTS_MAX_ENTRY_PLY + 1,
+                OPENING_INSIGHTS_MIN_ENTRY_PLY,                   # entry ply 3..16 (current row IS entry)
+                OPENING_INSIGHTS_MAX_ENTRY_PLY,
             ),
         )
         .group_by(transitions_cte.c.entry_hash, transitions_cte.c.move_san)

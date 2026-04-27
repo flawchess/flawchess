@@ -34,16 +34,21 @@ class GamePosition(Base):
         ),
         # Phase 70 (v1.13): partial composite covering index for the
         # opening_insights_service transition aggregation. COLUMN ORDER
-        # (user_id, game_id, ply) is LOAD-BEARING — matches LAG's
-        # PARTITION BY game_id ORDER BY ply, so PostgreSQL streams rows
-        # from the index without a re-sort (Index Only Scan, Heap Fetches: 0).
-        # Do NOT reorder for symmetry with sibling ix_gp_user_* indexes.
+        # (user_id, game_id, ply) is LOAD-BEARING — matches the window
+        # function's PARTITION BY game_id ORDER BY ply, so PostgreSQL streams
+        # rows from the index without a re-sort (Index Only Scan, Heap
+        # Fetches: 0). Do NOT reorder for symmetry with sibling ix_gp_user_*
+        # indexes. Phase 71 hotfix expanded the predicate to include ply 0:
+        # the SQL needs ply 0's move_san row in the partition so the very
+        # first move of each game is part of entry_san_sequence (otherwise
+        # `_replay_san_sequence` fails with chess.IllegalMoveError).
         # See alembic migration 20260426_201533_80e22b38993a_add_gp_user_game_ply_index.py
-        # for full rationale and verified perf numbers (Hikaru 65k games -> 816 ms).
+        # for the original rationale and verified perf numbers
+        # (Hikaru 65k games -> 816 ms).
         Index(
             "ix_gp_user_game_ply",
             "user_id", "game_id", "ply",
-            postgresql_where=text("ply BETWEEN 1 AND 17"),
+            postgresql_where=text("ply BETWEEN 0 AND 17"),
             postgresql_include=["full_hash", "move_san"],
         ),
     )
