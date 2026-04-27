@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
@@ -15,11 +15,39 @@ interface MoveExplorerProps {
   position: string;
   onMoveClick: (from: string, to: string) => void;
   onMoveHover?: (moveSan: string | null) => void;
+  /**
+   * When non-null, the row whose move_san matches `san` renders a sticky left
+   * border in the given hex color and is auto-scrolled into view once. Used by
+   * the deep-link from OpeningInsightsBlock → MoveExplorer (quick-task
+   * 260427-j41) so the user lands on the candidate row already highlighted.
+   */
+  highlightedMove?: { san: string; color: string } | null;
+  /**
+   * Fired when the highlight should clear:
+   *   1. Position changes (board move played, navigation, etc.).
+   *   2. Moves-array reference changes (filter-driven query refetch).
+   *   3. Any move row is clicked.
+   * The parent owns the actual highlight state — MoveExplorer just signals.
+   */
+  onHighlightConsumed?: () => void;
 }
 
 const IS_TOUCH = typeof window !== 'undefined' && 'ontouchstart' in window;
 
-export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick, onMoveHover }: MoveExplorerProps) {
+// Width of the inline border-left applied to a highlighted row. Kept as a named
+// constant so both the row style and any future hit-test math stay in sync.
+const HIGHLIGHT_BORDER_WIDTH_PX = 4;
+
+export function MoveExplorer({
+  moves,
+  isLoading,
+  isError,
+  position,
+  onMoveClick,
+  onMoveHover,
+  highlightedMove,
+  onHighlightConsumed,
+}: MoveExplorerProps) {
   // Mobile: first tap highlights a row (shows arrow on board), second tap plays the move
   const [selectedMove, setSelectedMove] = useState<string | null>(null);
 
@@ -29,12 +57,53 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
     return new Map(legalMoves.map(m => [m.san, { from: m.from, to: m.to }]));
   }, [position]);
 
-  // Clear selection when position changes (move was played via board or other source)
+  // Ref placed on the row matching highlightedMove.san — used to scrollIntoView.
+  // We only attach the ref to the matching row to avoid managing a Map of refs.
+  const highlightedRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  // Clear selection when position changes (move was played via board or other source).
+  // Derived-state pattern: setState during render is React-recommended for derived
+  // resets and is idempotent (the second pass sees prevPosition === position).
   const [prevPosition, setPrevPosition] = useState(position);
   if (prevPosition !== position) {
     setPrevPosition(position);
     if (selectedMove !== null) setSelectedMove(null);
   }
+
+  // Highlight consumption signals: position change OR moves-array reference change
+  // OR row click. We fire onHighlightConsumed in an effect (NOT in render) so the
+  // callback runs exactly once per transition — calling parent setState during
+  // render would cause React 19's double-invocation in dev/strict mode to
+  // double-fire the signal.
+  const prevPositionForHighlightRef = useRef(position);
+  const prevMovesForHighlightRef = useRef(moves);
+  useEffect(() => {
+    const positionChanged = prevPositionForHighlightRef.current !== position;
+    const movesChanged = prevMovesForHighlightRef.current !== moves;
+    prevPositionForHighlightRef.current = position;
+    prevMovesForHighlightRef.current = moves;
+    if ((positionChanged || movesChanged) && highlightedMove != null) {
+      onHighlightConsumed?.();
+    }
+  }, [position, moves, highlightedMove, onHighlightConsumed]);
+
+  // Scroll the matching row into view once when the highlight transitions to a
+  // value that exists in `moves`. behavior: 'smooth' already respects the OS
+  // prefers-reduced-motion setting in modern browsers, so no extra guard.
+  const lastScrolledSanRef = useRef<string | null>(null);
+  useEffect(() => {
+    const san = highlightedMove?.san ?? null;
+    if (san === null) {
+      lastScrolledSanRef.current = null;
+      return;
+    }
+    if (san === lastScrolledSanRef.current) return;
+    if (!moves.some(m => m.move_san === san)) return;
+    if (highlightedRowRef.current) {
+      highlightedRowRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      lastScrolledSanRef.current = san;
+    }
+  }, [highlightedMove, moves]);
 
   const handleRowClick = (entry: NextMoveEntry) => {
     const squares = moveMap.get(entry.move_san);
@@ -53,6 +122,12 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
     } else {
       // Desktop: single click plays the move
       onMoveClick(squares.from, squares.to);
+    }
+
+    // Any row click clears the deep-link highlight. We signal AFTER the
+    // existing logic so the next position-change effect doesn't double-clear.
+    if (highlightedMove != null) {
+      onHighlightConsumed?.();
     }
   };
 
@@ -112,16 +187,22 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
             </tr>
           </thead>
           <tbody>
-            {moves.map(entry => (
-              <MoveRow
-                key={entry.move_san}
-                entry={entry}
-                selectedMove={selectedMove}
-                onRowClick={handleRowClick}
-                onRowKeyDown={handleRowKeyDown}
-                onMoveHover={onMoveHover}
-              />
-            ))}
+            {moves.map(entry => {
+              const isHighlighted = highlightedMove != null && entry.move_san === highlightedMove.san;
+              return (
+                <MoveRow
+                  key={entry.move_san}
+                  entry={entry}
+                  selectedMove={selectedMove}
+                  onRowClick={handleRowClick}
+                  onRowKeyDown={handleRowKeyDown}
+                  onMoveHover={onMoveHover}
+                  highlightColor={isHighlighted ? highlightedMove.color : null}
+                  // Only attach the ref to the matching row — we don't need a Map of refs.
+                  rowRef={isHighlighted ? highlightedRowRef : undefined}
+                />
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -130,18 +211,34 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
 }
 
 /** Move row with inline MiniWDLBar showing percentages */
-function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover }: {
+function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, highlightColor, rowRef }: {
   entry: NextMoveEntry;
   selectedMove: string | null;
   onRowClick: (entry: NextMoveEntry) => void;
   onRowKeyDown: (e: React.KeyboardEvent, entry: NextMoveEntry) => void;
   onMoveHover?: (moveSan: string | null) => void;
+  /** Hex color for the inline border-left when this row matches highlightedMove. Null otherwise. */
+  highlightColor: string | null;
+  /** Ref attached only to the highlighted row so the parent can scrollIntoView once. */
+  rowRef?: React.Ref<HTMLTableRowElement>;
 }) {
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
   const isBelowThreshold = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
 
+  // Merge the unreliable-row opacity (if any) with the highlight border so
+  // neither value clobbers the other. The border lives on the left edge so it
+  // coexists with the existing blue selection background.
+  const rowStyle: React.CSSProperties = {};
+  if (isBelowThreshold) rowStyle.opacity = UNRELIABLE_OPACITY;
+  if (highlightColor !== null) rowStyle.borderLeft = `${HIGHLIGHT_BORDER_WIDTH_PX}px solid ${highlightColor}`;
+
+  // The highlighted row reuses the existing data-testid (`move-explorer-row-${san}`) —
+  // no NEW interactive element is added (the row remains the same <tr>), so per
+  // CLAUDE.md "data-testid on every interactive element" is already satisfied.
+
   return (
     <tr
+      ref={rowRef}
       data-testid={`move-explorer-row-${entry.move_san}`}
       className={cn(
         'cursor-pointer min-h-[44px]',
@@ -149,7 +246,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover }:
         !IS_TOUCH && 'hover:bg-blue-500/15',
         selectedMove === entry.move_san && 'bg-blue-500/15',
       )}
-      style={isBelowThreshold ? { opacity: UNRELIABLE_OPACITY } : undefined}
+      style={Object.keys(rowStyle).length > 0 ? rowStyle : undefined}
       role="button"
       tabIndex={0}
       onClick={() => onRowClick(entry)}
