@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { arrowSortKey } from '../../lib/arrowColor';
 import { darkSquareStyle, lightSquareStyle, BOARD_DARK_SQUARE, BOARD_LIGHT_SQUARE } from '../../lib/theme';
@@ -257,72 +257,103 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
     [selectedSquare, onPieceDrop],
   );
 
-  // Build squareStyles for last-move highlighting
-  const squareStyles: Record<string, React.CSSProperties> = {};
-  if (lastMove) {
-    const highlightStyle: React.CSSProperties = { backgroundColor: 'rgba(255, 255, 0, 0.35)' };
-    squareStyles[lastMove.from] = highlightStyle;
-    squareStyles[lastMove.to] = highlightStyle;
-  }
+  // Memoize squareStyles so its identity is stable across renders that don't
+  // change last-move or selection. Without this, react-chessboard 5.x sees a
+  // fresh `options` object every parent tick and re-fires its internal
+  // animation/dnd effects, which on /openings/games (where ~21 boards mount
+  // simultaneously) can amplify a single parent re-render past React's
+  // 50-nested-update guard (Sentry FLAWCHESS-3Y).
+  const lastMoveFrom = lastMove?.from ?? null;
+  const lastMoveTo = lastMove?.to ?? null;
+  const squareStyles = useMemo<Record<string, React.CSSProperties>>(() => {
+    const styles: Record<string, React.CSSProperties> = {};
+    if (lastMoveFrom && lastMoveTo) {
+      const highlightStyle: React.CSSProperties = { backgroundColor: 'rgba(255, 255, 0, 0.35)' };
+      styles[lastMoveFrom] = highlightStyle;
+      styles[lastMoveTo] = highlightStyle;
+    }
+    if (selectedSquare) {
+      styles[selectedSquare] = {
+        ...styles[selectedSquare],
+        backgroundColor: 'rgba(255, 255, 0, 0.5)',
+      };
+    }
+    return styles;
+  }, [lastMoveFrom, lastMoveTo, selectedSquare]);
 
-  // Yellow highlight on selected square (merged with any lastMove highlight)
-  if (selectedSquare) {
-    squareStyles[selectedSquare] = {
-      ...squareStyles[selectedSquare],
-      backgroundColor: 'rgba(255, 255, 0, 0.5)',
-    };
-  }
+  const boardStyle = useMemo<React.CSSProperties>(
+    () => ({ width: boardWidth, height: boardWidth, borderRadius: '0.5rem' }),
+    [boardWidth],
+  );
+
+  const handlePieceDrop = useCallback(
+    ({ sourceSquare, targetSquare }: { sourceSquare: string; targetSquare: string | null }) => {
+      if (!targetSquare) return false;
+      return onPieceDrop(sourceSquare, targetSquare);
+    },
+    [onPieceDrop],
+  );
+
+  type SquareRenderer = NonNullable<
+    NonNullable<Parameters<typeof Chessboard>[0]['options']>['squareRenderer']
+  >;
+  const squareRenderer = useCallback<SquareRenderer>(
+    ({ piece, square, children }) => {
+      const pieceName = piece ? PIECE_NAMES[piece.pieceType] : undefined;
+      const label = pieceName ? `${square} ${pieceName}` : square;
+      return (
+        <div
+          style={{ width: '100%', height: '100%', ...squareStyles[square] }}
+          aria-label={label}
+          data-testid={`square-${square}`}
+          // react-chessboard v5 mobile tap detection is broken: dnd-kit's
+          // TouchSensor starts a drag on minimal finger movement, which resets
+          // the library's isClickingOnMobile flag before onTouchEnd fires.
+          // This onPointerUp bypasses that flow to make tap-to-move work.
+          onPointerUp={(e) => {
+            if (e.pointerType === 'touch') {
+              handleSquareClick({ square, piece: piece ?? null });
+            }
+          }}
+        >
+          {children}
+        </div>
+      );
+    },
+    [squareStyles, handleSquareClick],
+  );
+
+  const showAnimations = useMemo(() => !('ontouchstart' in window), []);
+
+  const options = useMemo(
+    () => ({
+      position,
+      boardOrientation: (flipped ? 'black' : 'white') as 'black' | 'white',
+      boardStyle,
+      darkSquareStyle,
+      lightSquareStyle,
+      darkSquareNotationStyle: DARK_SQUARE_NOTATION,
+      lightSquareNotationStyle: LIGHT_SQUARE_NOTATION,
+      id: 'chessboard',
+      // react-chessboard v5 animation state machine causes black screen on mobile
+      // when position prop updates — disable animations on touch devices only
+      showAnimations,
+      // Disable library's built-in arrow drawing — we use our own ArrowOverlay
+      // which avoids NaN path errors from the library's same-square division-by-zero bug
+      allowDrawingArrows: false,
+      squareStyles,
+      squareRenderer,
+      onSquareClick: handleSquareClick,
+      onPieceDrop: handlePieceDrop,
+    }),
+    [position, flipped, boardStyle, showAnimations, squareStyles, squareRenderer, handleSquareClick, handlePieceDrop],
+  );
 
   return (
     <div ref={containerRef} className="w-full" data-testid="chessboard">
       {boardWidth > 0 && (
       <div style={{ position: 'relative', width: boardWidth, height: boardWidth, touchAction: 'none', borderRadius: '0.5rem', overflow: 'hidden' }}>
-        <Chessboard
-          options={{
-            position,
-            boardOrientation: flipped ? 'black' : 'white',
-            boardStyle: { width: boardWidth, height: boardWidth, borderRadius: '0.5rem' },
-            darkSquareStyle,
-            lightSquareStyle,
-            darkSquareNotationStyle: DARK_SQUARE_NOTATION,
-            lightSquareNotationStyle: LIGHT_SQUARE_NOTATION,
-            id: 'chessboard',
-            // react-chessboard v5 animation state machine causes black screen on mobile
-            // when position prop updates — disable animations on touch devices only
-            showAnimations: !('ontouchstart' in window),
-            // Disable library's built-in arrow drawing — we use our own ArrowOverlay
-            // which avoids NaN path errors from the library's same-square division-by-zero bug
-            allowDrawingArrows: false,
-            squareStyles,
-            squareRenderer: ({ piece, square, children }) => {
-              const pieceName = piece ? PIECE_NAMES[piece.pieceType] : undefined;
-              const label = pieceName ? `${square} ${pieceName}` : square;
-              return (
-                <div
-                  style={{ width: '100%', height: '100%', ...squareStyles[square] }}
-                  aria-label={label}
-                  data-testid={`square-${square}`}
-                  // react-chessboard v5 mobile tap detection is broken: dnd-kit's
-                  // TouchSensor starts a drag on minimal finger movement, which resets
-                  // the library's isClickingOnMobile flag before onTouchEnd fires.
-                  // This onPointerUp bypasses that flow to make tap-to-move work.
-                  onPointerUp={(e) => {
-                    if (e.pointerType === 'touch') {
-                      handleSquareClick({ square, piece: piece ?? null });
-                    }
-                  }}
-                >
-                  {children}
-                </div>
-              );
-            },
-            onSquareClick: handleSquareClick,
-            onPieceDrop: ({ sourceSquare, targetSquare }) => {
-              if (!targetSquare) return false;
-              return onPieceDrop(sourceSquare, targetSquare);
-            },
-          }}
-        />
+        <Chessboard options={options} />
         <ArrowOverlay arrows={arrows} boardWidth={boardWidth} flipped={flipped} />
       </div>
       )}

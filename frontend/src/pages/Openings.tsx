@@ -445,8 +445,14 @@ export function OpeningsPage() {
     opponentStrength: debouncedFilters.opponentStrength,
   });
 
-  // Chart entries: real bookmarks filtered by chart-enable toggle
-  const chartBookmarks = bookmarks.filter(b => chartEnabledMap[b.id] !== false);
+  // Chart entries: real bookmarks filtered by chart-enable toggle.
+  // Memoized so the array identity is stable across renders that don't change
+  // the underlying bookmarks or toggle map — keeps `timeSeriesRequest` (which
+  // depends on this) from being rebuilt on every parent tick.
+  const chartBookmarks = useMemo(
+    () => bookmarks.filter(b => chartEnabledMap[b.id] !== false),
+    [bookmarks, chartEnabledMap],
+  );
 
   const timeSeriesRequest: TimeSeriesRequest | null = useMemo(() => {
     if (chartBookmarks.length === 0) return null;
