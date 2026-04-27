@@ -1,10 +1,8 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Lightbulb } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { InfoPopover } from '@/components/ui/info-popover';
 import { OpeningFindingCard } from './OpeningFindingCard';
 import { useOpeningInsights } from '@/hooks/useOpeningInsights';
-import { INSIGHT_THRESHOLD_COPY } from '@/lib/openingInsights';
 import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/insights';
 import type { FilterState } from '@/components/filters/FilterPanel';
 
@@ -85,21 +83,6 @@ export function OpeningInsightsBlock({ debouncedFilters, onFindingClick }: Openi
       data-testid="opening-insights-block"
       className="flex flex-col gap-3"
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-          <span className="insight-lightbulb" aria-hidden="true">
-            <Lightbulb className="size-5" />
-          </span>
-          Opening Insights
-        </h2>
-        <InfoPopover
-          ariaLabel="Opening insights info"
-          testId="opening-insights-info"
-          side="top"
-        >
-          {INSIGHT_THRESHOLD_COPY}
-        </InfoPopover>
-      </div>
       <p
         className="text-sm italic text-muted-foreground"
         data-testid="opening-insights-tip"

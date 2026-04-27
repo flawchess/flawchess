@@ -191,16 +191,4 @@ describe('OpeningInsightsBlock', () => {
     expect(onFindingClick).toHaveBeenCalledWith(finding);
   });
 
-  it('shows InfoPopover with threshold copy on the heading', async () => {
-    (apiClient.post as ReturnType<typeof vi.fn>).mockResolvedValue({ data: EMPTY_RESPONSE });
-    const Wrapper = createWrapper();
-    render(
-      <Wrapper>
-        <OpeningInsightsBlock debouncedFilters={DEFAULT_FILTERS} onFindingClick={() => {}} />
-      </Wrapper>,
-    );
-    await waitFor(() => {
-      expect(screen.getByTestId('opening-insights-info')).toBeTruthy();
-    });
-  });
 });
