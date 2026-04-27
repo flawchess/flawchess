@@ -310,6 +310,7 @@ async def compute_insights(
                     opening_eco=opening_eco,
                     display_name=display_name,
                     entry_fen=entry_fen,
+                    entry_san_sequence=list(row.entry_san_sequence or []),  # Phase 71 (D-13): expose SAN sequence for FE deep-link replay
                     # BLOCKER-5 / Pitfall 1: stringify 64-bit ints at the API boundary.
                     entry_full_hash=str(int(row.entry_hash)),
                     candidate_move_san=row.move_san,
