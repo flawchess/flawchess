@@ -99,7 +99,7 @@ export function OpeningFindingCard({
       className="block border-l-4 charcoal-texture border border-border/20 rounded px-4 py-3"
       style={{ borderLeftColor }}
     >
-      {/* Mobile: header full-width on top, board + prose row below, links row last */}
+      {/* Mobile: header full-width on top, board + prose/links row below */}
       <div className="flex flex-col gap-2 sm:hidden">
         {headerLine}
         <div className="flex gap-3 items-start">
@@ -108,9 +108,11 @@ export function OpeningFindingCard({
             flipped={finding.color === 'black'}
             size={MOBILE_BOARD_SIZE}
           />
-          <div className="flex-1 min-w-0 flex flex-col gap-1">{proseLine}</div>
+          <div className="flex-1 min-w-0 flex flex-col gap-2">
+            {proseLine}
+            {linksRow}
+          </div>
         </div>
-        {linksRow}
       </div>
 
       {/* Desktop: board left, header + prose + links stacked right */}
