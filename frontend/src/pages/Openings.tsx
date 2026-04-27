@@ -522,10 +522,14 @@ export function OpeningsPage() {
     [chess, navigate, setFilters],
   );
 
-  /** Same as handleOpenFinding but routes to the Games subtab (filtered to the finding). */
+  /**
+   * Same as handleOpenFinding but routes to the Games subtab. Loads the position
+   * AFTER the candidate move (entry_san_sequence + candidate_move_san) so the
+   * Games filter matches the resulting position, not the entry position.
+   */
   const handleOpenFindingGames = useCallback(
     (finding: OpeningInsightFinding) => {
-      chess.loadMoves(finding.entry_san_sequence);
+      chess.loadMoves([...finding.entry_san_sequence, finding.candidate_move_san]);
       setBoardFlipped(finding.color === 'black');
       setFilters((prev) => ({
         ...prev,
