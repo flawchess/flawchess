@@ -132,50 +132,11 @@ def _compute_prefix_hashes(san_sequence: list[str]) -> list[int]:
     return list(reversed(hashes[:-1]))
 
 
-def _safe_replay(
-    san_sequence: list[str],
-    *,
-    entry_hash: int,
-    candidate_san: str,
-) -> tuple[str, list[int]] | None:
-    """Replay san_sequence and return (entry_fen, prefix_hashes), or None on failure.
-
-    Phase 71 hotfix: non-standard-FEN games (chess.com [SetUp "1"] PGN tags)
-    and any future row corruption used to crash the entire endpoint via
-    chess.IllegalMoveError when the SAN sequence isn't reachable from
-    chess.Board(). The repository now filters most cases out via
-    openings_repository.STARTING_POSITION_HASH; this helper is the
-    belt-and-braces guard so a single bad row never 500s the response.
-
-    Captures to Sentry once per bad row using set_context (no variable data
-    in the exception message — preserves Sentry grouping per CLAUDE.md) and
-    returns None so the caller skips the finding.
-    """
-    try:
-        entry_fen = _replay_san_sequence(san_sequence)
-        prefix_hashes = _compute_prefix_hashes(san_sequence)
-    except (chess.IllegalMoveError, chess.InvalidMoveError, ValueError) as exc:
-        sentry_sdk.set_tag("source", "opening_insights")
-        sentry_sdk.set_context(
-            "opening_insights_replay",
-            {
-                "entry_hash": entry_hash,
-                "candidate_san": candidate_san,
-                "san_sequence": san_sequence,
-            },
-        )
-        sentry_sdk.capture_exception(exc)
-        return None
-    return entry_fen, prefix_hashes
-
-
 def _attribute_finding(
     row: Any,
     openings_by_hash: dict[int, Opening],
     parents_by_hash: dict[int, Opening],
     finding_color: Literal["white", "black"],
-    *,
-    prefix_hashes: list[int] | None = None,
 ) -> tuple[str, str, str] | None:
     """Attribute a finding to an opening name (BLOCKER-1 / D-22 / D-23 / D-34).
 
@@ -187,11 +148,6 @@ def _attribute_finding(
     1. Direct: look up entry_hash in openings_by_hash.
     2. Lineage walk: check parent prefix hashes in parents_by_hash (deepest first).
     3. No match → return None. Sentry tag set by calling pipeline on drop.
-
-    When `prefix_hashes` is provided (Phase 71 hotfix), reuse them instead
-    of recomputing via _compute_prefix_hashes. This avoids a second replay
-    pass for rows that already passed _safe_replay in compute_insights, and
-    crucially short-circuits the recompute for rows whose replay failed.
     """
     entry_hash_int = int(row.entry_hash)
 
@@ -204,10 +160,8 @@ def _attribute_finding(
         return direct_opening.name, direct_opening.eco, display_name
 
     # Pass 2: lineage walk (deepest first)
-    if prefix_hashes is None:
-        san_seq = list(row.entry_san_sequence or [])
-        prefix_hashes = _compute_prefix_hashes(san_seq)
-    for prefix_hash in prefix_hashes:
+    san_seq = list(row.entry_san_sequence or [])
+    for prefix_hash in _compute_prefix_hashes(san_seq):
         parent_opening = parents_by_hash.get(prefix_hash)
         if parent_opening is not None:
             display_name = _apply_display_name_parity(
@@ -351,27 +305,13 @@ async def compute_insights(
         openings_by_hash = await query_openings_by_hashes(session, direct_entry_hashes)
 
         # Pass 2: parent-lineage attribution for unmatched (BLOCKER-1 / D-34).
-        # Phase 71 hotfix: precompute (entry_fen, prefix_hashes) per row via
-        # _safe_replay so a corrupt SAN sequence (chess.com [SetUp "1"] etc.)
-        # gets logged + skipped instead of crashing the entire endpoint. The
-        # cache is keyed by (color, entry_hash, candidate_san) which uniquely
-        # identifies a row in rows_by_color (post GROUP BY in the repository).
-        replay_cache: dict[tuple[str, int, str], tuple[str, list[int]] | None] = {}
         unmatched_parent_hashes: set[int] = set()
-        for color_key, rows in rows_by_color.items():
+        for rows in rows_by_color.values():
             for r in rows:
-                cache_key = (color_key, int(r.entry_hash), r.move_san)
-                replayed = _safe_replay(
-                    list(r.entry_san_sequence or []),
-                    entry_hash=int(r.entry_hash),
-                    candidate_san=r.move_san,
-                )
-                replay_cache[cache_key] = replayed
-                if replayed is None:
-                    continue
                 if int(r.entry_hash) not in openings_by_hash:
-                    _, prefix_hashes = replayed
-                    unmatched_parent_hashes.update(prefix_hashes)
+                    unmatched_parent_hashes.update(
+                        _compute_prefix_hashes(list(r.entry_san_sequence or []))
+                    )
         parents_by_hash = await query_openings_by_hashes(session, list(unmatched_parent_hashes))
 
         # ---- Build sections ----
@@ -391,27 +331,19 @@ async def compute_insights(
                     continue
                 classification, severity = cls
 
-                # Phase 71 hotfix: reuse the cached _safe_replay result. If
-                # replay failed, the bad row was already logged to Sentry
-                # during Pass-2; skip it here so a single corrupt entry never
-                # 500s the whole endpoint.
-                cached_replay = replay_cache.get((color, int(row.entry_hash), row.move_san))
-                if cached_replay is None:
-                    continue
-                entry_fen, prefix_hashes = cached_replay
-
                 # BLOCKER-1: single attribution path. None => DROP per D-34.
                 attribution = _attribute_finding(
-                    row,
-                    openings_by_hash,
-                    parents_by_hash,
-                    color_literal,
-                    prefix_hashes=prefix_hashes,
+                    row, openings_by_hash, parents_by_hash, color_literal
                 )
                 if attribution is None:
                     sentry_sdk.set_tag("openings.attribution.unmatched_dropped", True)
                     continue
                 opening_name, opening_eco, display_name = attribution
+
+                # BLOCKER-1 / D-25: entry_fen reconstructed by replaying the
+                # actual SAN sequence the user played up to the entry. Never
+                # fall back to chess.Board().fen() (initial position) — D-34.
+                entry_fen = _replay_san_sequence(list(row.entry_san_sequence or []))
 
                 # Carry the matched Opening.ply_count alongside for D-24
                 # deeper-entry-wins dedupe; use 0 for parent-only matches
@@ -431,9 +363,7 @@ async def compute_insights(
                     opening_eco=opening_eco,
                     display_name=display_name,
                     entry_fen=entry_fen,
-                    entry_san_sequence=list(
-                        row.entry_san_sequence or []
-                    ),  # Phase 71 (D-13): expose SAN sequence for FE deep-link replay
+                    entry_san_sequence=list(row.entry_san_sequence or []),  # Phase 71 (D-13): expose SAN sequence for FE deep-link replay
                     # BLOCKER-5 / Pitfall 1: stringify 64-bit ints at the API boundary.
                     entry_full_hash=str(int(row.entry_hash)),
                     candidate_move_san=row.move_san,
