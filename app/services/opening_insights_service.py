@@ -187,6 +187,56 @@ def _dedupe_within_section(
     return [finding for finding, _ in best.values()]
 
 
+def _dedupe_continuations(
+    sections: dict[str, list[OpeningInsightFinding]],
+) -> dict[str, list[OpeningInsightFinding]]:
+    """Drop findings whose entry position is downstream of a kept finding's candidate.
+
+    Phase 71 UAT fix: when consecutive moves in the same line are all weak (or
+    all strong), deeper findings crowd the block with the same opening line
+    (e.g. Caro-Kann B10: 3.exd5, 3...cxd5, 4.d4 all surfacing as separate
+    cards). Keep only the shallowest entry per chain — the player can explore
+    continuations via the deep-link Move Explorer.
+
+    Rule: drop B if there exists a kept A such that A.entry_san_sequence +
+    [A.candidate_move_san] is a prefix of B.entry_san_sequence. Applied
+    globally across all four sections so chains that cross color boundaries
+    (white candidate → black candidate → white candidate) still consolidate
+    to the earliest finding. Tie-break for sibling lines of equal depth:
+    major over minor severity, then higher n_games.
+    """
+    flat: list[tuple[str, OpeningInsightFinding]] = [
+        (sk, f) for sk, items in sections.items() for f in items
+    ]
+    flat.sort(
+        key=lambda kf: (
+            len(kf[1].entry_san_sequence),
+            0 if kf[1].severity == "major" else 1,
+            -kf[1].n_games,
+        )
+    )
+
+    kept_keys: set[tuple[str, str, str]] = set()
+    cover_prefixes: list[tuple[str, ...]] = []
+    for section_key, finding in flat:
+        entry_seq = tuple(finding.entry_san_sequence)
+        downstream = any(
+            len(entry_seq) >= len(cover) and entry_seq[: len(cover)] == cover
+            for cover in cover_prefixes
+        )
+        if downstream:
+            continue
+        kept_keys.add((section_key, finding.entry_full_hash, finding.candidate_move_san))
+        cover_prefixes.append(entry_seq + (finding.candidate_move_san,))
+
+    result: dict[str, list[OpeningInsightFinding]] = {k: [] for k in sections}
+    for section_key, items in sections.items():
+        for finding in items:
+            if (section_key, finding.entry_full_hash, finding.candidate_move_san) in kept_keys:
+                result[section_key].append(finding)
+    return result
+
+
 def _rank_section(findings: list[OpeningInsightFinding]) -> list[OpeningInsightFinding]:
     """Sort findings by (severity desc, n_games desc) per D-07.
 
@@ -329,11 +379,15 @@ async def compute_insights(
                 )
                 sections[section_key].append((finding, opening_ply_count))
 
-        # Dedupe + rank + cap per section (D-02 caps: 5 weaknesses, 3 strengths).
+        # Per-section transposition dedupe (D-24) → global continuation dedupe
+        # (Phase 71 UAT fix) → rank → cap (D-02 caps: 5 weaknesses, 3 strengths).
+        deduped_sections: dict[str, list[OpeningInsightFinding]] = {
+            key: _dedupe_within_section(items) for key, items in sections.items()
+        }
+        deduped_sections = _dedupe_continuations(deduped_sections)
         final_sections: dict[str, list[OpeningInsightFinding]] = {}
-        for key, items in sections.items():
-            deduped = _dedupe_within_section(items)
-            ranked = _rank_section(deduped)
+        for key, findings in deduped_sections.items():
+            ranked = _rank_section(findings)
             cap = WEAKNESS_CAP_PER_COLOR if "weaknesses" in key else STRENGTH_CAP_PER_COLOR
             final_sections[key] = ranked[:cap]
 
