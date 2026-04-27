@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.13
 milestone_name: Opening Insights
-status: executing
-last_updated: "2026-04-27T14:36:10.319Z"
+status: verifying
+last_updated: "2026-04-27T14:40:45.508Z"
 last_activity: 2026-04-27
 progress:
   total_phases: 8
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 14
-  completed_plans: 7
-  percent: 50
+  completed_plans: 8
+  percent: 57
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 71.1 (openings-subnav-layout-refactor-match-endgames-pattern) — EXECUTING
+Phase: 71.1 (openings-subnav-layout-refactor-match-endgames-pattern) — READY FOR VERIFICATION
 Plan: 3 of 3
-Status: Ready to execute (Plan 02 complete — mobile sticky subnav + non-sticky board landed; commit f3026df)
-Last activity: 2026-04-27 -- Phase 71.1 Plan 02 complete (mobile Openings reworked to Endgames sticky-subnav pattern; chevron-fold removed; subnav-filter-button + openings-mobile-subnav testids added; dead state swept early to satisfy TS noUnusedLocals — Plan 03 scope reduced)
+Status: Phase complete — Plan 03 cleanup gates green (knip / lint / build / test / ty all exit 0); manual UAT auto-approved per auto-mode policy
+Last activity: 2026-04-27 -- Phase 71.1 Plan 03 complete (gate suite green; no source edits — Plan 02 had already swept chevron-fold dead state to satisfy TS noUnusedLocals)
 
 ## Project Reference
 
@@ -97,6 +97,6 @@ Carried forward from v1.11 close (still relevant):
 | 260427-j41 | Highlight candidate move in Move Explorer when arriving via Insights Moves link (severity-colored row border, pulsating board arrow, auto-scroll, clear on position/filter change) | 2026-04-27 | b6c1f29 | [260427-j41-highlight-candidate-move-in-move-explore](./quick/260427-j41-highlight-candidate-move-in-move-explore/) |
 
 ---
-Last activity: 2026-04-27 — Phase 71.1 Plan 02 complete (mobile Openings reworked to Endgames sticky-subnav pattern; chevron-fold removed; commit f3026df).
+Last activity: 2026-04-27 — Phase 71.1 Plan 03 complete (cleanup gates green; phase ready for verification).
 | 2026-04-27 | fast | Mobile: Moves/Games links beside mini board in OpeningFindingCard | ✅ |
 | 2026-04-27 | fast | widen game card WDL left border | ✅ |
