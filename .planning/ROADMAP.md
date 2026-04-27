@@ -229,6 +229,20 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
   - [ ] 71-06-PLAN.md — Stats tab integration + handleOpenFinding deep-link wiring + manual UAT
 **UI hint**: yes
 
+### Phase 71.1: Openings subnav layout refactor — match Endgames pattern (INSERTED)
+
+**Goal:** Refactor `frontend/src/pages/Openings.tsx` so its subnav and mobile shape match the Endgames page pattern. Desktop subnav lifts to span the full right side of `SidebarLayout` (board column + main content). Mobile gets a sticky subnav with a filter button, the chevron-fold sticky board is removed, the board becomes non-sticky on Moves + Games, and is hidden entirely on Stats + Insights — all per the locked decisions in 71.1-CONTEXT.md.
+**Depends on:** Phase 71
+**Requirements**: N/A (frontend layout refactor — decisions live in `71.1-CONTEXT.md`, not `REQUIREMENTS.md`)
+**Success Criteria** (what must be TRUE):
+  1. Desktop (≥ 1024px): subnav spans the full width of `(board column + main content)` above both. Right-of-board settings column visible only on Moves + Games. Board column visible on all 4 subtabs. Left sidebar strip + slide-out panel unchanged.
+  2. Mobile (< 1024px): sticky subnav at top with 4 subtabs + filter button on the right edge. Filter drawer opens from this new button. Chevron fold + grid-rows collapse animation removed. Board, controls, moves field non-sticky and scroll with the page on Moves + Games. Stats + Insights hide the board, controls, and moves field entirely. Subtab switching resets scroll to top.
+  3. No horizontal scroll at 375px viewport. Tabs + filter button have ≥ 44px touch targets. All interactive elements have `data-testid` per CLAUDE.md frontend rules; mobile and desktop changes are applied symmetrically per "always apply changes to mobile too".
+  4. `npm run knip` in `frontend/` reports no new dead exports — chevron/fold cleanup is complete.
+  5. Phase 71 plans (`OpeningInsightsBlock`, deep-links, etc.) still render correctly inside the new layout — no Phase 71 regression.
+**Plans:** 0 plans (run `/gsd-plan-phase 71.1` to break down)
+**UI hint**: yes
+
 ### Phase 72: Frontend Moves subtab — inline weakness/strength bullets
 **Goal**: When the user is viewing a position on Openings → Moves that has at least one classified candidate-move finding, an inline bullet appears next to the existing red/green candidate-move arrow for that finding, scoped to the currently displayed position only.
 **Depends on**: Phase 70
