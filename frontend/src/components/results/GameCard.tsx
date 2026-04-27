@@ -1,44 +1,13 @@
-import { useRef, useState, useEffect } from 'react';
 import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
-import { MiniBoard } from '@/components/board/MiniBoard';
+import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import type { GameRecord, UserResult } from '@/types/api';
 
 interface GameCardProps {
   game: GameRecord;
-}
-
-/** Renders MiniBoard only when the card scrolls into view. */
-function LazyMiniBoard({ fen, flipped, size }: { fen: string; flipped: boolean; size: number }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // safe: IntersectionObserver always provides at least 1 entry when observing 1 element
-        if (entries[0]!.isIntersecting) { setVisible(true); observer.disconnect(); }
-      },
-      { rootMargin: '200px' },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <div
-      ref={ref}
-      className="shrink-0 rounded overflow-hidden bg-muted"
-      style={{ width: size, height: size }}
-    >
-      {visible && <MiniBoard fen={fen} size={size} flipped={flipped} />}
-    </div>
-  );
 }
 
 const MOBILE_BOARD_SIZE = 105;

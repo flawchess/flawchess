@@ -306,6 +306,45 @@ async def test_attribution_picks_max_ply_count() -> None:
 
 
 @pytest.mark.asyncio
+async def test_finding_includes_entry_san_sequence() -> None:
+    """Phase 71 (D-13): entry_san_sequence is exposed on the wire schema.
+
+    Asserts:
+      - field is a list of str
+      - length >= MIN_ENTRY_PLY=3 (entry_ply >= 3 guaranteed by service)
+      - replaying the sequence on a fresh chess.Board reproduces entry_fen exactly
+    """
+    opening = _make_opening(full_hash=100, name="Sicilian Defense", ply_count=4, eco="B20")
+    # Default _make_row() uses entry_san_sequence=["e4", "c5", "Nf3"] (3 plys)
+    row = _make_row(n=20, w=4, d=4, losses=12)
+    response = await _run_compute(
+        rows=[row],
+        openings_by_hash={100: opening},
+        color="white",
+    )
+    assert len(response.white_weaknesses) == 1
+    finding = response.white_weaknesses[0]
+
+    # Phase 71 (D-13): entry_san_sequence is the SAN sequence from the start
+    # position to the entry position (candidate excluded). Must be a non-empty
+    # list[str] with length >= MIN_ENTRY_PLY=3, and must replay to entry_fen.
+    assert isinstance(finding.entry_san_sequence, list)
+    assert all(isinstance(san, str) for san in finding.entry_san_sequence)
+    assert len(finding.entry_san_sequence) >= 3, (
+        f"entry_san_sequence must have at least MIN_ENTRY_PLY=3 plys, got {len(finding.entry_san_sequence)}"
+    )
+    # Replaying the SAN sequence must reproduce entry_fen exactly
+    _board = chess.Board()
+    for _san in finding.entry_san_sequence:
+        _board.push_san(_san)
+    assert _board.fen() == finding.entry_fen, (
+        f"Replaying entry_san_sequence must reproduce entry_fen.\n"
+        f"  expected: {finding.entry_fen}\n"
+        f"  got:      {_board.fen()}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_attribution_lineage_walk_to_parent_hash() -> None:
     """D-23: when entry_hash has no direct openings match, walk parent lineage.
 
