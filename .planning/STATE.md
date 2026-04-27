@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.13
 milestone_name: Opening Insights
 status: executing
-last_updated: "2026-04-27T14:26:56.010Z"
-last_activity: 2026-04-27 -- Phase 71.1 Plan 01 complete (desktop Openings Tabs lifted above SidebarLayout)
+last_updated: "2026-04-27T14:36:10.319Z"
+last_activity: 2026-04-27
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 14
-  completed_plans: 6
-  percent: 43
+  completed_plans: 7
+  percent: 50
 ---
 
 # Project State: FlawChess
@@ -18,9 +18,9 @@ progress:
 ## Current Position
 
 Phase: 71.1 (openings-subnav-layout-refactor-match-endgames-pattern) — EXECUTING
-Plan: 2 of 3
-Status: Ready to execute (Plan 01 complete — desktop subnav lifted; commit 9eaa55d)
-Last activity: 2026-04-27 -- Phase 71.1 Plan 01 complete (desktop Openings Tabs lifted above SidebarLayout, scroll-reset added on subtab switch)
+Plan: 3 of 3
+Status: Ready to execute (Plan 02 complete — mobile sticky subnav + non-sticky board landed; commit f3026df)
+Last activity: 2026-04-27 -- Phase 71.1 Plan 02 complete (mobile Openings reworked to Endgames sticky-subnav pattern; chevron-fold removed; subnav-filter-button + openings-mobile-subnav testids added; dead state swept early to satisfy TS noUnusedLocals — Plan 03 scope reduced)
 
 ## Project Reference
 
@@ -97,6 +97,6 @@ Carried forward from v1.11 close (still relevant):
 | 260427-j41 | Highlight candidate move in Move Explorer when arriving via Insights Moves link (severity-colored row border, pulsating board arrow, auto-scroll, clear on position/filter change) | 2026-04-27 | b6c1f29 | [260427-j41-highlight-candidate-move-in-move-explore](./quick/260427-j41-highlight-candidate-move-in-move-explore/) |
 
 ---
-Last activity: 2026-04-27 — Completed quick task 260427-j41: highlight candidate move in Move Explorer with severity-colored row border, pulsating chessboard arrow, and auto-scroll when arriving via the Insights Moves deep-link.
+Last activity: 2026-04-27 — Phase 71.1 Plan 02 complete (mobile Openings reworked to Endgames sticky-subnav pattern; chevron-fold removed; commit f3026df).
 | 2026-04-27 | fast | Mobile: Moves/Games links beside mini board in OpeningFindingCard | ✅ |
 | 2026-04-27 | fast | widen game card WDL left border | ✅ |
