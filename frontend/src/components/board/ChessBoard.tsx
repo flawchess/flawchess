@@ -135,7 +135,7 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
       style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
       data-testid="arrow-overlay"
     >
-      {sortedArrows.map((arrow, i) => {
+      {sortedArrows.map((arrow) => {
         // Skip degenerate arrows where start and end are the same square (causes NaN in path)
         if (arrow.startSquare === arrow.endSquare) return null;
 
@@ -172,9 +172,15 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
             }
           : undefined;
 
+        // Stable key keyed on the move identity (start→end), NOT the sorted
+        // index. Hovering a different move changes another arrow's color and
+        // therefore the sort order, so an index-based key would shift the
+        // highlighted arrow to a new slot — React would unmount/remount its
+        // <path>, restarting the CSS pulse animation. Move-keyed elements are
+        // stable across hover-driven re-sorts.
         return (
           <path
-            key={i}
+            key={`${arrow.startSquare}-${arrow.endSquare}`}
             d={d}
             fill={arrow.color}
             opacity={arrow.isHovered ? ARROW_HOVER_OPACITY : ARROW_OPACITY}
