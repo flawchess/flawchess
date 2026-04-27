@@ -1,6 +1,7 @@
 import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { WDL_BORDER_DRAW, WDL_BORDER_LOSS, WDL_BORDER_WIN } from '@/lib/theme';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
@@ -19,10 +20,10 @@ const RESULT_CLASSES: Record<UserResult, string> = {
   loss: 'bg-red-600/20 text-red-400 border-red-600/30',
 };
 const RESULT_ICONS: Record<UserResult, LucideIcon> = { win: Plus, draw: Equal, loss: Minus };
-const BORDER_CLASSES: Record<UserResult, string> = {
-  win: 'border-l-green-600',
-  draw: 'border-l-gray-500',
-  loss: 'border-l-red-600',
+const BORDER_COLORS: Record<UserResult, string> = {
+  win: WDL_BORDER_WIN,
+  draw: WDL_BORDER_DRAW,
+  loss: WDL_BORDER_LOSS,
 };
 
 function formatDate(dateStr: string | null): string {
@@ -190,10 +191,8 @@ export function GameCard({ game }: GameCardProps) {
   return (
     <div
       data-testid={`game-card-${game.game_id}`}
-      className={cn(
-        'charcoal-texture border border-border/20 border-l-8 rounded px-4 py-3',
-        BORDER_CLASSES[game.user_result],
-      )}
+      className="charcoal-texture border border-border/20 border-l-4 rounded px-4 py-3"
+      style={{ borderLeftColor: BORDER_COLORS[game.user_result] }}
     >
       {/* Mobile layout: identifier line full width on top, then board + opening/metadata below */}
       <div className="flex flex-col gap-2 sm:hidden">
