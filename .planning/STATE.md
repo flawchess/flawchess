@@ -91,6 +91,7 @@ Carried forward from v1.11 close (still relevant):
 | 260425-lwz | Fallback to month enumeration when chess.com archives-list endpoint 404s for an existing user | 2026-04-25 | af64f66 | [260425-lwz-fallback-to-month-enumeration-when-chess](./quick/260425-lwz-fallback-to-month-enumeration-when-chess/) |
 | 260425-nlv | Restructure GameCard and PositionBookmarkCard layouts (full-width identifier line on top, board left + content right below) | 2026-04-25 | 5a7ad30 | [260425-nlv-restructure-gamecard-and-positionbookmar](./quick/260425-nlv-restructure-gamecard-and-positionbookmar/) |
 | 260426-pbo | Drop parity filter on top-10 openings, prefix off-color rows with "vs." (PRE-01) | 2026-04-26 | 3301ff5 | [260426-pbo-drop-parity-filter-on-top-10-openings-pr](./quick/260426-pbo-drop-parity-filter-on-top-10-openings-pr/) |
+| 260427-g4a | Fix opening insights IllegalMoveError when entry_san_sequence does not start from initial position (#71 hotfix) | 2026-04-27 | 8bc4337 | [260427-g4a-fix-opening-insights-illegalmoveerror-wh](./quick/260427-g4a-fix-opening-insights-illegalmoveerror-wh/) |
 
 ---
-Last activity: 2026-04-26 — Completed quick task 260426-pbo (PRE-01): dropped parity filter on top-10 openings, off-color rows now render with "vs." prefix. Next: `/gsd-discuss-phase 70`.
+Last activity: 2026-04-27 — Completed quick task 260427-g4a: filtered non-standard-FEN games from opening-insights transitions and added defensive replay guard. Endpoint no longer 500s for users with custom-FEN games (e.g. user 7).
