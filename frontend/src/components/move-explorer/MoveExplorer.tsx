@@ -23,17 +23,19 @@ interface MoveExplorerProps {
   onMoveClick: (from: string, to: string) => void;
   onMoveHover?: (moveSan: string | null) => void;
   /**
-   * When non-null, the row whose move_san matches `san` renders a sticky left
-   * border in the given hex color and is auto-scrolled into view once. Used by
-   * the deep-link from OpeningInsightsBlock → MoveExplorer (quick-task
-   * 260427-j41) so the user lands on the candidate row already highlighted.
+   * When non-null, the row whose move_san matches `san` renders a sticky
+   * severity-tinted background in `color` and is auto-scrolled into view once.
+   * When `pulse` is true, the row tint also runs the synced pulse animation.
+   * The parent flips `pulse` false after the pulse window so a later React
+   * re-render can't re-attach the animation class and restart it.
+   * (Quick-task 260427-j41.)
    */
-  highlightedMove?: { san: string; color: string } | null;
+  highlightedMove?: { san: string; color: string; pulse: boolean } | null;
   /**
    * Fired when the highlight should clear:
    *   1. Position changes (board move played, navigation, etc.).
-   *   2. Moves-array reference changes (filter-driven query refetch).
-   *   3. Any move row is clicked.
+   *   2. Any move row is clicked.
+   * Filter-change clears live in the parent (Openings).
    * The parent owns the actual highlight state — MoveExplorer just signals.
    */
   onHighlightConsumed?: () => void;
@@ -206,6 +208,7 @@ export function MoveExplorer({
                   onRowKeyDown={handleRowKeyDown}
                   onMoveHover={onMoveHover}
                   highlightColor={isHighlighted ? highlightedMove.color : null}
+                  highlightPulse={isHighlighted ? highlightedMove.pulse : false}
                   // Only attach the ref to the matching row — we don't need a Map of refs.
                   rowRef={isHighlighted ? highlightedRowRef : undefined}
                 />
@@ -219,7 +222,7 @@ export function MoveExplorer({
 }
 
 /** Move row with inline MiniWDLBar showing percentages */
-function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, highlightColor, rowRef }: {
+function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, highlightColor, highlightPulse, rowRef }: {
   entry: NextMoveEntry;
   selectedMove: string | null;
   onRowClick: (entry: NextMoveEntry) => void;
@@ -227,29 +230,35 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   onMoveHover?: (moveSan: string | null) => void;
   /** Hex color for the row background tint when this row matches highlightedMove. Null otherwise. */
   highlightColor: string | null;
+  /** Whether the row should run the pulse animation. Sticky tint is independent (always on when highlightColor !== null). */
+  highlightPulse: boolean;
   /** Ref attached only to the highlighted row so the parent can scrollIntoView once. */
   rowRef?: React.Ref<HTMLTableRowElement>;
 }) {
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
   const isBelowThreshold = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
 
-  // Merge the unreliable-row opacity with the highlight pulse. When highlighted,
-  // we set a static fallback backgroundColor (final keyframe value) AND drive
-  // the @keyframes row-highlight-pulse animation via inline CSS variables —
-  // this stays in sync with the chessboard arrow pulse (same constants).
+  // Merge the unreliable-row opacity with the highlight tint + pulse. The
+  // sticky background tint stays as long as highlightColor is set; the pulse
+  // animation properties are only attached while highlightPulse is true so
+  // the parent can drop it after the pulse window — preventing later React
+  // re-renders (e.g. arrow re-sort on hover) from re-attaching the animation
+  // class and restarting the CSS keyframe.
   const rowStyle: React.CSSProperties = {};
   if (isBelowThreshold) rowStyle.opacity = UNRELIABLE_OPACITY;
   if (highlightColor !== null) {
     rowStyle.backgroundColor = `${highlightColor}${HIGHLIGHT_BG_REST_ALPHA}`;
-    rowStyle.animationDuration = `${HIGHLIGHT_PULSE_DURATION_MS}ms`;
-    rowStyle.animationIterationCount = HIGHLIGHT_PULSE_ITERATIONS;
-    // CSS custom properties for the keyframe stops; resolved by index.css.
-    (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-low'] =
-      `${highlightColor}${HIGHLIGHT_BG_LOW_ALPHA}`;
-    (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-high'] =
-      `${highlightColor}${HIGHLIGHT_BG_HIGH_ALPHA}`;
-    (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-rest'] =
-      `${highlightColor}${HIGHLIGHT_BG_REST_ALPHA}`;
+    if (highlightPulse) {
+      rowStyle.animationDuration = `${HIGHLIGHT_PULSE_DURATION_MS}ms`;
+      rowStyle.animationIterationCount = HIGHLIGHT_PULSE_ITERATIONS;
+      // CSS custom properties for the keyframe stops; resolved by index.css.
+      (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-low'] =
+        `${highlightColor}${HIGHLIGHT_BG_LOW_ALPHA}`;
+      (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-high'] =
+        `${highlightColor}${HIGHLIGHT_BG_HIGH_ALPHA}`;
+      (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-rest'] =
+        `${highlightColor}${HIGHLIGHT_BG_REST_ALPHA}`;
+    }
   }
 
   // The highlighted row reuses the existing data-testid (`move-explorer-row-${san}`) —
@@ -265,7 +274,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
         // hover:bg-blue-500/15 sticks on mobile after tap, causing two highlighted rows
         !IS_TOUCH && 'hover:bg-blue-500/15',
         selectedMove === entry.move_san && 'bg-blue-500/15',
-        highlightColor !== null && 'animate-row-highlight-pulse',
+        highlightColor !== null && highlightPulse && 'animate-row-highlight-pulse',
       )}
       style={Object.keys(rowStyle).length > 0 ? rowStyle : undefined}
       role="button"

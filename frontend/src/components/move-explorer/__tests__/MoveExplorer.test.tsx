@@ -68,7 +68,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000' }}
+        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
       />,
     );
     const matched = screen.getByTestId('move-explorer-row-e4');
@@ -86,7 +86,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'd4', color: '#00ff00' }}
+        highlightedMove={{ san: 'd4', color: '#00ff00', pulse: true }}
       />,
     );
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
@@ -102,7 +102,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000' }}
+        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -114,7 +114,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={AFTER_E4_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000' }}
+        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -135,7 +135,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000' }}
+        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -147,7 +147,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000' }}
+        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -163,7 +163,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000' }}
+        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );

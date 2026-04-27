@@ -60,6 +60,7 @@ import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
 import { OpeningInsightsBlock } from '@/components/insights/OpeningInsightsBlock';
 import { getSeverityBorderColor } from '@/lib/openingInsights';
+import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '@/lib/highlightPulse';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
 import { resolveMatchSide } from '@/types/api';
@@ -218,6 +219,26 @@ export function OpeningsPage() {
   // change or row click), by leaving the explorer subtab, and by filter changes
   // (handled below in a baseline-snapshot effect).
   const [highlightedMove, setHighlightedMove] = useState<{ san: string; color: string } | null>(null);
+
+  // Whether the deep-link pulse animations should currently render. Goes true
+  // when highlightedMove is set, then auto-flips false after the pulse window.
+  // Decoupling pulse-active from highlight-active prevents any later React
+  // re-render (e.g. when hovering another move re-sorts the arrow list) from
+  // re-attaching .animate-arrow-pulse and restarting the CSS animation. The
+  // arrow/row sit at their static rest opacity/tint once the pulse expires.
+  const [pulseActive, setPulseActive] = useState(false);
+  useEffect(() => {
+    if (highlightedMove == null) {
+      setPulseActive(false);
+      return;
+    }
+    setPulseActive(true);
+    const timeoutId = window.setTimeout(
+      () => setPulseActive(false),
+      HIGHLIGHT_PULSE_ITERATIONS * HIGHLIGHT_PULSE_DURATION_MS,
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [highlightedMove]);
 
   // ── Sidebar state (desktop only) ────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = useState<SidebarPanel | null>(null);
@@ -394,7 +415,7 @@ export function OpeningsPage() {
         const squares = moveMap.get(entry.move_san);
         if (!squares) return null;
         const isHovered = entry.move_san === hoveredMove;
-        const isHighlightPulse = highlightedMove !== null && entry.move_san === highlightedMove.san;
+        const isHighlightPulse = pulseActive && highlightedMove !== null && entry.move_san === highlightedMove.san;
         return {
           startSquare: squares.from,
           endSquare: squares.to,
@@ -405,7 +426,7 @@ export function OpeningsPage() {
         };
       })
       .filter((a): a is NonNullable<typeof a> => a !== null);
-  }, [nextMoves.data, chess.position, hoveredMove, highlightedMove]);
+  }, [nextMoves.data, chess.position, hoveredMove, highlightedMove, pulseActive]);
 
   // ── Games tab data ──────────────────────────────────────────────────────────
   const targetHash = chess.getHashForOpenings(filters.matchSide, filters.color);
@@ -816,7 +837,11 @@ export function OpeningsPage() {
           position={chess.position}
           onMoveClick={(from, to) => chess.makeMove(from, to)}
           onMoveHover={setHoveredMove}
-          highlightedMove={highlightedMove}
+          highlightedMove={
+            highlightedMove !== null
+              ? { ...highlightedMove, pulse: pulseActive }
+              : null
+          }
           onHighlightConsumed={() => setHighlightedMove(null)}
         />
       </div>
