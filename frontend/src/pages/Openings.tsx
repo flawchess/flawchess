@@ -1385,13 +1385,22 @@ export function OpeningsPage() {
           {(activeTab === 'explorer' || activeTab === 'games') && (
             <>
               <div className="flex items-stretch gap-1 px-1">
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 flex flex-col gap-1">
                   <ChessBoard
                     position={chess.position}
                     onPieceDrop={chess.makeMove}
                     flipped={boardFlipped}
                     lastMove={chess.lastMove}
                     arrows={boardArrows}
+                  />
+                  {/* Board controls aligned to chessboard width (excludes settings column) */}
+                  <BoardControls
+                    onBack={chess.goBack}
+                    onForward={chess.goForward}
+                    onReset={() => { chess.reset(); setGamesOffset(0); }}
+                    onFlip={() => setBoardFlipped((f) => !f)}
+                    canGoBack={chess.currentPly > 0}
+                    canGoForward={chess.currentPly < chess.moveHistory.length}
                   />
                 </div>
                 {/* Settings column: 3 stacked 44px buttons — bookmarks, played-as, info (filter button moved to subnav) */}
@@ -1456,15 +1465,6 @@ export function OpeningsPage() {
                   </div>
                 </div>
               </div>
-              {/* Full-width board controls below the board (no chevron neighbour, default sizing) */}
-              <BoardControls
-                onBack={chess.goBack}
-                onForward={chess.goForward}
-                onReset={() => { chess.reset(); setGamesOffset(0); }}
-                onFlip={() => setBoardFlipped((f) => !f)}
-                canGoBack={chess.currentPly > 0}
-                canGoForward={chess.currentPly < chess.moveHistory.length}
-              />
               {/* Opening name line (always visible on Moves/Games subtabs) */}
               <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
                 {chess.openingName ? (
