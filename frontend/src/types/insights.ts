@@ -61,3 +61,35 @@ export interface InsightsErrorResponse {
 }
 
 export type InsightsAxiosError = AxiosError<InsightsErrorResponse>;
+
+// ─── Phase 71 — Opening Insights ──────────────────────────────────────────
+// Hand-mirrored from app/schemas/opening_insights.py.
+// entry_san_sequence added by Phase 71 backend amendment (Plan 01, D-13).
+
+export interface OpeningInsightFinding {
+  color: 'white' | 'black';
+  classification: 'weakness' | 'strength';
+  severity: 'minor' | 'major';
+  opening_name: string;
+  opening_eco: string;
+  display_name: string;
+  entry_fen: string;
+  entry_san_sequence: string[];  // SAN tokens start→entry (candidate excluded)
+  entry_full_hash: string;
+  candidate_move_san: string;
+  resulting_full_hash: string;
+  n_games: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  win_rate: number;
+  loss_rate: number;
+  score: number;
+}
+
+export interface OpeningInsightsResponse {
+  white_weaknesses: OpeningInsightFinding[];
+  black_weaknesses: OpeningInsightFinding[];
+  white_strengths: OpeningInsightFinding[];
+  black_strengths: OpeningInsightFinding[];
+}
