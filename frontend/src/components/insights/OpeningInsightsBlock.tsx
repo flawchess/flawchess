@@ -133,7 +133,7 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 function EmptyBlock() {
   return (
     <p className="text-sm text-muted-foreground" data-testid="opening-insights-empty">
-      No opening findings cleared the threshold under your current filters. Try widening
+      No opening findings under your current filters. Try widening
       filters (longer recency window, more time controls) or import more games.
     </p>
   );
@@ -209,8 +209,7 @@ function FindingsSection({
       </h3>
       {findings.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">
-          No {section.kind} findings cleared the threshold under your current
-          filters.
+          No {section.kind} findings under your current filters.
         </p>
       ) : (
         <>
