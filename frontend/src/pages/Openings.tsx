@@ -801,7 +801,7 @@ export function OpeningsPage() {
   const moveExplorerContent = (
     <div className="flex flex-col gap-4">
       {gamesData && gamesData.stats.total > 0 && (
-        <div className="charcoal-texture rounded-md p-4">
+        <div className="charcoal-texture rounded-md p-4 order-2 lg:order-1">
           <WDLChartRow
             data={gamesData.stats}
             label={positionResultsLabel}
@@ -814,7 +814,7 @@ export function OpeningsPage() {
           />
         </div>
       )}
-      <div className="charcoal-texture rounded-md p-4">
+      <div className="charcoal-texture rounded-md p-4 order-1 lg:order-2">
         <MoveExplorer
           moves={nextMoves.data?.moves ?? []}
           isLoading={nextMoves.isLoading}
