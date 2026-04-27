@@ -71,22 +71,22 @@ export function MoveExplorer({
     if (selectedMove !== null) setSelectedMove(null);
   }
 
-  // Highlight consumption signals: position change OR moves-array reference change
-  // OR row click. We fire onHighlightConsumed in an effect (NOT in render) so the
-  // callback runs exactly once per transition — calling parent setState during
-  // render would cause React 19's double-invocation in dev/strict mode to
-  // double-fire the signal.
+  // Highlight consumption signals: position change OR row click. We fire
+  // onHighlightConsumed in an effect (NOT in render) so the callback runs
+  // exactly once per transition — calling parent setState during render would
+  // cause React 19's double-invocation in dev/strict mode to double-fire the
+  // signal. Filter-change clears live in the parent (where filter identity is
+  // owned) — using the moves-array reference here was a false proxy: TanStack
+  // Query resolution creates a new moves reference on first fetch, which would
+  // wrongly clear deep-link highlights mid-pulse.
   const prevPositionForHighlightRef = useRef(position);
-  const prevMovesForHighlightRef = useRef(moves);
   useEffect(() => {
     const positionChanged = prevPositionForHighlightRef.current !== position;
-    const movesChanged = prevMovesForHighlightRef.current !== moves;
     prevPositionForHighlightRef.current = position;
-    prevMovesForHighlightRef.current = moves;
-    if ((positionChanged || movesChanged) && highlightedMove != null) {
+    if (positionChanged && highlightedMove != null) {
       onHighlightConsumed?.();
     }
-  }, [position, moves, highlightedMove, onHighlightConsumed]);
+  }, [position, highlightedMove, onHighlightConsumed]);
 
   // Scroll the matching row into view once when the highlight transitions to a
   // value that exists in `moves`. behavior: 'smooth' already respects the OS

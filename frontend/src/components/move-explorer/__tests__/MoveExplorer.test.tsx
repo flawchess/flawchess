@@ -121,7 +121,10 @@ describe('MoveExplorer — highlightedMove prop', () => {
     expect(onHighlightConsumed).toHaveBeenCalledTimes(1);
   });
 
-  it('fires onHighlightConsumed once when the moves array identity changes while a highlight is active', () => {
+  it('does NOT fire onHighlightConsumed when only the moves array identity changes (e.g. query resolution)', () => {
+    // Regression: TanStack Query swaps the moves reference when the next-moves
+    // request resolves on a freshly-mounted explorer tab. Treating that as a
+    // clear signal cut off deep-link arrow pulses mid-animation.
     const onHighlightConsumed = vi.fn();
     const movesA = makeMoves();
     const movesB = makeMoves();  // different reference, same shape
@@ -148,7 +151,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
-    expect(onHighlightConsumed).toHaveBeenCalledTimes(1);
+    expect(onHighlightConsumed).not.toHaveBeenCalled();
   });
 
   it('fires onHighlightConsumed once when any row is clicked while a highlight is active', () => {

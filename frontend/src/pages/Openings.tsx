@@ -215,8 +215,8 @@ export function OpeningsPage() {
   // ── Deep-link highlight (Insights → MoveExplorer / quick-task 260427-j41) ──
   // Set by handleOpenFinding when the user clicks a "Moves" link on an
   // OpeningFindingCard; cleared by MoveExplorer's onHighlightConsumed (position
-  // change, moves-array refetch, or row click), and also when the user
-  // navigates away from the explorer subtab.
+  // change or row click), by leaving the explorer subtab, and by filter changes
+  // (handled below in a baseline-snapshot effect).
   const [highlightedMove, setHighlightedMove] = useState<{ san: string; color: string } | null>(null);
 
   // ── Sidebar state (desktop only) ────────────────────────────────────────────
@@ -275,6 +275,29 @@ export function OpeningsPage() {
       setHighlightedMove(null);
     }
   }
+
+  // Clear the deep-link highlight when filters change AFTER the highlight was
+  // set. Snapshot the filter identity at the moment the highlight transitions
+  // to non-null; later filter changes (with the same highlight active) clear it.
+  // Living here (not in MoveExplorer) avoids a false-trigger from the moves-array
+  // reference change when the useNextMoves query first resolves on tab mount.
+  const filtersAtHighlightRef = useRef<FilterState | null>(null);
+  const prevHighlightForFilterClearRef = useRef(highlightedMove);
+  useEffect(() => {
+    const highlightChanged = prevHighlightForFilterClearRef.current !== highlightedMove;
+    prevHighlightForFilterClearRef.current = highlightedMove;
+    if (highlightedMove == null) {
+      filtersAtHighlightRef.current = null;
+      return;
+    }
+    if (highlightChanged) {
+      filtersAtHighlightRef.current = filters;
+      return;
+    }
+    if (filtersAtHighlightRef.current !== null && filtersAtHighlightRef.current !== filters) {
+      setHighlightedMove(null);
+    }
+  }, [filters, highlightedMove]);
 
   // ── Bookmarks ───────────────────────────────────────────────────────────────
   const { data: bookmarks = [] } = usePositionBookmarks();
