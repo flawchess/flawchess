@@ -132,7 +132,7 @@ describe('OpeningInsightsBlock', () => {
     await waitFor(() => {
       // Block-level empty message references the threshold copy
       expect(screen.getByTestId('opening-insights-block').textContent).toMatch(
-        /No opening findings cleared the threshold/,
+        /No opening findings/,
       );
     });
   });
@@ -173,7 +173,7 @@ describe('OpeningInsightsBlock', () => {
     await waitFor(() => {
       // The black-weaknesses section is empty — it should display a muted per-section message
       const blackWeaknesses = screen.getByTestId('opening-insights-section-black-weaknesses');
-      expect(blackWeaknesses.textContent).toMatch(/No weakness findings cleared the threshold/);
+      expect(blackWeaknesses.textContent).toMatch(/No weakness findings/);
     });
   });
 

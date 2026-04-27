@@ -84,13 +84,6 @@ export function OpeningInsightsBlock({ debouncedFilters, onFindingClick, onOpenG
       data-testid="opening-insights-block"
       className="flex flex-col gap-3"
     >
-      <p
-        className="text-sm italic text-muted-foreground"
-        data-testid="opening-insights-tip"
-      >
-        <span className="font-semibold text-foreground/80">Tip:</span> Use the
-        recency and time control filters to get more specific insights.
-      </p>
 
       {isLoading ? (
         <SkeletonBlock />
@@ -140,7 +133,7 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 function EmptyBlock() {
   return (
     <p className="text-sm text-muted-foreground" data-testid="opening-insights-empty">
-      No opening findings cleared the threshold under your current filters. Try widening
+      No opening findings under your current filters. Try widening
       filters (longer recency window, more time controls) or import more games.
     </p>
   );
@@ -216,8 +209,7 @@ function FindingsSection({
       </h3>
       {findings.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">
-          No {section.kind} findings cleared the threshold under your current
-          filters.
+          No {section.kind} findings under your current filters.
         </p>
       ) : (
         <>

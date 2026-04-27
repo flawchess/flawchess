@@ -98,24 +98,6 @@ export function MoveExplorer({
     }
   }, [position, highlightedMove, onHighlightConsumed]);
 
-  // Scroll the matching row into view once when the highlight transitions to a
-  // value that exists in `moves`. behavior: 'smooth' already respects the OS
-  // prefers-reduced-motion setting in modern browsers, so no extra guard.
-  const lastScrolledSanRef = useRef<string | null>(null);
-  useEffect(() => {
-    const san = highlightedMove?.san ?? null;
-    if (san === null) {
-      lastScrolledSanRef.current = null;
-      return;
-    }
-    if (san === lastScrolledSanRef.current) return;
-    if (!moves.some(m => m.move_san === san)) return;
-    if (highlightedRowRef.current) {
-      highlightedRowRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      lastScrolledSanRef.current = san;
-    }
-  }, [highlightedMove, moves]);
-
   const handleRowClick = (entry: NextMoveEntry) => {
     const squares = moveMap.get(entry.move_san);
     if (!squares) return;

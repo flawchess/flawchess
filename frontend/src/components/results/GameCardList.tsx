@@ -12,6 +12,7 @@ interface GameCardListProps {
   onPageChange: (offset: number) => void;
   headerAction?: ReactNode;
   matchLabel?: ReactNode;
+  hideMatchLabelOnMobile?: boolean;
 }
 
 type PaginationItem = number | 'ellipsis-start' | 'ellipsis-end';
@@ -66,6 +67,7 @@ export function GameCardList({
   onPageChange,
   headerAction,
   matchLabel,
+  hideMatchLabelOnMobile = false,
 }: GameCardListProps) {
   const totalPages = Math.max(1, Math.ceil(matchedCount / limit));
   const currentPage = Math.floor(offset / limit) + 1;
@@ -82,7 +84,7 @@ export function GameCardList({
   return (
     <div data-testid="game-card-list" className="space-y-3">
       {/* Matched count row */}
-      <div className="flex items-center justify-between">
+      <div className={`${hideMatchLabelOnMobile ? 'hidden lg:flex' : 'flex'} items-center justify-between`}>
         <p className="text-sm text-muted-foreground">
           {matchLabel ?? (
             <>
