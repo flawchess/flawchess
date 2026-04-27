@@ -9,19 +9,16 @@ from app.models.base import Base
 class GamePosition(Base):
     __tablename__ = "game_positions"
     __table_args__ = (
-        # Composite indexes for the three query patterns (Phase 3)
-        Index("ix_gp_user_full_hash", "user_id", "full_hash"),
+        # Composite indexes for "my pieces only" queries (Phase 3)
         Index("ix_gp_user_white_hash", "user_id", "white_hash"),
         Index("ix_gp_user_black_hash", "user_id", "black_hash"),
-        # Covering index for Phase 12 next-moves aggregation queries
+        # Covering index for Phase 12 next-moves aggregation queries.
+        # Also serves (user_id, full_hash) prefix lookups — the narrower
+        # ix_gp_user_full_hash was dropped as redundant (prod stats showed
+        # this wider index handled the GROUP BY move_san aggregation via
+        # index-only scans, while the narrow one's 132 scans/period could
+        # safely fall back to the prefix of this index).
         Index("ix_gp_user_full_hash_move_san", "user_id", "full_hash", "move_san"),
-        # Partial index for endgame queries — only indexes rows where endgame_class IS NOT NULL
-        Index(
-            "ix_gp_user_endgame_class",
-            "user_id",
-            "endgame_class",
-            postgresql_where=text("endgame_class IS NOT NULL"),
-        ),
         # Covering index for endgame GROUP BY queries — enables index-only scans for:
         # 1. Span aggregation: GROUP BY game_id, endgame_class HAVING COUNT(ply) >= threshold
         # 2. Entry-ply material lookup: array_agg(material_imbalance ORDER BY ply)[1]
