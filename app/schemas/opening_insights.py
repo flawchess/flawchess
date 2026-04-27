@@ -48,6 +48,7 @@ class OpeningInsightFinding(BaseModel):
     opening_eco: str  # "" sentinel when no openings-table match (D-23)
     display_name: str  # may include "vs. " prefix per D-22 / RESEARCH.md Pitfall 4
     entry_fen: str
+    entry_san_sequence: list[str]  # SAN tokens from start to entry position (candidate excluded); added Phase 71 (D-13) for FE deep-link replay
     entry_full_hash: str  # str-form for JSON precision (RESEARCH.md Pitfall 1)
     candidate_move_san: str
     resulting_full_hash: str  # str-form, same reason
