@@ -1,6 +1,20 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+
+// IntersectionObserver is not available in jsdom — stub it as a class constructor.
+class MockIntersectionObserver {
+  observe = vi.fn();
+  disconnect = vi.fn();
+  unobserve = vi.fn();
+}
+vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
+
+// Mock react-chessboard to avoid SVG/canvas rendering in test environment
+vi.mock('react-chessboard', () => ({
+  Chessboard: vi.fn(() => null),
+}));
+
 import { OpeningFindingCard } from './OpeningFindingCard';
 import type { OpeningInsightFinding } from '@/types/insights';
 import { DARK_RED, LIGHT_RED, DARK_GREEN, LIGHT_GREEN } from '@/lib/arrowColor';
@@ -28,6 +42,10 @@ function makeFinding(overrides: Partial<OpeningInsightFinding> = {}): OpeningIns
     ...overrides,
   };
 }
+
+afterEach(() => {
+  cleanup();
+});
 
 describe('OpeningFindingCard', () => {
   it('renders weakness prose: "You lose {rate}% as {Color} after {seq} (n={n})"', () => {
