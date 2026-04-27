@@ -30,6 +30,9 @@ import { GlobalStatsPage } from '@/pages/GlobalStats';
 import { AdminPage } from '@/pages/Admin';
 import { PrivacyPage } from '@/pages/Privacy';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
+import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
+
+const FLAG_ENDGAMES_VISITED = 'endgames_visited';
 
 // ─── Non-visual job completion watcher ────────────────────────────────────────
 
@@ -90,6 +93,13 @@ function NavHeader() {
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
   const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
+  const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
+  // Backed by completed-import timestamps so the dot waits for the first
+  // import to actually finish (game counts can climb mid-import).
+  const hasCompletedImport =
+    profile != null &&
+    (profile.chess_com_last_sync_at !== null || profile.lichess_last_sync_at !== null);
+  const showEndgamesDot = hasCompletedImport && !endgamesVisited;
   // D-16: Admin tab rightmost for superusers, absent otherwise.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
@@ -120,6 +130,15 @@ function NavHeader() {
                   <span
                     className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                     data-testid="import-notification-dot"
+                  >
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                  </span>
+                )}
+                {to === '/endgames' && showEndgamesDot && (
+                  <span
+                    className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                    data-testid="endgames-notification-dot"
                   >
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
                     <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
@@ -198,6 +217,12 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
   const location = useLocation();
   const { data: profile } = useUserProfile();
   const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
+  const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
+  // See NavHeader — gate on completed-import timestamps, not game counts.
+  const hasCompletedImport =
+    profile != null &&
+    (profile.chess_com_last_sync_at !== null || profile.lichess_last_sync_at !== null);
+  const showEndgamesDot = hasCompletedImport && !endgamesVisited;
 
   return (
     <nav
@@ -221,6 +246,15 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
             <span
               className="absolute top-1.5 right-[30%] flex h-2 w-2"
               data-testid="import-notification-dot-mobile"
+            >
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+            </span>
+          )}
+          {to === '/endgames' && showEndgamesDot && (
+            <span
+              className="absolute top-1.5 right-[30%] flex h-2 w-2"
+              data-testid="endgames-notification-dot-mobile"
             >
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
@@ -300,7 +334,14 @@ function ProtectedLayout() {
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const isOpeningsRoute = location.pathname.startsWith('/openings');
+  const isEndgamesRoute = location.pathname.startsWith('/endgames');
   const refreshedRef = useRef(false);
+
+  useEffect(() => {
+    if (isEndgamesRoute && profile?.email) {
+      setUserFlag(FLAG_ENDGAMES_VISITED, profile.email);
+    }
+  }, [isEndgamesRoute, profile?.email]);
 
   // Show deferred toast from OAuth callback — checked here because ProtectedLayout
   // is the stable destination after the redirect chain (callback → / → /openings).

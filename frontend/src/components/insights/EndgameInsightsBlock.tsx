@@ -4,10 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { DEFAULT_FILTERS, type FilterState } from '@/components/filters/FilterPanel';
 import { useActiveJobs } from '@/hooks/useImport';
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
 import type {
   EndgameInsightsResponse,
   InsightsAxiosError,
 } from '@/types/insights';
+
+const FLAG_INSIGHTS_USED = 'insights_used';
 
 /**
  * Top-of-tab Insights card.
@@ -63,6 +67,8 @@ export function EndgameInsightsBlock({
   onGenerate,
 }: EndgameInsightsBlockProps) {
   const { data: activeJobs } = useActiveJobs(true);
+  const { data: profile } = useUserProfile();
+  const insightsUsed = useUserFlag(FLAG_INSIGHTS_USED, profile?.email);
 
   const isPending = mutation.isPending;
   const isError = mutation.isError;
@@ -70,6 +76,11 @@ export function EndgameInsightsBlock({
 
   const hasActiveImport = (activeJobs?.length ?? 0) > 0;
   const blockedReason = getBlockedReason(appliedFilters, hasActiveImport);
+
+  const handleGenerateClick = () => {
+    if (profile?.email) setUserFlag(FLAG_INSIGHTS_USED, profile.email);
+    onGenerate();
+  };
 
   const errorBody = mutation.error?.response?.data;
   const is429 = errorBody?.error === 'rate_limit_exceeded';
@@ -96,7 +107,7 @@ export function EndgameInsightsBlock({
       {isError ? (
         <ErrorState
           retryMinutes={errorRetryMinutes}
-          onRetry={onGenerate}
+          onRetry={handleGenerateClick}
         />
       ) : isPending && !hasRendered ? (
         <SkeletonBlock />
@@ -106,13 +117,14 @@ export function EndgameInsightsBlock({
           isStale={isStale}
           isPending={isPending}
           blockedReason={blockedReason}
-          onRegenerate={onGenerate}
+          onRegenerate={handleGenerateClick}
         />
       ) : (
         <HeroState
           isPending={isPending}
           blockedReason={blockedReason}
-          onGenerate={onGenerate}
+          showDot={!insightsUsed}
+          onGenerate={handleGenerateClick}
         />
       )}
     </div>
@@ -140,10 +152,12 @@ function MaybeBlockedTooltip({
 function HeroState({
   isPending,
   blockedReason,
+  showDot,
   onGenerate,
 }: {
   isPending: boolean;
   blockedReason: string | null;
+  showDot: boolean;
   onGenerate: () => void;
 }) {
   const disabled = isPending || blockedReason !== null;
@@ -161,9 +175,19 @@ function HeroState({
           onClick={onGenerate}
           disabled={disabled}
           data-testid="btn-generate-insights"
+          className="relative"
         >
           <Sparkles className="h-4 w-4" />
           Generate Insights
+          {showDot && !disabled && (
+            <span
+              className="absolute -top-1 -right-1 flex h-2.5 w-2.5"
+              data-testid="generate-insights-notification-dot"
+            >
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+            </span>
+          )}
         </Button>
       </MaybeBlockedTooltip>
     </>

@@ -216,10 +216,6 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
 
   return (
     <main data-testid="import-page" className="mx-auto w-full max-w-2xl px-4 py-6 md:px-6 space-y-8">
-      <h1 data-testid="import-page-heading" className="text-2xl font-bold tracking-tight">
-        Import Games
-      </h1>
-
       {profile?.is_guest && (
         <Alert variant="info" icon={DoorOpen} data-testid="import-guest-promo-info" className="mb-4">
           <div>
@@ -252,11 +248,11 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
           >
             <div className="flex items-center gap-3">
               <div className="flex-1 space-y-1">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                   <PlatformIcon platform="chess.com" className="h-4 w-4" />
                   <Label htmlFor="chess-com-username" className="text-sm font-medium">chess.com</Label>
                   {profile && (
-                    <span className="text-xs text-muted-foreground" data-testid="import-game-count-chess-com">
+                    <span className="text-xs text-muted-foreground basis-full sm:basis-auto" data-testid="import-game-count-chess-com">
                       {profile.chess_com_game_count} games
                       {formatLastSync(profile.chess_com_last_sync_at) && (
                         <> ({formatLastSync(profile.chess_com_last_sync_at)})</>
@@ -298,11 +294,11 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
           >
             <div className="flex items-center gap-3">
               <div className="flex-1 space-y-1">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                   <PlatformIcon platform="lichess" className="h-4 w-4" />
                   <Label htmlFor="lichess-username" className="text-sm font-medium">lichess</Label>
                   {profile && (
-                    <span className="text-xs text-muted-foreground" data-testid="import-game-count-lichess">
+                    <span className="text-xs text-muted-foreground basis-full sm:basis-auto" data-testid="import-game-count-lichess">
                       {profile.lichess_game_count} games
                       {formatLastSync(profile.lichess_last_sync_at) && (
                         <> ({formatLastSync(profile.lichess_last_sync_at)})</>
