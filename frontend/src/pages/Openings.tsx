@@ -1174,6 +1174,29 @@ export function OpeningsPage() {
     <div data-testid="openings-page" className="flex min-h-0 flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
         {/* Desktop: sidebar strip + optional panel + board/tabs content */}
+        <Tabs
+          value={activeTab}
+          onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }}
+          className="hidden lg:block"
+        >
+          <TabsList variant="brand" className="w-full" data-testid="openings-tabs">
+            <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
+              <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+              Moves
+            </TabsTrigger>
+            <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
+              <Gamepad2 className="mr-1.5 h-4 w-4" />
+              Games
+            </TabsTrigger>
+            <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
+              <BarChart2 className="mr-1.5 h-4 w-4" />
+              Stats
+            </TabsTrigger>
+            <TabsTrigger value="insights" data-testid="tab-insights" className="flex-1">
+              <Lightbulb className="mr-1.5 h-4 w-4" />
+              Insights
+            </TabsTrigger>
+          </TabsList>
         <SidebarLayout
           breakpoint="lg"
           panels={[
@@ -1300,40 +1323,21 @@ export function OpeningsPage() {
           }
         >
           <div>
-              <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)}>
-                <TabsList variant="brand" className="w-full" data-testid="openings-tabs">
-                  <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
-                    <ArrowRightLeft className="mr-1.5 h-4 w-4" />
-                    Moves
-                  </TabsTrigger>
-                  <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
-                    <Gamepad2 className="mr-1.5 h-4 w-4" />
-                    Games
-                  </TabsTrigger>
-                  <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
-                    <BarChart2 className="mr-1.5 h-4 w-4" />
-                    Stats
-                  </TabsTrigger>
-                  <TabsTrigger value="insights" data-testid="tab-insights" className="flex-1">
-                    <Lightbulb className="mr-1.5 h-4 w-4" />
-                    Insights
-                  </TabsTrigger>
-                </TabsList>
-                <TabsContent value="explorer" className="mt-4">
-                  {moveExplorerContent}
-                </TabsContent>
-                <TabsContent value="games" className="mt-4">
-                  {gamesContent}
-                </TabsContent>
-                <TabsContent value="stats" className="mt-4">
-                  {statisticsContent}
-                </TabsContent>
-                <TabsContent value="insights" className="mt-4">
-                  {insightsContent}
-                </TabsContent>
-              </Tabs>
+            <TabsContent value="explorer" className="mt-4">
+              {moveExplorerContent}
+            </TabsContent>
+            <TabsContent value="games" className="mt-4">
+              {gamesContent}
+            </TabsContent>
+            <TabsContent value="stats" className="mt-4">
+              {statisticsContent}
+            </TabsContent>
+            <TabsContent value="insights" className="mt-4">
+              {insightsContent}
+            </TabsContent>
           </div>
         </SidebarLayout>
+        </Tabs>
 
         {/* Mobile: single column with sticky board */}
         <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)} className="lg:hidden flex flex-col gap-2 min-w-0">
