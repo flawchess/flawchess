@@ -85,9 +85,9 @@ export function OpeningFindingCard({
           data-testid={`opening-finding-card-${idx}-games`}
           onClick={() => onOpenGames(finding)}
         >
+          <FolderOpen className="h-3.5 w-3.5" />
           <span className="tabular-nums">{finding.n_games}</span>
           <span>Games</span>
-          <FolderOpen className="h-3.5 w-3.5" />
         </button>
       </Tooltip>
     </div>
