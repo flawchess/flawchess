@@ -222,6 +222,29 @@
   animation: progress-indeterminate 1.5s ease-in-out infinite;
 }
 
+/* Highlight-pulse for a chessboard arrow's <path>. Used by the deep-link
+   from OpeningInsightsBlock → MoveExplorer (quick-task 260427-j41) to draw
+   the user's eye to the candidate move's arrow on arrival.
+
+   The 100% opacity matches the static ARROW_OPACITY (0.75) in
+   ChessBoard.tsx so the arrow visibly pulses and then settles to its
+   normal steady-state (animation-fill-mode: forwards).
+
+   animation-duration and animation-iteration-count are supplied inline by
+   ChessBoard.tsx (ARROW_PULSE_DURATION_MS × ARROW_PULSE_ITERATIONS) — keep
+   the keyframe stops in sync with that file's constants. */
+@keyframes arrow-pulse {
+  0%   { opacity: 0.45; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.75; }
+}
+
+.animate-arrow-pulse {
+  animation-name: arrow-pulse;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: forwards;
+}
+
 /* Mobile typography bump.
    Below the sm: breakpoint, lift Tailwind's default type scale by one tier so
    labels, filter chips, table captions, and body copy match typical mobile-app

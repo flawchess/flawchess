@@ -11,6 +11,14 @@ interface BoardArrow {
   width: number;
   /** Whether this arrow's move is currently hovered in the move list */
   isHovered?: boolean;
+  /**
+   * When true, the arrow's <path> gets the .animate-arrow-pulse class so it
+   * pulses (opacity 0.45 → 1.0 → 0.75) for ARROW_PULSE_ITERATIONS iterations
+   * and then settles at the static ARROW_OPACITY. Used by the deep-link from
+   * OpeningInsightsBlock → MoveExplorer to draw attention to the candidate
+   * move on arrival. (Quick-task 260427-j41.)
+   */
+  isHighlightPulse?: boolean;
 }
 
 interface ChessBoardProps {
@@ -47,6 +55,13 @@ const ARROW_OUTLINE_WIDTH = 1;
 const ARROW_HOVER_SCALE = 1.3;
 // How far past target square center the arrow tip extends (fraction of square size)
 const ARROW_TIP_OVERSHOOT = 0.15;
+// Arrow highlight-pulse animation. The .animate-arrow-pulse helper in
+// src/index.css encodes a CSS keyframe driven by these constants — keep the
+// CSS rule in sync if the values change.
+const ARROW_PULSE_ITERATIONS = 3;
+const ARROW_PULSE_DURATION_MS = 600;
+// Total pulse window = ARROW_PULSE_ITERATIONS × ARROW_PULSE_DURATION_MS = 1800 ms (~2 s).
+const ARROW_PULSE_CLASS = 'animate-arrow-pulse';
 
 const FILES = 'abcdefgh';
 
@@ -144,6 +159,18 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
           shaftHalf, headWidth / 2, headLen,
         );
 
+        // Highlight-pulse: the CSS class drives the animation and overrides
+        // opacity for the pulse window, then settles at ARROW_OPACITY (0.75) via
+        // animation-fill-mode: forwards (matching the keyframe's 100% value).
+        // Inline style passes the JS constants into CSS so the duration/iteration
+        // count are not duplicated as magic numbers.
+        const pulseStyle: React.CSSProperties | undefined = arrow.isHighlightPulse
+          ? {
+              animationDuration: `${ARROW_PULSE_DURATION_MS}ms`,
+              animationIterationCount: ARROW_PULSE_ITERATIONS,
+            }
+          : undefined;
+
         return (
           <path
             key={i}
@@ -153,6 +180,8 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
             stroke={ARROW_OUTLINE_COLOR}
             strokeWidth={ARROW_OUTLINE_WIDTH}
             strokeLinejoin="round"
+            className={arrow.isHighlightPulse ? ARROW_PULSE_CLASS : undefined}
+            style={pulseStyle}
           />
         );
       })}
