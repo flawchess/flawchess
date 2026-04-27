@@ -31,10 +31,10 @@ const FEATURES: {
   {
     slug: 'opening-explorer',
     icon: Compass,
-    heading: 'Interactive Opening Explorer',
+    heading: 'Opening Explorer & Insights',
     desc: [
         "Step through any opening and see your win/draw/loss rate for every move you\u2019ve played.",
-        'Discover which moves you struggle against and which traps and gambits work for you.',
+        'Automatically scan all your games 8 moves deep to surface opening strengths and weaknesses.',
         "Scout your opponents\u2019 weaknesses and tendencies before a match.",
     ],
     screenshot: { src: '/screenshots/opening-explorer.png', alt: 'Board with move explorer showing win/draw/loss bars per candidate move' },
