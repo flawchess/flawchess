@@ -89,7 +89,7 @@ export function GameCard({ game }: GameCardProps) {
             href={game.platform_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:text-foreground transition-colors"
+            className="text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
             aria-label="Open game on platform"
             data-testid={`game-card-link-${game.game_id}`}
           >

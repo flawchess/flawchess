@@ -71,7 +71,7 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, maxTot
       {/* Column 2: Game count with link to games tab */}
       <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
         <button
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
           aria-label={`View ${o.total} games for ${o.opening_name}`}
           data-testid={`${testIdPrefix}-games-${rowKey}`}
           onClick={() => onOpenGames(o, color)}

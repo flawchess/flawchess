@@ -130,7 +130,7 @@ function MobileMostPlayedRows({
                 </div>
                 <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
                   <button
-                    className="shrink-0 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    className="shrink-0 flex items-center gap-1 text-xs text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
                     aria-label={`View ${o.total} games for ${o.opening_name}`}
                     data-testid={`${testIdPrefix}-games-${rowKey}`}
                     onClick={() => onOpenGames(o, color)}

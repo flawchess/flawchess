@@ -43,6 +43,7 @@
     --brand-brown-light: #A07850;
     --brand-brown-hover: #6B4226;
     --brand-brown-active: #6B4226;
+    --brand-brown-highlight: #F0DBB9;
     --charcoal: #161412;
     --charcoal-hover: #262220;
     --inactive-bg: #171717;
@@ -132,6 +133,7 @@
     --color-brand-brown-light: var(--brand-brown-light);
     --color-brand-brown-hover: var(--brand-brown-hover);
     --color-brand-brown-active: var(--brand-brown-active);
+    --color-brand-brown-highlight: var(--brand-brown-highlight);
     --color-charcoal: var(--charcoal);
     --color-charcoal-hover: var(--charcoal-hover);
     --color-inactive-bg: var(--inactive-bg);

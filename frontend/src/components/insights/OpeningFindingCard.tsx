@@ -68,7 +68,7 @@ export function OpeningFindingCard({
       <Tooltip content={`Open ${finding.display_name} in the Move Explorer`}>
         <button
           type="button"
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
           aria-label={`Open ${finding.display_name} in the Move Explorer`}
           data-testid={`opening-finding-card-${idx}-moves`}
           onClick={() => onFindingClick(finding)}
@@ -80,7 +80,7 @@ export function OpeningFindingCard({
       <Tooltip content={`View ${finding.n_games} games for ${finding.opening_name}`}>
         <button
           type="button"
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
           aria-label={`View ${finding.n_games} games for ${finding.opening_name}`}
           data-testid={`opening-finding-card-${idx}-games`}
           onClick={() => onOpenGames(finding)}
