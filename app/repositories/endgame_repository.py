@@ -13,10 +13,9 @@ import datetime
 from collections.abc import Sequence
 from typing import Any, Literal
 
-from sqlalchemy import and_, case, func, select, type_coerce
+from sqlalchemy import case, func, select, type_coerce
 from sqlalchemy.dialects.postgresql import ARRAY, aggregate_order_by
 from sqlalchemy.engine import Row
-from sqlalchemy.orm import aliased
 from sqlalchemy.types import Float as FloatType
 from sqlalchemy.types import SmallInteger as SmallIntegerType
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -298,12 +297,52 @@ async def query_endgame_bucket_rows(
       "parity" bucket via the NULL-handling rule in
       `_compute_score_gap_material`.
     """
-    # Per-game first endgame ply — HAVING enforces the uniform 6-ply rule so this
-    # query returns exactly the same games as `_any_endgame_ply_subquery`.
-    entry_subq = (
+    # Single per-game aggregation: pull entry endgame_class, entry material_imbalance,
+    # and material_imbalance at entry+PERSISTENCE_PLIES from one index-only scan over
+    # ix_gp_user_endgame_game (which INCLUDEs material_imbalance).
+    #
+    # The previous form joined two GamePosition aliases (entry_pos, after_pos) on
+    # (user_id, game_id, ply) and (user_id, game_id, ply+4). The planner could not
+    # reliably push the join keys into the index conditions for after_pos — for
+    # users with smaller endgame populations it fell back to scanning all of the
+    # user's endgame rows per outer game (3000 loops × 110k rows = 340M heap fetches).
+    # Same array_agg trick already used by `query_endgame_entry_rows` (see line 175).
+    entry_imbalance_agg = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())),
+        ARRAY(SmallIntegerType),
+    )[1]
+
+    entry_endgame_class_agg = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.endgame_class, GamePosition.ply.asc())),
+        ARRAY(SmallIntegerType),
+    )[1]
+
+    raw_imbalance_after = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())),
+        ARRAY(SmallIntegerType),
+    )[PERSISTENCE_PLIES + 1]
+
+    ply_at_persistence = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.ply, GamePosition.ply.asc())),
+        ARRAY(SmallIntegerType),
+    )[PERSISTENCE_PLIES + 1]
+
+    # NULL when the (entry_ply + PERSISTENCE_PLIES) position is non-contiguous (i.e.
+    # the game exited the endgame between MIN(ply) and MIN(ply)+4 and re-entered
+    # later). The service layer's "is not None" check then routes such games to the
+    # parity bucket — same semantics as the old `after_pos.endgame_class IS NOT NULL`
+    # outer-join filter.
+    imbalance_after_persistence_agg = case(
+        (ply_at_persistence == func.min(GamePosition.ply) + PERSISTENCE_PLIES, raw_imbalance_after),
+        else_=None,
+    )
+
+    span_subq = (
         select(
             GamePosition.game_id.label("game_id"),
-            func.min(GamePosition.ply).label("entry_ply"),
+            entry_endgame_class_agg.label("endgame_class"),
+            entry_imbalance_agg.label("entry_imbalance"),
+            imbalance_after_persistence_agg.label("entry_imbalance_after"),
         )
         .where(
             GamePosition.user_id == user_id,
@@ -314,9 +353,6 @@ async def query_endgame_bucket_rows(
         .subquery("first_endgame")
     )
 
-    entry_pos = aliased(GamePosition, name="entry_pos")
-    after_pos = aliased(GamePosition, name="after_pos")
-
     color_sign = case(
         (Game.user_color == "white", 1),
         else_=-1,
@@ -325,30 +361,13 @@ async def query_endgame_bucket_rows(
     stmt = (
         select(
             Game.id.label("game_id"),
-            entry_pos.endgame_class.label("endgame_class"),
+            span_subq.c.endgame_class,
             Game.result,
             Game.user_color,
-            (entry_pos.material_imbalance * color_sign).label("user_material_imbalance"),
-            (after_pos.material_imbalance * color_sign).label("user_material_imbalance_after"),
+            (span_subq.c.entry_imbalance * color_sign).label("user_material_imbalance"),
+            (span_subq.c.entry_imbalance_after * color_sign).label("user_material_imbalance_after"),
         )
-        .join(entry_subq, Game.id == entry_subq.c.game_id)
-        .join(
-            entry_pos,
-            and_(
-                entry_pos.user_id == user_id,
-                entry_pos.game_id == entry_subq.c.game_id,
-                entry_pos.ply == entry_subq.c.entry_ply,
-            ),
-        )
-        .outerjoin(
-            after_pos,
-            and_(
-                after_pos.user_id == user_id,
-                after_pos.game_id == entry_subq.c.game_id,
-                after_pos.ply == entry_subq.c.entry_ply + PERSISTENCE_PLIES,
-                after_pos.endgame_class.isnot(None),
-            ),
-        )
+        .join(span_subq, Game.id == span_subq.c.game_id)
         .where(Game.user_id == user_id)
     )
 
@@ -709,8 +728,6 @@ async def query_clock_stats_rows(
     _any_endgame_ply_subquery matches the rest of the endgame tab and makes both
     consumers straight-through aggregations.
     """
-    any_endgame_subq = _any_endgame_ply_subquery(user_id)
-
     # Aggregate full ply and clock arrays ordered by ply ascending.
     # Using type_coerce with ARRAY types so SQLAlchemy returns Python lists.
     ply_array_agg = type_coerce(
@@ -723,8 +740,12 @@ async def query_clock_stats_rows(
         ARRAY(FloatType()),
     )
 
-    # One row per game: aggregate all endgame plies (across all classes), then
-    # restrict to games that pass the whole-game ENDGAME_PLY_THRESHOLD filter.
+    # One row per game: aggregate all endgame plies (across all classes) and apply the
+    # whole-game ENDGAME_PLY_THRESHOLD via HAVING in the same pass. Equivalent to the
+    # game_id IN _any_endgame_ply_subquery filter used elsewhere, but folded into a
+    # single scan — the IN form caused the planner to misestimate cardinality (every
+    # row estimate at 1 vs ~110k actual) and pick a Nested Loop / Join Filter cross
+    # comparison that hung indefinitely on users with many endgame games.
     per_game_subq = (
         select(
             GamePosition.game_id.label("game_id"),
@@ -734,9 +755,9 @@ async def query_clock_stats_rows(
         .where(
             GamePosition.user_id == user_id,
             GamePosition.endgame_class.isnot(None),
-            GamePosition.game_id.in_(select(any_endgame_subq.c.game_id)),
         )
         .group_by(GamePosition.game_id)
+        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
         .subquery("clock_per_game")
     )
 
@@ -820,10 +841,35 @@ async def query_endgame_elo_timeline_rows(
     in 57-RESEARCH.md). Callers filter emitted timeline points afterwards.
     """
     # ── bucket_rows: one row per endgame game (uniform 6-ply rule) ─────────
+    # Single per-game aggregation (mirrors query_endgame_bucket_rows / _entry_rows).
+    # Avoids two GamePosition self-joins whose plan was unstable across users — the
+    # planner couldn't reliably push (game_id, ply+4) into after_pos's index cond
+    # and would scan the user's full endgame population per outer game.
+    entry_imbalance_agg = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())),
+        ARRAY(SmallIntegerType),
+    )[1]
+
+    raw_imbalance_after = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())),
+        ARRAY(SmallIntegerType),
+    )[PERSISTENCE_PLIES + 1]
+
+    ply_at_persistence = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.ply, GamePosition.ply.asc())),
+        ARRAY(SmallIntegerType),
+    )[PERSISTENCE_PLIES + 1]
+
+    imbalance_after_persistence_agg = case(
+        (ply_at_persistence == func.min(GamePosition.ply) + PERSISTENCE_PLIES, raw_imbalance_after),
+        else_=None,
+    )
+
     entry_subq = (
         select(
             GamePosition.game_id.label("game_id"),
-            func.min(GamePosition.ply).label("entry_ply"),
+            entry_imbalance_agg.label("entry_imbalance"),
+            imbalance_after_persistence_agg.label("entry_imbalance_after"),
         )
         .where(
             GamePosition.user_id == user_id,
@@ -833,9 +879,6 @@ async def query_endgame_elo_timeline_rows(
         .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
         .subquery("elo_entry")
     )
-
-    entry_pos = aliased(GamePosition, name="elo_entry_pos")
-    after_pos = aliased(GamePosition, name="elo_after_pos")
 
     color_sign = case(
         (Game.user_color == "white", 1),
@@ -850,28 +893,11 @@ async def query_endgame_elo_timeline_rows(
             Game.user_color,
             Game.white_rating,
             Game.black_rating,
-            (entry_pos.material_imbalance * color_sign).label("user_material_imbalance"),
-            (after_pos.material_imbalance * color_sign).label("user_material_imbalance_after"),
+            (entry_subq.c.entry_imbalance * color_sign).label("user_material_imbalance"),
+            (entry_subq.c.entry_imbalance_after * color_sign).label("user_material_imbalance_after"),
             Game.result,
         )
         .join(entry_subq, Game.id == entry_subq.c.game_id)
-        .join(
-            entry_pos,
-            and_(
-                entry_pos.user_id == user_id,
-                entry_pos.game_id == entry_subq.c.game_id,
-                entry_pos.ply == entry_subq.c.entry_ply,
-            ),
-        )
-        .outerjoin(
-            after_pos,
-            and_(
-                after_pos.user_id == user_id,
-                after_pos.game_id == entry_subq.c.game_id,
-                after_pos.ply == entry_subq.c.entry_ply + PERSISTENCE_PLIES,
-                after_pos.endgame_class.isnot(None),
-            ),
-        )
         .where(
             Game.user_id == user_id,
             Game.played_at.isnot(None),
