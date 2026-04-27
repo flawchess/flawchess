@@ -261,21 +261,6 @@ export function OpeningsPage() {
   const [localMatchSides, setLocalMatchSides] = useState<Record<number, MatchSide>>({});
   const [localFilters, setLocalFilters] = useState<FilterState>(filters);
 
-  // ── Mobile board collapse (swipe/tap handle) ─────────────────────────────
-  const [boardCollapsed, setBoardCollapsed] = useState(false);
-  const touchStartY = useRef(0);
-
-  const handleHandleTouchStart = useCallback((e: React.TouchEvent) => {
-    touchStartY.current = e.touches[0]!.clientY;
-  }, []);
-
-  const handleHandleTouchEnd = useCallback((e: React.TouchEvent) => {
-    const MIN_SWIPE_DISTANCE = 30;
-    const deltaY = e.changedTouches[0]!.clientY - touchStartY.current;
-    if (deltaY < -MIN_SWIPE_DISTANCE) setBoardCollapsed(true);
-    if (deltaY > MIN_SWIPE_DISTANCE) setBoardCollapsed(false);
-  }, []);
-
   // ── Games tab pagination ────────────────────────────────────────────────────
   const [gamesOffset, setGamesOffset] = useState(0);
 
@@ -1339,125 +1324,143 @@ export function OpeningsPage() {
         </SidebarLayout>
         </Tabs>
 
-        {/* Mobile: single column with sticky board */}
-        <Tabs value={activeTab} onValueChange={(val) => navigate(`/openings/${val}`)} className="lg:hidden flex flex-col gap-2 min-w-0">
-          {/* Sticky board + controls — sticks to top of viewport while scrolling content below */}
-          {/* z-20 to stay above ToggleGroupItem's focus:z-10 */}
-          <div className="sticky top-0 z-20 bg-white/20 backdrop-blur-md pt-1 pb-1 rounded-b-xl">
-            {/* Collapsible board section — animates via grid-rows trick. Board + 4-button settings column collapse together. */}
-            <div className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${boardCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}>
-              <div className="overflow-hidden">
-                <div className="flex items-stretch gap-1 px-1 pb-1">
-                  <div className="flex-1 min-w-0">
-                    <ChessBoard
-                      position={chess.position}
-                      onPieceDrop={chess.makeMove}
-                      flipped={boardFlipped}
-                      lastMove={chess.lastMove}
-                      arrows={boardArrows}
-                    />
-                  </div>
-                  {/* Settings column: 4 stacked 44px buttons — filters, bookmarks, played-as, info */}
-                  <div className="flex flex-col gap-1 w-11" data-testid="openings-mobile-settings-column">
-                    <Tooltip content="Open filters" side="left">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
-                        onClick={openFilterSidebar}
-                        data-testid="btn-open-filter-sidebar"
-                        aria-label="Open filters"
-                      >
-                        <SlidersHorizontal className="h-4 w-4" />
-                        {showFiltersHint ? (
-                          <span
-                            className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                            data-testid="filters-notification-dot-mobile"
-                          >
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                          </span>
-                        ) : isFiltersModified ? (
-                          <span
-                            className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                            data-testid="filters-modified-dot-mobile"
-                            aria-hidden="true"
-                          >
-                            {isFiltersPulsing && (
-                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-brown opacity-75" />
-                            )}
-                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
-                          </span>
-                        ) : null}
-                      </Button>
-                    </Tooltip>
-                    <Tooltip content="Open bookmarks" side="left">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
-                        onClick={openBookmarkSidebar}
-                        data-testid="btn-open-bookmark-sidebar"
-                        aria-label="Open bookmarks"
-                      >
-                        <BookMarked className="h-4 w-4" />
-                        {showBookmarksHint && (
-                          <span
-                            className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                            data-testid="bookmarks-notification-dot-mobile"
-                          >
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                          </span>
-                        )}
-                      </Button>
-                    </Tooltip>
-                    <Tooltip content={`Playing as ${filters.color}`} side="left">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="relative h-11 w-11 shrink-0 !bg-toggle-active text-toggle-active-foreground hover:!bg-toggle-active"
-                        onClick={() => {
-                          const newColor: Color = filters.color === 'white' ? 'black' : 'white';
-                          // Change color without dismissing the filters hint — only the
-                          // Played-as hint advances when the color toggle is used.
-                          setFilters({ ...filters, color: newColor });
-                          setGamesOffset(0);
-                          setBoardFlipped(newColor === 'black');
-                          dismissPlayedAsHint();
-                          if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
-                        }}
-                        data-testid="btn-toggle-played-as"
-                        aria-label={`Playing as ${filters.color}, tap to switch`}
-                      >
-                        <span className={`inline-block h-4 w-4 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
-                        {showPlayedAsHint && (
-                          <span
-                            className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                            data-testid="played-as-notification-dot-mobile"
-                          >
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                          </span>
-                        )}
-                      </Button>
-                    </Tooltip>
-                    <div className="flex h-11 w-11 items-center justify-center">
-                      <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="left">
-                        Play moves on the board by tapping squares or dragging pieces.
-                        <br /><br />
-                        The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.
-                      </InfoPopover>
-                    </div>
+        {/* Mobile: sticky subnav + non-sticky board (matches Endgames pattern, 71.1-02) */}
+        <Tabs value={activeTab} onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }} className="lg:hidden flex flex-col gap-2 min-w-0">
+          {/* Sticky sub-navigation + filter button (D-05, D-11) */}
+          {/* z-20 keeps subnav above ToggleGroupItem's focus:z-10 and below SidebarLayout panel z-40 */}
+          <div
+            className="sticky top-0 z-20 flex items-center gap-2 h-[52px] bg-white/20 backdrop-blur-md rounded-md px-1 py-1"
+            data-testid="openings-mobile-subnav"
+          >
+            <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
+              <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
+                <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+                Moves
+              </TabsTrigger>
+              <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
+                <Gamepad2 className="mr-1.5 h-4 w-4" />
+                Games
+              </TabsTrigger>
+              <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
+                <BarChart2 className="mr-1.5 h-4 w-4" />
+                Stats
+              </TabsTrigger>
+              <TabsTrigger value="insights" className="flex-1" data-testid="tab-insights-mobile">
+                <Lightbulb className="mr-1.5 h-4 w-4" />
+                Insights
+              </TabsTrigger>
+            </TabsList>
+            <Tooltip content="Open filters" side="left">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
+                onClick={openFilterSidebar}
+                data-testid="subnav-filter-button"
+                aria-label="Open filters"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                {showFiltersHint ? (
+                  <span
+                    className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                    data-testid="filters-notification-dot-mobile"
+                  >
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                  </span>
+                ) : isFiltersModified ? (
+                  <span
+                    className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                    data-testid="filters-modified-dot-mobile"
+                    aria-hidden="true"
+                  >
+                    {isFiltersPulsing && (
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-brown opacity-75" />
+                    )}
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
+                  </span>
+                ) : null}
+              </Button>
+            </Tooltip>
+          </div>
+
+          {/* Non-sticky board block — only visible on Moves + Games subtabs (D-07, D-08, D-09) */}
+          {(activeTab === 'explorer' || activeTab === 'games') && (
+            <>
+              <div className="flex items-stretch gap-1 px-1">
+                <div className="flex-1 min-w-0">
+                  <ChessBoard
+                    position={chess.position}
+                    onPieceDrop={chess.makeMove}
+                    flipped={boardFlipped}
+                    lastMove={chess.lastMove}
+                    arrows={boardArrows}
+                  />
+                </div>
+                {/* Settings column: 3 stacked 44px buttons — bookmarks, played-as, info (filter button moved to subnav) */}
+                <div className="flex flex-col gap-1 w-11" data-testid="openings-mobile-settings-column">
+                  <Tooltip content="Open bookmarks" side="left">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
+                      onClick={openBookmarkSidebar}
+                      data-testid="btn-open-bookmark-sidebar"
+                      aria-label="Open bookmarks"
+                    >
+                      <BookMarked className="h-4 w-4" />
+                      {showBookmarksHint && (
+                        <span
+                          className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                          data-testid="bookmarks-notification-dot-mobile"
+                        >
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                        </span>
+                      )}
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content={`Playing as ${filters.color}`} side="left">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="relative h-11 w-11 shrink-0 !bg-toggle-active text-toggle-active-foreground hover:!bg-toggle-active"
+                      onClick={() => {
+                        const newColor: Color = filters.color === 'white' ? 'black' : 'white';
+                        // Change color without dismissing the filters hint — only the
+                        // Played-as hint advances when the color toggle is used.
+                        setFilters({ ...filters, color: newColor });
+                        setGamesOffset(0);
+                        setBoardFlipped(newColor === 'black');
+                        dismissPlayedAsHint();
+                        if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
+                      }}
+                      data-testid="btn-toggle-played-as"
+                      aria-label={`Playing as ${filters.color}, tap to switch`}
+                    >
+                      <span className={`inline-block h-4 w-4 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
+                      {showPlayedAsHint && (
+                        <span
+                          className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                          data-testid="played-as-notification-dot-mobile"
+                        >
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                        </span>
+                      )}
+                    </Button>
+                  </Tooltip>
+                  <div className="flex h-11 w-11 items-center justify-center">
+                    <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="left">
+                      Play moves on the board by tapping squares or dragging pieces.
+                      <br /><br />
+                      The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.
+                    </InfoPopover>
                   </div>
                 </div>
               </div>
-            </div>
-            {/* Slim control row — shorter than settings column buttons above but same 44px width on the BoardControls buttons and chevron. Stays visible when board is collapsed. */}
-            <div className="flex items-center gap-1 h-9 px-1" data-testid="openings-mobile-control-row">
+              {/* Full-width board controls below the board (no chevron neighbour, default sizing) */}
               <BoardControls
-                buttonClassName="h-9 w-9"
-                className="flex-1 justify-center! gap-1"
                 onBack={chess.goBack}
                 onForward={chess.goForward}
                 onReset={() => { chess.reset(); setGamesOffset(0); }}
@@ -1465,53 +1468,24 @@ export function OpeningsPage() {
                 canGoBack={chess.currentPly > 0}
                 canGoForward={chess.currentPly < chess.moveHistory.length}
               />
-              <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
-                <TabsTrigger
-                  value="explorer"
-                  className="flex-1 px-2"
-                  data-testid="tab-move-explorer-mobile"
-                  aria-label="Move Explorer"
-                >
-                  <ArrowRightLeft className="h-4 w-4" />
-                </TabsTrigger>
-                <TabsTrigger
-                  value="games"
-                  className="flex-1 px-2"
-                  data-testid="tab-games-mobile"
-                  aria-label="Games"
-                >
-                  <Gamepad2 className="h-4 w-4" />
-                </TabsTrigger>
-                <TabsTrigger
-                  value="stats"
-                  className="flex-1 px-2"
-                  data-testid="tab-stats-mobile"
-                  aria-label="Stats"
-                >
-                  <BarChart2 className="h-4 w-4" />
-                </TabsTrigger>
-                <TabsTrigger
-                  value="insights"
-                  className="flex-1 px-2"
-                  data-testid="tab-insights-mobile"
-                  aria-label="Insights"
-                >
-                  <Lightbulb className="h-4 w-4" />
-                </TabsTrigger>
-              </TabsList>
-              {/* Collapse chevron — 44px wide (matches settings column above) but shorter to keep the control row slim. Swipe-to-collapse bound here. */}
-              <button
-                className="flex h-9 w-11 shrink-0 items-center justify-center touch-none rounded-lg charcoal-texture"
-                onTouchStart={handleHandleTouchStart}
-                onTouchEnd={handleHandleTouchEnd}
-                onClick={() => setBoardCollapsed((c) => !c)}
-                aria-label={boardCollapsed ? 'Expand board' : 'Collapse board'}
-                data-testid="btn-board-collapse-handle"
-              >
-                <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${boardCollapsed ? 'rotate-0' : 'rotate-180'}`} />
-              </button>
-            </div>
-          </div>
+              {/* Opening name line (always visible on Moves/Games subtabs) */}
+              <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
+                {chess.openingName ? (
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
+                    <span className="text-foreground">{chess.openingName.name}</span>
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground italic">Play some moves</span>
+                )}
+              </div>
+              <MoveList
+                moveHistory={chess.moveHistory}
+                currentPly={chess.currentPly}
+                onMoveClick={chess.goToMove}
+              />
+            </>
+          )}
 
           {/* Filter sidebar (D-04, D-05, D-06, D-10, D-12) */}
           <Drawer open={filterSidebarOpen} onOpenChange={handleFilterSidebarOpenChange} direction="right">
@@ -1629,27 +1603,6 @@ export function OpeningsPage() {
               </div>
             </DrawerContent>
           </Drawer>
-
-          {/* Opening name + move list — hidden when board is collapsed */}
-          {!boardCollapsed && (
-            <>
-              <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
-                {chess.openingName ? (
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
-                    <span className="text-foreground">{chess.openingName.name}</span>
-                  </div>
-                ) : (
-                  <span className="text-muted-foreground italic">Play some moves</span>
-                )}
-              </div>
-              <MoveList
-                moveHistory={chess.moveHistory}
-                currentPly={chess.currentPly}
-                onMoveClick={chess.goToMove}
-              />
-            </>
-          )}
 
           <TabsContent value="explorer" className="mt-2">
             {moveExplorerContent}
