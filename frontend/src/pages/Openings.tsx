@@ -12,7 +12,7 @@ import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, SlidersHorizontal, BookMarked, X, ChevronDown, ChevronUp, FolderOpen } from 'lucide-react';
+import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, X, ChevronDown, ChevronUp, FolderOpen } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -58,11 +58,15 @@ import { MinimapPopover } from '@/components/stats/MinimapPopover';
 import { pgnToSanArray } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
+import { OpeningInsightsBlock } from '@/components/insights/OpeningInsightsBlock';
+import { getSeverityBorderColor } from '@/lib/openingInsights';
+import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '@/lib/highlightPulse';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
 import { resolveMatchSide } from '@/types/api';
 import type { PositionBookmarkResponse, TimeSeriesRequest } from '@/types/position_bookmarks';
 import type { OpeningWDL } from '@/types/stats';
+import type { OpeningInsightFinding } from '@/types/insights';
 
 const PAGE_SIZE = 20;
 // Number of most-played openings per color to use as default chart data when no bookmarks exist
@@ -128,7 +132,7 @@ function MobileMostPlayedRows({
                 </div>
                 <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
                   <button
-                    className="shrink-0 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    className="shrink-0 flex items-center gap-1 text-xs text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
                     aria-label={`View ${o.total} games for ${o.opening_name}`}
                     data-testid={`${testIdPrefix}-games-${rowKey}`}
                     onClick={() => onOpenGames(o, color)}
@@ -194,7 +198,9 @@ export function OpeningsPage() {
     ? 'games'
     : location.pathname.includes('/stats')
       ? 'stats'
-      : 'explorer';
+      : location.pathname.includes('/insights')
+        ? 'insights'
+        : 'explorer';
 
   // ── Board state ─────────────────────────────────────────────────────────────
   const chess = useChessGame();
@@ -206,6 +212,33 @@ export function OpeningsPage() {
 
   // ── Board arrows (hovered move) ─────────────────────────────────────────────
   const [hoveredMove, setHoveredMove] = useState<string | null>(null);
+
+  // ── Deep-link highlight (Insights → MoveExplorer / quick-task 260427-j41) ──
+  // Set by handleOpenFinding when the user clicks a "Moves" link on an
+  // OpeningFindingCard; cleared by MoveExplorer's onHighlightConsumed (position
+  // change or row click), by leaving the explorer subtab, and by filter changes
+  // (handled below in a baseline-snapshot effect).
+  const [highlightedMove, setHighlightedMove] = useState<{ san: string; color: string } | null>(null);
+
+  // Whether the deep-link pulse animations should currently render. Goes true
+  // when highlightedMove is set, then auto-flips false after the pulse window.
+  // Decoupling pulse-active from highlight-active prevents any later React
+  // re-render (e.g. when hovering another move re-sorts the arrow list) from
+  // re-attaching .animate-arrow-pulse and restarting the CSS animation. The
+  // arrow/row sit at their static rest opacity/tint once the pulse expires.
+  const [pulseActive, setPulseActive] = useState(false);
+  useEffect(() => {
+    if (highlightedMove == null) {
+      setPulseActive(false);
+      return;
+    }
+    setPulseActive(true);
+    const timeoutId = window.setTimeout(
+      () => setPulseActive(false),
+      HIGHLIGHT_PULSE_ITERATIONS * HIGHLIGHT_PULSE_DURATION_MS,
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [highlightedMove]);
 
   // ── Sidebar state (desktop only) ────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = useState<SidebarPanel | null>(null);
@@ -252,6 +285,40 @@ export function OpeningsPage() {
     setPrevTab(activeTab);
     setGamesOffset(0);
   }
+
+  // Clear the deep-link highlight when leaving the explorer subtab — the
+  // highlighted row only makes sense inside MoveExplorer, so don't carry it
+  // across tab navigations. Mirrors the prevTab pattern above.
+  const [prevTabForHighlight, setPrevTabForHighlight] = useState(activeTab);
+  if (activeTab !== prevTabForHighlight) {
+    setPrevTabForHighlight(activeTab);
+    if (activeTab !== 'explorer' && highlightedMove !== null) {
+      setHighlightedMove(null);
+    }
+  }
+
+  // Clear the deep-link highlight when filters change AFTER the highlight was
+  // set. Snapshot the filter identity at the moment the highlight transitions
+  // to non-null; later filter changes (with the same highlight active) clear it.
+  // Living here (not in MoveExplorer) avoids a false-trigger from the moves-array
+  // reference change when the useNextMoves query first resolves on tab mount.
+  const filtersAtHighlightRef = useRef<FilterState | null>(null);
+  const prevHighlightForFilterClearRef = useRef(highlightedMove);
+  useEffect(() => {
+    const highlightChanged = prevHighlightForFilterClearRef.current !== highlightedMove;
+    prevHighlightForFilterClearRef.current = highlightedMove;
+    if (highlightedMove == null) {
+      filtersAtHighlightRef.current = null;
+      return;
+    }
+    if (highlightChanged) {
+      filtersAtHighlightRef.current = filters;
+      return;
+    }
+    if (filtersAtHighlightRef.current !== null && filtersAtHighlightRef.current !== filters) {
+      setHighlightedMove(null);
+    }
+  }, [filters, highlightedMove]);
 
   // ── Bookmarks ───────────────────────────────────────────────────────────────
   const { data: bookmarks = [] } = usePositionBookmarks();
@@ -324,7 +391,15 @@ export function OpeningsPage() {
   // ── Moves data ──────────────────────────────────────────────────────
   const nextMoves = useNextMoves(chess.hashes.fullHash, debouncedFilters);
 
-  // Board arrows derived from next move frequencies
+  // Board arrows derived from next move frequencies.
+  // Highlight pulse decision (quick-task 260427-j41): the matching arrow gets
+  // isHighlightPulse=true so its <path> animates briefly. The arrow's COLOR
+  // stays whatever getArrowColor returned — we deliberately do NOT recolor it
+  // to highlightedMove.color. The MoveExplorer row border uses the severity
+  // color (which encodes weakness/strength + minor/major); the on-board pulse
+  // only modulates opacity so the arrow stays consistent with the rest of the
+  // arrow set. This keeps the visual language clean: row = severity-coded
+  // emphasis, arrow = pulse-only attention grab.
   const boardArrows = useMemo(() => {
     if (!nextMoves.data?.moves.length) return [];
 
@@ -340,16 +415,18 @@ export function OpeningsPage() {
         const squares = moveMap.get(entry.move_san);
         if (!squares) return null;
         const isHovered = entry.move_san === hoveredMove;
+        const isHighlightPulse = pulseActive && highlightedMove !== null && entry.move_san === highlightedMove.san;
         return {
           startSquare: squares.from,
           endSquare: squares.to,
           color: getArrowColor(entry.win_pct, entry.loss_pct, entry.game_count, isHovered),
           width: entry.game_count / maxCount,
           isHovered,
+          isHighlightPulse,
         };
       })
       .filter((a): a is NonNullable<typeof a> => a !== null);
-  }, [nextMoves.data, chess.position, hoveredMove]);
+  }, [nextMoves.data, chess.position, hoveredMove, highlightedMove, pulseActive]);
 
   // ── Games tab data ──────────────────────────────────────────────────────────
   const targetHash = chess.getHashForOpenings(filters.matchSide, filters.color);
@@ -496,6 +573,54 @@ export function OpeningsPage() {
     navigate('/openings/games');
     window.scrollTo({ top: 0 });
   }, [chess, navigate, setFilters]);
+
+  /**
+   * Phase 71 (D-13): Deep-link from OpeningInsightsBlock to Move Explorer.
+   * Mirror of handleOpenGames retargeted at /openings/explorer. The finding
+   * carries entry_san_sequence as a pre-parsed string[], so no pgnToSanArray
+   * conversion is needed.
+   */
+  const handleOpenFinding = useCallback(
+    (finding: OpeningInsightFinding) => {
+      chess.loadMoves(finding.entry_san_sequence);
+      // Set the deep-link highlight BEFORE navigation so MoveExplorer renders
+      // with the highlight on its first paint after the route change. The
+      // severity color matches the OpeningFindingCard's left-border color.
+      setHighlightedMove({
+        san: finding.candidate_move_san,
+        color: getSeverityBorderColor(finding.classification, finding.severity),
+      });
+      setBoardFlipped(finding.color === 'black');
+      setFilters((prev) => ({
+        ...prev,
+        color: finding.color,
+        matchSide: 'both' as MatchSide,
+      }));
+      navigate('/openings/explorer');
+      window.scrollTo({ top: 0 });
+    },
+    [chess, navigate, setFilters],
+  );
+
+  /**
+   * Same as handleOpenFinding but routes to the Games subtab. Loads the position
+   * AFTER the candidate move (entry_san_sequence + candidate_move_san) so the
+   * Games filter matches the resulting position, not the entry position.
+   */
+  const handleOpenFindingGames = useCallback(
+    (finding: OpeningInsightFinding) => {
+      chess.loadMoves([...finding.entry_san_sequence, finding.candidate_move_san]);
+      setBoardFlipped(finding.color === 'black');
+      setFilters((prev) => ({
+        ...prev,
+        color: finding.color,
+        matchSide: 'both' as MatchSide,
+      }));
+      navigate('/openings/games');
+      window.scrollTo({ top: 0 });
+    },
+    [chess, navigate, setFilters],
+  );
 
   const handleLoadBookmark = useCallback((bkm: PositionBookmarkResponse) => {
     chess.loadMoves(bkm.moves);
@@ -712,6 +837,12 @@ export function OpeningsPage() {
           position={chess.position}
           onMoveClick={(from, to) => chess.makeMove(from, to)}
           onMoveHover={setHoveredMove}
+          highlightedMove={
+            highlightedMove !== null
+              ? { ...highlightedMove, pulse: pulseActive }
+              : null
+          }
+          onHighlightConsumed={() => setHighlightedMove(null)}
         />
       </div>
     </div>
@@ -782,6 +913,25 @@ export function OpeningsPage() {
     </div>
   );
 
+  const insightsContent = (
+    <div className="flex flex-col gap-4">
+      {/* Phase 71: dedicated Insights subtab. */}
+      {/* Hidden block + friendly empty state when user has no imported games (proxy: mostPlayedData empty). */}
+      {mostPlayedData &&
+      (mostPlayedData.white.length > 0 || mostPlayedData.black.length > 0) ? (
+        <OpeningInsightsBlock
+          debouncedFilters={debouncedFilters}
+          onFindingClick={handleOpenFinding}
+          onOpenGames={handleOpenFindingGames}
+        />
+      ) : (
+        <p className="text-sm text-muted-foreground" data-testid="opening-insights-no-games">
+          Import some games to see opening insights.
+        </p>
+      )}
+    </div>
+  );
+
   const statisticsContent = (
     <div className="flex flex-col gap-4">
       {/* Bookmarked Openings: Results — empty state when no bookmarks, chart when data available */}
@@ -793,8 +943,11 @@ export function OpeningsPage() {
               Bookmarked Openings
             </span>
           </h2>
-          <p className="text-sm text-muted-foreground mb-3">
-            Save some openings as bookmarks to see your results and win rate over time here. Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. Use the Suggest button to pick from your most-played positions.
+          <p
+            className="text-sm italic text-muted-foreground mb-3"
+            data-testid="bookmarks-tip"
+          >
+            <span className="font-semibold text-foreground/80">Tip:</span> Save some openings as bookmarks to see your results and win rate over time here. Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. Use the Suggest button to pick from your most-played positions.
           </p>
           <Button
             size="lg"
@@ -1161,6 +1314,10 @@ export function OpeningsPage() {
                     <BarChart2 className="mr-1.5 h-4 w-4" />
                     Stats
                   </TabsTrigger>
+                  <TabsTrigger value="insights" data-testid="tab-insights" className="flex-1">
+                    <Lightbulb className="mr-1.5 h-4 w-4" />
+                    Insights
+                  </TabsTrigger>
                 </TabsList>
                 <TabsContent value="explorer" className="mt-4">
                   {moveExplorerContent}
@@ -1170,6 +1327,9 @@ export function OpeningsPage() {
                 </TabsContent>
                 <TabsContent value="stats" className="mt-4">
                   {statisticsContent}
+                </TabsContent>
+                <TabsContent value="insights" className="mt-4">
+                  {insightsContent}
                 </TabsContent>
               </Tabs>
           </div>
@@ -1301,15 +1461,38 @@ export function OpeningsPage() {
                 canGoBack={chess.currentPly > 0}
                 canGoForward={chess.currentPly < chess.moveHistory.length}
               />
-              <TabsList variant="brand" className="flex-1 !h-full !p-0 overflow-x-auto snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-testid="openings-tabs-mobile">
-                <TabsTrigger value="explorer" className="shrink-0 snap-start px-2 text-xs!" data-testid="tab-move-explorer-mobile">
-                  Moves
+              <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
+                <TabsTrigger
+                  value="explorer"
+                  className="flex-1 px-2"
+                  data-testid="tab-move-explorer-mobile"
+                  aria-label="Move Explorer"
+                >
+                  <ArrowRightLeft className="h-4 w-4" />
                 </TabsTrigger>
-                <TabsTrigger value="games" className="shrink-0 snap-start px-2 text-xs!" data-testid="tab-games-mobile">
-                  Games
+                <TabsTrigger
+                  value="games"
+                  className="flex-1 px-2"
+                  data-testid="tab-games-mobile"
+                  aria-label="Games"
+                >
+                  <Gamepad2 className="h-4 w-4" />
                 </TabsTrigger>
-                <TabsTrigger value="stats" className="shrink-0 snap-start px-2 text-xs!" data-testid="tab-stats-mobile">
-                  Stats
+                <TabsTrigger
+                  value="stats"
+                  className="flex-1 px-2"
+                  data-testid="tab-stats-mobile"
+                  aria-label="Stats"
+                >
+                  <BarChart2 className="h-4 w-4" />
+                </TabsTrigger>
+                <TabsTrigger
+                  value="insights"
+                  className="flex-1 px-2"
+                  data-testid="tab-insights-mobile"
+                  aria-label="Insights"
+                >
+                  <Lightbulb className="h-4 w-4" />
                 </TabsTrigger>
               </TabsList>
               {/* Collapse chevron — 44px wide (matches settings column above) but shorter to keep the control row slim. Swipe-to-collapse bound here. */}
@@ -1472,6 +1655,9 @@ export function OpeningsPage() {
           </TabsContent>
           <TabsContent value="stats" className="mt-2">
             {statisticsContent}
+          </TabsContent>
+          <TabsContent value="insights" className="mt-2">
+            {insightsContent}
           </TabsContent>
         </Tabs>
       </main>

@@ -281,6 +281,120 @@ async def test_cross_color_same_hash_kept_as_two_findings() -> None:
     assert len(response.black_weaknesses) == 1
 
 
+@pytest.mark.asyncio
+async def test_continuation_dedupe_collapses_chain_across_sections() -> None:
+    """Phase 71 UAT fix: a chain of consecutive weak moves in the same line
+    collapses to the shortest entry, even when the chain crosses color sections.
+
+    Reproduces the Caro-Kann B10 case reported during UAT:
+      - 1.e4 c6 2.Nc3 d5 3.exd5    (white weakness)
+      - 1.e4 c6 2.Nc3 d5 3.exd5 cxd5    (black weakness)
+      - 1.e4 c6 2.Nc3 d5 3.exd5 cxd5 4.d4    (white weakness)
+
+    Only the shortest entry (3.exd5) should remain — its cover prefix
+    [e4,c6,Nc3,d5,exd5] subsumes both deeper findings.
+    """
+    row_white_shallow = _make_row(
+        entry_hash=100,
+        move_san="exd5",
+        resulting_full_hash=200,
+        entry_san_sequence=["e4", "c6", "Nc3", "d5"],
+        n=20,
+        w=4,
+        d=4,
+        losses=12,
+    )
+    row_white_deep = _make_row(
+        entry_hash=300,
+        move_san="d4",
+        resulting_full_hash=400,
+        entry_san_sequence=["e4", "c6", "Nc3", "d5", "exd5", "cxd5"],
+        n=20,
+        w=3,
+        d=4,
+        losses=13,
+    )
+    row_black_mid = _make_row(
+        entry_hash=200,
+        move_san="cxd5",
+        resulting_full_hash=300,
+        entry_san_sequence=["e4", "c6", "Nc3", "d5", "exd5"],
+        n=20,
+        w=4,
+        d=4,
+        losses=12,
+    )
+    opening_a = _make_opening(full_hash=100, name="Caro-Kann Defense", eco="B10", ply_count=4)
+    opening_b = _make_opening(full_hash=200, name="Caro-Kann Defense", eco="B10", ply_count=5)
+    opening_c = _make_opening(full_hash=300, name="Caro-Kann Defense", eco="B10", ply_count=6)
+
+    with (
+        patch(
+            "app.services.opening_insights_service.query_opening_transitions",
+            new_callable=AsyncMock,
+        ) as mock_transitions,
+        patch(
+            "app.services.opening_insights_service.query_openings_by_hashes",
+            new_callable=AsyncMock,
+        ) as mock_attribution,
+    ):
+        # White call returns shallow + deep, black call returns mid.
+        mock_transitions.side_effect = [
+            [row_white_shallow, row_white_deep],
+            [row_black_mid],
+        ]
+        mock_attribution.return_value = {100: opening_a, 200: opening_b, 300: opening_c}
+
+        response = await compute_insights(
+            session=AsyncMock(),
+            user_id=1,
+            request=_default_request(color="all"),
+        )
+
+    # Only the shortest finding (3.exd5) should survive — both deeper continuations
+    # are subsumed by the shallow finding's cover prefix.
+    assert len(response.white_weaknesses) == 1
+    assert response.white_weaknesses[0].candidate_move_san == "exd5"
+    assert len(response.black_weaknesses) == 0
+
+
+@pytest.mark.asyncio
+async def test_continuation_dedupe_keeps_sibling_lines_at_same_depth() -> None:
+    """Two findings sharing the same entry but with different candidate moves
+    are siblings, not a chain — both must be kept (different cover prefixes)."""
+    # Same entry position, two different candidate moves → both classified as weak.
+    row_a = _make_row(
+        entry_hash=100,
+        move_san="exd5",
+        resulting_full_hash=200,
+        entry_san_sequence=["e4", "c6", "Nc3", "d5"],
+        n=20,
+        w=4,
+        d=4,
+        losses=12,
+    )
+    row_b = _make_row(
+        entry_hash=100,
+        move_san="d3",
+        resulting_full_hash=201,
+        entry_san_sequence=["e4", "c6", "Nc3", "d5"],
+        n=20,
+        w=4,
+        d=4,
+        losses=12,
+    )
+    opening = _make_opening(full_hash=100, name="Caro-Kann Defense", eco="B10", ply_count=4)
+    response = await _run_compute(
+        rows=[row_a, row_b],
+        openings_by_hash={100: opening},
+        color="white",
+    )
+    # Sibling candidates from the same entry are NOT a continuation chain.
+    assert len(response.white_weaknesses) == 2
+    candidates = {f.candidate_move_san for f in response.white_weaknesses}
+    assert candidates == {"exd5", "d3"}
+
+
 # ---------------------------------------------------------------------------
 # Attribution (D-22, D-23, D-24)
 # ---------------------------------------------------------------------------
@@ -303,6 +417,45 @@ async def test_attribution_picks_max_ply_count() -> None:
     assert len(response.white_weaknesses) == 1
     assert response.white_weaknesses[0].opening_name == "Deep Sicilian"
     assert response.white_weaknesses[0].opening_eco == "B70"
+
+
+@pytest.mark.asyncio
+async def test_finding_includes_entry_san_sequence() -> None:
+    """Phase 71 (D-13): entry_san_sequence is exposed on the wire schema.
+
+    Asserts:
+      - field is a list of str
+      - length >= MIN_ENTRY_PLY=3 (entry_ply >= 3 guaranteed by service)
+      - replaying the sequence on a fresh chess.Board reproduces entry_fen exactly
+    """
+    opening = _make_opening(full_hash=100, name="Sicilian Defense", ply_count=4, eco="B20")
+    # Default _make_row() uses entry_san_sequence=["e4", "c5", "Nf3"] (3 plys)
+    row = _make_row(n=20, w=4, d=4, losses=12)
+    response = await _run_compute(
+        rows=[row],
+        openings_by_hash={100: opening},
+        color="white",
+    )
+    assert len(response.white_weaknesses) == 1
+    finding = response.white_weaknesses[0]
+
+    # Phase 71 (D-13): entry_san_sequence is the SAN sequence from the start
+    # position to the entry position (candidate excluded). Must be a non-empty
+    # list[str] with length >= MIN_ENTRY_PLY=3, and must replay to entry_fen.
+    assert isinstance(finding.entry_san_sequence, list)
+    assert all(isinstance(san, str) for san in finding.entry_san_sequence)
+    assert len(finding.entry_san_sequence) >= 3, (
+        f"entry_san_sequence must have at least MIN_ENTRY_PLY=3 plys, got {len(finding.entry_san_sequence)}"
+    )
+    # Replaying the SAN sequence must reproduce entry_fen exactly
+    _board = chess.Board()
+    for _san in finding.entry_san_sequence:
+        _board.push_san(_san)
+    assert _board.fen() == finding.entry_fen, (
+        f"Replaying entry_san_sequence must reproduce entry_fen.\n"
+        f"  expected: {finding.entry_fen}\n"
+        f"  got:      {_board.fen()}"
+    )
 
 
 @pytest.mark.asyncio
@@ -475,12 +628,12 @@ async def test_ranking_severity_desc_then_n_games_desc() -> None:
 
 
 @pytest.mark.asyncio
-async def test_caps_5_weaknesses_3_strengths_per_color() -> None:
-    """D-02, D-08: per-section caps applied after sorting: top-5 weaknesses, top-3 strengths."""
-    assert WEAKNESS_CAP_PER_COLOR == 5
-    assert STRENGTH_CAP_PER_COLOR == 3
+async def test_caps_10_per_color_per_classification() -> None:
+    """D-02, D-08 + Phase 71 UAT: per-section caps applied after sorting: top-10 weaknesses, top-10 strengths."""
+    assert WEAKNESS_CAP_PER_COLOR == 10
+    assert STRENGTH_CAP_PER_COLOR == 10
 
-    # Create 7 weakness rows — only 5 should survive cap
+    # Create 12 weakness rows — only 10 should survive cap.
     # Use fixed n=20, losses=12 (loss_rate=0.60, major) so all rows classify.
     # Distinct entry/resulting hashes prevent dedupe from removing them.
     weakness_rows = [
@@ -493,10 +646,10 @@ async def test_caps_5_weaknesses_3_strengths_per_color() -> None:
             d=4,
             losses=12,  # loss_rate=0.60 → major weakness for all
         )
-        for i in range(1, 8)
+        for i in range(1, 13)
     ]
     openings_map = {
-        i: _make_opening(full_hash=i, name=f"Opening {i}", ply_count=2) for i in range(1, 8)
+        i: _make_opening(full_hash=i, name=f"Opening {i}", ply_count=2) for i in range(1, 13)
     }
 
     response = await _run_compute(
@@ -504,13 +657,13 @@ async def test_caps_5_weaknesses_3_strengths_per_color() -> None:
         openings_by_hash=openings_map,
         color="white",
     )
-    assert len(response.white_weaknesses) == WEAKNESS_CAP_PER_COLOR  # 5
+    assert len(response.white_weaknesses) == WEAKNESS_CAP_PER_COLOR  # 10
     assert len(response.white_strengths) == 0  # no strength rows
 
-    # Now create 5 strength rows — only 3 should survive cap
+    # Now create 12 strength rows — only 10 should survive cap.
     strength_rows = [
         _make_row(
-            entry_hash=10 + i,
+            entry_hash=20 + i,
             resulting_full_hash=200 + i,
             entry_san_sequence=["e4"],
             n=20,
@@ -518,18 +671,18 @@ async def test_caps_5_weaknesses_3_strengths_per_color() -> None:
             d=3,
             losses=3,  # win_rate=14/20=0.70 → major strength
         )
-        for i in range(1, 6)
+        for i in range(1, 13)
     ]
     openings_strength = {
-        10 + i: _make_opening(full_hash=10 + i, name=f"Strength {i}", ply_count=2)
-        for i in range(1, 6)
+        20 + i: _make_opening(full_hash=20 + i, name=f"Strength {i}", ply_count=2)
+        for i in range(1, 13)
     }
     response2 = await _run_compute(
         rows=strength_rows,
         openings_by_hash=openings_strength,
         color="white",
     )
-    assert len(response2.white_strengths) == STRENGTH_CAP_PER_COLOR  # 3
+    assert len(response2.white_strengths) == STRENGTH_CAP_PER_COLOR  # 10
     assert len(response2.white_weaknesses) == 0
 
 

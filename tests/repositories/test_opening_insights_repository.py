@@ -27,6 +27,7 @@ from app.models.game_position import GamePosition
 from app.models.opening import Opening
 from app.repositories.openings_repository import (
     OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
+    STARTING_POSITION_HASH,
     query_openings_by_hashes,
     query_opening_transitions,
 )
@@ -63,8 +64,19 @@ async def _seed_game_with_positions(
     positions: Sequence[tuple[int, int, str | None]],  # (ply, full_hash, move_san)
     played_at: datetime.datetime | None = None,
     time_control_seconds: int = 600,
+    force_ply0_hash: int | None = None,
+    skip_auto_ply0: bool = False,
 ) -> int:
-    """Insert one Game and its GamePositions; return game_id."""
+    """Insert one Game and its GamePositions; return game_id.
+
+    Phase 71 hotfix: query_opening_transitions filters out games whose ply-0
+    full_hash != STARTING_POSITION_HASH. To keep existing tests realistic,
+    any (0, <synthetic_hash>, ...) entry is overridden to STARTING_POSITION_HASH
+    by default; if no ply=0 row is in `positions`, one is auto-inserted with
+    move_san=None so the EXISTS predicate is satisfied. Tests that need to
+    seed a non-standard-start game pass `force_ply0_hash`; tests that need
+    to seed a game WITHOUT a ply=0 row at all pass `skip_auto_ply0=True`.
+    """
     if played_at is None:
         played_at = datetime.datetime.now(tz=datetime.timezone.utc)
 
@@ -87,12 +99,42 @@ async def _seed_game_with_positions(
     db_session.add(game)
     await db_session.flush()
 
+    seen_ply0 = any(ply == 0 for ply, _, _ in positions)
+    if not seen_ply0 and not skip_auto_ply0:
+        # Auto-add a ply=0 row so the Phase 71 CTE filter (has_standard_start)
+        # accepts the game. move_san=None here would block the partition's
+        # array_agg from picking up the first move; use a synthetic move_san
+        # that mirrors the next ply so entry_san_sequence stays non-empty for
+        # tests with entries at ply >= 3.
+        first_move = next((san for _, _, san in positions), None)
+        ply0_san = first_move if first_move is not None else "e4"
+        ply0_hash = force_ply0_hash if force_ply0_hash is not None else STARTING_POSITION_HASH
+        db_session.add(
+            GamePosition(
+                game_id=game.id,
+                user_id=user_id,
+                ply=0,
+                full_hash=ply0_hash,
+                white_hash=0,
+                black_hash=0,
+                move_san=ply0_san,
+            )
+        )
+
     for ply, full_hash, move_san in positions:
+        # Phase 71 hotfix: align ply-0 hash with the standard starting position
+        # by default so the new CTE filter doesn't silently drop fixtures.
+        # `force_ply0_hash` lets the regression test inject a non-standard hash.
+        effective_hash = full_hash
+        if ply == 0:
+            effective_hash = (
+                force_ply0_hash if force_ply0_hash is not None else STARTING_POSITION_HASH
+            )
         pos = GamePosition(
             game_id=game.id,
             user_id=user_id,
             ply=ply,
-            full_hash=full_hash,
+            full_hash=effective_hash,
             white_hash=0,
             black_hash=0,
             move_san=move_san,
@@ -144,12 +186,13 @@ def _default_call_args(
 async def test_entry_ply_lower_bound_3_inclusive(db_session: AsyncSession) -> None:
     """D-32: entry_ply = 3 is included in transition results.
 
-    Seeds 20 loss games each with entry at ply=3 and candidate at ply=4.
-    Expects exactly 1 row returned.
+    Per zobrist semantics, GamePosition.move_san at ply Y is the move played
+    FROM ply Y (leading to ply Y+1). The entry position is the row whose
+    full_hash and move_san describe (entry_hash, candidate_move). The seed
+    therefore puts the candidate move on the entry row itself, and uses a
+    final position with move_san=None one ply later so LEAD has a row to read.
     """
     user_id = 10
-    # Seed 20 games: positions at ply=1,2,3,4,5. Entry=ply3, candidate=ply4.
-    # ply=4 must have a non-null move_san (not the final position) to pass the filter.
     for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
         await _seed_game_with_positions(
             db_session,
@@ -157,11 +200,11 @@ async def test_entry_ply_lower_bound_3_inclusive(db_session: AsyncSession) -> No
             result="1-0",  # user_color=black so this is a LOSS
             user_color="black",
             positions=[
-                (1, 10001, SAN_E4),
-                (2, 10002, SAN_C5),
-                (3, H_ENTRY_PLY3, SAN_NF3),    # entry position (ply=3)
-                (4, H_CANDIDATE_PLY4, SAN_NC6),  # candidate position (ply=4) with move_san
-                (5, 10005, None),               # final position
+                (0, 10000, SAN_E4),  # ply=0: white's 1st move
+                (1, 10001, SAN_C5),  # ply=1: black's 1st move
+                (2, 10002, SAN_NF3),  # ply=2: white's 2nd move
+                (3, H_ENTRY_PLY3, SAN_NC6),  # ply=3 (entry): candidate move played FROM here
+                (4, H_CANDIDATE_PLY4, None),  # ply=4 (final): no further move; LEAD reads full_hash
             ],
         )
 
@@ -175,6 +218,7 @@ async def test_entry_ply_lower_bound_3_inclusive(db_session: AsyncSession) -> No
     assert len(rows) == 1
     row = rows[0]
     assert row.entry_hash == H_ENTRY_PLY3
+    assert row.move_san == SAN_NC6
     assert row.n == OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
 
 
@@ -230,8 +274,8 @@ async def test_entry_ply_2_excluded(db_session: AsyncSession) -> None:
             user_color="black",
             positions=[
                 (1, 20001, SAN_E4),
-                (2, H_ENTRY_PLY2, SAN_C5),    # entry at ply=2 (excluded)
-                (3, H_CANDIDATE_PLY3, None),   # candidate at ply=3 (outside [4, 17])
+                (2, H_ENTRY_PLY2, SAN_C5),  # entry at ply=2 (excluded)
+                (3, H_CANDIDATE_PLY3, None),  # candidate at ply=3 (outside [4, 17])
             ],
         )
 
@@ -268,8 +312,8 @@ async def test_entry_ply_17_excluded_as_entry_but_included_as_candidate(
         # ply=18 is excluded from the CTE (partial index WHERE ply BETWEEN 1 AND 17)
         # so no candidate_ply=18 row can appear in the outer query.
         positions = [
-            (17, H_ONLY_ENTRY, "Nf3"),   # entry at ply=17 (within CTE range 1..17)
-            (18, H_ONLY_CAND, "Nc6"),    # candidate at ply=18 (outside CTE range)
+            (17, H_ONLY_ENTRY, "Nf3"),  # entry at ply=17 (within CTE range 1..17)
+            (18, H_ONLY_CAND, "Nc6"),  # candidate at ply=18 (outside CTE range)
         ]
         await _seed_game_with_positions(
             db_session,
@@ -295,24 +339,22 @@ async def test_entry_ply_17_excluded_as_entry_but_included_as_candidate(
 
 
 @pytest.mark.asyncio
-async def test_lag_returns_null_for_first_ply_of_each_game(
+async def test_window_does_not_leak_across_games(
     db_session: AsyncSession,
 ) -> None:
-    """RESEARCH.md Pitfall 2: LAG partitioned by game_id returns NULL for ply=1.
+    """RESEARCH.md Pitfall 2: window functions partitioned by game_id must not
+    leak across game boundaries.
 
-    Seeds two games each with positions at plies 1..4. Verifies that the
-    LAG does NOT leak across game boundaries by checking that only ONE
-    (entry_hash, move_san) pair appears in the output — not phantom cross-game pairs.
-    Both games share the same opening line so their (entry_hash, move_san) at ply=4
-    collapse into one row (n=2, which is less than 20 so effectively 0 rows).
-    Then seeds 20 games with the same opening to verify n=20 produces 1 row,
-    not more (which would be the case if ply=1 leaked entry_hash from prior game).
+    Seeds 20 games with the same line where the entry row at ply=3 has
+    move_san=None (no candidate). Expects 0 rows since the entry row's
+    move_san is NULL (final-position rows are filtered out).
+
+    Then re-seeds 20 games with a candidate at ply=3 and verifies exactly
+    one (entry_hash, move_san) row is returned — not 20+ if the partition
+    leaked across game boundaries.
     """
     user_id = 10
 
-    # Seed 20 games with entry at ply=3, candidate at ply=4
-    # If LAG leaked across game boundaries, game_B.ply=1 would see
-    # game_A.ply=last as its entry_hash, creating phantom entries.
     for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
         await _seed_game_with_positions(
             db_session,
@@ -320,10 +362,10 @@ async def test_lag_returns_null_for_first_ply_of_each_game(
             result="1-0",  # loss for black
             user_color="black",
             positions=[
-                (1, 30001, SAN_E4),
-                (2, 30002, SAN_C5),
-                (3, 30003, SAN_NF3),   # entry
-                (4, 30004, None),      # candidate — no further move
+                (0, 30000, SAN_E4),
+                (1, 30001, SAN_C5),
+                (2, 30002, SAN_NF3),
+                (3, 30003, None),  # entry at ply=3, but no candidate move (final position)
             ],
         )
 
@@ -334,16 +376,12 @@ async def test_lag_returns_null_for_first_ply_of_each_game(
         **_default_call_args("black"),
     )
 
-    # Should have exactly ONE row (entry=30003, move_san=Nf3 at ply=4 is null here,
-    # but the position ply=3 has move_san=Nf3, so candidate move at ply=4 has
-    # move_san=None — this means 0 rows because move_san IS NULL is filtered).
-    # Let's re-think: the candidate position's move_san is None (final position in our seed).
-    # The transitions CTE filters move_san IS NOT NULL. So we need to seed move_san on ply=4.
-    # Let's also check: with our current seed, ply=4 has move_san=None, so 0 rows expected.
-    assert rows == []  # final position (ply=4 move_san=None) filtered out
+    # ply=3's move_san is None, so filtered by `move_san IS NOT NULL`.
+    assert rows == []
 
-    # Re-seed 20 games where ply=4 has a move_san (not the final position)
-    # to verify no cross-game leakage
+    # Re-seed 20 games with a candidate at ply=3 (move_san=Nc6) so a real
+    # entry row exists. ply=4 must exist for LEAD(full_hash) at ply=3 to be
+    # non-NULL.
     for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
         await _seed_game_with_positions(
             db_session,
@@ -351,11 +389,11 @@ async def test_lag_returns_null_for_first_ply_of_each_game(
             result="1-0",
             user_color="black",
             positions=[
-                (1, 31001, SAN_E4),
-                (2, 31002, SAN_C5),
-                (3, 31003, SAN_NF3),         # entry at ply=3
-                (4, 31004, SAN_NC6),         # candidate at ply=4 with move_san=Nc6
-                (5, 31005, None),            # final position
+                (0, 31000, SAN_E4),
+                (1, 31001, SAN_C5),
+                (2, 31002, SAN_NF3),
+                (3, 31003, SAN_NC6),  # entry at ply=3 with candidate move_san=Nc6
+                (4, 31004, None),  # final position; LEAD reads full_hash here
             ],
         )
 
@@ -366,10 +404,9 @@ async def test_lag_returns_null_for_first_ply_of_each_game(
         **_default_call_args("black"),
     )
 
-    # Should have exactly ONE row for entry_hash=31003, move_san="Nc6"
-    # If LAG leaked across game boundaries, we'd see phantom entries with wrong entry_hash
     assert len(rows2) == 1
     assert rows2[0].entry_hash == 31003
+    assert rows2[0].move_san == SAN_NC6
     assert rows2[0].move_san == SAN_NC6
     assert rows2[0].n == OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
 
@@ -450,60 +487,146 @@ async def test_having_strict_gt_055_drops_neutrals(db_session: AsyncSession) -> 
     # Scenario 1: 11W/4D/5L => win_rate=11/20=0.55 — neutral (strict >)
     for i in range(11):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="1-0", user_color="white",
-            positions=[(1, 60001, "e4"), (2, 60002, "e5"), (3, H_NEUTRAL_ENTRY, "Nf3"), (4, 60004, "Nc6"), (5, 60005, None)],
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="white",
+            positions=[
+                (1, 60001, "e4"),
+                (2, 60002, "e5"),
+                (3, H_NEUTRAL_ENTRY, "Nf3"),
+                (4, 60004, "Nc6"),
+                (5, 60005, None),
+            ],
         )
     for i in range(4):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="1/2-1/2", user_color="white",
-            positions=[(1, 60001, "e4"), (2, 60002, "e5"), (3, H_NEUTRAL_ENTRY, "Nf3"), (4, 60004, "Nc6"), (5, 60005, None)],
+            db_session,
+            user_id=user_id,
+            result="1/2-1/2",
+            user_color="white",
+            positions=[
+                (1, 60001, "e4"),
+                (2, 60002, "e5"),
+                (3, H_NEUTRAL_ENTRY, "Nf3"),
+                (4, 60004, "Nc6"),
+                (5, 60005, None),
+            ],
         )
     for i in range(5):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="0-1", user_color="white",
-            positions=[(1, 60001, "e4"), (2, 60002, "e5"), (3, H_NEUTRAL_ENTRY, "Nf3"), (4, 60004, "Nc6"), (5, 60005, None)],
+            db_session,
+            user_id=user_id,
+            result="0-1",
+            user_color="white",
+            positions=[
+                (1, 60001, "e4"),
+                (2, 60002, "e5"),
+                (3, H_NEUTRAL_ENTRY, "Nf3"),
+                (4, 60004, "Nc6"),
+                (5, 60005, None),
+            ],
         )
 
     # Scenario 2: 12W/4D/4L => win_rate=12/20=0.60 — strength
     for i in range(12):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="1-0", user_color="white",
-            positions=[(1, 70001, "e4"), (2, 70002, "e5"), (3, H_STRENGTH_ENTRY, "Nf3"), (4, 70004, "Nc6"), (5, 70005, None)],
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="white",
+            positions=[
+                (1, 70001, "e4"),
+                (2, 70002, "e5"),
+                (3, H_STRENGTH_ENTRY, "Nf3"),
+                (4, 70004, "Nc6"),
+                (5, 70005, None),
+            ],
         )
     for i in range(4):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="1/2-1/2", user_color="white",
-            positions=[(1, 70001, "e4"), (2, 70002, "e5"), (3, H_STRENGTH_ENTRY, "Nf3"), (4, 70004, "Nc6"), (5, 70005, None)],
+            db_session,
+            user_id=user_id,
+            result="1/2-1/2",
+            user_color="white",
+            positions=[
+                (1, 70001, "e4"),
+                (2, 70002, "e5"),
+                (3, H_STRENGTH_ENTRY, "Nf3"),
+                (4, 70004, "Nc6"),
+                (5, 70005, None),
+            ],
         )
     for i in range(4):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="0-1", user_color="white",
-            positions=[(1, 70001, "e4"), (2, 70002, "e5"), (3, H_STRENGTH_ENTRY, "Nf3"), (4, 70004, "Nc6"), (5, 70005, None)],
+            db_session,
+            user_id=user_id,
+            result="0-1",
+            user_color="white",
+            positions=[
+                (1, 70001, "e4"),
+                (2, 70002, "e5"),
+                (3, H_STRENGTH_ENTRY, "Nf3"),
+                (4, 70004, "Nc6"),
+                (5, 70005, None),
+            ],
         )
 
     # Scenario 3: 12L/4D/4W => loss_rate=12/20=0.60 — weakness
     for i in range(12):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="0-1", user_color="white",
-            positions=[(1, 80001, "e4"), (2, 80002, "e5"), (3, H_WEAKNESS_ENTRY, "Nf3"), (4, 80004, "Nc6"), (5, 80005, None)],
+            db_session,
+            user_id=user_id,
+            result="0-1",
+            user_color="white",
+            positions=[
+                (1, 80001, "e4"),
+                (2, 80002, "e5"),
+                (3, H_WEAKNESS_ENTRY, "Nf3"),
+                (4, 80004, "Nc6"),
+                (5, 80005, None),
+            ],
         )
     for i in range(4):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="1/2-1/2", user_color="white",
-            positions=[(1, 80001, "e4"), (2, 80002, "e5"), (3, H_WEAKNESS_ENTRY, "Nf3"), (4, 80004, "Nc6"), (5, 80005, None)],
+            db_session,
+            user_id=user_id,
+            result="1/2-1/2",
+            user_color="white",
+            positions=[
+                (1, 80001, "e4"),
+                (2, 80002, "e5"),
+                (3, H_WEAKNESS_ENTRY, "Nf3"),
+                (4, 80004, "Nc6"),
+                (5, 80005, None),
+            ],
         )
     for i in range(4):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="1-0", user_color="white",
-            positions=[(1, 80001, "e4"), (2, 80002, "e5"), (3, H_WEAKNESS_ENTRY, "Nf3"), (4, 80004, "Nc6"), (5, 80005, None)],
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="white",
+            positions=[
+                (1, 80001, "e4"),
+                (2, 80002, "e5"),
+                (3, H_WEAKNESS_ENTRY, "Nf3"),
+                (4, 80004, "Nc6"),
+                (5, 80005, None),
+            ],
         )
 
     rows = await query_opening_transitions(
-        db_session, user_id=user_id, color="white", **_default_call_args("white"),
+        db_session,
+        user_id=user_id,
+        color="white",
+        **_default_call_args("white"),
     )
 
     entry_hashes_in_result = [r.entry_hash for r in rows]
-    assert H_NEUTRAL_ENTRY not in entry_hashes_in_result, "win_rate=0.55 (neutral) should be dropped"
+    assert H_NEUTRAL_ENTRY not in entry_hashes_in_result, (
+        "win_rate=0.55 (neutral) should be dropped"
+    )
     assert H_STRENGTH_ENTRY in entry_hashes_in_result, "win_rate=0.60 (strength) should appear"
     assert H_WEAKNESS_ENTRY in entry_hashes_in_result, "loss_rate=0.60 (weakness) should appear"
 
@@ -519,22 +642,47 @@ async def test_user_color_filter_routes_correct_games(db_session: AsyncSession) 
     user_id = 10
     H_WHITE_ENTRY = 90003
 
+    # Seed: ply 0..2 build up to entry; ply 3 IS the entry with candidate; ply 4 is final.
     for i in range(12):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="0-1", user_color="white",
-            positions=[(1, 90001, "e4"), (2, 90002, "e5"), (3, H_WHITE_ENTRY, "Nf3"), (4, 90004, "Nc6"), (5, 90005, None)],
+            db_session,
+            user_id=user_id,
+            result="0-1",
+            user_color="white",
+            positions=[
+                (0, 90000, "e4"),
+                (1, 90001, "e5"),
+                (2, 90002, "Nf3"),
+                (3, H_WHITE_ENTRY, "Nc6"),
+                (4, 90004, None),
+            ],
         )
     for i in range(8):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="1-0", user_color="white",
-            positions=[(1, 90001, "e4"), (2, 90002, "e5"), (3, H_WHITE_ENTRY, "Nf3"), (4, 90004, "Nc6"), (5, 90005, None)],
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="white",
+            positions=[
+                (0, 90000, "e4"),
+                (1, 90001, "e5"),
+                (2, 90002, "Nf3"),
+                (3, H_WHITE_ENTRY, "Nc6"),
+                (4, 90004, None),
+            ],
         )
 
     rows_black = await query_opening_transitions(
-        db_session, user_id=user_id, color="black", **_default_call_args("black"),
+        db_session,
+        user_id=user_id,
+        color="black",
+        **_default_call_args("black"),
     )
     rows_white = await query_opening_transitions(
-        db_session, user_id=user_id, color="white", **_default_call_args("white"),
+        db_session,
+        user_id=user_id,
+        color="white",
+        **_default_call_args("white"),
     )
 
     assert rows_black == [], "color='black' should return 0 rows (no black games)"
@@ -560,13 +708,21 @@ async def test_apply_game_filters_recency_narrows_results(db_session: AsyncSessi
     old_date = now - datetime.timedelta(days=30)
     cutoff = now - datetime.timedelta(days=8)
 
-    # Seed 20 recent loss games
+    # Seed 20 recent loss games. Per zobrist semantics: ply Y move_san is
+    # the move played FROM ply Y. ply 3 IS the entry with candidate move "Nc6";
+    # ply 4 is final (LEAD reads its full_hash for resulting_full_hash).
     for _ in range(20):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="1-0", user_color="black",
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="black",
             positions=[
-                (1, 100001, "e4"), (2, 100002, "c5"),
-                (3, H_RECENCY_ENTRY, "Nf3"), (4, 100004, "Nc6"), (5, 100005, None),
+                (0, 100000, "e4"),
+                (1, 100001, "c5"),
+                (2, 100002, "Nf3"),
+                (3, H_RECENCY_ENTRY, "Nc6"),
+                (4, 100004, None),
             ],
             played_at=recent_date,
         )
@@ -574,28 +730,44 @@ async def test_apply_game_filters_recency_narrows_results(db_session: AsyncSessi
     # Seed 10 old loss games
     for _ in range(10):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="1-0", user_color="black",
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="black",
             positions=[
-                (1, 100001, "e4"), (2, 100002, "c5"),
-                (3, H_RECENCY_ENTRY, "Nf3"), (4, 100004, "Nc6"), (5, 100005, None),
+                (0, 100000, "e4"),
+                (1, 100001, "c5"),
+                (2, 100002, "Nf3"),
+                (3, H_RECENCY_ENTRY, "Nc6"),
+                (4, 100004, None),
             ],
             played_at=old_date,
         )
 
     # Without cutoff: 30 games total
     rows_all = await query_opening_transitions(
-        db_session, user_id=user_id, color="black",
-        time_control=None, platform=None, rated=None,
-        opponent_type="both", recency_cutoff=None,
+        db_session,
+        user_id=user_id,
+        color="black",
+        time_control=None,
+        platform=None,
+        rated=None,
+        opponent_type="both",
+        recency_cutoff=None,
     )
     assert len(rows_all) == 1
     assert rows_all[0].n == 30
 
     # With recency cutoff: only 20 recent games
     rows_recent = await query_opening_transitions(
-        db_session, user_id=user_id, color="black",
-        time_control=None, platform=None, rated=None,
-        opponent_type="both", recency_cutoff=cutoff,
+        db_session,
+        user_id=user_id,
+        color="black",
+        time_control=None,
+        platform=None,
+        rated=None,
+        opponent_type="both",
+        recency_cutoff=cutoff,
     )
     assert len(rows_recent) == 1
     assert rows_recent[0].n == 20
@@ -623,10 +795,16 @@ async def test_partial_index_predicate_alignment(db_session: AsyncSession) -> No
     # Seed enough games to produce a real EXPLAIN plan
     for _ in range(20):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="1-0", user_color="black",
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="black",
             positions=[
-                (1, 110001, "e4"), (2, 110002, "c5"),
-                (3, 110003, "Nf3"), (4, 110004, "Nc6"), (5, 110005, None),
+                (1, 110001, "e4"),
+                (2, 110002, "c5"),
+                (3, 110003, "Nf3"),
+                (4, 110004, "Nc6"),
+                (5, 110005, None),
             ],
         )
 
@@ -636,19 +814,16 @@ async def test_partial_index_predicate_alignment(db_session: AsyncSession) -> No
     # is proven effective at Hikaru-scale (5.7M rows: 2.0 s → 816 ms, verified
     # 2026-04-26, CONTEXT.md). Here we verify structural alignment, not planner choice.
     index_check = await db_session.execute(
-        text(
-            "SELECT indexdef FROM pg_indexes "
-            "WHERE indexname = 'ix_gp_user_game_ply'"
-        )
+        text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_gp_user_game_ply'")
     )
     indexdef = index_check.scalar_one_or_none()
     assert indexdef is not None, "Index ix_gp_user_game_ply must exist in the test DB"
     assert "ply" in indexdef.lower(), f"Index must include ply column. Got: {indexdef}"
     assert "game_id" in indexdef.lower(), f"Index must include game_id column. Got: {indexdef}"
     assert "user_id" in indexdef.lower(), f"Index must include user_id column. Got: {indexdef}"
-    # Partial predicate must match the CTE WHERE clause (ply BETWEEN 1 AND 17)
-    assert "1" in indexdef and "17" in indexdef, (
-        f"Index partial predicate must cover ply BETWEEN 1 AND 17. Got: {indexdef}"
+    # Partial predicate must match the CTE WHERE clause (ply BETWEEN 0 AND 17 after #71 hotfix)
+    assert "0" in indexdef and "17" in indexdef, (
+        f"Index partial predicate must cover ply BETWEEN 0 AND 17. Got: {indexdef}"
     )
 
     # Verify the partial index predicate alignment: the CTE WHERE clause (ply BETWEEN 1 AND 17)
@@ -671,9 +846,9 @@ async def test_partial_index_predicate_alignment(db_session: AsyncSession) -> No
     )
     predicate = predicate_check.scalar_one_or_none()
     assert predicate is not None, "Index ix_gp_user_game_ply predicate must exist"
-    # PostgreSQL renders BETWEEN as: ply >= 1 AND ply <= 17
-    assert "1" in predicate and "17" in predicate, (
-        f"Index predicate must cover ply BETWEEN 1 AND 17. Got: {predicate}"
+    # PostgreSQL renders BETWEEN as: ply >= 0 AND ply <= 17 (after #71 hotfix)
+    assert "0" in predicate and "17" in predicate, (
+        f"Index predicate must cover ply BETWEEN 0 AND 17. Got: {predicate}"
     )
 
     # Verify the INCLUDE columns by checking the indexdef
@@ -699,28 +874,36 @@ async def test_partial_index_predicate_alignment(db_session: AsyncSession) -> No
 
 @pytest.mark.asyncio
 async def test_query_returns_resulting_full_hash(db_session: AsyncSession) -> None:
-    """BLOCKER-6 / D-21: resulting_full_hash is the candidate position's full_hash.
+    """BLOCKER-6 / D-21: resulting_full_hash is the position AFTER the candidate.
 
-    Seeds 20 games where the candidate move at ply=4 leads to position H_RESULT.
-    Asserts the returned Row has resulting_full_hash == H_RESULT.
+    Seeds 20 games. The entry row is at ply=3 with candidate move "Nc6"; the
+    next ply (4) carries the resulting position's full_hash. The repository
+    query reads it via LEAD(full_hash).
     """
     user_id = 10
     H_ENTRY = 120003
-    H_RESULT = 120004  # the candidate's full_hash (position after the candidate move)
+    H_RESULT = 120004  # position after the candidate move = full_hash at ply=4
 
     for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="1-0", user_color="black",
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="black",
             positions=[
-                (1, 120001, "e4"), (2, 120002, "c5"),
-                (3, H_ENTRY, "Nf3"),       # entry
-                (4, H_RESULT, "Nc6"),      # candidate (full_hash=H_RESULT)
-                (5, 120005, None),
+                (0, 120000, "e4"),
+                (1, 120001, "c5"),
+                (2, 120002, "Nf3"),
+                (3, H_ENTRY, "Nc6"),  # entry: candidate move is "Nc6"
+                (4, H_RESULT, None),  # final: LEAD(full_hash) reads H_RESULT
             ],
         )
 
     rows = await query_opening_transitions(
-        db_session, user_id=user_id, color="black", **_default_call_args("black"),
+        db_session,
+        user_id=user_id,
+        color="black",
+        **_default_call_args("black"),
     )
 
     assert len(rows) == 1
@@ -731,11 +914,12 @@ async def test_query_returns_resulting_full_hash(db_session: AsyncSession) -> No
 
 @pytest.mark.asyncio
 async def test_query_returns_entry_san_sequence(db_session: AsyncSession) -> None:
-    """BLOCKER-1 / D-34: entry_san_sequence contains SAN tokens up to (not including) candidate.
+    """BLOCKER-1 / D-34: entry_san_sequence contains SAN tokens needed to replay
+    the entry position from the start.
 
-    Seeds 20 games following e4-c5-Nf3 as moves at ply=1,2,3 and candidate at ply=4.
-    For a candidate at ply=4 (move_san="Nc6"), the entry is at ply=3 (move_san="Nf3").
-    entry_san_sequence = ["e4", "c5", "Nf3"] (all moves up to and including the entry position).
+    Per zobrist semantics, GamePosition.move_san at ply Y is the move played
+    FROM ply Y. For an entry at ply=3 with candidate move "Nc6", the
+    sequence to reach the entry is move_san at plies 0, 1, 2 = ["e4","c5","Nf3"].
     """
     user_id = 10
     H_ENTRY = 130003
@@ -743,28 +927,168 @@ async def test_query_returns_entry_san_sequence(db_session: AsyncSession) -> Non
 
     for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
         await _seed_game_with_positions(
-            db_session, user_id=user_id, result="1-0", user_color="black",
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="black",
             positions=[
-                (1, 130001, "e4"),   # ply=1, move_san="e4"
-                (2, 130002, "c5"),   # ply=2, move_san="c5"
-                (3, H_ENTRY, "Nf3"), # ply=3 (entry), move_san="Nf3"
-                (4, H_RESULT, "Nc6"), # ply=4 (candidate), move_san="Nc6"
-                (5, 130005, None),   # final position
+                (0, 130000, "e4"),  # ply=0: White's 1st move played FROM start
+                (1, 130001, "c5"),  # ply=1: Black's 1st move played FROM after-e4
+                (2, 130002, "Nf3"),  # ply=2: White's 2nd move played FROM after-e4-c5
+                (3, H_ENTRY, "Nc6"),  # ply=3 (entry): candidate move played FROM here
+                (4, H_RESULT, None),  # final: LEAD(full_hash) reads H_RESULT
             ],
         )
 
     rows = await query_opening_transitions(
-        db_session, user_id=user_id, color="black", **_default_call_args("black"),
+        db_session,
+        user_id=user_id,
+        color="black",
+        **_default_call_args("black"),
     )
 
     assert len(rows) == 1
     row = rows[0]
     assert row.move_san == "Nc6", f"Expected candidate move_san='Nc6', got {row.move_san!r}"
-    # entry_san_sequence should be ["e4", "c5", "Nf3"] — moves up to and including entry ply=3
-    # (not including the candidate move "Nc6")
     assert row.entry_san_sequence == ["e4", "c5", "Nf3"], (
         f"Expected entry_san_sequence=['e4', 'c5', 'Nf3'], got {row.entry_san_sequence!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 71 hotfix: STARTING_POSITION_HASH CTE filter
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_non_standard_start_game_excluded_from_transitions(
+    db_session: AsyncSession,
+) -> None:
+    """Phase 71 hotfix: games whose ply-0 full_hash != STARTING_POSITION_HASH
+    must NOT contribute any rows to query_opening_transitions output.
+
+    Reproduces the production bug seen on user 7 (hikaru): chess.com themed
+    events / puzzles import with a [SetUp "1"][FEN ...] PGN header. ply 0
+    in those games carries the custom FEN's hash, and ply-0 move_san (e.g.
+    "Bb2") is illegal from chess.Board(). When min(array_agg(...))
+    lexicographically picked such a chain, _compute_prefix_hashes raised
+    chess.IllegalMoveError and 500'd the endpoint.
+    """
+    user_id = 10
+    NON_STANDARD_PLY0 = 11111  # any value != STARTING_POSITION_HASH
+    H_BAD_ENTRY = 222003
+    H_BAD_RESULT = 222004
+
+    for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="1-0",  # loss for black
+            user_color="black",
+            positions=[
+                (0, 0, "Bb2"),  # placeholder; helper rewrites ply=0 to force_ply0_hash
+                (1, 222001, "c5"),
+                (2, 222002, "Nf3"),
+                (3, H_BAD_ENTRY, "Nc6"),
+                (4, H_BAD_RESULT, None),
+            ],
+            force_ply0_hash=NON_STANDARD_PLY0,
+        )
+
+    rows = await query_opening_transitions(
+        db_session,
+        user_id=user_id,
+        color="black",
+        **_default_call_args("black"),
+    )
+
+    # The non-standard-start game produces no transition rows.
+    assert rows == [], (
+        f"Expected 0 rows for non-standard-FEN game, got {len(rows)}: "
+        f"{[(r.entry_hash, r.move_san) for r in rows]}"
+    )
+    entry_hashes = [r.entry_hash for r in rows]
+    assert H_BAD_ENTRY not in entry_hashes
+
+
+@pytest.mark.asyncio
+async def test_standard_start_game_included_in_transitions(
+    db_session: AsyncSession,
+) -> None:
+    """Phase 71 hotfix: a normal game (ply-0 full_hash == STARTING_POSITION_HASH)
+    is NOT affected by the new filter and still contributes transition rows."""
+    user_id = 10
+    H_GOOD_ENTRY = 333003
+    H_GOOD_RESULT = 333004
+
+    for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="1-0",  # loss for black
+            user_color="black",
+            positions=[
+                (0, 0, "e4"),  # helper rewrites to STARTING_POSITION_HASH by default
+                (1, 333001, "c5"),
+                (2, 333002, "Nf3"),
+                (3, H_GOOD_ENTRY, "Nc6"),
+                (4, H_GOOD_RESULT, None),
+            ],
+        )
+
+    rows = await query_opening_transitions(
+        db_session,
+        user_id=user_id,
+        color="black",
+        **_default_call_args("black"),
+    )
+
+    assert len(rows) == 1
+    assert rows[0].entry_hash == H_GOOD_ENTRY
+    assert rows[0].move_san == "Nc6"
+
+
+@pytest.mark.asyncio
+async def test_game_without_ply0_row_excluded_from_transitions(
+    db_session: AsyncSession,
+) -> None:
+    """Phase 71 hotfix: a game with no ply=0 row at all (data corruption case)
+    is excluded by the EXISTS predicate.
+
+    This shouldn't happen in practice — every imported game seeds ply 0 — but
+    the CTE filter is conservative: include only games with a positive
+    confirmation that the start position is standard. Missing ply 0 is treated
+    the same as a non-standard ply 0.
+    """
+    user_id = 11  # isolated user_id to avoid contaminating user 10 fixtures
+    H_ORPHAN_ENTRY = 444003
+    H_ORPHAN_RESULT = 444004
+
+    for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="black",
+            positions=[
+                # No ply=0 row. Helper would normally auto-insert one, but
+                # skip_auto_ply0 disables that for this regression test.
+                (1, 444001, "c5"),
+                (2, 444002, "Nf3"),
+                (3, H_ORPHAN_ENTRY, "Nc6"),
+                (4, H_ORPHAN_RESULT, None),
+            ],
+            skip_auto_ply0=True,
+        )
+
+    rows = await query_opening_transitions(
+        db_session,
+        user_id=user_id,
+        color="black",
+        **_default_call_args("black"),
+    )
+
+    assert rows == [], f"Expected 0 rows for game missing ply=0, got {len(rows)}"
 
 
 # ---------------------------------------------------------------------------

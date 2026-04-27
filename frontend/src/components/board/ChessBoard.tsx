@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { arrowSortKey } from '../../lib/arrowColor';
 import { darkSquareStyle, lightSquareStyle, BOARD_DARK_SQUARE, BOARD_LIGHT_SQUARE } from '../../lib/theme';
+import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '../../lib/highlightPulse';
 
 interface BoardArrow {
   startSquare: string;
@@ -11,6 +12,14 @@ interface BoardArrow {
   width: number;
   /** Whether this arrow's move is currently hovered in the move list */
   isHovered?: boolean;
+  /**
+   * When true, the arrow's <path> gets the .animate-arrow-pulse class so it
+   * pulses (opacity 0.45 → 1.0 → 0.75) for ARROW_PULSE_ITERATIONS iterations
+   * and then settles at the static ARROW_OPACITY. Used by the deep-link from
+   * OpeningInsightsBlock → MoveExplorer to draw attention to the candidate
+   * move on arrival. (Quick-task 260427-j41.)
+   */
+  isHighlightPulse?: boolean;
 }
 
 interface ChessBoardProps {
@@ -47,6 +56,13 @@ const ARROW_OUTLINE_WIDTH = 1;
 const ARROW_HOVER_SCALE = 1.3;
 // How far past target square center the arrow tip extends (fraction of square size)
 const ARROW_TIP_OVERSHOOT = 0.15;
+// Arrow highlight-pulse animation. The .animate-arrow-pulse helper in
+// src/index.css encodes a CSS keyframe driven by these constants — keep the
+// CSS rule in sync if the values change. Total pulse window =
+// HIGHLIGHT_PULSE_ITERATIONS × HIGHLIGHT_PULSE_DURATION_MS (~5 s).
+// Constants live in lib/highlightPulse.ts so the MoveExplorer row-pulse
+// stays driven by the same timing.
+const ARROW_PULSE_CLASS = 'animate-arrow-pulse';
 
 const FILES = 'abcdefgh';
 
@@ -119,7 +135,7 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
       style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
       data-testid="arrow-overlay"
     >
-      {sortedArrows.map((arrow, i) => {
+      {sortedArrows.map((arrow) => {
         // Skip degenerate arrows where start and end are the same square (causes NaN in path)
         if (arrow.startSquare === arrow.endSquare) return null;
 
@@ -144,15 +160,35 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
           shaftHalf, headWidth / 2, headLen,
         );
 
+        // Highlight-pulse: the CSS class drives the animation and overrides
+        // opacity for the pulse window, then settles at ARROW_OPACITY (0.75) via
+        // animation-fill-mode: forwards (matching the keyframe's 100% value).
+        // Inline style passes the JS constants into CSS so the duration/iteration
+        // count are not duplicated as magic numbers.
+        const pulseStyle: React.CSSProperties | undefined = arrow.isHighlightPulse
+          ? {
+              animationDuration: `${HIGHLIGHT_PULSE_DURATION_MS}ms`,
+              animationIterationCount: HIGHLIGHT_PULSE_ITERATIONS,
+            }
+          : undefined;
+
+        // Stable key keyed on the move identity (start→end), NOT the sorted
+        // index. Hovering a different move changes another arrow's color and
+        // therefore the sort order, so an index-based key would shift the
+        // highlighted arrow to a new slot — React would unmount/remount its
+        // <path>, restarting the CSS pulse animation. Move-keyed elements are
+        // stable across hover-driven re-sorts.
         return (
           <path
-            key={i}
+            key={`${arrow.startSquare}-${arrow.endSquare}`}
             d={d}
             fill={arrow.color}
             opacity={arrow.isHovered ? ARROW_HOVER_OPACITY : ARROW_OPACITY}
             stroke={ARROW_OUTLINE_COLOR}
             strokeWidth={ARROW_OUTLINE_WIDTH}
             strokeLinejoin="round"
+            className={arrow.isHighlightPulse ? ARROW_PULSE_CLASS : undefined}
+            style={pulseStyle}
           />
         );
       })}

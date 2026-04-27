@@ -347,10 +347,10 @@ export function FilterPanel({
         </Button>
         {showDeferredApplyHint && (
           <p
-            className="mt-2 text-xs leading-tight text-muted-foreground"
+            className="mt-2 text-sm italic leading-tight text-muted-foreground"
             data-testid="filter-deferred-apply-hint"
           >
-            Filter changes apply on closing the filters panel.
+            <span className="font-semibold text-foreground/80">Tip:</span> Filter changes apply on closing the filters panel.
           </p>
         )}
       </div>

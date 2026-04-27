@@ -17,6 +17,12 @@ export const WDL_WIN = 'oklch(0.50 0.14 145)';
 export const WDL_DRAW = 'oklch(0.60 0.02 260)';
 export const WDL_LOSS = 'oklch(0.50 0.15 25)';
 
+// Solid WDL accent borders (e.g. game card left edges).
+// Matched to the strength/weakness card severity palette in arrowColor.ts.
+export const WDL_BORDER_WIN = '#036C22';
+export const WDL_BORDER_DRAW = '#6B7280';
+export const WDL_BORDER_LOSS = '#9E2020';
+
 // Glass-effect overlay: white highlight fading to transparent
 // Applied as backgroundImage on WDL bar segments for a polished look
 export const GLASS_OVERLAY =

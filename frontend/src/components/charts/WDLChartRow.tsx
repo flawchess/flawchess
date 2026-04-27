@@ -98,7 +98,7 @@ export function WDLChartRow({
               <Link
                 to={gamesLink}
                 onClick={onGamesLinkClick}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                className="inline-flex items-center gap-1 text-xs text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
                 aria-label={gamesLinkAriaLabel}
                 data-testid={gamesLinkTestId}
               >
@@ -110,7 +110,7 @@ export function WDLChartRow({
             <Tooltip content="View games for this opening">
               <button
                 onClick={onOpenGames}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                className="inline-flex items-center gap-1 text-xs text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
                 aria-label="View games for this opening"
                 data-testid={openGamesTestId}
               >

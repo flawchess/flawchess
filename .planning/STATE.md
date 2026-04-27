@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.13
 milestone_name: Opening Insights
-status: phase_verified
-last_updated: "2026-04-26T21:19:57.000Z"
-last_activity: 2026-04-26 -- Phase 70 verified (9/9 must-haves passed, 1135 tests, 4 advisory warnings in REVIEW.md)
+status: executing
+last_updated: "2026-04-27T03:58:47.279Z"
+last_activity: 2026-04-27 -- Phase 71 execution started
 progress:
   total_phases: 7
-  completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
-  percent: 14
+  completed_phases: 0
+  total_plans: 11
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 70 (backend-opening-insights-service) — COMPLETE
-Plan: 5 of 5
-Status: Phase 70 verified — ready for Phase 71 (frontend opening insights UI)
-Last activity: 2026-04-26 -- Phase 70 verified (9/9 must-haves passed, 1135 tests, 4 advisory warnings in REVIEW.md)
+Phase: 71 (frontend-stats-subtab-openinginsightsblock) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 71
+Last activity: 2026-04-27 -- Phase 71 execution started
 
 ## Project Reference
 
@@ -91,6 +91,11 @@ Carried forward from v1.11 close (still relevant):
 | 260425-lwz | Fallback to month enumeration when chess.com archives-list endpoint 404s for an existing user | 2026-04-25 | af64f66 | [260425-lwz-fallback-to-month-enumeration-when-chess](./quick/260425-lwz-fallback-to-month-enumeration-when-chess/) |
 | 260425-nlv | Restructure GameCard and PositionBookmarkCard layouts (full-width identifier line on top, board left + content right below) | 2026-04-25 | 5a7ad30 | [260425-nlv-restructure-gamecard-and-positionbookmar](./quick/260425-nlv-restructure-gamecard-and-positionbookmar/) |
 | 260426-pbo | Drop parity filter on top-10 openings, prefix off-color rows with "vs." (PRE-01) | 2026-04-26 | 3301ff5 | [260426-pbo-drop-parity-filter-on-top-10-openings-pr](./quick/260426-pbo-drop-parity-filter-on-top-10-openings-pr/) |
+| 260427-g4a | Fix opening insights IllegalMoveError when entry_san_sequence does not start from initial position (#71 hotfix) | 2026-04-27 | 8bc4337 | [260427-g4a-fix-opening-insights-illegalmoveerror-wh](./quick/260427-g4a-fix-opening-insights-illegalmoveerror-wh/) |
+| 260427-h3u | Replace OpeningFindingCard whole-card deeplink with explicit Moves + Games links (drops n=, ExternalLink icon) | 2026-04-27 | ae44c6e | [260427-h3u-in-opening-strengths-and-weaknesses-card](./quick/260427-h3u-in-opening-strengths-and-weaknesses-card/) |
+| 260427-j41 | Highlight candidate move in Move Explorer when arriving via Insights Moves link (severity-colored row border, pulsating board arrow, auto-scroll, clear on position/filter change) | 2026-04-27 | b6c1f29 | [260427-j41-highlight-candidate-move-in-move-explore](./quick/260427-j41-highlight-candidate-move-in-move-explore/) |
 
 ---
-Last activity: 2026-04-26 — Completed quick task 260426-pbo (PRE-01): dropped parity filter on top-10 openings, off-color rows now render with "vs." prefix. Next: `/gsd-discuss-phase 70`.
+Last activity: 2026-04-27 — Completed quick task 260427-j41: highlight candidate move in Move Explorer with severity-colored row border, pulsating chessboard arrow, and auto-scroll when arriving via the Insights Moves deep-link.
+| 2026-04-27 | fast | Mobile: Moves/Games links beside mini board in OpeningFindingCard | ✅ |
+| 2026-04-27 | fast | widen game card WDL left border | ✅ |

@@ -43,6 +43,7 @@
     --brand-brown-light: #A07850;
     --brand-brown-hover: #6B4226;
     --brand-brown-active: #6B4226;
+    --brand-brown-highlight: #F0DBB9;
     --charcoal: #161412;
     --charcoal-hover: #262220;
     --inactive-bg: #171717;
@@ -132,6 +133,7 @@
     --color-brand-brown-light: var(--brand-brown-light);
     --color-brand-brown-hover: var(--brand-brown-hover);
     --color-brand-brown-active: var(--brand-brown-active);
+    --color-brand-brown-highlight: var(--brand-brown-highlight);
     --color-charcoal: var(--charcoal);
     --color-charcoal-hover: var(--charcoal-hover);
     --color-inactive-bg: var(--inactive-bg);
@@ -218,6 +220,47 @@
 .animate-progress-indeterminate {
   width: 40%;
   animation: progress-indeterminate 1.5s ease-in-out infinite;
+}
+
+/* Highlight-pulse for a chessboard arrow's <path>. Used by the deep-link
+   from OpeningInsightsBlock → MoveExplorer (quick-task 260427-j41) to draw
+   the user's eye to the candidate move's arrow on arrival.
+
+   The 100% opacity matches the static ARROW_OPACITY (0.75) in
+   ChessBoard.tsx so the arrow visibly pulses and then settles to its
+   normal steady-state (animation-fill-mode: forwards).
+
+   animation-duration and animation-iteration-count are supplied inline by
+   ChessBoard.tsx (ARROW_PULSE_DURATION_MS × ARROW_PULSE_ITERATIONS) — keep
+   the keyframe stops in sync with that file's constants. */
+@keyframes arrow-pulse {
+  0%   { opacity: 0.45; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.75; }
+}
+
+.animate-arrow-pulse {
+  animation-name: arrow-pulse;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: forwards;
+}
+
+/* Deep-link row-highlight pulse. Background-color is animated between three
+   inline CSS variables so the keyframe is colorblind to the row's specific
+   severity hex — MoveExplorer sets --row-highlight-low/high/rest from the
+   shared constants in src/lib/highlightPulse.ts. animation-duration and
+   animation-iteration-count are also supplied inline (paired with the arrow
+   pulse) so both pulses stay in sync. */
+@keyframes row-highlight-pulse {
+  0%   { background-color: var(--row-highlight-low); }
+  50%  { background-color: var(--row-highlight-high); }
+  100% { background-color: var(--row-highlight-rest); }
+}
+
+.animate-row-highlight-pulse {
+  animation-name: row-highlight-pulse;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: forwards;
 }
 
 /* Mobile typography bump.

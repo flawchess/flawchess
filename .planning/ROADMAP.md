@@ -220,7 +220,13 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
   3. When the active filter set yields no findings, the block renders a clear empty-state message naming the threshold and the min-games floor.
   4. Changing filters (color, time_control, recency, opponent_type/strength, rated) refreshes the block; loading and error states match v1.11 EndgameInsightsBlock conventions.
   5. Block renders cleanly inside the mobile drawer / single-column layout — verified at 375px width, no horizontal scroll, ≥ 44px touch targets, semantic HTML + `data-testid` per CLAUDE.md frontend rules.
-**Plans**: TBD
+**Plans**: 6 plans
+  - [x] 71-01-PLAN.md — Phase 70 contract amendment: add entry_san_sequence to OpeningInsightFinding
+  - [x] 71-02-PLAN.md — Extract LazyMiniBoard from GameCard into shared module
+  - [x] 71-03-PLAN.md — Types, openingInsights helpers (trim, severity-color, threshold copy), useOpeningInsights hook
+  - [x] 71-04-PLAN.md — OpeningFindingCard component (per-finding card with severity border, dual layout, prose)
+  - [x] 71-05-PLAN.md — OpeningInsightsBlock component (outer block, 4 sections, loading/error/empty/populated states)
+  - [ ] 71-06-PLAN.md — Stats tab integration + handleOpenFinding deep-link wiring + manual UAT
 **UI hint**: yes
 
 ### Phase 72: Frontend Moves subtab — inline weakness/strength bullets
@@ -283,7 +289,7 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
 | 63-68. v1.11 phases | v1.11 | 23/23 | Complete (Phase 67 descoped) | 2026-04-24 |
 | 69. Benchmark DB Infra & Ingestion Pipeline | v1.12 | 6/6 | Complete (follow-on phases deferred to SEED-006) | 2026-04-26 |
 | 70. Backend opening insights service | v1.13 | 5/5 | Complete   | 2026-04-26 |
-| 71. `OpeningInsightsBlock` (Stats subtab) | v1.13 | 0/0 | Not started | — |
+| 71. `OpeningInsightsBlock` (Stats subtab) | v1.13 | 5/6 | In Progress|  |
 | 72. Inline bullets (Moves subtab) | v1.13 | 0/0 | Not started | — |
 | 73. Meta-recommendation (stretch) | v1.13 | 0/0 | Not started | — |
 | 74. Bookmark-card weakness badge (stretch) | v1.13 | 0/0 | Not started | — |
@@ -294,7 +300,7 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 5/5 plans complete
+**Plans:** 5/6 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

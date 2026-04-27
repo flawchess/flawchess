@@ -149,8 +149,11 @@ function HeroState({
   const disabled = isPending || blockedReason !== null;
   return (
     <>
-      <p className="text-sm text-muted-foreground mb-3">
-        Generate a player profile, endgame data analysis, and recommendations using an LLM. Also add key insights at the end of each section below.
+      <p
+        className="text-sm italic text-muted-foreground mb-3"
+        data-testid="endgame-insights-tip"
+      >
+        <span className="font-semibold text-foreground/80">Tip:</span> Generate a player profile, endgame data analysis, and recommendations using an LLM.
       </p>
       <MaybeBlockedTooltip reason={blockedReason}>
         <Button

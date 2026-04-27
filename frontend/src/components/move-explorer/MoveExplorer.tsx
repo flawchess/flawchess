@@ -1,8 +1,16 @@
-import { useState, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
+import { getArrowColor, GREY } from '@/lib/arrowColor';
+import {
+  HIGHLIGHT_PULSE_DURATION_MS,
+  HIGHLIGHT_PULSE_ITERATIONS,
+  HIGHLIGHT_BG_LOW_ALPHA,
+  HIGHLIGHT_BG_HIGH_ALPHA,
+  HIGHLIGHT_BG_REST_ALPHA,
+} from '@/lib/highlightPulse';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { cn } from '@/lib/utils';
@@ -15,11 +23,42 @@ interface MoveExplorerProps {
   position: string;
   onMoveClick: (from: string, to: string) => void;
   onMoveHover?: (moveSan: string | null) => void;
+  /**
+   * When non-null, the row whose move_san matches `san` renders a sticky
+   * severity-tinted background in `color` and is auto-scrolled into view once.
+   * When `pulse` is true, the row tint also runs the synced pulse animation.
+   * The parent flips `pulse` false after the pulse window so a later React
+   * re-render can't re-attach the animation class and restart it.
+   * (Quick-task 260427-j41.)
+   */
+  highlightedMove?: { san: string; color: string; pulse: boolean } | null;
+  /**
+   * Fired when the highlight should clear:
+   *   1. Position changes (board move played, navigation, etc.).
+   *   2. Any move row is clicked.
+   * Filter-change clears live in the parent (Openings).
+   * The parent owns the actual highlight state — MoveExplorer just signals.
+   */
+  onHighlightConsumed?: () => void;
 }
 
 const IS_TOUCH = typeof window !== 'undefined' && 'ontouchstart' in window;
 
-export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick, onMoveHover }: MoveExplorerProps) {
+// Background-tint pulse for the highlighted row. The keyframe lives in
+// index.css (`@keyframes row-highlight-pulse`); MoveRow supplies the three
+// color stops via inline CSS variables and the duration/iteration count
+// inline so the pulse stays in sync with the chessboard arrow pulse.
+
+export function MoveExplorer({
+  moves,
+  isLoading,
+  isError,
+  position,
+  onMoveClick,
+  onMoveHover,
+  highlightedMove,
+  onHighlightConsumed,
+}: MoveExplorerProps) {
   // Mobile: first tap highlights a row (shows arrow on board), second tap plays the move
   const [selectedMove, setSelectedMove] = useState<string | null>(null);
 
@@ -29,12 +68,53 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
     return new Map(legalMoves.map(m => [m.san, { from: m.from, to: m.to }]));
   }, [position]);
 
-  // Clear selection when position changes (move was played via board or other source)
+  // Ref placed on the row matching highlightedMove.san — used to scrollIntoView.
+  // We only attach the ref to the matching row to avoid managing a Map of refs.
+  const highlightedRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  // Clear selection when position changes (move was played via board or other source).
+  // Derived-state pattern: setState during render is React-recommended for derived
+  // resets and is idempotent (the second pass sees prevPosition === position).
   const [prevPosition, setPrevPosition] = useState(position);
   if (prevPosition !== position) {
     setPrevPosition(position);
     if (selectedMove !== null) setSelectedMove(null);
   }
+
+  // Highlight consumption signals: position change OR row click. We fire
+  // onHighlightConsumed in an effect (NOT in render) so the callback runs
+  // exactly once per transition — calling parent setState during render would
+  // cause React 19's double-invocation in dev/strict mode to double-fire the
+  // signal. Filter-change clears live in the parent (where filter identity is
+  // owned) — using the moves-array reference here was a false proxy: TanStack
+  // Query resolution creates a new moves reference on first fetch, which would
+  // wrongly clear deep-link highlights mid-pulse.
+  const prevPositionForHighlightRef = useRef(position);
+  useEffect(() => {
+    const positionChanged = prevPositionForHighlightRef.current !== position;
+    prevPositionForHighlightRef.current = position;
+    if (positionChanged && highlightedMove != null) {
+      onHighlightConsumed?.();
+    }
+  }, [position, highlightedMove, onHighlightConsumed]);
+
+  // Scroll the matching row into view once when the highlight transitions to a
+  // value that exists in `moves`. behavior: 'smooth' already respects the OS
+  // prefers-reduced-motion setting in modern browsers, so no extra guard.
+  const lastScrolledSanRef = useRef<string | null>(null);
+  useEffect(() => {
+    const san = highlightedMove?.san ?? null;
+    if (san === null) {
+      lastScrolledSanRef.current = null;
+      return;
+    }
+    if (san === lastScrolledSanRef.current) return;
+    if (!moves.some(m => m.move_san === san)) return;
+    if (highlightedRowRef.current) {
+      highlightedRowRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      lastScrolledSanRef.current = san;
+    }
+  }, [highlightedMove, moves]);
 
   const handleRowClick = (entry: NextMoveEntry) => {
     const squares = moveMap.get(entry.move_san);
@@ -53,6 +133,12 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
     } else {
       // Desktop: single click plays the move
       onMoveClick(squares.from, squares.to);
+    }
+
+    // Any row click clears the deep-link highlight. We signal AFTER the
+    // existing logic so the next position-change effect doesn't double-clear.
+    if (highlightedMove != null) {
+      onHighlightConsumed?.();
     }
   };
 
@@ -112,16 +198,23 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
             </tr>
           </thead>
           <tbody>
-            {moves.map(entry => (
-              <MoveRow
-                key={entry.move_san}
-                entry={entry}
-                selectedMove={selectedMove}
-                onRowClick={handleRowClick}
-                onRowKeyDown={handleRowKeyDown}
-                onMoveHover={onMoveHover}
-              />
-            ))}
+            {moves.map(entry => {
+              const isHighlighted = highlightedMove != null && entry.move_san === highlightedMove.san;
+              return (
+                <MoveRow
+                  key={entry.move_san}
+                  entry={entry}
+                  selectedMove={selectedMove}
+                  onRowClick={handleRowClick}
+                  onRowKeyDown={handleRowKeyDown}
+                  onMoveHover={onMoveHover}
+                  highlightColor={isHighlighted ? highlightedMove.color : null}
+                  highlightPulse={isHighlighted ? highlightedMove.pulse : false}
+                  // Only attach the ref to the matching row — we don't need a Map of refs.
+                  rowRef={isHighlighted ? highlightedRowRef : undefined}
+                />
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -130,26 +223,71 @@ export function MoveExplorer({ moves, isLoading, isError, position, onMoveClick,
 }
 
 /** Move row with inline MiniWDLBar showing percentages */
-function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover }: {
+function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, highlightColor, highlightPulse, rowRef }: {
   entry: NextMoveEntry;
   selectedMove: string | null;
   onRowClick: (entry: NextMoveEntry) => void;
   onRowKeyDown: (e: React.KeyboardEvent, entry: NextMoveEntry) => void;
   onMoveHover?: (moveSan: string | null) => void;
+  /** Hex color for the row background tint when this row matches highlightedMove. Null otherwise. */
+  highlightColor: string | null;
+  /** Whether the row should run the pulse animation. Sticky tint is independent (always on when highlightColor !== null). */
+  highlightPulse: boolean;
+  /** Ref attached only to the highlighted row so the parent can scrollIntoView once. */
+  rowRef?: React.Ref<HTMLTableRowElement>;
 }) {
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
   const isBelowThreshold = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
 
+  // Strength/weakness row tint: every qualifying row gets the same color the
+  // chessboard arrow uses (green for strengths, red for weaknesses). Grey
+  // (neutral or below the color threshold) means no tint. The deep-link
+  // highlight reuses the same color and adds the pulse animation on top.
+  const arrowColor = getArrowColor(entry.win_pct, entry.loss_pct, entry.game_count, false);
+  const severityColor = arrowColor === GREY ? null : arrowColor;
+  const tintColor = highlightColor ?? severityColor;
+
+  // Merge the unreliable-row opacity with the severity tint + pulse. The
+  // sticky background tint stays whenever tintColor is set; the pulse
+  // animation properties are only attached while highlightPulse is true so
+  // the parent can drop it after the pulse window — preventing later React
+  // re-renders (e.g. arrow re-sort on hover) from re-attaching the animation
+  // class and restarting the CSS keyframe.
+  const rowStyle: React.CSSProperties = {};
+  if (isBelowThreshold) rowStyle.opacity = UNRELIABLE_OPACITY;
+  if (tintColor !== null) {
+    rowStyle.backgroundColor = `${tintColor}${HIGHLIGHT_BG_REST_ALPHA}`;
+    if (highlightPulse) {
+      rowStyle.animationDuration = `${HIGHLIGHT_PULSE_DURATION_MS}ms`;
+      rowStyle.animationIterationCount = HIGHLIGHT_PULSE_ITERATIONS;
+      // CSS custom properties for the keyframe stops; resolved by index.css.
+      (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-low'] =
+        `${tintColor}${HIGHLIGHT_BG_LOW_ALPHA}`;
+      (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-high'] =
+        `${tintColor}${HIGHLIGHT_BG_HIGH_ALPHA}`;
+      (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-rest'] =
+        `${tintColor}${HIGHLIGHT_BG_REST_ALPHA}`;
+    }
+  }
+
+  // The highlighted row reuses the existing data-testid (`move-explorer-row-${san}`) —
+  // no NEW interactive element is added (the row remains the same <tr>), so per
+  // CLAUDE.md "data-testid on every interactive element" is already satisfied.
+
   return (
     <tr
+      ref={rowRef}
       data-testid={`move-explorer-row-${entry.move_san}`}
       className={cn(
         'cursor-pointer min-h-[44px]',
+        // `!` (Tailwind v4 important suffix) is needed so the hover background
+        // beats the inline severity tint set via `style.backgroundColor`.
         // hover:bg-blue-500/15 sticks on mobile after tap, causing two highlighted rows
-        !IS_TOUCH && 'hover:bg-blue-500/15',
+        !IS_TOUCH && 'hover:bg-blue-500/15!',
         selectedMove === entry.move_san && 'bg-blue-500/15',
+        tintColor !== null && highlightPulse && 'animate-row-highlight-pulse',
       )}
-      style={isBelowThreshold ? { opacity: UNRELIABLE_OPACITY } : undefined}
+      style={Object.keys(rowStyle).length > 0 ? rowStyle : undefined}
       role="button"
       tabIndex={0}
       onClick={() => onRowClick(entry)}

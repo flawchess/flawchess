@@ -1,44 +1,14 @@
-import { useRef, useState, useEffect } from 'react';
 import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { WDL_BORDER_DRAW, WDL_BORDER_LOSS, WDL_BORDER_WIN } from '@/lib/theme';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
-import { MiniBoard } from '@/components/board/MiniBoard';
+import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import type { GameRecord, UserResult } from '@/types/api';
 
 interface GameCardProps {
   game: GameRecord;
-}
-
-/** Renders MiniBoard only when the card scrolls into view. */
-function LazyMiniBoard({ fen, flipped, size }: { fen: string; flipped: boolean; size: number }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // safe: IntersectionObserver always provides at least 1 entry when observing 1 element
-        if (entries[0]!.isIntersecting) { setVisible(true); observer.disconnect(); }
-      },
-      { rootMargin: '200px' },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <div
-      ref={ref}
-      className="shrink-0 rounded overflow-hidden bg-muted"
-      style={{ width: size, height: size }}
-    >
-      {visible && <MiniBoard fen={fen} size={size} flipped={flipped} />}
-    </div>
-  );
 }
 
 const MOBILE_BOARD_SIZE = 105;
@@ -50,10 +20,10 @@ const RESULT_CLASSES: Record<UserResult, string> = {
   loss: 'bg-red-600/20 text-red-400 border-red-600/30',
 };
 const RESULT_ICONS: Record<UserResult, LucideIcon> = { win: Plus, draw: Equal, loss: Minus };
-const BORDER_CLASSES: Record<UserResult, string> = {
-  win: 'border-l-green-600',
-  draw: 'border-l-gray-500',
-  loss: 'border-l-red-600',
+const BORDER_COLORS: Record<UserResult, string> = {
+  win: WDL_BORDER_WIN,
+  draw: WDL_BORDER_DRAW,
+  loss: WDL_BORDER_LOSS,
 };
 
 function formatDate(dateStr: string | null): string {
@@ -120,7 +90,7 @@ export function GameCard({ game }: GameCardProps) {
             href={game.platform_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:text-foreground transition-colors"
+            className="text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
             aria-label="Open game on platform"
             data-testid={`game-card-link-${game.game_id}`}
           >
@@ -221,10 +191,8 @@ export function GameCard({ game }: GameCardProps) {
   return (
     <div
       data-testid={`game-card-${game.game_id}`}
-      className={cn(
-        'border-l-4 charcoal-texture border border-border/20 rounded px-4 py-3',
-        BORDER_CLASSES[game.user_result],
-      )}
+      className="charcoal-texture border border-border/20 border-l-4 rounded px-4 py-3"
+      style={{ borderLeftColor: BORDER_COLORS[game.user_result] }}
     >
       {/* Mobile layout: identifier line full width on top, then board + opening/metadata below */}
       <div className="flex flex-col gap-2 sm:hidden">
