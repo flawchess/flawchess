@@ -159,7 +159,7 @@ function SectionsContent({
 }) {
   // Compute per-section start indices so each card gets a globally unique idx for data-testid.
   // White weaknesses start at 0; each subsequent section starts after the previous section's count.
-  const sectionStartIdxs = SECTIONS.reduce<number[]>((acc, section, i) => {
+  const sectionStartIdxs = SECTIONS.reduce<number[]>((acc, _section, i) => {
     const prev = acc[i - 1] ?? 0;
     const prevCount = i === 0 ? 0 : (data[SECTIONS[i - 1]!.findingsKey].length);
     acc.push(i === 0 ? 0 : prev + prevCount);
