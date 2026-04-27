@@ -791,7 +791,7 @@ export function OpeningsPage() {
   const pieceFilterLabel = filters.matchSide === 'both' ? null : `(Piece filter: ${filters.matchSide === 'mine' ? 'Mine' : 'Opponent'})`;
   const positionResultsLabel = (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      <span>Position Results played as</span>
+      <span>Results played as</span>
       {colorIconSquare}
       <span>{colorName}</span>
       {pieceFilterLabel && <span className="basis-full md:basis-auto text-muted-foreground">{pieceFilterLabel}</span>}
@@ -878,6 +878,7 @@ export function OpeningsPage() {
             offset={gamesOffset}
             limit={PAGE_SIZE}
             onPageChange={setGamesOffset}
+            hideMatchLabelOnMobile
             matchLabel={(() => {
               const total = gameCount ?? gamesData.stats.total;
               const pct = total > 0 ? (gamesData.matched_count / total * 100).toFixed(1) : '0.0';
@@ -1334,19 +1335,15 @@ export function OpeningsPage() {
           >
             <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
               <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
-                <ArrowRightLeft className="mr-1.5 h-4 w-4" />
                 Moves
               </TabsTrigger>
               <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
-                <Gamepad2 className="mr-1.5 h-4 w-4" />
                 Games
               </TabsTrigger>
               <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
-                <BarChart2 className="mr-1.5 h-4 w-4" />
                 Stats
               </TabsTrigger>
               <TabsTrigger value="insights" className="flex-1" data-testid="tab-insights-mobile">
-                <Lightbulb className="mr-1.5 h-4 w-4" />
                 Insights
               </TabsTrigger>
             </TabsList>

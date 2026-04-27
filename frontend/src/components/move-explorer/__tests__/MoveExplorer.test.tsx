@@ -78,7 +78,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
     expect(other.style.backgroundColor || '').toBe('');
   });
 
-  it('calls scrollIntoView once on the matching row when highlight is set', () => {
+  it('does NOT scroll the matching row into view (deeplinks scroll to top instead)', () => {
     render(
       <MoveExplorer
         moves={makeMoves()}
@@ -89,8 +89,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         highlightedMove={{ san: 'd4', color: '#00ff00', pulse: true }}
       />,
     );
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' });
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
   });
 
   it('fires onHighlightConsumed once when position changes while a highlight is active', () => {
