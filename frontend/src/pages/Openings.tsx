@@ -1158,30 +1158,8 @@ export function OpeningsPage() {
   return (
     <div data-testid="openings-page" className="flex min-h-0 flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
-        {/* Desktop: sidebar strip + optional panel + board/tabs content */}
-        <Tabs
-          value={activeTab}
-          onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }}
-          className="hidden lg:block"
-        >
-          <TabsList variant="brand" className="w-full" data-testid="openings-tabs">
-            <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
-              <ArrowRightLeft className="mr-1.5 h-4 w-4" />
-              Moves
-            </TabsTrigger>
-            <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
-              <Gamepad2 className="mr-1.5 h-4 w-4" />
-              Games
-            </TabsTrigger>
-            <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
-              <BarChart2 className="mr-1.5 h-4 w-4" />
-              Stats
-            </TabsTrigger>
-            <TabsTrigger value="insights" data-testid="tab-insights" className="flex-1">
-              <Lightbulb className="mr-1.5 h-4 w-4" />
-              Insights
-            </TabsTrigger>
-          </TabsList>
+        {/* Desktop: sidebar strip + (subnav over board column + main content). Tabs lives INSIDE
+            SidebarLayout so the subnav does NOT span above the sidebar strip — matches Endgames. */}
         <SidebarLayout
           breakpoint="lg"
           panels={[
@@ -1264,65 +1242,87 @@ export function OpeningsPage() {
               </Button>
             </Tooltip>
           }
-          sideContent={
-            <div className="flex flex-col gap-2 w-[400px]">
-              <ChessBoard
-                position={chess.position}
-                onPieceDrop={chess.makeMove}
-                flipped={boardFlipped}
-                lastMove={chess.lastMove}
-                arrows={boardArrows}
-              />
-              <BoardControls
-                onBack={chess.goBack}
-                onForward={chess.goForward}
-                onReset={() => { chess.reset(); setGamesOffset(0); }}
-                onFlip={() => setBoardFlipped((f) => !f)}
-                canGoBack={chess.currentPly > 0}
-                canGoForward={chess.currentPly < chess.moveHistory.length}
-                infoSlot={
-                  <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
-                    <div className="space-y-2">
-                      <p>Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.</p>
-                      <p>The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.</p>
-                    </div>
-                  </InfoPopover>
-                }
-              />
-              <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
-                {chess.openingName ? (
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
-                    <span className="text-foreground">{chess.openingName.name}</span>
-                  </div>
-                ) : (
-                  <span className="text-muted-foreground italic">Play some moves</span>
-                )}
-              </div>
-              <MoveList
-                moveHistory={chess.moveHistory}
-                currentPly={chess.currentPly}
-                onMoveClick={chess.goToMove}
-              />
-            </div>
-          }
         >
-          <div>
-            <TabsContent value="explorer" className="mt-4">
-              {moveExplorerContent}
-            </TabsContent>
-            <TabsContent value="games" className="mt-4">
-              {gamesContent}
-            </TabsContent>
-            <TabsContent value="stats" className="mt-4">
-              {statisticsContent}
-            </TabsContent>
-            <TabsContent value="insights" className="mt-4">
-              {insightsContent}
-            </TabsContent>
-          </div>
+          <Tabs
+            value={activeTab}
+            onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }}
+          >
+            <TabsList variant="brand" className="w-full" data-testid="openings-tabs">
+              <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
+                <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+                Moves
+              </TabsTrigger>
+              <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
+                <Gamepad2 className="mr-1.5 h-4 w-4" />
+                Games
+              </TabsTrigger>
+              <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
+                <BarChart2 className="mr-1.5 h-4 w-4" />
+                Stats
+              </TabsTrigger>
+              <TabsTrigger value="insights" data-testid="tab-insights" className="flex-1">
+                <Lightbulb className="mr-1.5 h-4 w-4" />
+                Insights
+              </TabsTrigger>
+            </TabsList>
+            <div className="mt-4 flex flex-row items-start gap-6">
+              <div className="flex flex-col gap-2 w-[400px] shrink-0">
+                <ChessBoard
+                  position={chess.position}
+                  onPieceDrop={chess.makeMove}
+                  flipped={boardFlipped}
+                  lastMove={chess.lastMove}
+                  arrows={boardArrows}
+                />
+                <BoardControls
+                  onBack={chess.goBack}
+                  onForward={chess.goForward}
+                  onReset={() => { chess.reset(); setGamesOffset(0); }}
+                  onFlip={() => setBoardFlipped((f) => !f)}
+                  canGoBack={chess.currentPly > 0}
+                  canGoForward={chess.currentPly < chess.moveHistory.length}
+                  infoSlot={
+                    <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
+                      <div className="space-y-2">
+                        <p>Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.</p>
+                        <p>The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.</p>
+                      </div>
+                    </InfoPopover>
+                  }
+                />
+                <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
+                  {chess.openingName ? (
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
+                      <span className="text-foreground">{chess.openingName.name}</span>
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground italic">Play some moves</span>
+                  )}
+                </div>
+                <MoveList
+                  moveHistory={chess.moveHistory}
+                  currentPly={chess.currentPly}
+                  onMoveClick={chess.goToMove}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <TabsContent value="explorer">
+                  {moveExplorerContent}
+                </TabsContent>
+                <TabsContent value="games">
+                  {gamesContent}
+                </TabsContent>
+                <TabsContent value="stats">
+                  {statisticsContent}
+                </TabsContent>
+                <TabsContent value="insights">
+                  {insightsContent}
+                </TabsContent>
+              </div>
+            </div>
+          </Tabs>
         </SidebarLayout>
-        </Tabs>
 
         {/* Mobile: sticky subnav + non-sticky board (matches Endgames pattern, 71.1-02) */}
         <Tabs value={activeTab} onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }} className="lg:hidden flex flex-col gap-2 min-w-0">
