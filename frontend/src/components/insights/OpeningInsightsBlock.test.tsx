@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { OpeningInsightsBlock } from './OpeningInsightsBlock';
@@ -14,9 +14,9 @@ vi.mock('@/api/client', async () => {
 import { apiClient } from '@/api/client';
 
 const DEFAULT_FILTERS: FilterState = {
-  color: 'all' as unknown as FilterState['color'],
+  color: 'white',
   matchSide: 'both',
-  recency: 'year' as unknown as FilterState['recency'],
+  recency: 'year',
   timeControls: null,
   platforms: null,
   rated: null,
@@ -61,6 +61,12 @@ function createWrapper() {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   };
 }
+
+// Vitest 4 does not auto-cleanup RTL mounts — rendered DOM from a previous
+// test bleeds into the next one's screen queries if we don't explicitly unmount.
+afterEach(() => {
+  cleanup();
+});
 
 describe('OpeningInsightsBlock', () => {
   beforeEach(() => {
