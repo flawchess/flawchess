@@ -1,4 +1,5 @@
-import { AlertTriangle, Lightbulb, Star } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown, ChevronUp, Lightbulb } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { OpeningFindingCard } from './OpeningFindingCard';
@@ -6,6 +7,11 @@ import { useOpeningInsights } from '@/hooks/useOpeningInsights';
 import { INSIGHT_THRESHOLD_COPY } from '@/lib/openingInsights';
 import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/insights';
 import type { FilterState } from '@/components/filters/FilterPanel';
+
+// Show the top 3 findings per section by default; remaining (up to backend cap of 10) are
+// revealed via a "X more" toggle. The backend always returns up to 10 per section so a
+// single roundtrip covers both states.
+const INITIAL_VISIBLE_PER_SECTION = 3;
 
 interface OpeningInsightsBlockProps {
   debouncedFilters: FilterState;
@@ -77,10 +83,10 @@ export function OpeningInsightsBlock({ debouncedFilters, onFindingClick }: Openi
   return (
     <div
       data-testid="opening-insights-block"
-      className="charcoal-texture rounded-md p-4"
+      className="flex flex-col gap-3"
     >
-      <div className="flex flex-wrap items-center gap-2 mb-2">
-        <h2 className="text-lg font-semibold text-foreground mt-2 flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
           <span className="insight-lightbulb" aria-hidden="true">
             <Lightbulb className="size-5" />
           </span>
@@ -91,10 +97,16 @@ export function OpeningInsightsBlock({ debouncedFilters, onFindingClick }: Openi
           testId="opening-insights-info"
           side="top"
         >
-          {INSIGHT_THRESHOLD_COPY} This block always shows both colors, regardless of the
-          active color filter.
+          {INSIGHT_THRESHOLD_COPY}
         </InfoPopover>
       </div>
+      <p
+        className="text-sm italic text-muted-foreground"
+        data-testid="opening-insights-tip"
+      >
+        <span className="font-semibold text-foreground/80">Tip:</span> Use the
+        recency and time control filters to get more specific insights.
+      </p>
 
       {isLoading ? (
         <SkeletonBlock />
@@ -168,45 +180,94 @@ function SectionsContent({
 
   return (
     <div className="space-y-4">
-      {SECTIONS.map((section, sectionIdx) => {
-        const findings = data[section.findingsKey];
-        const SectionIcon = section.kind === 'weakness' ? AlertTriangle : Star;
-        const swatchClass = section.color === 'white' ? 'bg-white' : 'bg-zinc-900';
-        const startIdx = sectionStartIdxs[sectionIdx] ?? 0;
-        return (
-          <section
-            key={section.key}
-            data-testid={`opening-insights-section-${section.key}`}
-            className="space-y-2"
-          >
-            <h3 className="text-base font-semibold flex items-center gap-1.5">
-              <SectionIcon className="h-4 w-4 text-muted-foreground" />
-              <span
-                className={`inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground ${swatchClass}`}
-                aria-hidden="true"
-              />
-              {section.title}
-            </h3>
-            {findings.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">
-                No {section.kind} findings cleared the threshold under your current
-                filters.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {findings.map((finding, i) => (
-                  <OpeningFindingCard
-                    key={`${section.key}-${i}`}
-                    finding={finding}
-                    idx={startIdx + i}
-                    onFindingClick={onFindingClick}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-        );
-      })}
+      {SECTIONS.map((section, sectionIdx) => (
+        <FindingsSection
+          key={section.key}
+          section={section}
+          findings={data[section.findingsKey]}
+          startIdx={sectionStartIdxs[sectionIdx] ?? 0}
+          onFindingClick={onFindingClick}
+        />
+      ))}
     </div>
+  );
+}
+
+function FindingsSection({
+  section,
+  findings,
+  startIdx,
+  onFindingClick,
+}: {
+  section: SectionMeta;
+  findings: OpeningInsightFinding[];
+  startIdx: number;
+  onFindingClick: (finding: OpeningInsightFinding) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const swatchClass = section.color === 'white' ? 'bg-white' : 'bg-zinc-900';
+
+  const visibleFindings = expanded
+    ? findings
+    : findings.slice(0, INITIAL_VISIBLE_PER_SECTION);
+  const hiddenCount = findings.length - INITIAL_VISIBLE_PER_SECTION;
+  const hasMore = hiddenCount > 0;
+
+  return (
+    <section
+      data-testid={`opening-insights-section-${section.key}`}
+      className="space-y-2"
+    >
+      <h3 className="text-base font-semibold flex items-center gap-1.5">
+        <span
+          className={`inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground ${swatchClass}`}
+          aria-hidden="true"
+        />
+        {section.title}
+      </h3>
+      {findings.length === 0 ? (
+        <p className="text-sm text-muted-foreground italic">
+          No {section.kind} findings cleared the threshold under your current
+          filters.
+        </p>
+      ) : (
+        <>
+          <div className="space-y-3">
+            {visibleFindings.map((finding, i) => (
+              <OpeningFindingCard
+                key={`${section.key}-${i}`}
+                finding={finding}
+                idx={startIdx + i}
+                onFindingClick={onFindingClick}
+              />
+            ))}
+          </div>
+          {hasMore && (
+            <button
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mt-2 px-2"
+              onClick={() => setExpanded((prev) => !prev)}
+              data-testid={`opening-insights-section-${section.key}-btn-more`}
+              aria-label={
+                expanded
+                  ? `Show fewer ${section.kind} findings`
+                  : `Show ${hiddenCount} more ${section.kind} findings`
+              }
+            >
+              {expanded ? (
+                <>
+                  <ChevronUp className="h-4 w-4" />
+                  Less
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-4 w-4" />
+                  {hiddenCount} more
+                </>
+              )}
+            </button>
+          )}
+        </>
+      )}
+    </section>
   );
 }

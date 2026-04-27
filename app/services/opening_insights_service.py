@@ -45,8 +45,11 @@ from app.services.openings_service import recency_cutoff
 # ---------------------------------------------------------------------------
 
 DARK_THRESHOLD: float = 0.60  # arrowColor.ts DARK_COLOR_THRESHOLD/100
-WEAKNESS_CAP_PER_COLOR: int = 5
-STRENGTH_CAP_PER_COLOR: int = 3
+# Phase 71 UAT: caps raised to 10 (was 5 weak / 3 strong) so the FE can render
+# 5 visible cards per section with a "X more" toggle expanding up to 10, all in
+# a single roundtrip.
+WEAKNESS_CAP_PER_COLOR: int = 10
+STRENGTH_CAP_PER_COLOR: int = 10
 UNNAMED_LINE_NAME: str = "<unnamed line>"
 UNNAMED_LINE_ECO: str = ""
 

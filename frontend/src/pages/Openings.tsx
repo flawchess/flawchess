@@ -12,7 +12,7 @@ import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, SlidersHorizontal, BookMarked, X, ChevronDown, ChevronUp, FolderOpen } from 'lucide-react';
+import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, X, ChevronDown, ChevronUp, FolderOpen } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -196,7 +196,9 @@ export function OpeningsPage() {
     ? 'games'
     : location.pathname.includes('/stats')
       ? 'stats'
-      : 'explorer';
+      : location.pathname.includes('/insights')
+        ? 'insights'
+        : 'explorer';
 
   // ── Board state ─────────────────────────────────────────────────────────────
   const chess = useChessGame();
@@ -805,17 +807,26 @@ export function OpeningsPage() {
     </div>
   );
 
+  const insightsContent = (
+    <div className="flex flex-col gap-4">
+      {/* Phase 71: dedicated Insights subtab. */}
+      {/* Hidden block + friendly empty state when user has no imported games (proxy: mostPlayedData empty). */}
+      {mostPlayedData &&
+      (mostPlayedData.white.length > 0 || mostPlayedData.black.length > 0) ? (
+        <OpeningInsightsBlock
+          debouncedFilters={debouncedFilters}
+          onFindingClick={handleOpenFinding}
+        />
+      ) : (
+        <p className="text-sm text-muted-foreground" data-testid="opening-insights-no-games">
+          Import some games to see opening insights.
+        </p>
+      )}
+    </div>
+  );
+
   const statisticsContent = (
     <div className="flex flex-col gap-4">
-      {/* Phase 71 (D-19): Opening Insights — top of Stats tab, above bookmarks. */}
-      {/* D-18: hidden when user has no most-played openings (no imported games proxy). */}
-      {mostPlayedData &&
-        (mostPlayedData.white.length > 0 || mostPlayedData.black.length > 0) && (
-          <OpeningInsightsBlock
-            debouncedFilters={debouncedFilters}
-            onFindingClick={handleOpenFinding}
-          />
-        )}
       {/* Bookmarked Openings: Results — empty state when no bookmarks, chart when data available */}
       {bookmarks.length === 0 ? (
         <div className="charcoal-texture rounded-md p-4">
@@ -825,8 +836,11 @@ export function OpeningsPage() {
               Bookmarked Openings
             </span>
           </h2>
-          <p className="text-sm text-muted-foreground mb-3">
-            Save some openings as bookmarks to see your results and win rate over time here. Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. Use the Suggest button to pick from your most-played positions.
+          <p
+            className="text-sm italic text-muted-foreground mb-3"
+            data-testid="bookmarks-tip"
+          >
+            <span className="font-semibold text-foreground/80">Tip:</span> Save some openings as bookmarks to see your results and win rate over time here. Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. Use the Suggest button to pick from your most-played positions.
           </p>
           <Button
             size="lg"
@@ -1193,6 +1207,10 @@ export function OpeningsPage() {
                     <BarChart2 className="mr-1.5 h-4 w-4" />
                     Stats
                   </TabsTrigger>
+                  <TabsTrigger value="insights" data-testid="tab-insights" className="flex-1">
+                    <Lightbulb className="mr-1.5 h-4 w-4" />
+                    Insights
+                  </TabsTrigger>
                 </TabsList>
                 <TabsContent value="explorer" className="mt-4">
                   {moveExplorerContent}
@@ -1202,6 +1220,9 @@ export function OpeningsPage() {
                 </TabsContent>
                 <TabsContent value="stats" className="mt-4">
                   {statisticsContent}
+                </TabsContent>
+                <TabsContent value="insights" className="mt-4">
+                  {insightsContent}
                 </TabsContent>
               </Tabs>
           </div>
@@ -1333,15 +1354,38 @@ export function OpeningsPage() {
                 canGoBack={chess.currentPly > 0}
                 canGoForward={chess.currentPly < chess.moveHistory.length}
               />
-              <TabsList variant="brand" className="flex-1 !h-full !p-0 overflow-x-auto snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-testid="openings-tabs-mobile">
-                <TabsTrigger value="explorer" className="shrink-0 snap-start px-2 text-xs!" data-testid="tab-move-explorer-mobile">
-                  Moves
+              <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
+                <TabsTrigger
+                  value="explorer"
+                  className="flex-1 px-2"
+                  data-testid="tab-move-explorer-mobile"
+                  aria-label="Move Explorer"
+                >
+                  <ArrowRightLeft className="h-4 w-4" />
                 </TabsTrigger>
-                <TabsTrigger value="games" className="shrink-0 snap-start px-2 text-xs!" data-testid="tab-games-mobile">
-                  Games
+                <TabsTrigger
+                  value="games"
+                  className="flex-1 px-2"
+                  data-testid="tab-games-mobile"
+                  aria-label="Games"
+                >
+                  <Gamepad2 className="h-4 w-4" />
                 </TabsTrigger>
-                <TabsTrigger value="stats" className="shrink-0 snap-start px-2 text-xs!" data-testid="tab-stats-mobile">
-                  Stats
+                <TabsTrigger
+                  value="stats"
+                  className="flex-1 px-2"
+                  data-testid="tab-stats-mobile"
+                  aria-label="Stats"
+                >
+                  <BarChart2 className="h-4 w-4" />
+                </TabsTrigger>
+                <TabsTrigger
+                  value="insights"
+                  className="flex-1 px-2"
+                  data-testid="tab-insights-mobile"
+                  aria-label="Insights"
+                >
+                  <Lightbulb className="h-4 w-4" />
                 </TabsTrigger>
               </TabsList>
               {/* Collapse chevron — 44px wide (matches settings column above) but shorter to keep the control row slim. Swipe-to-collapse bound here. */}
@@ -1504,6 +1548,9 @@ export function OpeningsPage() {
           </TabsContent>
           <TabsContent value="stats" className="mt-2">
             {statisticsContent}
+          </TabsContent>
+          <TabsContent value="insights" className="mt-2">
+            {insightsContent}
           </TabsContent>
         </Tabs>
       </main>

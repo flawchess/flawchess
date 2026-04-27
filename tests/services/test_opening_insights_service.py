@@ -628,12 +628,12 @@ async def test_ranking_severity_desc_then_n_games_desc() -> None:
 
 
 @pytest.mark.asyncio
-async def test_caps_5_weaknesses_3_strengths_per_color() -> None:
-    """D-02, D-08: per-section caps applied after sorting: top-5 weaknesses, top-3 strengths."""
-    assert WEAKNESS_CAP_PER_COLOR == 5
-    assert STRENGTH_CAP_PER_COLOR == 3
+async def test_caps_10_per_color_per_classification() -> None:
+    """D-02, D-08 + Phase 71 UAT: per-section caps applied after sorting: top-10 weaknesses, top-10 strengths."""
+    assert WEAKNESS_CAP_PER_COLOR == 10
+    assert STRENGTH_CAP_PER_COLOR == 10
 
-    # Create 7 weakness rows — only 5 should survive cap
+    # Create 12 weakness rows — only 10 should survive cap.
     # Use fixed n=20, losses=12 (loss_rate=0.60, major) so all rows classify.
     # Distinct entry/resulting hashes prevent dedupe from removing them.
     weakness_rows = [
@@ -646,10 +646,10 @@ async def test_caps_5_weaknesses_3_strengths_per_color() -> None:
             d=4,
             losses=12,  # loss_rate=0.60 → major weakness for all
         )
-        for i in range(1, 8)
+        for i in range(1, 13)
     ]
     openings_map = {
-        i: _make_opening(full_hash=i, name=f"Opening {i}", ply_count=2) for i in range(1, 8)
+        i: _make_opening(full_hash=i, name=f"Opening {i}", ply_count=2) for i in range(1, 13)
     }
 
     response = await _run_compute(
@@ -657,13 +657,13 @@ async def test_caps_5_weaknesses_3_strengths_per_color() -> None:
         openings_by_hash=openings_map,
         color="white",
     )
-    assert len(response.white_weaknesses) == WEAKNESS_CAP_PER_COLOR  # 5
+    assert len(response.white_weaknesses) == WEAKNESS_CAP_PER_COLOR  # 10
     assert len(response.white_strengths) == 0  # no strength rows
 
-    # Now create 5 strength rows — only 3 should survive cap
+    # Now create 12 strength rows — only 10 should survive cap.
     strength_rows = [
         _make_row(
-            entry_hash=10 + i,
+            entry_hash=20 + i,
             resulting_full_hash=200 + i,
             entry_san_sequence=["e4"],
             n=20,
@@ -671,18 +671,18 @@ async def test_caps_5_weaknesses_3_strengths_per_color() -> None:
             d=3,
             losses=3,  # win_rate=14/20=0.70 → major strength
         )
-        for i in range(1, 6)
+        for i in range(1, 13)
     ]
     openings_strength = {
-        10 + i: _make_opening(full_hash=10 + i, name=f"Strength {i}", ply_count=2)
-        for i in range(1, 6)
+        20 + i: _make_opening(full_hash=20 + i, name=f"Strength {i}", ply_count=2)
+        for i in range(1, 13)
     }
     response2 = await _run_compute(
         rows=strength_rows,
         openings_by_hash=openings_strength,
         color="white",
     )
-    assert len(response2.white_strengths) == STRENGTH_CAP_PER_COLOR  # 3
+    assert len(response2.white_strengths) == STRENGTH_CAP_PER_COLOR  # 10
     assert len(response2.white_weaknesses) == 0
 
 
