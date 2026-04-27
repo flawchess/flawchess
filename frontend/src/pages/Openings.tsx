@@ -59,6 +59,7 @@ import { pgnToSanArray } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
 import { OpeningInsightsBlock } from '@/components/insights/OpeningInsightsBlock';
+import { getSeverityBorderColor } from '@/lib/openingInsights';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
 import { resolveMatchSide } from '@/types/api';
@@ -211,6 +212,13 @@ export function OpeningsPage() {
   // ── Board arrows (hovered move) ─────────────────────────────────────────────
   const [hoveredMove, setHoveredMove] = useState<string | null>(null);
 
+  // ── Deep-link highlight (Insights → MoveExplorer / quick-task 260427-j41) ──
+  // Set by handleOpenFinding when the user clicks a "Moves" link on an
+  // OpeningFindingCard; cleared by MoveExplorer's onHighlightConsumed (position
+  // change, moves-array refetch, or row click), and also when the user
+  // navigates away from the explorer subtab.
+  const [highlightedMove, setHighlightedMove] = useState<{ san: string; color: string } | null>(null);
+
   // ── Sidebar state (desktop only) ────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = useState<SidebarPanel | null>(null);
   const [playedAsHintDismissed, setPlayedAsHintDismissed] = useState(
@@ -255,6 +263,17 @@ export function OpeningsPage() {
   if (activeTab !== prevTab) {
     setPrevTab(activeTab);
     setGamesOffset(0);
+  }
+
+  // Clear the deep-link highlight when leaving the explorer subtab — the
+  // highlighted row only makes sense inside MoveExplorer, so don't carry it
+  // across tab navigations. Mirrors the prevTab pattern above.
+  const [prevTabForHighlight, setPrevTabForHighlight] = useState(activeTab);
+  if (activeTab !== prevTabForHighlight) {
+    setPrevTabForHighlight(activeTab);
+    if (activeTab !== 'explorer' && highlightedMove !== null) {
+      setHighlightedMove(null);
+    }
   }
 
   // ── Bookmarks ───────────────────────────────────────────────────────────────
@@ -328,7 +347,15 @@ export function OpeningsPage() {
   // ── Moves data ──────────────────────────────────────────────────────
   const nextMoves = useNextMoves(chess.hashes.fullHash, debouncedFilters);
 
-  // Board arrows derived from next move frequencies
+  // Board arrows derived from next move frequencies.
+  // Highlight pulse decision (quick-task 260427-j41): the matching arrow gets
+  // isHighlightPulse=true so its <path> animates briefly. The arrow's COLOR
+  // stays whatever getArrowColor returned — we deliberately do NOT recolor it
+  // to highlightedMove.color. The MoveExplorer row border uses the severity
+  // color (which encodes weakness/strength + minor/major); the on-board pulse
+  // only modulates opacity so the arrow stays consistent with the rest of the
+  // arrow set. This keeps the visual language clean: row = severity-coded
+  // emphasis, arrow = pulse-only attention grab.
   const boardArrows = useMemo(() => {
     if (!nextMoves.data?.moves.length) return [];
 
@@ -344,16 +371,18 @@ export function OpeningsPage() {
         const squares = moveMap.get(entry.move_san);
         if (!squares) return null;
         const isHovered = entry.move_san === hoveredMove;
+        const isHighlightPulse = highlightedMove !== null && entry.move_san === highlightedMove.san;
         return {
           startSquare: squares.from,
           endSquare: squares.to,
           color: getArrowColor(entry.win_pct, entry.loss_pct, entry.game_count, isHovered),
           width: entry.game_count / maxCount,
           isHovered,
+          isHighlightPulse,
         };
       })
       .filter((a): a is NonNullable<typeof a> => a !== null);
-  }, [nextMoves.data, chess.position, hoveredMove]);
+  }, [nextMoves.data, chess.position, hoveredMove, highlightedMove]);
 
   // ── Games tab data ──────────────────────────────────────────────────────────
   const targetHash = chess.getHashForOpenings(filters.matchSide, filters.color);
@@ -510,6 +539,13 @@ export function OpeningsPage() {
   const handleOpenFinding = useCallback(
     (finding: OpeningInsightFinding) => {
       chess.loadMoves(finding.entry_san_sequence);
+      // Set the deep-link highlight BEFORE navigation so MoveExplorer renders
+      // with the highlight on its first paint after the route change. The
+      // severity color matches the OpeningFindingCard's left-border color.
+      setHighlightedMove({
+        san: finding.candidate_move_san,
+        color: getSeverityBorderColor(finding.classification, finding.severity),
+      });
       setBoardFlipped(finding.color === 'black');
       setFilters((prev) => ({
         ...prev,
@@ -757,6 +793,8 @@ export function OpeningsPage() {
           position={chess.position}
           onMoveClick={(from, to) => chess.makeMove(from, to)}
           onMoveHover={setHoveredMove}
+          highlightedMove={highlightedMove}
+          onHighlightConsumed={() => setHighlightedMove(null)}
         />
       </div>
     </div>
