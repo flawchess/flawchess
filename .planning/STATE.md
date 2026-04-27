@@ -97,3 +97,4 @@ Carried forward from v1.11 close (still relevant):
 ---
 Last activity: 2026-04-27 — Completed quick task 260427-h3u: replaced whole-card deep-link in opening-insights finding cards with explicit Moves and Games links matching the Most Played Openings table styling.
 | 2026-04-27 | fast | Mobile: Moves/Games links beside mini board in OpeningFindingCard | ✅ |
+| 2026-04-27 | fast | widen game card WDL left border | ✅ |

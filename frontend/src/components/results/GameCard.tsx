@@ -191,7 +191,7 @@ export function GameCard({ game }: GameCardProps) {
     <div
       data-testid={`game-card-${game.game_id}`}
       className={cn(
-        'border-l-8 charcoal-texture border border-border/20 rounded px-4 py-3',
+        'charcoal-texture border border-border/20 border-l-8 rounded px-4 py-3',
         BORDER_CLASSES[game.user_result],
       )}
     >
