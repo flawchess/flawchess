@@ -34,7 +34,7 @@ const FEATURES: {
     heading: 'Opening Explorer & Insights',
     desc: [
         "Step through any opening and see your win/draw/loss rate for every move you\u2019ve played.",
-        'Automatically scan all your games 8 moves deep to surface opening strengths and weaknesses.',
+        'Automatically scan all your games 16 half-moves deep to surface opening strengths and weaknesses.',
         "Scout your opponents\u2019 weaknesses and tendencies before a match.",
     ],
     screenshot: { src: '/screenshots/opening-explorer.png', alt: 'Board with move explorer showing win/draw/loss bars per candidate move' },
