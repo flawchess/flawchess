@@ -34,9 +34,10 @@ interface MoveExplorerProps {
 
 const IS_TOUCH = typeof window !== 'undefined' && 'ontouchstart' in window;
 
-// Width of the inline border-left applied to a highlighted row. Kept as a named
-// constant so both the row style and any future hit-test math stay in sync.
-const HIGHLIGHT_BORDER_WIDTH_PX = 4;
+// Alpha suffix appended to the severity hex for the highlighted-row background tint.
+// 0x26 / 0xFF ≈ 15% — matches the existing `bg-blue-500/15` selection brightness so
+// the deep-link tint reads at the same intensity as the mobile-tap selection.
+const HIGHLIGHT_BG_ALPHA_HEX = '26';
 
 export function MoveExplorer({
   moves,
@@ -217,7 +218,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   onRowClick: (entry: NextMoveEntry) => void;
   onRowKeyDown: (e: React.KeyboardEvent, entry: NextMoveEntry) => void;
   onMoveHover?: (moveSan: string | null) => void;
-  /** Hex color for the inline border-left when this row matches highlightedMove. Null otherwise. */
+  /** Hex color for the row background tint when this row matches highlightedMove. Null otherwise. */
   highlightColor: string | null;
   /** Ref attached only to the highlighted row so the parent can scrollIntoView once. */
   rowRef?: React.Ref<HTMLTableRowElement>;
@@ -225,12 +226,12 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
   const isBelowThreshold = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
 
-  // Merge the unreliable-row opacity (if any) with the highlight border so
-  // neither value clobbers the other. The border lives on the left edge so it
-  // coexists with the existing blue selection background.
+  // Merge the unreliable-row opacity (if any) with the highlight background tint.
+  // The tint reuses the severity hex with a ~15% alpha suffix so it sits at the
+  // same brightness as the existing blue selection background but never duplicates it.
   const rowStyle: React.CSSProperties = {};
   if (isBelowThreshold) rowStyle.opacity = UNRELIABLE_OPACITY;
-  if (highlightColor !== null) rowStyle.borderLeft = `${HIGHLIGHT_BORDER_WIDTH_PX}px solid ${highlightColor}`;
+  if (highlightColor !== null) rowStyle.backgroundColor = `${highlightColor}${HIGHLIGHT_BG_ALPHA_HEX}`;
 
   // The highlighted row reuses the existing data-testid (`move-explorer-row-${san}`) —
   // no NEW interactive element is added (the row remains the same <tr>), so per

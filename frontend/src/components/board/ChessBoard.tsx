@@ -59,8 +59,8 @@ const ARROW_TIP_OVERSHOOT = 0.15;
 // src/index.css encodes a CSS keyframe driven by these constants — keep the
 // CSS rule in sync if the values change.
 const ARROW_PULSE_ITERATIONS = 3;
-const ARROW_PULSE_DURATION_MS = 600;
-// Total pulse window = ARROW_PULSE_ITERATIONS × ARROW_PULSE_DURATION_MS = 1800 ms (~2 s).
+const ARROW_PULSE_DURATION_MS = 1000;
+// Total pulse window = ARROW_PULSE_ITERATIONS × ARROW_PULSE_DURATION_MS = 3000 ms (~3 s).
 const ARROW_PULSE_CLASS = 'animate-arrow-pulse';
 
 const FILES = 'abcdefgh';

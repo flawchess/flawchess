@@ -46,7 +46,7 @@ beforeEach(() => {
 });
 
 describe('MoveExplorer — highlightedMove prop', () => {
-  it('renders without highlight: no inline left border on any row', () => {
+  it('renders without highlight: no inline background tint on any row', () => {
     render(
       <MoveExplorer
         moves={makeMoves()}
@@ -57,10 +57,10 @@ describe('MoveExplorer — highlightedMove prop', () => {
       />,
     );
     const row = screen.getByTestId('move-explorer-row-e4');
-    expect(row.style.borderLeft || '').toBe('');
+    expect(row.style.backgroundColor || '').toBe('');
   });
 
-  it('renders inline left border with severity color on the matching row', () => {
+  it('renders severity-tinted background on the matching row', () => {
     render(
       <MoveExplorer
         moves={makeMoves()}
@@ -73,8 +73,9 @@ describe('MoveExplorer — highlightedMove prop', () => {
     );
     const matched = screen.getByTestId('move-explorer-row-e4');
     const other = screen.getByTestId('move-explorer-row-d4');
-    expect(matched.style.borderLeft.toLowerCase()).toContain('rgb(255, 0, 0)');
-    expect(other.style.borderLeft || '').toBe('');
+    // jsdom normalizes #ff000026 to rgba(255, 0, 0, 0.149).
+    expect(matched.style.backgroundColor.toLowerCase()).toContain('rgba(255, 0, 0');
+    expect(other.style.backgroundColor || '').toBe('');
   });
 
   it('calls scrollIntoView once on the matching row when highlight is set', () => {
