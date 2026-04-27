@@ -33,6 +33,7 @@ import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
 import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
 import type { UserProfile } from '@/types/users';
 
+const FLAG_OPENINGS_VISITED = 'openings_visited';
 const FLAG_ENDGAMES_VISITED = 'endgames_visited';
 const IMPORT_REQUIRED_MESSAGE = 'Import your games first to unlock this feature.';
 
@@ -99,11 +100,15 @@ function NavHeader() {
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
   const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
+  const openingsVisited = useUserFlag(FLAG_OPENINGS_VISITED, profile?.email);
   const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
-  // Backed by completed-import timestamps so the dot waits for the first
+  // Backed by completed-import timestamps so the dots wait for the first
   // import to actually finish (game counts can climb mid-import).
   const hasCompletedImport = profileHasCompletedImport(profile);
-  const showEndgamesDot = hasCompletedImport && !endgamesVisited;
+  const showOpeningsDot = hasCompletedImport && !openingsVisited;
+  // Endgames dot is gated behind the Openings dot — we want users to discover
+  // Openings first, then Endgames after that dot is cleared.
+  const showEndgamesDot = hasCompletedImport && openingsVisited && !endgamesVisited;
   // D-16: Admin tab rightmost for superusers, absent otherwise.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
@@ -140,6 +145,15 @@ function NavHeader() {
                   <span
                     className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                     data-testid="import-notification-dot"
+                  >
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                  </span>
+                )}
+                {to === '/openings' && showOpeningsDot && (
+                  <span
+                    className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                    data-testid="openings-notification-dot"
                   >
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
                     <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
@@ -228,10 +242,12 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
   const location = useLocation();
   const { data: profile } = useUserProfile();
   const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
+  const openingsVisited = useUserFlag(FLAG_OPENINGS_VISITED, profile?.email);
   const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
   // See NavHeader — gate on completed-import timestamps, not game counts.
   const hasCompletedImport = profileHasCompletedImport(profile);
-  const showEndgamesDot = hasCompletedImport && !endgamesVisited;
+  const showOpeningsDot = hasCompletedImport && !openingsVisited;
+  const showEndgamesDot = hasCompletedImport && openingsVisited && !endgamesVisited;
 
   return (
     <nav
@@ -261,6 +277,15 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
             <span
               className="absolute top-1.5 right-[30%] flex h-2 w-2"
               data-testid="import-notification-dot-mobile"
+            >
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+            </span>
+          )}
+          {to === '/openings' && showOpeningsDot && (
+            <span
+              className="absolute top-1.5 right-[30%] flex h-2 w-2"
+              data-testid="openings-notification-dot-mobile"
             >
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
@@ -360,6 +385,12 @@ function ProtectedLayout() {
   const isOpeningsRoute = location.pathname.startsWith('/openings');
   const isEndgamesRoute = location.pathname.startsWith('/endgames');
   const refreshedRef = useRef(false);
+
+  useEffect(() => {
+    if (isOpeningsRoute && profile?.email) {
+      setUserFlag(FLAG_OPENINGS_VISITED, profile.email);
+    }
+  }, [isOpeningsRoute, profile?.email]);
 
   useEffect(() => {
     if (isEndgamesRoute && profile?.email) {

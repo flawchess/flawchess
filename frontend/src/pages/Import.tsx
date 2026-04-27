@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
-import { X, DoorOpen, BookOpenIcon, ArrowRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { X, DoorOpen } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import {
@@ -108,17 +107,6 @@ function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jo
           <div className="h-full w-full rounded-full bg-destructive" />
         )}
       </div>
-      {isDone && data.games_imported > 0 && (
-        <div className="flex justify-center pt-2">
-          <Button asChild size="sm" data-testid="btn-explore-openings">
-            <Link to="/openings">
-              <BookOpenIcon className="h-4 w-4" />
-              Explore your openings
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </Button>
-        </div>
-      )}
       {data.other_importers > 0 && (
         <Alert variant="info" className="mt-3" data-testid="import-concurrent-notice">
           {data.other_importers} other {data.other_importers === 1 ? 'user is' : 'users are'} also importing from {data.platform} — progress may be slower than usual.
