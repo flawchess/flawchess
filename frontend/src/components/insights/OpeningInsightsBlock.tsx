@@ -84,13 +84,6 @@ export function OpeningInsightsBlock({ debouncedFilters, onFindingClick, onOpenG
       data-testid="opening-insights-block"
       className="flex flex-col gap-3"
     >
-      <p
-        className="text-sm italic text-muted-foreground"
-        data-testid="opening-insights-tip"
-      >
-        <span className="font-semibold text-foreground/80">Tip:</span> Use the
-        recency and time control filters to get more specific insights.
-      </p>
 
       {isLoading ? (
         <SkeletonBlock />
