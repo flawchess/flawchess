@@ -790,3 +790,142 @@ def test_bookmarks_not_consumed_by_algorithm() -> None:
     param_names = list(sig.parameters.keys())
     assert "bookmark" not in param_names
     assert "bookmarks" not in param_names
+
+
+# ---------------------------------------------------------------------------
+# Phase 71 hotfix: _safe_replay defensive guard
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_safe_replay_unreplayable_san_does_not_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase 71 hotfix: a SAN sequence illegal from chess.Board() must be
+    silently dropped — compute_insights must NOT propagate the
+    chess.IllegalMoveError as a 500.
+
+    Reproduces the production bug seen on user 7 (hikaru): chess.com themed
+    events with [SetUp "1"] PGN headers had move_san='Bb2' at ply 0, illegal
+    from the standard starting position. Even though the repository CTE now
+    filters those games out, this defensive guard ensures any future row
+    corruption degrades gracefully instead of crashing.
+    """
+    # ['Bb2'] is illegal from chess.Board(): no piece on b2 can move to b2.
+    bad_row = _make_row(
+        entry_hash=999,
+        move_san="Nf3",
+        entry_san_sequence=["Bb2"],
+        n=20,
+        w=2,
+        d=2,
+        losses=16,  # weakness so it would otherwise be classified
+    )
+
+    # Sanity: confirm the SAN is indeed illegal so the guard's except branch fires.
+    with pytest.raises(chess.IllegalMoveError):
+        chess.Board().push_san("Bb2")
+
+    # Mute Sentry so the test doesn't depend on Sentry being initialized.
+    monkeypatch.setattr("app.services.opening_insights_service.sentry_sdk", MagicMock())
+
+    response = await _run_compute(rows=[bad_row], openings_by_hash={}, color="white")
+
+    # No exception raised; the bad row is dropped from the response.
+    assert response.white_weaknesses == []
+    assert response.white_strengths == []
+
+
+@pytest.mark.asyncio
+async def test_safe_replay_captures_to_sentry_with_set_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase 71 hotfix: a bad row triggers exactly one capture_exception call
+    with row metadata in set_context (entry_hash, candidate_san, san_sequence)
+    and a 'source=opening_insights' tag — variable data is NEVER embedded in
+    the exception message (preserves Sentry grouping per CLAUDE.md)."""
+    bad_row = _make_row(
+        entry_hash=12345,
+        move_san="Bb2",
+        entry_san_sequence=["Bb2"],
+        n=20,
+        w=2,
+        d=2,
+        losses=16,
+    )
+
+    sentry_mock = MagicMock()
+    monkeypatch.setattr("app.services.opening_insights_service.sentry_sdk", sentry_mock)
+
+    await _run_compute(rows=[bad_row], openings_by_hash={}, color="white")
+
+    # Exactly one capture_exception call for the single bad row.
+    assert sentry_mock.capture_exception.call_count == 1
+    captured_exc = sentry_mock.capture_exception.call_args.args[0]
+    assert isinstance(captured_exc, (chess.IllegalMoveError, chess.InvalidMoveError, ValueError))
+    # Variable data must NOT appear in the exception message — grouping rule.
+    msg = str(captured_exc)
+    assert "12345" not in msg
+    assert "user_id" not in msg.lower()
+
+    # set_tag and set_context supplied the row metadata.
+    tag_calls = [c.args for c in sentry_mock.set_tag.call_args_list]
+    assert ("source", "opening_insights") in tag_calls
+
+    context_calls = sentry_mock.set_context.call_args_list
+    matched = [c for c in context_calls if c.args and c.args[0] == "opening_insights_replay"]
+    assert matched, f"expected an opening_insights_replay context call, got {context_calls}"
+    payload = matched[-1].args[1]
+    assert payload["entry_hash"] == 12345
+    assert payload["candidate_san"] == "Bb2"
+    assert payload["san_sequence"] == ["Bb2"]
+
+
+@pytest.mark.asyncio
+async def test_safe_replay_mixed_batch_keeps_good_drops_bad(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase 71 hotfix: a mixed batch (one good row + one bad row) must yield
+    the good row's finding and silently skip the bad one — partial degradation,
+    not all-or-nothing failure."""
+    # Build prefix hashes so the good row maps to a real opening.
+    good_san_seq = ["e4", "c5", "Nf3"]
+    board = chess.Board()
+    for san in good_san_seq:
+        board.push_san(san)
+    good_entry_hash = ctypes.c_int64(chess.polyglot.zobrist_hash(board)).value
+
+    good_row = _make_row(
+        entry_hash=good_entry_hash,
+        move_san="Nc6",
+        entry_san_sequence=good_san_seq,
+        n=20,
+        w=2,
+        d=2,
+        losses=16,  # weakness
+    )
+    bad_row = _make_row(
+        entry_hash=99999,
+        move_san="Bb2",
+        entry_san_sequence=["Bb2"],
+        n=20,
+        w=2,
+        d=2,
+        losses=16,
+    )
+
+    opening = _make_opening(full_hash=good_entry_hash, name="Sicilian Defense", ply_count=4)
+
+    monkeypatch.setattr("app.services.opening_insights_service.sentry_sdk", MagicMock())
+
+    response = await _run_compute(
+        rows=[good_row, bad_row],
+        openings_by_hash={good_entry_hash: opening},
+        color="white",
+    )
+
+    # Exactly one weakness — the good one. Bad row dropped.
+    assert len(response.white_weaknesses) == 1
+    finding = response.white_weaknesses[0]
+    assert finding.opening_name == "Sicilian Defense"
+    assert finding.candidate_move_san == "Nc6"
