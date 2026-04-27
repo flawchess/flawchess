@@ -27,16 +27,13 @@
 - [ ] **INSIGHT-STATS-05**: Block respects active filter set; updates when filters change (matches v1.11 endgame insights pattern).
 - [ ] **INSIGHT-STATS-06**: Mobile-equivalent rendering (component must survive the mobile drawer / single-column layout — see CLAUDE.md frontend rules).
 
-### Frontend — Moves subtab inline bullets (INSIGHT-MOVES)
+### ~~Frontend — Moves subtab inline bullets (INSIGHT-MOVES)~~ — DESCOPED 2026-04-27
 
-- [ ] **INSIGHT-MOVES-01**: Inline bullet next to existing red/green candidate-move arrows on the Openings → Moves board.
-- [ ] **INSIGHT-MOVES-02**: Bullets are scoped to the **currently displayed** position (one finding per displayed candidate, not the full scan). No deep-link — user is already at the position.
-- [ ] **INSIGHT-MOVES-03**: Reuses the same `OpeningInsightFinding` payload from INSIGHT-CORE.
+INSIGHT-MOVES-01..03 were descoped after Phases 70 + 71 + 71.1 shipped. The existing `MoveExplorer` row tint via `getArrowColor` (`frontend/src/components/move-explorer/MoveExplorer.tsx:228-230`) already colors every reliable candidate row red/green at the displayed position; the deep-link landing case is handled by the sticky severity tint + one-shot pulse from quick-task 260427-j41. See Out of Scope below.
 
-### Stretch (in-scope but deferrable)
+### ~~Stretch (in-scope but deferrable)~~ — DESCOPED 2026-04-27
 
-- [ ] **INSIGHT-META-01** (stretch): Aggregate-level finding rendered above the per-finding list — e.g. "You have weaknesses across 8 different openings — consider narrowing your repertoire" or "Your Caro-Kann shows 5 weak responses — focus revision here". Templated rule-based; LLM narration is **out of scope** for v1.13.
-- [ ] **INSIGHT-BADGE-01** (stretch): Visual badge on bookmark cards (e.g. small red dot + count chip) when the bookmarked opening surfaces ≥ 1 weakness. Apply to both desktop bookmarks panel and mobile bookmarks drawer.
+INSIGHT-META-01 and INSIGHT-BADGE-01 were descoped on the same date. See Out of Scope below.
 
 ## Pre-v1.13 Quick Tasks (gate before Phase A starts building on the algo)
 
@@ -56,6 +53,9 @@
 - **Time-pressure-as-weakness** — mixes opening prep with time management; belongs in time-pressure analytics
 - **Opponent-rating-conditioned thresholds** — already covered by global filters (opponent_strength)
 - **Recursive scan into deeper opening lines** — explicitly avoided; deeper named openings surface as their own top-10 entries; recursion would thin samples below n=10
+- **Inline weakness/strength bullets on Openings → Moves (INSIGHT-MOVES-01, INSIGHT-MOVES-02, INSIGHT-MOVES-03)** — descoped 2026-04-27. Move Explorer row tinting via `getArrowColor` (`MoveExplorer.tsx:228-230`) already provides red/green visual signal at the displayed position; quick-task 260427-j41 added the sticky tint + pulse on deep-link landing. Layering an additional bullet on top of an already-tinted row was redundant in a dense tabular UI; the n≥10 vs n≥20 floor distinction is not perceptually meaningful to users. Reopen if real-user feedback shows the curated finding signal at the position is missed.
+- **Meta-recommendation aggregate finding (INSIGHT-META-01)** — descoped 2026-04-27. Phase 71's per-finding cards already convey actionable per-opening weakness/strength signal at finer granularity than an aggregate sentence.
+- **Bookmark-card weakness badge (INSIGHT-BADGE-01)** — descoped 2026-04-27. Notification-dot density on the global nav is already high (Endgames + Openings dots); a third badge channel on individual bookmark cards risks alert fatigue.
 
 ## Traceability
 
@@ -78,11 +78,11 @@ PRE-01 is a pre-v1.13 quick task gating Phase 70 — intentionally not mapped to
 | INSIGHT-STATS-04 | 71 |
 | INSIGHT-STATS-05 | 71 |
 | INSIGHT-STATS-06 | 71 |
-| INSIGHT-MOVES-01 | 72 |
-| INSIGHT-MOVES-02 | 72 |
-| INSIGHT-MOVES-03 | 72 |
-| INSIGHT-META-01 | 73 (stretch) |
-| INSIGHT-BADGE-01 | 74 (stretch) |
+| ~~INSIGHT-MOVES-01~~ | ~~72~~ — descoped 2026-04-27 |
+| ~~INSIGHT-MOVES-02~~ | ~~72~~ — descoped 2026-04-27 |
+| ~~INSIGHT-MOVES-03~~ | ~~72~~ — descoped 2026-04-27 |
+| ~~INSIGHT-META-01~~ | ~~73 (stretch)~~ — descoped 2026-04-27 |
+| ~~INSIGHT-BADGE-01~~ | ~~74 (stretch)~~ — descoped 2026-04-27 |
 
 ---
-*Last updated: 2026-04-26 — v1.13 roadmap created (Phases 70-74). Coverage: 20/20 active requirements mapped.*
+*Last updated: 2026-04-27 — Phases 72/73/74 descoped after Phases 70 + 71 + 71.1 shipped. Active requirements: 15/15 mapped (INSIGHT-CORE-01..09 → Phase 70; INSIGHT-STATS-01..06 → Phase 71). Descoped: 5 (INSIGHT-MOVES-01..03, INSIGHT-META-01, INSIGHT-BADGE-01).*

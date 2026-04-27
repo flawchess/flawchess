@@ -2,24 +2,24 @@
 gsd_state_version: 1.0
 milestone: v1.13
 milestone_name: Opening Insights
-status: "Phase 71.1 shipped — PR #68"
-last_updated: "2026-04-27T16:44:28.217Z"
+status: "Phases 72/73/74 descoped — v1.13 ready for close (70 + 71 + 71.1 shipped)"
+last_updated: "2026-04-27T18:00:00.000Z"
 last_activity: 2026-04-27
 progress:
-  total_phases: 8
-  completed_phases: 1
+  total_phases: 3
+  completed_phases: 3
   total_plans: 14
-  completed_plans: 8
-  percent: 57
+  completed_plans: 14
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 71.1 (openings-subnav-layout-refactor-match-endgames-pattern) — READY FOR VERIFICATION
-Plan: 3 of 3
-Status: Phase 71.1 shipped — PR #68
+Milestone v1.13 active phases (70, 71, 71.1) all SHIPPED.
+Phases 72, 73, 74 descoped 2026-04-27 — see ROADMAP.md and REQUIREMENTS.md Out of Scope.
+Status: v1.13 ready for `/gsd-complete-milestone` (or backlog review then close).
 Last activity: 2026-04-27
 
 ## Project Reference

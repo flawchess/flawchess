@@ -131,10 +131,12 @@ Users can determine their success rate for any opening position they specify, fi
 **Target features:**
 - Backend `opening_insights_service` — scans top-10 most-played openings per color + bookmarked positions, classifies each (entry_position, candidate_move) pair as weakness (loss_rate ≥ 0.55) / strength (score ≥ 0.60) at n ≥ 10 games, dedupes by Zobrist hash with deepest-opening attribution, ranks by frequency × severity (formula resolved in Phase A discuss)
 - Frontend `OpeningInsightsBlock` on Openings → Stats subtab — templated bullets with red/green semantics, deep-links navigate to Openings → Moves tab pre-loaded at the entry FEN with the candidate move highlighted
-- Inline weakness/strength bullets in Openings → Moves tab — scoped to the currently displayed position, alongside existing red/green candidate-move arrows
 - Pure templated/rule-based in v1 — no LLM. LLM wrap-up deferred to v1.13.x or v1.14 once findings are in real users' hands.
-- (Stretch) Meta-recommendation layer — aggregate finding across openings ("you have weaknesses across 8 openings — narrow your repertoire")
-- (Stretch) Bookmark-card weakness badge
+
+**Descoped 2026-04-27** (after Phases 70 + 71 + 71.1 shipped):
+- ~~Inline weakness/strength bullets on Openings → Moves~~ — covered by existing `MoveExplorer` row tint via `getArrowColor`; bullet on top of tint was redundant signal.
+- ~~(Stretch) Meta-recommendation aggregate finding~~ — Phase 71's per-finding cards already deliver actionable per-opening signal at finer granularity.
+- ~~(Stretch) Bookmark-card weakness badge~~ — nav notification-dot density already high; a third badge channel risks alert fatigue.
 
 **Pre-v1.13 quick tasks:**
 - v1.11 VAL-01 — insights snapshot test against a canonical user fixture (no benchmark dependency)
@@ -258,4 +260,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-26 — v1.13 Opening Insights milestone opened.*
+*Last updated: 2026-04-27 — v1.13 Phases 72/73/74 descoped after Phases 70 + 71 + 71.1 shipped; milestone ready for close.*

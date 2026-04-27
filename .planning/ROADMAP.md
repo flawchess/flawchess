@@ -15,7 +15,7 @@
 - ✅ **v1.10 Advanced Analytics** — Phases 48, 52-55, 57, 57.1, 59-62 (shipped 2026-04-19) — see [milestones/v1.10-ROADMAP.md](milestones/v1.10-ROADMAP.md)
 - ✅ **v1.11 LLM-first Endgame Insights** — Phases 63-68 (shipped 2026-04-24) — see [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md)
 - ✅ **v1.12 Benchmark DB Infrastructure & Ingestion Pipeline** — Phase 69 (shipped 2026-04-26). The applied-analytics work originally scoped under v1.12 (classifier validation at scale, rating-stratified offsets, Parity validation, `/benchmarks` skill upgrade & zone recalibration) was deferred to a future milestone — see [seeds/SEED-006](seeds/SEED-006-benchmark-population-zone-recalibration.md). Full archive: [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md)
-- 🚧 **v1.13 Opening Insights** — Phases 70-74 (planning, opened 2026-04-26) — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md)
+- 🚧 **v1.13 Opening Insights** — Phases 70, 71, 71.1 (opened 2026-04-26; Phases 72-74 descoped 2026-04-27 — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md))
 
 ## Phases
 
@@ -179,13 +179,14 @@ See [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md) for full details.
 </details>
 
 <details open>
-<summary>🚧 v1.13 Opening Insights (Phases 70-74) — IN PLANNING (opened 2026-04-26)</summary>
+<summary>🚧 v1.13 Opening Insights (Phases 70, 71, 71.1) — IN PLANNING (opened 2026-04-26)</summary>
 
-- [ ] Phase 70: Backend opening insights service — INSIGHT-CORE-01..09
-- [ ] Phase 71: Frontend Stats subtab — `OpeningInsightsBlock` — INSIGHT-STATS-01..06
-- [ ] Phase 72: Frontend Moves subtab — inline weakness/strength bullets — INSIGHT-MOVES-01..03
-- [ ] Phase 73 (stretch): Meta-recommendation aggregate finding — INSIGHT-META-01
-- [ ] Phase 74 (stretch): Bookmark-card weakness badge — INSIGHT-BADGE-01
+- [x] Phase 70: Backend opening insights service — INSIGHT-CORE-01..09 (shipped, PR #66)
+- [x] Phase 71: Frontend Stats subtab — `OpeningInsightsBlock` — INSIGHT-STATS-01..06 (shipped, PR #67)
+- [x] Phase 71.1: Openings subnav layout refactor — match Endgames pattern (shipped, PR #68)
+- ~~Phase 72: Frontend Moves subtab — inline weakness/strength bullets~~ — descoped 2026-04-27 (covered by existing MoveExplorer row tint via `getArrowColor`; INSIGHT-MOVES-01..03 marked Out of Scope)
+- ~~Phase 73 (stretch): Meta-recommendation aggregate finding~~ — descoped 2026-04-27 (per-finding cards in Phase 71 deliver the actionable signal; INSIGHT-META-01 marked Out of Scope)
+- ~~Phase 74 (stretch): Bookmark-card weakness badge~~ — descoped 2026-04-27 (badge density already high in nav; INSIGHT-BADGE-01 marked Out of Scope)
 
 See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
 
@@ -246,38 +247,14 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
   - [x] 71.1-03-PLAN.md — Cleanup: delete chevron-fold dead state, run knip/lint/build/test gates, manual UAT at 375px (D-12)
 **UI hint**: yes
 
-### Phase 72: Frontend Moves subtab — inline weakness/strength bullets
-**Goal**: When the user is viewing a position on Openings → Moves that has at least one classified candidate-move finding, an inline bullet appears next to the existing red/green candidate-move arrow for that finding, scoped to the currently displayed position only.
-**Depends on**: Phase 70
-**Requirements**: INSIGHT-MOVES-01, INSIGHT-MOVES-02, INSIGHT-MOVES-03
-**Success Criteria** (what must be TRUE):
-  1. On Openings → Moves, when the displayed position matches a Phase-70 finding's `entry_fen`, a templated bullet renders inline next to the existing red/green candidate-move arrow for that finding's `candidate_move_san`.
-  2. Bullets are scoped to the currently displayed position only — no full-scan list and no deep-link affordance.
-  3. The same `OpeningInsightFinding` payload powers both this view and the Stats block; no second backend route or schema is introduced.
-**Plans**: TBD
-**UI hint**: yes
+### ~~Phase 72: Frontend Moves subtab — inline weakness/strength bullets~~ (DESCOPED 2026-04-27)
+**Status:** Descoped. The Move Explorer already tints every reliable candidate row by win/loss rate via `getArrowColor` (`MoveExplorer.tsx:228-230`), and the deep-link landing case is handled by the sticky severity tint + one-shot pulse from quick-task 260427-j41. Adding a bullet on top of an already-tinted row was redundant signal in an already-dense table. Requirements INSIGHT-MOVES-01..03 marked Out of Scope in REQUIREMENTS.md.
 
-### Phase 73 (stretch): Meta-recommendation aggregate finding
-**Goal**: Above the per-finding list on the Stats subtab, render a single templated aggregate sentence summarizing the user's repertoire-level pattern (e.g. "You have weaknesses across 8 different openings — consider narrowing your repertoire").
-**Depends on**: Phase 70, Phase 71. Stretch — deferrable without affecting core delivery.
-**Requirements**: INSIGHT-META-01
-**Success Criteria** (what must be TRUE):
-  1. When the findings list contains weaknesses spanning multiple openings, the aggregate sentence appears above the per-finding bullets and reflects the active filter set.
-  2. The rule(s) that generate the sentence are pure templated logic over the findings list — no LLM call, no second backend round trip.
-  3. When findings are absent or below the meta-rule threshold, the aggregate sentence is suppressed.
-**Plans**: TBD
-**UI hint**: yes
+### ~~Phase 73 (stretch): Meta-recommendation aggregate finding~~ (DESCOPED 2026-04-27)
+**Status:** Descoped. The per-finding cards shipped in Phase 71 already convey actionable per-opening weakness/strength signal; an aggregate sentence on top adds little. Revisit if real-user feedback shows the aggregate framing is missed. Requirement INSIGHT-META-01 marked Out of Scope.
 
-### Phase 74 (stretch): Bookmark-card weakness badge
-**Goal**: A small visual indicator (red dot + count chip) appears on bookmark cards whose bookmarked opening surfaces ≥ 1 Phase-70 weakness finding under the active filter set, on both desktop bookmarks panel and mobile bookmarks drawer.
-**Depends on**: Phase 70. Stretch — deferrable without affecting core delivery.
-**Requirements**: INSIGHT-BADGE-01
-**Success Criteria** (what must be TRUE):
-  1. A bookmark card whose `entry_fen` matches at least one weakness finding shows a red dot + count chip badge; cards with no findings render unchanged.
-  2. The badge is present in both the desktop bookmarks panel (`PositionBookmarkCard`) and the mobile bookmarks drawer — applied consistently per CLAUDE.md "always apply changes to mobile too" rule.
-  3. The badge updates when filters change — same data source as the Stats block, so badge state stays consistent with the bullet list.
-**Plans**: TBD
-**UI hint**: yes
+### ~~Phase 74 (stretch): Bookmark-card weakness badge~~ (DESCOPED 2026-04-27)
+**Status:** Descoped. Notification-dot density on the nav is already high (Endgames + Openings dots); a third on individual bookmark cards risks alert fatigue. Requirement INSIGHT-BADGE-01 marked Out of Scope.
 
 ## Progress
 
@@ -305,11 +282,12 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
 | 48, 52-62. v1.10 phases | v1.10 | 28/28 | Complete | 2026-04-19 |
 | 63-68. v1.11 phases | v1.11 | 23/23 | Complete (Phase 67 descoped) | 2026-04-24 |
 | 69. Benchmark DB Infra & Ingestion Pipeline | v1.12 | 6/6 | Complete (follow-on phases deferred to SEED-006) | 2026-04-26 |
-| 70. Backend opening insights service | v1.13 | 5/5 | Complete   | 2026-04-26 |
-| 71. `OpeningInsightsBlock` (Stats subtab) | v1.13 | 5/6 | In Progress|  |
-| 72. Inline bullets (Moves subtab) | v1.13 | 0/0 | Not started | — |
-| 73. Meta-recommendation (stretch) | v1.13 | 0/0 | Not started | — |
-| 74. Bookmark-card weakness badge (stretch) | v1.13 | 0/0 | Not started | — |
+| 70. Backend opening insights service | v1.13 | 5/5 | Complete | 2026-04-26 |
+| 71. `OpeningInsightsBlock` (Stats subtab) | v1.13 | 6/6 | Complete | 2026-04-27 |
+| 71.1. Openings subnav layout refactor | v1.13 | 3/3 | Complete | 2026-04-27 |
+| ~~72. Inline bullets (Moves subtab)~~ | v1.13 | — | Descoped 2026-04-27 (covered by row tint) | — |
+| ~~73. Meta-recommendation (stretch)~~ | v1.13 | — | Descoped 2026-04-27 | — |
+| ~~74. Bookmark-card weakness badge (stretch)~~ | v1.13 | — | Descoped 2026-04-27 | — |
 
 ## Backlog
 
