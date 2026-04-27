@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.13
 milestone_name: Opening Insights
-status: Phase 71.1 inserted (urgent UI refactor)
-last_updated: "2026-04-27T13:55:47.825Z"
-last_activity: 2026-04-27 -- Inserted Phase 71.1 (Openings subnav layout refactor) via /gsd-insert-phase
+status: executing
+last_updated: "2026-04-27T14:26:56.010Z"
+last_activity: 2026-04-27 -- Phase 71.1 Plan 01 complete (desktop Openings Tabs lifted above SidebarLayout)
 progress:
   total_phases: 8
   completed_phases: 0
-  total_plans: 11
-  completed_plans: 5
-  percent: 45
+  total_plans: 14
+  completed_plans: 6
+  percent: 43
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 71.1 (openings-subnav-layout-refactor-match-endgames-pattern) — INSERTED, NOT PLANNED
-Plan: 1 of 6
-Status: Phase 71.1 inserted (urgent UI refactor)
-Last activity: 2026-04-27 -- Inserted Phase 71.1 (Openings subnav layout refactor) via /gsd-insert-phase
+Phase: 71.1 (openings-subnav-layout-refactor-match-endgames-pattern) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute (Plan 01 complete — desktop subnav lifted; commit 9eaa55d)
+Last activity: 2026-04-27 -- Phase 71.1 Plan 01 complete (desktop Openings Tabs lifted above SidebarLayout, scroll-reset added on subtab switch)
 
 ## Project Reference
 

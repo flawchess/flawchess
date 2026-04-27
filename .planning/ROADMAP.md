@@ -240,8 +240,8 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
   3. No horizontal scroll at 375px viewport. Tabs + filter button have ≥ 44px touch targets. All interactive elements have `data-testid` per CLAUDE.md frontend rules; mobile and desktop changes are applied symmetrically per "always apply changes to mobile too".
   4. `npm run knip` in `frontend/` reports no new dead exports — chevron/fold cleanup is complete.
   5. Phase 71 plans (`OpeningInsightsBlock`, deep-links, etc.) still render correctly inside the new layout — no Phase 71 regression.
-**Plans:** 3 plans
-  - [ ] 71.1-01-PLAN.md — Desktop subnav lift: wrap SidebarLayout in Tabs, render TabsList above board column + main content (D-01, D-04, D-13)
+**Plans:** 1/3 plans executed
+  - [x] 71.1-01-PLAN.md — Desktop subnav lift: wrap SidebarLayout in Tabs, render TabsList above board column + main content (D-01, D-04, D-13)
   - [ ] 71.1-02-PLAN.md — Mobile rework: sticky subnav with filter button, non-sticky board conditional on Moves/Games, chevron-fold removed (D-05..D-11, D-13)
   - [ ] 71.1-03-PLAN.md — Cleanup: delete chevron-fold dead state, run knip/lint/build/test gates, manual UAT at 375px (D-12)
 **UI hint**: yes
