@@ -169,14 +169,14 @@ export function HomePageContent() {
           <div data-testid="hero-endgame-preview" className="hidden lg:block">
             <h2 className="text-2xl font-bold mb-4">Endgame Analytics</h2>
             <img
-              src="/screenshots/endgame-metrics-and-elo.png"
+              src="/screenshots/endgame-metrics-and-elo-llm-badge.png"
               alt="Endgame metrics and Endgame ELO timeline over time"
               className="rounded-lg border border-border shadow-md w-full mb-4"
             />
             <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
               <li>Measure how well you convert winning endgames and recover from losing ones.</li>
-              <li>See whether you outperform your opponents once games reach an endgame.</li>
               <li>Track your Endgame ELO over time by platform and time control.</li>
+              <li>Get personalized feedback explaining what your endgame stats mean.</li>
             </ul>
           </div>
         </div>
@@ -196,14 +196,14 @@ export function HomePageContent() {
             <h2 className="text-2xl font-bold">Endgame Analytics</h2>
           </div>
           <img
-            src="/screenshots/endgame-metrics-and-elo.png"
+            src="/screenshots/endgame-metrics-and-elo-llm-badge.png"
             alt="Endgame metrics and Endgame ELO timeline over time"
             className="rounded-lg border border-border shadow-md w-full"
           />
           <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
             <li>Measure how well you convert winning endgames and recover from losing ones.</li>
-            <li>See whether you outperform your opponents once games reach an endgame.</li>
-            <li>Track your Endgame ELO over time by platform and time control.</li>
+              <li>Track your Endgame ELO over time by platform and time control.</li>
+              <li>Get personalized feedback explaining what your endgame stats mean.</li>
           </ul>
         </div>
       </section>
