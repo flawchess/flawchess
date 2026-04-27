@@ -3,6 +3,7 @@ import { Chess } from 'chess.js';
 import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
+import { getArrowColor, GREY } from '@/lib/arrowColor';
 import {
   HIGHLIGHT_PULSE_DURATION_MS,
   HIGHLIGHT_PULSE_ITERATIONS,
@@ -238,26 +239,34 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
   const isBelowThreshold = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
 
-  // Merge the unreliable-row opacity with the highlight tint + pulse. The
-  // sticky background tint stays as long as highlightColor is set; the pulse
+  // Strength/weakness row tint: every qualifying row gets the same color the
+  // chessboard arrow uses (green for strengths, red for weaknesses). Grey
+  // (neutral or below the color threshold) means no tint. The deep-link
+  // highlight reuses the same color and adds the pulse animation on top.
+  const arrowColor = getArrowColor(entry.win_pct, entry.loss_pct, entry.game_count, false);
+  const severityColor = arrowColor === GREY ? null : arrowColor;
+  const tintColor = highlightColor ?? severityColor;
+
+  // Merge the unreliable-row opacity with the severity tint + pulse. The
+  // sticky background tint stays whenever tintColor is set; the pulse
   // animation properties are only attached while highlightPulse is true so
   // the parent can drop it after the pulse window — preventing later React
   // re-renders (e.g. arrow re-sort on hover) from re-attaching the animation
   // class and restarting the CSS keyframe.
   const rowStyle: React.CSSProperties = {};
   if (isBelowThreshold) rowStyle.opacity = UNRELIABLE_OPACITY;
-  if (highlightColor !== null) {
-    rowStyle.backgroundColor = `${highlightColor}${HIGHLIGHT_BG_REST_ALPHA}`;
+  if (tintColor !== null) {
+    rowStyle.backgroundColor = `${tintColor}${HIGHLIGHT_BG_REST_ALPHA}`;
     if (highlightPulse) {
       rowStyle.animationDuration = `${HIGHLIGHT_PULSE_DURATION_MS}ms`;
       rowStyle.animationIterationCount = HIGHLIGHT_PULSE_ITERATIONS;
       // CSS custom properties for the keyframe stops; resolved by index.css.
       (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-low'] =
-        `${highlightColor}${HIGHLIGHT_BG_LOW_ALPHA}`;
+        `${tintColor}${HIGHLIGHT_BG_LOW_ALPHA}`;
       (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-high'] =
-        `${highlightColor}${HIGHLIGHT_BG_HIGH_ALPHA}`;
+        `${tintColor}${HIGHLIGHT_BG_HIGH_ALPHA}`;
       (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-rest'] =
-        `${highlightColor}${HIGHLIGHT_BG_REST_ALPHA}`;
+        `${tintColor}${HIGHLIGHT_BG_REST_ALPHA}`;
     }
   }
 
@@ -271,10 +280,12 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
       data-testid={`move-explorer-row-${entry.move_san}`}
       className={cn(
         'cursor-pointer min-h-[44px]',
+        // `!` (Tailwind v4 important suffix) is needed so the hover background
+        // beats the inline severity tint set via `style.backgroundColor`.
         // hover:bg-blue-500/15 sticks on mobile after tap, causing two highlighted rows
-        !IS_TOUCH && 'hover:bg-blue-500/15',
+        !IS_TOUCH && 'hover:bg-blue-500/15!',
         selectedMove === entry.move_san && 'bg-blue-500/15',
-        highlightColor !== null && highlightPulse && 'animate-row-highlight-pulse',
+        tintColor !== null && highlightPulse && 'animate-row-highlight-pulse',
       )}
       style={Object.keys(rowStyle).length > 0 ? rowStyle : undefined}
       role="button"
