@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.13
 milestone_name: Opening Insights
-status: verifying
-last_updated: "2026-04-27T14:40:45.508Z"
+status: "Phase 71.1 shipped — PR #68"
+last_updated: "2026-04-27T16:44:28.217Z"
 last_activity: 2026-04-27
 progress:
   total_phases: 8
@@ -19,8 +19,8 @@ progress:
 
 Phase: 71.1 (openings-subnav-layout-refactor-match-endgames-pattern) — READY FOR VERIFICATION
 Plan: 3 of 3
-Status: Phase complete — Plan 03 cleanup gates green (knip / lint / build / test / ty all exit 0); manual UAT auto-approved per auto-mode policy
-Last activity: 2026-04-27 -- Phase 71.1 Plan 03 complete (gate suite green; no source edits — Plan 02 had already swept chevron-fold dead state to satisfy TS noUnusedLocals)
+Status: Phase 71.1 shipped — PR #68
+Last activity: 2026-04-27
 
 ## Project Reference
 
