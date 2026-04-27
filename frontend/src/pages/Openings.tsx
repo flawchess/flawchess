@@ -58,11 +58,13 @@ import { MinimapPopover } from '@/components/stats/MinimapPopover';
 import { pgnToSanArray } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
+import { OpeningInsightsBlock } from '@/components/insights/OpeningInsightsBlock';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
 import { resolveMatchSide } from '@/types/api';
 import type { PositionBookmarkResponse, TimeSeriesRequest } from '@/types/position_bookmarks';
 import type { OpeningWDL } from '@/types/stats';
+import type { OpeningInsightFinding } from '@/types/insights';
 
 const PAGE_SIZE = 20;
 // Number of most-played openings per color to use as default chart data when no bookmarks exist
@@ -497,6 +499,27 @@ export function OpeningsPage() {
     window.scrollTo({ top: 0 });
   }, [chess, navigate, setFilters]);
 
+  /**
+   * Phase 71 (D-13): Deep-link from OpeningInsightsBlock to Move Explorer.
+   * Mirror of handleOpenGames retargeted at /openings/explorer. The finding
+   * carries entry_san_sequence as a pre-parsed string[], so no pgnToSanArray
+   * conversion is needed.
+   */
+  const handleOpenFinding = useCallback(
+    (finding: OpeningInsightFinding) => {
+      chess.loadMoves(finding.entry_san_sequence);
+      setBoardFlipped(finding.color === 'black');
+      setFilters((prev) => ({
+        ...prev,
+        color: finding.color,
+        matchSide: 'both' as MatchSide,
+      }));
+      navigate('/openings/explorer');
+      window.scrollTo({ top: 0 });
+    },
+    [chess, navigate, setFilters],
+  );
+
   const handleLoadBookmark = useCallback((bkm: PositionBookmarkResponse) => {
     chess.loadMoves(bkm.moves);
     setBoardFlipped(bkm.is_flipped ?? false);
@@ -784,6 +807,15 @@ export function OpeningsPage() {
 
   const statisticsContent = (
     <div className="flex flex-col gap-4">
+      {/* Phase 71 (D-19): Opening Insights — top of Stats tab, above bookmarks. */}
+      {/* D-18: hidden when user has no most-played openings (no imported games proxy). */}
+      {mostPlayedData &&
+        (mostPlayedData.white.length > 0 || mostPlayedData.black.length > 0) && (
+          <OpeningInsightsBlock
+            debouncedFilters={debouncedFilters}
+            onFindingClick={handleOpenFinding}
+          />
+        )}
       {/* Bookmarked Openings: Results — empty state when no bookmarks, chart when data available */}
       {bookmarks.length === 0 ? (
         <div className="charcoal-texture rounded-md p-4">
