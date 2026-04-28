@@ -13,7 +13,6 @@ for D-01..D-34 locked decisions.
 
 import ctypes
 import datetime
-import math
 from typing import Any, Literal
 
 import chess
@@ -33,12 +32,11 @@ from app.schemas.opening_insights import (
     OpeningInsightsResponse,
 )
 from app.services.opening_insights_constants import (
-    OPENING_INSIGHTS_CONFIDENCE_HIGH_MAX_HALF_WIDTH as CONFIDENCE_HIGH_MAX_HALF_WIDTH,
-    OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_HALF_WIDTH as CONFIDENCE_MEDIUM_MAX_HALF_WIDTH,
     OPENING_INSIGHTS_MAJOR_EFFECT as MAJOR_EFFECT,
     OPENING_INSIGHTS_MINOR_EFFECT as MINOR_EFFECT,
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
 )
+from app.services.score_confidence import compute_confidence_bucket
 from app.services.openings_service import recency_cutoff
 
 # ---------------------------------------------------------------------------
@@ -100,56 +98,6 @@ def _classify_row(
 def _compute_score(row: Any) -> float:
     """Compute score = (W + D/2) / n (Phase 75 D-09: canonical classification metric)."""
     return (row.w + row.d / 2) / row.n
-
-
-def _compute_confidence(row: Any) -> tuple[Literal["low", "medium", "high"], float]:
-    """Compute trinomial Wald confidence bucket and two-sided p-value (D-05, D-06).
-
-    Per-game variance under the trinomial Wald model: scores live in
-    {0, 0.5, 1}, so E[X²] = (W·1 + D·0.25 + L·0) / N = (W + 0.25·D) / N.
-    Variance is E[X²] - score². Standard error of the mean: sqrt(var/N).
-
-    Half-width = 1.96 · SE → bucket per D-06 thresholds.
-    Two-sided p-value: erfc(|Z| / sqrt(2)) where Z = (score - 0.50) / SE.
-    Pure Python `math` only (D-05) — no scipy.
-
-    Edge case — all-same-result lines (all wins, all losses, all draws): the
-    trinomial model has zero estimation variance (every game produced the
-    same outcome), so half_width = 0 and the row buckets "high". Sample-size
-    concerns are handled upstream by OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
-    = 10 (the HAVING gate); this helper does not re-litigate them. p_value
-    in the SE = 0 branch is the limiting value as SE → 0:
-      - score == 0.50 (e.g. all draws) → z numerator is 0 → p_value = 1.0.
-      - score != 0.50 (all wins / all losses) → z numerator is non-zero,
-        |z| → ∞, erfc(|z|/√2) → 0 → p_value = 0.0.
-    """
-    n = row.n
-    score = (row.w + 0.5 * row.d) / n
-    variance = (row.w + 0.25 * row.d) / n - score * score
-    # Numerical guard: variance can be exactly 0 (all-draw or all-same-result lines)
-    # and floating-point noise can make it tiny-negative. Clamp at 0.
-    variance = max(variance, 0.0)
-    se = math.sqrt(variance / n)
-
-    if se == 0.0:
-        # Degenerate: no within-line variation. Half-width = 0 → high.
-        # Score either equals 0.5 (no effect) or differs by a fixed offset
-        # with zero estimation noise → p_value = 0.0 if score != 0.5 else 1.0.
-        if score == SCORE_PIVOT:
-            return "high", 1.0
-        return "high", 0.0
-
-    half_width = 1.96 * se  # 1.96 = z_{0.975}, constant of the formula
-    if half_width <= CONFIDENCE_HIGH_MAX_HALF_WIDTH:
-        confidence: Literal["low", "medium", "high"] = "high"
-    elif half_width <= CONFIDENCE_MEDIUM_MAX_HALF_WIDTH:
-        confidence = "medium"
-    else:
-        confidence = "low"
-
-    z = (score - SCORE_PIVOT) / se
-    p_value = math.erfc(abs(z) / math.sqrt(2.0))
-    return confidence, p_value
 
 
 def _replay_san_sequence(san_sequence: list[str]) -> str:
@@ -435,7 +383,7 @@ async def compute_insights(
                 opening_ply_count = matched_opening.ply_count if matched_opening else 0
 
                 score = _compute_score(row)
-                confidence, p_value = _compute_confidence(row)
+                confidence, p_value = compute_confidence_bucket(row.w, row.d, row.l, row.n)
 
                 finding = OpeningInsightFinding(
                     color=color_literal,

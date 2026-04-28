@@ -25,7 +25,6 @@ from app.services.opening_insights_service import (
     WEAKNESS_CAP_PER_COLOR,
     STRENGTH_CAP_PER_COLOR,
     _classify_row,
-    _compute_confidence,
     compute_insights,
 )
 
@@ -191,81 +190,6 @@ def test_classify_row_does_not_filter_below_min_games() -> None:
     # n=8, w=2, d=2, l=4 → score = (2+1)/8 = 0.375 → major weakness regardless of n
     row = _make_row(n=8, w=2, d=2, losses=4)
     assert _classify_row(row) is not None
-
-
-# ---------------------------------------------------------------------------
-# Confidence helper (D-05, D-06, D-11; Phase 75)
-# ---------------------------------------------------------------------------
-
-
-def test_compute_confidence_high_at_large_n() -> None:
-    """Half-width <= 0.10 → 'high'. Synthesize a row big enough to lock in."""
-    # n=400 with score=0.30: variance = (w + 0.25*d)/n - score**2.
-    # Use w=80, d=80, l=240 → score = (80+40)/400 = 0.30, variance = (80 + 20)/400 - 0.09 = 0.16
-    # se = sqrt(0.16/400) = 0.02; half_width = 1.96*0.02 = 0.0392 → 'high'.
-    row = _make_row(n=400, w=80, d=80, losses=240)
-    confidence, p_value = _compute_confidence(row)
-    assert confidence == "high"
-    assert 0.0 <= p_value < 1.0
-
-
-def test_compute_confidence_medium_at_moderate_n() -> None:
-    """Half-width in (0.10, 0.20] → 'medium'."""
-    # n=30, w=6, d=6, l=18 → score = (6+3)/30 = 0.30, variance = (6 + 1.5)/30 - 0.09 = 0.16
-    # se = sqrt(0.16/30) ≈ 0.0730; half_width ≈ 0.143 → 'medium'.
-    row = _make_row(n=30, w=6, d=6, losses=18)
-    confidence, _p_value = _compute_confidence(row)
-    assert confidence == "medium"
-
-
-def test_compute_confidence_low_at_n10_extreme_score() -> None:
-    """At n=10 with a strong observed effect, half-width > 0.20 → 'low'."""
-    # n=10, w=2, d=2, l=6 → score = (2+1)/10 = 0.30, variance = (2+0.5)/10 - 0.09 = 0.16
-    # se = sqrt(0.16/10) ≈ 0.1265; half_width ≈ 0.248 → 'low'.
-    row = _make_row(n=10, w=2, d=2, losses=6)
-    confidence, _p_value = _compute_confidence(row)
-    assert confidence == "low"
-
-
-def test_compute_confidence_just_inside_medium_boundary() -> None:
-    """Half-width comfortably in (0.10, 0.20] → 'medium' (D-06 strict <= boundary).
-
-    Replaces the prior 'exact 0.10 / 0.20' boundary tests. 0.10/1.96 and
-    0.20/1.96 are irrational, so no integer (w, d, l, n) row can hit either
-    bucket boundary exactly — every constructible row lands strictly inside
-    a bucket. We assert bucket semantics with a row that lands inside
-    'medium', not on an irrational boundary.
-    """
-    # n=25, w=5, d=5, l=15 → score = (5 + 2.5)/25 = 0.30
-    # variance = (5 + 1.25)/25 - 0.09 = 0.25 - 0.09 = 0.16
-    # se = sqrt(0.16/25) = 0.08; half_width = 1.96 * 0.08 = 0.1568 → 'medium'.
-    row = _make_row(n=25, w=5, d=5, losses=15)
-    confidence, _p_value = _compute_confidence(row)
-    assert confidence == "medium"
-
-
-def test_compute_confidence_p_value_at_score_050_is_one() -> None:
-    """Score exactly 0.50 → z=0 → p_value = erfc(0) = 1.0 (no evidence vs H0)."""
-    row = _make_row(n=20, w=8, d=4, losses=8)  # score = (8+2)/20 = 0.50
-    _confidence, p_value = _compute_confidence(row)
-    assert p_value == pytest.approx(1.0, abs=1e-9)
-
-
-def test_compute_confidence_se_zero_all_draws() -> None:
-    """All-draws line: variance=0, se=0. Returns ('high', 1.0) per the SE=0 guard."""
-    # n=10, w=0, d=10, l=0 → score = (0 + 5)/10 = 0.5; variance = (0 + 2.5)/10 - 0.25 = 0
-    row = _make_row(n=10, w=0, d=10, losses=0)
-    confidence, p_value = _compute_confidence(row)
-    assert confidence == "high"
-    assert p_value == 1.0
-
-
-def test_compute_confidence_se_zero_all_wins() -> None:
-    """All-wins line: variance=0, se=0, score!=0.5. Returns ('high', 0.0) per the SE=0 guard."""
-    row = _make_row(n=10, w=10, d=0, losses=0)
-    confidence, p_value = _compute_confidence(row)
-    assert confidence == "high"
-    assert p_value == 0.0
 
 
 # ---------------------------------------------------------------------------

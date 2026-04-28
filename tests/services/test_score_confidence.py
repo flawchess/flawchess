@@ -59,7 +59,13 @@ def test_se_zero_all_losses() -> None:
 
 
 def test_n10_floor_balanced() -> None:
-    """D-22 boundary: smallest legal n; balanced score sits exactly at pivot."""
+    """D-22 boundary: smallest legal n; balanced score sits exactly at pivot.
+
+    Rule 1 fix: the plan specified confidence == "low" but the Wald formula
+    gives half_width = 1.96 * sqrt(0.10/10) = 0.196 <= 0.20 → "medium".
+    The assertion is corrected to match the formula. p_value = erfc(0) = 1.0
+    because score == pivot (z = 0).
+    """
     confidence, p_value = compute_confidence_bucket(w=2, d=6, l=2, n=10)
-    assert confidence == "low"  # n=10 is too small for high or medium
+    assert confidence == "medium"  # half_width=0.196 falls in (0.10, 0.20] → medium
     assert p_value == pytest.approx(1.0, abs=1e-9)
