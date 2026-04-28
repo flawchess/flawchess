@@ -5,7 +5,7 @@ app.services.openings_service.get_next_moves. Single source of truth for the
 formula (Phase 75 D-07 anti-pattern lock; Phase 76 D-06 module split).
 
 Body migrated verbatim from app/services/opening_insights_service.py:105-152.
-The signature is widened from (row: Any) to explicit (w, d, l, n) so callers
+The signature is widened from (row: Any) to explicit (w, d, losses, n) so callers
 do not need a SQLAlchemy Row shim.
 """
 
@@ -20,7 +20,7 @@ from app.services.opening_insights_constants import (
 
 
 def compute_confidence_bucket(
-    w: int, d: int, l: int, n: int
+    w: int, d: int, losses: int, n: int
 ) -> tuple[Literal["low", "medium", "high"], float]:
     """Return (confidence_bucket, two_sided_p_value) for a (W, D, L, N) row.
 
@@ -34,6 +34,9 @@ def compute_confidence_bucket(
 
     Edge case: when SE == 0 (all draws or all wins or all losses), the bucket
     is "high" and p_value is 1.0 if score == 0.50 else 0.0.
+
+    Note: the `losses` parameter is accepted for API consistency with (W, D, L, N)
+    calling convention but is not used in the Wald formula (only W, D, N matter).
     """
     score = (w + 0.5 * d) / n
     variance = (w + 0.25 * d) / n - score * score

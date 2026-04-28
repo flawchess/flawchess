@@ -267,15 +267,17 @@ def _dedupe_continuations(
     return result
 
 
-def _rank_section(findings: list[OpeningInsightFinding]) -> list[OpeningInsightFinding]:
-    """Sort findings by (severity desc, n_games desc) per D-07.
+_CONFIDENCE_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
 
-    'major' comes before 'minor'; within each tier, higher n_games first.
-    Ascending sort with negated n_games achieves descending n_games.
+
+def _rank_section(findings: list[OpeningInsightFinding]) -> list[OpeningInsightFinding]:
+    """Sort findings by (confidence DESC, |score - 0.50| DESC) per Phase 76 D-03.
+
+    high -> medium -> low; ties broken by effect size (distance from 0.50 pivot).
     """
     return sorted(
         findings,
-        key=lambda f: (0 if f.severity == "major" else 1, -f.n_games),
+        key=lambda f: (_CONFIDENCE_RANK[f.confidence], -abs(f.score - 0.5)),
     )
 
 

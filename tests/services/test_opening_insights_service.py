@@ -25,8 +25,10 @@ from app.services.opening_insights_service import (
     WEAKNESS_CAP_PER_COLOR,
     STRENGTH_CAP_PER_COLOR,
     _classify_row,
+    _rank_section,
     compute_insights,
 )
+from app.services.score_confidence import compute_confidence_bucket
 
 
 # ---------------------------------------------------------------------------
@@ -556,60 +558,82 @@ async def test_unnamed_line_fallback_uses_empty_eco_and_sentinel_name() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_ranking_severity_desc_then_n_games_desc() -> None:
-    """D-07: within a section, major findings before minor; within tier, higher n_games first."""
-    # Phase 75: rebuilt with score-based row data → 2 minors + 1 major.
-    # minor #1: n=100, w=30, d=24, l=46 → score = (30+12)/100 = 0.42 (delta=-0.08, minor)
-    row_minor_large_n = _make_row(
-        entry_hash=11,
-        resulting_full_hash=211,
-        entry_san_sequence=["e4"],
-        n=100,
-        w=30,
-        d=24,
-        losses=46,
-    )
-    # minor #2: n=50, w=15, d=12, l=23 → score = (15+6)/50 = 0.42 (delta=-0.08, minor)
-    row_minor_small_n = _make_row(
-        entry_hash=12,
-        resulting_full_hash=212,
-        entry_san_sequence=["e4"],
-        n=50,
-        w=15,
-        d=12,
-        losses=23,
-    )
-    # major: n=20, w=4, d=4, l=12 → score = (4+2)/20 = 0.30 (delta=-0.20, major)
-    row_major = _make_row(
-        entry_hash=13, resulting_full_hash=213, entry_san_sequence=["e4"], n=20, w=4, d=4, losses=12
-    )
+def test_ranking_confidence_desc_then_score_distance_desc() -> None:
+    """Phase 76 D-03: sort within each section by (confidence DESC, |score - 0.50| DESC).
 
-    # Verify scores: 42/100=0.42 (minor), 21/50=0.42 (minor), 6/20=0.30 (major)
-    assert (30 + 12) / 100 == 0.42  # minor
-    assert (15 + 6) / 50 == 0.42  # minor
-    assert (4 + 2) / 20 == 0.30  # major
+    high -> medium -> low; ties broken by distance from 0.50 pivot.
+    """
+    # Build three findings with different (confidence, |score - 0.5|) profiles.
+    # Use direct OpeningInsightFinding construction (no DB) so assertions are deterministic.
+    from app.schemas.opening_insights import OpeningInsightFinding
 
-    openings = {
-        11: _make_opening(full_hash=11, name="Queen's Gambit", ply_count=2),
-        12: _make_opening(full_hash=12, name="English Opening", ply_count=2),
-        13: _make_opening(full_hash=13, name="King's Indian", ply_count=2),
-    }
+    def _make_finding(
+        n: int, w: int, d: int, losses: int, candidate: str
+    ) -> OpeningInsightFinding:
+        score = (w + 0.5 * d) / n
+        confidence, p_value = compute_confidence_bucket(w, d, losses, n)
+        return OpeningInsightFinding(
+            color="white",
+            classification="weakness",
+            severity="major",  # severity is metric-agnostic now; value irrelevant for this test
+            opening_name="Test",
+            opening_eco="A00",
+            display_name="Test",
+            entry_fen="",
+            entry_san_sequence=[],
+            entry_full_hash="0",
+            candidate_move_san=candidate,
+            resulting_full_hash="0",
+            n_games=n,
+            wins=w,
+            draws=d,
+            losses=losses,
+            score=score,
+            confidence=confidence,
+            p_value=p_value,
+        )
 
-    response = await _run_compute(
-        rows=[row_minor_large_n, row_minor_small_n, row_major],
-        openings_by_hash=openings,
-        color="white",
-    )
+    high_small_delta = _make_finding(n=400, w=130, d=80, losses=190, candidate="a")  # score≈0.425, conf=high
+    high_large_delta = _make_finding(n=400, w=80, d=80, losses=240, candidate="b")   # score=0.30,  conf=high
+    medium_any_delta = _make_finding(n=30, w=6, d=6, losses=18, candidate="c")      # score≈0.30,  conf=medium
 
-    weaknesses = response.white_weaknesses
-    assert len(weaknesses) == 3
-    # Major should be first
-    assert weaknesses[0].severity == "major"
-    # Within minor tier, larger n_games first
-    assert weaknesses[1].severity == "minor"
-    assert weaknesses[2].severity == "minor"
-    assert weaknesses[1].n_games >= weaknesses[2].n_games
+    ranked = _rank_section([medium_any_delta, high_small_delta, high_large_delta])
+
+    # high before medium; within high, larger |score-0.5| first.
+    assert [f.candidate_move_san for f in ranked] == ["b", "a", "c"]
+
+
+def test_ranking_score_distance_tiebreak_within_same_confidence() -> None:
+    """Phase 76 D-03 tiebreak: same confidence bucket, larger |score - 0.50| sorts first."""
+    from app.schemas.opening_insights import OpeningInsightFinding
+
+    def _make_finding(score: float, candidate: str) -> OpeningInsightFinding:
+        return OpeningInsightFinding(
+            color="white",
+            classification="weakness",
+            severity="major",
+            opening_name="Test",
+            opening_eco="A00",
+            display_name="Test",
+            entry_fen="",
+            entry_san_sequence=[],
+            entry_full_hash="0",
+            candidate_move_san=candidate,
+            resulting_full_hash="0",
+            n_games=400,
+            wins=200,
+            draws=0,
+            losses=200,
+            score=score,
+            confidence="high",
+            p_value=0.5,
+        )
+
+    near_pivot = _make_finding(score=0.45, candidate="a")  # |delta| = 0.05
+    far_from_pivot = _make_finding(score=0.30, candidate="b")  # |delta| = 0.20
+
+    ranked = _rank_section([near_pivot, far_from_pivot])
+    assert [f.candidate_move_san for f in ranked] == ["b", "a"]
 
 
 @pytest.mark.asyncio
