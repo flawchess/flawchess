@@ -25,9 +25,10 @@ from app.services.opening_insights_service import (
     WEAKNESS_CAP_PER_COLOR,
     STRENGTH_CAP_PER_COLOR,
     _classify_row,
-    _compute_confidence,
+    _rank_section,
     compute_insights,
 )
+from app.services.score_confidence import compute_confidence_bucket
 
 
 # ---------------------------------------------------------------------------
@@ -191,81 +192,6 @@ def test_classify_row_does_not_filter_below_min_games() -> None:
     # n=8, w=2, d=2, l=4 → score = (2+1)/8 = 0.375 → major weakness regardless of n
     row = _make_row(n=8, w=2, d=2, losses=4)
     assert _classify_row(row) is not None
-
-
-# ---------------------------------------------------------------------------
-# Confidence helper (D-05, D-06, D-11; Phase 75)
-# ---------------------------------------------------------------------------
-
-
-def test_compute_confidence_high_at_large_n() -> None:
-    """Half-width <= 0.10 → 'high'. Synthesize a row big enough to lock in."""
-    # n=400 with score=0.30: variance = (w + 0.25*d)/n - score**2.
-    # Use w=80, d=80, l=240 → score = (80+40)/400 = 0.30, variance = (80 + 20)/400 - 0.09 = 0.16
-    # se = sqrt(0.16/400) = 0.02; half_width = 1.96*0.02 = 0.0392 → 'high'.
-    row = _make_row(n=400, w=80, d=80, losses=240)
-    confidence, p_value = _compute_confidence(row)
-    assert confidence == "high"
-    assert 0.0 <= p_value < 1.0
-
-
-def test_compute_confidence_medium_at_moderate_n() -> None:
-    """Half-width in (0.10, 0.20] → 'medium'."""
-    # n=30, w=6, d=6, l=18 → score = (6+3)/30 = 0.30, variance = (6 + 1.5)/30 - 0.09 = 0.16
-    # se = sqrt(0.16/30) ≈ 0.0730; half_width ≈ 0.143 → 'medium'.
-    row = _make_row(n=30, w=6, d=6, losses=18)
-    confidence, _p_value = _compute_confidence(row)
-    assert confidence == "medium"
-
-
-def test_compute_confidence_low_at_n10_extreme_score() -> None:
-    """At n=10 with a strong observed effect, half-width > 0.20 → 'low'."""
-    # n=10, w=2, d=2, l=6 → score = (2+1)/10 = 0.30, variance = (2+0.5)/10 - 0.09 = 0.16
-    # se = sqrt(0.16/10) ≈ 0.1265; half_width ≈ 0.248 → 'low'.
-    row = _make_row(n=10, w=2, d=2, losses=6)
-    confidence, _p_value = _compute_confidence(row)
-    assert confidence == "low"
-
-
-def test_compute_confidence_just_inside_medium_boundary() -> None:
-    """Half-width comfortably in (0.10, 0.20] → 'medium' (D-06 strict <= boundary).
-
-    Replaces the prior 'exact 0.10 / 0.20' boundary tests. 0.10/1.96 and
-    0.20/1.96 are irrational, so no integer (w, d, l, n) row can hit either
-    bucket boundary exactly — every constructible row lands strictly inside
-    a bucket. We assert bucket semantics with a row that lands inside
-    'medium', not on an irrational boundary.
-    """
-    # n=25, w=5, d=5, l=15 → score = (5 + 2.5)/25 = 0.30
-    # variance = (5 + 1.25)/25 - 0.09 = 0.25 - 0.09 = 0.16
-    # se = sqrt(0.16/25) = 0.08; half_width = 1.96 * 0.08 = 0.1568 → 'medium'.
-    row = _make_row(n=25, w=5, d=5, losses=15)
-    confidence, _p_value = _compute_confidence(row)
-    assert confidence == "medium"
-
-
-def test_compute_confidence_p_value_at_score_050_is_one() -> None:
-    """Score exactly 0.50 → z=0 → p_value = erfc(0) = 1.0 (no evidence vs H0)."""
-    row = _make_row(n=20, w=8, d=4, losses=8)  # score = (8+2)/20 = 0.50
-    _confidence, p_value = _compute_confidence(row)
-    assert p_value == pytest.approx(1.0, abs=1e-9)
-
-
-def test_compute_confidence_se_zero_all_draws() -> None:
-    """All-draws line: variance=0, se=0. Returns ('high', 1.0) per the SE=0 guard."""
-    # n=10, w=0, d=10, l=0 → score = (0 + 5)/10 = 0.5; variance = (0 + 2.5)/10 - 0.25 = 0
-    row = _make_row(n=10, w=0, d=10, losses=0)
-    confidence, p_value = _compute_confidence(row)
-    assert confidence == "high"
-    assert p_value == 1.0
-
-
-def test_compute_confidence_se_zero_all_wins() -> None:
-    """All-wins line: variance=0, se=0, score!=0.5. Returns ('high', 0.0) per the SE=0 guard."""
-    row = _make_row(n=10, w=10, d=0, losses=0)
-    confidence, p_value = _compute_confidence(row)
-    assert confidence == "high"
-    assert p_value == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -632,60 +558,82 @@ async def test_unnamed_line_fallback_uses_empty_eco_and_sentinel_name() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_ranking_severity_desc_then_n_games_desc() -> None:
-    """D-07: within a section, major findings before minor; within tier, higher n_games first."""
-    # Phase 75: rebuilt with score-based row data → 2 minors + 1 major.
-    # minor #1: n=100, w=30, d=24, l=46 → score = (30+12)/100 = 0.42 (delta=-0.08, minor)
-    row_minor_large_n = _make_row(
-        entry_hash=11,
-        resulting_full_hash=211,
-        entry_san_sequence=["e4"],
-        n=100,
-        w=30,
-        d=24,
-        losses=46,
-    )
-    # minor #2: n=50, w=15, d=12, l=23 → score = (15+6)/50 = 0.42 (delta=-0.08, minor)
-    row_minor_small_n = _make_row(
-        entry_hash=12,
-        resulting_full_hash=212,
-        entry_san_sequence=["e4"],
-        n=50,
-        w=15,
-        d=12,
-        losses=23,
-    )
-    # major: n=20, w=4, d=4, l=12 → score = (4+2)/20 = 0.30 (delta=-0.20, major)
-    row_major = _make_row(
-        entry_hash=13, resulting_full_hash=213, entry_san_sequence=["e4"], n=20, w=4, d=4, losses=12
-    )
+def test_ranking_confidence_desc_then_score_distance_desc() -> None:
+    """Phase 76 D-03: sort within each section by (confidence DESC, |score - 0.50| DESC).
 
-    # Verify scores: 42/100=0.42 (minor), 21/50=0.42 (minor), 6/20=0.30 (major)
-    assert (30 + 12) / 100 == 0.42  # minor
-    assert (15 + 6) / 50 == 0.42  # minor
-    assert (4 + 2) / 20 == 0.30  # major
+    high -> medium -> low; ties broken by distance from 0.50 pivot.
+    """
+    # Build three findings with different (confidence, |score - 0.5|) profiles.
+    # Use direct OpeningInsightFinding construction (no DB) so assertions are deterministic.
+    from app.schemas.opening_insights import OpeningInsightFinding
 
-    openings = {
-        11: _make_opening(full_hash=11, name="Queen's Gambit", ply_count=2),
-        12: _make_opening(full_hash=12, name="English Opening", ply_count=2),
-        13: _make_opening(full_hash=13, name="King's Indian", ply_count=2),
-    }
+    def _make_finding(
+        n: int, w: int, d: int, losses: int, candidate: str
+    ) -> OpeningInsightFinding:
+        score = (w + 0.5 * d) / n
+        confidence, p_value = compute_confidence_bucket(w, d, losses, n)
+        return OpeningInsightFinding(
+            color="white",
+            classification="weakness",
+            severity="major",  # severity is metric-agnostic now; value irrelevant for this test
+            opening_name="Test",
+            opening_eco="A00",
+            display_name="Test",
+            entry_fen="",
+            entry_san_sequence=[],
+            entry_full_hash="0",
+            candidate_move_san=candidate,
+            resulting_full_hash="0",
+            n_games=n,
+            wins=w,
+            draws=d,
+            losses=losses,
+            score=score,
+            confidence=confidence,
+            p_value=p_value,
+        )
 
-    response = await _run_compute(
-        rows=[row_minor_large_n, row_minor_small_n, row_major],
-        openings_by_hash=openings,
-        color="white",
-    )
+    high_small_delta = _make_finding(n=400, w=130, d=80, losses=190, candidate="a")  # score≈0.425, conf=high
+    high_large_delta = _make_finding(n=400, w=80, d=80, losses=240, candidate="b")   # score=0.30,  conf=high
+    medium_any_delta = _make_finding(n=30, w=6, d=6, losses=18, candidate="c")      # score≈0.30,  conf=medium
 
-    weaknesses = response.white_weaknesses
-    assert len(weaknesses) == 3
-    # Major should be first
-    assert weaknesses[0].severity == "major"
-    # Within minor tier, larger n_games first
-    assert weaknesses[1].severity == "minor"
-    assert weaknesses[2].severity == "minor"
-    assert weaknesses[1].n_games >= weaknesses[2].n_games
+    ranked = _rank_section([medium_any_delta, high_small_delta, high_large_delta])
+
+    # high before medium; within high, larger |score-0.5| first.
+    assert [f.candidate_move_san for f in ranked] == ["b", "a", "c"]
+
+
+def test_ranking_score_distance_tiebreak_within_same_confidence() -> None:
+    """Phase 76 D-03 tiebreak: same confidence bucket, larger |score - 0.50| sorts first."""
+    from app.schemas.opening_insights import OpeningInsightFinding
+
+    def _make_finding(score: float, candidate: str) -> OpeningInsightFinding:
+        return OpeningInsightFinding(
+            color="white",
+            classification="weakness",
+            severity="major",
+            opening_name="Test",
+            opening_eco="A00",
+            display_name="Test",
+            entry_fen="",
+            entry_san_sequence=[],
+            entry_full_hash="0",
+            candidate_move_san=candidate,
+            resulting_full_hash="0",
+            n_games=400,
+            wins=200,
+            draws=0,
+            losses=200,
+            score=score,
+            confidence="high",
+            p_value=0.5,
+        )
+
+    near_pivot = _make_finding(score=0.45, candidate="a")  # |delta| = 0.05
+    far_from_pivot = _make_finding(score=0.30, candidate="b")  # |delta| = 0.20
+
+    ranked = _rank_section([near_pivot, far_from_pivot])
+    assert [f.candidate_move_san for f in ranked] == ["b", "a"]
 
 
 @pytest.mark.asyncio
