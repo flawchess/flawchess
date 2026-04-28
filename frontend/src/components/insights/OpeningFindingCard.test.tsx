@@ -68,32 +68,46 @@ afterEach(() => {
 describe('OpeningFindingCard', () => {
   it('renders "You score X% as Black" prose for weakness section', () => {
     const finding = makeFinding({ classification: 'weakness', color: 'black', score: 0.30 });
-    const { getByText } = renderCard({ finding });
-    expect(getByText(/You score/)).toBeInTheDocument();
-    expect(getByText('30%')).toBeInTheDocument();
-    expect(getByText(/as Black/)).toBeInTheDocument();
+    renderCard({ finding, idx: 0 });
+    const card = screen.getByTestId('opening-finding-card-0');
+    const text = card.textContent ?? '';
+    // Both mobile + desktop branches render — text content includes both; check it contains the right pieces
+    expect(text).toMatch(/You score/);
+    expect(text).toMatch(/30%/);
+    expect(text).toMatch(/Black/);
+    expect(text).not.toMatch(/You lose/);
+    expect(text).not.toMatch(/You win/);
   });
 
   it('renders "You score X% as White" prose for strength section', () => {
     const finding = makeFinding({ classification: 'strength', color: 'white', score: 0.58 });
-    const { getByText } = renderCard({ finding });
-    expect(getByText(/You score/)).toBeInTheDocument();
-    expect(getByText('58%')).toBeInTheDocument();
-    expect(getByText(/as White/)).toBeInTheDocument();
+    renderCard({ finding, idx: 1 });
+    const card = screen.getByTestId('opening-finding-card-1');
+    const text = card.textContent ?? '';
+    expect(text).toMatch(/You score/);
+    expect(text).toMatch(/58%/);
+    expect(text).toMatch(/White/);
+    expect(text).not.toMatch(/You lose/);
+    expect(text).not.toMatch(/You win/);
   });
 
   it('does NOT render "lose" or "win" verbs in prose (Phase 76 D-02)', () => {
     const finding = makeFinding();
-    const { queryByText } = renderCard({ finding });
-    expect(queryByText(/You lose/)).not.toBeInTheDocument();
-    expect(queryByText(/You win/)).not.toBeInTheDocument();
+    renderCard({ finding, idx: 0 });
+    const card = screen.getByTestId('opening-finding-card-0');
+    const text = card.textContent ?? '';
+    expect(text).not.toMatch(/You lose/);
+    expect(text).not.toMatch(/You win/);
   });
 
   it('falls back to .toFixed(1) when rounded percent contradicts the section title', () => {
     // weakness with score = 0.499 would round to 50% (contradicts weakness label)
     const finding = makeFinding({ classification: 'weakness', score: 0.499 });
-    const { getByText } = renderCard({ finding });
-    expect(getByText('49.9%')).toBeInTheDocument();
+    renderCard({ finding, idx: 0 });
+    const card = screen.getByTestId('opening-finding-card-0');
+    const text = card.textContent ?? '';
+    expect(text).toMatch(/49\.9%/);
+    expect(text).not.toMatch(/\b50%/);
   });
 
   it('applies DARK_RED border-left for major weakness', () => {
@@ -251,38 +265,42 @@ describe('OpeningFindingCard', () => {
   describe('Phase 76 — Confidence indicator + mute', () => {
     it('renders Confidence: <level> line with the right data-testid', () => {
       const finding = makeFinding({ confidence: 'medium' });
-      const { getByTestId } = renderCard({ finding, idx: 3 });
-      const line = getByTestId('opening-finding-card-3-confidence');
-      expect(line).toHaveTextContent(/Confidence:\s*medium/);
+      renderCard({ finding, idx: 3 });
+      // Both mobile + desktop branches render confidence lines with same testid.
+      // getAllByTestId returns both; check text content of the first.
+      const lines = screen.getAllByTestId('opening-finding-card-3-confidence');
+      expect(lines.length).toBeGreaterThanOrEqual(1);
+      expect(lines[0]!.textContent).toMatch(/Confidence:\s*medium/);
     });
 
     it('renders all three confidence levels as full words (low/medium/high)', () => {
       for (const level of ['low', 'medium', 'high'] as const) {
         const finding = makeFinding({ confidence: level });
-        const { getByTestId, unmount } = renderCard({ finding, idx: 0 });
-        expect(getByTestId('opening-finding-card-0-confidence')).toHaveTextContent(level);
-        unmount();
+        renderCard({ finding, idx: 0 });
+        const lines = screen.getAllByTestId('opening-finding-card-0-confidence');
+        expect(lines[0]!.textContent).toMatch(new RegExp(level));
+        cleanup();
       }
     });
 
     it('applies UNRELIABLE_OPACITY when finding.confidence === "low"', () => {
       const finding = makeFinding({ confidence: 'low', n_games: 100 });
-      const { getByTestId } = renderCard({ finding, idx: 0 });
-      const card = getByTestId('opening-finding-card-0');
+      renderCard({ finding, idx: 0 });
+      const card = screen.getByTestId('opening-finding-card-0');
       expect(card.getAttribute('style')).toMatch(/opacity:\s*0\.5/);
     });
 
     it('applies UNRELIABLE_OPACITY when finding.n_games < 10', () => {
       const finding = makeFinding({ confidence: 'high', n_games: 9 });
-      const { getByTestId } = renderCard({ finding, idx: 0 });
-      const card = getByTestId('opening-finding-card-0');
+      renderCard({ finding, idx: 0 });
+      const card = screen.getByTestId('opening-finding-card-0');
       expect(card.getAttribute('style')).toMatch(/opacity:\s*0\.5/);
     });
 
     it('does NOT apply UNRELIABLE_OPACITY when n_games >= 10 AND confidence !== "low"', () => {
       const finding = makeFinding({ confidence: 'high', n_games: 100 });
-      const { getByTestId } = renderCard({ finding, idx: 0 });
-      const card = getByTestId('opening-finding-card-0');
+      renderCard({ finding, idx: 0 });
+      const card = screen.getByTestId('opening-finding-card-0');
       expect(card.getAttribute('style') ?? '').not.toMatch(/opacity:\s*0\.5/);
     });
   });
