@@ -12,7 +12,7 @@ import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { Save, Sparkles, ArrowRightLeft, Gamepad2, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, X, ChevronDown, ChevronUp, FolderOpen } from 'lucide-react';
+import { Save, Sparkles, ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -138,7 +138,7 @@ function MobileMostPlayedRows({
                     onClick={() => onOpenGames(o, color)}
                   >
                     <span className="tabular-nums">{o.total}</span>
-                    <FolderOpen className="h-3.5 w-3.5" />
+                    <Swords className="h-3.5 w-3.5" />
                   </button>
                 </Tooltip>
               </div>
@@ -1260,7 +1260,7 @@ export function OpeningsPage() {
                 Moves
               </TabsTrigger>
               <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
-                <Gamepad2 className="mr-1.5 h-4 w-4" />
+                <Swords className="mr-1.5 h-4 w-4" />
                 Games
               </TabsTrigger>
               <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">

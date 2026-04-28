@@ -1,4 +1,4 @@
-import { ArrowRightLeft, FolderOpen } from 'lucide-react';
+import { ArrowRightLeft, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { Tooltip } from '@/components/ui/tooltip';
 import { getSeverityBorderColor, trimMoveSequence } from '@/lib/openingInsights';
@@ -85,7 +85,7 @@ export function OpeningFindingCard({
           data-testid={`opening-finding-card-${idx}-games`}
           onClick={() => onOpenGames(finding)}
         >
-          <FolderOpen className="h-3.5 w-3.5" />
+          <Swords className="h-3.5 w-3.5" />
           <span className="tabular-nums">{finding.n_games}</span>
           <span>Games</span>
         </button>
