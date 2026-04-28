@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
-import { SlidersHorizontal, X, BarChart2Icon, Gamepad2Icon, HelpCircle, Lightbulb } from 'lucide-react';
+import { SlidersHorizontal, X, BarChart2Icon, SwordsIcon, HelpCircle, Lightbulb } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
@@ -599,7 +599,7 @@ export function EndgamesPage() {
                 Stats
               </TabsTrigger>
               <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
-                <Gamepad2Icon className="mr-1.5 h-4 w-4" />
+                <SwordsIcon className="mr-1.5 h-4 w-4" />
                 Games
               </TabsTrigger>
             </TabsList>
@@ -623,7 +623,7 @@ export function EndgamesPage() {
                   Stats
                 </TabsTrigger>
                 <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
-                  <Gamepad2Icon className="mr-1.5 h-4 w-4" />
+                  <SwordsIcon className="mr-1.5 h-4 w-4" />
                   Games
                 </TabsTrigger>
               </TabsList>

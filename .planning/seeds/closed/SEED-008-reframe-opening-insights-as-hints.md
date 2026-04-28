@@ -1,8 +1,14 @@
 ---
 id: SEED-008
-status: dormant
+status: closed_folded_into_v1_14
 planted: 2026-04-28
 planted_during: v1.13 Opening Weakness/Strength Insights (shipped)
+closed: 2026-04-28
+closed_during: v1.14 milestone planning (`/gsd-explore`)
+disposition: |
+  Folded into v1.14 milestone (Phase 76). Label softening lands together with the score-metric
+  migration and the new low/medium/high confidence badges so the math, the labels, and the
+  calibration cue all ship under one consistent framing. See notes/opening-insights-v1.14-design.md.
 trigger_when: next time `OpeningInsightsBlock.tsx` / `openingInsights.ts` copy is touched, OR a v1.x polish pass on the Insights block, OR before SEED-007 (principled thresholding) is built — whichever fires first
 scope: phase
 related_files:
@@ -10,6 +16,7 @@ related_files:
   - frontend/src/lib/openingInsights.ts
 related_notes:
   - opening-insights-statistical-framing.md
+  - opening-insights-v1.14-design.md
 related_seeds: [SEED-005, SEED-007]
 ---
 

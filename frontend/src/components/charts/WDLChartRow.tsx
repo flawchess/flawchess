@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { FolderOpen } from 'lucide-react';
+import { Swords } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip } from '@/components/ui/tooltip';
 import {
@@ -35,7 +35,7 @@ interface WDLChartRowProps {
   /** aria-label for the games link */
   gamesLinkAriaLabel?: string;
 
-  /** Optional button-based games action — renders a FolderOpen icon next to game count */
+  /** Optional button-based games action — renders a Swords icon next to game count */
   onOpenGames?: () => void;
   /** data-testid for the open games button */
   openGamesTestId?: string;
@@ -103,7 +103,7 @@ export function WDLChartRow({
                 data-testid={gamesLinkTestId}
               >
                 <span>{data.total} games{isUnreliable && ' (low)'}</span>
-                <FolderOpen className="h-3.5 w-3.5" />
+                <Swords className="h-3.5 w-3.5" />
               </Link>
             </Tooltip>
           ) : onOpenGames !== undefined ? (
@@ -115,7 +115,7 @@ export function WDLChartRow({
                 data-testid={openGamesTestId}
               >
                 <span>{data.total} games{isUnreliable && ' (low)'}</span>
-                <FolderOpen className="h-3.5 w-3.5" />
+                <Swords className="h-3.5 w-3.5" />
               </button>
             </Tooltip>
           ) : (

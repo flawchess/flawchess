@@ -1,5 +1,7 @@
-"""CI-enforced consistency: opening_insights_service constants must match
-frontend/src/lib/arrowColor.ts. Catches future arrow-color drift."""
+"""CI-enforced consistency: opening_insights_constants must match
+frontend/src/lib/arrowColor.ts. Catches future score-threshold drift
+between the backend classifier (Phase 75) and the board arrow colors
+(Phase 76). Float values, regex-extracted from arrowColor.ts."""
 
 import re
 from pathlib import Path
@@ -8,29 +10,61 @@ import pytest
 
 _ARROW_TS = Path(__file__).resolve().parents[2] / "frontend/src/lib/arrowColor.ts"
 
-# Import lazily so the file is always collectable, but tests skip if service missing.
+# Import lazily so the file is always collectable, but tests skip if the
+# constants module is missing (e.g. during initial Phase 75 Plan 01 mid-flight).
 try:
-    from app.services.opening_insights_service import DARK_THRESHOLD, LIGHT_THRESHOLD
+    from app.services.opening_insights_constants import (
+        OPENING_INSIGHTS_MAJOR_EFFECT,
+        OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
+        OPENING_INSIGHTS_MINOR_EFFECT,
+        OPENING_INSIGHTS_SCORE_PIVOT,
+    )
 
-    _SERVICE_AVAILABLE = True
+    _CONSTANTS_AVAILABLE = True
 except ImportError:
-    _SERVICE_AVAILABLE = False
-    LIGHT_THRESHOLD: float = 0.0  # type: ignore[assignment]
-    DARK_THRESHOLD: float = 0.0  # type: ignore[assignment]
+    _CONSTANTS_AVAILABLE = False
+    OPENING_INSIGHTS_SCORE_PIVOT: float = 0.0  # type: ignore[assignment]
+    OPENING_INSIGHTS_MINOR_EFFECT: float = 0.0  # type: ignore[assignment]
+    OPENING_INSIGHTS_MAJOR_EFFECT: float = 0.0  # type: ignore[assignment]
+    OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE: int = 0  # type: ignore[assignment]
 
 
-def _extract(name: str) -> int:
+def _extract_float(name: str) -> float:
+    """Extract `export const NAME = <float>;` from arrowColor.ts."""
     text = _ARROW_TS.read_text()
-    m = re.search(rf"{name}\s*=\s*(\d+)", text)
-    assert m, f"could not find {name} in arrowColor.ts"
+    # Match floats like 0.50, .05, 1, 10, 0.10
+    m = re.search(rf"export\s+const\s+{name}\s*=\s*([0-9]*\.?[0-9]+)\s*;", text)
+    assert m, f"could not find export const {name} in arrowColor.ts"
+    return float(m.group(1))
+
+
+def _extract_int(name: str) -> int:
+    """Extract `export const NAME = <int>;` from arrowColor.ts."""
+    text = _ARROW_TS.read_text()
+    m = re.search(rf"export\s+const\s+{name}\s*=\s*(\d+)\s*;", text)
+    assert m, f"could not find export const {name} in arrowColor.ts"
     return int(m.group(1))
 
 
-@pytest.mark.skipif(not _SERVICE_AVAILABLE, reason="Wave 0 — service module not yet implemented")
-def test_light_threshold_matches_frontend() -> None:
-    assert _extract("LIGHT_COLOR_THRESHOLD") == int(LIGHT_THRESHOLD * 100)
+@pytest.mark.skipif(not _CONSTANTS_AVAILABLE, reason="constants module not yet available")
+def test_score_pivot_matches_frontend() -> None:
+    """SCORE_PIVOT must match OPENING_INSIGHTS_SCORE_PIVOT (D-13)."""
+    assert _extract_float("SCORE_PIVOT") == OPENING_INSIGHTS_SCORE_PIVOT
 
 
-@pytest.mark.skipif(not _SERVICE_AVAILABLE, reason="Wave 0 — service module not yet implemented")
-def test_dark_threshold_matches_frontend() -> None:
-    assert _extract("DARK_COLOR_THRESHOLD") == int(DARK_THRESHOLD * 100)
+@pytest.mark.skipif(not _CONSTANTS_AVAILABLE, reason="constants module not yet available")
+def test_minor_effect_matches_frontend() -> None:
+    """MINOR_EFFECT_SCORE must match OPENING_INSIGHTS_MINOR_EFFECT (D-13)."""
+    assert _extract_float("MINOR_EFFECT_SCORE") == OPENING_INSIGHTS_MINOR_EFFECT
+
+
+@pytest.mark.skipif(not _CONSTANTS_AVAILABLE, reason="constants module not yet available")
+def test_major_effect_matches_frontend() -> None:
+    """MAJOR_EFFECT_SCORE must match OPENING_INSIGHTS_MAJOR_EFFECT (D-13)."""
+    assert _extract_float("MAJOR_EFFECT_SCORE") == OPENING_INSIGHTS_MAJOR_EFFECT
+
+
+@pytest.mark.skipif(not _CONSTANTS_AVAILABLE, reason="constants module not yet available")
+def test_min_games_matches_frontend() -> None:
+    """MIN_GAMES_FOR_COLOR must match OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE (D-13)."""
+    assert _extract_int("MIN_GAMES_FOR_COLOR") == OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE

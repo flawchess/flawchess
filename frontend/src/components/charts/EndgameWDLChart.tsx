@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { FolderOpen } from 'lucide-react';
+import { Swords } from 'lucide-react';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
@@ -116,7 +116,7 @@ function EndgameCategoryRowDesktop({
             <span>
               {cat.total.toLocaleString()} games{isUnreliable && ' (low)'}
             </span>
-            <FolderOpen className="h-3.5 w-3.5" />
+            <Swords className="h-3.5 w-3.5" />
           </Link>
         </Tooltip>
       </td>
@@ -202,7 +202,7 @@ function EndgameCategoryCardMobile({
             <span>
               {cat.total.toLocaleString()} games{isUnreliable && ' (low)'}
             </span>
-            <FolderOpen className="h-3.5 w-3.5" />
+            <Swords className="h-3.5 w-3.5" />
           </Link>
         </Tooltip>
       </div>

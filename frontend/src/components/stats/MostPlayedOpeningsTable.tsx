@@ -1,5 +1,5 @@
 import * as React from "react"
-import { FolderOpen, ChevronDown, ChevronUp } from "lucide-react"
+import { Swords, ChevronDown, ChevronUp } from "lucide-react"
 import type { OpeningWDL } from "@/types/stats"
 import { MinimapPopover } from "./MinimapPopover"
 import { MiniWDLBar } from "./MiniWDLBar"
@@ -77,7 +77,7 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, maxTot
           onClick={() => onOpenGames(o, color)}
         >
           <span className="tabular-nums">{o.total}</span>
-          <FolderOpen className="h-3.5 w-3.5" />
+          <Swords className="h-3.5 w-3.5" />
         </button>
       </Tooltip>
 

@@ -1,26 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.13
-milestone_name: Opening Insights
-status: completed
-last_updated: "2026-04-27T18:17:45.874Z"
-last_activity: 2026-04-27
+milestone: v1.14
+milestone_name: Score-Based Opening Insights
+status: "Phase 75 shipped — PR #69"
+last_updated: "2026-04-28T11:15:31.960Z"
+last_activity: "2026-04-28 — Phase 75 shipped — PR #69"
 progress:
-  total_phases: 7
-  completed_phases: 3
-  total_plans: 14
-  completed_plans: 14
-  percent: 100
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone v1.13 active phases (70, 71, 71.1) all SHIPPED.
-Phases 72, 73, 74 descoped 2026-04-27 — see ROADMAP.md and REQUIREMENTS.md Out of Scope.
-Status: v1.13 ready for `/gsd-complete-milestone` (or backlog review then close).
-Last activity: 2026-04-27
+Phase: 999.1
+Plan: Not started
+Status: Phase 75 shipped — PR #69
+Resume: .planning/phases/75-backend-score-metric-confidence-annotation/75-CONTEXT.md
+Last activity: 2026-04-28 — Phase 75 shipped — PR #69
 
 ## Project Reference
 
@@ -109,6 +109,7 @@ Carried forward from v1.11 close (still relevant):
 | 260427-g4a | Fix opening insights IllegalMoveError when entry_san_sequence does not start from initial position (#71 hotfix) | 2026-04-27 | 8bc4337 | [260427-g4a-fix-opening-insights-illegalmoveerror-wh](./quick/260427-g4a-fix-opening-insights-illegalmoveerror-wh/) |
 | 260427-h3u | Replace OpeningFindingCard whole-card deeplink with explicit Moves + Games links (drops n=, ExternalLink icon) | 2026-04-27 | ae44c6e | [260427-h3u-in-opening-strengths-and-weaknesses-card](./quick/260427-h3u-in-opening-strengths-and-weaknesses-card/) |
 | 260427-j41 | Highlight candidate move in Move Explorer when arriving via Insights Moves link (severity-colored row border, pulsating board arrow, auto-scroll, clear on position/filter change) | 2026-04-27 | b6c1f29 | [260427-j41-highlight-candidate-move-in-move-explore](./quick/260427-j41-highlight-candidate-move-in-move-explore/) |
+| 260428-doc-framing-refresh | Refresh PROJECT/CLAUDE/README lead sections to match homepage's 5-feature framing (Endgame Analytics + Opening Insights + Time Management + Comparison + System Filter) | 2026-04-28 | ce250a4 | [260428-doc-framing-refresh](./quick/260428-doc-framing-refresh/) |
 
 ---
 Last activity: 2026-04-27 — Phase 71.1 Plan 03 complete (cleanup gates green; phase ready for verification).

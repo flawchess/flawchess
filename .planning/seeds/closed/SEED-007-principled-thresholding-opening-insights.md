@@ -1,8 +1,16 @@
 ---
 id: SEED-007
-status: dormant
+status: closed_folded_into_v1_14
 planted: 2026-04-28
 planted_during: v1.13 Opening Weakness/Strength Insights (shipped)
+closed: 2026-04-28
+closed_during: v1.14 milestone planning (`/gsd-explore`)
+disposition: |
+  Folded into v1.14 milestone (Phases 75-76). Option A (Wilson on score, 0.50 pivot) is locked in.
+  Option B (user-baseline shrinkage) was rejected — Lichess/chess.com matchmaking already centers
+  users near 50% score, and the opponent-strength filter handles drift cases. User-baseline would
+  break user-agnostic arrow color reads on shared positions. See notes/opening-insights-v1.14-design.md
+  for the full reasoning.
 trigger_when: opening insights gain LLM narration, OR user feedback flags a meaningful false-positive rate, OR a v1.x polish pass touches opening-insights thresholding
 scope: phase
 related_files:

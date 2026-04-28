@@ -5,6 +5,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
+from app.services.opening_insights_constants import (
+    OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
+)
 
 
 class OpeningInsightsRequest(BaseModel):
@@ -34,11 +37,14 @@ class OpeningInsightsRequest(BaseModel):
 
 
 class OpeningInsightFinding(BaseModel):
-    """Single opening weakness or strength finding (D-03, D-05, D-25).
+    """Single opening weakness or strength finding (D-03, D-05, D-25; Phase 75 D-09).
 
     Hash fields (entry_full_hash, resulting_full_hash) are typed as str to
     preserve 64-bit Zobrist hash precision at the JSON boundary — mirrors
     OpeningWDL.full_hash:str (RESEARCH.md Pitfall 1).
+
+    Phase 75 (v1.14) replaced loss_rate/win_rate with score-based
+    classification annotated by Wald confidence.
     """
 
     color: Literal["white", "black"]
@@ -48,17 +54,31 @@ class OpeningInsightFinding(BaseModel):
     opening_eco: str  # "" sentinel when no openings-table match (D-23)
     display_name: str  # may include "vs. " prefix per D-22 / RESEARCH.md Pitfall 4
     entry_fen: str
-    entry_san_sequence: list[str]  # SAN tokens from start to entry position (candidate excluded); added Phase 71 (D-13) for FE deep-link replay
+    entry_san_sequence: list[
+        str
+    ]  # SAN tokens from start to entry position (candidate excluded); added Phase 71 (D-13) for FE deep-link replay
     entry_full_hash: str  # str-form for JSON precision (RESEARCH.md Pitfall 1)
     candidate_move_san: str
     resulting_full_hash: str  # str-form, same reason
-    n_games: int
-    wins: int
-    draws: int
-    losses: int
-    win_rate: float  # used as classifier for strengths (D-04)
-    loss_rate: float  # used as classifier for weaknesses (D-04)
-    score: float  # (W + D/2)/n; informative only per D-06
+    # Range constraints enforce API-boundary invariants (CLAUDE.md: leverage
+    # Pydantic for validation). n_games is gated by the SQL HAVING clause at
+    # MIN_GAMES_PER_CANDIDATE; w/d/l are non-negative game counts; score and
+    # p_value live in [0, 1] by construction (score = (w + d/2)/n; p_value
+    # via math.erfc which is bounded in [0, 2] but the two-sided form here
+    # is bounded in [0, 1]).
+    n_games: int = Field(ge=OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE)
+    wins: int = Field(ge=0)
+    draws: int = Field(ge=0)
+    losses: int = Field(ge=0)
+    score: float = Field(
+        ge=0.0, le=1.0
+    )  # (W + D/2)/n; canonical classification metric (Phase 75 D-09)
+    confidence: Literal[
+        "low", "medium", "high"
+    ]  # Trinomial Wald 95% CI half-width bucket (Phase 75 D-05/D-06)
+    p_value: float = Field(
+        ge=0.0, le=1.0
+    )  # Two-sided p-value for H0: score = 0.50 (Phase 75 D-05/D-09)
 
 
 class OpeningInsightsResponse(BaseModel):

@@ -412,12 +412,12 @@ async def test_window_does_not_leak_across_games(
 
 
 @pytest.mark.asyncio
-async def test_min_games_per_candidate_floor_at_20(db_session: AsyncSession) -> None:
-    """D-33: n=19 is excluded, n=20 is included by the HAVING clause.
+async def test_min_games_per_candidate_floor_at_10(db_session: AsyncSession) -> None:
+    """Phase 75 D-04 / D-08: n=9 excluded, n=10 included by the HAVING clause.
 
     Seeds two different entry hashes:
-    - entry_hash=A with 20 games (loss_rate=1.0): should appear
-    - entry_hash=B with 19 games (loss_rate=1.0): should NOT appear
+    - entry_hash=A with 10 games (score=0.0, all losses): should appear
+    - entry_hash=B with 9 games (score=0.0, all losses): should NOT appear
     """
     user_id = 10
     H_ENTRY_A = 40003
@@ -425,12 +425,12 @@ async def test_min_games_per_candidate_floor_at_20(db_session: AsyncSession) -> 
     H_CAND_A = 40004
     H_CAND_B = 50004
 
-    # 20 games for entry A
-    for _ in range(20):
+    # 10 games for entry A
+    for _ in range(10):
         await _seed_game_with_positions(
             db_session,
             user_id=user_id,
-            result="1-0",  # loss for black
+            result="1-0",  # loss for black → score=0.0
             user_color="black",
             positions=[
                 (1, 40001, SAN_E4),
@@ -441,12 +441,12 @@ async def test_min_games_per_candidate_floor_at_20(db_session: AsyncSession) -> 
             ],
         )
 
-    # 19 games for entry B
-    for _ in range(19):
+    # 9 games for entry B
+    for _ in range(9):
         await _seed_game_with_positions(
             db_session,
             user_id=user_id,
-            result="1-0",  # loss for black
+            result="1-0",  # loss for black → score=0.0
             user_color="black",
             positions=[
                 (1, 50001, SAN_E4),
@@ -465,18 +465,19 @@ async def test_min_games_per_candidate_floor_at_20(db_session: AsyncSession) -> 
     )
 
     entry_hashes_in_result = [r.entry_hash for r in rows]
-    assert H_ENTRY_A in entry_hashes_in_result, "20-game entry should be included"
-    assert H_ENTRY_B not in entry_hashes_in_result, "19-game entry should be excluded"
+    assert H_ENTRY_A in entry_hashes_in_result, "10-game entry should be included"
+    assert H_ENTRY_B not in entry_hashes_in_result, "9-game entry should be excluded"
 
 
 @pytest.mark.asyncio
-async def test_having_strict_gt_055_drops_neutrals(db_session: AsyncSession) -> None:
-    """D-04: HAVING uses strict > 0.55; exactly win_rate=0.55 is dropped (neutral).
+async def test_having_score_boundaries_drops_neutrals(db_session: AsyncSession) -> None:
+    """Phase 75 D-08: HAVING uses score (W + 0.5·D)/N <= 0.45 OR >= 0.55. Strict
+    <=/>= boundaries (D-03): score=0.50 is dropped, score=0.45 / 0.55 surface.
 
-    Seeds three scenarios:
-    1. 11W/4D/5L (win_rate=0.55, loss_rate=0.25): 0 rows — neutral
-    2. 12W/4D/4L (win_rate=0.60): 1 row — strength
-    3. 12L/4D/4W in 20 games (loss_rate=0.60): 1 row — weakness
+    Seeds three scenarios at n=20:
+    1. 8W/4D/8L → score=(8+2)/20=0.50: 0 rows — neutral
+    2. 8W/6D/6L → score=(8+3)/20=0.55: 1 row — strength boundary surfaces
+    3. 5W/8D/7L → score=(5+4)/20=0.45: 1 row — weakness boundary surfaces
     """
     user_id = 10
 
@@ -484,8 +485,8 @@ async def test_having_strict_gt_055_drops_neutrals(db_session: AsyncSession) -> 
     H_STRENGTH_ENTRY = 70003
     H_WEAKNESS_ENTRY = 80003
 
-    # Scenario 1: 11W/4D/5L => win_rate=11/20=0.55 — neutral (strict >)
-    for i in range(11):
+    # Scenario 1: 8W/4D/8L => score=(8+2)/20=0.50 — neutral (strict <=/>=)
+    for i in range(8):
         await _seed_game_with_positions(
             db_session,
             user_id=user_id,
@@ -511,97 +512,97 @@ async def test_having_strict_gt_055_drops_neutrals(db_session: AsyncSession) -> 
                 (3, H_NEUTRAL_ENTRY, "Nf3"),
                 (4, 60004, "Nc6"),
                 (5, 60005, None),
+            ],
+        )
+    for i in range(8):
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="0-1",
+            user_color="white",
+            positions=[
+                (1, 60001, "e4"),
+                (2, 60002, "e5"),
+                (3, H_NEUTRAL_ENTRY, "Nf3"),
+                (4, 60004, "Nc6"),
+                (5, 60005, None),
+            ],
+        )
+
+    # Scenario 2: 8W/6D/6L => score=(8+3)/20=0.55 — strength boundary
+    for i in range(8):
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="white",
+            positions=[
+                (1, 70001, "e4"),
+                (2, 70002, "e5"),
+                (3, H_STRENGTH_ENTRY, "Nf3"),
+                (4, 70004, "Nc6"),
+                (5, 70005, None),
+            ],
+        )
+    for i in range(6):
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="1/2-1/2",
+            user_color="white",
+            positions=[
+                (1, 70001, "e4"),
+                (2, 70002, "e5"),
+                (3, H_STRENGTH_ENTRY, "Nf3"),
+                (4, 70004, "Nc6"),
+                (5, 70005, None),
+            ],
+        )
+    for i in range(6):
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="0-1",
+            user_color="white",
+            positions=[
+                (1, 70001, "e4"),
+                (2, 70002, "e5"),
+                (3, H_STRENGTH_ENTRY, "Nf3"),
+                (4, 70004, "Nc6"),
+                (5, 70005, None),
+            ],
+        )
+
+    # Scenario 3: 5W/8D/7L => score=(5+4)/20=0.45 — weakness boundary
+    for i in range(7):
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="0-1",
+            user_color="white",
+            positions=[
+                (1, 80001, "e4"),
+                (2, 80002, "e5"),
+                (3, H_WEAKNESS_ENTRY, "Nf3"),
+                (4, 80004, "Nc6"),
+                (5, 80005, None),
+            ],
+        )
+    for i in range(8):
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="1/2-1/2",
+            user_color="white",
+            positions=[
+                (1, 80001, "e4"),
+                (2, 80002, "e5"),
+                (3, H_WEAKNESS_ENTRY, "Nf3"),
+                (4, 80004, "Nc6"),
+                (5, 80005, None),
             ],
         )
     for i in range(5):
-        await _seed_game_with_positions(
-            db_session,
-            user_id=user_id,
-            result="0-1",
-            user_color="white",
-            positions=[
-                (1, 60001, "e4"),
-                (2, 60002, "e5"),
-                (3, H_NEUTRAL_ENTRY, "Nf3"),
-                (4, 60004, "Nc6"),
-                (5, 60005, None),
-            ],
-        )
-
-    # Scenario 2: 12W/4D/4L => win_rate=12/20=0.60 — strength
-    for i in range(12):
-        await _seed_game_with_positions(
-            db_session,
-            user_id=user_id,
-            result="1-0",
-            user_color="white",
-            positions=[
-                (1, 70001, "e4"),
-                (2, 70002, "e5"),
-                (3, H_STRENGTH_ENTRY, "Nf3"),
-                (4, 70004, "Nc6"),
-                (5, 70005, None),
-            ],
-        )
-    for i in range(4):
-        await _seed_game_with_positions(
-            db_session,
-            user_id=user_id,
-            result="1/2-1/2",
-            user_color="white",
-            positions=[
-                (1, 70001, "e4"),
-                (2, 70002, "e5"),
-                (3, H_STRENGTH_ENTRY, "Nf3"),
-                (4, 70004, "Nc6"),
-                (5, 70005, None),
-            ],
-        )
-    for i in range(4):
-        await _seed_game_with_positions(
-            db_session,
-            user_id=user_id,
-            result="0-1",
-            user_color="white",
-            positions=[
-                (1, 70001, "e4"),
-                (2, 70002, "e5"),
-                (3, H_STRENGTH_ENTRY, "Nf3"),
-                (4, 70004, "Nc6"),
-                (5, 70005, None),
-            ],
-        )
-
-    # Scenario 3: 12L/4D/4W => loss_rate=12/20=0.60 — weakness
-    for i in range(12):
-        await _seed_game_with_positions(
-            db_session,
-            user_id=user_id,
-            result="0-1",
-            user_color="white",
-            positions=[
-                (1, 80001, "e4"),
-                (2, 80002, "e5"),
-                (3, H_WEAKNESS_ENTRY, "Nf3"),
-                (4, 80004, "Nc6"),
-                (5, 80005, None),
-            ],
-        )
-    for i in range(4):
-        await _seed_game_with_positions(
-            db_session,
-            user_id=user_id,
-            result="1/2-1/2",
-            user_color="white",
-            positions=[
-                (1, 80001, "e4"),
-                (2, 80002, "e5"),
-                (3, H_WEAKNESS_ENTRY, "Nf3"),
-                (4, 80004, "Nc6"),
-                (5, 80005, None),
-            ],
-        )
-    for i in range(4):
         await _seed_game_with_positions(
             db_session,
             user_id=user_id,
@@ -624,18 +625,21 @@ async def test_having_strict_gt_055_drops_neutrals(db_session: AsyncSession) -> 
     )
 
     entry_hashes_in_result = [r.entry_hash for r in rows]
-    assert H_NEUTRAL_ENTRY not in entry_hashes_in_result, (
-        "win_rate=0.55 (neutral) should be dropped"
+    assert H_NEUTRAL_ENTRY not in entry_hashes_in_result, "score=0.50 (neutral) should be dropped"
+    assert H_STRENGTH_ENTRY in entry_hashes_in_result, (
+        "score=0.55 boundary (strength) should appear"
     )
-    assert H_STRENGTH_ENTRY in entry_hashes_in_result, "win_rate=0.60 (strength) should appear"
-    assert H_WEAKNESS_ENTRY in entry_hashes_in_result, "loss_rate=0.60 (weakness) should appear"
+    assert H_WEAKNESS_ENTRY in entry_hashes_in_result, (
+        "score=0.45 boundary (weakness) should appear"
+    )
 
 
 @pytest.mark.asyncio
 async def test_user_color_filter_routes_correct_games(db_session: AsyncSession) -> None:
     """color parameter filters to games where game.user_color matches.
 
-    Seeds 20 white-color games (loss_rate=0.6 from white's perspective).
+    Seeds 20 white-color games (12L/8W → score=0.40 from white's perspective,
+    a major weakness under the Phase 75 score gate).
     color="black" should return 0 rows (no black games).
     color="white" should return 1 row.
     """

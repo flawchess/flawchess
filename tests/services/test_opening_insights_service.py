@@ -25,6 +25,7 @@ from app.services.opening_insights_service import (
     WEAKNESS_CAP_PER_COLOR,
     STRENGTH_CAP_PER_COLOR,
     _classify_row,
+    _compute_confidence,
     compute_insights,
 )
 
@@ -113,33 +114,28 @@ async def _run_compute(
 
 
 # ---------------------------------------------------------------------------
-# Classification boundary tests (D-04, D-05)
+# Classification boundary tests (D-03, D-11; Phase 75)
 # ---------------------------------------------------------------------------
 
 
-def test_classify_row_strict_gt_boundary_loss_rate_055() -> None:
-    """D-04 strict `>`, loss_rate exactly 0.550 → not a finding (neutral)."""
-    # n=20, losses=11 → loss_rate = 11/20 = 0.55 (exactly) → not classified
-    row = _make_row(n=20, w=6, d=3, losses=11)
+def test_classify_row_neutral_score_046_returns_none() -> None:
+    """D-03 strict <=/>= boundaries: score=0.46 → not a finding (neutral, |delta|<0.05)."""
+    # n=100, w=40, d=12, l=48 → score = (40 + 6)/100 = 0.46
+    row = _make_row(n=100, w=40, d=12, losses=48)
     assert _classify_row(row) is None
 
 
-def test_classification_strict_gt_boundary_loss_rate_055() -> None:
-    """D-04 strict `>`, loss_rate exactly 0.550 → not a finding (neutral).
-
-    The service-level test runs through compute_insights to ensure the
-    pipeline propagates the classification logic correctly.
-    """
-    # loss_rate = 11/20 = 0.55 exactly — strict > means NOT classified
-    row = _make_row(n=20, w=6, d=3, losses=11)
+def test_classify_row_neutral_score_054_returns_none() -> None:
+    """D-03 strict boundary: score=0.54 → not a finding (neutral, |delta|<0.05)."""
+    # n=100, w=48, d=12, l=40 → score = (48 + 6)/100 = 0.54
+    row = _make_row(n=100, w=48, d=12, losses=40)
     assert _classify_row(row) is None
 
 
-def test_classification_minor_weakness_at_loss_rate_0551() -> None:
-    """loss_rate = 0.551 → minor weakness (just over the strict > 0.55 boundary)."""
-    # n=20, losses=11.02... can't use fractional; use n=1000 for precise control
-    # n=1000, losses=551 → loss_rate = 0.551
-    row = _make_row(n=1000, w=300, d=149, losses=551)
+def test_classify_row_minor_weakness_at_score_045_exact() -> None:
+    """D-03/D-11: score=0.45 exactly → minor weakness (delta=-0.05, strict <=)."""
+    # n=20, w=5, d=8, l=7 → score = (5 + 4)/20 = 0.45 exactly
+    row = _make_row(n=20, w=5, d=8, losses=7)
     result = _classify_row(row)
     assert result is not None
     classification, severity = result
@@ -147,10 +143,10 @@ def test_classification_minor_weakness_at_loss_rate_0551() -> None:
     assert severity == "minor"
 
 
-def test_classification_major_weakness_at_loss_rate_060() -> None:
-    """D-05 severity boundary: loss_rate = 0.60 → major weakness."""
-    # n=20, losses=12 → loss_rate = 12/20 = 0.60
-    row = _make_row(n=20, w=4, d=4, losses=12)
+def test_classify_row_major_weakness_at_score_040_exact() -> None:
+    """D-03/D-11: score=0.40 → major weakness (delta=-0.10, strict <=)."""
+    # n=20, w=4, d=8, l=8 → score = (4 + 4)/20 = 0.40 exactly
+    row = _make_row(n=20, w=4, d=8, losses=8)
     result = _classify_row(row)
     assert result is not None
     classification, severity = result
@@ -158,10 +154,10 @@ def test_classification_major_weakness_at_loss_rate_060() -> None:
     assert severity == "major"
 
 
-def test_classification_minor_strength_at_win_rate_0599() -> None:
-    """win_rate = 0.599 → minor strength (below DARK_THRESHOLD)."""
-    # n=1000, w=599 → win_rate = 0.599
-    row = _make_row(n=1000, w=599, d=101, losses=300)
+def test_classify_row_minor_strength_at_score_055_exact() -> None:
+    """D-03/D-11: score=0.55 → minor strength (delta=+0.05, strict >=)."""
+    # n=20, w=8, d=6, l=6 → score = (8 + 3)/20 = 0.55 exactly
+    row = _make_row(n=20, w=8, d=6, losses=6)
     result = _classify_row(row)
     assert result is not None
     classification, severity = result
@@ -169,10 +165,10 @@ def test_classification_minor_strength_at_win_rate_0599() -> None:
     assert severity == "minor"
 
 
-def test_classification_major_strength_at_win_rate_060() -> None:
-    """D-05: win_rate = 0.60 → major strength (at DARK_THRESHOLD)."""
-    # n=20, w=12 → win_rate = 12/20 = 0.60
-    row = _make_row(n=20, w=12, d=4, losses=4)
+def test_classify_row_major_strength_at_score_060_exact() -> None:
+    """D-03/D-11: score=0.60 → major strength (delta=+0.10, strict >=)."""
+    # n=20, w=10, d=4, l=6 → score = (10 + 2)/20 = 0.60 exactly
+    row = _make_row(n=20, w=10, d=4, losses=6)
     result = _classify_row(row)
     assert result is not None
     classification, severity = result
@@ -181,31 +177,95 @@ def test_classification_major_strength_at_win_rate_060() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Evidence floor (D-33)
+# Evidence floor (D-04 / Phase 75 INSIGHT-SCORE-05)
 # ---------------------------------------------------------------------------
 
 
-def test_min_games_floor_excludes_n19() -> None:
-    """D-33 evidence floor: _classify_row does not filter n — that's SQL.
-
-    The SQL HAVING clause enforces n >= 20. The service layer only classifies
-    rows that pass SQL. This test verifies the classifier itself doesn't
-    double-gate on n, but also confirms via compute_insights that n=19 rows
-    never reach it (SQL drops them). We use a mock that returns an n=19 row
-    to test that Python classify logic returns non-None for a loss_rate row
-    even when n=19 (the SQL gate owns the floor enforcement).
-
-    What this really tests: MIN_GAMES_PER_CANDIDATE is defined = 20.
-    """
-    assert MIN_GAMES_PER_CANDIDATE == 20
+def test_min_games_floor_constant_is_10() -> None:
+    """D-04 / Phase 75 INSIGHT-SCORE-05: discovery floor dropped from 20 to 10."""
+    assert MIN_GAMES_PER_CANDIDATE == 10
 
 
-def test_min_games_floor_includes_n20() -> None:
-    """D-33: n=20 == MIN_GAMES_PER_CANDIDATE → included (constant == 20)."""
-    assert MIN_GAMES_PER_CANDIDATE == 20
-    # Verify that a row with n=20 and loss_rate=0.60 classifies successfully
-    row = _make_row(n=20, w=4, d=4, losses=12)
+def test_classify_row_does_not_filter_below_min_games() -> None:
+    """The SQL HAVING clause owns the n>=10 floor; _classify_row only inspects score."""
+    # n=8, w=2, d=2, l=4 → score = (2+1)/8 = 0.375 → major weakness regardless of n
+    row = _make_row(n=8, w=2, d=2, losses=4)
     assert _classify_row(row) is not None
+
+
+# ---------------------------------------------------------------------------
+# Confidence helper (D-05, D-06, D-11; Phase 75)
+# ---------------------------------------------------------------------------
+
+
+def test_compute_confidence_high_at_large_n() -> None:
+    """Half-width <= 0.10 → 'high'. Synthesize a row big enough to lock in."""
+    # n=400 with score=0.30: variance = (w + 0.25*d)/n - score**2.
+    # Use w=80, d=80, l=240 → score = (80+40)/400 = 0.30, variance = (80 + 20)/400 - 0.09 = 0.16
+    # se = sqrt(0.16/400) = 0.02; half_width = 1.96*0.02 = 0.0392 → 'high'.
+    row = _make_row(n=400, w=80, d=80, losses=240)
+    confidence, p_value = _compute_confidence(row)
+    assert confidence == "high"
+    assert 0.0 <= p_value < 1.0
+
+
+def test_compute_confidence_medium_at_moderate_n() -> None:
+    """Half-width in (0.10, 0.20] → 'medium'."""
+    # n=30, w=6, d=6, l=18 → score = (6+3)/30 = 0.30, variance = (6 + 1.5)/30 - 0.09 = 0.16
+    # se = sqrt(0.16/30) ≈ 0.0730; half_width ≈ 0.143 → 'medium'.
+    row = _make_row(n=30, w=6, d=6, losses=18)
+    confidence, _p_value = _compute_confidence(row)
+    assert confidence == "medium"
+
+
+def test_compute_confidence_low_at_n10_extreme_score() -> None:
+    """At n=10 with a strong observed effect, half-width > 0.20 → 'low'."""
+    # n=10, w=2, d=2, l=6 → score = (2+1)/10 = 0.30, variance = (2+0.5)/10 - 0.09 = 0.16
+    # se = sqrt(0.16/10) ≈ 0.1265; half_width ≈ 0.248 → 'low'.
+    row = _make_row(n=10, w=2, d=2, losses=6)
+    confidence, _p_value = _compute_confidence(row)
+    assert confidence == "low"
+
+
+def test_compute_confidence_just_inside_medium_boundary() -> None:
+    """Half-width comfortably in (0.10, 0.20] → 'medium' (D-06 strict <= boundary).
+
+    Replaces the prior 'exact 0.10 / 0.20' boundary tests. 0.10/1.96 and
+    0.20/1.96 are irrational, so no integer (w, d, l, n) row can hit either
+    bucket boundary exactly — every constructible row lands strictly inside
+    a bucket. We assert bucket semantics with a row that lands inside
+    'medium', not on an irrational boundary.
+    """
+    # n=25, w=5, d=5, l=15 → score = (5 + 2.5)/25 = 0.30
+    # variance = (5 + 1.25)/25 - 0.09 = 0.25 - 0.09 = 0.16
+    # se = sqrt(0.16/25) = 0.08; half_width = 1.96 * 0.08 = 0.1568 → 'medium'.
+    row = _make_row(n=25, w=5, d=5, losses=15)
+    confidence, _p_value = _compute_confidence(row)
+    assert confidence == "medium"
+
+
+def test_compute_confidence_p_value_at_score_050_is_one() -> None:
+    """Score exactly 0.50 → z=0 → p_value = erfc(0) = 1.0 (no evidence vs H0)."""
+    row = _make_row(n=20, w=8, d=4, losses=8)  # score = (8+2)/20 = 0.50
+    _confidence, p_value = _compute_confidence(row)
+    assert p_value == pytest.approx(1.0, abs=1e-9)
+
+
+def test_compute_confidence_se_zero_all_draws() -> None:
+    """All-draws line: variance=0, se=0. Returns ('high', 1.0) per the SE=0 guard."""
+    # n=10, w=0, d=10, l=0 → score = (0 + 5)/10 = 0.5; variance = (0 + 2.5)/10 - 0.25 = 0
+    row = _make_row(n=10, w=0, d=10, losses=0)
+    confidence, p_value = _compute_confidence(row)
+    assert confidence == "high"
+    assert p_value == 1.0
+
+
+def test_compute_confidence_se_zero_all_wins() -> None:
+    """All-wins line: variance=0, se=0, score!=0.5. Returns ('high', 0.0) per the SE=0 guard."""
+    row = _make_row(n=10, w=10, d=0, losses=0)
+    confidence, p_value = _compute_confidence(row)
+    assert confidence == "high"
+    assert p_value == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -575,35 +635,36 @@ async def test_unnamed_line_fallback_uses_empty_eco_and_sentinel_name() -> None:
 @pytest.mark.asyncio
 async def test_ranking_severity_desc_then_n_games_desc() -> None:
     """D-07: within a section, major findings before minor; within tier, higher n_games first."""
-    # Create rows: 2 minor weaknesses + 1 major weakness
-    # minor: 0.56 rate → n=100, losses=56
+    # Phase 75: rebuilt with score-based row data → 2 minors + 1 major.
+    # minor #1: n=100, w=30, d=24, l=46 → score = (30+12)/100 = 0.42 (delta=-0.08, minor)
     row_minor_large_n = _make_row(
         entry_hash=11,
         resulting_full_hash=211,
         entry_san_sequence=["e4"],
         n=100,
         w=30,
-        d=14,
-        losses=56,
+        d=24,
+        losses=46,
     )
+    # minor #2: n=50, w=15, d=12, l=23 → score = (15+6)/50 = 0.42 (delta=-0.08, minor)
     row_minor_small_n = _make_row(
         entry_hash=12,
         resulting_full_hash=212,
         entry_san_sequence=["e4"],
         n=50,
         w=15,
-        d=7,
-        losses=28,
+        d=12,
+        losses=23,
     )
-    # major: 0.60 rate → n=20, losses=12
+    # major: n=20, w=4, d=4, l=12 → score = (4+2)/20 = 0.30 (delta=-0.20, major)
     row_major = _make_row(
         entry_hash=13, resulting_full_hash=213, entry_san_sequence=["e4"], n=20, w=4, d=4, losses=12
     )
 
-    # Verify rates: 56/100=0.56 (minor), 28/50=0.56 (minor), 12/20=0.60 (major)
-    assert 56 / 100 > 0.55 and 56 / 100 < 0.60  # minor
-    assert 28 / 50 > 0.55 and 28 / 50 < 0.60  # minor
-    assert 12 / 20 >= 0.60  # major
+    # Verify scores: 42/100=0.42 (minor), 21/50=0.42 (minor), 6/20=0.30 (major)
+    assert (30 + 12) / 100 == 0.42  # minor
+    assert (15 + 6) / 50 == 0.42  # minor
+    assert (4 + 2) / 20 == 0.30  # major
 
     openings = {
         11: _make_opening(full_hash=11, name="Queen's Gambit", ply_count=2),
@@ -634,7 +695,7 @@ async def test_caps_10_per_color_per_classification() -> None:
     assert STRENGTH_CAP_PER_COLOR == 10
 
     # Create 12 weakness rows — only 10 should survive cap.
-    # Use fixed n=20, losses=12 (loss_rate=0.60, major) so all rows classify.
+    # Use fixed n=20, w=4, d=4, l=12 (score=0.30, major) so all rows classify.
     # Distinct entry/resulting hashes prevent dedupe from removing them.
     weakness_rows = [
         _make_row(
@@ -644,7 +705,7 @@ async def test_caps_10_per_color_per_classification() -> None:
             n=20,
             w=4,
             d=4,
-            losses=12,  # loss_rate=0.60 → major weakness for all
+            losses=12,  # score=(4+2)/20=0.30 → major weakness for all
         )
         for i in range(1, 13)
     ]
@@ -669,7 +730,7 @@ async def test_caps_10_per_color_per_classification() -> None:
             n=20,
             w=14,
             d=3,
-            losses=3,  # win_rate=14/20=0.70 → major strength
+            losses=3,  # score=(14+1.5)/20=0.775 → major strength
         )
         for i in range(1, 13)
     ]
@@ -684,6 +745,30 @@ async def test_caps_10_per_color_per_classification() -> None:
     )
     assert len(response2.white_strengths) == STRENGTH_CAP_PER_COLOR  # 10
     assert len(response2.white_weaknesses) == 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 75 D-09: confidence + p_value end-to-end smoke
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_compute_insights_populates_confidence_and_p_value() -> None:
+    """Phase 75 D-09: every finding carries confidence + p_value fields."""
+    # Major weakness, n=20: score = (2 + 0.5*2)/20 = 0.15 (delta=-0.35, major).
+    # variance = (2 + 0.25*2)/20 - 0.0225 = 0.125 - 0.0225 = 0.1025
+    # se = sqrt(0.1025/20) ≈ 0.0716; half_width ≈ 0.140 → medium
+    # z = (0.15 - 0.50) / 0.0716 ≈ -4.89; p_value ≈ erfc(4.89/sqrt(2)) ≈ 1e-6
+    row = _make_row(n=20, w=2, d=2, losses=16)
+    opening = _make_opening()
+    response = await _run_compute(rows=[row], openings_by_hash={100: opening}, color="white")
+
+    assert len(response.white_weaknesses) == 1
+    finding = response.white_weaknesses[0]
+    assert finding.severity == "major"
+    assert finding.score == pytest.approx(0.15)
+    assert finding.confidence in {"low", "medium", "high"}
+    assert 0.0 <= finding.p_value <= 1.0
 
 
 # ---------------------------------------------------------------------------

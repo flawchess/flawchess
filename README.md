@@ -25,19 +25,20 @@
 
 ## What is FlawChess?
 
-A free, open-source chess analysis platform. Import games from chess.com and lichess to analyze your openings by position (not just name), track endgame performance by category, and find exactly where you win and lose. FlawChess matches positions via Zobrist hashes for precise, cross-platform analysis.
+A free, open-source chess analysis platform. Import games from chess.com and lichess to find exactly where you win and lose — across openings, endgames, and time management. Position matching uses Zobrist hashes (not opening names), so analysis stays consistent across platforms.
 
 ![Opening Explorer](frontend/public/screenshots/opening-explorer.png)
 
 ## Features
 
-- **Interactive opening explorer** — step through any opening and see your win/draw/loss rate for every move, scout opponents before a match, discover which moves you struggle against
-- **Opening comparison and tracking** — bookmark openings and compare their performance, track how your opening study impacts your win rate over time, filter by time control
-- **System opening filter** — filter by your pieces only to analyze system openings like the London across all opponent variations
-- **Endgame analytics** — win/draw/loss rates by endgame type (rook, minor piece, pawn, queen, mixed), material conversion and recovery statistics, performance gauges and timelines
-- **Cross-platform import** — import from chess.com and lichess, sync new games, scout opponents by importing their games
-- **Mobile-friendly PWA** — installable on Android and iOS, optimized for touch
-- **Open source** — self-hostable, MIT licensed
+- **Endgame analytics** — WDL by endgame type (rook, minor piece, pawn, queen, mixed), conversion rates when up material and recovery rates when down, Endgame ELO timeline per platform/time control, and LLM-narrated personalized feedback explaining what your stats mean.
+- **Opening explorer & insights** — step through any position and see your WDL per candidate move; an automatic 16-half-move scan surfaces opening strengths and weaknesses with deep-links into the explorer; works for scouting opponents too.
+- **Time management stats** — clock advantage/deficit at endgame entry, performance under matching time pressure vs opponents, flag rates per time control.
+- **Opening comparison & tracking** — bookmark openings and compare WDL trends over time, filter by time control to see what works where.
+- **System opening filter** — filter by your pieces only to analyze system openings like the London across all opponent variations.
+- **Cross-platform import** — combine chess.com and lichess games, filter by color, time control, opponent type, and recency.
+- **Mobile-friendly PWA** — installable on Android and iOS, optimized for touch.
+- **Open source** — self-hostable, MIT licensed.
 
 ## Tech Stack
 

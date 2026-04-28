@@ -6,15 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 FlawChess — a free, open-source chess analysis platform at flawchess.com. Tagline: "Engines are flawless, humans play FlawChess."
 
-Users import their games from chess.com and/or lichess and analyze win/draw/loss (WDL) rates by board position using Zobrist hashes. This solves inconsistent opening categorization on existing platforms — instead of named openings, FlawChess matches positions exactly.
+Users import their games from chess.com and/or lichess and analyze win/draw/loss (WDL) rates by board position using Zobrist hashes. This solves inconsistent opening categorization on existing platforms — instead of named openings, FlawChess matches positions exactly. The product covers openings, endgames, and time management.
 
 ### Key Features
 
-- **Interactive move explorer** — navigate positions on a chessboard and see WDL rates for each candidate move, scout opponents, detect weaknesses
-- **Opening comparison and tracking** — bookmark openings, compare performance, track win rate over time with filters
-- **System opening filter** — filter by user's pieces only to analyze system openings (e.g. the London) across all opponent variations
-- **Endgame analytics** — WDL rates by endgame type, material conversion/recovery stats, performance gauges, rolling-window timelines
-- **Cross-platform analysis** — combine chess.com and lichess games, powerful filters (color, time control, recency)
+- **Endgame Analytics** — WDL by endgame type (rook, minor piece, pawn, queen, mixed), conversion rates when up material, recovery rates when down, Endgame ELO timeline per (platform, time control), and LLM-narrated personalized feedback (`POST /api/insights/endgame`).
+- **Opening Explorer & Insights** — interactive move explorer with WDL per candidate move; automatic 16-half-move scan (`POST /api/insights/openings`) surfaces opening strengths/weaknesses with deep-links into the explorer; usable for scouting opponents.
+- **Time Management Stats** — average clock advantage/deficit at endgame entry, performance under matching time-pressure levels vs opponents, flag rates per time control.
+- **Opening Comparison & Tracking** — bookmark positions, compare WDL trends over time, filter by time control.
+- **System Opening Filter** — filter by user's pieces only (white_hash / black_hash) to analyze system openings (e.g. the London) across all opponent variations.
+- **Cross-platform import** — combine chess.com and lichess games, filter by color, time control, opponent type, recency.
+- **Mobile-first PWA** — installable on iOS/Android, drawer-based filter and bookmark sidebars, click-to-move on touch.
 
 ### User Flow
 
@@ -168,7 +170,7 @@ ssh flawchess "cd /opt/flawchess && docker compose down && docker compose up -d"
 - Hetzner Cloud Firewall configured with inbound TCP 22/80/443 + ICMP from any
 - Alembic migrations run automatically on backend container startup via `deploy/entrypoint.sh`
 - `.env` on server at `/opt/flawchess/.env` — never commit production secrets
-- Docker BuildKit cache is capped at 3 GB by a weekly cron job at `/etc/cron.d/docker-builder-prune` (Sundays 3am UTC, logs to `/var/log/docker-builder-prune.log`). Without it the cache grows ~50 GB over a few weeks of deploys and fills the disk.
+- Docker BuildKit cache is capped at 3 GB by a daily cron job at `/etc/cron.d/docker-builder-prune` (3am UTC, logs to `/var/log/docker-builder-prune.log`). Daily (not weekly) because each `bin/deploy.sh` run rebuilds images on the server, and a few deploys per day grow the cache past 6 GB between weekly runs. Without it the cache grows tens of GB over a few weeks of deploys and fills the disk. Note: with Docker's containerd image store, BuildKit cache lives in `/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs`, not `/var/lib/docker/buildkit` — use `docker system df` to inspect, not `du`.
 
 ## Version Control
 
