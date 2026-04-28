@@ -35,6 +35,7 @@ from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_MAJOR_EFFECT as MAJOR_EFFECT,
     OPENING_INSIGHTS_MINOR_EFFECT as MINOR_EFFECT,
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
+    OPENING_INSIGHTS_WALD_Z_95 as WALD_Z_95,
 )
 from app.services.score_confidence import compute_confidence_bucket
 from app.services.openings_service import recency_cutoff
@@ -201,25 +202,28 @@ def _attribute_finding(
 
 
 def _dedupe_within_section(
-    items: list[tuple[OpeningInsightFinding, int]],
-) -> list[OpeningInsightFinding]:
+    items: list[tuple[OpeningInsightFinding, int, float]],
+) -> list[tuple[OpeningInsightFinding, float]]:
     """Deduplicate by resulting_full_hash within a section, keeping the deepest entry.
 
     D-24: when two findings share resulting_full_hash in the same color section,
     keep the one with the higher attribution ply_count (deeper opening wins).
+
+    Quick task 260428-tgg: also threads `se` through. Returns (finding, se) tuples
+    — opening_ply_count is consumed here and does not flow downstream to ranking.
     """
-    best: dict[str, tuple[OpeningInsightFinding, int]] = {}
-    for finding, ply_count in items:
+    best: dict[str, tuple[OpeningInsightFinding, int, float]] = {}
+    for finding, ply_count, se in items:
         key = finding.resulting_full_hash
         existing = best.get(key)
         if existing is None or ply_count > existing[1]:
-            best[key] = (finding, ply_count)
-    return [finding for finding, _ in best.values()]
+            best[key] = (finding, ply_count, se)
+    return [(finding, se) for finding, _ply, se in best.values()]
 
 
 def _dedupe_continuations(
-    sections: dict[str, list[OpeningInsightFinding]],
-) -> dict[str, list[OpeningInsightFinding]]:
+    sections: dict[str, list[tuple[OpeningInsightFinding, float]]],
+) -> dict[str, list[tuple[OpeningInsightFinding, float]]]:
     """Drop findings whose entry position is downstream of a kept finding's candidate.
 
     Phase 71 UAT fix: when consecutive moves in the same line are all weak (or
@@ -234,9 +238,13 @@ def _dedupe_continuations(
     (white candidate → black candidate → white candidate) still consolidate
     to the earliest finding. Tie-break for sibling lines of equal depth:
     major over minor severity, then higher n_games.
+
+    Quick task 260428-tgg: payload widened from `OpeningInsightFinding` to
+    `(finding, se)` so SE survives this stage and reaches _rank_section. The
+    dedupe logic itself is unchanged — only the carried tuple shape grew.
     """
-    flat: list[tuple[str, OpeningInsightFinding]] = [
-        (sk, f) for sk, items in sections.items() for f in items
+    flat: list[tuple[str, OpeningInsightFinding, float]] = [
+        (sk, f, se) for sk, items in sections.items() for f, se in items
     ]
     flat.sort(
         key=lambda kf: (
@@ -248,7 +256,7 @@ def _dedupe_continuations(
 
     kept_keys: set[tuple[str, str, str]] = set()
     cover_prefixes: list[tuple[str, ...]] = []
-    for section_key, finding in flat:
+    for section_key, finding, _se in flat:
         entry_seq = tuple(finding.entry_san_sequence)
         downstream = any(
             len(entry_seq) >= len(cover) and entry_seq[: len(cover)] == cover
@@ -259,26 +267,60 @@ def _dedupe_continuations(
         kept_keys.add((section_key, finding.entry_full_hash, finding.candidate_move_san))
         cover_prefixes.append(entry_seq + (finding.candidate_move_san,))
 
-    result: dict[str, list[OpeningInsightFinding]] = {k: [] for k in sections}
+    result: dict[str, list[tuple[OpeningInsightFinding, float]]] = {k: [] for k in sections}
     for section_key, items in sections.items():
-        for finding in items:
+        for finding, se in items:
             if (section_key, finding.entry_full_hash, finding.candidate_move_san) in kept_keys:
-                result[section_key].append(finding)
+                result[section_key].append((finding, se))
     return result
 
 
 _CONFIDENCE_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
 
 
-def _rank_section(findings: list[OpeningInsightFinding]) -> list[OpeningInsightFinding]:
-    """Sort findings by (confidence DESC, |score - 0.50| DESC) per Phase 76 D-03.
+def _rank_section(
+    findings_with_se: list[tuple[OpeningInsightFinding, float]],
+    direction: Literal["weakness", "strength"],
+) -> list[OpeningInsightFinding]:
+    """Sort findings by (confidence DESC, Wald 95% CI bound) per Phase 76 D-03 + 260428-tgg.
 
-    high -> medium -> low; ties broken by effect size (distance from 0.50 pivot).
+    Within a confidence bucket, the tiebreak is the *direction-aware* Wald 95%
+    confidence-interval bound on the score, clamped to [0, 1]:
+      - weakness: ascending upper bound `score + 1.96 * SE` — the row whose
+        score is most-confidently-below-0.5 (smallest plausible best case)
+        sorts first.
+      - strength: descending lower bound `score - 1.96 * SE` — the row whose
+        score is most-confidently-above-0.5 (largest plausible worst case)
+        sorts first.
+
+    Why the Wald bound and not raw |score - 0.5|: the |score - 0.5| tiebreak
+    rewarded large effect regardless of sample size, so a small-N high-effect
+    row could leapfrog a large-N moderate-effect row inside the same bucket
+    even though the small-N row's confidence interval was much wider. The
+    Wald bound mixes effect AND uncertainty within the existing Wald-test
+    framework that already drives the bucket gate, so the same SE that
+    determines bucket membership also determines within-bucket order.
+
+    Bucket order (high -> medium -> low) remains the primary sort key; the
+    bound only orders rows within a bucket.
     """
-    return sorted(
-        findings,
-        key=lambda f: (_CONFIDENCE_RANK[f.confidence], -abs(f.score - 0.5)),
-    )
+
+    def sort_key(item: tuple[OpeningInsightFinding, float]) -> tuple[int, float]:
+        finding, se = item
+        half_width = WALD_Z_95 * se
+        if direction == "weakness":
+            # Ascending upper bound: tighter, more-confidently-bad rows first.
+            bound = min(max(finding.score + half_width, 0.0), 1.0)
+        else:
+            # Negate the lower bound so the tuple stays homogeneously ascending
+            # under the default sorted() order — equivalent to sorting the
+            # lower bound descending (more-confidently-good rows first).
+            lower = min(max(finding.score - half_width, 0.0), 1.0)
+            bound = -lower
+        return (_CONFIDENCE_RANK[finding.confidence], bound)
+
+    ranked = sorted(findings_with_se, key=sort_key)
+    return [f for f, _se in ranked]
 
 
 # ---------------------------------------------------------------------------
@@ -346,8 +388,12 @@ async def compute_insights(
         parents_by_hash = await query_openings_by_hashes(session, list(unmatched_parent_hashes))
 
         # ---- Build sections ----
-        # Each section accumulates (OpeningInsightFinding, ply_count) tuples for D-24 dedupe.
-        sections: dict[str, list[tuple[OpeningInsightFinding, int]]] = {
+        # Each section accumulates (OpeningInsightFinding, ply_count, se) tuples:
+        # - ply_count drives the D-24 deeper-entry-wins dedupe in _dedupe_within_section
+        #   (consumed there and not propagated downstream).
+        # - se threads through dedupe stages into _rank_section so the within-bucket
+        #   tiebreak can use the Wald 95% CI bound (quick task 260428-tgg).
+        sections: dict[str, list[tuple[OpeningInsightFinding, int, float]]] = {
             "white_weaknesses": [],
             "black_weaknesses": [],
             "white_strengths": [],
@@ -385,9 +431,7 @@ async def compute_insights(
                 opening_ply_count = matched_opening.ply_count if matched_opening else 0
 
                 score = _compute_score(row)
-                confidence, p_value, _se = compute_confidence_bucket(row.w, row.d, row.l, row.n)
-                # _se is threaded through to _rank_section in Task 2 (quick 260428-tgg);
-                # for now the helper signature changed but ranking still uses |score - 0.5|.
+                confidence, p_value, se = compute_confidence_bucket(row.w, row.d, row.l, row.n)
 
                 finding = OpeningInsightFinding(
                     color=color_literal,
@@ -416,17 +460,24 @@ async def compute_insights(
                 section_key = (
                     f"{color}_{'weaknesses' if classification == 'weakness' else 'strengths'}"
                 )
-                sections[section_key].append((finding, opening_ply_count))
+                sections[section_key].append((finding, opening_ply_count, se))
 
         # Per-section transposition dedupe (D-24) → global continuation dedupe
         # (Phase 71 UAT fix) → rank → cap (D-02 caps: 5 weaknesses, 3 strengths).
-        deduped_sections: dict[str, list[OpeningInsightFinding]] = {
+        # Quick 260428-tgg: SE flows through both dedupe stages into _rank_section,
+        # which ranks by Wald 95% CI bound (direction-aware) rather than raw
+        # |score - 0.5|, so wide-CI small-N rows do not leapfrog tight-CI
+        # large-N rows inside the same confidence bucket.
+        deduped_sections: dict[str, list[tuple[OpeningInsightFinding, float]]] = {
             key: _dedupe_within_section(items) for key, items in sections.items()
         }
         deduped_sections = _dedupe_continuations(deduped_sections)
         final_sections: dict[str, list[OpeningInsightFinding]] = {}
-        for key, findings in deduped_sections.items():
-            ranked = _rank_section(findings)
+        for key, findings_with_se in deduped_sections.items():
+            direction: Literal["weakness", "strength"] = (
+                "weakness" if "weaknesses" in key else "strength"
+            )
+            ranked = _rank_section(findings_with_se, direction=direction)
             cap = WEAKNESS_CAP_PER_COLOR if "weaknesses" in key else STRENGTH_CAP_PER_COLOR
             final_sections[key] = ranked[:cap]
 

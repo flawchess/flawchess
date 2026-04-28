@@ -8,7 +8,7 @@ parity, color optimization, and bookmark isolation (D-18).
 from __future__ import annotations
 
 import ctypes
-from typing import Any
+from typing import Any, Literal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,7 +17,11 @@ import chess.polyglot
 import pytest
 
 from app.models.opening import Opening
-from app.schemas.opening_insights import OpeningInsightsRequest, OpeningInsightsResponse
+from app.schemas.opening_insights import (
+    OpeningInsightFinding,
+    OpeningInsightsRequest,
+    OpeningInsightsResponse,
+)
 from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE as MIN_GAMES_PER_CANDIDATE,
 )
@@ -28,7 +32,6 @@ from app.services.opening_insights_service import (
     _rank_section,
     compute_insights,
 )
-from app.services.score_confidence import compute_confidence_bucket
 
 
 # ---------------------------------------------------------------------------
@@ -558,85 +561,175 @@ async def test_unnamed_line_fallback_uses_empty_eco_and_sentinel_name() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_ranking_confidence_desc_then_score_distance_desc() -> None:
-    """Phase 76 D-03: sort within each section by (confidence DESC, |score - 0.50| DESC).
+def _make_weakness_finding(
+    score: float,
+    candidate: str,
+    confidence: Literal["low", "medium", "high"] = "high",
+) -> OpeningInsightFinding:
+    """Build a minimal weakness OpeningInsightFinding for ranking-level tests.
 
-    high -> medium -> low; ties broken by distance from 0.50 pivot.
+    n_games / wins / draws / losses are set to placeholders that match `score`
+    closely enough for downstream display, but the ranking layer reads
+    `score`, `confidence`, and the externally-supplied SE only.
     """
-    # Build three findings with different (confidence, |score - 0.5|) profiles.
-    # Use direct OpeningInsightFinding construction (no DB) so assertions are deterministic.
-    from app.schemas.opening_insights import OpeningInsightFinding
-
-    def _make_finding(
-        n: int, w: int, d: int, losses: int, candidate: str
-    ) -> OpeningInsightFinding:
-        score = (w + 0.5 * d) / n
-        confidence, p_value, _se = compute_confidence_bucket(w, d, losses, n)
-        return OpeningInsightFinding(
-            color="white",
-            classification="weakness",
-            severity="major",  # severity is metric-agnostic now; value irrelevant for this test
-            opening_name="Test",
-            opening_eco="A00",
-            display_name="Test",
-            entry_fen="",
-            entry_san_sequence=[],
-            entry_full_hash="0",
-            candidate_move_san=candidate,
-            resulting_full_hash="0",
-            n_games=n,
-            wins=w,
-            draws=d,
-            losses=losses,
-            score=score,
-            confidence=confidence,
-            p_value=p_value,
-        )
-
-    # Bucket choices match the one-sided p-value + N>=10 rule: "medium" requires
-    # 0.05 <= p < 0.10 with n >= 10. Use n=50, score=0.40 (one-sided p≈0.0745)
-    # for the medium fixture; "high" cases sit at one-sided p << 0.05.
-    high_small_delta = _make_finding(n=400, w=130, d=80, losses=190, candidate="a")  # score≈0.425, conf=high
-    high_large_delta = _make_finding(n=400, w=80, d=80, losses=240, candidate="b")   # score=0.30,  conf=high
-    medium_any_delta = _make_finding(n=50, w=20, d=0, losses=30, candidate="c")      # score=0.40,  conf=medium
-
-    ranked = _rank_section([medium_any_delta, high_small_delta, high_large_delta])
-
-    # high before medium; within high, larger |score-0.5| first.
-    assert [f.candidate_move_san for f in ranked] == ["b", "a", "c"]
+    return OpeningInsightFinding(
+        color="white",
+        classification="weakness",
+        severity="major",
+        opening_name="Test",
+        opening_eco="A00",
+        display_name="Test",
+        entry_fen="",
+        entry_san_sequence=[],
+        entry_full_hash="0",
+        candidate_move_san=candidate,
+        resulting_full_hash="0",
+        n_games=400,
+        wins=int(round(score * 400)),
+        draws=0,
+        losses=400 - int(round(score * 400)),
+        score=score,
+        confidence=confidence,
+        p_value=0.5,
+    )
 
 
-def test_ranking_score_distance_tiebreak_within_same_confidence() -> None:
-    """Phase 76 D-03 tiebreak: same confidence bucket, larger |score - 0.50| sorts first."""
-    from app.schemas.opening_insights import OpeningInsightFinding
+def _make_strength_finding(
+    score: float,
+    candidate: str,
+    confidence: Literal["low", "medium", "high"] = "high",
+) -> OpeningInsightFinding:
+    return OpeningInsightFinding(
+        color="white",
+        classification="strength",
+        severity="major",
+        opening_name="Test",
+        opening_eco="A00",
+        display_name="Test",
+        entry_fen="",
+        entry_san_sequence=[],
+        entry_full_hash="0",
+        candidate_move_san=candidate,
+        resulting_full_hash="0",
+        n_games=400,
+        wins=int(round(score * 400)),
+        draws=0,
+        losses=400 - int(round(score * 400)),
+        score=score,
+        confidence=confidence,
+        p_value=0.5,
+    )
 
-    def _make_finding(score: float, candidate: str) -> OpeningInsightFinding:
-        return OpeningInsightFinding(
-            color="white",
-            classification="weakness",
-            severity="major",
-            opening_name="Test",
-            opening_eco="A00",
-            display_name="Test",
-            entry_fen="",
-            entry_san_sequence=[],
-            entry_full_hash="0",
-            candidate_move_san=candidate,
-            resulting_full_hash="0",
-            n_games=400,
-            wins=200,
-            draws=0,
-            losses=200,
-            score=score,
-            confidence="high",
-            p_value=0.5,
-        )
 
-    near_pivot = _make_finding(score=0.45, candidate="a")  # |delta| = 0.05
-    far_from_pivot = _make_finding(score=0.30, candidate="b")  # |delta| = 0.20
+def test_ranking_high_before_medium_before_low_buckets() -> None:
+    """Bucket order (high -> medium -> low) is the primary sort key — within-bucket
+    order may be reshuffled by the new Wald bound rule, but bucket ordering is preserved.
 
-    ranked = _rank_section([near_pivot, far_from_pivot])
-    assert [f.candidate_move_san for f in ranked] == ["b", "a"]
+    Quick task 260428-tgg replaces the |score - 0.5| tiebreak with a direction-aware
+    Wald CI bound; the bucket-level invariant is unchanged.
+    """
+    high_a = _make_weakness_finding(score=0.30, candidate="a", confidence="high")
+    high_b = _make_weakness_finding(score=0.40, candidate="b", confidence="high")
+    medium = _make_weakness_finding(score=0.40, candidate="c", confidence="medium")
+    low = _make_weakness_finding(score=0.45, candidate="d", confidence="low")
+
+    # Use small SE so the bound is essentially the score itself (ascending = lowest score first).
+    items = [(medium, 0.02), (low, 0.02), (high_a, 0.02), (high_b, 0.02)]
+    ranked = _rank_section(items, direction="weakness")
+
+    bucket_order = [f.confidence for f in ranked]
+    assert bucket_order == ["high", "high", "medium", "low"], (
+        "high bucket must come first, then medium, then low"
+    )
+
+
+def test_ranking_wald_upper_bound_tiebreak_within_same_confidence_for_weaknesses() -> None:
+    """Quick task 260428-tgg: within a confidence bucket, weaknesses are ranked by
+    Wald 95% upper bound ASCENDING — the row whose score is most-confidently-below-0.5
+    sorts first. The fixture is chosen so that the new (Wald upper) and old
+    (|score - 0.5|) rules disagree:
+
+      F1: score=0.40, se=0.005. upper = 0.40 + 1.96*0.005 = 0.4098. |delta| = 0.10.
+      F2: score=0.30, se=0.10.  upper = 0.30 + 1.96*0.10  = 0.496.  |delta| = 0.20.
+
+    Old rule (|score-0.5| desc): F2 first (|delta|=0.20 > 0.10).
+    New rule (upper bound asc):  F1 first (0.4098 < 0.496) — F1's CI is much
+    tighter and stays well below 0.5, so F1 is the more-confidently-bad row.
+    """
+    f1 = _make_weakness_finding(score=0.40, candidate="f1", confidence="high")
+    f2 = _make_weakness_finding(score=0.30, candidate="f2", confidence="high")
+
+    ranked = _rank_section([(f2, 0.10), (f1, 0.005)], direction="weakness")
+    assert [f.candidate_move_san for f in ranked] == ["f1", "f2"], (
+        "F1 (tight CI, upper=0.41) must outrank F2 (wide CI, upper=0.50) within the same bucket"
+    )
+
+
+def test_ranking_small_n_high_effect_does_not_outrank_large_n_moderate_effect_within_bucket() -> (
+    None
+):
+    """Must-have: a small-N high-effect finding should NOT outrank a large-N
+    moderate-effect finding within the same bucket — small N inflates SE, widens
+    the bound, and demotes the row.
+
+    Both findings are in the "high" bucket; demonstration uses hand-picked SE
+    that mimics what compute_confidence_bucket would produce for n=10 vs n=400.
+
+      A (small N, high effect):   score=0.20, se=0.13. upper = 0.20 + 1.96*0.13 = 0.4548.
+      B (large N, moderate effect): score=0.30, se=0.02. upper = 0.30 + 1.96*0.02 = 0.3392.
+
+    New Wald-bound rule: B.upper (0.339) < A.upper (0.455) -> B sorts FIRST.
+    Old |score-0.5| rule would have ordered A.|delta|=0.30 > B.|delta|=0.20 -> A first.
+    """
+    a_small_n = _make_weakness_finding(score=0.20, candidate="a", confidence="high")
+    b_large_n = _make_weakness_finding(score=0.30, candidate="b", confidence="high")
+
+    ranked = _rank_section([(a_small_n, 0.13), (b_large_n, 0.02)], direction="weakness")
+    assert [f.candidate_move_san for f in ranked] == ["b", "a"], (
+        "Large-N tight-CI moderate finding must outrank small-N wide-CI high-effect finding"
+    )
+
+
+def test_ranking_strength_uses_lower_bound() -> None:
+    """Quick task 260428-tgg: strengths sort by Wald 95% LOWER bound DESCENDING
+    (most-confidently-good first). Symmetric to the weakness case.
+
+      F1: score=0.60, se=0.005. lower = 0.60 - 1.96*0.005 = 0.5902.
+      F2: score=0.70, se=0.10.  lower = 0.70 - 1.96*0.10  = 0.504.
+
+    F1's lower bound (0.59) is well above 0.5; F2's (0.504) hugs the pivot.
+    F1 sorts first under the new rule despite having a smaller raw effect.
+    """
+    f1 = _make_strength_finding(score=0.60, candidate="f1", confidence="high")
+    f2 = _make_strength_finding(score=0.70, candidate="f2", confidence="high")
+
+    ranked = _rank_section([(f2, 0.10), (f1, 0.005)], direction="strength")
+    assert [f.candidate_move_san for f in ranked] == ["f1", "f2"], (
+        "F1 (tight CI, lower=0.59) must outrank F2 (wide CI, lower=0.50) within the same bucket"
+    )
+
+
+def test_ranking_clamps_bound_to_unit_interval() -> None:
+    """Wald bound is clamped to [0, 1] so degenerate (very wide CI) rows still
+    produce well-defined sort keys and do not crash sorting.
+
+    Weakness side: score=0.95, se=0.5 -> raw upper = 1.93, clamped to 1.0.
+    A normal row at score=0.30, se=0.02 has upper ≈ 0.34 and sorts first.
+    """
+    f_extreme = _make_weakness_finding(score=0.95, candidate="extreme", confidence="high")
+    f_normal = _make_weakness_finding(score=0.30, candidate="normal", confidence="high")
+
+    ranked = _rank_section([(f_extreme, 0.5), (f_normal, 0.02)], direction="weakness")
+    # Normal row (clamped upper ~0.34) sorts before extreme row (clamped to 1.0).
+    assert [f.candidate_move_san for f in ranked] == ["normal", "extreme"]
+
+    # Strength side: score=0.05, se=0.5 -> raw lower = -0.93, clamped to 0.0.
+    s_extreme = _make_strength_finding(score=0.05, candidate="extreme", confidence="high")
+    s_normal = _make_strength_finding(score=0.70, candidate="normal", confidence="high")
+
+    ranked_s = _rank_section([(s_extreme, 0.5), (s_normal, 0.02)], direction="strength")
+    # Normal row (lower ~0.66) sorts before extreme row (clamped lower to 0.0).
+    assert [f.candidate_move_san for f in ranked_s] == ["normal", "extreme"]
 
 
 @pytest.mark.asyncio
