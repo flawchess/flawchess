@@ -35,3 +35,11 @@ OPENING_INSIGHTS_MAJOR_EFFECT: float = 0.10  # |score - pivot| >= 0.10 → major
 OPENING_INSIGHTS_CONFIDENCE_MIN_N: int = 10
 OPENING_INSIGHTS_CONFIDENCE_HIGH_MAX_P: float = 0.05
 OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_P: float = 0.10
+
+# Two-sided 95% normal-approximation z-score. Used to construct the Wald 95%
+# confidence interval `score +/- WALD_Z_95 * SE` that drives the within-bucket
+# finding tiebreak in opening_insights_service._rank_section (quick task
+# 260428-tgg). The same z value is the implicit threshold for the p < 0.05
+# "high" confidence bucket above; collocating the constant keeps the Wald
+# framework parameters in one place.
+OPENING_INSIGHTS_WALD_Z_95: float = 1.96

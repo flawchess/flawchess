@@ -385,7 +385,9 @@ async def compute_insights(
                 opening_ply_count = matched_opening.ply_count if matched_opening else 0
 
                 score = _compute_score(row)
-                confidence, p_value = compute_confidence_bucket(row.w, row.d, row.l, row.n)
+                confidence, p_value, _se = compute_confidence_bucket(row.w, row.d, row.l, row.n)
+                # _se is threaded through to _rank_section in Task 2 (quick 260428-tgg);
+                # for now the helper signature changed but ranking still uses |score - 0.5|.
 
                 finding = OpeningInsightFinding(
                     color=color_literal,

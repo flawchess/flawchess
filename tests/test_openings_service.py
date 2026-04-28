@@ -605,7 +605,7 @@ class TestNextMovesScoreConfidence:
         assert 0.0 <= entry.p_value <= 1.0
 
         # Cross-check: same value as the helper would return directly for (w, d, l, n).
-        expected_confidence, expected_p = compute_confidence_bucket(
+        expected_confidence, expected_p, _expected_se = compute_confidence_bucket(
             entry.wins, entry.draws, entry.losses, entry.game_count
         )
         expected_score = (entry.wins + 0.5 * entry.draws) / entry.game_count

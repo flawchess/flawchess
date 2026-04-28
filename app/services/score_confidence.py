@@ -15,6 +15,11 @@ on the side of 0.5 the user actually cares about?" (i.e. for a weakness, "is
 score < 0.5?"; for a strength, "is score > 0.5?"). Mathematically it equals
 half the two-sided p; switching framing makes the tooltip copy honest, since
 a finding card asks a directional question, not a two-tailed one.
+
+The helper returns a 3-tuple (confidence, p_value, se). SE is exposed so the
+opening_insights_service ranking layer can build the Wald 95% CI bound that
+breaks ties within a confidence bucket without re-deriving the variance
+formula (quick task 260428-tgg).
 """
 
 import math
@@ -30,8 +35,8 @@ from app.services.opening_insights_constants import (
 
 def compute_confidence_bucket(
     w: int, d: int, losses: int, n: int
-) -> tuple[Literal["low", "medium", "high"], float]:
-    """Return (confidence_bucket, one_sided_p_value) for a (W, D, L, N) row.
+) -> tuple[Literal["low", "medium", "high"], float, float]:
+    """Return (confidence_bucket, one_sided_p_value, standard_error) for a (W, D, L, N) row.
 
     confidence_bucket is determined by the one-sided Wald p-value plus an
     N >= 10 sample-size gate:
@@ -48,10 +53,19 @@ def compute_confidence_bucket(
     ("is this score worse/better than 50%?"); it is mathematically equivalent
     to halving the two-sided p, with p_value bounded in [0, 0.5].
 
+    standard_error is the Wald standard error of the score (W + 0.5*D) / N
+    under the binomial-with-half-credit-for-draws variance, clamped at 0.0 for
+    degenerate (all-wins / all-draws / all-losses) rows. Callers use SE to
+    construct the Wald 95% confidence interval `score +/- 1.96 * SE` for the
+    direction-aware within-bucket tiebreak in
+    opening_insights_service._rank_section (quick task 260428-tgg). Returning
+    SE alongside the bucket avoids re-deriving the formula at the call site.
+
     Edge cases (SE == 0):
       - All-draws (score == 0.50): p_value = 0.5 -> "low" (n >= 10) or "low" (n < 10).
       - All-wins or all-losses (score != 0.50): p_value = 0.0 -> "high" (n >= 10)
         or "low" (n < 10, gated).
+      - n <= 0: returns ("low", 0.5, 0.0) without raising.
 
     No effect-size gate is applied (rejected during planning): the p-value bucket
     already encodes both magnitude and sample size, and the score classifier
@@ -64,10 +78,10 @@ def compute_confidence_bucket(
     # MD-02 guard: callers today only pass rows with n >= 1, but openings_service.get_next_moves
     # has an inconsistent `if gc > 0` guard on the score expression while passing gc here
     # unconditionally. Defend against future contract drift (e.g. a new JOIN producing
-    # zero-game rows) so this helper can never raise ZeroDivisionError. Returning ("low", 0.5)
-    # is the conservative one-sided null: no sample, no signal.
+    # zero-game rows) so this helper can never raise ZeroDivisionError. Returning ("low", 0.5, 0.0)
+    # is the conservative one-sided null: no sample, no signal, no spread.
     if n <= 0:
-        return "low", 0.5
+        return "low", 0.5, 0.0
     score = (w + 0.5 * d) / n
     variance = (w + 0.25 * d) / n - score * score
     variance = max(variance, 0.0)
@@ -93,4 +107,4 @@ def compute_confidence_bucket(
         confidence = "medium"
     else:
         confidence = "low"
-    return confidence, p_value
+    return confidence, p_value, se

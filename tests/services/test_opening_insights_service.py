@@ -571,7 +571,7 @@ def test_ranking_confidence_desc_then_score_distance_desc() -> None:
         n: int, w: int, d: int, losses: int, candidate: str
     ) -> OpeningInsightFinding:
         score = (w + 0.5 * d) / n
-        confidence, p_value = compute_confidence_bucket(w, d, losses, n)
+        confidence, p_value, _se = compute_confidence_bucket(w, d, losses, n)
         return OpeningInsightFinding(
             color="white",
             classification="weakness",

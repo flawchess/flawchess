@@ -445,7 +445,9 @@ async def get_next_moves(
         dp = round(d / gc * 100, 1) if gc > 0 else 0.0
         lp = round(lo / gc * 100, 1) if gc > 0 else 0.0
         score = (w + 0.5 * d) / gc if gc > 0 else 0.5
-        confidence, p_value = compute_confidence_bucket(w, d, lo, gc)
+        # Move Explorer rows are sorted by frequency or win_rate (not Wald CI bound),
+        # so SE is not needed here — `_se` underscore signals "intentionally unused".
+        confidence, p_value, _se = compute_confidence_bucket(w, d, lo, gc)
         moves.append(
             NextMoveEntry(
                 move_san=row.move_san,
