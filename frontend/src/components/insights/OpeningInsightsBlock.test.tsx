@@ -51,7 +51,7 @@ function makeFinding(overrides: Partial<OpeningInsightFinding> = {}): OpeningIns
     opening_name: 'Sample',
     opening_eco: 'A00',
     display_name: 'Sample',
-    entry_fen: '',
+    entry_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR',
     entry_san_sequence: ['e4'],
     entry_full_hash: '0',
     candidate_move_san: 'e5',
