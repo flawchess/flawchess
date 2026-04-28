@@ -404,7 +404,7 @@ export function OpeningsPage() {
         return {
           startSquare: squares.from,
           endSquare: squares.to,
-          color: getArrowColor(entry.score, entry.game_count, isHovered),
+          color: getArrowColor(entry.score, entry.game_count, entry.confidence, isHovered),
           width: entry.game_count / maxCount,
           isHovered,
           isHighlightPulse,
