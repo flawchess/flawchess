@@ -310,14 +310,14 @@ def _rank_section(
         half_width = WALD_Z_95 * se
         if direction == "weakness":
             # Ascending upper bound: tighter, more-confidently-bad rows first.
-            bound = min(max(finding.score + half_width, 0.0), 1.0)
+            wald_bound = min(max(finding.score + half_width, 0.0), 1.0)
         else:
             # Negate the lower bound so the tuple stays homogeneously ascending
             # under the default sorted() order — equivalent to sorting the
             # lower bound descending (more-confidently-good rows first).
             lower = min(max(finding.score - half_width, 0.0), 1.0)
-            bound = -lower
-        return (_CONFIDENCE_RANK[finding.confidence], bound)
+            wald_bound = -lower
+        return (_CONFIDENCE_RANK[finding.confidence], wald_bound)
 
     ranked = sorted(findings_with_se, key=sort_key)
     return [f for f, _se in ranked]
