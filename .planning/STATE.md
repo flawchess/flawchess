@@ -20,7 +20,7 @@ Phase: 76 (frontend-score-coloring-confidence-badges-label-reframe) — EXECUTIN
 Plan: 1 of 8
 Status: Executing Phase 76
 Resume: .planning/phases/75-backend-score-metric-confidence-annotation/75-CONTEXT.md
-Last activity: 2026-04-28 - Completed quick task 260428-oxr: Replace Wald CI half-width confidence buckets with p-value thresholds and N>=10 gate
+Last activity: 2026-04-28 - Completed quick task 260428-tgg: Sort opening insights findings by Wald CI bound (direction-aware tiebreak replacing effect-size)
 
 ## Project Reference
 
@@ -111,6 +111,7 @@ Carried forward from v1.11 close (still relevant):
 | 260427-j41 | Highlight candidate move in Move Explorer when arriving via Insights Moves link (severity-colored row border, pulsating board arrow, auto-scroll, clear on position/filter change) | 2026-04-27 | b6c1f29 | [260427-j41-highlight-candidate-move-in-move-explore](./quick/260427-j41-highlight-candidate-move-in-move-explore/) |
 | 260428-doc-framing-refresh | Refresh PROJECT/CLAUDE/README lead sections to match homepage's 5-feature framing (Endgame Analytics + Opening Insights + Time Management + Comparison + System Filter) | 2026-04-28 | ce250a4 | [260428-doc-framing-refresh](./quick/260428-doc-framing-refresh/) |
 | 260428-oxr | Replace Wald CI half-width confidence buckets with p-value thresholds and N>=10 gate | 2026-04-28 | f29617d | [260428-oxr-replace-wald-ci-half-width-confidence-bu](./quick/260428-oxr-replace-wald-ci-half-width-confidence-bu/) |
+| 260428-tgg | Sort opening insights findings by Wald CI bound (direction-aware tiebreak replacing effect-size) | 2026-04-28 | 45c5a20 | [260428-tgg-sort-opening-insights-findings-by-wald-c](./quick/260428-tgg-sort-opening-insights-findings-by-wald-c/) |
 
 ---
 Last activity: 2026-04-27 — Phase 71.1 Plan 03 complete (cleanup gates green; phase ready for verification).
