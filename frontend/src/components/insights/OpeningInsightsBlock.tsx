@@ -17,7 +17,9 @@ export const OPENING_INSIGHTS_CONFIDENCE_COPY: ReactNode = (
   <>
     <p>
       <strong>Confidence</strong> is based on the p-value, the chance of seeing
-      this score by luck (one-sided Wald test against 50%):
+      this difference by pure chance (one-sided Wald test against 50%). High confidence
+      can both result from a small difference based on a high number of games, or
+      from a large difference based on a small number of games:
     </p>
     <ul className="list-disc pl-4 space-y-0.5">
       <li><em>high</em>: p &lt; 0.05 (very likely a real effect)</li>
@@ -30,11 +32,12 @@ export const OPENING_INSIGHTS_CONFIDENCE_COPY: ReactNode = (
 const OPENING_INSIGHTS_POPOVER_COPY: ReactNode = (
   <div className="space-y-2">
     <p>
-      <strong>Score</strong> is (W + ½D) / N. 50% means you and your opponents broke even.
+      <strong>Score</strong> is your win rate plus half your draw rate.
+      50% means you and your opponents broke even.
     </p>
     <p>
-      A finding shows up when your score sits at least 5% from 50% over at
-      least 10 games, enough of a difference to be worth a closer look.
+      A finding shows up when your score is below 45% or above 55% over at
+      least 10 games, enough of a difference from 50% to be worth a closer look.
     </p>
     {OPENING_INSIGHTS_CONFIDENCE_COPY}
   </div>
