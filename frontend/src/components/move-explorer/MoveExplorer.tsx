@@ -17,7 +17,9 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { Tooltip } from '@/components/ui/tooltip';
 import { formatConfidenceTooltip } from '@/lib/openingInsights';
 import { cn } from '@/lib/utils';
-import type { NextMoveEntry } from '@/types/api';
+import { isTrollPosition } from '@/lib/trollOpenings';
+import trollFaceUrl from '@/assets/troll-face.svg';
+import type { NextMoveEntry, Color } from '@/types/api';
 
 interface MoveExplorerProps {
   moves: NextMoveEntry[];
@@ -69,6 +71,23 @@ export function MoveExplorer({
     const chess = new Chess(position);
     const legalMoves = chess.moves({ verbose: true });
     return new Map(legalMoves.map(m => [m.san, { from: m.from, to: m.to }]));
+  }, [position]);
+
+  // Derive side-just-moved once from the parent FEN's side-to-move token.
+  // The parent's side TO MOVE is the side that plays each candidate move in
+  // `moves`, so it's also the side that just moved on the resulting position
+  // (D-10). Defensive throw: callers must pass a full FEN — a board-only
+  // placement string has no side-to-move token and would silently produce
+  // wrong results (RESEARCH.md Pitfall 7).
+  const sideJustMoved: Color = useMemo(() => {
+    const tokens = position.split(' ');
+    const sideToken = tokens[1];
+    if (sideToken !== 'w' && sideToken !== 'b') {
+      throw new Error(
+        `MoveExplorer: position must be a full FEN with side-to-move, got: ${position}`,
+      );
+    }
+    return sideToken === 'w' ? 'white' : 'black';
   }, [position]);
 
   // Ref placed on the row matching highlightedMove.san — used to scrollIntoView.
@@ -210,6 +229,7 @@ export function MoveExplorer({
                   highlightPulse={isHighlighted ? highlightedMove.pulse : false}
                   // Only attach the ref to the matching row — we don't need a Map of refs.
                   rowRef={isHighlighted ? highlightedRowRef : undefined}
+                  sideJustMoved={sideJustMoved}
                 />
               );
             })}
@@ -221,7 +241,7 @@ export function MoveExplorer({
 }
 
 /** Move row with inline MiniWDLBar showing percentages */
-function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, highlightColor, highlightPulse, rowRef }: {
+function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, highlightColor, highlightPulse, rowRef, sideJustMoved }: {
   entry: NextMoveEntry;
   selectedMove: string | null;
   onRowClick: (entry: NextMoveEntry) => void;
@@ -233,11 +253,17 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   highlightPulse: boolean;
   /** Ref attached only to the highlighted row so the parent can scrollIntoView once. */
   rowRef?: React.Ref<HTMLTableRowElement>;
+  /** Side that just moved (i.e. the side TO MOVE in the parent position). Used to route the troll-set lookup. */
+  sideJustMoved: Color;
 }) {
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
   // Mute the row only on small samples — confidence is now its own column and
   // is hidden (not muted) when the effect is too small to be interesting.
   const isUnreliable = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
+  // Phase 77 D-06: inline troll-face icon when the resulting position is in
+  // the curated set for the side that just moved. Pure synchronous lookup —
+  // no useMemo (RESEARCH.md anti-pattern note).
+  const showTroll = isTrollPosition(entry.result_fen, sideJustMoved);
   // Hide the per-row confidence indicator for moves below the effect-of-
   // interest threshold (|score - 0.5| < 0.05) and for samples too small to
   // ground a significance test (game_count < 10). The column header stays.
@@ -301,7 +327,18 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
       onMouseLeave={() => onMoveHover?.(null)}
     >
       <td className="py-1 text-sm text-foreground font-normal truncate">
-        {entry.move_san}
+        <span className="inline-flex items-center gap-1">
+          <span>{entry.move_san}</span>
+          {showTroll && (
+            <img
+              src={trollFaceUrl}
+              alt=""
+              aria-hidden="true"
+              data-testid={`move-list-row-${entry.move_san}-troll-icon`}
+              className="hidden sm:inline-block h-3.5 w-3.5"
+            />
+          )}
+        </span>
       </td>
       <td className="py-1 text-right tabular-nums">
         <span className="inline-flex items-center justify-end gap-0.5">

@@ -35,7 +35,11 @@ function makeEntry(overrides: Partial<NextMoveEntry> & Pick<NextMoveEntry, 'move
     draw_pct: 25,
     loss_pct: 25,
     result_hash: '0',
-    result_fen: '',
+    // Phase 77: must be a valid 8-rank board FEN — MoveExplorer now calls
+    // isTrollPosition(result_fen, side) which throws on malformed input. The
+    // starting-position board FEN is a safe non-troll default; tests that
+    // exercise the troll path override this explicitly.
+    result_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR',
     transposition_count: 100,
     score: 0.625,           // Phase 76 D-05
     confidence: 'high',     // Phase 76 D-05
