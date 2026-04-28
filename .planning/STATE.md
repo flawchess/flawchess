@@ -20,7 +20,7 @@ Phase: 76 (frontend-score-coloring-confidence-badges-label-reframe) — EXECUTIN
 Plan: 1 of 8
 Status: Executing Phase 76
 Resume: .planning/phases/75-backend-score-metric-confidence-annotation/75-CONTEXT.md
-Last activity: 2026-04-28 - Completed quick task 260428-tgg: Sort opening insights findings by Wald CI bound (direction-aware tiebreak replacing effect-size)
+Last activity: 2026-04-28 - Completed quick task 260428-v9i: Switch opening insights ranking from Wald CI bound to Wilson score interval bound
 
 ## Project Reference
 
@@ -112,9 +112,10 @@ Carried forward from v1.11 close (still relevant):
 | 260428-doc-framing-refresh | Refresh PROJECT/CLAUDE/README lead sections to match homepage's 5-feature framing (Endgame Analytics + Opening Insights + Time Management + Comparison + System Filter) | 2026-04-28 | ce250a4 | [260428-doc-framing-refresh](./quick/260428-doc-framing-refresh/) |
 | 260428-oxr | Replace Wald CI half-width confidence buckets with p-value thresholds and N>=10 gate | 2026-04-28 | f29617d | [260428-oxr-replace-wald-ci-half-width-confidence-bu](./quick/260428-oxr-replace-wald-ci-half-width-confidence-bu/) |
 | 260428-tgg | Sort opening insights findings by Wald CI bound (direction-aware tiebreak replacing effect-size) | 2026-04-28 | 45c5a20 | [260428-tgg-sort-opening-insights-findings-by-wald-c](./quick/260428-tgg-sort-opening-insights-findings-by-wald-c/) |
+| 260428-v9i | Switch opening insights ranking from Wald CI bound to Wilson score interval bound | 2026-04-28 | 0715fda | [260428-v9i-switch-opening-insights-ranking-from-wal](./quick/260428-v9i-switch-opening-insights-ranking-from-wal/) |
 
 ---
-Last activity: 2026-04-27 — Phase 71.1 Plan 03 complete (cleanup gates green; phase ready for verification).
+Last activity: 2026-04-28 — Completed quick task 260428-v9i: Switch opening insights ranking from Wald CI bound to Wilson score interval bound.
 | 2026-04-27 | fast | Mobile: Moves/Games links beside mini board in OpeningFindingCard | ✅ |
 | 2026-04-27 | fast | widen game card WDL left border | ✅ |
 
