@@ -203,7 +203,7 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
   - Expose `confidence: "low" | "medium" | "high"` on the API response (`OpeningInsightFinding`).
   - Update CI-enforced consistency test mirroring `arrowColor.ts`.
 
-- [ ] Phase 76: Frontend — score-based coloring, confidence badges, label reframe
+- [x] Phase 76: Frontend — score-based coloring, confidence badges, label reframe (completed 2026-04-28)
   - Migrate `arrowColor.ts` from loss-rate to score (effect-size only, no confidence cue on arrows).
   - Migrate Move Explorer moves-list row tint to score; extend the existing `(low)` indicator to `(low)` / `(medium)` / `(high)`.
   - Soften Opening Insights section titles and severity copy per SEED-008 ("Worth a closer look" / "Played confidently"). Severity word stays; confidence badge sits next to it.
