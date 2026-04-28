@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.14
 milestone_name: Score-Based Opening Insights
-status: executing
-last_updated: "2026-04-28T14:11:31.163Z"
-last_activity: 2026-04-28 -- Phase 76 execution started
+status: "Phase 76 shipped — PR #70"
+last_updated: "2026-04-28T21:03:43.503Z"
+last_activity: "2026-04-28 — Phase 76 shipped — PR #70"
 progress:
   total_phases: 4
   completed_phases: 0
@@ -18,9 +18,9 @@ progress:
 
 Phase: 76 (frontend-score-coloring-confidence-badges-label-reframe) — EXECUTING
 Plan: 1 of 8
-Status: Executing Phase 76
+Status: Phase 76 shipped — PR #70
 Resume: .planning/phases/75-backend-score-metric-confidence-annotation/75-CONTEXT.md
-Last activity: 2026-04-28 - Completed quick task 260428-v9i: Switch opening insights ranking from Wald CI bound to Wilson score interval bound
+Last activity: 2026-04-28 — Phase 76 shipped — PR #70
 
 ## Project Reference
 
