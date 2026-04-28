@@ -344,8 +344,10 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
               className="inline-block h-3.5 w-3.5 text-muted-foreground"
             >
               <circle cx="12" cy="12" r="10" />
-              <circle cx="9" cy="10" r="1" fill="currentColor" stroke="none" />
-              <circle cx="15" cy="10" r="1" fill="currentColor" stroke="none" />
+              {/* Sunglasses: two filled lenses joined by a thin bridge */}
+              <rect x="4" y="8" width="6" height="4" rx="1" fill="currentColor" stroke="none" />
+              <rect x="14" y="8" width="6" height="4" rx="1" fill="currentColor" stroke="none" />
+              <line x1="10" y1="10" x2="14" y2="10" />
               <path d="M8 14.5 Q12 17.5 16 14.5" />
             </svg>
           )}
