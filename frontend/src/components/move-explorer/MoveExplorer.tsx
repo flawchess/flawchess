@@ -327,7 +327,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
       onMouseEnter={() => onMoveHover?.(entry.move_san)}
       onMouseLeave={() => onMoveHover?.(null)}
     >
-      <td className="py-1 text-sm text-foreground font-normal truncate">
+      <td className="py-1 text-sm text-foreground font-normal whitespace-nowrap">
         <span className="inline-flex items-center gap-1">
           <span>{entry.move_san}</span>
           {showTroll && (
@@ -341,7 +341,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
               strokeLinejoin="round"
               aria-hidden="true"
               data-testid={`move-list-row-${entry.move_san}-troll-icon`}
-              className="inline-block h-3.5 w-3.5 text-muted-foreground"
+              className="inline-block h-4 w-4 text-muted-foreground"
             >
               <circle cx="12" cy="12" r="10" />
               {/* Sunglasses: two filled lenses joined by a thin bridge */}
