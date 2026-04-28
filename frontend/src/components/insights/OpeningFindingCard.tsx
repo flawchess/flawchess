@@ -1,5 +1,6 @@
 import { ArrowRightLeft, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { Tooltip } from '@/components/ui/tooltip';
 import { getSeverityBorderColor, trimMoveSequence } from '@/lib/openingInsights';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
@@ -85,16 +86,25 @@ export function OpeningFindingCard({
     </p>
   );
 
-  // D-09/D-10: "Confidence: low/medium/high" line with level-specific hover tooltip.
+  // D-09/D-10: "Confidence: low/medium/high" line with level-specific explainer.
+  // Uses InfoPopover (tap-friendly) so mobile/tablet users can reach the copy — D-25 mobile parity.
+  // Wrapping a non-interactive <p> in Tooltip via asChild left the explainer unreachable on
+  // touch devices and to keyboard users; InfoPopover provides a focusable trigger and
+  // matches the section-title pattern in OpeningInsightsBlock.
   const confidenceLine = (
-    <Tooltip content={CONFIDENCE_TOOLTIP[finding.confidence]}>
-      <p
-        className="text-xs text-muted-foreground"
-        data-testid={`opening-finding-card-${idx}-confidence`}
+    <p
+      className="text-xs text-muted-foreground flex items-center gap-1"
+      data-testid={`opening-finding-card-${idx}-confidence`}
+    >
+      Confidence: <span className="font-medium">{finding.confidence}</span>
+      <InfoPopover
+        ariaLabel={`Confidence ${finding.confidence} explainer`}
+        testId={`opening-finding-card-${idx}-confidence-info`}
+        side="top"
       >
-        Confidence: <span className="font-medium">{finding.confidence}</span>
-      </p>
-    </Tooltip>
+        {CONFIDENCE_TOOLTIP[finding.confidence]}
+      </InfoPopover>
+    </p>
   );
 
   const linksRow = (
