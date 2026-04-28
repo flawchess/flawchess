@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.14
 milestone_name: Score-Based Opening Insights
-status: "Phase 75 shipped — PR #69"
-last_updated: "2026-04-28T11:15:31.960Z"
-last_activity: "2026-04-28 — Phase 75 shipped — PR #69"
+status: executing
+last_updated: "2026-04-28T13:01:55.296Z"
+last_activity: 2026-04-28 -- Phase 76 planning complete
 progress:
   total_phases: 4
   completed_phases: 0
@@ -18,9 +18,9 @@ progress:
 
 Phase: 999.1
 Plan: Not started
-Status: Phase 75 shipped — PR #69
+Status: Ready to execute
 Resume: .planning/phases/75-backend-score-metric-confidence-annotation/75-CONTEXT.md
-Last activity: 2026-04-28 — Phase 75 shipped — PR #69
+Last activity: 2026-04-28 -- Phase 76 planning complete
 
 ## Project Reference
 
@@ -115,3 +115,7 @@ Carried forward from v1.11 close (still relevant):
 Last activity: 2026-04-27 — Phase 71.1 Plan 03 complete (cleanup gates green; phase ready for verification).
 | 2026-04-27 | fast | Mobile: Moves/Games links beside mini board in OpeningFindingCard | ✅ |
 | 2026-04-27 | fast | widen game card WDL left border | ✅ |
+
+## Decision Coverage Override — Phase 76 (2026-04-28)
+
+The decision-coverage-plan gate reported 4/24 D-IDs covered. Plan-checker independently verified all 25 D-XX decisions are reflected in plan tasks (grep finds 21 unique D-IDs across must_haves blocks; the gate's strict YAML parser undercounts). Decisions D-01 (section titles unchanged — no-action), D-14 (row tint via getArrowColor — implemented in Plan 05 but not cited verbatim in must_haves), D-23 / D-24 (out-of-scope clarifications) are not literal citations in must_haves but are demonstrably honored by the plan structure. Override acknowledged; verify-phase will re-surface this for confirmation.
