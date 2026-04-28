@@ -218,8 +218,8 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
   - **Decisions:** D-01..D-11 in [77-CONTEXT.md](phases/77-troll-opening-watermark-on-insights-findings/77-CONTEXT.md). Research in [77-RESEARCH.md](phases/77-troll-opening-watermark-on-insights-findings/77-RESEARCH.md). Patterns in [77-PATTERNS.md](phases/77-troll-opening-watermark-on-insights-findings/77-PATTERNS.md). Original design notes in [notes/troll-openings-design.md](notes/troll-openings-design.md) (superseded by CONTEXT.md where they conflict — backend Zobrist/TSV/frozenset approach is OUTDATED).
 
   Plans:
-  - [ ] 77-01-PLAN.md — Asset move + theme constant + matcher utility (deriveUserSideKey, isTrollPosition) + unit tests (Wave 1)
-  - [ ] 77-02-PLAN.md — Curation script + hand-pruned static data module (Wave 1, autonomous: false — D-01 human checkpoint)
+  - [x] 77-01-PLAN.md — Asset move + theme constant + matcher utility (deriveUserSideKey, isTrollPosition) + unit tests (Wave 1)
+  - [x] 77-02-PLAN.md — Curation script + hand-pruned static data module (Wave 1, autonomous: false — D-01 human checkpoint)
   - [ ] 77-03-PLAN.md — OpeningFindingCard watermark + tests (Wave 2)
   - [ ] 77-04-PLAN.md — Move Explorer inline icon + tests (Wave 2, desktop-only via `hidden sm:inline-block`)
 
