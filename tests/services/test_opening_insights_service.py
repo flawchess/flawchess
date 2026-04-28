@@ -8,7 +8,7 @@ parity, color optimization, and bookmark isolation (D-18).
 from __future__ import annotations
 
 import ctypes
-from typing import Any
+from typing import Any, Literal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,7 +17,11 @@ import chess.polyglot
 import pytest
 
 from app.models.opening import Opening
-from app.schemas.opening_insights import OpeningInsightsRequest, OpeningInsightsResponse
+from app.schemas.opening_insights import (
+    OpeningInsightFinding,
+    OpeningInsightsRequest,
+    OpeningInsightsResponse,
+)
 from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE as MIN_GAMES_PER_CANDIDATE,
 )
@@ -25,7 +29,7 @@ from app.services.opening_insights_service import (
     WEAKNESS_CAP_PER_COLOR,
     STRENGTH_CAP_PER_COLOR,
     _classify_row,
-    _compute_confidence,
+    _rank_section,
     compute_insights,
 )
 
@@ -191,81 +195,6 @@ def test_classify_row_does_not_filter_below_min_games() -> None:
     # n=8, w=2, d=2, l=4 → score = (2+1)/8 = 0.375 → major weakness regardless of n
     row = _make_row(n=8, w=2, d=2, losses=4)
     assert _classify_row(row) is not None
-
-
-# ---------------------------------------------------------------------------
-# Confidence helper (D-05, D-06, D-11; Phase 75)
-# ---------------------------------------------------------------------------
-
-
-def test_compute_confidence_high_at_large_n() -> None:
-    """Half-width <= 0.10 → 'high'. Synthesize a row big enough to lock in."""
-    # n=400 with score=0.30: variance = (w + 0.25*d)/n - score**2.
-    # Use w=80, d=80, l=240 → score = (80+40)/400 = 0.30, variance = (80 + 20)/400 - 0.09 = 0.16
-    # se = sqrt(0.16/400) = 0.02; half_width = 1.96*0.02 = 0.0392 → 'high'.
-    row = _make_row(n=400, w=80, d=80, losses=240)
-    confidence, p_value = _compute_confidence(row)
-    assert confidence == "high"
-    assert 0.0 <= p_value < 1.0
-
-
-def test_compute_confidence_medium_at_moderate_n() -> None:
-    """Half-width in (0.10, 0.20] → 'medium'."""
-    # n=30, w=6, d=6, l=18 → score = (6+3)/30 = 0.30, variance = (6 + 1.5)/30 - 0.09 = 0.16
-    # se = sqrt(0.16/30) ≈ 0.0730; half_width ≈ 0.143 → 'medium'.
-    row = _make_row(n=30, w=6, d=6, losses=18)
-    confidence, _p_value = _compute_confidence(row)
-    assert confidence == "medium"
-
-
-def test_compute_confidence_low_at_n10_extreme_score() -> None:
-    """At n=10 with a strong observed effect, half-width > 0.20 → 'low'."""
-    # n=10, w=2, d=2, l=6 → score = (2+1)/10 = 0.30, variance = (2+0.5)/10 - 0.09 = 0.16
-    # se = sqrt(0.16/10) ≈ 0.1265; half_width ≈ 0.248 → 'low'.
-    row = _make_row(n=10, w=2, d=2, losses=6)
-    confidence, _p_value = _compute_confidence(row)
-    assert confidence == "low"
-
-
-def test_compute_confidence_just_inside_medium_boundary() -> None:
-    """Half-width comfortably in (0.10, 0.20] → 'medium' (D-06 strict <= boundary).
-
-    Replaces the prior 'exact 0.10 / 0.20' boundary tests. 0.10/1.96 and
-    0.20/1.96 are irrational, so no integer (w, d, l, n) row can hit either
-    bucket boundary exactly — every constructible row lands strictly inside
-    a bucket. We assert bucket semantics with a row that lands inside
-    'medium', not on an irrational boundary.
-    """
-    # n=25, w=5, d=5, l=15 → score = (5 + 2.5)/25 = 0.30
-    # variance = (5 + 1.25)/25 - 0.09 = 0.25 - 0.09 = 0.16
-    # se = sqrt(0.16/25) = 0.08; half_width = 1.96 * 0.08 = 0.1568 → 'medium'.
-    row = _make_row(n=25, w=5, d=5, losses=15)
-    confidence, _p_value = _compute_confidence(row)
-    assert confidence == "medium"
-
-
-def test_compute_confidence_p_value_at_score_050_is_one() -> None:
-    """Score exactly 0.50 → z=0 → p_value = erfc(0) = 1.0 (no evidence vs H0)."""
-    row = _make_row(n=20, w=8, d=4, losses=8)  # score = (8+2)/20 = 0.50
-    _confidence, p_value = _compute_confidence(row)
-    assert p_value == pytest.approx(1.0, abs=1e-9)
-
-
-def test_compute_confidence_se_zero_all_draws() -> None:
-    """All-draws line: variance=0, se=0. Returns ('high', 1.0) per the SE=0 guard."""
-    # n=10, w=0, d=10, l=0 → score = (0 + 5)/10 = 0.5; variance = (0 + 2.5)/10 - 0.25 = 0
-    row = _make_row(n=10, w=0, d=10, losses=0)
-    confidence, p_value = _compute_confidence(row)
-    assert confidence == "high"
-    assert p_value == 1.0
-
-
-def test_compute_confidence_se_zero_all_wins() -> None:
-    """All-wins line: variance=0, se=0, score!=0.5. Returns ('high', 0.0) per the SE=0 guard."""
-    row = _make_row(n=10, w=10, d=0, losses=0)
-    confidence, p_value = _compute_confidence(row)
-    assert confidence == "high"
-    assert p_value == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -632,60 +561,209 @@ async def test_unnamed_line_fallback_uses_empty_eco_and_sentinel_name() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_ranking_severity_desc_then_n_games_desc() -> None:
-    """D-07: within a section, major findings before minor; within tier, higher n_games first."""
-    # Phase 75: rebuilt with score-based row data → 2 minors + 1 major.
-    # minor #1: n=100, w=30, d=24, l=46 → score = (30+12)/100 = 0.42 (delta=-0.08, minor)
-    row_minor_large_n = _make_row(
-        entry_hash=11,
-        resulting_full_hash=211,
-        entry_san_sequence=["e4"],
-        n=100,
-        w=30,
-        d=24,
-        losses=46,
-    )
-    # minor #2: n=50, w=15, d=12, l=23 → score = (15+6)/50 = 0.42 (delta=-0.08, minor)
-    row_minor_small_n = _make_row(
-        entry_hash=12,
-        resulting_full_hash=212,
-        entry_san_sequence=["e4"],
-        n=50,
-        w=15,
-        d=12,
-        losses=23,
-    )
-    # major: n=20, w=4, d=4, l=12 → score = (4+2)/20 = 0.30 (delta=-0.20, major)
-    row_major = _make_row(
-        entry_hash=13, resulting_full_hash=213, entry_san_sequence=["e4"], n=20, w=4, d=4, losses=12
-    )
+def _make_weakness_finding(
+    score: float,
+    candidate: str,
+    confidence: Literal["low", "medium", "high"] = "high",
+    n_games: int = 400,
+) -> OpeningInsightFinding:
+    """Build a minimal weakness OpeningInsightFinding for ranking-level tests.
 
-    # Verify scores: 42/100=0.42 (minor), 21/50=0.42 (minor), 6/20=0.30 (major)
-    assert (30 + 12) / 100 == 0.42  # minor
-    assert (15 + 6) / 50 == 0.42  # minor
-    assert (4 + 2) / 20 == 0.30  # major
-
-    openings = {
-        11: _make_opening(full_hash=11, name="Queen's Gambit", ply_count=2),
-        12: _make_opening(full_hash=12, name="English Opening", ply_count=2),
-        13: _make_opening(full_hash=13, name="King's Indian", ply_count=2),
-    }
-
-    response = await _run_compute(
-        rows=[row_minor_large_n, row_minor_small_n, row_major],
-        openings_by_hash=openings,
+    Quick task 260428-v9i: ranking now uses the Wilson 95% score interval, which
+    is derived from `score` and `n_games` directly (no SE input). Tests therefore
+    drive uncertainty via `n_games` rather than synthetic SE values; the SE
+    component of the (finding, se) tuple is preserved upstream but ignored by
+    `_rank_section`. wins/losses are derived from `score * n_games` so the
+    finding is internally consistent for downstream display.
+    """
+    wins = int(round(score * n_games))
+    return OpeningInsightFinding(
         color="white",
+        classification="weakness",
+        severity="major",
+        opening_name="Test",
+        opening_eco="A00",
+        display_name="Test",
+        entry_fen="",
+        entry_san_sequence=[],
+        entry_full_hash="0",
+        candidate_move_san=candidate,
+        resulting_full_hash="0",
+        n_games=n_games,
+        wins=wins,
+        draws=0,
+        losses=n_games - wins,
+        score=score,
+        confidence=confidence,
+        p_value=0.5,
     )
 
-    weaknesses = response.white_weaknesses
-    assert len(weaknesses) == 3
-    # Major should be first
-    assert weaknesses[0].severity == "major"
-    # Within minor tier, larger n_games first
-    assert weaknesses[1].severity == "minor"
-    assert weaknesses[2].severity == "minor"
-    assert weaknesses[1].n_games >= weaknesses[2].n_games
+
+def _make_strength_finding(
+    score: float,
+    candidate: str,
+    confidence: Literal["low", "medium", "high"] = "high",
+    n_games: int = 400,
+) -> OpeningInsightFinding:
+    wins = int(round(score * n_games))
+    return OpeningInsightFinding(
+        color="white",
+        classification="strength",
+        severity="major",
+        opening_name="Test",
+        opening_eco="A00",
+        display_name="Test",
+        entry_fen="",
+        entry_san_sequence=[],
+        entry_full_hash="0",
+        candidate_move_san=candidate,
+        resulting_full_hash="0",
+        n_games=n_games,
+        wins=wins,
+        draws=0,
+        losses=n_games - wins,
+        score=score,
+        confidence=confidence,
+        p_value=0.5,
+    )
+
+
+def test_ranking_ignores_confidence_bucket_uses_ci_bound_only() -> None:
+    """Quick task 260428-v9i: confidence bucket is no longer part of the sort
+    key. A "medium" bucket row can outrank a "high" bucket row if its Wilson
+    upper bound is more striking (and vice versa). Bucket is retained as a UI
+    badge only.
+
+      medium_tight: score=0.42, n_games=4000 -> Wilson upper ~ 0.4354.
+      high_wide:    score=0.40, n_games=100  -> Wilson upper ~ 0.4980.
+
+    Even though high_wide has the larger raw effect, medium_tight's tight CI
+    sits much lower against the 0.5 pivot. medium_tight sorts first.
+    """
+    high_wide = _make_weakness_finding(
+        score=0.40, candidate="high_wide", confidence="high", n_games=100
+    )
+    medium_tight = _make_weakness_finding(
+        score=0.42, candidate="medium_tight", confidence="medium", n_games=4000
+    )
+
+    # SE values are arbitrary under Wilson — kept in the tuple for upstream
+    # contract compatibility but ignored by _rank_section. Setting SE=0 here
+    # would make the old Wald formula collapse to a pure score sort (giving
+    # high_wide first), so this test also distinguishes Wilson from Wald.
+    ranked = _rank_section([(high_wide, 0.0), (medium_tight, 0.0)], direction="weakness")
+    assert [f.candidate_move_san for f in ranked] == ["medium_tight", "high_wide"], (
+        "Tight medium-bucket row with stricter Wilson bound must outrank wide high-bucket row"
+    )
+
+
+def test_ranking_ci_upper_bound_tiebreak_within_same_confidence_for_weaknesses() -> None:
+    """Quick task 260428-v9i: within a confidence bucket, weaknesses are ranked
+    by Wilson 95% upper bound ASCENDING — the row whose score is most-confidently
+    -below-0.5 sorts first. The fixture is chosen so that the new (Wilson upper)
+    and old (|score - 0.5|) rules disagree:
+
+      F1: score=0.40, n_games=10000 -> Wilson upper ~ 0.4096. |delta| = 0.10.
+      F2: score=0.30, n_games=50    -> Wilson upper ~ 0.4375. |delta| = 0.20.
+
+    Old rule (|score-0.5| desc): F2 first (|delta|=0.20 > 0.10).
+    New rule (upper bound asc):  F1 first (0.4096 < 0.4375) — F1's CI is much
+    tighter and stays well below 0.5, so F1 is the more-confidently-bad row.
+    """
+    f1 = _make_weakness_finding(score=0.40, candidate="f1", confidence="high", n_games=10000)
+    f2 = _make_weakness_finding(score=0.30, candidate="f2", confidence="high", n_games=50)
+
+    # SE arbitrary (ignored by Wilson). 0.0 also makes the old Wald formula
+    # collapse to score-only, where f2 (0.30) < f1 (0.40) — opposite of Wilson.
+    ranked = _rank_section([(f2, 0.0), (f1, 0.0)], direction="weakness")
+    assert [f.candidate_move_san for f in ranked] == ["f1", "f2"], (
+        "F1 (tight CI, upper=0.4096) must outrank F2 (wide CI, upper=0.4375) within the same bucket"
+    )
+
+
+def test_ranking_small_n_high_effect_does_not_outrank_large_n_moderate_effect_within_bucket() -> (
+    None
+):
+    """Must-have: a small-N high-effect finding should NOT outrank a large-N
+    moderate-effect finding within the same bucket — small N widens the Wilson
+    interval and demotes the row.
+
+      A (small N, high effect):     score=0.20, n_games=10  -> Wilson upper ~ 0.5098.
+      B (large N, moderate effect): score=0.30, n_games=400 -> Wilson upper ~ 0.3466.
+
+    New Wilson-bound rule: B.upper (0.347) < A.upper (0.510) -> B sorts FIRST.
+    Old |score-0.5| rule would have ordered A.|delta|=0.30 > B.|delta|=0.20 -> A first.
+    """
+    a_small_n = _make_weakness_finding(score=0.20, candidate="a", confidence="high", n_games=10)
+    b_large_n = _make_weakness_finding(score=0.30, candidate="b", confidence="high", n_games=400)
+
+    # SE=0 makes the old Wald formula collapse to score-only, where A (0.20)
+    # would sort first — but Wilson correctly demotes the small-N row.
+    ranked = _rank_section([(a_small_n, 0.0), (b_large_n, 0.0)], direction="weakness")
+    assert [f.candidate_move_san for f in ranked] == ["b", "a"], (
+        "Large-N moderate finding must outrank small-N high-effect finding under Wilson"
+    )
+
+
+def test_ranking_strength_uses_lower_bound() -> None:
+    """Quick task 260428-v9i: strengths sort by Wilson 95% LOWER bound DESCENDING
+    (most-confidently-good first). Symmetric to the weakness case.
+
+      F1: score=0.60, n_games=10000 -> Wilson lower ~ 0.5904.
+      F2: score=0.70, n_games=50    -> Wilson lower ~ 0.5625.
+
+    F1's lower bound (0.59) is well above 0.5; F2's (0.56) hugs the pivot.
+    F1 sorts first under the new rule despite having a smaller raw effect.
+    """
+    f1 = _make_strength_finding(score=0.60, candidate="f1", confidence="high", n_games=10000)
+    f2 = _make_strength_finding(score=0.70, candidate="f2", confidence="high", n_games=50)
+
+    # SE=0 collapses old Wald to score-only, where f2 (0.70) > f1 (0.60) and
+    # would sort first — opposite of Wilson, which correctly tightens f1's
+    # bound and pushes it above f2's.
+    ranked = _rank_section([(f2, 0.0), (f1, 0.0)], direction="strength")
+    assert [f.candidate_move_san for f in ranked] == ["f1", "f2"], (
+        "F1 (tight CI, lower=0.5904) must outrank F2 (wide CI, lower=0.5625) within the same bucket"
+    )
+
+
+def test_ranking_bound_handles_boundary_scores() -> None:
+    """Quick task 260428-v9i: Wilson is well-defined at boundary scores (p=0,
+    p=1) — no Wald-style SE=0 degeneracy. The defensive clamp to [0, 1] is kept
+    in the implementation for safety, but ordering does not depend on it.
+
+    Weakness side:
+      f_extreme: score=0.95, n_games=10  -> Wilson upper ~ 0.9948 (NOT clamped).
+      f_normal:  score=0.30, n_games=400 -> Wilson upper ~ 0.3466.
+    Normal row sorts first (its bound is much further below 0.5).
+
+    Strength side:
+      s_extreme: score=0.05, n_games=10  -> Wilson lower ~ 0.0052.
+      s_normal:  score=0.70, n_games=400 -> Wilson lower ~ 0.6534.
+    Normal row sorts first (its bound is much further above 0.5).
+    """
+    f_extreme = _make_weakness_finding(
+        score=0.95, candidate="extreme", confidence="high", n_games=10
+    )
+    f_normal = _make_weakness_finding(
+        score=0.30, candidate="normal", confidence="high", n_games=400
+    )
+
+    # SE values arbitrary — Wilson uses only score and n_games.
+    ranked = _rank_section([(f_extreme, 0.0), (f_normal, 0.0)], direction="weakness")
+    # Normal row (upper ~0.347) sorts before extreme row (upper ~0.995).
+    assert [f.candidate_move_san for f in ranked] == ["normal", "extreme"]
+
+    s_extreme = _make_strength_finding(
+        score=0.05, candidate="extreme", confidence="high", n_games=10
+    )
+    s_normal = _make_strength_finding(
+        score=0.70, candidate="normal", confidence="high", n_games=400
+    )
+
+    ranked_s = _rank_section([(s_extreme, 0.0), (s_normal, 0.0)], direction="strength")
+    # Normal row (lower ~0.653) sorts before extreme row (lower ~0.005).
+    assert [f.candidate_move_san for f in ranked_s] == ["normal", "extreme"]
 
 
 @pytest.mark.asyncio
@@ -757,8 +835,8 @@ async def test_compute_insights_populates_confidence_and_p_value() -> None:
     """Phase 75 D-09: every finding carries confidence + p_value fields."""
     # Major weakness, n=20: score = (2 + 0.5*2)/20 = 0.15 (delta=-0.35, major).
     # variance = (2 + 0.25*2)/20 - 0.0225 = 0.125 - 0.0225 = 0.1025
-    # se = sqrt(0.1025/20) ≈ 0.0716; half_width ≈ 0.140 → medium
-    # z = (0.15 - 0.50) / 0.0716 ≈ -4.89; p_value ≈ erfc(4.89/sqrt(2)) ≈ 1e-6
+    # se = sqrt(0.1025/20) ≈ 0.0716
+    # z ≈ -4.89; p ≈ 1e-6; n=20 >= 10 → high
     row = _make_row(n=20, w=2, d=2, losses=16)
     opening = _make_opening()
     response = await _run_compute(rows=[row], openings_by_hash={100: opening}, color="white")
@@ -767,7 +845,7 @@ async def test_compute_insights_populates_confidence_and_p_value() -> None:
     finding = response.white_weaknesses[0]
     assert finding.severity == "major"
     assert finding.score == pytest.approx(0.15)
-    assert finding.confidence in {"low", "medium", "high"}
+    assert finding.confidence == "high"
     assert 0.0 <= finding.p_value <= 1.0
 
 

@@ -33,12 +33,12 @@ from app.schemas.opening_insights import (
     OpeningInsightsResponse,
 )
 from app.services.opening_insights_constants import (
-    OPENING_INSIGHTS_CONFIDENCE_HIGH_MAX_HALF_WIDTH as CONFIDENCE_HIGH_MAX_HALF_WIDTH,
-    OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_HALF_WIDTH as CONFIDENCE_MEDIUM_MAX_HALF_WIDTH,
+    OPENING_INSIGHTS_CI_Z_95 as CI_Z_95,
     OPENING_INSIGHTS_MAJOR_EFFECT as MAJOR_EFFECT,
     OPENING_INSIGHTS_MINOR_EFFECT as MINOR_EFFECT,
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
 )
+from app.services.score_confidence import compute_confidence_bucket
 from app.services.openings_service import recency_cutoff
 
 # ---------------------------------------------------------------------------
@@ -100,56 +100,6 @@ def _classify_row(
 def _compute_score(row: Any) -> float:
     """Compute score = (W + D/2) / n (Phase 75 D-09: canonical classification metric)."""
     return (row.w + row.d / 2) / row.n
-
-
-def _compute_confidence(row: Any) -> tuple[Literal["low", "medium", "high"], float]:
-    """Compute trinomial Wald confidence bucket and two-sided p-value (D-05, D-06).
-
-    Per-game variance under the trinomial Wald model: scores live in
-    {0, 0.5, 1}, so E[X²] = (W·1 + D·0.25 + L·0) / N = (W + 0.25·D) / N.
-    Variance is E[X²] - score². Standard error of the mean: sqrt(var/N).
-
-    Half-width = 1.96 · SE → bucket per D-06 thresholds.
-    Two-sided p-value: erfc(|Z| / sqrt(2)) where Z = (score - 0.50) / SE.
-    Pure Python `math` only (D-05) — no scipy.
-
-    Edge case — all-same-result lines (all wins, all losses, all draws): the
-    trinomial model has zero estimation variance (every game produced the
-    same outcome), so half_width = 0 and the row buckets "high". Sample-size
-    concerns are handled upstream by OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
-    = 10 (the HAVING gate); this helper does not re-litigate them. p_value
-    in the SE = 0 branch is the limiting value as SE → 0:
-      - score == 0.50 (e.g. all draws) → z numerator is 0 → p_value = 1.0.
-      - score != 0.50 (all wins / all losses) → z numerator is non-zero,
-        |z| → ∞, erfc(|z|/√2) → 0 → p_value = 0.0.
-    """
-    n = row.n
-    score = (row.w + 0.5 * row.d) / n
-    variance = (row.w + 0.25 * row.d) / n - score * score
-    # Numerical guard: variance can be exactly 0 (all-draw or all-same-result lines)
-    # and floating-point noise can make it tiny-negative. Clamp at 0.
-    variance = max(variance, 0.0)
-    se = math.sqrt(variance / n)
-
-    if se == 0.0:
-        # Degenerate: no within-line variation. Half-width = 0 → high.
-        # Score either equals 0.5 (no effect) or differs by a fixed offset
-        # with zero estimation noise → p_value = 0.0 if score != 0.5 else 1.0.
-        if score == SCORE_PIVOT:
-            return "high", 1.0
-        return "high", 0.0
-
-    half_width = 1.96 * se  # 1.96 = z_{0.975}, constant of the formula
-    if half_width <= CONFIDENCE_HIGH_MAX_HALF_WIDTH:
-        confidence: Literal["low", "medium", "high"] = "high"
-    elif half_width <= CONFIDENCE_MEDIUM_MAX_HALF_WIDTH:
-        confidence = "medium"
-    else:
-        confidence = "low"
-
-    z = (score - SCORE_PIVOT) / se
-    p_value = math.erfc(abs(z) / math.sqrt(2.0))
-    return confidence, p_value
 
 
 def _replay_san_sequence(san_sequence: list[str]) -> str:
@@ -253,25 +203,28 @@ def _attribute_finding(
 
 
 def _dedupe_within_section(
-    items: list[tuple[OpeningInsightFinding, int]],
-) -> list[OpeningInsightFinding]:
+    items: list[tuple[OpeningInsightFinding, int, float]],
+) -> list[tuple[OpeningInsightFinding, float]]:
     """Deduplicate by resulting_full_hash within a section, keeping the deepest entry.
 
     D-24: when two findings share resulting_full_hash in the same color section,
     keep the one with the higher attribution ply_count (deeper opening wins).
+
+    Quick task 260428-tgg: also threads `se` through. Returns (finding, se) tuples
+    — opening_ply_count is consumed here and does not flow downstream to ranking.
     """
-    best: dict[str, tuple[OpeningInsightFinding, int]] = {}
-    for finding, ply_count in items:
+    best: dict[str, tuple[OpeningInsightFinding, int, float]] = {}
+    for finding, ply_count, se in items:
         key = finding.resulting_full_hash
         existing = best.get(key)
         if existing is None or ply_count > existing[1]:
-            best[key] = (finding, ply_count)
-    return [finding for finding, _ in best.values()]
+            best[key] = (finding, ply_count, se)
+    return [(finding, se) for finding, _ply, se in best.values()]
 
 
 def _dedupe_continuations(
-    sections: dict[str, list[OpeningInsightFinding]],
-) -> dict[str, list[OpeningInsightFinding]]:
+    sections: dict[str, list[tuple[OpeningInsightFinding, float]]],
+) -> dict[str, list[tuple[OpeningInsightFinding, float]]]:
     """Drop findings whose entry position is downstream of a kept finding's candidate.
 
     Phase 71 UAT fix: when consecutive moves in the same line are all weak (or
@@ -286,9 +239,13 @@ def _dedupe_continuations(
     (white candidate → black candidate → white candidate) still consolidate
     to the earliest finding. Tie-break for sibling lines of equal depth:
     major over minor severity, then higher n_games.
+
+    Quick task 260428-tgg: payload widened from `OpeningInsightFinding` to
+    `(finding, se)` so SE survives this stage and reaches _rank_section. The
+    dedupe logic itself is unchanged — only the carried tuple shape grew.
     """
-    flat: list[tuple[str, OpeningInsightFinding]] = [
-        (sk, f) for sk, items in sections.items() for f in items
+    flat: list[tuple[str, OpeningInsightFinding, float]] = [
+        (sk, f, se) for sk, items in sections.items() for f, se in items
     ]
     flat.sort(
         key=lambda kf: (
@@ -300,7 +257,7 @@ def _dedupe_continuations(
 
     kept_keys: set[tuple[str, str, str]] = set()
     cover_prefixes: list[tuple[str, ...]] = []
-    for section_key, finding in flat:
+    for section_key, finding, _se in flat:
         entry_seq = tuple(finding.entry_san_sequence)
         downstream = any(
             len(entry_seq) >= len(cover) and entry_seq[: len(cover)] == cover
@@ -311,24 +268,74 @@ def _dedupe_continuations(
         kept_keys.add((section_key, finding.entry_full_hash, finding.candidate_move_san))
         cover_prefixes.append(entry_seq + (finding.candidate_move_san,))
 
-    result: dict[str, list[OpeningInsightFinding]] = {k: [] for k in sections}
+    result: dict[str, list[tuple[OpeningInsightFinding, float]]] = {k: [] for k in sections}
     for section_key, items in sections.items():
-        for finding in items:
+        for finding, se in items:
             if (section_key, finding.entry_full_hash, finding.candidate_move_san) in kept_keys:
-                result[section_key].append(finding)
+                result[section_key].append((finding, se))
     return result
 
 
-def _rank_section(findings: list[OpeningInsightFinding]) -> list[OpeningInsightFinding]:
-    """Sort findings by (severity desc, n_games desc) per D-07.
+def _wilson_bounds(p: float, n: int) -> tuple[float, float]:
+    """Return (lower, upper) Wilson 95% score interval bounds, clamped to [0, 1].
 
-    'major' comes before 'minor'; within each tier, higher n_games first.
-    Ascending sort with negated n_games achieves descending n_games.
+    Replaces the Wald CI used in earlier ranking (quick task 260428-v9i).
+    Wilson is well-defined at p=0 and p=1 (no SE=0 degeneracy) and is generally
+    tighter than Wald for small n. Caller guarantees n > 0 (N >=
+    MIN_GAMES_PER_CANDIDATE = 10); the n <= 0 branch is purely defensive.
     """
-    return sorted(
-        findings,
-        key=lambda f: (0 if f.severity == "major" else 1, -f.n_games),
-    )
+    if n <= 0:
+        # Defensive — should never happen given the discovery floor.
+        return (0.0, 1.0)
+    z = CI_Z_95
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    center = (p + z2 / (2 * n)) / denom
+    margin = (z * math.sqrt(p * (1.0 - p) / n + z2 / (4 * n * n))) / denom
+    lower = max(0.0, min(1.0, center - margin))
+    upper = max(0.0, min(1.0, center + margin))
+    return lower, upper
+
+
+def _rank_section(
+    findings_with_se: list[tuple[OpeningInsightFinding, float]],
+    direction: Literal["weakness", "strength"],
+) -> list[OpeningInsightFinding]:
+    """Sort findings by direction-aware Wilson 95% CI bound on the score, clamped to [0, 1].
+
+    - weakness: ascending Wilson upper bound — the row whose score is
+      most-confidently-below-0.5 (smallest plausible best case) sorts first.
+    - strength: descending Wilson lower bound — the row whose score is
+      most-confidently-above-0.5 (largest plausible worst case) sorts first.
+
+    Wilson replaces the earlier Wald `score +/- 1.96 * SE` formula (quick task
+    260428-v9i). Wald degenerates at boundary scores (e.g. 0/11 -> SE=0, CI
+    width=0, claiming 100% certainty); Wilson is well-defined for any p in
+    [0, 1] and tighter for small n, so small-N extreme findings no longer
+    outrank large-N moderate findings purely on score.
+
+    The `(finding, se)` tuple shape is preserved upstream because SE is still
+    produced by compute_confidence_bucket for the UI confidence badge, but
+    Wilson uses only `finding.score` and `finding.n_games` — the SE component
+    of the tuple is intentionally ignored here.
+
+    Confidence bucket is no longer part of the sort key (260428-tgg follow-up):
+    the CI bound already mixes effect size and sample size, so a high-N
+    moderate-effect row that lives in the "medium" bucket can legitimately
+    rank above a small-N extreme-effect row in the "high" bucket when its
+    bound is more striking. Bucket is retained as a UI badge only.
+    """
+
+    def sort_key(item: tuple[OpeningInsightFinding, float]) -> float:
+        finding, _se = item  # SE unused under Wilson; preserved for upstream compatibility
+        lower, upper = _wilson_bounds(finding.score, finding.n_games)
+        if direction == "weakness":
+            return upper
+        # Negate so default ascending sort yields lower-bound descending.
+        return -lower
+
+    ranked = sorted(findings_with_se, key=sort_key)
+    return [f for f, _se in ranked]
 
 
 # ---------------------------------------------------------------------------
@@ -396,8 +403,13 @@ async def compute_insights(
         parents_by_hash = await query_openings_by_hashes(session, list(unmatched_parent_hashes))
 
         # ---- Build sections ----
-        # Each section accumulates (OpeningInsightFinding, ply_count) tuples for D-24 dedupe.
-        sections: dict[str, list[tuple[OpeningInsightFinding, int]]] = {
+        # Each section accumulates (OpeningInsightFinding, ply_count, se) tuples:
+        # - ply_count drives the D-24 deeper-entry-wins dedupe in _dedupe_within_section
+        #   (consumed there and not propagated downstream).
+        # - se threads through dedupe stages but is ignored by _rank_section under
+        #   the Wilson 95% CI bound (quick task 260428-v9i — replaces Wald to fix
+        #   small-N degeneracy). SE is still produced for the UI confidence badge.
+        sections: dict[str, list[tuple[OpeningInsightFinding, int, float]]] = {
             "white_weaknesses": [],
             "black_weaknesses": [],
             "white_strengths": [],
@@ -435,7 +447,7 @@ async def compute_insights(
                 opening_ply_count = matched_opening.ply_count if matched_opening else 0
 
                 score = _compute_score(row)
-                confidence, p_value = _compute_confidence(row)
+                confidence, p_value, se = compute_confidence_bucket(row.w, row.d, row.l, row.n)
 
                 finding = OpeningInsightFinding(
                     color=color_literal,
@@ -464,17 +476,24 @@ async def compute_insights(
                 section_key = (
                     f"{color}_{'weaknesses' if classification == 'weakness' else 'strengths'}"
                 )
-                sections[section_key].append((finding, opening_ply_count))
+                sections[section_key].append((finding, opening_ply_count, se))
 
         # Per-section transposition dedupe (D-24) → global continuation dedupe
         # (Phase 71 UAT fix) → rank → cap (D-02 caps: 5 weaknesses, 3 strengths).
-        deduped_sections: dict[str, list[OpeningInsightFinding]] = {
+        # Quick 260428-v9i: ranks by Wilson 95% CI bound (direction-aware),
+        # using (score, n_games) and ignoring SE — replaces the earlier Wald
+        # CI to fix small-N degeneracy. Confidence bucket is no longer part of
+        # the sort key, only a UI badge.
+        deduped_sections: dict[str, list[tuple[OpeningInsightFinding, float]]] = {
             key: _dedupe_within_section(items) for key, items in sections.items()
         }
         deduped_sections = _dedupe_continuations(deduped_sections)
         final_sections: dict[str, list[OpeningInsightFinding]] = {}
-        for key, findings in deduped_sections.items():
-            ranked = _rank_section(findings)
+        for key, findings_with_se in deduped_sections.items():
+            direction: Literal["weakness", "strength"] = (
+                "weakness" if "weaknesses" in key else "strength"
+            )
+            ranked = _rank_section(findings_with_se, direction=direction)
             cap = WEAKNESS_CAP_PER_COLOR if "weaknesses" in key else STRENGTH_CAP_PER_COLOR
             final_sections[key] = ranked[:cap]
 

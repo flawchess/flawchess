@@ -196,6 +196,15 @@ class NextMoveEntry(BaseModel):
     result_hash: str   # BigInt as string for JS safety (full_hash of resulting position)
     result_fen: str    # board FEN of resulting position (piece placement only)
     transposition_count: int
+    score: float = Field(
+        ge=0.0, le=1.0
+    )  # (W + 0.5*D)/n; canonical classification metric (Phase 75 D-09, Phase 76 D-13)
+    confidence: Literal[
+        "low", "medium", "high"
+    ]  # One-sided Wald p-value bucket with N>=10 gate (p<0.05 high, p<0.10 medium) (Phase 75 D-05/D-06, shared via score_confidence.py)
+    p_value: float = Field(
+        ge=0.0, le=1.0
+    )  # One-sided p-value for directional Wald z-test on H0: score = 0.50 (Phase 75 D-09)
 
 
 class NextMovesResponse(BaseModel):

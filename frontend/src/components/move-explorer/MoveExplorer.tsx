@@ -3,7 +3,8 @@ import { Chess } from 'chess.js';
 import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
-import { getArrowColor, GREY } from '@/lib/arrowColor';
+import { getArrowColor, GREY, MINOR_EFFECT_SCORE, SCORE_PIVOT } from '@/lib/arrowColor';
+import { OPENING_INSIGHTS_CONFIDENCE_COPY } from '@/components/insights/OpeningInsightsBlock';
 import {
   HIGHLIGHT_PULSE_DURATION_MS,
   HIGHLIGHT_PULSE_ITERATIONS,
@@ -13,6 +14,8 @@ import {
 } from '@/lib/highlightPulse';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { Tooltip } from '@/components/ui/tooltip';
+import { formatConfidenceTooltip } from '@/lib/openingInsights';
 import { cn } from '@/lib/utils';
 import type { NextMoveEntry } from '@/types/api';
 
@@ -157,12 +160,12 @@ export function MoveExplorer({
           </p>
         </div>
       ) : (
-        <table data-testid="move-explorer-table" className="w-full text-sm">
+        <table data-testid="move-explorer-table" className="w-full text-sm table-fixed">
           <thead>
             <tr>
-              <th className="w-[3rem] text-left text-xs text-muted-foreground font-normal pb-1">
+              <th className="w-8 sm:w-12 text-left text-xs text-muted-foreground font-normal pb-1">
                 <span className="inline-flex items-center gap-1">
-                  Move
+                  <span className="sr-only sm:not-sr-only">Move</span>
                   <InfoPopover ariaLabel="Move arrows info" testId="move-arrows-info" side="top">
                     <div className="space-y-2">
                       <p>
@@ -171,11 +174,24 @@ export function MoveExplorer({
                       <p>
                         On desktop, click a move to play it. On mobile, tap to highlight (shows the arrow on the board), then tap again to play.
                       </p>
+                      <p>
+                        <strong>Score</strong> is your win rate plus half your draw rate.
+                        When your score is below 45% or above 55% over at
+                        least 10 games, a statistical test is conducted to determine how
+                        likely the difference occurred by chance.
+                      </p>
+                      {OPENING_INSIGHTS_CONFIDENCE_COPY}
                     </div>
                   </InfoPopover>
                 </span>
               </th>
               <th className="w-[5.5rem] text-right text-xs text-muted-foreground font-normal pb-1">Games</th>
+              <th
+                className="w-[2.5rem] text-center text-xs text-muted-foreground font-normal pb-1"
+                data-testid="move-explorer-th-conf"
+              >
+                Conf
+              </th>
               <th className="text-left text-xs text-muted-foreground font-normal pb-1 pl-2">Results</th>
             </tr>
           </thead>
@@ -219,13 +235,20 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   rowRef?: React.Ref<HTMLTableRowElement>;
 }) {
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
-  const isBelowThreshold = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
+  // Mute the row only on small samples — confidence is now its own column and
+  // is hidden (not muted) when the effect is too small to be interesting.
+  const isUnreliable = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
+  // Hide the per-row confidence indicator for moves below the effect-of-
+  // interest threshold (|score - 0.5| < 0.05) and for samples too small to
+  // ground a significance test (game_count < 10). The column header stays.
+  const hasEffectOfInterest = Math.abs(entry.score - SCORE_PIVOT) >= MINOR_EFFECT_SCORE;
+  const showConfidence = hasEffectOfInterest && entry.game_count >= MIN_GAMES_FOR_RELIABLE_STATS;
 
   // Strength/weakness row tint: every qualifying row gets the same color the
   // chessboard arrow uses (green for strengths, red for weaknesses). Grey
   // (neutral or below the color threshold) means no tint. The deep-link
   // highlight reuses the same color and adds the pulse animation on top.
-  const arrowColor = getArrowColor(entry.win_pct, entry.loss_pct, entry.game_count, false);
+  const arrowColor = getArrowColor(entry.score, entry.game_count, false);
   const severityColor = arrowColor === GREY ? null : arrowColor;
   const tintColor = highlightColor ?? severityColor;
 
@@ -236,7 +259,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   // re-renders (e.g. arrow re-sort on hover) from re-attaching the animation
   // class and restarting the CSS keyframe.
   const rowStyle: React.CSSProperties = {};
-  if (isBelowThreshold) rowStyle.opacity = UNRELIABLE_OPACITY;
+  if (isUnreliable) rowStyle.opacity = UNRELIABLE_OPACITY;
   if (tintColor !== null) {
     rowStyle.backgroundColor = `${tintColor}${HIGHLIGHT_BG_REST_ALPHA}`;
     if (highlightPulse) {
@@ -289,8 +312,15 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
               gameCount={entry.game_count}
             />
           )}
-          {entry.game_count}{isBelowThreshold && ' (low)'}
+          {entry.game_count}
         </span>
+      </td>
+      <td className="py-1 text-center text-muted-foreground tabular-nums">
+        {showConfidence && (
+          <Tooltip content={formatConfidenceTooltip(entry.confidence, entry.p_value, entry.score)}>
+            <span>{entry.confidence === 'medium' ? 'med' : entry.confidence}</span>
+          </Tooltip>
+        )}
       </td>
       <td className="py-1 pl-2">
         {!hasWdl ? (

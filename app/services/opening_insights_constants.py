@@ -26,9 +26,23 @@ OPENING_INSIGHTS_SCORE_PIVOT: float = 0.50
 OPENING_INSIGHTS_MINOR_EFFECT: float = 0.05  # |score - pivot| >= 0.05 → minor
 OPENING_INSIGHTS_MAJOR_EFFECT: float = 0.10  # |score - pivot| >= 0.10 → major
 
-# Confidence buckets — half-width thresholds (D-06). Half-width is
-# 1.96 * sqrt(per-game variance / n) using the trinomial Wald formula
-# (variance = (w + 0.25*d)/n - score**2). Values are first-principles
-# defaults; recheck after Phase 76 ships and we have telemetry.
-OPENING_INSIGHTS_CONFIDENCE_HIGH_MAX_HALF_WIDTH: float = 0.10
-OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_HALF_WIDTH: float = 0.20
+# Confidence buckets — one-sided Wald p-value thresholds plus N>=10 gate.
+# One-sided framing matches the directional question a finding card asks
+# ("is this score worse/better than 50%?"); equivalent to halving the
+# two-sided p. With N < 10, confidence is forced to "low" regardless of
+# p-value: small samples already carry the unreliable-stats opacity dim in
+# the UI, and the bucket should match that signal.
+OPENING_INSIGHTS_CONFIDENCE_MIN_N: int = 10
+OPENING_INSIGHTS_CONFIDENCE_HIGH_MAX_P: float = 0.05
+OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_P: float = 0.10
+
+# Two-sided 95% normal-approximation z-score (z = 1.96). Used by
+# `opening_insights_service._wilson_bounds` to construct the Wilson 95% score
+# interval that drives within-section ranking in `_rank_section` (quick task
+# 260428-v9i, replacing the earlier Wald CI). The same z value is also the
+# implicit threshold for the p < 0.05 "high" confidence bucket above;
+# collocating it keeps both 95%-normal-approximation parameters in one place.
+# Note: the trinomial *Wald* p-value used by
+# `score_confidence.compute_confidence_bucket` is a different statistical
+# procedure and is not renamed.
+OPENING_INSIGHTS_CI_Z_95: float = 1.96

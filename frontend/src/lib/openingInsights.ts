@@ -1,15 +1,44 @@
 import { DARK_RED, LIGHT_RED, DARK_GREEN, LIGHT_GREEN } from '@/lib/arrowColor';
 import type { OpeningInsightFinding } from '@/types/insights';
 
-/** Backend MIN_GAMES_PER_CANDIDATE — the minimum game count for a candidate move to qualify as a finding. */
-export const MIN_GAMES_FOR_INSIGHT = 20;
+// OPENING_INSIGHTS_POPOVER_COPY lives in OpeningInsightsBlock.tsx (JSX co-location).
 
-/** Mirrors LIGHT_COLOR_THRESHOLD from arrowColor.ts — the win/loss-rate boundary in percent. */
-export const INSIGHT_RATE_THRESHOLD = 55;
+type ConfidenceLevel = 'low' | 'medium' | 'high';
 
-/** Shared copy used by the InfoPopover (D-20) and empty states (D-09 / D-10). */
-export const INSIGHT_THRESHOLD_COPY =
-  'Insights are computed from candidate moves with at least 20 games where your win or loss rate exceeds 55%.';
+const CONFIDENCE_PREFIX: Record<ConfidenceLevel, string> = {
+  low: 'Low confidence',
+  medium: 'Medium confidence',
+  high: 'High confidence',
+};
+
+const CONFIDENCE_VERDICT: Record<ConfidenceLevel, (noun: string) => string> = {
+  low: () => 'could plausibly be chance',
+  medium: (noun) => `is likely a real ${noun}`,
+  high: (noun) => `is very likely a real ${noun}`,
+};
+
+/**
+ * Tooltip copy for confidence indicators — significance level explainer with the
+ * observed score, its signed distance from the 50% break-even line, and the p-value.
+ * `noun` is the directional thing being claimed: "strength" when score ≥ 50%,
+ * otherwise "weakness".
+ */
+export function formatConfidenceTooltip(
+  level: ConfidenceLevel,
+  pValue: number,
+  score: number,
+): string {
+  const noun: 'strength' | 'weakness' = score >= 0.5 ? 'strength' : 'weakness';
+  const scorePct = score * 100;
+  const roundedScore = Math.round(scorePct);
+  const diff = scorePct - 50;
+  const roundedDiff = Math.round(Math.abs(diff));
+  const scoreDescriptor =
+    roundedDiff === 0
+      ? `${roundedScore}% score (at 50%)`
+      : `${roundedScore}% score (${roundedDiff}% ${diff >= 0 ? 'above' : 'below'} 50%)`;
+  return `${CONFIDENCE_PREFIX[level]}: ${scoreDescriptor} ${CONFIDENCE_VERDICT[level](noun)} (p = ${pValue.toFixed(3)})`;
+}
 
 /**
  * Map a classification + severity tuple to the appropriate border-left color hex.
@@ -27,71 +56,20 @@ export function getSeverityBorderColor(
 }
 
 /**
- * Trim a SAN sequence + candidate move down to a compact "...N.move N+1.candidate"
- * string per D-05. Keeps the last 2 entry plys + candidate when the entry sequence
- * has 3+ plys, otherwise renders the whole sequence without ellipsis.
- *
- * If keeping the last 2 entry plys would start the trimmed render mid-move on a
- * Black ply, the orphan black ply is dropped so the render starts on a White ply.
- * This matches the user-facing examples in CONTEXT.md D-05 / RESEARCH.md table.
+ * Render the candidate move alone with PGN move-number notation. The board
+ * already shows the position context, so the card only needs to identify the
+ * single move that produced the score.
  *
  * @param entrySanSequence - SAN tokens from start to entry position (candidate excluded). May be empty.
  * @param candidateMoveSan - The candidate move SAN (always present).
- * @returns Compact rendering, e.g. "...3.d4 cxd4 4.Nxd4" or "1.e4 c5".
+ * @returns "N.san" for white plys, "N...san" for black plys (e.g. "4.Nxd4", "3...c5").
  */
-export function trimMoveSequence(
+export function formatCandidateMove(
   entrySanSequence: string[],
   candidateMoveSan: string,
 ): string {
-  const totalEntryPlys = entrySanSequence.length;
-
-  // Build the working sequence to render and decide whether ellipsis is needed.
-  let workingEntry: string[];
-  let firstPlyIndexInFull: number;  // 0-based index of the first rendered ply in the full sequence
-  let needsEllipsis: boolean;
-
-  if (totalEntryPlys < 2) {
-    // 0 or 1 entry plys: render whole sequence, no ellipsis.
-    workingEntry = entrySanSequence;
-    firstPlyIndexInFull = 0;
-    needsEllipsis = false;
-  } else {
-    // Default: keep last 2 entry plys.
-    workingEntry = entrySanSequence.slice(-2);
-    firstPlyIndexInFull = totalEntryPlys - workingEntry.length;
-    // If the first trimmed ply is a Black ply (odd index), drop it so the
-    // render starts on a White ply. This matches the D-05 examples exactly.
-    if (firstPlyIndexInFull % 2 === 1) {
-      workingEntry = workingEntry.slice(1);
-      firstPlyIndexInFull += 1;
-    }
-    // Ellipsis if any entry ply was omitted from the front.
-    needsEllipsis = firstPlyIndexInFull > 0;
-  }
-
-  const trimmed = [...workingEntry, candidateMoveSan];
-
-  // Render each token with PGN move-number notation.
-  const tokens: string[] = [];
-  for (let i = 0; i < trimmed.length; i += 1) {
-    const plyIndex = firstPlyIndexInFull + i;
-    const isWhitePly = plyIndex % 2 === 0;
-    const moveNumber = Math.floor(plyIndex / 2) + 1;
-    const san = trimmed[i]!;  // safe: i is a valid index into trimmed
-
-    if (isWhitePly) {
-      tokens.push(`${moveNumber}.${san}`);
-    } else if (i === 0) {
-      // First rendered ply is a Black ply (only happens when totalEntryPlys < 2
-      // produced workingEntry = [] and the candidate itself is Black-on-move —
-      // unreachable for entry_ply >= 3 backend, but defensive).
-      tokens.push(`${moveNumber}...${san}`);
-    } else {
-      // Black follow-up to a White ply we just rendered.
-      tokens.push(san);
-    }
-  }
-
-  const body = tokens.join(' ');
-  return needsEllipsis ? `...${body}` : body;
+  const plyIndex = entrySanSequence.length;  // 0-based index of the candidate in the full sequence
+  const isWhitePly = plyIndex % 2 === 0;
+  const moveNumber = Math.floor(plyIndex / 2) + 1;
+  return isWhitePly ? `${moveNumber}.${candidateMoveSan}` : `${moveNumber}...${candidateMoveSan}`;
 }

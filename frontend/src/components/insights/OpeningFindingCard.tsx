@@ -1,7 +1,12 @@
 import { ArrowRightLeft, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { Tooltip } from '@/components/ui/tooltip';
-import { getSeverityBorderColor, trimMoveSequence } from '@/lib/openingInsights';
+import {
+  formatCandidateMove,
+  formatConfidenceTooltip,
+  getSeverityBorderColor,
+} from '@/lib/openingInsights';
+import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
 import type { OpeningInsightFinding } from '@/types/insights';
 
 interface OpeningFindingCardProps {
@@ -21,13 +26,8 @@ export function OpeningFindingCard({
   onFindingClick,
   onOpenGames,
 }: OpeningFindingCardProps) {
-  const isWeakness = finding.classification === 'weakness';
-  const ratePercent = Math.round(
-    (isWeakness ? finding.loss_rate : finding.win_rate) * 100,
-  );
   const colorLabel = finding.color === 'white' ? 'White' : 'Black';
-  const verb = isWeakness ? 'lose' : 'win';
-  const trimmedSequence = trimMoveSequence(
+  const candidateMoveDisplay = formatCandidateMove(
     finding.entry_san_sequence,
     finding.candidate_move_san,
   );
@@ -36,6 +36,23 @@ export function OpeningFindingCard({
     finding.severity,
   );
   const isUnnamed = finding.opening_name === UNNAMED_SENTINEL;
+
+  // D-02: Score-based prose (replaces broken loss_rate/win_rate reads removed in Phase 75).
+  // Edge case: if rounding to integer would show 50% but classification implies otherwise,
+  // fall back to one decimal place to avoid contradicting the section title.
+  const rawPercent = finding.score * 100;
+  const wouldContradict =
+    (finding.classification === 'weakness' && Math.round(rawPercent) >= 50) ||
+    (finding.classification === 'strength' && Math.round(rawPercent) <= 50);
+  const scoreDisplay = wouldContradict ? rawPercent.toFixed(1) : Math.round(rawPercent).toString();
+
+  // D-11: Apply UNRELIABLE_OPACITY when n_games < 10 OR confidence is low.
+  const isUnreliable =
+    finding.n_games < MIN_GAMES_FOR_RELIABLE_STATS || finding.confidence === 'low';
+  const cardStyle: React.CSSProperties = {
+    borderLeftColor,
+    ...(isUnreliable ? { opacity: UNRELIABLE_OPACITY } : {}),
+  };
 
   const headerLine = (
     <div className="flex items-center gap-2 text-sm min-w-0">
@@ -52,14 +69,32 @@ export function OpeningFindingCard({
     </div>
   );
 
+  // D-02: "You score X% as <Color> after <seq>" — same form for both weakness and strength.
+  // Section title carries the polarity; the border tint via getSeverityBorderColor conveys direction visually.
   const proseLine = (
     <p className="text-sm text-muted-foreground">
-      You {verb}{' '}
+      You score{' '}
       <span style={{ color: borderLeftColor }} className="font-semibold">
-        {ratePercent}%
+        {scoreDisplay}%
       </span>{' '}
       as {colorLabel} after{' '}
-      <span className="font-mono text-foreground">{trimmedSequence}</span>
+      <span className="font-mono text-foreground">{candidateMoveDisplay}</span>
+    </p>
+  );
+
+  // "Confidence: low/medium/high" line — tooltip on hover over the level word
+  // matches the Moves/Games link pattern (hover-only, no tap-friendly trigger).
+  const confidenceLine = (
+    <p
+      className="text-sm text-muted-foreground flex items-center gap-1"
+      data-testid={`opening-finding-card-${idx}-confidence`}
+    >
+      Confidence:{' '}
+      <Tooltip content={formatConfidenceTooltip(finding.confidence, finding.p_value, finding.score)}>
+        <span className="font-medium" data-testid={`opening-finding-card-${idx}-confidence-info`}>
+          {finding.confidence}
+        </span>
+      </Tooltip>
     </p>
   );
 
@@ -97,7 +132,7 @@ export function OpeningFindingCard({
     <div
       data-testid={`opening-finding-card-${idx}`}
       className="block border-l-4 charcoal-texture border border-border/20 rounded px-4 py-3"
-      style={{ borderLeftColor }}
+      style={cardStyle}
     >
       {/* Mobile: header full-width on top, board + prose/links row below */}
       <div className="flex flex-col gap-2 sm:hidden">
@@ -110,6 +145,7 @@ export function OpeningFindingCard({
           />
           <div className="flex-1 min-w-0 flex flex-col gap-2">
             {proseLine}
+            {confidenceLine}
             {linksRow}
           </div>
         </div>
@@ -125,6 +161,7 @@ export function OpeningFindingCard({
         <div className="min-w-0 flex-1 flex flex-col gap-2">
           {headerLine}
           {proseLine}
+          {confidenceLine}
           {linksRow}
         </div>
       </div>

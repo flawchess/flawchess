@@ -82,9 +82,9 @@ export interface OpeningInsightFinding {
   wins: number;
   draws: number;
   losses: number;
-  win_rate: number;
-  loss_rate: number;
   score: number;
+  confidence: 'low' | 'medium' | 'high';
+  p_value: number;
 }
 
 export interface OpeningInsightsResponse {

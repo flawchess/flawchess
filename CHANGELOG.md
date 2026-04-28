@@ -8,6 +8,21 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+- Move Explorer: new "Conf" column showing low / med / high confidence per move so you can tell how well-sampled each next-move statistic is (Phase 76).
+- Opening Insights cards: each card now shows a "Confidence: low / medium / high" line with a hover tooltip explaining how to read it (Phase 76).
+- Opening Insights section titles: a small `?` icon next to each section title opens a popover explaining score, the 5%-from-pivot effect-size gate, and what confidence means (Phase 76).
+
+### Changed
+- Opening Insights ranking now uses the Wilson 95% score interval bound instead of Wald. Fixes degeneracy at boundary scores (Wald upper bound for 0/11 was 0.000; Wilson is ~0.259) and demotes small-N extreme findings in favor of large-N moderate findings within each section. Top-of-list mostly stable; mid-list reorders to favor higher-N findings. Backend constant `OPENING_INSIGHTS_WALD_Z_95` renamed to `OPENING_INSIGHTS_CI_Z_95` (value unchanged at 1.96). The trinomial Wald p-value in `score_confidence.py` (separate procedure for the confidence badge) is unchanged (quick task 260428-v9i).
+- Move Explorer arrows and row tints now reflect chess score (W + 0.5D)/N rather than separate win/loss rates. Color encoding stays effect-size only — arrows show how far from a 50% break-even your performance sits (Phase 76).
+- Opening Insights card prose reframed from "You lose / win X%" to "You score X% as colour after move" — same form for both weakness and strength sections (Phase 76).
+- Opening Insights cards within each section now sort by confidence first, then by distance from 50% — high-confidence findings rise to the top (Phase 76).
+- Low-confidence (or low-game-count) Move Explorer rows and Opening Insights cards are visually muted at 50% opacity to flag treat-as-a-hint findings without hiding them (Phase 76).
+
+### Fixed
+- Opening Insights cards no longer break when the backend stops returning the (now removed) `loss_rate` / `win_rate` fields — cards read `score` directly per the Phase 75 contract (Phase 76).
+
 ## [v1.13] Opening Insights — 2026-04-27
 
 First user-facing analytics layer for openings. Each user gets a curated list of

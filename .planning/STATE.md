@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.14
 milestone_name: Score-Based Opening Insights
-status: "Phase 75 shipped — PR #69"
-last_updated: "2026-04-28T11:15:31.960Z"
-last_activity: "2026-04-28 — Phase 75 shipped — PR #69"
+status: "Phase 76 shipped — PR #70"
+last_updated: "2026-04-28T21:03:43.503Z"
+last_activity: "2026-04-28 — Phase 76 shipped — PR #70"
 progress:
   total_phases: 4
   completed_phases: 0
@@ -16,11 +16,11 @@ progress:
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Phase 75 shipped — PR #69
+Phase: 76 (frontend-score-coloring-confidence-badges-label-reframe) — EXECUTING
+Plan: 1 of 8
+Status: Phase 76 shipped — PR #70
 Resume: .planning/phases/75-backend-score-metric-confidence-annotation/75-CONTEXT.md
-Last activity: 2026-04-28 — Phase 75 shipped — PR #69
+Last activity: 2026-04-28 — Phase 76 shipped — PR #70
 
 ## Project Reference
 
@@ -110,8 +110,18 @@ Carried forward from v1.11 close (still relevant):
 | 260427-h3u | Replace OpeningFindingCard whole-card deeplink with explicit Moves + Games links (drops n=, ExternalLink icon) | 2026-04-27 | ae44c6e | [260427-h3u-in-opening-strengths-and-weaknesses-card](./quick/260427-h3u-in-opening-strengths-and-weaknesses-card/) |
 | 260427-j41 | Highlight candidate move in Move Explorer when arriving via Insights Moves link (severity-colored row border, pulsating board arrow, auto-scroll, clear on position/filter change) | 2026-04-27 | b6c1f29 | [260427-j41-highlight-candidate-move-in-move-explore](./quick/260427-j41-highlight-candidate-move-in-move-explore/) |
 | 260428-doc-framing-refresh | Refresh PROJECT/CLAUDE/README lead sections to match homepage's 5-feature framing (Endgame Analytics + Opening Insights + Time Management + Comparison + System Filter) | 2026-04-28 | ce250a4 | [260428-doc-framing-refresh](./quick/260428-doc-framing-refresh/) |
+| 260428-oxr | Replace Wald CI half-width confidence buckets with p-value thresholds and N>=10 gate | 2026-04-28 | f29617d | [260428-oxr-replace-wald-ci-half-width-confidence-bu](./quick/260428-oxr-replace-wald-ci-half-width-confidence-bu/) |
+| 260428-tgg | Sort opening insights findings by Wald CI bound (direction-aware tiebreak replacing effect-size) | 2026-04-28 | 45c5a20 | [260428-tgg-sort-opening-insights-findings-by-wald-c](./quick/260428-tgg-sort-opening-insights-findings-by-wald-c/) |
+| 260428-v9i | Switch opening insights ranking from Wald CI bound to Wilson score interval bound | 2026-04-28 | 0715fda | [260428-v9i-switch-opening-insights-ranking-from-wal](./quick/260428-v9i-switch-opening-insights-ranking-from-wal/) |
 
 ---
-Last activity: 2026-04-27 — Phase 71.1 Plan 03 complete (cleanup gates green; phase ready for verification).
+Last activity: 2026-04-28 — Completed quick task 260428-v9i: Switch opening insights ranking from Wald CI bound to Wilson score interval bound.
 | 2026-04-27 | fast | Mobile: Moves/Games links beside mini board in OpeningFindingCard | ✅ |
 | 2026-04-27 | fast | widen game card WDL left border | ✅ |
+
+## Decision Coverage Override — Phase 76 (2026-04-28)
+
+The decision-coverage-plan gate reported 4/24 D-IDs covered. Plan-checker independently verified all 25 D-XX decisions are reflected in plan tasks (grep finds 21 unique D-IDs across must_haves blocks; the gate's strict YAML parser undercounts). Decisions D-01 (section titles unchanged — no-action), D-14 (row tint via getArrowColor — implemented in Plan 05 but not cited verbatim in must_haves), D-23 / D-24 (out-of-scope clarifications) are not literal citations in must_haves but are demonstrably honored by the plan structure. Override acknowledged; verify-phase will re-surface this for confirmation.
+| 2026-04-28 | fast | Confidence indicator polish: drop (low) suffix, add hover tooltip with p-value, match font sizes | ✅ |
+| 2026-04-28 | fast | Switch confidence to one-sided p with p<0.05/p<0.10 thresholds | ✅ |
+| 2026-04-28 | fast | Reframe confidence tooltip copy with directional noun, move thresholds into section info popover | ✅ |

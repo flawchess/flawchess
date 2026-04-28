@@ -10,99 +10,77 @@ import {
   HOVER_BLUE,
 } from './arrowColor';
 
-describe('getArrowColor', () => {
-  // ── Few games guard ────────────────────────────────────────────────────────
-  it('returns GREY when gameCount < 10', () => {
-    expect(getArrowColor(80, 0, 9, false)).toBe(GREY);
+describe('getArrowColor (Phase 76 — score-based)', () => {
+  describe('below-min-games guard', () => {
+    it('returns GREY when gameCount < MIN_GAMES_FOR_COLOR (10) and not hovered', () => {
+      expect(getArrowColor(0.65, 9, false)).toBe(GREY);
+      expect(getArrowColor(0.30, 9, false)).toBe(GREY);
+    });
+
+    it('returns HOVER_BLUE when hovered, even below MIN_GAMES_FOR_COLOR', () => {
+      expect(getArrowColor(0.65, 9, true)).toBe(HOVER_BLUE);
+      expect(getArrowColor(0.30, 9, true)).toBe(HOVER_BLUE);
+    });
   });
 
-  it('returns HOVER_BLUE when gameCount < 10 and hovered', () => {
-    expect(getArrowColor(80, 0, 9, true)).toBe(HOVER_BLUE);
+  describe('hover short-circuit', () => {
+    it('returns HOVER_BLUE on hover regardless of score', () => {
+      expect(getArrowColor(0.50, 20, true)).toBe(HOVER_BLUE);
+      expect(getArrowColor(0.80, 20, true)).toBe(HOVER_BLUE);
+      expect(getArrowColor(0.20, 20, true)).toBe(HOVER_BLUE);
+    });
   });
 
-  // ── Hover always returns blue ─────────────────────────────────────────────
-  it('returns HOVER_BLUE when hovered regardless of WDL', () => {
-    expect(getArrowColor(50, 30, 20, true)).toBe(HOVER_BLUE);
-    expect(getArrowColor(65, 20, 20, true)).toBe(HOVER_BLUE);
-    expect(getArrowColor(20, 65, 20, true)).toBe(HOVER_BLUE);
-    expect(getArrowColor(57, 20, 20, true)).toBe(HOVER_BLUE);
-    expect(getArrowColor(20, 57, 20, true)).toBe(HOVER_BLUE);
+  describe('neutral grey zone (strict boundaries)', () => {
+    it('returns GREY at exact pivot 0.50', () => {
+      expect(getArrowColor(0.50, 20, false)).toBe(GREY);
+    });
+
+    it('returns GREY just above pivot but below MINOR threshold (0.55)', () => {
+      expect(getArrowColor(0.501, 20, false)).toBe(GREY);
+      expect(getArrowColor(0.549, 20, false)).toBe(GREY);
+    });
+
+    it('returns GREY just above LIGHT_RED threshold (<=0.45) — i.e. 0.451', () => {
+      expect(getArrowColor(0.451, 20, false)).toBe(GREY);
+      expect(getArrowColor(0.499, 20, false)).toBe(GREY);
+    });
   });
 
-  // ── Neutral zone (grey 45-55%) ─────────────────────────────────────────────
-  it('returns GREY for win rate 45-55% (neutral zone)', () => {
-    expect(getArrowColor(50, 30, 20, false)).toBe(GREY);
+  describe('green buckets (positive score)', () => {
+    it('returns LIGHT_GREEN at exact MINOR threshold 0.55', () => {
+      expect(getArrowColor(0.55, 20, false)).toBe(LIGHT_GREEN);
+    });
+
+    it('returns LIGHT_GREEN just below MAJOR threshold 0.60', () => {
+      expect(getArrowColor(0.599, 20, false)).toBe(LIGHT_GREEN);
+    });
+
+    it('returns DARK_GREEN at exact MAJOR threshold 0.60', () => {
+      expect(getArrowColor(0.60, 20, false)).toBe(DARK_GREEN);
+    });
+
+    it('returns DARK_GREEN at extreme score 0.80', () => {
+      expect(getArrowColor(0.80, 20, false)).toBe(DARK_GREEN);
+    });
   });
 
-  it('returns GREY at exactly winPct=55 (boundary: 55 is still grey)', () => {
-    expect(getArrowColor(55, 20, 20, false)).toBe(GREY);
-  });
+  describe('red buckets (negative score)', () => {
+    it('returns LIGHT_RED at exact MINOR threshold 0.45', () => {
+      expect(getArrowColor(0.45, 20, false)).toBe(LIGHT_RED);
+    });
 
-  // ── Light green (win rate 55-60%) ──────────────────────────────────────────
-  it('returns LIGHT_GREEN at winPct=55.1 (just above threshold)', () => {
-    expect(getArrowColor(55.1, 20, 20, false)).toBe(LIGHT_GREEN);
-  });
+    it('returns LIGHT_RED just above MAJOR threshold 0.40 — i.e. 0.401', () => {
+      expect(getArrowColor(0.401, 20, false)).toBe(LIGHT_RED);
+    });
 
-  it('returns LIGHT_GREEN at winPct=57', () => {
-    expect(getArrowColor(57, 20, 20, false)).toBe(LIGHT_GREEN);
-  });
+    it('returns DARK_RED at exact MAJOR threshold 0.40', () => {
+      expect(getArrowColor(0.40, 20, false)).toBe(DARK_RED);
+    });
 
-  it('returns LIGHT_GREEN at winPct just below 60', () => {
-    expect(getArrowColor(59.9, 20, 20, false)).toBe(LIGHT_GREEN);
-  });
-
-  // ── Dark green (win rate 60%+) ─────────────────────────────────────────────
-  it('returns DARK_GREEN at winPct=60', () => {
-    expect(getArrowColor(60, 20, 20, false)).toBe(DARK_GREEN);
-  });
-
-  it('returns DARK_GREEN at winPct=65', () => {
-    expect(getArrowColor(65, 20, 20, false)).toBe(DARK_GREEN);
-  });
-
-  it('returns DARK_GREEN at winPct=80', () => {
-    expect(getArrowColor(80, 10, 20, false)).toBe(DARK_GREEN);
-  });
-
-  // ── Light red (loss rate 55-60%, i.e. win rate 40-45%) ────────────────────
-  it('returns LIGHT_RED at lossPct=55.1 (just above threshold)', () => {
-    expect(getArrowColor(20, 55.1, 20, false)).toBe(LIGHT_RED);
-  });
-
-  it('returns LIGHT_RED at lossPct=57 (win rate ~40-45%)', () => {
-    expect(getArrowColor(20, 57, 20, false)).toBe(LIGHT_RED);
-  });
-
-  it('returns LIGHT_RED at lossPct just below 60', () => {
-    expect(getArrowColor(20, 59.9, 20, false)).toBe(LIGHT_RED);
-  });
-
-  // ── Dark red (loss rate 60%+, i.e. win rate below 40%) ───────────────────
-  it('returns DARK_RED at lossPct=60', () => {
-    expect(getArrowColor(20, 60, 20, false)).toBe(DARK_RED);
-  });
-
-  it('returns DARK_RED at lossPct=65', () => {
-    expect(getArrowColor(20, 65, 20, false)).toBe(DARK_RED);
-  });
-
-  // ── Boundary: exactly at threshold 55 ─────────────────────────────────────
-  it('returns GREY at lossPct=55 (boundary: 55 is still grey)', () => {
-    expect(getArrowColor(20, 55, 20, false)).toBe(GREY);
-  });
-
-  // ── Edge case: both winPct and lossPct exceed 55% ─────────────────────────
-  it('returns DARK_GREEN when winPct=70 lossPct=60 (win dominates)', () => {
-    expect(getArrowColor(70, 60, 20, false)).toBe(DARK_GREEN);
-  });
-
-  it('returns DARK_RED when winPct=57 lossPct=62 (loss dominates)', () => {
-    expect(getArrowColor(57, 62, 20, false)).toBe(DARK_RED);
-  });
-
-  it('returns DARK_GREEN when winPct=65 lossPct=65 (equal — win wins)', () => {
-    // When both are equal, green takes precedence (winPct >= lossPct rule)
-    expect(getArrowColor(65, 65, 20, false)).toBe(DARK_GREEN);
+    it('returns DARK_RED at extreme score 0.20', () => {
+      expect(getArrowColor(0.20, 20, false)).toBe(DARK_RED);
+    });
   });
 });
 
@@ -135,20 +113,20 @@ describe('arrowSortKey', () => {
     expect(arrowSortKey('#123456')).toBe(2);
   });
 
-  // Verify sort keys via getArrowColor round-trip
+  // Verify sort keys via getArrowColor round-trip (new score-based signature)
   it('hovered color from getArrowColor has sort key -1', () => {
-    expect(arrowSortKey(getArrowColor(65, 10, 20, true))).toBe(-1);
+    expect(arrowSortKey(getArrowColor(0.65, 20, true))).toBe(-1);
   });
 
   it('green color from getArrowColor has sort key 0', () => {
-    expect(arrowSortKey(getArrowColor(65, 10, 20, false))).toBe(0);
+    expect(arrowSortKey(getArrowColor(0.65, 20, false))).toBe(0);
   });
 
   it('red color from getArrowColor has sort key 1', () => {
-    expect(arrowSortKey(getArrowColor(10, 65, 20, false))).toBe(1);
+    expect(arrowSortKey(getArrowColor(0.20, 20, false))).toBe(1);
   });
 
   it('grey color from getArrowColor has sort key 2', () => {
-    expect(arrowSortKey(getArrowColor(40, 20, 20, false))).toBe(2);
+    expect(arrowSortKey(getArrowColor(0.50, 20, false))).toBe(2);
   });
 });

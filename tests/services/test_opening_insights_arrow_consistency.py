@@ -68,3 +68,35 @@ def test_major_effect_matches_frontend() -> None:
 def test_min_games_matches_frontend() -> None:
     """MIN_GAMES_FOR_COLOR must match OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE (D-13)."""
     assert _extract_int("MIN_GAMES_FOR_COLOR") == OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
+
+
+def test_compute_confidence_bucket_is_single_implementation() -> None:
+    """Phase 76 D-22 fallback: structural assertion that
+    score_confidence.compute_confidence_bucket is the only implementation of the
+    trinomial Wald formula. The boundary behavior is exercised by
+    tests/services/test_score_confidence.py.
+    """
+    from app.services import score_confidence
+
+    assert hasattr(score_confidence, "compute_confidence_bucket"), (
+        "score_confidence.compute_confidence_bucket must exist (Phase 76 D-06)"
+    )
+
+    # opening_insights_service must NOT define a local _compute_confidence
+    from app.services import opening_insights_service
+
+    assert not hasattr(opening_insights_service, "_compute_confidence"), (
+        "_compute_confidence must be migrated to score_confidence (Phase 76 D-06); "
+        "duplicate definition would re-introduce the formula divergence risk."
+    )
+
+    # openings_service must import compute_confidence_bucket (the second consumer per D-05/D-06)
+    import inspect
+
+    from app.services import openings_service
+
+    source = inspect.getsource(openings_service)
+    assert "compute_confidence_bucket" in source, (
+        "openings_service must use the shared score_confidence helper (Phase 76 D-06); "
+        "found no reference to compute_confidence_bucket."
+    )

@@ -21,6 +21,7 @@ from app.repositories.openings_repository import (
     query_transposition_counts,
     query_wdl_counts,
 )
+from app.services.score_confidence import compute_confidence_bucket
 from app.schemas.openings import (
     OpeningsRequest,
     OpeningsResponse,
@@ -443,6 +444,10 @@ async def get_next_moves(
         wp = round(w / gc * 100, 1) if gc > 0 else 0.0
         dp = round(d / gc * 100, 1) if gc > 0 else 0.0
         lp = round(lo / gc * 100, 1) if gc > 0 else 0.0
+        score = (w + 0.5 * d) / gc if gc > 0 else 0.5
+        # Move Explorer rows are sorted by frequency or win_rate (not Wald CI bound),
+        # so SE is not needed here — `_se` underscore signals "intentionally unused".
+        confidence, p_value, _se = compute_confidence_bucket(w, d, lo, gc)
         moves.append(
             NextMoveEntry(
                 move_san=row.move_san,
@@ -456,6 +461,9 @@ async def get_next_moves(
                 result_hash=str(row.result_hash),
                 result_fen=result_fens.get(row.result_hash, ""),
                 transposition_count=trans_counts.get(row.result_hash, gc),
+                score=score,
+                confidence=confidence,
+                p_value=p_value,
             )
         )
 

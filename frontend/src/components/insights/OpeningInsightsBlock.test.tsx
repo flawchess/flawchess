@@ -48,21 +48,21 @@ function makeFinding(overrides: Partial<OpeningInsightFinding> = {}): OpeningIns
     color: 'white',
     classification: 'weakness',
     severity: 'major',
-    opening_name: 'Test Opening',
+    opening_name: 'Sample',
     opening_eco: 'A00',
-    display_name: 'Test Opening',
-    entry_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
-    entry_san_sequence: ['e4', 'c5', 'Nf3'],
-    entry_full_hash: '111',
-    candidate_move_san: 'd4',
-    resulting_full_hash: '222',
-    n_games: 25,
-    wins: 5,
-    draws: 5,
-    losses: 15,
-    win_rate: 0.20,
-    loss_rate: 0.60,
+    display_name: 'Sample',
+    entry_fen: '',
+    entry_san_sequence: ['e4'],
+    entry_full_hash: '0',
+    candidate_move_san: 'e5',
+    resulting_full_hash: '0',
+    n_games: 50,
+    wins: 10,
+    draws: 10,
+    losses: 30,
     score: 0.30,
+    confidence: 'high',     // Phase 76 D-21
+    p_value: 0.01,          // Phase 76 D-21
     ...overrides,
   };
 }
@@ -141,7 +141,7 @@ describe('OpeningInsightsBlock', () => {
     const populated: OpeningInsightsResponse = {
       ...EMPTY_RESPONSE,
       white_weaknesses: [makeFinding({ color: 'white', classification: 'weakness' })],
-      black_strengths: [makeFinding({ color: 'black', classification: 'strength', severity: 'minor', win_rate: 0.58 })],
+      black_strengths: [makeFinding({ color: 'black', classification: 'strength', severity: 'minor', score: 0.58 })],
     };
     (apiClient.post as ReturnType<typeof vi.fn>).mockResolvedValue({ data: populated });
     const Wrapper = createWrapper();
@@ -226,4 +226,58 @@ describe('OpeningInsightsBlock', () => {
     expect(onOpenGames).toHaveBeenCalledWith(finding);
   });
 
+});
+
+describe('Phase 76 — Section-title InfoPopover triggers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function renderBlock(responseOverrides: Partial<OpeningInsightsResponse> = {}) {
+    const data: OpeningInsightsResponse = {
+      ...EMPTY_RESPONSE,
+      ...responseOverrides,
+    };
+    (apiClient.post as ReturnType<typeof vi.fn>).mockResolvedValue({ data });
+    const Wrapper = createWrapper();
+    render(
+      <Wrapper>
+        <OpeningInsightsBlock debouncedFilters={DEFAULT_FILTERS} onFindingClick={() => {}} onOpenGames={() => {}} />
+      </Wrapper>,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('opening-insights-section-white-weaknesses')).toBeTruthy();
+    });
+    return screen;
+  }
+
+  it('renders an InfoPopover trigger on each of the four section headers', async () => {
+    await renderBlock({ white_weaknesses: [makeFinding()] });
+    // The InfoPopover trigger renders an icon button; testid pattern matches all 4.
+    const triggers = screen.getAllByTestId(/^opening-insights-section-(white|black)-(weaknesses|strengths)-info$/);
+    expect(triggers).toHaveLength(4);
+  });
+
+  it('each trigger has an ARIA label matching the section title', async () => {
+    await renderBlock({ white_weaknesses: [makeFinding()] });
+    expect(
+      screen.getByTestId('opening-insights-section-white-weaknesses-info').getAttribute('aria-label'),
+    ).toContain('White Opening Weaknesses');
+    expect(
+      screen.getByTestId('opening-insights-section-black-weaknesses-info').getAttribute('aria-label'),
+    ).toContain('Black Opening Weaknesses');
+    expect(
+      screen.getByTestId('opening-insights-section-white-strengths-info').getAttribute('aria-label'),
+    ).toContain('White Opening Strengths');
+    expect(
+      screen.getByTestId('opening-insights-section-black-strengths-info').getAttribute('aria-label'),
+    ).toContain('Black Opening Strengths');
+  });
+
+  it('does not render a block-level "Opening Insights" h2 title (D-18)', async () => {
+    await renderBlock({ white_weaknesses: [makeFinding()] });
+    // No top-level h2 with this exact text.
+    const h2 = screen.queryByRole('heading', { level: 2, name: /Opening Insights/i });
+    expect(h2).toBeNull();
+  });
 });

@@ -552,3 +552,63 @@ class TestNextMovesSorting:
         assert response.moves[0].move_san == "d4"
         assert response.moves[0].win_pct == 100.0
         assert response.moves[1].move_san == "e4"
+
+
+# ---------------------------------------------------------------------------
+# TestNextMovesScoreConfidence — Phase 76 D-05/D-13
+# ---------------------------------------------------------------------------
+
+
+class TestNextMovesScoreConfidence:
+    """Phase 76 D-05/D-13: each NextMoveEntry carries score, confidence, p_value
+    computed via the shared score_confidence.compute_confidence_bucket helper.
+    """
+
+    @pytest.mark.asyncio
+    async def test_get_next_moves_populates_score_confidence_p_value(
+        self, db_session: AsyncSession
+    ) -> None:
+        """NextMoveEntry.score/confidence/p_value match compute_confidence_bucket output."""
+        from app.services.score_confidence import compute_confidence_bucket
+
+        SOURCE_HASH = 33333302
+        RESULT_HASH = 33333303
+
+        # Seed 2 wins and 1 loss so we have deterministic W/D/L counts.
+        for _ in range(2):
+            await _seed_game_with_positions(
+                db_session,
+                result="1-0",
+                user_color="white",
+                positions=[
+                    {"ply": 0, "full_hash": SOURCE_HASH, "move_san": "e4"},
+                    {"ply": 1, "full_hash": RESULT_HASH, "move_san": None},
+                ],
+            )
+        await _seed_game_with_positions(
+            db_session,
+            result="0-1",
+            user_color="white",
+            positions=[
+                {"ply": 0, "full_hash": SOURCE_HASH, "move_san": "e4"},
+                {"ply": 1, "full_hash": RESULT_HASH, "move_san": None},
+            ],
+        )
+
+        request = NextMovesRequest(target_hash=SOURCE_HASH)
+        response = await get_next_moves(db_session, user_id=1, request=request)
+        assert response.moves, "expected at least one move from seeded games"
+
+        entry = response.moves[0]
+        assert 0.0 <= entry.score <= 1.0
+        assert entry.confidence in ("low", "medium", "high")
+        assert 0.0 <= entry.p_value <= 1.0
+
+        # Cross-check: same value as the helper would return directly for (w, d, l, n).
+        expected_confidence, expected_p, _expected_se = compute_confidence_bucket(
+            entry.wins, entry.draws, entry.losses, entry.game_count
+        )
+        expected_score = (entry.wins + 0.5 * entry.draws) / entry.game_count
+        assert entry.score == pytest.approx(expected_score, abs=1e-9)
+        assert entry.confidence == expected_confidence
+        assert entry.p_value == pytest.approx(expected_p, abs=1e-9)
