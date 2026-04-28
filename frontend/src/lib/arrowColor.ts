@@ -14,6 +14,14 @@
 
 export const MIN_GAMES_FOR_COLOR = 10;
 
+// Score-based thresholds (Phase 75; consumed by Phase 76 once getArrowColor
+// body migrates to score-based coloring). MIN_GAMES_FOR_COLOR is already 10
+// in this file — leave it as-is; the CI consistency test now asserts it
+// matches OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE.
+export const SCORE_PIVOT = 0.50;
+export const MINOR_EFFECT_SCORE = 0.05;
+export const MAJOR_EFFECT_SCORE = 0.10;
+
 // Win/loss rate thresholds for categorical color buckets
 const LIGHT_COLOR_THRESHOLD = 55; // > 55% triggers light green/red
 const DARK_COLOR_THRESHOLD = 60;  // >= 60% triggers dark green/red
