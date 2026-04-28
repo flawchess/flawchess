@@ -18,7 +18,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { formatConfidenceTooltip } from '@/lib/openingInsights';
 import { cn } from '@/lib/utils';
 import { isTrollPosition } from '@/lib/trollOpenings';
-import winkSmileyUrl from '@/assets/wink-smiley.svg';
+import smileyUrl from '@/assets/smiley.svg';
 import type { NextMoveEntry, Color } from '@/types/api';
 
 interface MoveExplorerProps {
@@ -333,7 +333,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
           <span>{entry.move_san}</span>
           {showTroll && (
             <img
-              src={winkSmileyUrl}
+              src={smileyUrl}
               alt=""
               aria-hidden="true"
               data-testid={`move-list-row-${entry.move_san}-troll-icon`}
