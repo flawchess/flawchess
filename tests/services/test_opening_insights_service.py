@@ -651,9 +651,7 @@ def test_ranking_ignores_confidence_bucket_uses_ci_bound_only() -> None:
     # contract compatibility but ignored by _rank_section. Setting SE=0 here
     # would make the old Wald formula collapse to a pure score sort (giving
     # high_wide first), so this test also distinguishes Wilson from Wald.
-    ranked = _rank_section(
-        [(high_wide, 0.0), (medium_tight, 0.0)], direction="weakness"
-    )
+    ranked = _rank_section([(high_wide, 0.0), (medium_tight, 0.0)], direction="weakness")
     assert [f.candidate_move_san for f in ranked] == ["medium_tight", "high_wide"], (
         "Tight medium-bucket row with stricter Wilson bound must outrank wide high-bucket row"
     )

@@ -13,6 +13,7 @@ for D-01..D-34 locked decisions.
 
 import ctypes
 import datetime
+import math
 from typing import Any, Literal
 
 import chess
@@ -32,10 +33,10 @@ from app.schemas.opening_insights import (
     OpeningInsightsResponse,
 )
 from app.services.opening_insights_constants import (
+    OPENING_INSIGHTS_CI_Z_95 as CI_Z_95,
     OPENING_INSIGHTS_MAJOR_EFFECT as MAJOR_EFFECT,
     OPENING_INSIGHTS_MINOR_EFFECT as MINOR_EFFECT,
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
-    OPENING_INSIGHTS_WALD_Z_95 as WALD_Z_95,
 )
 from app.services.score_confidence import compute_confidence_bucket
 from app.services.openings_service import recency_cutoff
@@ -275,33 +276,63 @@ def _dedupe_continuations(
     return result
 
 
+def _wilson_bounds(p: float, n: int) -> tuple[float, float]:
+    """Return (lower, upper) Wilson 95% score interval bounds, clamped to [0, 1].
+
+    Replaces the Wald CI used in earlier ranking (quick task 260428-v9i).
+    Wilson is well-defined at p=0 and p=1 (no SE=0 degeneracy) and is generally
+    tighter than Wald for small n. Caller guarantees n > 0 (N >=
+    MIN_GAMES_PER_CANDIDATE = 10); the n <= 0 branch is purely defensive.
+    """
+    if n <= 0:
+        # Defensive — should never happen given the discovery floor.
+        return (0.0, 1.0)
+    z = CI_Z_95
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    center = (p + z2 / (2 * n)) / denom
+    margin = (z * math.sqrt(p * (1.0 - p) / n + z2 / (4 * n * n))) / denom
+    lower = max(0.0, min(1.0, center - margin))
+    upper = max(0.0, min(1.0, center + margin))
+    return lower, upper
+
+
 def _rank_section(
     findings_with_se: list[tuple[OpeningInsightFinding, float]],
     direction: Literal["weakness", "strength"],
 ) -> list[OpeningInsightFinding]:
-    """Sort findings by direction-aware Wald 95% CI bound on the score, clamped to [0, 1].
+    """Sort findings by direction-aware Wilson 95% CI bound on the score, clamped to [0, 1].
 
-    - weakness: ascending upper bound `score + 1.96 * SE` — the row whose
-      score is most-confidently-below-0.5 (smallest plausible best case)
-      sorts first.
-    - strength: descending lower bound `score - 1.96 * SE` — the row whose
-      score is most-confidently-above-0.5 (largest plausible worst case)
-      sorts first.
+    - weakness: ascending Wilson upper bound — the row whose score is
+      most-confidently-below-0.5 (smallest plausible best case) sorts first.
+    - strength: descending Wilson lower bound — the row whose score is
+      most-confidently-above-0.5 (largest plausible worst case) sorts first.
+
+    Wilson replaces the earlier Wald `score +/- 1.96 * SE` formula (quick task
+    260428-v9i). Wald degenerates at boundary scores (e.g. 0/11 -> SE=0, CI
+    width=0, claiming 100% certainty); Wilson is well-defined for any p in
+    [0, 1] and tighter for small n, so small-N extreme findings no longer
+    outrank large-N moderate findings purely on score.
+
+    The `(finding, se)` tuple shape is preserved upstream because SE is still
+    produced by compute_confidence_bucket for the UI confidence badge, but
+    Wilson uses only `finding.score` and `finding.n_games` — the SE component
+    of the tuple is intentionally ignored here.
 
     Confidence bucket is no longer part of the sort key (260428-tgg follow-up):
-    the Wald CI bound already mixes effect size and sample size, so a high-N
-    moderate-effect row that lives in the "medium" bucket can legitimately rank
-    above a small-N extreme-effect row in the "high" bucket when its bound is
-    more striking. Bucket is retained as a UI badge only.
+    the CI bound already mixes effect size and sample size, so a high-N
+    moderate-effect row that lives in the "medium" bucket can legitimately
+    rank above a small-N extreme-effect row in the "high" bucket when its
+    bound is more striking. Bucket is retained as a UI badge only.
     """
 
     def sort_key(item: tuple[OpeningInsightFinding, float]) -> float:
-        finding, se = item
-        half_width = WALD_Z_95 * se
+        finding, _se = item  # SE unused under Wilson; preserved for upstream compatibility
+        lower, upper = _wilson_bounds(finding.score, finding.n_games)
         if direction == "weakness":
-            return min(max(finding.score + half_width, 0.0), 1.0)
+            return upper
         # Negate so default ascending sort yields lower-bound descending.
-        return -min(max(finding.score - half_width, 0.0), 1.0)
+        return -lower
 
     ranked = sorted(findings_with_se, key=sort_key)
     return [f for f, _se in ranked]
@@ -375,8 +406,9 @@ async def compute_insights(
         # Each section accumulates (OpeningInsightFinding, ply_count, se) tuples:
         # - ply_count drives the D-24 deeper-entry-wins dedupe in _dedupe_within_section
         #   (consumed there and not propagated downstream).
-        # - se threads through dedupe stages into _rank_section so ranking can
-        #   use the Wald 95% CI bound (quick task 260428-tgg).
+        # - se threads through dedupe stages but is ignored by _rank_section under
+        #   the Wilson 95% CI bound (quick task 260428-v9i — replaces Wald to fix
+        #   small-N degeneracy). SE is still produced for the UI confidence badge.
         sections: dict[str, list[tuple[OpeningInsightFinding, int, float]]] = {
             "white_weaknesses": [],
             "black_weaknesses": [],
@@ -448,9 +480,10 @@ async def compute_insights(
 
         # Per-section transposition dedupe (D-24) → global continuation dedupe
         # (Phase 71 UAT fix) → rank → cap (D-02 caps: 5 weaknesses, 3 strengths).
-        # Quick 260428-tgg: SE flows through both dedupe stages into _rank_section,
-        # which ranks by Wald 95% CI bound alone (direction-aware) — confidence
-        # bucket is no longer part of the sort key, only a UI badge.
+        # Quick 260428-v9i: ranks by Wilson 95% CI bound (direction-aware),
+        # using (score, n_games) and ignoring SE — replaces the earlier Wald
+        # CI to fix small-N degeneracy. Confidence bucket is no longer part of
+        # the sort key, only a UI badge.
         deduped_sections: dict[str, list[tuple[OpeningInsightFinding, float]]] = {
             key: _dedupe_within_section(items) for key, items in sections.items()
         }

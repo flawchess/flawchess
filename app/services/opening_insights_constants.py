@@ -36,10 +36,13 @@ OPENING_INSIGHTS_CONFIDENCE_MIN_N: int = 10
 OPENING_INSIGHTS_CONFIDENCE_HIGH_MAX_P: float = 0.05
 OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_P: float = 0.10
 
-# Two-sided 95% normal-approximation z-score. Used to construct the Wald 95%
-# confidence interval `score +/- WALD_Z_95 * SE` that drives the within-bucket
-# finding tiebreak in opening_insights_service._rank_section (quick task
-# 260428-tgg). The same z value is the implicit threshold for the p < 0.05
-# "high" confidence bucket above; collocating the constant keeps the Wald
-# framework parameters in one place.
-OPENING_INSIGHTS_WALD_Z_95: float = 1.96
+# Two-sided 95% normal-approximation z-score (z = 1.96). Used by
+# `opening_insights_service._wilson_bounds` to construct the Wilson 95% score
+# interval that drives within-section ranking in `_rank_section` (quick task
+# 260428-v9i, replacing the earlier Wald CI). The same z value is also the
+# implicit threshold for the p < 0.05 "high" confidence bucket above;
+# collocating it keeps both 95%-normal-approximation parameters in one place.
+# Note: the trinomial *Wald* p-value used by
+# `score_confidence.compute_confidence_bucket` is a different statistical
+# procedure and is not renamed.
+OPENING_INSIGHTS_CI_Z_95: float = 1.96
