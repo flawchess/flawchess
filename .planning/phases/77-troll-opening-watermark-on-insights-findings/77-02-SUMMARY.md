@@ -2,14 +2,15 @@
 phase: 77-troll-opening-watermark-on-insights-findings
 plan: 02
 subsystem: frontend-curation
-tags: [troll-openings, curation-script, frontend, partial]
-status: checkpoint-pending
+tags: [troll-openings, curation-script, frontend, complete]
+status: complete
 requires:
   - chess.js (already installed @1.4.0)
 provides:
   - frontend/scripts/curate-troll-openings.ts (curation pipeline)
+  - frontend/src/data/trollOpenings.ts (curated data module)
 affects:
-  - frontend/src/data/trollOpenings.ts (Task 3 — pending user approval)
+  - frontend/src/lib/trollOpenings.ts (Plan 01 — consumes WHITE_TROLL_KEYS, BLACK_TROLL_KEYS)
 tech-stack:
   added: []
   patterns:
@@ -18,20 +19,20 @@ key-files:
   created:
     - frontend/scripts/curate-troll-openings.ts
     - frontend/scripts/.cache/.gitignore
+    - frontend/src/data/trollOpenings.ts
   modified: []
 decisions:
   - "Per-ply emission (both colors) rather than final-position-only — pushes ambiguity into the human review step per Pitfall 2"
   - "Cache directory .gitignore uses -f stage because root .gitignore already excludes .cache (line 59)"
+  - "Curated set scope: full study extraction (10 white + 1 black) plus 4 manually-derived keys (Grob, Barnes, Borg, Fred) for openings absent from cEDAMVBB"
 metrics:
-  duration: pending-checkpoint
-  completed: null
+  duration: ~4 min (resumed from checkpoint)
+  completed: 2026-04-29
 ---
 
-# Phase 77 Plan 02: Curate troll openings (PARTIAL — checkpoint pending)
+# Phase 77 Plan 02: Curate troll openings (COMPLETE)
 
-**Status:** Awaiting user approval at Task 2 checkpoint before proceeding to Task 3.
-
-One-liner: Reproducible Node/TS curation script committed; awaiting human pruning of 542 candidates before writing the static data module.
+One-liner: Reproducible Node/TS curation script + hand-pruned static `ReadonlySet<string>` data module covering 12 white-side and 3 black-side strict-Bongcloud-tier troll openings.
 
 ## Tasks Completed
 
@@ -39,41 +40,58 @@ One-liner: Reproducible Node/TS curation script committed; awaiting human prunin
 | ---- | --------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------ |
 | 1    | Create curation script that emits candidates to stdout                      | 7c7dd3b | frontend/scripts/curate-troll-openings.ts, frontend/scripts/.cache/.gitignore        |
 | 2    | Surface candidate list to user for hand-pruning approval (D-01 checkpoint) | —       | /tmp/troll-candidates.txt (transient, surfaced inline)                               |
-
-## Tasks Pending
-
-- Task 2: awaiting user approval of pruned set.
-- Task 3: not started — depends on Task 2 outcome.
+| 3    | Commit the hand-pruned data module                                          | 13a88db | frontend/src/data/trollOpenings.ts                                                   |
 
 ## Curation Run Output
 
 - Cache: `frontend/scripts/.cache/cEDAMVBB.pgn` (19,693 bytes, fetched from `https://lichess.org/study/cEDAMVBB.pgn`, gitignored).
 - Chapters parsed: 46 (one chapter has empty mainline and was skipped — chapter 36).
-- Total candidates emitted: 542 (per-ply × both colors across 46 chapters).
-- Bongcloud canonical defining-position key `8/8/8/8/4P3/8/PPPPKPPP/RNBQ1BNR` is present in the candidate list (sanity check passed).
+- Total candidates emitted: **542** → final pruned set: **15 keys** (12 white + 3 black).
 
-## Gap Flagged for User Review
+## Curated Set
 
-The user's stated minimum target set per D-01 / Task 2 prompt is:
-- Bongcloud Attack (white) — `1.e4 e5 2.Ke2`
-- Grob (white) — `1.g4`
-- Borg / Reversed Grob (black) — `1.e4 g5`
-- Halloween Gambit (white) — `1.e4 e5 2.Nf3 Nc6 3.Nc3 Nf6 4.Nxe5`
-- Barnes Opening (white) — `1.f3`
-- Fred Defense (black) — `1.e4 f5`
+### WHITE_TROLL_KEYS (12 entries)
 
-Of those, only **Bongcloud (chapter 19)** and **Halloween Gambit (chapter 7)** appear in the Lichess study `cEDAMVBB`. **Grob, Borg, Barnes, Fred are MISSING** from the source PGN entirely (verified via case-insensitive grep across the full output — zero matches).
+| Opening                       | SAN sequence                                          | Key                                                          | Source                |
+| ----------------------------- | ----------------------------------------------------- | ------------------------------------------------------------ | --------------------- |
+| Bongcloud Attack              | `1.e4 e5 2.Ke2`                                       | `8/8/8/8/4P3/8/PPPPKPPP/RNBQ1BNR`                            | study chapter 19 (canary) |
+| Hammerschlag (Pork Chop)      | `1.f3 e5 2.Kf2`                                       | `8/8/8/8/8/5P2/PPPPPKPP/RNBQ1BNR`                            | study chapter 1       |
+| Halloween Gambit              | `1.e4 e5 2.Nf3 Nc6 3.Nc3 Nf6 4.Nxe5`                  | `8/8/8/4N3/4P3/2N5/PPPP1PPP/R1BQKB1R`                        | study chapter 7       |
+| Sodium Attack                 | `1.Na3`                                               | `8/8/8/8/8/N7/PPPPPPPP/R1BQKBNR`                             | study chapter 8       |
+| Drunken Knight Opening        | `1.Nh3`                                               | `8/8/8/8/8/7N/PPPPPPPP/RNBQKB1R`                             | study chapter 9       |
+| Crab Opening                  | `1.a4 e5 2.h4`                                        | `8/8/8/8/P6P/8/1PPPPPP1/RNBQKBNR`                            | study chapter 15      |
+| Double Duck Formation         | `1.f4 f5 2.d4 d5`                                     | `8/8/8/8/3P1P2/8/PPP1P1PP/RNBQKBNR`                          | study chapter 16      |
+| Creepy Crawly Formation       | `1.a3 e5 2.h3`                                        | `8/8/8/8/8/P6P/1PPPPPP1/RNBQKBNR`                            | study chapter 18      |
+| Reagan's Attack               | `1.h4`                                                | `8/8/8/8/7P/8/PPPPPPP1/RNBQKBNR`                             | study chapter 22      |
+| Napoleon Attack               | `1.e4 e5 2.Qf3`                                       | `8/8/8/8/4P3/5Q2/PPPP1PPP/RNB1KBNR`                          | study chapter 24      |
+| Grob Attack                   | `1.g4`                                                | `8/8/8/8/6P1/8/PPPPPP1P/RNBQKBNR`                            | manual (not in study) |
+| Barnes Opening                | `1.f3`                                                | `8/8/8/8/8/5P2/PPPPP1PP/RNBQKBNR`                            | manual (not in study) |
 
-The user has two options when responding to the checkpoint:
-1. Accept the subset that's actually in the study (Bongcloud + Halloween, plus any other strict-tier picks the user wants from the 46 chapters).
-2. Instruct Task 3 to also include the 4 missing openings using their canonical defining positions derived manually (the executor can compute the keys directly using `deriveUserSideKey` semantics — they're trivial 1-3 ply positions).
+### BLACK_TROLL_KEYS (3 entries)
+
+| Opening                       | SAN sequence                                          | Key                                                          | Source                |
+| ----------------------------- | ----------------------------------------------------- | ------------------------------------------------------------ | --------------------- |
+| Drunken Knight Variation      | `1.Nf3 f6 2.e4 Nh6`                                   | `rnbqkb1r/ppppp1pp/5p1n/8/8/8/8/8`                           | study chapter 31      |
+| Borg Defence (Reversed Grob)  | `1.e4 g5`                                             | `rnbqkbnr/pppppp1p/8/6p1/8/8/8/8`                            | manual (not in study) |
+| Fred Defence                  | `1.e4 f5`                                             | `rnbqkbnr/ppppp1pp/8/5p2/8/8/8/8`                            | manual (not in study) |
+
+## Gap Vs Stated Minimum Target Set
+
+User's stated minimum (Bongcloud, Grob, Borg, Halloween, Barnes, Fred) — only Bongcloud and Halloween are present in cEDAMVBB. Grob, Borg, Barnes, Fred were added manually with canonical defining-position keys derived directly from `deriveUserSideKey` semantics (1-3 ply positions, trivial). User approved option "Full study set + manual Grob/Borg/Barnes/Fred" at the checkpoint.
+
+## Verification
+
+- `cd frontend && npm test -- --run src/lib/trollOpenings.test.ts` → 10/10 pass
+- `cd frontend && npm run knip` → exit 0 (data module flagged "unused" until Plan 03 imports `isTrollPosition`)
+- `cd frontend && npx tsc --noEmit -p tsconfig.app.json` → exit 0
+- Bongcloud canary key `8/8/8/8/4P3/8/PPPPKPPP/RNBQ1BNR` present in WHITE_TROLL_KEYS
 
 ## Self-Check
 
 - File `frontend/scripts/curate-troll-openings.ts` exists: FOUND
 - File `frontend/scripts/.cache/.gitignore` exists: FOUND
-- Commit 7c7dd3b exists: FOUND
-- `Total candidates:` line present in /tmp/troll-candidates.txt: FOUND
-- Bongcloud key present in /tmp/troll-candidates.txt: FOUND
+- File `frontend/src/data/trollOpenings.ts` exists: FOUND
+- Commits 7c7dd3b, 02032c5, 13a88db exist: FOUND
+- Inline `// <Opening Name> — after <SAN sequence>` comment per entry: FOUND
 
-## Self-Check: PASSED (partial scope — Task 1 + Task 2 run, Task 3 pending checkpoint)
+## Self-Check: PASSED
