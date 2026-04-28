@@ -26,9 +26,12 @@ OPENING_INSIGHTS_SCORE_PIVOT: float = 0.50
 OPENING_INSIGHTS_MINOR_EFFECT: float = 0.05  # |score - pivot| >= 0.05 → minor
 OPENING_INSIGHTS_MAJOR_EFFECT: float = 0.10  # |score - pivot| >= 0.10 → major
 
-# Confidence buckets — half-width thresholds (D-06). Half-width is
-# 1.96 * sqrt(per-game variance / n) using the trinomial Wald formula
-# (variance = (w + 0.25*d)/n - score**2). Values are first-principles
-# defaults; recheck after Phase 76 ships and we have telemetry.
-OPENING_INSIGHTS_CONFIDENCE_HIGH_MAX_HALF_WIDTH: float = 0.10
-OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_HALF_WIDTH: float = 0.20
+# Confidence buckets — two-sided Wald p-value thresholds plus N>=10 gate.
+# Replaces the prior CI half-width bucketing (which answered "is the point
+# estimate precise?" rather than "is this score different from 50% by chance?").
+# With N < 10, confidence is forced to "low" regardless of p-value: small
+# samples already carry the unreliable-stats opacity dim in the UI, and the
+# bucket should match that signal.
+OPENING_INSIGHTS_CONFIDENCE_MIN_N: int = 10
+OPENING_INSIGHTS_CONFIDENCE_HIGH_MAX_P: float = 0.01
+OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_P: float = 0.05

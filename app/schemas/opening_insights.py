@@ -75,7 +75,7 @@ class OpeningInsightFinding(BaseModel):
     )  # (W + D/2)/n; canonical classification metric (Phase 75 D-09)
     confidence: Literal[
         "low", "medium", "high"
-    ]  # Trinomial Wald 95% CI half-width bucket (Phase 75 D-05/D-06)
+    ]  # Two-sided Wald p-value bucket with N>=10 gate (p<0.01 high, p<0.05 medium) (Phase 75 D-05/D-06)
     p_value: float = Field(
         ge=0.0, le=1.0
     )  # Two-sided p-value for H0: score = 0.50 (Phase 75 D-05/D-09)
