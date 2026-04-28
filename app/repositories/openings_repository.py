@@ -17,10 +17,12 @@ from app.models.game_position import GamePosition
 from app.models.opening import Opening
 from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD, apply_game_filters
 from app.services.opening_insights_constants import (
-    OPENING_INSIGHTS_LIGHT_THRESHOLD,
+    OPENING_INSIGHTS_MAJOR_EFFECT,  # noqa: F401  # imported for docstring traceability; SQL gate uses MINOR_EFFECT, Python post-filter uses MAJOR_EFFECT
     OPENING_INSIGHTS_MAX_ENTRY_PLY,
     OPENING_INSIGHTS_MIN_ENTRY_PLY,
     OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
+    OPENING_INSIGHTS_MINOR_EFFECT,
+    OPENING_INSIGHTS_SCORE_PIVOT,
 )
 
 # Maps match_side values to the corresponding GamePosition hash column.
@@ -528,7 +530,9 @@ async def query_opening_transitions(
     Single CTE with a LAG window function derives entry_hash from the prior
     ply within each game. The outer query joins to games, applies user
     filters, groups by (entry_hash, candidate_san), and HAVING-filters to
-    n>=20 candidates whose win_rate or loss_rate strictly exceeds 0.55.
+    n>=10 candidates whose chess score (W + 0.5·D)/N is at most 0.45
+    (weaknesses) or at least 0.55 (strengths). Phase 75 D-08; replaces the
+    Phase 70 win_rate/loss_rate gate.
 
     Returns one Row per surviving (entry_hash, move_san) pair with attrs:
         entry_hash: int        (BIGINT in PG, never NULL in output)
@@ -643,6 +647,15 @@ async def query_opening_transitions(
     draws = func.count(func.distinct(Game.id)).filter(draw_cond)
     losses = func.count(func.distinct(Game.id)).filter(loss_cond)
 
+    # Phase 75 D-08: score-based effect-size gate. score = (W + 0.5·D) / N.
+    # Minor-effect threshold (0.05) drives the SQL gate; major findings
+    # (effect >= 0.10, OPENING_INSIGHTS_MAJOR_EFFECT) are a post-filter
+    # assertion in Python (_classify_row). Symmetric on both sides → the OR
+    # keeps the gate simple. n_games >= 10 (was 20 in Phase 70).
+    score_expr = (cast(wins, Float) + 0.5 * cast(draws, Float)) / cast(n_games, Float)
+    weakness_threshold = OPENING_INSIGHTS_SCORE_PIVOT - OPENING_INSIGHTS_MINOR_EFFECT  # 0.45
+    strength_threshold = OPENING_INSIGHTS_SCORE_PIVOT + OPENING_INSIGHTS_MINOR_EFFECT  # 0.55
+
     stmt = (
         select(
             transitions_cte.c.entry_hash.label("entry_hash"),
@@ -683,8 +696,8 @@ async def query_opening_transitions(
             and_(
                 n_games >= OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
                 or_(
-                    cast(wins, Float) / cast(n_games, Float) > OPENING_INSIGHTS_LIGHT_THRESHOLD,
-                    cast(losses, Float) / cast(n_games, Float) > OPENING_INSIGHTS_LIGHT_THRESHOLD,
+                    score_expr <= weakness_threshold,
+                    score_expr >= strength_threshold,
                 ),
             )
         )
