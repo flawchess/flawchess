@@ -159,6 +159,15 @@ def _replay_san_sequence(san_sequence: list[str]) -> str:
     the user played up to the entry position. Never falls back to the initial
     position (D-34).
     """
+    if not san_sequence:
+        # D-34: never fall back to the initial position. An empty sequence at
+        # this point indicates a CTE/repository contract violation upstream
+        # (entry_ply >= MIN_ENTRY_PLY = 3 should always yield a non-empty
+        # SAN prefix). Raise loudly so the top-level Sentry handler captures it.
+        raise ValueError(
+            "_replay_san_sequence received an empty SAN sequence; "
+            "expected entry_ply >= MIN_ENTRY_PLY (3)"
+        )
     board = chess.Board()
     for san in san_sequence:
         board.push_san(san)
@@ -228,8 +237,9 @@ def _attribute_finding(
         )
         return direct_opening.name, direct_opening.eco, display_name
 
-    # Pass 2: lineage walk (deepest first)
-    san_seq = list(row.entry_san_sequence or [])
+    # Pass 2: lineage walk (deepest first). No `or []` fallback — an
+    # empty/None entry_san_sequence violates the CTE contract (D-34).
+    san_seq = list(row.entry_san_sequence)
     for prefix_hash in _compute_prefix_hashes(san_seq):
         parent_opening = parents_by_hash.get(prefix_hash)
         if parent_opening is not None:
@@ -378,8 +388,10 @@ async def compute_insights(
         for rows in rows_by_color.values():
             for r in rows:
                 if int(r.entry_hash) not in openings_by_hash:
+                    # D-34: no `or []` fallback. An empty/None SAN sequence here
+                    # indicates a CTE contract violation; let it raise.
                     unmatched_parent_hashes.update(
-                        _compute_prefix_hashes(list(r.entry_san_sequence or []))
+                        _compute_prefix_hashes(list(r.entry_san_sequence))
                     )
         parents_by_hash = await query_openings_by_hashes(session, list(unmatched_parent_hashes))
 
@@ -412,7 +424,9 @@ async def compute_insights(
                 # BLOCKER-1 / D-25: entry_fen reconstructed by replaying the
                 # actual SAN sequence the user played up to the entry. Never
                 # fall back to chess.Board().fen() (initial position) — D-34.
-                entry_fen = _replay_san_sequence(list(row.entry_san_sequence or []))
+                # No `or []` fallback: an empty/None sequence raises in
+                # _replay_san_sequence and surfaces in Sentry.
+                entry_fen = _replay_san_sequence(list(row.entry_san_sequence))
 
                 # Carry the matched Opening.ply_count alongside for D-24
                 # deeper-entry-wins dedupe; use 0 for parent-only matches
@@ -432,8 +446,8 @@ async def compute_insights(
                     display_name=display_name,
                     entry_fen=entry_fen,
                     entry_san_sequence=list(
-                        row.entry_san_sequence or []
-                    ),  # Phase 71 (D-13): expose SAN sequence for FE deep-link replay
+                        row.entry_san_sequence
+                    ),  # Phase 71 (D-13): expose SAN sequence for FE deep-link replay; no `or []` fallback (D-34)
                     # BLOCKER-5 / Pitfall 1: stringify 64-bit ints at the API boundary.
                     entry_full_hash=str(int(row.entry_hash)),
                     candidate_move_san=row.move_san,
