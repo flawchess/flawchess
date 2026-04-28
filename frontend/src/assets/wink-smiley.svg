@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Winking smiley face, sized for inline icon use.
+       Authored as monochrome strokes + dot so brightness-0 invert (or any
+       color filter) renders cleanly. Right eye is a horizontal dash (the wink). -->
+  <circle cx="12" cy="12" r="10" />
+  <circle cx="9" cy="10" r="1" fill="currentColor" stroke="none" />
+  <line x1="14" y1="10" x2="17" y2="10" />
+  <path d="M8 14.5 Q12 17.5 16 14.5" />
+</svg>
