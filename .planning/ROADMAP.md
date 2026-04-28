@@ -211,6 +211,14 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
   - Update `openingInsights.ts` and `OpeningInsightsBlock.tsx` to consume the new `confidence` field.
   - Mobile parity: apply all changes to mobile layouts of Move Explorer and Insights block.
 
+- [ ] Phase 77: Troll-opening watermark on Insights findings (planned)
+  - Render `Troll-Face.svg` at 30% opacity as a background watermark on `OpeningFindingCard` when the position belongs to a curated troll-opening set (Bongcloud, Grob, etc. — sourced from Lichess study cEDAMVBB, hand-filtered).
+  - Match by side-only Zobrist hash (`white_hash` / `black_hash`) — fires only when the user themselves played the troll moves, regardless of opponent response.
+  - Add `is_troll_opening: bool` to the `OpeningInsightFinding` API payload.
+  - Curation script in `scripts/` + static `app/data/troll_openings.tsv` loaded into an in-memory `frozenset[int]` per color at startup. No DB table.
+  - Asset move: `temp/Troll-Face.svg` → `frontend/src/assets/troll-face.svg`.
+  - Mobile parity. Design notes captured in [notes/troll-openings-design.md](notes/troll-openings-design.md).
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
