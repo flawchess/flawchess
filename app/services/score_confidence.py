@@ -38,6 +38,13 @@ def compute_confidence_bucket(
     Note: the `losses` parameter is accepted for API consistency with (W, D, L, N)
     calling convention but is not used in the Wald formula (only W, D, N matter).
     """
+    # MD-02 guard: callers today only pass rows with n >= 1, but openings_service.get_next_moves
+    # has an inconsistent `if gc > 0` guard on the score expression while passing gc here
+    # unconditionally. Defend against future contract drift (e.g. a new JOIN producing
+    # zero-game rows) so this helper can never raise ZeroDivisionError. Returning ("low", 1.0)
+    # is the conservative answer: no sample, no signal.
+    if n <= 0:
+        return "low", 1.0
     score = (w + 0.5 * d) / n
     variance = (w + 0.25 * d) / n - score * score
     variance = max(variance, 0.0)
