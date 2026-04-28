@@ -169,7 +169,7 @@ export function MoveExplorer({
                   <InfoPopover ariaLabel="Move arrows info" testId="move-arrows-info" side="top">
                     <div className="space-y-2">
                       <p>
-                        These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings. Moves with fewer than 10 games have unreliable statistics and are shown as muted.
+                        These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings. Moves with fewer than 10 games or low confidence are always grey. Rows with fewer than 10 games are also dimmed since their statistics are unreliable.
                       </p>
                       <p>
                         On desktop, click a move to play it. On mobile, tap to highlight (shows the arrow on the board), then tap again to play.
@@ -248,7 +248,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   // chessboard arrow uses (green for strengths, red for weaknesses). Grey
   // (neutral or below the color threshold) means no tint. The deep-link
   // highlight reuses the same color and adds the pulse animation on top.
-  const arrowColor = getArrowColor(entry.score, entry.game_count, false);
+  const arrowColor = getArrowColor(entry.score, entry.game_count, entry.confidence, false);
   const severityColor = arrowColor === GREY ? null : arrowColor;
   const tintColor = highlightColor ?? severityColor;
 
