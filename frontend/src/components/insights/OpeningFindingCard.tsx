@@ -181,7 +181,7 @@ export function OpeningFindingCard({
           alt=""
           aria-hidden="true"
           data-testid={`opening-finding-card-${idx}-troll-watermark`}
-          className="absolute bottom-2 right-2 h-16 w-16 sm:h-20 sm:w-20 pointer-events-none select-none"
+          className="absolute inset-y-0 right-2 h-full w-auto pointer-events-none select-none"
           style={{ opacity: TROLL_WATERMARK_OPACITY }}
         />
       )}

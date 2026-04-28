@@ -337,7 +337,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
               alt=""
               aria-hidden="true"
               data-testid={`move-list-row-${entry.move_san}-troll-icon`}
-              className="hidden sm:inline-block h-3.5 w-3.5"
+              className="hidden sm:inline-block h-3.5 w-3.5 brightness-0 invert"
             />
           )}
         </span>
