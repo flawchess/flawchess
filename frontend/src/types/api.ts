@@ -102,6 +102,9 @@ export interface NextMoveEntry {
   result_hash: string;    // BigInt as string
   result_fen: string;     // board FEN (piece placement only)
   transposition_count: number;
+  score: number;
+  confidence: 'low' | 'medium' | 'high';
+  p_value: number;
 }
 
 export interface NextMovesResponse {
