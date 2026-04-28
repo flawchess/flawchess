@@ -18,7 +18,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { formatConfidenceTooltip } from '@/lib/openingInsights';
 import { cn } from '@/lib/utils';
 import { isTrollPosition } from '@/lib/trollOpenings';
-import trollFaceUrl from '@/assets/troll-face.svg';
+import jesterHatUrl from '@/assets/jester-hat.svg';
 import type { NextMoveEntry, Color } from '@/types/api';
 
 interface MoveExplorerProps {
@@ -333,7 +333,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
           <span>{entry.move_san}</span>
           {showTroll && (
             <img
-              src={trollFaceUrl}
+              src={jesterHatUrl}
               alt=""
               aria-hidden="true"
               data-testid={`move-list-row-${entry.move_san}-troll-icon`}

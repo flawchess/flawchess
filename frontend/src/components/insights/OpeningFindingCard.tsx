@@ -137,7 +137,7 @@ export function OpeningFindingCard({
   return (
     <div
       data-testid={`opening-finding-card-${idx}`}
-      className="block relative border-l-4 charcoal-texture border border-border/20 rounded px-4 py-3"
+      className="block relative border-l-4 charcoal-texture border border-border/20 rounded px-4 py-4"
       style={cardStyle}
     >
       {/* Mobile: header full-width on top, board + prose/links row below */}
@@ -181,7 +181,7 @@ export function OpeningFindingCard({
           alt=""
           aria-hidden="true"
           data-testid={`opening-finding-card-${idx}-troll-watermark`}
-          className="absolute inset-y-0 right-2 h-full w-auto pointer-events-none select-none"
+          className="absolute right-3 top-1/2 -translate-y-1/2 h-[105px] sm:h-[100px] w-auto pointer-events-none select-none"
           style={{ opacity: TROLL_WATERMARK_OPACITY }}
         />
       )}
