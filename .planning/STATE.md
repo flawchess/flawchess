@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.14
 milestone_name: Score-Based Opening Insights
 status: "Phase 76 shipped — PR #70"
-last_updated: "2026-04-28T21:03:43.503Z"
+last_updated: "2026-04-28T21:13:39.408Z"
 last_activity: "2026-04-28 — Phase 76 shipped — PR #70"
 progress:
   total_phases: 4
