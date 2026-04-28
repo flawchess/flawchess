@@ -2,10 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   trimMoveSequence,
   getSeverityBorderColor,
-  INSIGHT_THRESHOLD_COPY,
-  MIN_GAMES_FOR_INSIGHT,
-  INSIGHT_RATE_THRESHOLD,
 } from './openingInsights';
+import * as openingInsights from './openingInsights';
 import { DARK_RED, LIGHT_RED, DARK_GREEN, LIGHT_GREEN } from './arrowColor';
 
 describe('trimMoveSequence', () => {
@@ -89,17 +87,16 @@ describe('getSeverityBorderColor', () => {
   });
 });
 
-describe('shared constants', () => {
-  it('MIN_GAMES_FOR_INSIGHT mirrors backend MIN_GAMES_PER_CANDIDATE = 20', () => {
-    expect(MIN_GAMES_FOR_INSIGHT).toBe(20);
+describe('shared constants — stale-constant removal (Phase 76 D-20)', () => {
+  it('does not export MIN_GAMES_FOR_INSIGHT', () => {
+    expect((openingInsights as Record<string, unknown>).MIN_GAMES_FOR_INSIGHT).toBeUndefined();
   });
 
-  it('INSIGHT_RATE_THRESHOLD mirrors LIGHT_COLOR_THRESHOLD = 55', () => {
-    expect(INSIGHT_RATE_THRESHOLD).toBe(55);
+  it('does not export INSIGHT_RATE_THRESHOLD', () => {
+    expect((openingInsights as Record<string, unknown>).INSIGHT_RATE_THRESHOLD).toBeUndefined();
   });
 
-  it('INSIGHT_THRESHOLD_COPY references the threshold values', () => {
-    expect(INSIGHT_THRESHOLD_COPY).toMatch(/20/);
-    expect(INSIGHT_THRESHOLD_COPY).toMatch(/55/);
+  it('does not export INSIGHT_THRESHOLD_COPY', () => {
+    expect((openingInsights as Record<string, unknown>).INSIGHT_THRESHOLD_COPY).toBeUndefined();
   });
 });
