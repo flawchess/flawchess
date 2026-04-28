@@ -1,10 +1,30 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { OpeningFindingCard } from './OpeningFindingCard';
 import { useOpeningInsights } from '@/hooks/useOpeningInsights';
 import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/insights';
 import type { FilterState } from '@/components/filters/FilterPanel';
+
+// Phase 76 D-17 — single shared copy for all four section-title InfoPopovers.
+// Co-located with consumer (this file) per RESEARCH.md Open Question 3 — keeps
+// openingInsights.ts as a pure .ts module (no JSX rename).
+const OPENING_INSIGHTS_POPOVER_COPY: ReactNode = (
+  <div className="space-y-2">
+    <p>
+      <strong>Score</strong> is (W + ½D) / N. 50% means you and your opponents broke even.
+    </p>
+    <p>
+      A finding shows up when your score sits at least 5% from 50%, enough of a gap that it&apos;s probably not random.
+    </p>
+    <p>
+      <strong>Confidence</strong> says how big the sample is. <em>Low</em> findings are worth a glance;{' '}
+      <em>high</em> findings are well-supported.
+    </p>
+  </div>
+);
 
 // Show the top 3 findings per section by default; remaining (up to backend cap of 10) are
 // revealed via a "X more" toggle. The backend always returns up to 10 per section so a
@@ -206,6 +226,13 @@ function FindingsSection({
           aria-hidden="true"
         />
         {section.title}
+        <InfoPopover
+          ariaLabel={`${section.title} info`}
+          testId={`opening-insights-section-${section.key}-info`}
+          side="bottom"
+        >
+          {OPENING_INSIGHTS_POPOVER_COPY}
+        </InfoPopover>
       </h3>
       {findings.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">
