@@ -1,26 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.13
-milestone_name: Opening Insights
-status: completed
-last_updated: "2026-04-27T18:17:45.874Z"
-last_activity: 2026-04-27
+milestone: v1.14
+milestone_name: Score-Based Opening Insights
+status: planning
+last_updated: "2026-04-28T09:00:24.281Z"
+last_activity: 2026-04-28
 progress:
-  total_phases: 7
-  completed_phases: 3
-  total_plans: 14
-  completed_plans: 14
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone v1.13 active phases (70, 71, 71.1) all SHIPPED.
-Phases 72, 73, 74 descoped 2026-04-27 — see ROADMAP.md and REQUIREMENTS.md Out of Scope.
-Status: v1.13 ready for `/gsd-complete-milestone` (or backlog review then close).
-Last activity: 2026-04-27
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-28 — Milestone v1.14 started
 
 ## Project Reference
 

@@ -122,7 +122,20 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 
 ### Active (v1.14)
 
-- [ ] (TBD — next milestone goals defined via `/gsd-new-milestone`)
+- [ ] Migrate Opening Insights and Move Explorer color coding from loss-rate to chess score `(W + 0.5·D)/N` — INSIGHT-SCORE-01
+- [ ] Threshold pivot at 0.50 (no user-baseline shrinkage; rationale: matchmaking + opponent-strength filter already center the baseline) — INSIGHT-SCORE-02
+- [ ] Effect-size gate: minor at `|score − 0.5| ≥ 0.05`, major at `≥ 0.10`; symmetric on strength side — INSIGHT-SCORE-03
+- [ ] Wilson-based confidence annotation `(low) / (medium) / (high)` on each finding; replaces hard MIN_GAMES floor as the noise filter — INSIGHT-SCORE-04
+- [ ] Drop `MIN_GAMES_PER_CANDIDATE` from 20 → 10 to enable discovery framing — INSIGHT-SCORE-05
+- [ ] Expose `confidence` on the API contract alongside the existing `severity` field — INSIGHT-SCORE-06
+- [ ] CI consistency test mirrors score-based thresholds between backend and `arrowColor.ts` — INSIGHT-SCORE-07
+- [ ] Migrate `arrowColor.ts` to score (effect-size only — no confidence cue on arrows) — INSIGHT-UI-01
+- [ ] Move Explorer moves-list row tint by score (WDL bars on each row stay unchanged) — INSIGHT-UI-02
+- [ ] Extend existing `(low)` indicator on moves-list rows to `(low) / (medium) / (high)` — INSIGHT-UI-03
+- [ ] Soften Opening Insights section titles and severity copy per SEED-008 — INSIGHT-UI-04
+- [ ] Confidence badge on each `OpeningFindingCard` next to severity word — INSIGHT-UI-05
+- [ ] `?` explainer popover on Opening Insights section title (score / sample-size / confidence framing) — INSIGHT-UI-06
+- [ ] Mobile parity for all Move Explorer + Insights UI changes — INSIGHT-UI-07
 
 ### Deferred (gated on full benchmark ingest — SEED-006)
 
@@ -140,9 +153,20 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: TBD (planning v1.14 next)
+## Current Milestone: v1.14 Score-Based Opening Insights
 
-v1.13 closed 2026-04-27. The next milestone goals are defined via `/gsd-new-milestone`.
+**Goal:** Migrate Opening Insights and Move Explorer color coding from loss-rate to chess score `(W + 0.5·D)/N`, gate findings on effect size against a 0.50 pivot, and annotate them with low/medium/high confidence badges. Replaces today's "Major/Minor Weakness" framing with a calibrated discovery surface that holds up under future LLM narration.
+
+**Target features:**
+- Score metric replaces loss/win rate everywhere (arrow color, moves-list row tint, insight classifier).
+- Effect-size gate (what shows up) is separated from confidence annotation (how sure we are) — the right inversion for a discovery UI.
+- Wilson-based `(low) / (medium) / (high)` badge surfaces on insight cards and moves-list rows; arrows stay effect-size-only.
+- MIN_GAMES drops 20 → 10 to enable discovery; the badge calibrates trust.
+- Section titles and severity copy soften per SEED-008 ("Worth a closer look", "Played confidently") so the math, the labels, and the calibration cue all ship under one consistent framing.
+
+**Source:** SEED-007 (Option A only — Wilson on score, 0.50 pivot, no user-baseline) + SEED-008 (label reframe). Design captured in [notes/opening-insights-v1.14-design.md](notes/opening-insights-v1.14-design.md).
+
+**Phases:** 75 (backend), 76 (frontend). See ROADMAP.md.
 
 ## Current State
 
@@ -292,4 +316,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-27 after v1.13 milestone close (PRs #66, #67, #68; Phases 72/73/74 descoped).*
+*Last updated: 2026-04-28 — v1.14 milestone opened (Score-Based Opening Insights, SEED-007 Option A + SEED-008 folded together); 14 active requirements across Phases 75-76.*

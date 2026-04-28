@@ -16,6 +16,7 @@
 - ✅ **v1.11 LLM-first Endgame Insights** — Phases 63-68 (shipped 2026-04-24) — see [milestones/v1.11-ROADMAP.md](milestones/v1.11-ROADMAP.md)
 - ✅ **v1.12 Benchmark DB Infrastructure & Ingestion Pipeline** — Phase 69 (shipped 2026-04-26) — see [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md)
 - ✅ **v1.13 Opening Insights** — Phases 70, 71, 71.1 (shipped 2026-04-27; Phases 72-74 descoped) — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md)
+- 🚧 **v1.14 Score-Based Opening Insights** — Phases 75, 76 (opened 2026-04-28; SEED-007 Option A + SEED-008 folded together)
 
 ## Phases
 
@@ -190,9 +191,25 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
 
 </details>
 
-### 📋 v1.14 (Planning)
+### 🚧 v1.14 Score-Based Opening Insights (Planning) — see [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md)
 
-Next milestone goals defined via `/gsd-new-milestone`.
+**Theme:** Migrate opening insights and Move Explorer color coding from loss-rate to chess score, gate findings on effect size, and annotate them with low/medium/high confidence badges. Folds in SEED-007 (Option A only — Wilson on score, 0.50 pivot, no user-baseline) and SEED-008 (label reframe + confidence cues). Design decisions captured in [notes/opening-insights-v1.14-design.md](notes/opening-insights-v1.14-design.md).
+
+- [ ] Phase 75: Backend — score metric and confidence annotation for opening insights
+  - Replace `loss_rate` / `win_rate` with chess score `(W + 0.5·D) / N` in `opening_insights_service.py` and `openings_repository.py`.
+  - Classify on score vs 0.50 pivot with effect-size thresholds (e.g. minor ≥ 0.05, major ≥ 0.10).
+  - Compute Wilson 95% half-width per finding and bucket to `low` / `medium` / `high`.
+  - Drop `MIN_GAMES_PER_CANDIDATE` from 20 → 10 to support discovery framing.
+  - Expose `confidence: "low" | "medium" | "high"` on the API response (`OpeningInsightFinding`).
+  - Update CI-enforced consistency test mirroring `arrowColor.ts`.
+
+- [ ] Phase 76: Frontend — score-based coloring, confidence badges, label reframe
+  - Migrate `arrowColor.ts` from loss-rate to score (effect-size only, no confidence cue on arrows).
+  - Migrate Move Explorer moves-list row tint to score; extend the existing `(low)` indicator to `(low)` / `(medium)` / `(high)`.
+  - Soften Opening Insights section titles and severity copy per SEED-008 ("Worth a closer look" / "Played confidently"). Severity word stays; confidence badge sits next to it.
+  - Add optional `?` explainer popover on the Insights section title covering the score / sample-size / confidence framing.
+  - Update `openingInsights.ts` and `OpeningInsightsBlock.tsx` to consume the new `confidence` field.
+  - Mobile parity: apply all changes to mobile layouts of Move Explorer and Insights block.
 
 ## Progress
 
@@ -212,9 +229,8 @@ Next milestone goals defined via `/gsd-new-milestone`.
 | 63-68. v1.11 phases | v1.11 | 23/23 | Complete (Phase 67 descoped) | 2026-04-24 |
 | 69. Benchmark DB Infra & Ingestion | v1.12 | 6/6 | Complete (follow-on phases → SEED-006) | 2026-04-26 |
 | 70-71.1. v1.13 phases | v1.13 | 14/14 | Complete (Phases 72/73/74 descoped) | 2026-04-27 |
+| 75-76. v1.14 phases | v1.14 | 0/0 | Planning | — |
 
-</content>
-</invoke>
 ## Backlog
 
 ### Phase 999.1: Password Reset (BACKLOG)
