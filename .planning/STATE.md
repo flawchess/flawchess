@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.14
 milestone_name: Score-Based Opening Insights
-status: ready_to_plan
-last_updated: "2026-04-28T10:10:06.113Z"
-last_activity: 2026-04-28 -- Phase 75 execution started
+status: "Phase 75 shipped — PR #69"
+last_updated: "2026-04-28T11:15:31.960Z"
+last_activity: "2026-04-28 — Phase 75 shipped — PR #69"
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 0
   total_plans: 0
   completed_plans: 0
 ---
@@ -18,9 +18,9 @@ progress:
 
 Phase: 999.1
 Plan: Not started
-Status: Ready to plan
+Status: Phase 75 shipped — PR #69
 Resume: .planning/phases/75-backend-score-metric-confidence-annotation/75-CONTEXT.md
-Last activity: 2026-04-28
+Last activity: 2026-04-28 — Phase 75 shipped — PR #69
 
 ## Project Reference
 
