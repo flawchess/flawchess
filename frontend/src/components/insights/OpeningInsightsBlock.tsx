@@ -17,13 +17,19 @@ const OPENING_INSIGHTS_POPOVER_COPY: ReactNode = (
       <strong>Score</strong> is (W + ½D) / N. 50% means you and your opponents broke even.
     </p>
     <p>
-      A finding shows up when your score sits at least 5% from 50%, enough of a gap that it&apos;s probably not random.
+      A finding shows up when your score sits at least 5% from 50% over at
+      least 10 games, enough of a gap on enough games that it&apos;s probably
+      not random.
     </p>
     <p>
-      <strong>Confidence</strong> says whether the score is likely a real effect
-      or could plausibly be chance. <em>Low</em> findings are worth a glance;{' '}
-      <em>high</em> findings have strong statistical evidence (p &lt; 0.05).
+      <strong>Confidence</strong> is based on the p-value, the chance of seeing
+      this score by luck (one-sided Wald test against 50%):
     </p>
+    <ul className="list-disc pl-4 space-y-0.5">
+      <li><em>high</em>: p &lt; 0.05 (very likely a real effect)</li>
+      <li><em>medium</em>: p &lt; 0.10 (likely a real effect)</li>
+      <li><em>low</em>: p ≥ 0.10, or fewer than 10 games (could plausibly be chance)</li>
+    </ul>
   </div>
 );
 

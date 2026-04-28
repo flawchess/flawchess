@@ -5,15 +5,23 @@ import type { OpeningInsightFinding } from '@/types/insights';
 
 type ConfidenceLevel = 'low' | 'medium' | 'high';
 
-const CONFIDENCE_BASE_COPY: Record<ConfidenceLevel, string> = {
-  low: 'Not enough evidence — this could plausibly be chance',
-  medium: 'Likely a real effect (p < 0.10)',
-  high: 'Strong evidence of a real effect (p < 0.05)',
+const CONFIDENCE_BASE_COPY: Record<ConfidenceLevel, (noun: string) => string> = {
+  low: () => 'Not enough evidence: this could plausibly be chance',
+  medium: (noun) => `Moderate evidence: this is likely a real ${noun}`,
+  high: (noun) => `Strong evidence: this is very likely a real ${noun}`,
 };
 
-/** Tooltip copy for confidence indicators — significance level explainer plus the actual p-value. */
-export function formatConfidenceTooltip(level: ConfidenceLevel, pValue: number): string {
-  return `${CONFIDENCE_BASE_COPY[level]} (p = ${pValue.toFixed(3)})`;
+/**
+ * Tooltip copy for confidence indicators — significance level explainer plus the actual p-value.
+ * `noun` is the directional thing being claimed (e.g. "weakness", "strength"). Defaults to
+ * "effect" for the Move Explorer's non-directional confidence column.
+ */
+export function formatConfidenceTooltip(
+  level: ConfidenceLevel,
+  pValue: number,
+  noun: string = 'effect',
+): string {
+  return `${CONFIDENCE_BASE_COPY[level](noun)} (p = ${pValue.toFixed(3)})`;
 }
 
 /**

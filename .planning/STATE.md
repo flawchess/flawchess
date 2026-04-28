@@ -121,3 +121,5 @@ Last activity: 2026-04-27 — Phase 71.1 Plan 03 complete (cleanup gates green; 
 
 The decision-coverage-plan gate reported 4/24 D-IDs covered. Plan-checker independently verified all 25 D-XX decisions are reflected in plan tasks (grep finds 21 unique D-IDs across must_haves blocks; the gate's strict YAML parser undercounts). Decisions D-01 (section titles unchanged — no-action), D-14 (row tint via getArrowColor — implemented in Plan 05 but not cited verbatim in must_haves), D-23 / D-24 (out-of-scope clarifications) are not literal citations in must_haves but are demonstrably honored by the plan structure. Override acknowledged; verify-phase will re-surface this for confirmation.
 | 2026-04-28 | fast | Confidence indicator polish: drop (low) suffix, add hover tooltip with p-value, match font sizes | ✅ |
+| 2026-04-28 | fast | Switch confidence to one-sided p with p<0.05/p<0.10 thresholds | ✅ |
+| 2026-04-28 | fast | Reframe confidence tooltip copy with directional noun, move thresholds into section info popover | ✅ |
