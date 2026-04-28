@@ -17,13 +17,16 @@ from app.models.game_position import GamePosition
 from app.models.opening import Opening
 from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD, apply_game_filters
 from app.services.opening_insights_constants import (
-    OPENING_INSIGHTS_MAJOR_EFFECT,  # noqa: F401  # imported for docstring traceability; SQL gate uses MINOR_EFFECT, Python post-filter uses MAJOR_EFFECT
     OPENING_INSIGHTS_MAX_ENTRY_PLY,
     OPENING_INSIGHTS_MIN_ENTRY_PLY,
     OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
     OPENING_INSIGHTS_MINOR_EFFECT,
     OPENING_INSIGHTS_SCORE_PIVOT,
 )
+
+# Note: the SQL gate below uses OPENING_INSIGHTS_MINOR_EFFECT only; the
+# major-vs-minor distinction is applied downstream in
+# opening_insights_service._classify_row (which uses MAJOR_EFFECT).
 
 # Maps match_side values to the corresponding GamePosition hash column.
 HASH_COLUMN_MAP = {
