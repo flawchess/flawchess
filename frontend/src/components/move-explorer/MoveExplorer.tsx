@@ -13,6 +13,8 @@ import {
 } from '@/lib/highlightPulse';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { Tooltip } from '@/components/ui/tooltip';
+import { formatConfidenceTooltip } from '@/lib/openingInsights';
 import { cn } from '@/lib/utils';
 import type { NextMoveEntry } from '@/types/api';
 
@@ -296,11 +298,13 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
               gameCount={entry.game_count}
             />
           )}
-          {entry.game_count}{entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS && ' (low)'}
+          {entry.game_count}
         </span>
       </td>
-      <td className="py-1 text-center text-xs text-muted-foreground tabular-nums">
-        {entry.confidence === 'medium' ? 'med' : entry.confidence}
+      <td className="py-1 text-center text-muted-foreground tabular-nums">
+        <Tooltip content={formatConfidenceTooltip(entry.confidence, entry.p_value)}>
+          <span>{entry.confidence === 'medium' ? 'med' : entry.confidence}</span>
+        </Tooltip>
       </td>
       <td className="py-1 pl-2">
         {!hasWdl ? (

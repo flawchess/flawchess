@@ -1,8 +1,11 @@
 import { ArrowRightLeft, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
-import { InfoPopover } from '@/components/ui/info-popover';
 import { Tooltip } from '@/components/ui/tooltip';
-import { getSeverityBorderColor, trimMoveSequence } from '@/lib/openingInsights';
+import {
+  formatConfidenceTooltip,
+  getSeverityBorderColor,
+  trimMoveSequence,
+} from '@/lib/openingInsights';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
 import type { OpeningInsightFinding } from '@/types/insights';
 
@@ -16,13 +19,6 @@ interface OpeningFindingCardProps {
 const MOBILE_BOARD_SIZE = 105;
 const DESKTOP_BOARD_SIZE = 100;
 const UNNAMED_SENTINEL = '<unnamed line>';
-
-// D-10: Level-specific tooltip copy for the Confidence indicator.
-const CONFIDENCE_TOOLTIP: Record<OpeningInsightFinding['confidence'], string> = {
-  low: 'small sample, treat as a hint',
-  medium: 'enough games to trust the direction',
-  high: 'sample is large enough to trust the magnitude',
-};
 
 export function OpeningFindingCard({
   finding,
@@ -86,24 +82,19 @@ export function OpeningFindingCard({
     </p>
   );
 
-  // D-09/D-10: "Confidence: low/medium/high" line with level-specific explainer.
-  // Uses InfoPopover (tap-friendly) so mobile/tablet users can reach the copy — D-25 mobile parity.
-  // Wrapping a non-interactive <p> in Tooltip via asChild left the explainer unreachable on
-  // touch devices and to keyboard users; InfoPopover provides a focusable trigger and
-  // matches the section-title pattern in OpeningInsightsBlock.
+  // "Confidence: low/medium/high" line — tooltip on hover over the level word
+  // matches the Moves/Games link pattern (hover-only, no tap-friendly trigger).
   const confidenceLine = (
     <p
-      className="text-xs text-muted-foreground flex items-center gap-1"
+      className="text-sm text-muted-foreground flex items-center gap-1"
       data-testid={`opening-finding-card-${idx}-confidence`}
     >
-      Confidence: <span className="font-medium">{finding.confidence}</span>
-      <InfoPopover
-        ariaLabel={`Confidence ${finding.confidence} explainer`}
-        testId={`opening-finding-card-${idx}-confidence-info`}
-        side="top"
-      >
-        {CONFIDENCE_TOOLTIP[finding.confidence]}
-      </InfoPopover>
+      Confidence:{' '}
+      <Tooltip content={formatConfidenceTooltip(finding.confidence, finding.p_value)}>
+        <span className="font-medium" data-testid={`opening-finding-card-${idx}-confidence-info`}>
+          {finding.confidence}
+        </span>
+      </Tooltip>
     </p>
   );
 

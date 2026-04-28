@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import type * as React from 'react';
+
+// Stub Tooltip so renders don't need a TooltipProvider wrapper.
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 import { MoveExplorer } from '../MoveExplorer';
 import type { NextMoveEntry } from '@/types/api';
 
