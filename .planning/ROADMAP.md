@@ -195,7 +195,7 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
 
 **Theme:** Migrate opening insights and Move Explorer color coding from loss-rate to chess score, gate findings on effect size, and annotate them with low/medium/high confidence badges. Folds in SEED-007 (Option A only — Wilson on score, 0.50 pivot, no user-baseline) and SEED-008 (label reframe + confidence cues). Design decisions captured in [notes/opening-insights-v1.14-design.md](notes/opening-insights-v1.14-design.md).
 
-- [ ] Phase 75: Backend — score metric and confidence annotation for opening insights
+- [x] Phase 75: Backend — score metric and confidence annotation for opening insights (completed 2026-04-28)
   - Replace `loss_rate` / `win_rate` with chess score `(W + 0.5·D) / N` in `opening_insights_service.py` and `openings_repository.py`.
   - Classify on score vs 0.50 pivot with effect-size thresholds (e.g. minor ≥ 0.05, major ≥ 0.10).
   - Compute Wilson 95% half-width per finding and bucket to `low` / `medium` / `high`.
