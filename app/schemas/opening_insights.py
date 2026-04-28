@@ -5,6 +5,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
+from app.services.opening_insights_constants import (
+    OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
+)
 
 
 class OpeningInsightsRequest(BaseModel):
@@ -57,15 +60,25 @@ class OpeningInsightFinding(BaseModel):
     entry_full_hash: str  # str-form for JSON precision (RESEARCH.md Pitfall 1)
     candidate_move_san: str
     resulting_full_hash: str  # str-form, same reason
-    n_games: int
-    wins: int
-    draws: int
-    losses: int
-    score: float  # (W + D/2)/n; canonical classification metric (Phase 75 D-09)
+    # Range constraints enforce API-boundary invariants (CLAUDE.md: leverage
+    # Pydantic for validation). n_games is gated by the SQL HAVING clause at
+    # MIN_GAMES_PER_CANDIDATE; w/d/l are non-negative game counts; score and
+    # p_value live in [0, 1] by construction (score = (w + d/2)/n; p_value
+    # via math.erfc which is bounded in [0, 2] but the two-sided form here
+    # is bounded in [0, 1]).
+    n_games: int = Field(ge=OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE)
+    wins: int = Field(ge=0)
+    draws: int = Field(ge=0)
+    losses: int = Field(ge=0)
+    score: float = Field(
+        ge=0.0, le=1.0
+    )  # (W + D/2)/n; canonical classification metric (Phase 75 D-09)
     confidence: Literal[
         "low", "medium", "high"
     ]  # Trinomial Wald 95% CI half-width bucket (Phase 75 D-05/D-06)
-    p_value: float  # Two-sided p-value for H0: score = 0.50 (Phase 75 D-05/D-09)
+    p_value: float = Field(
+        ge=0.0, le=1.0
+    )  # Two-sided p-value for H0: score = 0.50 (Phase 75 D-05/D-09)
 
 
 class OpeningInsightsResponse(BaseModel):
