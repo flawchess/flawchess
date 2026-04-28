@@ -18,7 +18,6 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { formatConfidenceTooltip } from '@/lib/openingInsights';
 import { cn } from '@/lib/utils';
 import { isTrollPosition } from '@/lib/trollOpenings';
-import smileyUrl from '@/assets/smiley.svg';
 import type { NextMoveEntry, Color } from '@/types/api';
 
 interface MoveExplorerProps {
@@ -332,13 +331,23 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
         <span className="inline-flex items-center gap-1">
           <span>{entry.move_san}</span>
           {showTroll && (
-            <img
-              src={smileyUrl}
-              alt=""
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
               aria-hidden="true"
               data-testid={`move-list-row-${entry.move_san}-troll-icon`}
-              className="hidden sm:inline-block h-3.5 w-3.5 brightness-0 invert"
-            />
+              className="inline-block h-3.5 w-3.5 text-muted-foreground"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <circle cx="9" cy="10" r="1" fill="currentColor" stroke="none" />
+              <circle cx="15" cy="10" r="1" fill="currentColor" stroke="none" />
+              <path d="M8 14.5 Q12 17.5 16 14.5" />
+            </svg>
           )}
         </span>
       </td>

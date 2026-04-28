@@ -325,7 +325,7 @@ describe('Phase 77 — Troll-opening inline icon', () => {
       />,
     );
     const icon = screen.getByTestId('move-list-row-e4-troll-icon');
-    expect(icon.tagName).toBe('IMG');
+    expect(icon.tagName.toLowerCase()).toBe('svg');
   });
 
   it('does not render troll icon when result_fen is not in the troll set', () => {
@@ -357,7 +357,9 @@ describe('Phase 77 — Troll-opening inline icon', () => {
     expect(screen.queryByTestId('move-list-row-e5-troll-icon')).toBeNull();
   });
 
-  it('icon has hidden + sm:inline-block class for mobile suppression (D-07)', () => {
+  it('icon renders on mobile and desktop with muted-foreground tint', () => {
+    // D-07 reversed (post-77 polish): the smiley now shows on mobile too,
+    // tinted to text-muted-foreground to match the confidence column.
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', result_fen: RESULT_FEN_AFTER_E5 })]}
@@ -368,8 +370,11 @@ describe('Phase 77 — Troll-opening inline icon', () => {
       />,
     );
     const icon = screen.getByTestId('move-list-row-e4-troll-icon');
-    expect(icon.className).toContain('hidden');
-    expect(icon.className).toContain('sm:inline-block');
+    // SVG `.className` is an SVGAnimatedString — read the raw class attribute instead.
+    const classes = icon.getAttribute('class') ?? '';
+    expect(classes).toContain('inline-block');
+    expect(classes).not.toContain('hidden');
+    expect(classes).toContain('text-muted-foreground');
   });
 
   it('throws when position is a board-only FEN with no side-to-move token (Pitfall 7)', () => {
@@ -389,7 +394,8 @@ describe('Phase 77 — Troll-opening inline icon', () => {
     consoleErrorSpy.mockRestore();
   });
 
-  it('icon is decorative (alt="" + aria-hidden)', () => {
+  it('icon is decorative (aria-hidden)', () => {
+    // Inline SVG (no <img>), so no alt attribute — aria-hidden alone covers AT.
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', result_fen: RESULT_FEN_AFTER_E5 })]}
@@ -400,7 +406,6 @@ describe('Phase 77 — Troll-opening inline icon', () => {
       />,
     );
     const icon = screen.getByTestId('move-list-row-e4-troll-icon');
-    expect(icon.getAttribute('alt')).toBe('');
     expect(icon.getAttribute('aria-hidden')).toBe('true');
   });
 });
