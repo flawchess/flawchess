@@ -593,9 +593,12 @@ def test_ranking_confidence_desc_then_score_distance_desc() -> None:
             p_value=p_value,
         )
 
+    # Bucket choices match the new p-value + N>=10 rule (260428-oxr): "medium"
+    # requires 0.01 <= p < 0.05 with n >= 10. Use n=100, score=0.40 (p≈0.031) for
+    # the medium fixture; "high" cases sit at p << 0.01.
     high_small_delta = _make_finding(n=400, w=130, d=80, losses=190, candidate="a")  # score≈0.425, conf=high
     high_large_delta = _make_finding(n=400, w=80, d=80, losses=240, candidate="b")   # score=0.30,  conf=high
-    medium_any_delta = _make_finding(n=30, w=6, d=6, losses=18, candidate="c")      # score≈0.30,  conf=medium
+    medium_any_delta = _make_finding(n=100, w=35, d=10, losses=55, candidate="c")    # score=0.40,  conf=medium
 
     ranked = _rank_section([medium_any_delta, high_small_delta, high_large_delta])
 
@@ -705,8 +708,8 @@ async def test_compute_insights_populates_confidence_and_p_value() -> None:
     """Phase 75 D-09: every finding carries confidence + p_value fields."""
     # Major weakness, n=20: score = (2 + 0.5*2)/20 = 0.15 (delta=-0.35, major).
     # variance = (2 + 0.25*2)/20 - 0.0225 = 0.125 - 0.0225 = 0.1025
-    # se = sqrt(0.1025/20) ≈ 0.0716; half_width ≈ 0.140 → medium
-    # z = (0.15 - 0.50) / 0.0716 ≈ -4.89; p_value ≈ erfc(4.89/sqrt(2)) ≈ 1e-6
+    # se = sqrt(0.1025/20) ≈ 0.0716
+    # z ≈ -4.89; p ≈ 1e-6; n=20 >= 10 → high
     row = _make_row(n=20, w=2, d=2, losses=16)
     opening = _make_opening()
     response = await _run_compute(rows=[row], openings_by_hash={100: opening}, color="white")
@@ -715,7 +718,7 @@ async def test_compute_insights_populates_confidence_and_p_value() -> None:
     finding = response.white_weaknesses[0]
     assert finding.severity == "major"
     assert finding.score == pytest.approx(0.15)
-    assert finding.confidence in {"low", "medium", "high"}
+    assert finding.confidence == "high"
     assert 0.0 <= finding.p_value <= 1.0
 
 
