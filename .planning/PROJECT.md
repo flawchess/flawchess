@@ -2,11 +2,21 @@
 
 ## What This Is
 
-FlawChess — a multi-user chess analysis platform that lets players import their games from chess.com and lichess, then analyze win/draw/loss rates for specific board positions. It solves the problem of inconsistent opening categorization on existing platforms — instead of relying on opening names, users define positions visually and filter by actual piece placement. Includes an interactive move explorer showing next moves with W/D/L stats per position, endgame performance analytics with conversion/recovery metrics, and a polished mobile PWA experience with drawer-based sidebars.
+FlawChess — a free, open-source chess analysis platform at flawchess.com. Tagline: "Engines are flawless, humans play FlawChess." Users import their games from chess.com and lichess and analyze where they actually win and lose. Position matching uses Zobrist hashes (not opening names), so analysis stays consistent across platforms.
+
+Five feature areas, mirrored on the homepage:
+
+1. **Endgame Analytics** (hero) — WDL by endgame type, conversion/recovery rates when up/down material, Endgame ELO timeline per (platform, time control), and LLM-narrated personalized feedback on what the stats mean.
+2. **Opening Explorer & Insights** — step through any position and see WDL per candidate move; an automatic 16-half-move scan surfaces opening strengths and weaknesses; works for the user and for scouting opponents.
+3. **Time Management Stats** — average clock advantage/deficit at endgame entry, performance under matching time-pressure levels vs opponents, flag rates per time control.
+4. **Opening Comparison & Tracking** — bookmark openings, compare WDL trends over time, filter by time control to see what works where.
+5. **System Opening Filter** — filter by user's pieces only (e.g. London, King's Indian) so all opponent variations roll up under one system.
+
+Mobile-first PWA, installable on iOS/Android, with drawer-based filter and bookmark sidebars.
 
 ## Core Value
 
-Users can determine their success rate for any opening position they specify, filtering by their own pieces only, regardless of how platforms categorize the opening.
+Users get position-precise WDL analysis (openings + endgames + time pressure) on top of their actual chess.com and lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report. No per-platform fragmentation, no manual opening tagging.
 
 ## Requirements
 
