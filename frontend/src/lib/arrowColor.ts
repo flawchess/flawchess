@@ -25,19 +25,28 @@ export const HOVER_BLUE = '#3B82F6';
  * Returns a categorical hex color string for a board arrow / row tint based on
  * chess score (W + 0.5*D)/N.
  *
- * Encoding is effect-size-only (Phase 75 / 76 design lock — no confidence cue
- * on arrows). Strict >= / <= boundaries match the backend classification in
+ * Strict >= / <= boundaries match the backend classification in
  * app/services/opening_insights_service.py.
  *
- * @param score     Score in [0, 1]. The pivot is 0.50 (break-even).
- * @param gameCount Absolute game count for this move. Below MIN_GAMES_FOR_COLOR
- *                  (10), the function falls back to GREY (or HOVER_BLUE if
- *                  hovered) — small samples never carry color.
- * @param isHovered Whether this arrow is currently hovered by the user.
+ * @param score      Score in [0, 1]. The pivot is 0.50 (break-even).
+ * @param gameCount  Absolute game count for this move. Below MIN_GAMES_FOR_COLOR
+ *                   (10), the function falls back to GREY (or HOVER_BLUE if
+ *                   hovered) — small samples never carry color.
+ * @param confidence Statistical confidence ('low' | 'medium' | 'high'). 'low'
+ *                   collapses to GREY (or HOVER_BLUE if hovered) — the effect
+ *                   could plausibly be chance, so we don't encode it as a
+ *                   strength/weakness.
+ * @param isHovered  Whether this arrow is currently hovered by the user.
  */
-export function getArrowColor(score: number, gameCount: number, isHovered: boolean): string {
+export function getArrowColor(
+  score: number,
+  gameCount: number,
+  confidence: 'low' | 'medium' | 'high',
+  isHovered: boolean,
+): string {
   if (isHovered) return HOVER_BLUE;
   if (gameCount < MIN_GAMES_FOR_COLOR) return GREY;
+  if (confidence === 'low') return GREY;
 
   // Order matters: dark before light on each side. Strict >= / <= boundaries.
   if (score >= SCORE_PIVOT + MAJOR_EFFECT_SCORE) return DARK_GREEN;   // >= 0.60
