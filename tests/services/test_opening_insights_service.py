@@ -565,13 +565,18 @@ def _make_weakness_finding(
     score: float,
     candidate: str,
     confidence: Literal["low", "medium", "high"] = "high",
+    n_games: int = 400,
 ) -> OpeningInsightFinding:
     """Build a minimal weakness OpeningInsightFinding for ranking-level tests.
 
-    n_games / wins / draws / losses are set to placeholders that match `score`
-    closely enough for downstream display, but the ranking layer reads
-    `score`, `confidence`, and the externally-supplied SE only.
+    Quick task 260428-v9i: ranking now uses the Wilson 95% score interval, which
+    is derived from `score` and `n_games` directly (no SE input). Tests therefore
+    drive uncertainty via `n_games` rather than synthetic SE values; the SE
+    component of the (finding, se) tuple is preserved upstream but ignored by
+    `_rank_section`. wins/losses are derived from `score * n_games` so the
+    finding is internally consistent for downstream display.
     """
+    wins = int(round(score * n_games))
     return OpeningInsightFinding(
         color="white",
         classification="weakness",
@@ -584,10 +589,10 @@ def _make_weakness_finding(
         entry_full_hash="0",
         candidate_move_san=candidate,
         resulting_full_hash="0",
-        n_games=400,
-        wins=int(round(score * 400)),
+        n_games=n_games,
+        wins=wins,
         draws=0,
-        losses=400 - int(round(score * 400)),
+        losses=n_games - wins,
         score=score,
         confidence=confidence,
         p_value=0.5,
@@ -598,7 +603,9 @@ def _make_strength_finding(
     score: float,
     candidate: str,
     confidence: Literal["low", "medium", "high"] = "high",
+    n_games: int = 400,
 ) -> OpeningInsightFinding:
+    wins = int(round(score * n_games))
     return OpeningInsightFinding(
         color="white",
         classification="strength",
@@ -611,59 +618,68 @@ def _make_strength_finding(
         entry_full_hash="0",
         candidate_move_san=candidate,
         resulting_full_hash="0",
-        n_games=400,
-        wins=int(round(score * 400)),
+        n_games=n_games,
+        wins=wins,
         draws=0,
-        losses=400 - int(round(score * 400)),
+        losses=n_games - wins,
         score=score,
         confidence=confidence,
         p_value=0.5,
     )
 
 
-def test_ranking_ignores_confidence_bucket_uses_wald_bound_only() -> None:
-    """260428-tgg follow-up: confidence bucket is no longer part of the sort key.
-    A "medium" bucket row can outrank a "high" bucket row if its Wald bound is
-    more striking (and vice versa). Bucket is retained as a UI badge only.
+def test_ranking_ignores_confidence_bucket_uses_ci_bound_only() -> None:
+    """Quick task 260428-v9i: confidence bucket is no longer part of the sort
+    key. A "medium" bucket row can outrank a "high" bucket row if its Wilson
+    upper bound is more striking (and vice versa). Bucket is retained as a UI
+    badge only.
 
-      high_wide: score=0.40, se=0.05. upper = 0.40 + 1.96*0.05 = 0.498.
-      medium_tight: score=0.42, se=0.005. upper = 0.42 + 1.96*0.005 = 0.4298.
+      medium_tight: score=0.42, n_games=4000 -> Wilson upper ~ 0.4354.
+      high_wide:    score=0.40, n_games=100  -> Wilson upper ~ 0.4980.
 
-    Even though high_wide is in the "high" bucket, its CI almost touches 0.5,
-    while medium_tight stays well below 0.5. medium_tight sorts first.
+    Even though high_wide has the larger raw effect, medium_tight's tight CI
+    sits much lower against the 0.5 pivot. medium_tight sorts first.
     """
-    high_wide = _make_weakness_finding(score=0.40, candidate="high_wide", confidence="high")
+    high_wide = _make_weakness_finding(
+        score=0.40, candidate="high_wide", confidence="high", n_games=100
+    )
     medium_tight = _make_weakness_finding(
-        score=0.42, candidate="medium_tight", confidence="medium"
+        score=0.42, candidate="medium_tight", confidence="medium", n_games=4000
     )
 
+    # SE values are arbitrary under Wilson — kept in the tuple for upstream
+    # contract compatibility but ignored by _rank_section. Setting SE=0 here
+    # would make the old Wald formula collapse to a pure score sort (giving
+    # high_wide first), so this test also distinguishes Wilson from Wald.
     ranked = _rank_section(
-        [(high_wide, 0.05), (medium_tight, 0.005)], direction="weakness"
+        [(high_wide, 0.0), (medium_tight, 0.0)], direction="weakness"
     )
     assert [f.candidate_move_san for f in ranked] == ["medium_tight", "high_wide"], (
-        "Tight medium-bucket row with stricter bound must outrank wide high-bucket row"
+        "Tight medium-bucket row with stricter Wilson bound must outrank wide high-bucket row"
     )
 
 
-def test_ranking_wald_upper_bound_tiebreak_within_same_confidence_for_weaknesses() -> None:
-    """Quick task 260428-tgg: within a confidence bucket, weaknesses are ranked by
-    Wald 95% upper bound ASCENDING — the row whose score is most-confidently-below-0.5
-    sorts first. The fixture is chosen so that the new (Wald upper) and old
-    (|score - 0.5|) rules disagree:
+def test_ranking_ci_upper_bound_tiebreak_within_same_confidence_for_weaknesses() -> None:
+    """Quick task 260428-v9i: within a confidence bucket, weaknesses are ranked
+    by Wilson 95% upper bound ASCENDING — the row whose score is most-confidently
+    -below-0.5 sorts first. The fixture is chosen so that the new (Wilson upper)
+    and old (|score - 0.5|) rules disagree:
 
-      F1: score=0.40, se=0.005. upper = 0.40 + 1.96*0.005 = 0.4098. |delta| = 0.10.
-      F2: score=0.30, se=0.10.  upper = 0.30 + 1.96*0.10  = 0.496.  |delta| = 0.20.
+      F1: score=0.40, n_games=10000 -> Wilson upper ~ 0.4096. |delta| = 0.10.
+      F2: score=0.30, n_games=50    -> Wilson upper ~ 0.4375. |delta| = 0.20.
 
     Old rule (|score-0.5| desc): F2 first (|delta|=0.20 > 0.10).
-    New rule (upper bound asc):  F1 first (0.4098 < 0.496) — F1's CI is much
+    New rule (upper bound asc):  F1 first (0.4096 < 0.4375) — F1's CI is much
     tighter and stays well below 0.5, so F1 is the more-confidently-bad row.
     """
-    f1 = _make_weakness_finding(score=0.40, candidate="f1", confidence="high")
-    f2 = _make_weakness_finding(score=0.30, candidate="f2", confidence="high")
+    f1 = _make_weakness_finding(score=0.40, candidate="f1", confidence="high", n_games=10000)
+    f2 = _make_weakness_finding(score=0.30, candidate="f2", confidence="high", n_games=50)
 
-    ranked = _rank_section([(f2, 0.10), (f1, 0.005)], direction="weakness")
+    # SE arbitrary (ignored by Wilson). 0.0 also makes the old Wald formula
+    # collapse to score-only, where f2 (0.30) < f1 (0.40) — opposite of Wilson.
+    ranked = _rank_section([(f2, 0.0), (f1, 0.0)], direction="weakness")
     assert [f.candidate_move_san for f in ranked] == ["f1", "f2"], (
-        "F1 (tight CI, upper=0.41) must outrank F2 (wide CI, upper=0.50) within the same bucket"
+        "F1 (tight CI, upper=0.4096) must outrank F2 (wide CI, upper=0.4375) within the same bucket"
     )
 
 
@@ -671,66 +687,84 @@ def test_ranking_small_n_high_effect_does_not_outrank_large_n_moderate_effect_wi
     None
 ):
     """Must-have: a small-N high-effect finding should NOT outrank a large-N
-    moderate-effect finding within the same bucket — small N inflates SE, widens
-    the bound, and demotes the row.
+    moderate-effect finding within the same bucket — small N widens the Wilson
+    interval and demotes the row.
 
-    Both findings are in the "high" bucket; demonstration uses hand-picked SE
-    that mimics what compute_confidence_bucket would produce for n=10 vs n=400.
+      A (small N, high effect):     score=0.20, n_games=10  -> Wilson upper ~ 0.5098.
+      B (large N, moderate effect): score=0.30, n_games=400 -> Wilson upper ~ 0.3466.
 
-      A (small N, high effect):   score=0.20, se=0.13. upper = 0.20 + 1.96*0.13 = 0.4548.
-      B (large N, moderate effect): score=0.30, se=0.02. upper = 0.30 + 1.96*0.02 = 0.3392.
-
-    New Wald-bound rule: B.upper (0.339) < A.upper (0.455) -> B sorts FIRST.
+    New Wilson-bound rule: B.upper (0.347) < A.upper (0.510) -> B sorts FIRST.
     Old |score-0.5| rule would have ordered A.|delta|=0.30 > B.|delta|=0.20 -> A first.
     """
-    a_small_n = _make_weakness_finding(score=0.20, candidate="a", confidence="high")
-    b_large_n = _make_weakness_finding(score=0.30, candidate="b", confidence="high")
+    a_small_n = _make_weakness_finding(score=0.20, candidate="a", confidence="high", n_games=10)
+    b_large_n = _make_weakness_finding(score=0.30, candidate="b", confidence="high", n_games=400)
 
-    ranked = _rank_section([(a_small_n, 0.13), (b_large_n, 0.02)], direction="weakness")
+    # SE=0 makes the old Wald formula collapse to score-only, where A (0.20)
+    # would sort first — but Wilson correctly demotes the small-N row.
+    ranked = _rank_section([(a_small_n, 0.0), (b_large_n, 0.0)], direction="weakness")
     assert [f.candidate_move_san for f in ranked] == ["b", "a"], (
-        "Large-N tight-CI moderate finding must outrank small-N wide-CI high-effect finding"
+        "Large-N moderate finding must outrank small-N high-effect finding under Wilson"
     )
 
 
 def test_ranking_strength_uses_lower_bound() -> None:
-    """Quick task 260428-tgg: strengths sort by Wald 95% LOWER bound DESCENDING
+    """Quick task 260428-v9i: strengths sort by Wilson 95% LOWER bound DESCENDING
     (most-confidently-good first). Symmetric to the weakness case.
 
-      F1: score=0.60, se=0.005. lower = 0.60 - 1.96*0.005 = 0.5902.
-      F2: score=0.70, se=0.10.  lower = 0.70 - 1.96*0.10  = 0.504.
+      F1: score=0.60, n_games=10000 -> Wilson lower ~ 0.5904.
+      F2: score=0.70, n_games=50    -> Wilson lower ~ 0.5625.
 
-    F1's lower bound (0.59) is well above 0.5; F2's (0.504) hugs the pivot.
+    F1's lower bound (0.59) is well above 0.5; F2's (0.56) hugs the pivot.
     F1 sorts first under the new rule despite having a smaller raw effect.
     """
-    f1 = _make_strength_finding(score=0.60, candidate="f1", confidence="high")
-    f2 = _make_strength_finding(score=0.70, candidate="f2", confidence="high")
+    f1 = _make_strength_finding(score=0.60, candidate="f1", confidence="high", n_games=10000)
+    f2 = _make_strength_finding(score=0.70, candidate="f2", confidence="high", n_games=50)
 
-    ranked = _rank_section([(f2, 0.10), (f1, 0.005)], direction="strength")
+    # SE=0 collapses old Wald to score-only, where f2 (0.70) > f1 (0.60) and
+    # would sort first — opposite of Wilson, which correctly tightens f1's
+    # bound and pushes it above f2's.
+    ranked = _rank_section([(f2, 0.0), (f1, 0.0)], direction="strength")
     assert [f.candidate_move_san for f in ranked] == ["f1", "f2"], (
-        "F1 (tight CI, lower=0.59) must outrank F2 (wide CI, lower=0.50) within the same bucket"
+        "F1 (tight CI, lower=0.5904) must outrank F2 (wide CI, lower=0.5625) within the same bucket"
     )
 
 
-def test_ranking_clamps_bound_to_unit_interval() -> None:
-    """Wald bound is clamped to [0, 1] so degenerate (very wide CI) rows still
-    produce well-defined sort keys and do not crash sorting.
+def test_ranking_bound_handles_boundary_scores() -> None:
+    """Quick task 260428-v9i: Wilson is well-defined at boundary scores (p=0,
+    p=1) — no Wald-style SE=0 degeneracy. The defensive clamp to [0, 1] is kept
+    in the implementation for safety, but ordering does not depend on it.
 
-    Weakness side: score=0.95, se=0.5 -> raw upper = 1.93, clamped to 1.0.
-    A normal row at score=0.30, se=0.02 has upper ≈ 0.34 and sorts first.
+    Weakness side:
+      f_extreme: score=0.95, n_games=10  -> Wilson upper ~ 0.9948 (NOT clamped).
+      f_normal:  score=0.30, n_games=400 -> Wilson upper ~ 0.3466.
+    Normal row sorts first (its bound is much further below 0.5).
+
+    Strength side:
+      s_extreme: score=0.05, n_games=10  -> Wilson lower ~ 0.0052.
+      s_normal:  score=0.70, n_games=400 -> Wilson lower ~ 0.6534.
+    Normal row sorts first (its bound is much further above 0.5).
     """
-    f_extreme = _make_weakness_finding(score=0.95, candidate="extreme", confidence="high")
-    f_normal = _make_weakness_finding(score=0.30, candidate="normal", confidence="high")
+    f_extreme = _make_weakness_finding(
+        score=0.95, candidate="extreme", confidence="high", n_games=10
+    )
+    f_normal = _make_weakness_finding(
+        score=0.30, candidate="normal", confidence="high", n_games=400
+    )
 
-    ranked = _rank_section([(f_extreme, 0.5), (f_normal, 0.02)], direction="weakness")
-    # Normal row (clamped upper ~0.34) sorts before extreme row (clamped to 1.0).
+    # SE values arbitrary — Wilson uses only score and n_games.
+    ranked = _rank_section([(f_extreme, 0.0), (f_normal, 0.0)], direction="weakness")
+    # Normal row (upper ~0.347) sorts before extreme row (upper ~0.995).
     assert [f.candidate_move_san for f in ranked] == ["normal", "extreme"]
 
-    # Strength side: score=0.05, se=0.5 -> raw lower = -0.93, clamped to 0.0.
-    s_extreme = _make_strength_finding(score=0.05, candidate="extreme", confidence="high")
-    s_normal = _make_strength_finding(score=0.70, candidate="normal", confidence="high")
+    s_extreme = _make_strength_finding(
+        score=0.05, candidate="extreme", confidence="high", n_games=10
+    )
+    s_normal = _make_strength_finding(
+        score=0.70, candidate="normal", confidence="high", n_games=400
+    )
 
-    ranked_s = _rank_section([(s_extreme, 0.5), (s_normal, 0.02)], direction="strength")
-    # Normal row (lower ~0.66) sorts before extreme row (clamped lower to 0.0).
+    ranked_s = _rank_section([(s_extreme, 0.0), (s_normal, 0.0)], direction="strength")
+    # Normal row (lower ~0.653) sorts before extreme row (lower ~0.005).
     assert [f.candidate_move_san for f in ranked_s] == ["normal", "extreme"]
 
 
