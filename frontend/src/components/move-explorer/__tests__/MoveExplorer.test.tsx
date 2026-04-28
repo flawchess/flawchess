@@ -8,6 +8,15 @@ vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+// Phase 77: stub curated data — sentinel key matches the WHITE-only
+// derivation of RESULT_FEN_AFTER_E5 below (post-1.e4 e5 board FEN with
+// black pieces stripped). BLACK_TROLL_KEYS stays empty so the side-routing
+// test can assert "same result_fen but black-to-move => no icon".
+vi.mock('@/data/trollOpenings', () => ({
+  WHITE_TROLL_KEYS: new Set(['8/8/8/8/4P3/8/PPPP1PPP/RNBQKBNR']),
+  BLACK_TROLL_KEYS: new Set<string>(),
+}));
+
 import { MoveExplorer } from '../MoveExplorer';
 import type { NextMoveEntry } from '@/types/api';
 
@@ -23,6 +32,11 @@ afterEach(() => {
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 // A position one ply later — used to trigger the position-change reset path.
 const AFTER_E4_FEN = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1';
+// Board FEN after 1.e4 e5 — when stripped to white-only, derives to the
+// WHITE_TROLL_KEYS sentinel '8/8/8/8/4P3/8/PPPP1PPP/RNBQKBNR'.
+const RESULT_FEN_AFTER_E5 = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR';
+// Board FEN of the starting position — derives to a non-troll key.
+const RESULT_FEN_NOT_TROLL = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR';
 
 function makeEntry(overrides: Partial<NextMoveEntry> & Pick<NextMoveEntry, 'move_san'>): NextMoveEntry {
   return {
@@ -296,5 +310,97 @@ describe('Phase 76 — Conf column + mute extension', () => {
     );
     const row = screen.getByTestId('move-explorer-row-e4');
     expect(row.getAttribute('style') ?? '').not.toMatch(/opacity:\s*0\.5/);
+  });
+});
+
+describe('Phase 77 — Troll-opening inline icon', () => {
+  it('renders troll icon when result_fen matches WHITE_TROLL_KEYS and parent is white-to-move', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', result_fen: RESULT_FEN_AFTER_E5 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}      // white to move => sideJustMoved = 'white'
+        onMoveClick={() => {}}
+      />,
+    );
+    const icon = screen.getByTestId('move-list-row-e4-troll-icon');
+    expect(icon.tagName).toBe('IMG');
+  });
+
+  it('does not render troll icon when result_fen is not in the troll set', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'd4', result_fen: RESULT_FEN_NOT_TROLL })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId('move-list-row-d4-troll-icon')).toBeNull();
+  });
+
+  it('routes to BLACK_TROLL_KEYS when parent position is black-to-move (D-10)', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e5', result_fen: RESULT_FEN_AFTER_E5 })]}
+        isLoading={false}
+        isError={false}
+        position={AFTER_E4_FEN}   // black to move => sideJustMoved = 'black'
+        onMoveClick={() => {}}
+      />,
+    );
+    // BLACK_TROLL_KEYS is empty in the mock; even though result_fen would
+    // hit the white set sentinel, the white set is NOT consulted, so no
+    // icon should render.
+    expect(screen.queryByTestId('move-list-row-e5-troll-icon')).toBeNull();
+  });
+
+  it('icon has hidden + sm:inline-block class for mobile suppression (D-07)', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', result_fen: RESULT_FEN_AFTER_E5 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const icon = screen.getByTestId('move-list-row-e4-troll-icon');
+    expect(icon.className).toContain('hidden');
+    expect(icon.className).toContain('sm:inline-block');
+  });
+
+  it('throws when position is a board-only FEN with no side-to-move token (Pitfall 7)', () => {
+    // Suppress React's error-boundary logging for this assertion.
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(() =>
+      render(
+        <MoveExplorer
+          moves={[makeEntry({ move_san: 'e4', result_fen: RESULT_FEN_AFTER_E5 })]}
+          isLoading={false}
+          isError={false}
+          position="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"  // no side-to-move token
+          onMoveClick={() => {}}
+        />,
+      ),
+    ).toThrow(/must be a full FEN with side-to-move/);
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('icon is decorative (alt="" + aria-hidden)', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', result_fen: RESULT_FEN_AFTER_E5 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const icon = screen.getByTestId('move-list-row-e4-troll-icon');
+    expect(icon.getAttribute('alt')).toBe('');
+    expect(icon.getAttribute('aria-hidden')).toBe('true');
   });
 });

@@ -67,18 +67,14 @@ export function MoveExplorer({
   // Mobile: first tap highlights a row (shows arrow on board), second tap plays the move
   const [selectedMove, setSelectedMove] = useState<string | null>(null);
 
-  const moveMap = useMemo(() => {
-    const chess = new Chess(position);
-    const legalMoves = chess.moves({ verbose: true });
-    return new Map(legalMoves.map(m => [m.san, { from: m.from, to: m.to }]));
-  }, [position]);
-
   // Derive side-just-moved once from the parent FEN's side-to-move token.
   // The parent's side TO MOVE is the side that plays each candidate move in
   // `moves`, so it's also the side that just moved on the resulting position
   // (D-10). Defensive throw: callers must pass a full FEN — a board-only
   // placement string has no side-to-move token and would silently produce
-  // wrong results (RESEARCH.md Pitfall 7).
+  // wrong results (RESEARCH.md Pitfall 7). This check runs BEFORE the
+  // `moveMap` useMemo so its friendly error message wins over chess.js's
+  // generic "must contain six space-delimited fields" complaint.
   const sideJustMoved: Color = useMemo(() => {
     const tokens = position.split(' ');
     const sideToken = tokens[1];
@@ -88,6 +84,12 @@ export function MoveExplorer({
       );
     }
     return sideToken === 'w' ? 'white' : 'black';
+  }, [position]);
+
+  const moveMap = useMemo(() => {
+    const chess = new Chess(position);
+    const legalMoves = chess.moves({ verbose: true });
+    return new Map(legalMoves.map(m => [m.san, { from: m.from, to: m.to }]));
   }, [position]);
 
   // Ref placed on the row matching highlightedMove.san — used to scrollIntoView.
