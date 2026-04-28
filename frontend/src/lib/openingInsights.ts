@@ -1,15 +1,7 @@
 import { DARK_RED, LIGHT_RED, DARK_GREEN, LIGHT_GREEN } from '@/lib/arrowColor';
 import type { OpeningInsightFinding } from '@/types/insights';
 
-/** Backend MIN_GAMES_PER_CANDIDATE — the minimum game count for a candidate move to qualify as a finding. */
-export const MIN_GAMES_FOR_INSIGHT = 20;
-
-/** Mirrors LIGHT_COLOR_THRESHOLD from arrowColor.ts — the win/loss-rate boundary in percent. */
-export const INSIGHT_RATE_THRESHOLD = 55;
-
-/** Shared copy used by the InfoPopover (D-20) and empty states (D-09 / D-10). */
-export const INSIGHT_THRESHOLD_COPY =
-  'Insights are computed from candidate moves with at least 20 games where your win or loss rate exceeds 55%.';
+// OPENING_INSIGHTS_POPOVER_COPY lives in OpeningInsightsBlock.tsx (JSX co-location).
 
 /**
  * Map a classification + severity tuple to the appropriate border-left color hex.
