@@ -317,7 +317,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
       </td>
       <td className="py-1 text-center text-muted-foreground tabular-nums">
         {showConfidence && (
-          <Tooltip content={formatConfidenceTooltip(entry.confidence, entry.p_value)}>
+          <Tooltip content={formatConfidenceTooltip(entry.confidence, entry.p_value, entry.score)}>
             <span>{entry.confidence === 'medium' ? 'med' : entry.confidence}</span>
           </Tooltip>
         )}

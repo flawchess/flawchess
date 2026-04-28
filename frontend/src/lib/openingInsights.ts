@@ -5,23 +5,39 @@ import type { OpeningInsightFinding } from '@/types/insights';
 
 type ConfidenceLevel = 'low' | 'medium' | 'high';
 
-const CONFIDENCE_BASE_COPY: Record<ConfidenceLevel, (noun: string) => string> = {
-  low: () => 'Not enough evidence: this could plausibly be chance',
-  medium: (noun) => `Moderate evidence: this is likely a real ${noun}`,
-  high: (noun) => `Strong evidence: this is very likely a real ${noun}`,
+const CONFIDENCE_PREFIX: Record<ConfidenceLevel, string> = {
+  low: 'Low confidence',
+  medium: 'Medium confidence',
+  high: 'High confidence',
+};
+
+const CONFIDENCE_VERDICT: Record<ConfidenceLevel, (noun: string) => string> = {
+  low: () => 'could plausibly be chance',
+  medium: (noun) => `is likely a real ${noun}`,
+  high: (noun) => `is very likely a real ${noun}`,
 };
 
 /**
- * Tooltip copy for confidence indicators — significance level explainer plus the actual p-value.
- * `noun` is the directional thing being claimed (e.g. "weakness", "strength"). Defaults to
- * "effect" for the Move Explorer's non-directional confidence column.
+ * Tooltip copy for confidence indicators — significance level explainer with the
+ * observed score, its signed distance from the 50% break-even line, and the p-value.
+ * `noun` is the directional thing being claimed: "strength" when score ≥ 50%,
+ * otherwise "weakness".
  */
 export function formatConfidenceTooltip(
   level: ConfidenceLevel,
   pValue: number,
-  noun: string = 'effect',
+  score: number,
 ): string {
-  return `${CONFIDENCE_BASE_COPY[level](noun)} (p = ${pValue.toFixed(3)})`;
+  const noun: 'strength' | 'weakness' = score >= 0.5 ? 'strength' : 'weakness';
+  const scorePct = score * 100;
+  const roundedScore = Math.round(scorePct);
+  const diff = scorePct - 50;
+  const roundedDiff = Math.round(Math.abs(diff));
+  const scoreDescriptor =
+    roundedDiff === 0
+      ? `${roundedScore}% score (at 50%)`
+      : `${roundedScore}% score (${roundedDiff}% ${diff >= 0 ? 'above' : 'below'} 50%)`;
+  return `${CONFIDENCE_PREFIX[level]}: ${scoreDescriptor} ${CONFIDENCE_VERDICT[level](noun)} (p = ${pValue.toFixed(3)})`;
 }
 
 /**

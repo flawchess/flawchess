@@ -90,7 +90,7 @@ export function OpeningFindingCard({
       data-testid={`opening-finding-card-${idx}-confidence`}
     >
       Confidence:{' '}
-      <Tooltip content={formatConfidenceTooltip(finding.confidence, finding.p_value, finding.classification)}>
+      <Tooltip content={formatConfidenceTooltip(finding.confidence, finding.p_value, finding.score)}>
         <span className="font-medium" data-testid={`opening-finding-card-${idx}-confidence-info`}>
           {finding.confidence}
         </span>
