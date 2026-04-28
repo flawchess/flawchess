@@ -176,6 +176,12 @@ export function MoveExplorer({
                 </span>
               </th>
               <th className="w-[5.5rem] text-right text-xs text-muted-foreground font-normal pb-1">Games</th>
+              <th
+                className="w-[2.5rem] text-center text-xs text-muted-foreground font-normal pb-1"
+                data-testid="move-explorer-th-conf"
+              >
+                Conf
+              </th>
               <th className="text-left text-xs text-muted-foreground font-normal pb-1 pl-2">Results</th>
             </tr>
           </thead>
@@ -219,13 +225,14 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   rowRef?: React.Ref<HTMLTableRowElement>;
 }) {
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
-  const isBelowThreshold = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
+  const isLowConfidence = entry.confidence === 'low';
+  const isUnreliable = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS || isLowConfidence;
 
   // Strength/weakness row tint: every qualifying row gets the same color the
   // chessboard arrow uses (green for strengths, red for weaknesses). Grey
   // (neutral or below the color threshold) means no tint. The deep-link
   // highlight reuses the same color and adds the pulse animation on top.
-  const arrowColor = getArrowColor(entry.win_pct, entry.loss_pct, entry.game_count, false);
+  const arrowColor = getArrowColor(entry.score, entry.game_count, false);
   const severityColor = arrowColor === GREY ? null : arrowColor;
   const tintColor = highlightColor ?? severityColor;
 
@@ -236,7 +243,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   // re-renders (e.g. arrow re-sort on hover) from re-attaching the animation
   // class and restarting the CSS keyframe.
   const rowStyle: React.CSSProperties = {};
-  if (isBelowThreshold) rowStyle.opacity = UNRELIABLE_OPACITY;
+  if (isUnreliable) rowStyle.opacity = UNRELIABLE_OPACITY;
   if (tintColor !== null) {
     rowStyle.backgroundColor = `${tintColor}${HIGHLIGHT_BG_REST_ALPHA}`;
     if (highlightPulse) {
@@ -289,8 +296,11 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
               gameCount={entry.game_count}
             />
           )}
-          {entry.game_count}{isBelowThreshold && ' (low)'}
+          {entry.game_count}{entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS && ' (low)'}
         </span>
+      </td>
+      <td className="py-1 text-center text-xs text-muted-foreground tabular-nums">
+        {entry.confidence === 'medium' ? 'med' : entry.confidence}
       </td>
       <td className="py-1 pl-2">
         {!hasWdl ? (
