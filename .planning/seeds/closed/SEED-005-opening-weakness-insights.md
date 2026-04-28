@@ -1,6 +1,6 @@
 ---
 id: SEED-005
-status: dormant
+status: closed_implemented_in_v1_13
 planted: 2026-04-26
 planted_during: v1.12 Benchmark DB & Population Baselines (executing, Phase 69 mid-ingest)
 trigger_when: milestone v1.13 opens (after v1.12 ships)
