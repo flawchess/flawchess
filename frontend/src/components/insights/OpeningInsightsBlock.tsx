@@ -11,16 +11,10 @@ import type { FilterState } from '@/components/filters/FilterPanel';
 // Phase 76 D-17 — single shared copy for all four section-title InfoPopovers.
 // Co-located with consumer (this file) per RESEARCH.md Open Question 3 — keeps
 // openingInsights.ts as a pure .ts module (no JSX rename).
-const OPENING_INSIGHTS_POPOVER_COPY: ReactNode = (
-  <div className="space-y-2">
-    <p>
-      <strong>Score</strong> is (W + ½D) / N. 50% means you and your opponents broke even.
-    </p>
-    <p>
-      A finding shows up when your score sits at least 5% from 50% over at
-      least 10 games, enough of a gap on enough games that it&apos;s probably
-      not random.
-    </p>
+// Exported so the Move Explorer's "Move" header InfoPopover can reuse the same
+// confidence explanation verbatim.
+export const OPENING_INSIGHTS_CONFIDENCE_COPY: ReactNode = (
+  <>
     <p>
       <strong>Confidence</strong> is based on the p-value, the chance of seeing
       this score by luck (one-sided Wald test against 50%):
@@ -30,6 +24,19 @@ const OPENING_INSIGHTS_POPOVER_COPY: ReactNode = (
       <li><em>medium</em>: p &lt; 0.10 (likely a real effect)</li>
       <li><em>low</em>: p ≥ 0.10, or fewer than 10 games (could plausibly be chance)</li>
     </ul>
+  </>
+);
+
+const OPENING_INSIGHTS_POPOVER_COPY: ReactNode = (
+  <div className="space-y-2">
+    <p>
+      <strong>Score</strong> is (W + ½D) / N. 50% means you and your opponents broke even.
+    </p>
+    <p>
+      A finding shows up when your score sits at least 5% from 50% over at
+      least 10 games, enough of a difference to be worth a closer look.
+    </p>
+    {OPENING_INSIGHTS_CONFIDENCE_COPY}
   </div>
 );
 

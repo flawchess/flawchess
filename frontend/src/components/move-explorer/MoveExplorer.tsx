@@ -3,7 +3,8 @@ import { Chess } from 'chess.js';
 import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
-import { getArrowColor, GREY } from '@/lib/arrowColor';
+import { getArrowColor, GREY, MINOR_EFFECT_SCORE, SCORE_PIVOT } from '@/lib/arrowColor';
+import { OPENING_INSIGHTS_CONFIDENCE_COPY } from '@/components/insights/OpeningInsightsBlock';
 import {
   HIGHLIGHT_PULSE_DURATION_MS,
   HIGHLIGHT_PULSE_ITERATIONS,
@@ -173,6 +174,7 @@ export function MoveExplorer({
                       <p>
                         On desktop, click a move to play it. On mobile, tap to highlight (shows the arrow on the board), then tap again to play.
                       </p>
+                      {OPENING_INSIGHTS_CONFIDENCE_COPY}
                     </div>
                   </InfoPopover>
                 </span>
@@ -227,8 +229,14 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   rowRef?: React.Ref<HTMLTableRowElement>;
 }) {
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
-  const isLowConfidence = entry.confidence === 'low';
-  const isUnreliable = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS || isLowConfidence;
+  // Mute the row only on small samples — confidence is now its own column and
+  // is hidden (not muted) when the effect is too small to be interesting.
+  const isUnreliable = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
+  // Hide the per-row confidence indicator for moves below the effect-of-
+  // interest threshold (|score - 0.5| < 0.05) and for samples too small to
+  // ground a significance test (game_count < 10). The column header stays.
+  const hasEffectOfInterest = Math.abs(entry.score - SCORE_PIVOT) >= MINOR_EFFECT_SCORE;
+  const showConfidence = hasEffectOfInterest && entry.game_count >= MIN_GAMES_FOR_RELIABLE_STATS;
 
   // Strength/weakness row tint: every qualifying row gets the same color the
   // chessboard arrow uses (green for strengths, red for weaknesses). Grey
@@ -302,9 +310,11 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
         </span>
       </td>
       <td className="py-1 text-center text-muted-foreground tabular-nums">
-        <Tooltip content={formatConfidenceTooltip(entry.confidence, entry.p_value)}>
-          <span>{entry.confidence === 'medium' ? 'med' : entry.confidence}</span>
-        </Tooltip>
+        {showConfidence && (
+          <Tooltip content={formatConfidenceTooltip(entry.confidence, entry.p_value)}>
+            <span>{entry.confidence === 'medium' ? 'med' : entry.confidence}</span>
+          </Tooltip>
+        )}
       </td>
       <td className="py-1 pl-2">
         {!hasWdl ? (

@@ -202,13 +202,13 @@ describe('Phase 76 — Conf column + mute extension', () => {
     expect(th.textContent?.trim()).toBe('Conf');
   });
 
-  it('renders "low" / "med" / "high" labels per entry.confidence', () => {
+  it('renders "low" / "med" / "high" labels per entry.confidence when the effect is of interest', () => {
     render(
       <MoveExplorer
         moves={[
-          makeEntry({ move_san: 'e4', confidence: 'low' }),
-          makeEntry({ move_san: 'd4', confidence: 'medium' }),
-          makeEntry({ move_san: 'c4', confidence: 'high' }),
+          makeEntry({ move_san: 'e4', confidence: 'low', score: 0.625 }),
+          makeEntry({ move_san: 'd4', confidence: 'medium', score: 0.625 }),
+          makeEntry({ move_san: 'c4', confidence: 'high', score: 0.625 }),
         ]}
         isLoading={false}
         isError={false}
@@ -221,7 +221,38 @@ describe('Phase 76 — Conf column + mute extension', () => {
     expect(screen.getByTestId('move-explorer-row-c4').textContent).toContain('high');
   });
 
-  it('applies UNRELIABLE_OPACITY to the row when entry.confidence === "low"', () => {
+  it('hides the confidence indicator when |score - 0.5| < 0.05 (effect below interest threshold)', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 100, score: 0.52 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    // The "high" confidence label must not render — only the move SAN, game count, and (empty) WDL bar remain.
+    expect(row.textContent).not.toContain('high');
+    expect(row.textContent).not.toContain('med');
+    expect(row.textContent).not.toContain('low');
+  });
+
+  it('hides the confidence indicator when game_count < 10', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 9, score: 0.625 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    expect(row.textContent).not.toContain('high');
+  });
+
+  it('does NOT mute the row based on confidence alone when game_count >= 10', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'low', game_count: 100 })]}
@@ -232,10 +263,10 @@ describe('Phase 76 — Conf column + mute extension', () => {
       />,
     );
     const row = screen.getByTestId('move-explorer-row-e4');
-    expect(row.getAttribute('style')).toMatch(/opacity:\s*0\.5/);
+    expect(row.getAttribute('style') ?? '').not.toMatch(/opacity:\s*0\.5/);
   });
 
-  it('applies UNRELIABLE_OPACITY to the row when entry.game_count < 10', () => {
+  it('mutes the row when entry.game_count < 10', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 9 })]}
@@ -249,7 +280,7 @@ describe('Phase 76 — Conf column + mute extension', () => {
     expect(row.getAttribute('style')).toMatch(/opacity:\s*0\.5/);
   });
 
-  it('does NOT apply UNRELIABLE_OPACITY when game_count >= 10 AND confidence !== "low"', () => {
+  it('does NOT mute the row when game_count >= 10', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 50 })]}
