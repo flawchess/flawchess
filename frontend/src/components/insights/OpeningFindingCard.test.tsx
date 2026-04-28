@@ -42,11 +42,23 @@ function makeFinding(overrides: Partial<OpeningInsightFinding> = {}): OpeningIns
     wins: 4,
     draws: 3,
     losses: 11,
-    win_rate: 4 / 18,
-    loss_rate: 11 / 18,
-    score: 5.5 / 18,
+    score: 0.30,            // gives clean "30%" prose
+    confidence: 'medium',   // Phase 76 D-21
+    p_value: 0.05,          // Phase 76 D-21
     ...overrides,
   };
+}
+
+function renderCard(props: { finding: OpeningInsightFinding; idx?: number }) {
+  const { finding, idx = 0 } = props;
+  return render(
+    <OpeningFindingCard
+      finding={finding}
+      idx={idx}
+      onFindingClick={() => {}}
+      onOpenGames={() => {}}
+    />,
+  );
 }
 
 afterEach(() => {
@@ -54,51 +66,34 @@ afterEach(() => {
 });
 
 describe('OpeningFindingCard', () => {
-  it('renders weakness prose: "You lose {rate}% as {Color} after {seq}" without (n=…)', () => {
-    const finding = makeFinding({
-      classification: 'weakness',
-      color: 'black',
-      loss_rate: 0.62,
-      n_games: 18,
-    });
-    render(
-      <OpeningFindingCard
-        finding={finding}
-        idx={0}
-        onFindingClick={() => {}}
-        onOpenGames={() => {}}
-      />,
-    );
-    const card = screen.getByTestId('opening-finding-card-0');
-    const text = card.textContent ?? '';
-    expect(text).toMatch(/lose/i);
-    expect(text).toMatch(/62%/);
-    expect(text).toMatch(/Black/);
-    expect(text).not.toMatch(/\(n=/);
+  it('renders "You score X% as Black" prose for weakness section', () => {
+    const finding = makeFinding({ classification: 'weakness', color: 'black', score: 0.30 });
+    const { getByText } = renderCard({ finding });
+    expect(getByText(/You score/)).toBeInTheDocument();
+    expect(getByText('30%')).toBeInTheDocument();
+    expect(getByText(/as Black/)).toBeInTheDocument();
   });
 
-  it('renders strength prose: "You win {rate}% as {Color} after {seq}" without (n=…)', () => {
-    const finding = makeFinding({
-      classification: 'strength',
-      severity: 'minor',
-      color: 'white',
-      win_rate: 0.58,
-      n_games: 25,
-    });
-    render(
-      <OpeningFindingCard
-        finding={finding}
-        idx={1}
-        onFindingClick={() => {}}
-        onOpenGames={() => {}}
-      />,
-    );
-    const card = screen.getByTestId('opening-finding-card-1');
-    const text = card.textContent ?? '';
-    expect(text).toMatch(/win/i);
-    expect(text).toMatch(/58%/);
-    expect(text).toMatch(/White/);
-    expect(text).not.toMatch(/\(n=/);
+  it('renders "You score X% as White" prose for strength section', () => {
+    const finding = makeFinding({ classification: 'strength', color: 'white', score: 0.58 });
+    const { getByText } = renderCard({ finding });
+    expect(getByText(/You score/)).toBeInTheDocument();
+    expect(getByText('58%')).toBeInTheDocument();
+    expect(getByText(/as White/)).toBeInTheDocument();
+  });
+
+  it('does NOT render "lose" or "win" verbs in prose (Phase 76 D-02)', () => {
+    const finding = makeFinding();
+    const { queryByText } = renderCard({ finding });
+    expect(queryByText(/You lose/)).not.toBeInTheDocument();
+    expect(queryByText(/You win/)).not.toBeInTheDocument();
+  });
+
+  it('falls back to .toFixed(1) when rounded percent contradicts the section title', () => {
+    // weakness with score = 0.499 would round to 50% (contradicts weakness label)
+    const finding = makeFinding({ classification: 'weakness', score: 0.499 });
+    const { getByText } = renderCard({ finding });
+    expect(getByText('49.9%')).toBeInTheDocument();
   });
 
   it('applies DARK_RED border-left for major weakness', () => {
@@ -251,6 +246,45 @@ describe('OpeningFindingCard', () => {
     );
     const text = screen.getByTestId('opening-finding-card-11').textContent ?? '';
     expect(text).toContain('...3.d4 cxd4 4.Nxd4');
+  });
+
+  describe('Phase 76 — Confidence indicator + mute', () => {
+    it('renders Confidence: <level> line with the right data-testid', () => {
+      const finding = makeFinding({ confidence: 'medium' });
+      const { getByTestId } = renderCard({ finding, idx: 3 });
+      const line = getByTestId('opening-finding-card-3-confidence');
+      expect(line).toHaveTextContent(/Confidence:\s*medium/);
+    });
+
+    it('renders all three confidence levels as full words (low/medium/high)', () => {
+      for (const level of ['low', 'medium', 'high'] as const) {
+        const finding = makeFinding({ confidence: level });
+        const { getByTestId, unmount } = renderCard({ finding, idx: 0 });
+        expect(getByTestId('opening-finding-card-0-confidence')).toHaveTextContent(level);
+        unmount();
+      }
+    });
+
+    it('applies UNRELIABLE_OPACITY when finding.confidence === "low"', () => {
+      const finding = makeFinding({ confidence: 'low', n_games: 100 });
+      const { getByTestId } = renderCard({ finding, idx: 0 });
+      const card = getByTestId('opening-finding-card-0');
+      expect(card.getAttribute('style')).toMatch(/opacity:\s*0\.5/);
+    });
+
+    it('applies UNRELIABLE_OPACITY when finding.n_games < 10', () => {
+      const finding = makeFinding({ confidence: 'high', n_games: 9 });
+      const { getByTestId } = renderCard({ finding, idx: 0 });
+      const card = getByTestId('opening-finding-card-0');
+      expect(card.getAttribute('style')).toMatch(/opacity:\s*0\.5/);
+    });
+
+    it('does NOT apply UNRELIABLE_OPACITY when n_games >= 10 AND confidence !== "low"', () => {
+      const finding = makeFinding({ confidence: 'high', n_games: 100 });
+      const { getByTestId } = renderCard({ finding, idx: 0 });
+      const card = getByTestId('opening-finding-card-0');
+      expect(card.getAttribute('style') ?? '').not.toMatch(/opacity:\s*0\.5/);
+    });
   });
 });
 
