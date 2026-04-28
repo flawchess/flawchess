@@ -73,14 +73,26 @@ def _classify_row(
       - strength: score >= 0.55 → minor; >= 0.60 → major
     Strict <= / >= boundaries (D-03). Returns None for neutral positions.
     Phase 75 D-09 promoted score from informative to canonical metric.
+
+    Compare score directly against precomputed pivot ± effect thresholds rather
+    than against `delta = score - PIVOT`. The literal score values produced by
+    integer-row factories (e.g. 0.45 = 9/20) are exactly equal to PIVOT ± EFFECT
+    in IEEE-754 (0.50 - 0.05 == 0.45 exactly), but `0.45 - 0.50 == -0.04999…`,
+    which would silently miss strict-<= boundary cases. Direct comparison keeps
+    the strict <= / >= semantics on the boundary.
     """
     score = (row.w + 0.5 * row.d) / row.n
-    delta = score - SCORE_PIVOT
-    if delta <= -MINOR_EFFECT:
-        severity: Literal["minor", "major"] = "major" if delta <= -MAJOR_EFFECT else "minor"
+    weakness_minor_threshold = SCORE_PIVOT - MINOR_EFFECT  # 0.45
+    weakness_major_threshold = SCORE_PIVOT - MAJOR_EFFECT  # 0.40
+    strength_minor_threshold = SCORE_PIVOT + MINOR_EFFECT  # 0.55
+    strength_major_threshold = SCORE_PIVOT + MAJOR_EFFECT  # 0.60
+    if score <= weakness_minor_threshold:
+        severity: Literal["minor", "major"] = (
+            "major" if score <= weakness_major_threshold else "minor"
+        )
         return "weakness", severity
-    if delta >= MINOR_EFFECT:
-        severity = "major" if delta >= MAJOR_EFFECT else "minor"
+    if score >= strength_minor_threshold:
+        severity = "major" if score >= strength_major_threshold else "minor"
         return "strength", severity
     return None
 
