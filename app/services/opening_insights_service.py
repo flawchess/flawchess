@@ -13,6 +13,7 @@ for D-01..D-34 locked decisions.
 
 import ctypes
 import datetime
+import math
 from typing import Any, Literal
 
 import chess
@@ -32,19 +33,22 @@ from app.schemas.opening_insights import (
     OpeningInsightsResponse,
 )
 from app.services.opening_insights_constants import (
-    OPENING_INSIGHTS_LIGHT_THRESHOLD as LIGHT_THRESHOLD,
+    OPENING_INSIGHTS_CONFIDENCE_HIGH_MAX_HALF_WIDTH as CONFIDENCE_HIGH_MAX_HALF_WIDTH,
+    OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_HALF_WIDTH as CONFIDENCE_MEDIUM_MAX_HALF_WIDTH,
+    OPENING_INSIGHTS_MAJOR_EFFECT as MAJOR_EFFECT,
+    OPENING_INSIGHTS_MINOR_EFFECT as MINOR_EFFECT,
+    OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
 )
 from app.services.openings_service import recency_cutoff
 
 # ---------------------------------------------------------------------------
-# Phase 70 thresholds. Mirror frontend/src/lib/arrowColor.ts so opening
-# insights and board arrow colors stay in lock-step (CI-enforced via
-# tests/services/test_opening_insights_arrow_consistency.py).
-# Shared thresholds (also used by the SQL HAVING clause in the repository)
-# are imported from app.services.opening_insights_constants above.
+# Phase 75 thresholds. Score-based effect-size gate (D-03, D-11) and
+# trinomial Wald confidence buckets (D-05, D-06) are imported from
+# app.services.opening_insights_constants above. The CI consistency test
+# (tests/services/test_opening_insights_arrow_consistency.py) keeps the
+# backend constants and frontend/src/lib/arrowColor.ts in lock-step.
 # ---------------------------------------------------------------------------
 
-DARK_THRESHOLD: float = 0.60  # arrowColor.ts DARK_COLOR_THRESHOLD/100
 # Phase 71 UAT: caps raised to 10 (was 5 weak / 3 strong) so the FE can render
 # 5 visible cards per section with a "X more" toggle expanding up to 10, all in
 # a single roundtrip.
@@ -62,25 +66,78 @@ UNNAMED_LINE_ECO: str = ""
 def _classify_row(
     row: Any,
 ) -> tuple[Literal["weakness", "strength"], Literal["minor", "major"]] | None:
-    """Classify a transition row as weakness or strength, with severity.
+    """Classify a transition row by chess score against the 0.50 pivot (D-11).
 
-    Uses strict > boundary at LIGHT_THRESHOLD (0.55) mirroring arrowColor.ts
-    lines 49-57. Returns None for neutral positions (D-04).
+    Score is (W + 0.5·D) / N. Effect-size thresholds are symmetric:
+      - weakness: score <= 0.45 → minor; <= 0.40 → major
+      - strength: score >= 0.55 → minor; >= 0.60 → major
+    Strict <= / >= boundaries (D-03). Returns None for neutral positions.
+    Phase 75 D-09 promoted score from informative to canonical metric.
     """
-    loss_rate = row.l / row.n
-    win_rate = row.w / row.n
-    if loss_rate > LIGHT_THRESHOLD:
-        severity: Literal["minor", "major"] = "major" if loss_rate >= DARK_THRESHOLD else "minor"
+    score = (row.w + 0.5 * row.d) / row.n
+    delta = score - SCORE_PIVOT
+    if delta <= -MINOR_EFFECT:
+        severity: Literal["minor", "major"] = "major" if delta <= -MAJOR_EFFECT else "minor"
         return "weakness", severity
-    if win_rate > LIGHT_THRESHOLD:
-        severity = "major" if win_rate >= DARK_THRESHOLD else "minor"
+    if delta >= MINOR_EFFECT:
+        severity = "major" if delta >= MAJOR_EFFECT else "minor"
         return "strength", severity
     return None
 
 
 def _compute_score(row: Any) -> float:
-    """Compute score = (W + D/2) / n. Informative only per D-06."""
+    """Compute score = (W + D/2) / n (Phase 75 D-09: canonical classification metric)."""
     return (row.w + row.d / 2) / row.n
+
+
+def _compute_confidence(row: Any) -> tuple[Literal["low", "medium", "high"], float]:
+    """Compute trinomial Wald confidence bucket and two-sided p-value (D-05, D-06).
+
+    Per-game variance under the trinomial Wald model: scores live in
+    {0, 0.5, 1}, so E[X²] = (W·1 + D·0.25 + L·0) / N = (W + 0.25·D) / N.
+    Variance is E[X²] - score². Standard error of the mean: sqrt(var/N).
+
+    Half-width = 1.96 · SE → bucket per D-06 thresholds.
+    Two-sided p-value: erfc(|Z| / sqrt(2)) where Z = (score - 0.50) / SE.
+    Pure Python `math` only (D-05) — no scipy.
+
+    Edge case — all-same-result lines (all wins, all losses, all draws): the
+    trinomial model has zero estimation variance (every game produced the
+    same outcome), so half_width = 0 and the row buckets "high". Sample-size
+    concerns are handled upstream by OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
+    = 10 (the HAVING gate); this helper does not re-litigate them. p_value
+    in the SE = 0 branch is the limiting value as SE → 0:
+      - score == 0.50 (e.g. all draws) → z numerator is 0 → p_value = 1.0.
+      - score != 0.50 (all wins / all losses) → z numerator is non-zero,
+        |z| → ∞, erfc(|z|/√2) → 0 → p_value = 0.0.
+    """
+    n = row.n
+    score = (row.w + 0.5 * row.d) / n
+    variance = (row.w + 0.25 * row.d) / n - score * score
+    # Numerical guard: variance can be exactly 0 (all-draw or all-same-result lines)
+    # and floating-point noise can make it tiny-negative. Clamp at 0.
+    variance = max(variance, 0.0)
+    se = math.sqrt(variance / n)
+
+    if se == 0.0:
+        # Degenerate: no within-line variation. Half-width = 0 → high.
+        # Score either equals 0.5 (no effect) or differs by a fixed offset
+        # with zero estimation noise → p_value = 0.0 if score != 0.5 else 1.0.
+        if score == SCORE_PIVOT:
+            return "high", 1.0
+        return "high", 0.0
+
+    half_width = 1.96 * se  # 1.96 = z_{0.975}, constant of the formula
+    if half_width <= CONFIDENCE_HIGH_MAX_HALF_WIDTH:
+        confidence: Literal["low", "medium", "high"] = "high"
+    elif half_width <= CONFIDENCE_MEDIUM_MAX_HALF_WIDTH:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    z = (score - SCORE_PIVOT) / se
+    p_value = math.erfc(abs(z) / math.sqrt(2.0))
+    return confidence, p_value
 
 
 def _replay_san_sequence(san_sequence: list[str]) -> str:
@@ -351,9 +408,8 @@ async def compute_insights(
                 matched_opening = openings_by_hash.get(int(row.entry_hash))
                 opening_ply_count = matched_opening.ply_count if matched_opening else 0
 
-                win_rate = row.w / row.n
-                loss_rate = row.l / row.n
                 score = _compute_score(row)
+                confidence, p_value = _compute_confidence(row)
 
                 finding = OpeningInsightFinding(
                     color=color_literal,
@@ -363,7 +419,9 @@ async def compute_insights(
                     opening_eco=opening_eco,
                     display_name=display_name,
                     entry_fen=entry_fen,
-                    entry_san_sequence=list(row.entry_san_sequence or []),  # Phase 71 (D-13): expose SAN sequence for FE deep-link replay
+                    entry_san_sequence=list(
+                        row.entry_san_sequence or []
+                    ),  # Phase 71 (D-13): expose SAN sequence for FE deep-link replay
                     # BLOCKER-5 / Pitfall 1: stringify 64-bit ints at the API boundary.
                     entry_full_hash=str(int(row.entry_hash)),
                     candidate_move_san=row.move_san,
@@ -372,9 +430,9 @@ async def compute_insights(
                     wins=row.w,
                     draws=row.d,
                     losses=row.l,
-                    win_rate=win_rate,
-                    loss_rate=loss_rate,
                     score=score,
+                    confidence=confidence,
+                    p_value=p_value,
                 )
 
                 section_key = (
