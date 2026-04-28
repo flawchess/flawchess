@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.14
 milestone_name: Score-Based Opening Insights
-status: planning
-last_updated: "2026-04-28T09:00:24.281Z"
-last_activity: 2026-04-28
+status: Phase 75 context gathered
+last_updated: "2026-04-28T09:30:34.969Z"
+last_activity: 2026-04-28 — Phase 75 /gsd-discuss-phase complete
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 75 — context gathered, ready for planning
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-28 — Milestone v1.14 started
+Status: Phase 75 context gathered
+Resume: .planning/phases/75-backend-score-metric-confidence-annotation/75-CONTEXT.md
+Last activity: 2026-04-28 — Phase 75 /gsd-discuss-phase complete
 
 ## Project Reference
 
