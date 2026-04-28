@@ -57,8 +57,13 @@ describe('deriveUserSideKey', () => {
 
 describe('isTrollPosition', () => {
   it('returns true when the derived white key is in WHITE_TROLL_KEYS', () => {
-    // Bongcloud after 1.e4 e5 2.Ke2 — board FEN
-    const bongcloud = 'rnbqkbnr/pppp1ppp/8/4p3/8/8/PPPPKPPP/RNBQ1BNR';
+    // Bongcloud after 1.e4 e5 2.Ke2 — board FEN.
+    // [Rule 1] Plan's original FEN was missing the white e4 pawn on rank 4
+    // (rank 4 was '8' instead of '4P3'). After 1.e4 the white pawn lives on
+    // e4; the corrected FEN has '4P3' on rank 4 so deriveUserSideKey strips
+    // black pieces and yields '8/8/8/8/4P3/8/PPPPKPPP/RNBQ1BNR' — which is
+    // exactly the key the mock places in WHITE_TROLL_KEYS.
+    const bongcloud = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPPKPPP/RNBQ1BNR';
     expect(isTrollPosition(bongcloud, 'white')).toBe(true);
   });
 
@@ -69,7 +74,7 @@ describe('isTrollPosition', () => {
   });
 
   it('routes to the correct side-set (Bongcloud key is white-only; black returns false)', () => {
-    const bongcloud = 'rnbqkbnr/pppp1ppp/8/4p3/8/8/PPPPKPPP/RNBQ1BNR';
+    const bongcloud = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPPKPPP/RNBQ1BNR';
     expect(isTrollPosition(bongcloud, 'black')).toBe(false);
   });
 });
