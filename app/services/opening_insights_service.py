@@ -275,49 +275,33 @@ def _dedupe_continuations(
     return result
 
 
-_CONFIDENCE_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
-
-
 def _rank_section(
     findings_with_se: list[tuple[OpeningInsightFinding, float]],
     direction: Literal["weakness", "strength"],
 ) -> list[OpeningInsightFinding]:
-    """Sort findings by (confidence DESC, Wald 95% CI bound) per Phase 76 D-03 + 260428-tgg.
+    """Sort findings by direction-aware Wald 95% CI bound on the score, clamped to [0, 1].
 
-    Within a confidence bucket, the tiebreak is the *direction-aware* Wald 95%
-    confidence-interval bound on the score, clamped to [0, 1]:
-      - weakness: ascending upper bound `score + 1.96 * SE` — the row whose
-        score is most-confidently-below-0.5 (smallest plausible best case)
-        sorts first.
-      - strength: descending lower bound `score - 1.96 * SE` — the row whose
-        score is most-confidently-above-0.5 (largest plausible worst case)
-        sorts first.
+    - weakness: ascending upper bound `score + 1.96 * SE` — the row whose
+      score is most-confidently-below-0.5 (smallest plausible best case)
+      sorts first.
+    - strength: descending lower bound `score - 1.96 * SE` — the row whose
+      score is most-confidently-above-0.5 (largest plausible worst case)
+      sorts first.
 
-    Why the Wald bound and not raw |score - 0.5|: the |score - 0.5| tiebreak
-    rewarded large effect regardless of sample size, so a small-N high-effect
-    row could leapfrog a large-N moderate-effect row inside the same bucket
-    even though the small-N row's confidence interval was much wider. The
-    Wald bound mixes effect AND uncertainty within the existing Wald-test
-    framework that already drives the bucket gate, so the same SE that
-    determines bucket membership also determines within-bucket order.
-
-    Bucket order (high -> medium -> low) remains the primary sort key; the
-    bound only orders rows within a bucket.
+    Confidence bucket is no longer part of the sort key (260428-tgg follow-up):
+    the Wald CI bound already mixes effect size and sample size, so a high-N
+    moderate-effect row that lives in the "medium" bucket can legitimately rank
+    above a small-N extreme-effect row in the "high" bucket when its bound is
+    more striking. Bucket is retained as a UI badge only.
     """
 
-    def sort_key(item: tuple[OpeningInsightFinding, float]) -> tuple[int, float]:
+    def sort_key(item: tuple[OpeningInsightFinding, float]) -> float:
         finding, se = item
         half_width = WALD_Z_95 * se
         if direction == "weakness":
-            # Ascending upper bound: tighter, more-confidently-bad rows first.
-            wald_bound = min(max(finding.score + half_width, 0.0), 1.0)
-        else:
-            # Negate the lower bound so the tuple stays homogeneously ascending
-            # under the default sorted() order — equivalent to sorting the
-            # lower bound descending (more-confidently-good rows first).
-            lower = min(max(finding.score - half_width, 0.0), 1.0)
-            wald_bound = -lower
-        return (_CONFIDENCE_RANK[finding.confidence], wald_bound)
+            return min(max(finding.score + half_width, 0.0), 1.0)
+        # Negate so default ascending sort yields lower-bound descending.
+        return -min(max(finding.score - half_width, 0.0), 1.0)
 
     ranked = sorted(findings_with_se, key=sort_key)
     return [f for f, _se in ranked]
@@ -391,8 +375,8 @@ async def compute_insights(
         # Each section accumulates (OpeningInsightFinding, ply_count, se) tuples:
         # - ply_count drives the D-24 deeper-entry-wins dedupe in _dedupe_within_section
         #   (consumed there and not propagated downstream).
-        # - se threads through dedupe stages into _rank_section so the within-bucket
-        #   tiebreak can use the Wald 95% CI bound (quick task 260428-tgg).
+        # - se threads through dedupe stages into _rank_section so ranking can
+        #   use the Wald 95% CI bound (quick task 260428-tgg).
         sections: dict[str, list[tuple[OpeningInsightFinding, int, float]]] = {
             "white_weaknesses": [],
             "black_weaknesses": [],
@@ -465,9 +449,8 @@ async def compute_insights(
         # Per-section transposition dedupe (D-24) → global continuation dedupe
         # (Phase 71 UAT fix) → rank → cap (D-02 caps: 5 weaknesses, 3 strengths).
         # Quick 260428-tgg: SE flows through both dedupe stages into _rank_section,
-        # which ranks by Wald 95% CI bound (direction-aware) rather than raw
-        # |score - 0.5|, so wide-CI small-N rows do not leapfrog tight-CI
-        # large-N rows inside the same confidence bucket.
+        # which ranks by Wald 95% CI bound alone (direction-aware) — confidence
+        # bucket is no longer part of the sort key, only a UI badge.
         deduped_sections: dict[str, list[tuple[OpeningInsightFinding, float]]] = {
             key: _dedupe_within_section(items) for key, items in sections.items()
         }

@@ -621,25 +621,27 @@ def _make_strength_finding(
     )
 
 
-def test_ranking_high_before_medium_before_low_buckets() -> None:
-    """Bucket order (high -> medium -> low) is the primary sort key — within-bucket
-    order may be reshuffled by the new Wald bound rule, but bucket ordering is preserved.
+def test_ranking_ignores_confidence_bucket_uses_wald_bound_only() -> None:
+    """260428-tgg follow-up: confidence bucket is no longer part of the sort key.
+    A "medium" bucket row can outrank a "high" bucket row if its Wald bound is
+    more striking (and vice versa). Bucket is retained as a UI badge only.
 
-    Quick task 260428-tgg replaces the |score - 0.5| tiebreak with a direction-aware
-    Wald CI bound; the bucket-level invariant is unchanged.
+      high_wide: score=0.40, se=0.05. upper = 0.40 + 1.96*0.05 = 0.498.
+      medium_tight: score=0.42, se=0.005. upper = 0.42 + 1.96*0.005 = 0.4298.
+
+    Even though high_wide is in the "high" bucket, its CI almost touches 0.5,
+    while medium_tight stays well below 0.5. medium_tight sorts first.
     """
-    high_a = _make_weakness_finding(score=0.30, candidate="a", confidence="high")
-    high_b = _make_weakness_finding(score=0.40, candidate="b", confidence="high")
-    medium = _make_weakness_finding(score=0.40, candidate="c", confidence="medium")
-    low = _make_weakness_finding(score=0.45, candidate="d", confidence="low")
+    high_wide = _make_weakness_finding(score=0.40, candidate="high_wide", confidence="high")
+    medium_tight = _make_weakness_finding(
+        score=0.42, candidate="medium_tight", confidence="medium"
+    )
 
-    # Use small SE so the bound is essentially the score itself (ascending = lowest score first).
-    items = [(medium, 0.02), (low, 0.02), (high_a, 0.02), (high_b, 0.02)]
-    ranked = _rank_section(items, direction="weakness")
-
-    bucket_order = [f.confidence for f in ranked]
-    assert bucket_order == ["high", "high", "medium", "low"], (
-        "high bucket must come first, then medium, then low"
+    ranked = _rank_section(
+        [(high_wide, 0.05), (medium_tight, 0.005)], direction="weakness"
+    )
+    assert [f.candidate_move_san for f in ranked] == ["medium_tight", "high_wide"], (
+        "Tight medium-bucket row with stricter bound must outrank wide high-bucket row"
     )
 
 
