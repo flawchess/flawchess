@@ -593,12 +593,12 @@ def test_ranking_confidence_desc_then_score_distance_desc() -> None:
             p_value=p_value,
         )
 
-    # Bucket choices match the new p-value + N>=10 rule (260428-oxr): "medium"
-    # requires 0.01 <= p < 0.05 with n >= 10. Use n=100, score=0.40 (p≈0.031) for
-    # the medium fixture; "high" cases sit at p << 0.01.
+    # Bucket choices match the one-sided p-value + N>=10 rule: "medium" requires
+    # 0.05 <= p < 0.10 with n >= 10. Use n=50, score=0.40 (one-sided p≈0.0745)
+    # for the medium fixture; "high" cases sit at one-sided p << 0.05.
     high_small_delta = _make_finding(n=400, w=130, d=80, losses=190, candidate="a")  # score≈0.425, conf=high
     high_large_delta = _make_finding(n=400, w=80, d=80, losses=240, candidate="b")   # score=0.30,  conf=high
-    medium_any_delta = _make_finding(n=100, w=35, d=10, losses=55, candidate="c")    # score=0.40,  conf=medium
+    medium_any_delta = _make_finding(n=50, w=20, d=0, losses=30, candidate="c")      # score=0.40,  conf=medium
 
     ranked = _rank_section([medium_any_delta, high_small_delta, high_large_delta])
 

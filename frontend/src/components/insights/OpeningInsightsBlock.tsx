@@ -22,7 +22,7 @@ const OPENING_INSIGHTS_POPOVER_COPY: ReactNode = (
     <p>
       <strong>Confidence</strong> says whether the score is likely a real effect
       or could plausibly be chance. <em>Low</em> findings are worth a glance;{' '}
-      <em>high</em> findings have strong statistical evidence (p &lt; 0.01).
+      <em>high</em> findings have strong statistical evidence (p &lt; 0.05).
     </p>
   </div>
 );

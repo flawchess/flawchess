@@ -62,10 +62,9 @@ class OpeningInsightFinding(BaseModel):
     resulting_full_hash: str  # str-form, same reason
     # Range constraints enforce API-boundary invariants (CLAUDE.md: leverage
     # Pydantic for validation). n_games is gated by the SQL HAVING clause at
-    # MIN_GAMES_PER_CANDIDATE; w/d/l are non-negative game counts; score and
-    # p_value live in [0, 1] by construction (score = (w + d/2)/n; p_value
-    # via math.erfc which is bounded in [0, 2] but the two-sided form here
-    # is bounded in [0, 1]).
+    # MIN_GAMES_PER_CANDIDATE; w/d/l are non-negative game counts; score is
+    # in [0, 1] by construction (score = (w + d/2)/n); p_value is the
+    # one-sided Wald p, bounded in [0, 0.5] (subset of the schema's [0, 1]).
     n_games: int = Field(ge=OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE)
     wins: int = Field(ge=0)
     draws: int = Field(ge=0)
@@ -75,10 +74,10 @@ class OpeningInsightFinding(BaseModel):
     )  # (W + D/2)/n; canonical classification metric (Phase 75 D-09)
     confidence: Literal[
         "low", "medium", "high"
-    ]  # Two-sided Wald p-value bucket with N>=10 gate (p<0.01 high, p<0.05 medium) (Phase 75 D-05/D-06)
+    ]  # One-sided Wald p-value bucket with N>=10 gate (p<0.05 high, p<0.10 medium) (Phase 75 D-05/D-06)
     p_value: float = Field(
         ge=0.0, le=1.0
-    )  # Two-sided p-value for H0: score = 0.50 (Phase 75 D-05/D-09)
+    )  # One-sided p-value for directional Wald z-test on H0: score = 0.50 (Phase 75 D-05/D-09)
 
 
 class OpeningInsightsResponse(BaseModel):

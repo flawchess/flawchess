@@ -201,10 +201,10 @@ class NextMoveEntry(BaseModel):
     )  # (W + 0.5*D)/n; canonical classification metric (Phase 75 D-09, Phase 76 D-13)
     confidence: Literal[
         "low", "medium", "high"
-    ]  # Two-sided Wald p-value bucket with N>=10 gate (p<0.01 high, p<0.05 medium) (Phase 75 D-05/D-06, shared via score_confidence.py)
+    ]  # One-sided Wald p-value bucket with N>=10 gate (p<0.05 high, p<0.10 medium) (Phase 75 D-05/D-06, shared via score_confidence.py)
     p_value: float = Field(
         ge=0.0, le=1.0
-    )  # Two-sided p-value for H0: score = 0.50 (Phase 75 D-09)
+    )  # One-sided p-value for directional Wald z-test on H0: score = 0.50 (Phase 75 D-09)
 
 
 class NextMovesResponse(BaseModel):

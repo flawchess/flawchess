@@ -7,8 +7,8 @@ type ConfidenceLevel = 'low' | 'medium' | 'high';
 
 const CONFIDENCE_BASE_COPY: Record<ConfidenceLevel, string> = {
   low: 'Not enough evidence — this could plausibly be chance',
-  medium: 'Likely a real effect (p < 0.05)',
-  high: 'Strong evidence of a real effect (p < 0.01)',
+  medium: 'Likely a real effect (p < 0.10)',
+  high: 'Strong evidence of a real effect (p < 0.05)',
 };
 
 /** Tooltip copy for confidence indicators — significance level explainer plus the actual p-value. */
