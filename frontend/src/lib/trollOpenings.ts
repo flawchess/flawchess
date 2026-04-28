@@ -42,9 +42,16 @@ function canonicalizeRank(rank: string, stripPattern: RegExp): string {
 /**
  * Returns true iff the user-side-only key derived from `fen` is in the curated
  * troll-opening set for `side`. Pure synchronous lookup; safe to call inline
- * (no useMemo needed).
+ * (no useMemo needed). Returns false on any malformed FEN — this function is
+ * called during render of every insights card and move-explorer row, so a
+ * bad payload from the API must not crash the surface.
  */
 export function isTrollPosition(fen: string, side: Color): boolean {
-  const key = deriveUserSideKey(fen, side);
+  let key: string;
+  try {
+    key = deriveUserSideKey(fen, side);
+  } catch {
+    return false;
+  }
   return side === 'white' ? WHITE_TROLL_KEYS.has(key) : BLACK_TROLL_KEYS.has(key);
 }

@@ -77,4 +77,13 @@ describe('isTrollPosition', () => {
     const bongcloud = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPPKPPP/RNBQ1BNR';
     expect(isTrollPosition(bongcloud, 'black')).toBe(false);
   });
+
+  it('returns false on malformed FEN instead of throwing — render-time safety', () => {
+    // isTrollPosition is called unconditionally during render of every insights
+    // card and move-explorer row. A bad FEN from the API must NOT crash the
+    // surface — caller-side try/catch in every consumer would be fragile.
+    expect(isTrollPosition('', 'white')).toBe(false);
+    expect(isTrollPosition('not-a-fen', 'white')).toBe(false);
+    expect(isTrollPosition('8/8/8/8/8/8/8', 'black')).toBe(false);
+  });
 });
