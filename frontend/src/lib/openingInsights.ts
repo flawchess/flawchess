@@ -6,12 +6,12 @@ import type { OpeningInsightFinding } from '@/types/insights';
 type ConfidenceLevel = 'low' | 'medium' | 'high';
 
 const CONFIDENCE_BASE_COPY: Record<ConfidenceLevel, string> = {
-  low: 'Small sample, treat as a hint',
-  medium: 'Enough games to trust the direction',
-  high: 'Sample is large enough to trust the magnitude',
+  low: 'Not enough evidence — this could plausibly be chance',
+  medium: 'Likely a real effect (p < 0.05)',
+  high: 'Strong evidence of a real effect (p < 0.01)',
 };
 
-/** Tooltip copy for confidence indicators — level explainer plus the actual p-value. */
+/** Tooltip copy for confidence indicators — significance level explainer plus the actual p-value. */
 export function formatConfidenceTooltip(level: ConfidenceLevel, pValue: number): string {
   return `${CONFIDENCE_BASE_COPY[level]} (p = ${pValue.toFixed(3)})`;
 }

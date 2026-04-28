@@ -20,8 +20,9 @@ const OPENING_INSIGHTS_POPOVER_COPY: ReactNode = (
       A finding shows up when your score sits at least 5% from 50%, enough of a gap that it&apos;s probably not random.
     </p>
     <p>
-      <strong>Confidence</strong> says how big the sample is. <em>Low</em> findings are worth a glance;{' '}
-      <em>high</em> findings are well-supported.
+      <strong>Confidence</strong> says whether the score is likely a real effect
+      or could plausibly be chance. <em>Low</em> findings are worth a glance;{' '}
+      <em>high</em> findings have strong statistical evidence (p &lt; 0.01).
     </p>
   </div>
 );
