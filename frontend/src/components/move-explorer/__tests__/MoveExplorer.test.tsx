@@ -30,12 +30,21 @@ function makeEntry(overrides: Partial<NextMoveEntry> & Pick<NextMoveEntry, 'move
     result_hash: '0',
     result_fen: '',
     transposition_count: 100,
+    score: 0.625,           // Phase 76 D-05
+    confidence: 'high',     // Phase 76 D-05
+    p_value: 0.05,          // Phase 76 D-05
     ...overrides,
   };
 }
 
+// Use score: 0.50 (neutral) so the severity-tint path produces GREY and the
+// existing highlightedMove tests can assert "no background tint" cleanly.
 function makeMoves(): NextMoveEntry[] {
-  return [makeEntry({ move_san: 'e4' }), makeEntry({ move_san: 'd4' }), makeEntry({ move_san: 'Nf3' })];
+  return [
+    makeEntry({ move_san: 'e4', score: 0.50 }),
+    makeEntry({ move_san: 'd4', score: 0.50 }),
+    makeEntry({ move_san: 'Nf3', score: 0.50 }),
+  ];
 }
 
 // jsdom does not implement Element.prototype.scrollIntoView. Stub before each
@@ -168,5 +177,82 @@ describe('MoveExplorer — highlightedMove prop', () => {
     );
     fireEvent.click(screen.getByTestId('move-explorer-row-d4'));
     expect(onHighlightConsumed).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Phase 76 — Conf column + mute extension', () => {
+  it('renders the Conf header cell with data-testid="move-explorer-th-conf"', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4' })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const th = screen.getByTestId('move-explorer-th-conf');
+    expect(th.textContent?.trim()).toBe('Conf');
+  });
+
+  it('renders "low" / "med" / "high" labels per entry.confidence', () => {
+    render(
+      <MoveExplorer
+        moves={[
+          makeEntry({ move_san: 'e4', confidence: 'low' }),
+          makeEntry({ move_san: 'd4', confidence: 'medium' }),
+          makeEntry({ move_san: 'c4', confidence: 'high' }),
+        ]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('move-explorer-row-e4').textContent).toContain('low');
+    expect(screen.getByTestId('move-explorer-row-d4').textContent).toContain('med');
+    expect(screen.getByTestId('move-explorer-row-c4').textContent).toContain('high');
+  });
+
+  it('applies UNRELIABLE_OPACITY to the row when entry.confidence === "low"', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'low', game_count: 100 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    expect(row.getAttribute('style')).toMatch(/opacity:\s*0\.5/);
+  });
+
+  it('applies UNRELIABLE_OPACITY to the row when entry.game_count < 10', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 9 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    expect(row.getAttribute('style')).toMatch(/opacity:\s*0\.5/);
+  });
+
+  it('does NOT apply UNRELIABLE_OPACITY when game_count >= 10 AND confidence !== "low"', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 50 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    expect(row.getAttribute('style') ?? '').not.toMatch(/opacity:\s*0\.5/);
   });
 });
