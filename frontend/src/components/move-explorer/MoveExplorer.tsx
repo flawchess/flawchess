@@ -160,12 +160,12 @@ export function MoveExplorer({
           </p>
         </div>
       ) : (
-        <table data-testid="move-explorer-table" className="w-full text-sm">
+        <table data-testid="move-explorer-table" className="w-full text-sm table-fixed">
           <thead>
             <tr>
-              <th className="w-9 sm:w-12 text-left text-xs text-muted-foreground font-normal pb-1">
+              <th className="w-8 sm:w-12 text-left text-xs text-muted-foreground font-normal pb-1">
                 <span className="inline-flex items-center gap-1">
-                  Move
+                  <span className="sr-only sm:not-sr-only">Move</span>
                   <InfoPopover ariaLabel="Move arrows info" testId="move-arrows-info" side="top">
                     <div className="space-y-2">
                       <p>
