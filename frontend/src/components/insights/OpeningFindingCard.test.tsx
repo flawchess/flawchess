@@ -245,7 +245,7 @@ describe('OpeningFindingCard', () => {
     expect(italicEl?.textContent).toContain('<unnamed line>');
   });
 
-  it('renders the trimmed SAN sequence (D-05) in the prose', () => {
+  it('renders only the candidate move with PGN move-number notation in the prose', () => {
     const finding = makeFinding({
       entry_san_sequence: ['e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4'],
       candidate_move_san: 'Nxd4',
@@ -259,7 +259,9 @@ describe('OpeningFindingCard', () => {
       />,
     );
     const text = screen.getByTestId('opening-finding-card-11').textContent ?? '';
-    expect(text).toContain('...3.d4 cxd4 4.Nxd4');
+    expect(text).toContain('4.Nxd4');
+    // Earlier entry plys should no longer appear in the rendered prose.
+    expect(text).not.toContain('3.d4 cxd4');
   });
 
   describe('Phase 76 — Confidence indicator + mute', () => {

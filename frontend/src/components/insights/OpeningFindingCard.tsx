@@ -2,9 +2,9 @@ import { ArrowRightLeft, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { Tooltip } from '@/components/ui/tooltip';
 import {
+  formatCandidateMove,
   formatConfidenceTooltip,
   getSeverityBorderColor,
-  trimMoveSequence,
 } from '@/lib/openingInsights';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
 import type { OpeningInsightFinding } from '@/types/insights';
@@ -27,7 +27,7 @@ export function OpeningFindingCard({
   onOpenGames,
 }: OpeningFindingCardProps) {
   const colorLabel = finding.color === 'white' ? 'White' : 'Black';
-  const trimmedSequence = trimMoveSequence(
+  const candidateMoveDisplay = formatCandidateMove(
     finding.entry_san_sequence,
     finding.candidate_move_san,
   );
@@ -78,7 +78,7 @@ export function OpeningFindingCard({
         {scoreDisplay}%
       </span>{' '}
       as {colorLabel} after{' '}
-      <span className="font-mono text-foreground">{trimmedSequence}</span>
+      <span className="font-mono text-foreground">{candidateMoveDisplay}</span>
     </p>
   );
 
