@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.14
 milestone_name: Score-Based Opening Insights
 status: executing
-last_updated: "2026-04-28T13:01:55.296Z"
-last_activity: 2026-04-28 -- Phase 76 planning complete
+last_updated: "2026-04-28T14:11:31.163Z"
+last_activity: 2026-04-28 -- Phase 76 execution started
 progress:
   total_phases: 4
   completed_phases: 0
@@ -16,11 +16,11 @@ progress:
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Ready to execute
+Phase: 76 (frontend-score-coloring-confidence-badges-label-reframe) — EXECUTING
+Plan: 1 of 8
+Status: Executing Phase 76
 Resume: .planning/phases/75-backend-score-metric-confidence-annotation/75-CONTEXT.md
-Last activity: 2026-04-28 -- Phase 76 planning complete
+Last activity: 2026-04-28 -- Phase 76 execution started
 
 ## Project Reference
 
