@@ -62,6 +62,7 @@ from app.schemas.insights import (
     SubsectionFinding,
     TimePoint,
 )
+from app.core.opponent_strength import preset_to_range
 from app.services.endgame_service import get_endgame_overview
 from app.services.endgame_zones import (
     TREND_MIN_SLOPE_VOL_RATIO,
@@ -138,6 +139,7 @@ async def compute_findings(
     is carried in the output but NOT forwarded to `get_endgame_overview` —
     that service has no color filter (per INS-03).
     """
+    gap_min, gap_max = preset_to_range(filter_context.opponent_strength)
     try:
         all_time_resp = await get_endgame_overview(
             session=session,
@@ -147,7 +149,8 @@ async def compute_findings(
             rated=True if filter_context.rated_only else None,
             opponent_type=_OPPONENT_TYPE,
             recency=None,
-            opponent_strength=filter_context.opponent_strength,
+            opponent_gap_min=gap_min,
+            opponent_gap_max=gap_max,
         )
         last_3mo_resp = await get_endgame_overview(
             session=session,
@@ -157,7 +160,8 @@ async def compute_findings(
             rated=True if filter_context.rated_only else None,
             opponent_type=_OPPONENT_TYPE,
             recency="3months",
-            opponent_strength=filter_context.opponent_strength,
+            opponent_gap_min=gap_min,
+            opponent_gap_max=gap_max,
         )
     except Exception as exc:
         # CLAUDE.md §Sentry: pass variable data via set_context; never embed
@@ -503,9 +507,7 @@ def _findings_score_timeline(
     gap_series = _weekly_points_to_time_points(gap_weekly, "last_3mo")
 
     # Trend per side: each finding carries its own trajectory.
-    endgame_trend, endgame_weekly_points = _compute_trend(
-        [p.endgame_score for p in timeline]
-    )
+    endgame_trend, endgame_weekly_points = _compute_trend([p.endgame_score for p in timeline])
     non_endgame_trend, non_endgame_weekly_points = _compute_trend(
         [p.non_endgame_score for p in timeline]
     )

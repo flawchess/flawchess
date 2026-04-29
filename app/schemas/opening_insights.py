@@ -4,7 +4,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
 from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
 )
@@ -31,8 +30,8 @@ class OpeningInsightsRequest(BaseModel):
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None
     opponent_type: Literal["human", "bot", "both"] = "human"
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any"
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD
+    opponent_gap_min: int | None = None
+    opponent_gap_max: int | None = None
     color: Literal["all", "white", "black"] = "all"
 
 

@@ -11,7 +11,7 @@ Functions:
 
 import datetime
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Any
 
 from sqlalchemy import case, func, select, type_coerce
 from sqlalchemy.dialects.postgresql import ARRAY, aggregate_order_by
@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD, apply_game_filters
+from app.repositories.query_utils import apply_game_filters
 from app.schemas.endgames import EndgameClass
 
 # Piece-count threshold for endgame classification (Lichess definition).
@@ -79,8 +79,8 @@ async def count_filtered_games(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> int:
     """Count ALL games for the user matching the given filters.
 
@@ -95,8 +95,8 @@ async def count_filtered_games(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     result = await session.execute(stmt)
     return result.scalar_one()
@@ -110,8 +110,8 @@ async def count_endgame_games(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> int:
     """Count games that reached an endgame phase per the uniform ENDGAME_PLY_THRESHOLD rule.
 
@@ -135,8 +135,8 @@ async def count_endgame_games(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     result = await session.execute(stmt)
     return result.scalar_one()
@@ -150,8 +150,8 @@ async def query_endgame_entry_rows(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
     """Return one row per (game, endgame_class) span meeting the ply threshold.
 
@@ -250,8 +250,8 @@ async def query_endgame_entry_rows(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     result = await session.execute(stmt)
@@ -266,8 +266,8 @@ async def query_endgame_bucket_rows(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
     """Return exactly one row per endgame game for conv/even/recov bucketing.
 
@@ -378,8 +378,8 @@ async def query_endgame_bucket_rows(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     result = await session.execute(stmt)
@@ -397,8 +397,8 @@ async def query_endgame_games(
     recency_cutoff: datetime.datetime | None,
     offset: int,
     limit: int,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> tuple[list[Game], int]:
     """Return paginated Game objects for games that spent >= ENDGAME_PLY_THRESHOLD plies
     in the given endgame class.
@@ -441,8 +441,8 @@ async def query_endgame_games(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     # Count total matching games (before pagination)
@@ -474,8 +474,8 @@ async def query_endgame_performance_rows(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> tuple[list[Row[Any]], list[Row[Any]]]:
     """Return endgame and non-endgame game rows for performance comparison.
 
@@ -512,8 +512,8 @@ async def query_endgame_performance_rows(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     # Non-endgame games: id NOT in the endgame subquery
@@ -527,8 +527,8 @@ async def query_endgame_performance_rows(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     # Execute sequentially — AsyncSession is not safe for concurrent use from
@@ -548,8 +548,8 @@ async def query_endgame_timeline_rows(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> tuple[list[Row[Any]], list[Row[Any]], dict[int, list[Row[Any]]]]:
     """Return rows for rolling-window time series (overall and per endgame class).
 
@@ -613,8 +613,8 @@ async def query_endgame_timeline_rows(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     # Execute sequentially — AsyncSession is not safe for concurrent use from
@@ -669,8 +669,8 @@ async def query_endgame_timeline_rows(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     non_endgame_result = await session.execute(non_endgame_stmt)
@@ -687,8 +687,8 @@ async def query_clock_stats_rows(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
     """Return rows for Time Pressure at Endgame Entry and Time Pressure vs Performance.
 
@@ -789,8 +789,8 @@ async def query_clock_stats_rows(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     result = await session.execute(stmt)
@@ -805,8 +805,8 @@ async def query_endgame_elo_timeline_rows(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> tuple[list[Row[Any]], list[Row[Any]]]:
     """Return (bucket_rows, all_rows) for the Phase 57 Endgame ELO timeline.
 
@@ -828,7 +828,7 @@ async def query_endgame_elo_timeline_rows(
     Both queries:
     - Filter by Game.user_id == user_id at the TOP LEVEL (user scoping).
     - Use apply_game_filters for time_control/platform/rated/opponent_type/
-      recency_cutoff/opponent_strength. Never duplicate filter logic.
+      recency_cutoff/opponent_gap_{min,max}. Never duplicate filter logic.
     - Exclude rows with NULL played_at.
     - Exclude rows where white_rating IS NULL OR black_rating IS NULL (needed
       for per-side Elo math; a game without ratings can't contribute).
@@ -894,7 +894,9 @@ async def query_endgame_elo_timeline_rows(
             Game.white_rating,
             Game.black_rating,
             (entry_subq.c.entry_imbalance * color_sign).label("user_material_imbalance"),
-            (entry_subq.c.entry_imbalance_after * color_sign).label("user_material_imbalance_after"),
+            (entry_subq.c.entry_imbalance_after * color_sign).label(
+                "user_material_imbalance_after"
+            ),
             Game.result,
         )
         .join(entry_subq, Game.id == entry_subq.c.game_id)
@@ -913,8 +915,8 @@ async def query_endgame_elo_timeline_rows(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     # ── all_rows: one row per user game (endgame + non-endgame) ─────────────
@@ -942,8 +944,8 @@ async def query_endgame_elo_timeline_rows(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     # Execute sequentially — AsyncSession is not safe for concurrent use from

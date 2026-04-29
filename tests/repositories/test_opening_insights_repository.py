@@ -169,7 +169,8 @@ def _default_call_args(
         "rated": None,
         "opponent_type": "both",
         "recency_cutoff": None,
-        "opponent_strength": "any",
+        "opponent_gap_min": None,
+        "opponent_gap_max": None,
     }
 
 

@@ -302,9 +302,9 @@ def _dedupe_continuations(
         full_path = tuple(finding.entry_san_sequence) + (finding.candidate_move_san,)
         same_line = False
         for kept_section_key, kp in kept_paths:
-            shares_line = (
-                len(full_path) >= len(kp) and full_path[: len(kp)] == kp
-            ) or (len(kp) >= len(full_path) and kp[: len(full_path)] == full_path)
+            shares_line = (len(full_path) >= len(kp) and full_path[: len(kp)] == kp) or (
+                len(kp) >= len(full_path) and kp[: len(full_path)] == full_path
+            )
             if not shares_line:
                 continue
             # D-21 exception: same exact transition reached from different
@@ -432,8 +432,8 @@ async def compute_insights(
                 rated=request.rated,
                 opponent_type=request.opponent_type,
                 recency_cutoff=cutoff,
-                opponent_strength=request.opponent_strength,
-                elo_threshold=request.elo_threshold,
+                opponent_gap_min=request.opponent_gap_min,
+                opponent_gap_max=request.opponent_gap_max,
             )
 
         # Pass 1: direct attribution for all entry hashes. Also include
@@ -446,9 +446,7 @@ async def compute_insights(
                 direct_entry_hashes_set.add(int(r.entry_hash))
                 if not (r.entry_san_sequence or []):
                     direct_entry_hashes_set.add(int(r.resulting_full_hash))
-        openings_by_hash = await query_openings_by_hashes(
-            session, list(direct_entry_hashes_set)
-        )
+        openings_by_hash = await query_openings_by_hashes(session, list(direct_entry_hashes_set))
 
         # Pass 2: parent-lineage attribution for unmatched (BLOCKER-1 / D-34).
         unmatched_parent_hashes: set[int] = set()

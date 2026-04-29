@@ -1,6 +1,6 @@
 """Stats router: GET /stats/rating-history and GET /stats/global endpoints."""
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_async_session
 from app.models.user import User
 from app.schemas.stats import GlobalStatsResponse, MostPlayedOpeningsResponse, RatingHistoryResponse
-from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
 from app.services import stats_service
 from app.users import current_active_user
 
@@ -22,11 +21,12 @@ async def get_rating_history(
     recency: str | None = Query(default=None),
     platform: str | None = Query(default=None),
     opponent_type: str = Query(default="human"),
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
+    opponent_gap_min: int | None = Query(default=None),
+    opponent_gap_max: int | None = Query(default=None),
 ) -> RatingHistoryResponse:
     """Return per-platform per-game rating data points.
 
-    Optionally filtered by recency, platform, opponent_type, and opponent_strength.
+    Optionally filtered by recency, platform, opponent_type, and opponent gap.
     """
     return await stats_service.get_rating_history(
         session,
@@ -34,7 +34,8 @@ async def get_rating_history(
         recency,
         platform,
         opponent_type=opponent_type,
-        opponent_strength=opponent_strength,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
 
@@ -45,11 +46,12 @@ async def get_global_stats(
     recency: str | None = Query(default=None),
     platform: str | None = Query(default=None),
     opponent_type: str = Query(default="human"),
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
+    opponent_gap_min: int | None = Query(default=None),
+    opponent_gap_max: int | None = Query(default=None),
 ) -> GlobalStatsResponse:
     """Return global W/D/L breakdowns by time control and by color.
 
-    Optionally filtered by recency, platform, opponent_type, and opponent_strength.
+    Optionally filtered by recency, platform, opponent_type, and opponent gap.
     """
     return await stats_service.get_global_stats(
         session,
@@ -57,7 +59,8 @@ async def get_global_stats(
         recency,
         platform,
         opponent_type=opponent_type,
-        opponent_strength=opponent_strength,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
 
@@ -70,8 +73,8 @@ async def get_most_played_openings(
     platform: list[str] | None = Query(default=None),
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
-    elo_threshold: int = Query(default=DEFAULT_ELO_THRESHOLD),
+    opponent_gap_min: int | None = Query(default=None),
+    opponent_gap_max: int | None = Query(default=None),
 ) -> MostPlayedOpeningsResponse:
     """Return top 10 most played openings per color with SQL-side WDL stats.
 
@@ -85,6 +88,6 @@ async def get_most_played_openings(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )

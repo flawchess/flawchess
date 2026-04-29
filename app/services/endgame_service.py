@@ -25,7 +25,6 @@ import sentry_sdk
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
 from app.repositories.endgame_repository import (
     count_endgame_games,
     count_filtered_games,
@@ -347,8 +346,8 @@ async def get_endgame_stats(
     rated: bool | None,
     opponent_type: str,
     recency: str | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> EndgameStatsResponse:
     """Orchestrate endgame stats query and return EndgameStatsResponse.
 
@@ -367,8 +366,8 @@ async def get_endgame_stats(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     categories = _aggregate_endgame_stats(rows)
 
@@ -381,8 +380,8 @@ async def get_endgame_stats(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     # Count games that reached an endgame phase per the uniform ENDGAME_PLY_THRESHOLD rule
     # (quick-260414-ae4): a game qualifies if its total endgame plies meet the threshold.
@@ -394,8 +393,8 @@ async def get_endgame_stats(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     return EndgameStatsResponse(
@@ -416,8 +415,8 @@ async def get_endgame_games(
     recency: str | None,
     offset: int,
     limit: int,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> EndgameGamesResponse:
     """Orchestrate endgame games query and return paginated EndgameGamesResponse.
 
@@ -439,8 +438,8 @@ async def get_endgame_games(
         recency_cutoff=cutoff,
         offset=offset,
         limit=limit,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     game_records = [
@@ -597,9 +596,7 @@ def _compute_score_gap_timeline(
             non_endgame_window = non_endgame_window[-window:]
 
         iso_year, iso_week, iso_weekday = played_at.isocalendar()
-        per_week_total[(iso_year, iso_week)] = (
-            per_week_total.get((iso_year, iso_week), 0) + 1
-        )
+        per_week_total[(iso_year, iso_week)] = per_week_total.get((iso_year, iso_week), 0) + 1
 
         eg_count = len(endgame_window)
         neg_count = len(non_endgame_window)
@@ -1358,9 +1355,7 @@ def _compute_clock_pressure_timeline(
         avg = statistics.mean(window_slice)
 
         iso_year, iso_week, iso_weekday = played_at.isocalendar()
-        per_week_count[(iso_year, iso_week)] = (
-            per_week_count.get((iso_year, iso_week), 0) + 1
-        )
+        per_week_count[(iso_year, iso_week)] = per_week_count.get((iso_year, iso_week), 0) + 1
         monday = (played_at - timedelta(days=iso_weekday - 1)).date()
         data_by_week[(iso_year, iso_week)] = {
             "date": monday.isoformat(),
@@ -1599,9 +1594,7 @@ def _compute_weekly_rolling_series(
         win_rate = window_slice.count("win") / window_total if window_total > 0 else 0.0
 
         iso_year, iso_week, iso_weekday = played_at.isocalendar()
-        per_week_count[(iso_year, iso_week)] = (
-            per_week_count.get((iso_year, iso_week), 0) + 1
-        )
+        per_week_count[(iso_year, iso_week)] = per_week_count.get((iso_year, iso_week), 0) + 1
         monday = (played_at - timedelta(days=iso_weekday - 1)).date()
         # Overwrite so each week keeps the window state after its last game.
         data_by_week[(iso_year, iso_week)] = {
@@ -1649,8 +1642,8 @@ async def get_endgame_performance(
     recency: str | None,
     rated: bool | None,
     opponent_type: str,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> EndgamePerformanceResponse:
     """Orchestrate endgame performance query and return EndgamePerformanceResponse.
 
@@ -1672,8 +1665,8 @@ async def get_endgame_performance(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     entry_rows = await query_endgame_entry_rows(
         session,
@@ -1683,8 +1676,8 @@ async def get_endgame_performance(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     return _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, entry_rows)
@@ -1699,8 +1692,8 @@ async def get_endgame_timeline(
     rated: bool | None,
     opponent_type: str,
     window: int = 50,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> EndgameTimelineResponse:
     """Orchestrate endgame timeline query and return EndgameTimelineResponse.
 
@@ -1726,8 +1719,8 @@ async def get_endgame_timeline(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=None,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     # Compute rolling series over full history, then filter to recency window
@@ -1808,8 +1801,8 @@ async def get_endgame_elo_timeline(
     rated: bool | None,
     opponent_type: str,
     recency: str | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> EndgameEloTimelineResponse:
     """Orchestrate the Endgame ELO timeline query (Phase 57 ELO-05).
 
@@ -1830,8 +1823,8 @@ async def get_endgame_elo_timeline(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=None,  # pre-fill windows; filter output via cutoff_str
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     # Partition by (platform, time_control_bucket).
@@ -1908,8 +1901,8 @@ async def get_endgame_overview(
     opponent_type: str,
     recency: str | None,
     window: int = 50,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> EndgameOverviewResponse:
     """Compose all five endgame dashboard payloads into a single response.
 
@@ -1934,8 +1927,8 @@ async def get_endgame_overview(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     # Stats: aggregate per-category W/D/L + conversion/recovery from entry_rows
@@ -1948,8 +1941,8 @@ async def get_endgame_overview(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     # Count games that reached an endgame phase per the uniform ENDGAME_PLY_THRESHOLD rule
     # (quick-260414-ae4): a game qualifies if its total endgame plies meet the threshold.
@@ -1961,8 +1954,8 @@ async def get_endgame_overview(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     stats = EndgameStatsResponse(
         categories=categories,
@@ -1983,8 +1976,8 @@ async def get_endgame_overview(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=None,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     if cutoff is not None:
         endgame_rows = [r for r in endgame_rows_all if r[0] is not None and r[0] >= cutoff]
@@ -2007,8 +2000,8 @@ async def get_endgame_overview(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     # Build score-gap timeline from unfiltered rows so the rolling 100-game
     # window per side is pre-filled with games before the cutoff; then drop
@@ -2036,8 +2029,8 @@ async def get_endgame_overview(
         rated=rated,
         opponent_type=opponent_type,
         window=window,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     # Clock pressure: fetch per-span arrays WITHOUT recency cutoff so the
     # clock-diff timeline can pre-fill from games before the cutoff. Filter in
@@ -2051,8 +2044,8 @@ async def get_endgame_overview(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=None,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     if cutoff is not None:
         clock_rows = [r for r in clock_rows_all if r[8] is not None and r[8] >= cutoff]
@@ -2083,8 +2076,8 @@ async def get_endgame_overview(
         rated=rated,
         opponent_type=opponent_type,
         recency=recency,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     return EndgameOverviewResponse(

@@ -55,9 +55,7 @@ RECENCY_DELTAS: dict[str, datetime.timedelta] = {
 }
 
 
-def derive_user_result(
-    result: str, user_color: str
-) -> Literal["win", "draw", "loss"]:
+def derive_user_result(result: str, user_color: str) -> Literal["win", "draw", "loss"]:
     """Derive win/draw/loss from the raw PGN result and the user's color.
 
     Args:
@@ -69,9 +67,7 @@ def derive_user_result(
     """
     if result == "1/2-1/2":
         return "draw"
-    if (result == "1-0" and user_color == "white") or (
-        result == "0-1" and user_color == "black"
-    ):
+    if (result == "1-0" and user_color == "white") or (result == "0-1" and user_color == "black"):
         return "win"
     return "loss"
 
@@ -118,8 +114,8 @@ async def analyze(
         opponent_type=request.opponent_type,
         recency_cutoff=cutoff,
         color=request.color,
-        opponent_strength=request.opponent_strength,
-        elo_threshold=request.elo_threshold,
+        opponent_gap_min=request.opponent_gap_min,
+        opponent_gap_max=request.opponent_gap_max,
     )
     wins, draws, losses, total = wdl_row.wins, wdl_row.draws, wdl_row.losses, wdl_row.total
 
@@ -154,8 +150,8 @@ async def analyze(
         color=request.color,
         offset=request.offset,
         limit=request.limit,
-        opponent_strength=request.opponent_strength,
-        elo_threshold=request.elo_threshold,
+        opponent_gap_min=request.opponent_gap_min,
+        opponent_gap_max=request.opponent_gap_max,
     )
 
     game_records = [
@@ -221,8 +217,8 @@ async def get_time_series(
             rated=request.rated,
             opponent_type=request.opponent_type,
             recency_cutoff=None,
-            opponent_strength=request.opponent_strength,
-            elo_threshold=request.elo_threshold,
+            opponent_gap_min=request.opponent_gap_min,
+            opponent_gap_max=request.opponent_gap_max,
         )
 
         # Build rolling-window datapoints from chronological per-game rows.
@@ -382,8 +378,8 @@ async def get_next_moves(
         opponent_type=request.opponent_type,
         recency_cutoff=cutoff,
         color=request.color,
-        opponent_strength=request.opponent_strength,
-        elo_threshold=request.elo_threshold,
+        opponent_gap_min=request.opponent_gap_min,
+        opponent_gap_max=request.opponent_gap_max,
     )
     wins, draws, losses, total = wdl_row.wins, wdl_row.draws, wdl_row.losses, wdl_row.total
     win_pct = round(wins / total * 100, 1) if total > 0 else 0.0
@@ -410,8 +406,8 @@ async def get_next_moves(
         opponent_type=request.opponent_type,
         recency_cutoff=cutoff,
         color=request.color,
-        opponent_strength=request.opponent_strength,
-        elo_threshold=request.elo_threshold,
+        opponent_gap_min=request.opponent_gap_min,
+        opponent_gap_max=request.opponent_gap_max,
     )
 
     if not move_rows:
@@ -429,8 +425,8 @@ async def get_next_moves(
         opponent_type=request.opponent_type,
         recency_cutoff=cutoff,
         color=request.color,
-        opponent_strength=request.opponent_strength,
-        elo_threshold=request.elo_threshold,
+        opponent_gap_min=request.opponent_gap_min,
+        opponent_gap_max=request.opponent_gap_max,
     )
 
     # --- Result FENs via PGN replay ---

@@ -5,8 +5,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
-
 
 class OpeningsRequest(BaseModel):
     """Request body for POST /openings/positions."""
@@ -30,6 +28,7 @@ class OpeningsRequest(BaseModel):
         if isinstance(v, str):
             return int(v)
         return v
+
     match_side: Literal["white", "black", "full"] = "full"
 
     # Optional filters
@@ -37,11 +36,13 @@ class OpeningsRequest(BaseModel):
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None
     opponent_type: Literal["human", "bot", "both"] = "human"
-    recency: Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None = None
+    recency: (
+        Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None
+    ) = None
     color: Literal["white", "black"] | None = None
 
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any"
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD
+    opponent_gap_min: int | None = None
+    opponent_gap_max: int | None = None
 
     # Pagination
     offset: Annotated[int, Field(ge=0)] = 0
@@ -119,18 +120,20 @@ class TimeSeriesRequest(BaseModel):
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None
     opponent_type: Literal["human", "bot", "both"] = "human"
-    recency: Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None = None
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any"
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD
+    recency: (
+        Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None
+    ) = None
+    opponent_gap_min: int | None = None
+    opponent_gap_max: int | None = None
 
 
 class TimeSeriesPoint(BaseModel):
     """Win-rate data for a single rolling-window datapoint."""
 
-    date: str           # "2025-01-15" (ISO date of the game)
-    win_rate: float     # wins / total in trailing window
-    game_count: int     # total games in the window (1..window_size)
-    window_size: int    # the configured window size (always ROLLING_WINDOW_SIZE)
+    date: str  # "2025-01-15" (ISO date of the game)
+    win_rate: float  # wins / total in trailing window
+    game_count: int  # total games in the window (1..window_size)
+    window_size: int  # the configured window size (always ROLLING_WINDOW_SIZE)
 
 
 class BookmarkTimeSeries(BaseModel):
@@ -175,11 +178,13 @@ class NextMovesRequest(BaseModel):
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None
     opponent_type: Literal["human", "bot", "both"] = "human"
-    recency: Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None = None
+    recency: (
+        Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None
+    ) = None
     color: Literal["white", "black"] | None = None
     sort_by: Literal["frequency", "win_rate"] = "frequency"
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any"
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD
+    opponent_gap_min: int | None = None
+    opponent_gap_max: int | None = None
 
 
 class NextMoveEntry(BaseModel):
@@ -193,8 +198,8 @@ class NextMoveEntry(BaseModel):
     win_pct: float
     draw_pct: float
     loss_pct: float
-    result_hash: str   # BigInt as string for JS safety (full_hash of resulting position)
-    result_fen: str    # board FEN of resulting position (piece placement only)
+    result_hash: str  # BigInt as string for JS safety (full_hash of resulting position)
+    result_fen: str  # board FEN of resulting position (piece placement only)
     transposition_count: int
     score: float = Field(
         ge=0.0, le=1.0
