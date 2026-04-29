@@ -2,6 +2,63 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v1.14 — Score-Based Opening Insights
+
+**Shipped:** 2026-04-29
+**Phases:** 3 (75, 76, 77) | **Plans:** 16 | **Delivered via:** PRs #69, #70, #71 (inline confidence-mute hotfix), #72, #73 (quick task)
+**Stats:** 123 files changed, +18,701 / -787 lines over 2 days (2026-04-28 → 2026-04-29)
+**Source:** SEED-007 (Option A only — Wilson on score, 0.50 pivot, no user-baseline) + SEED-008 (label reframe). Both seeds folded into v1.14 and closed.
+
+### What Was Built
+- Score `(W + 0.5·D)/N` is the canonical metric across `opening_insights_service.py`, `openings_repository.py`, `arrowColor.ts`, and the `NextMoveEntry` / `OpeningInsightFinding` API payloads. `loss_rate` / `win_rate` removed cleanly. Effect-size gate against a 0.50 pivot with strict `≤`/`≥` boundaries — minor at 0.45/0.55, major at 0.40/0.60. Pivot stays at 0.50 (no user-baseline shrinkage; matchmaking + opponent-strength filter already center the baseline) (Phase 75)
+- Trinomial Wald 95% confidence interval per finding using the actual variance of the chess result distribution `X ∈ {0, 0.5, 1}` — variance `(W + 0.25·D)/N − score²` rather than the binomial-Wilson approximation that over-states uncertainty when draws are common (standard formula in BayesElo / Ordo). Pure-Python `math` only, no scipy. Half-width buckets `≤ 0.10 → high`, `≤ 0.20 → medium`, else `low`. Pivoted from Wilson per Phase 75 D-05. `MIN_GAMES_PER_CANDIDATE` dropped 20 → 10 — confidence badge replaces hard-floor gate (Phase 75)
+- `OpeningInsightFinding` payload extended with `confidence: "low" | "medium" | "high"` (the half-width bucket, user-facing badge) and `p_value: float` (two-sided Z-test of observed score vs 0.50, tooltip-grade). `severity` retained so the frontend renders effect size + precision + significance per finding. `NextMoveEntry` extended with the same three fields for moves-list parity (Phase 75 + 76-02)
+- `arrowColor.ts` migrated to score (effect-size only — no confidence cue on arrows). Move Explorer moves-list row tint by score with extended mute rule `(game_count < 10 OR confidence === 'low')`. New Conf column with sort key `(confidence DESC, |score - 0.50| DESC)`. Single shared `compute_confidence_bucket` module with CI structural assertion that there's only one implementation (Phase 76)
+- `OpeningFindingCard` renders score-based prose with level-specific confidence indicator and directional p-value tooltip; `UNRELIABLE_OPACITY` mute when `n_games < 10` OR `confidence === 'low'`. Four `InfoPopover` triggers added to `OpeningInsightsBlock` section headers. Mobile parity at 375px (Phase 76)
+- INSIGHT-UI-04 (soften titles per SEED-008) descoped 2026-04-28 per Phase 76 D-04 — severity word never appeared as user-facing text; confidence badge + sort calibration deliver SEED-008's intent without rewriting "Weakness/Strength" titles
+- Inline hotfix between Phase 76 and 77 (PR #71): force grey arrow + skip row tint when `confidence === 'low'`. Strengthens the at-a-glance board read; low-confidence findings still surface in the table with the badge but don't visually claim authority on the board
+- Phase 77 troll-opening watermark — frontend-only matching via a side-only FEN piece-placement key (no backend schema, no Zobrist hash, no API contract change). `troll-face.svg` renders as 30%-opacity bottom-right watermark on `OpeningFindingCard` (mobile + desktop) and a small inline icon next to qualifying SAN rows in `MoveExplorer` (desktop only via `hidden sm:inline-block`). Curation is offline via a Node/TS script that emits per-ply candidates (both colors) for human pruning. Decorative `<img>` idiom keeps the asset cacheable and out of the accessibility tree (Phase 77)
+- CI consistency test `test_opening_insights_arrow_consistency` rewritten to enforce score-based threshold lock-step between backend classification and `arrowColor.ts`
+- Inline quick tasks during the milestone window: 260428-doc-framing-refresh, 260428-oxr (replaced Wald half-width buckets with p-value thresholds), 260428-tgg (sort by Wald CI bound), 260428-v9i (switched ranking from Wald to Wilson score interval bound), 260429-gmj (after-move arrow on insight finding mini board, PR #73)
+
+### What Worked
+- **Tightly-scoped milestone with one conceptual move.** v1.14 had a clear single thesis ("effect size decides what shows up, confidence annotates how sure we are") and shipped it in 2 days across 3 phases / 16 plans. The conceptual pivot was articulated in the design note before any code was written; every phase plan referenced it. Compact milestones with a clear thesis ship faster than ambitious milestones with mixed themes.
+- **Decision IDs (D-XX) carried through context → plan → SUMMARY.** Phase 75 D-05 (trinomial Wald over Wilson) and D-09 (`p_value` alongside `confidence`) were debated at discuss-phase, recorded in `75-CONTEXT.md`, cited as the rationale for REQUIREMENTS amendments in Plan 75-04, and referenced in the Phase 75 SUMMARY. The chain from "why" to "what shipped" is unbroken and grep-able. Phase 76 D-03/D-04/D-17 followed the same chain.
+- **Pivot during the milestone (Wilson → Wald, ranking iterations).** Originally specified Wilson half-width buckets per SEED-007 Option A; mid-Phase-75 discussion revealed Wilson over-states uncertainty when draws are common. Pivoted to trinomial Wald in `75-CONTEXT.md` D-05, with REQUIREMENTS amendment in Plan 75-04. The four post-Phase-76 quick tasks (260428-oxr/tgg/v9i + 260429-gmj) iterated on confidence buckets, sort key, and visual polish based on first-look-at-real-data feedback. Treating the metric as soft and iterable through the milestone window produced a calibrated end state that pre-locked metric specs would have over-constrained.
+- **Frontend-only Phase 77 matching as a deliberate scope reduction.** Original troll-watermark design note specified backend Zobrist + TSV + frozenset — same shape as `seed_openings.py`. Switched to frontend-only matching via side-only FEN piece-placement keys at `77-CONTEXT.md` time after recognizing the small read-only nature of the curated set. Eliminated a migration, a backend service touch, an API contract change, and a CI parity test. Pure savings; no ergonomic loss.
+- **CI structural assertions on shared helpers.** Both v1.14 phases shipped CI tests that catch *structural* violations beyond functional ones — `test_opening_insights_arrow_consistency` enforces backend/frontend threshold lock-step; the structural assertion on `compute_confidence_bucket` ensures only one implementation exists. Cheap to write; prevents the most common refactoring-induced drift class.
+- **Inline mid-milestone hotfix (PR #71) was the right reach.** After Phase 76 shipped, the live UI showed low-confidence colored arrows still claiming visual authority on the board. Fixed inline via PR #71 (force grey + skip row tint) before opening Phase 77. Don't open a new phase for a polish-grade fix that's clearly load-bearing; don't queue for next milestone either; ship inline.
+- **Phase 77 added off-roadmap-scope under v1.14, not as a hyphenated milestone.** Frontend-only follow-on with no v1.15 dependency; cheaper to ship under v1.14 than open v1.14.1.
+
+### What Was Inefficient
+- **Discuss-phase confidence-bucket math went through three pivots before settling.** Wilson (SEED-007) → Wald with half-width buckets (Phase 75 D-05) → p-value thresholds (post-Phase-76 quick task 260428-oxr) → Wilson score-interval bound for ranking only (260428-v9i). Each pivot required follow-on REQUIREMENTS/code adjustments. A 30-minute first-pass smoke against real user data during discuss-phase — sample 100 user-color pairs, compute candidate Wald/Wilson/p-value buckets, eyeball the rank order — would have surfaced the right calibration earlier. Lesson: when the milestone hinges on one statistical decision, smoke real data before locking the spec.
+- **Phase 75 → 76 → 77 ran sequential when 75 + 76 had natural overlap.** Phase 75 (4 plans) and Phase 76 (8 plans) had natural overlap potential — frontend types, arrowColor.ts, helper module are pure additions atop the new constants module. Phase 76's first 3 plans are pure frontend type-shape catch-up that could have started in parallel with Phase 75. A two-track lane would have shaved a half day off the critical path.
+- **No discuss-phase for Phase 77; design notes were rewritten mid-context.** Phase 77 jumped straight from "design notes in `notes/troll-openings-design.md`" to plans, then revised in `77-CONTEXT.md` ("backend Zobrist/TSV/frozenset approach is OUTDATED"). The original design note remains in tree as a misleading sibling. Future readers will hit the stale design note first.
+- **133 quick-task entries without status frontmatter still showing as "open" in audits.** Carried forward from v1.10/v1.11/v1.12/v1.13 closes with the same disclaimer. Growing roughly +10/milestone. At some point this needs a one-shot script to backfill status frontmatter on the historical archive, or the audit's heuristic needs a bypass for entries with merged commits.
+
+### Patterns Established
+- **Effect size + confidence as separate UI cues.** Pioneered in v1.14: severity (effect size, color intensity) and confidence (precision, badge text + opacity mute) surfaced as orthogonal dimensions on the same finding. The user reads both at once. Reusable framing for any future ranked-discovery surface (LLM-narrated openings, endgame anomalies, rating-anomaly signals).
+- **Trinomial Wald variance on chess scores, not binomial Wilson.** Future statistical work on FlawChess should default to trinomial Wald — chess is a 3-outcome game; the binomial approximation distorts the math when draws are non-trivial. `compute_confidence_bucket` is the canonical implementation.
+- **Frontend-only matching for small read-only curated sets.** Phase 77 troll-opening matching established the pattern: side-only FEN piece-placement key, static data module, lookup once per render. Skips backend schema / API contract / migration / CI parity test. Use when the curated set is small (≤ 1000 entries), read-only, and doesn't need user-specific gating.
+- **Decorative `<img>` watermark idiom.** Decorative `<img>` over CSS background — keeps the asset cacheable and lets browser handle scaling; `alt=""` + `aria-hidden="true"` + `pointer-events-none` keeps it out of the accessibility tree and doesn't block underlying interactivity.
+- **CI structural assertion on shared helpers.** Beyond functional tests, assert *that there's only one implementation* of a cross-cutting helper. Cheap to write; prevents drift across refactors.
+- **Mid-milestone hotfix PR.** When live-UI feedback reveals a polish-grade fix that's clearly load-bearing and not worth a new phase, ship inline. Pattern matches v1.13's quick-task hotfix loop.
+
+### Key Lessons
+1. **Smoke real data before locking statistical specs.** v1.14's three confidence-bucket pivots cost real REQUIREMENTS/code rewrites. A 30-min smoke on production-shape data during discuss-phase would have surfaced the right calibration first try.
+2. **Compact milestones with one thesis ship faster than ambitious mixed-theme ones.** v1.14 (3 phases / 16 plans / 2 days, one conceptual move) compares favorably to v1.13's mixed scope.
+3. **CI structural assertions complement functional tests.** Both Phase 75 and Phase 76 shipped CI tests that catch refactoring-induced *shape* violations, not just behavior bugs.
+4. **Iteration via inline hotfixes / quick tasks is a feature.** PR #71 + four post-Phase-76 quick tasks iterated on the metric/sort/visual until the milestone felt right. Don't fight the iterative loop; structure for it.
+5. **Off-roadmap-scope additions belong under the current milestone, not a hyphenated one.** Phase 77 folded into v1.14 directly rather than spawning v1.14.1.
+6. **Stale design notes in tree are a future-reader trap.** Phase 77's pivot from backend to frontend matching left an outdated `notes/troll-openings-design.md` as a sibling. Either delete superseded design notes at decision time or annotate them with `> SUPERSEDED by <link>`.
+
+### Cost Observations
+- Sessions: ~7 conversations across the milestone window (discuss × 3 + plan × 3 + execute × 3 + verify × 3 + close × 1, with overlaps)
+- Notable: Phase 76 ran an 8-plan parallel execute waveplan; Phase 77 ran a 4-plan / 2-wave execute. Parallel execution cut wall-clock by ~50% vs sequential.
+- Sentry: zero new prod errors attributable to v1.14 changes through 2026-04-29 close. Score migration was clean.
+
+---
+
 ## Milestone: v1.13 — Opening Insights
 
 **Shipped:** 2026-04-27
@@ -476,6 +533,12 @@
 | v1.6 | 6 | 11 | UI polish: theme system, shared components, openings table, mobile drawers, 26 quick tasks |
 | v1.7 | 6 | 11 | Consolidation: ty type checking, knip dead exports, import speed 2x, SQL aggregations |
 | v1.8 | 4 | N/A | Guest access via feature branch + PR, outside GSD workflow — no formal plans |
+| v1.9 | 3 | 7 | UI/UX restructuring: openings sidebar, mobile layouts, stats subtab |
+| v1.10 | 11 | 28 | Advanced endgame analytics: score gap, time pressure, ELO timeline, admin impersonation |
+| v1.11 | 5 | 23 | LLM-first endgame insights: pydantic-ai Agent, llm_logs table, dual-line score chart |
+| v1.12 | 1 | 6 | Benchmark DB infrastructure & ingestion pipeline; scope-down deferred analysis phases to SEED-006 |
+| v1.13 | 3 | 14 | Templated opening insights: SQL transition aggregation, deep-link wiring, subnav refactor |
+| v1.14 | 3 | 16 | Score-based opening insights: trinomial Wald confidence, effect size + confidence as orthogonal cues, troll watermark |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -487,3 +550,7 @@
 6. Human verification checkpoints (manual deploy steps) don't fit automated plan execution — use milestone gates instead
 7. Infrastructure-first ordering pays off — theme/shared components early in UI milestones, DB schema early in backend milestones
 8. Requirement traceability tables drift under manual maintenance — consider automated status syncing
+9. Compact milestones with one conceptual move ship faster than mixed-theme ones (v1.4, v1.12, v1.14 all shipped in 1-3 days)
+10. CI structural assertions (single-implementation, threshold lock-step) catch refactoring drift cheaply (v1.13 + v1.14)
+11. Iteration via inline hotfixes / quick tasks is a feature — don't fight it, structure for it (v1.13 + v1.14 both used the inline hotfix loop to land calibrated end states that pre-locked specs couldn't have)
+12. Smoke real data before locking statistical specs — v1.14's three confidence-bucket pivots cost real REQUIREMENTS rewrites that a 30-min discuss-phase smoke would have prevented

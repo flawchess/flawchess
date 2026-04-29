@@ -1,5 +1,35 @@
 # Milestones: FlawChess
 
+## v1.14 Score-Based Opening Insights (Shipped: 2026-04-29)
+
+**Phases completed:** 3 phases (75, 76, 77), 16 plans, delivered via PRs #69, #70, #71 (inline confidence-mute hotfix), #72, #73 (quick task).
+**Stats:** 123 files changed, +18,701 / -787 lines over 2 days (2026-04-28 → 2026-04-29) since v1.13 (commit f15b3cc → fa5ac64).
+**Source:** SEED-007 (Option A only — Wilson on score, 0.50 pivot, no user-baseline) + SEED-008 (label reframe). Both seeds folded into this milestone and closed.
+
+**Key accomplishments:**
+
+- Migrated Opening Insights and Move Explorer color coding from loss-rate to chess score `(W + 0.5·D)/N`. Score is now the canonical metric in `opening_insights_service.py`, `openings_repository.py`, `arrowColor.ts`, and the `NextMoveEntry` / `OpeningInsightFinding` API payloads. `loss_rate` / `win_rate` removed cleanly. Effect-size gate against a 0.50 pivot with strict `≤`/`≥` boundaries — minor at 0.45/0.55, major at 0.40/0.60 (Phase 75)
+- Trinomial Wald 95% confidence interval per finding using the actual variance of the chess result distribution `X ∈ {0, 0.5, 1}` — `(W + 0.25·D)/N − score²` rather than the binomial Wilson approximation that over-states uncertainty when draws are common (standard formula in BayesElo / Ordo). Pure-Python `math` only, no scipy dependency. Half-width buckets `≤ 0.10 → high`, `≤ 0.20 → medium`, else `low`. Pivoted from Wilson per Phase 75 D-05 (Phase 75)
+- API contract extended with both `confidence: "low" | "medium" | "high"` (the half-width bucket, user-facing badge) and `p_value: float` (two-sided Z-test of observed score vs 0.50, tooltip-grade significance). `severity` retained so the frontend renders effect size + precision + significance per finding without overloading any one cue. `MIN_GAMES_PER_CANDIDATE` dropped 20 → 10 to enable discovery framing (Phase 75)
+- Frontend score-based coloring shipped end-to-end: `arrowColor.ts` migrated to score (effect-size only, no confidence cue on arrows); Move Explorer moves-list row tint by score with extended mute rule `(game_count < 10 OR confidence === 'low')`; new Conf column with sort key `(confidence DESC, |score - 0.50| DESC)`; `OpeningFindingCard` renders score-based prose with level-specific confidence indicator and directional p-value tooltip; `UNRELIABLE_OPACITY` mute applied when `n_games < 10` OR `confidence === 'low'`. Mobile parity at 375px (Phase 76)
+- Four `InfoPopover` triggers on `OpeningInsightsBlock` section headers cover the score / sample-size / confidence framing (Phase 76 D-17)
+- INSIGHT-UI-04 descoped 2026-04-28 per Phase 76 D-04: severity word never appears as user-facing text (only drives border color); confidence badge + sort calibration deliver SEED-008's intent without rewriting "Weakness/Strength" titles
+- Post-Phase-76 inline hotfix (PR #71): force grey arrow + skip row tint when `confidence === 'low'`. Board reads cleaner; low-confidence findings still surface in the table with the badge but don't visually claim authority on the board
+- Phase 77 troll-opening watermark — frontend-only matching via side-only FEN piece-placement key (no backend schema, no Zobrist hash, no API contract change). `troll-face.svg` renders as 30%-opacity bottom-right watermark on `OpeningFindingCard` (mobile + desktop) and a small inline icon next to qualifying SAN rows in `MoveExplorer` (desktop only via `hidden sm:inline-block`). Curation is offline via a Node/TS script that emits per-ply candidates (both colors) for human pruning per CONTEXT.md D-01. Decorative `<img>` idiom (`alt=""` + `aria-hidden="true"`, `pointer-events-none`) keeps the asset cacheable and out of the accessibility tree (Phase 77)
+- Single `compute_confidence_bucket` shared module across `opening_insights_service` and the move-explorer payload — CI structural test asserts there's only one implementation. CI consistency test `test_opening_insights_arrow_consistency` updated to enforce score-based threshold lock-step between backend classification and `frontend/src/lib/arrowColor.ts`
+- Inline quick tasks during the milestone window: 260428-doc-framing-refresh (PROJECT/CLAUDE/README lead sections), 260428-oxr (replaced Wald half-width buckets with p-value thresholds), 260428-tgg (sort by Wald CI bound), 260428-v9i (switched ranking from Wald to Wilson score interval bound), 260429-gmj (after-move arrow on insight finding mini board, PR #73)
+
+**Known deferred items at close: 6**
+
+- INSIGHT-UI-04 — descoped 2026-04-28 (Phase 76 D-04). Severity word never user-facing; confidence badge + sort carry SEED-008 intent.
+- Phase 77 HUMAN-UAT (3 open scenarios) and VERIFICATION (`human_needed`) — automated gates green, phase shipped via PR #72; remaining UAT captured in `77-HUMAN-UAT.md`, not blocking close.
+- LLM narration of opening insights — future seed; v1.14 shipped the calibrated data plumbing (effect size + confidence + p_value) that LLM narration would consume.
+- Population-relative weakness signals — gated on full benchmark ingest (SEED-006). Deliberately not part of v1.14 because the design rejects user/population baselines.
+- Carried forward: 9 stale debug session entries (March-April), 133 quick-task directory entries without status frontmatter (audit misclassifies as open — both historical), pre-existing ORM/DB column drift (`game_positions.clock_seconds`, `games.white_accuracy`, `games.black_accuracy`), 2 long-range todos (bitboard-storage; phase-70-amendments already landed but todo file not pruned).
+- SEED-002 (benchmark population baselines) and SEED-006 (zone recalibration) — dormant, gated on full benchmark ingest.
+
+---
+
 ## v1.13 Opening Insights (Shipped: 2026-04-27)
 
 **Phases completed:** 3 phases (70, 71, 71.1), 14 plans, delivered via PRs #66, #67, #68 (squash merges). Phases 72, 73, 74 descoped 2026-04-27.

@@ -1,12 +1,12 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.14
-milestone_name: Score-Based Opening Insights
-status: "Phase 77 shipped — PR #72"
-last_updated: "2026-04-29T09:47:46.188Z"
-last_activity: "2026-04-29 -- Phase 77 shipped — PR #72"
+milestone: none
+milestone_name: "(planning v1.15 via /gsd-new-milestone)"
+status: "v1.14 shipped 2026-04-29"
+last_updated: "2026-04-29T10:50:00.000Z"
+last_activity: "2026-04-29 -- v1.14 milestone closed"
 progress:
-  total_phases: 4
+  total_phases: 0
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -16,36 +16,49 @@ progress:
 
 ## Current Position
 
-Phase: 77 (troll-opening-watermark-on-insights-findings) — EXECUTING
-Plan: 1 of 4
-Status: Phase 77 shipped — PR #72
-Resume: .planning/phases/75-backend-score-metric-confidence-annotation/75-CONTEXT.md
-Last activity: 2026-04-29 -- Phase 77 shipped — PR #72
+Milestone: v1.14 SHIPPED 2026-04-29
+Next: open v1.15 via `/gsd-new-milestone`
+Last activity: 2026-04-29 — v1.14 milestone closed (Score-Based Opening Insights; Phases 75, 76, 77; INSIGHT-UI-04 descoped)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-26)
-Core value: Users can determine their success rate for any opening position they specify
-Current focus: v1.13 (SEED-005 Opening Insights). Roadmap covers Phases 70-74; pre-v1.13 quick task PRE-01 (top-10 parity-filter fix) landed 2026-04-26; Phase 70 ready to start. SEED-006 (Benchmark population zone recalibration) holds the deferred classifier-validation phases until full benchmark ingest completes.
+See: .planning/PROJECT.md (updated 2026-04-29 after v1.14 close)
+Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report (now score-based with low/medium/high confidence calibration).
+Current focus: v1.15 unselected — pick direction via `/gsd-new-milestone`. SEED-002 (benchmark population baselines) and SEED-006 (zone recalibration) remain dormant, gated on full benchmark ingest. LLM narration of opening insights is the natural next consumer of the v1.14 calibrated data plumbing (effect size + confidence + p_value).
 
 ## Milestone Progress
 
-v1.12 shipped 2026-04-26 with 1 phase (69), 6 plans, delivered via PR #65. Twelve milestones complete (v1.0-v1.12). v1.13 opened 2026-04-26 with 5 phases (70-74), Phases 73-74 marked stretch. 0 plans committed yet (filled at `/gsd-plan-phase` time).
+Fourteen milestones complete (v1.0–v1.14). v1.14 Score-Based Opening Insights shipped 2026-04-29 with 3 phases (75, 76, 77), 16 plans, delivered via PRs #69, #70, #71 (inline confidence-mute hotfix), #72, #73 (quick task). Stats: 123 files changed, +18,701 / -787 lines over 2 days since v1.13 (commit f15b3cc → fa5ac64). 73 phases total (+4 inserted: 27.1, 28.1, 41.1, 57.1, 71.1).
 
 ## Key Context
 
 - Stack: FastAPI + React/TS/Vite + PostgreSQL + python-chess
 - ORM: SQLAlchemy 2.x async + Alembic
 - Auth: FastAPI-Users 15.0.5 (Bearer JWT, Google SSO, guest sessions, admin impersonation)
-- Core algorithm: Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import — Phase 70 reuses this directly for finding deduplication
+- Core algorithm: Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import
 - Deployment: Docker Compose on Hetzner CX32 (4 vCPUs, 7.6 GB RAM + 2 GB swap)
-- v1.11 LLM stack: pydantic-ai Agent with env-var-driven model selection (`PYDANTIC_AI_MODEL_INSIGHTS`), `genai-prices` for cost accounting, generic `llm_logs` Postgres table — v1.13 deliberately does NOT use the LLM layer (templated-only)
-- v1.12 Benchmark DB: separate PostgreSQL 18 instance on port 5433 — v1.13 deliberately does NOT consume this (book-move equality makes population baselines redundant for opening insights, per SEED-005)
-- v1.13 reuse points: `query_top_openings_sql_wdl` (must land PRE-01 fix first), `apply_game_filters`, `game_positions` Zobrist-hash schema, v1.11 in-tab insights placement idiom (red/green semantic colors, mobile drawer compatibility, EndgameInsightsBlock loading/error patterns)
+- v1.11 LLM stack: pydantic-ai Agent with env-var-driven model selection (`PYDANTIC_AI_MODEL_INSIGHTS`), `genai-prices` for cost accounting, generic `llm_logs` Postgres table
+- v1.12 Benchmark DB: separate PostgreSQL 18 instance on port 5433 — dormant (gated on full ingest); SEED-002 / SEED-006 still pending
+- v1.14 score plumbing: trinomial Wald 95% half-width drives `confidence: "low" | "medium" | "high"`; `OpeningInsightFinding` and `NextMoveEntry` payloads expose `score`, `confidence`, `p_value`. `compute_confidence_bucket` is the single shared helper (CI structural assertion). `arrowColor.ts` and backend constants are kept in lock-step by `tests/services/test_opening_insights_arrow_consistency.py`. Natural next consumer: LLM narration of opening insights.
 
 ## Accumulated Context
 
 ### Deferred Items
+
+Acknowledged at v1.14 milestone close on 2026-04-29:
+
+| Category | Item | Status |
+|----------|------|--------|
+| requirements | INSIGHT-UI-04 (soften titles per SEED-008) | Descoped 2026-04-28 (Phase 76 D-04 — severity word never user-facing; confidence badge + sort cover SEED-008 intent) |
+| uat | Phase 77 HUMAN-UAT — 3 open scenarios | Deferred — phase shipped via PR #72; remaining scenarios in `77-HUMAN-UAT.md`, not blocking close |
+| verification | Phase 77 VERIFICATION — `human_needed` | Deferred — automated gates green; manual verification not blocking close |
+| audit | 9 stale debug session entries (diagnosed/awaiting_human_verify, March-April) | Carried forward; not relevant to v1.14 active work |
+| audit | 133 quick-task directory entries without status frontmatter | Historical archive (already merged in git); audit misclassifies as open |
+| todos | bitboard-storage-for-partial-position-queries (database) | Carried forward — long-range idea |
+| todos | phase-70-requirements-roadmap-amendments (planning) | Already landed in Plan 70-05; todo file not pruned |
+| seeds | SEED-002 (benchmark population baselines), SEED-006 (zone recalibration) | Dormant — gated on full benchmark ingest |
+| future | LLM narration of opening insights | Future seed — v1.14 shipped the calibrated data plumbing (effect size + confidence + p_value) that LLM narration would consume |
+| tech debt | Pre-existing ORM/DB column drift (`game_positions.clock_seconds`, `games.white_accuracy`, `games.black_accuracy`) | Carried forward from v1.11 — cleanup migration outstanding |
 
 Acknowledged at v1.13 milestone close on 2026-04-27:
 
@@ -82,11 +95,10 @@ Carried forward from v1.11 close (still relevant):
 
 ### Roadmap Evolution
 
-- v1.0–v1.12 shipped (see .planning/MILESTONES.md)
-- v1.12 shipped 2026-04-26 with 1 phase (69), 6 plans (Plan 69-06 sub-tasks 06-05/06-08 descoped). PR #65.
-- 2026-04-26: v1.12 mid-milestone scope-down moved the originally-planned follow-on classifier-validation phases to SEED-006 (Benchmark Population Zone Recalibration), gated on full benchmark ingest. Phase-number range 70-74 was subsequently allocated to v1.13.
-- 2026-04-26: v1.13 roadmap created — Phases 70-74, source SEED-005, 20/20 active requirements mapped, Phases 73-74 marked stretch.
-- Phase 71.1 inserted after Phase 71: Openings subnav layout refactor — match Endgames pattern (frontend-only UI restructuring; design notes at .planning/notes/openings-subnav-refactor.md) (URGENT)
+- v1.0–v1.14 shipped (see .planning/MILESTONES.md)
+- v1.14 shipped 2026-04-29 with 3 phases (75, 76, 77), 16 plans, delivered via PRs #69, #70, #71 (inline confidence-mute hotfix), #72, #73 (quick task). INSIGHT-UI-04 descoped per Phase 76 D-04.
+- 2026-04-28: Phase 77 (troll-opening watermark) added off-roadmap-scope under v1.14 — frontend-only follow-on with no v1.15 dependency.
+- 2026-04-28: Phase 75 amended INSIGHT-SCORE-04 from binomial Wilson → trinomial Wald (D-05) and INSIGHT-SCORE-06 to add `p_value` alongside `confidence` (D-09). REQUIREMENTS.md updated in Plan 75-04.
 
 ### Pending Todos
 
@@ -116,13 +128,4 @@ Carried forward from v1.11 close (still relevant):
 | 260429-gmj | Insights finding cards: arrow for after-move on mini board | 2026-04-29 | de187ed | [260429-gmj-insights-finding-cards-arrow-for-after-m](./quick/260429-gmj-insights-finding-cards-arrow-for-after-m/) |
 
 ---
-Last activity: 2026-04-29 — Completed quick task 260429-gmj: Insights finding cards: arrow for after-move on mini board.
-| 2026-04-27 | fast | Mobile: Moves/Games links beside mini board in OpeningFindingCard | ✅ |
-| 2026-04-27 | fast | widen game card WDL left border | ✅ |
-
-## Decision Coverage Override — Phase 76 (2026-04-28)
-
-The decision-coverage-plan gate reported 4/24 D-IDs covered. Plan-checker independently verified all 25 D-XX decisions are reflected in plan tasks (grep finds 21 unique D-IDs across must_haves blocks; the gate's strict YAML parser undercounts). Decisions D-01 (section titles unchanged — no-action), D-14 (row tint via getArrowColor — implemented in Plan 05 but not cited verbatim in must_haves), D-23 / D-24 (out-of-scope clarifications) are not literal citations in must_haves but are demonstrably honored by the plan structure. Override acknowledged; verify-phase will re-surface this for confirmation.
-| 2026-04-28 | fast | Confidence indicator polish: drop (low) suffix, add hover tooltip with p-value, match font sizes | ✅ |
-| 2026-04-28 | fast | Switch confidence to one-sided p with p<0.05/p<0.10 thresholds | ✅ |
-| 2026-04-28 | fast | Reframe confidence tooltip copy with directional noun, move thresholds into section info popover | ✅ |
+Last activity: 2026-04-29 — v1.14 milestone closed. Score-Based Opening Insights shipped (Phases 75, 76, 77; 16 plans; INSIGHT-UI-04 descoped). Next: open v1.15 via `/gsd-new-milestone`.

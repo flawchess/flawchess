@@ -119,23 +119,13 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 - ✓ Frontend `OpeningInsightsBlock` on Openings → Stats subtab with severity-accented `OpeningFindingCard` (DARK_RED / LIGHT_RED / DARK_GREEN / LIGHT_GREEN from `arrowColor.ts`), shared `LazyMiniBoard` thumbnail, four-state rendering. CI test `test_opening_insights_arrow_consistency` enforces backend/frontend threshold lock-step — v1.13 Phase 71
 - ✓ Deep-link wiring — clicking a finding's Moves link replays `entry_san_sequence`, flips the board if needed, applies the matching color filter, navigates to Move Explorer with sticky severity tint + one-shot pulse on the candidate row — v1.13 Phase 71
 - ✓ Openings page subnav layout refactor — desktop subnav lifts above `SidebarLayout`; mobile gains a sticky 4-tab subnav with filter button, board becomes non-sticky on Moves/Games and hidden on Stats/Insights, chevron-fold collapsible removed — v1.13 Phase 71.1
+- ✓ Score-based opening insights — chess score `(W + 0.5·D)/N` is the canonical metric; effect-size gate against a 0.50 pivot with strict `≤`/`≥` boundaries (minor 0.45/0.55, major 0.40/0.60). Trinomial Wald 95% half-width drives `confidence: "low" | "medium" | "high"` (≤ 0.10 → high, ≤ 0.20 → medium, else low) — actual variance of `X ∈ {0, 0.5, 1}`, not the binomial-Wilson approximation. `loss_rate` / `win_rate` removed from API; `confidence` + `p_value` added to `OpeningInsightFinding` and `NextMoveEntry`. `MIN_GAMES_PER_CANDIDATE` dropped 20 → 10 for discovery framing — v1.14 Phase 75
+- ✓ Frontend score-based coloring shipped end-to-end — `arrowColor.ts` migrated (effect-size only, no confidence cue on arrows); Move Explorer moves-list row tint by score with extended mute `(game_count < 10 OR confidence === 'low')`; Conf column with sort key `(confidence DESC, |score - 0.50| DESC)`; `OpeningFindingCard` shows score-based prose with level-specific confidence indicator and directional p-value tooltip; `UNRELIABLE_OPACITY` mute on cards/rows; four `InfoPopover` triggers on `OpeningInsightsBlock` section headers. Mobile parity at 375px. CI consistency test enforces backend/frontend threshold lock-step. PR #71 inline hotfix forces grey arrow + skips row tint when `confidence === 'low'` — v1.14 Phase 76
+- ✓ Troll-opening watermark — `troll-face.svg` renders as 30%-opacity bottom-right watermark on `OpeningFindingCard` (mobile + desktop) and a small inline icon next to qualifying SAN rows in `MoveExplorer` (desktop only via `hidden sm:inline-block`). Frontend-only matching via side-only FEN piece-placement key (no backend schema, no Zobrist hash, no API contract change); curation via Node/TS script with per-ply emission for human pruning. Decorative `<img>` idiom (`alt=""` + `aria-hidden="true"`, `pointer-events-none`) — v1.14 Phase 77
 
-### Active (v1.14)
+### Active (v1.15)
 
-- [ ] Migrate Opening Insights and Move Explorer color coding from loss-rate to chess score `(W + 0.5·D)/N` — INSIGHT-SCORE-01
-- [ ] Threshold pivot at 0.50 (no user-baseline shrinkage; rationale: matchmaking + opponent-strength filter already center the baseline) — INSIGHT-SCORE-02
-- [ ] Effect-size gate: minor at `|score − 0.5| ≥ 0.05`, major at `≥ 0.10`; symmetric on strength side — INSIGHT-SCORE-03
-- [ ] Wilson-based confidence annotation `(low) / (medium) / (high)` on each finding; replaces hard MIN_GAMES floor as the noise filter — INSIGHT-SCORE-04
-- [ ] Drop `MIN_GAMES_PER_CANDIDATE` from 20 → 10 to enable discovery framing — INSIGHT-SCORE-05
-- [ ] Expose `confidence` on the API contract alongside the existing `severity` field — INSIGHT-SCORE-06
-- [ ] CI consistency test mirrors score-based thresholds between backend and `arrowColor.ts` — INSIGHT-SCORE-07
-- [ ] Migrate `arrowColor.ts` to score (effect-size only — no confidence cue on arrows) — INSIGHT-UI-01
-- [ ] Move Explorer moves-list row tint by score (WDL bars on each row stay unchanged) — INSIGHT-UI-02
-- [ ] Extend existing `(low)` indicator on moves-list rows to `(low) / (medium) / (high)` — INSIGHT-UI-03
-- [ ] Soften Opening Insights section titles and severity copy per SEED-008 — INSIGHT-UI-04
-- [ ] Confidence badge on each `OpeningFindingCard` next to severity word — INSIGHT-UI-05
-- [ ] `?` explainer popover on Opening Insights section title (score / sample-size / confidence framing) — INSIGHT-UI-06
-- [ ] Mobile parity for all Move Explorer + Insights UI changes — INSIGHT-UI-07
+(No active requirements yet — pick direction via `/gsd-new-milestone`.)
 
 ### Deferred (gated on full benchmark ingest — SEED-006)
 
@@ -153,41 +143,28 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: v1.14 Score-Based Opening Insights
+## Current Milestone: v1.15 (TBD — pick via `/gsd-new-milestone`)
 
-**Goal:** Migrate Opening Insights and Move Explorer color coding from loss-rate to chess score `(W + 0.5·D)/N`, gate findings on effect size against a 0.50 pivot, and annotate them with low/medium/high confidence badges. Replaces today's "Major/Minor Weakness" framing with a calibrated discovery surface that holds up under future LLM narration.
-
-**Target features:**
-- Score metric replaces loss/win rate everywhere (arrow color, moves-list row tint, insight classifier).
-- Effect-size gate (what shows up) is separated from confidence annotation (how sure we are) — the right inversion for a discovery UI.
-- Wilson-based `(low) / (medium) / (high)` badge surfaces on insight cards and moves-list rows; arrows stay effect-size-only.
-- MIN_GAMES drops 20 → 10 to enable discovery; the badge calibrates trust.
-- Section titles and severity copy soften per SEED-008 ("Worth a closer look", "Played confidently") so the math, the labels, and the calibration cue all ship under one consistent framing.
-
-**Source:** SEED-007 (Option A only — Wilson on score, 0.50 pivot, no user-baseline) + SEED-008 (label reframe). Design captured in [notes/opening-insights-v1.14-design.md](notes/opening-insights-v1.14-design.md).
-
-**Phases:** 75 (backend), 76 (frontend). See ROADMAP.md.
+v1.14 shipped 2026-04-29. Next milestone is unselected — open with `/gsd-new-milestone`.
 
 ## Current State
 
-v1.13 Opening Insights shipped 2026-04-27 (PRs #66, #67, #68). Thirteen milestones complete (v1.0–v1.13), 70 phases (+3 inserted), live at flawchess.com.
+v1.14 Score-Based Opening Insights shipped 2026-04-29 (PRs #69, #70, #71, #72, #73). Fourteen milestones complete (v1.0–v1.14), 73 phases (+4 inserted), live at flawchess.com.
 
-v1.13 fulfilled SEED-005 with a templated/rule-based opening-insights pipeline. Backend `opening_insights_service` scans every (entry_position, candidate_move) pair across entry plies [3, 16] via a single LAG-window CTE per (user, color) over `game_positions`, deduplicates by Zobrist hash with deepest-opening attribution, applies an `n ≥ 20` evidence floor and a strict `>` 0.55 win/loss boundary, and emits `OpeningInsightFinding[]` with `entry_san_sequence` so the frontend can replay the line on demand. Frontend `OpeningInsightsBlock` on Openings → Stats renders severity-accented per-finding cards with deep-links into the Move Explorer pre-positioned at the entry FEN. Phase 71.1 refactored the Openings page subnav to match the Endgames pattern (desktop subnav above `SidebarLayout`, sticky mobile subnav with filter button, non-sticky board on Moves/Games, hidden on Stats/Insights).
+v1.14 folded SEED-007 Option A (Wilson on score, 0.50 pivot, no user-baseline) and SEED-008 (label reframe + confidence cues) under a single calibrated framing. Score `(W + 0.5·D)/N` is the canonical metric across `opening_insights_service.py`, `openings_repository.py`, `arrowColor.ts`, and the `NextMoveEntry` / `OpeningInsightFinding` API payloads. Effect-size gate against a 0.50 pivot with strict `≤`/`≥` boundaries (minor 0.45/0.55, major 0.40/0.60). Trinomial Wald 95% half-width — using the actual variance of the chess result distribution `X ∈ {0, 0.5, 1}`, not the binomial-Wilson approximation that over-states uncertainty when draws are common — drives the `confidence: "low" | "medium" | "high"` badge surfaced on Insights cards and Move Explorer moves-list rows. `loss_rate` / `win_rate` removed cleanly; `severity` retained alongside the new `confidence` and `p_value` fields. `MIN_GAMES_PER_CANDIDATE` dropped 20 → 10 to enable discovery framing; the badge calibrates trust where the hard floor used to gate. The conceptual pivot is "effect size decides what shows up, confidence annotates how sure we are" — the right inversion for a discovery UI.
 
-Mid-milestone scope-down on 2026-04-27 dropped Phases 72 (Moves-subtab inline bullets), 73 (meta-recommendation, stretch), and 74 (bookmark-card weakness badge, stretch) after Phases 70+71+71.1 shipped. Move Explorer row tinting via `getArrowColor` already conveys the signal at the displayed position; per-finding cards convey actionable per-opening signal at finer granularity than an aggregate sentence would; alert-fatigue concern on a third nav badge channel.
+Frontend shipped end-to-end with mobile parity at 375px: arrows colored by score (effect-size only, no confidence cue on arrows); moves-list row tint by score with extended mute `(game_count < 10 OR confidence === 'low')`; new Conf column with sort key `(confidence DESC, |score - 0.50| DESC)`; `OpeningFindingCard` shows score-based prose with level-specific confidence indicator and directional p-value tooltip; `UNRELIABLE_OPACITY` mute on cards/rows; four `InfoPopover` triggers on `OpeningInsightsBlock` section headers. PR #71 inline hotfix forces grey arrow + skips row tint when `confidence === 'low'`, strengthening the at-a-glance board read. INSIGHT-UI-04 (soften titles per SEED-008) descoped 2026-04-28 per Phase 76 D-04: severity word never appeared as user-facing text; confidence badge + sort calibration deliver SEED-008's intent without rewriting "Weakness/Strength" titles.
 
-v1.13 deliberately did NOT consume the v1.12 benchmark DB — opening positions are book theory (engine eval ≈ 0.0), so absolute under-/over-performance over n ≥ 20 is actionable without population baselines. LLM narration of opening insights is deferred to v1.13.x or v1.14 once templated findings are in real users' hands.
+Phase 77 added a troll-opening watermark — frontend-only matching via a side-only FEN piece-placement key (no backend schema, no Zobrist hash, no API contract change). `troll-face.svg` renders as 30%-opacity bottom-right watermark on `OpeningFindingCard` (mobile + desktop) and a small inline icon next to qualifying SAN rows in `MoveExplorer` (desktop only via `hidden sm:inline-block`). Curation is offline via a Node/TS script that emits per-ply candidates (both colors) for human pruning. Decorative `<img>` idiom (`alt=""` + `aria-hidden="true"`, `pointer-events-none`) keeps the asset cacheable and out of the accessibility tree.
+
+LLM narration of opening insights remains deferred — v1.14 shipped the calibrated data plumbing (effect size + confidence + p_value) that future LLM narration would consume. Population-relative weakness signals stay gated on full benchmark ingest (SEED-006).
 
 <details>
-<summary>Previous milestone snapshots (v1.12, etc.)</summary>
+<summary>Previous milestone snapshots (v1.13, v1.12)</summary>
 
-v1.12 Benchmark DB Infrastructure & Ingestion Pipeline shipped 2026-04-26 (PR #65). Twelve milestones complete at that point (v1.0–v1.12), 67 phases.
+v1.13 Opening Insights shipped 2026-04-27 (PRs #66, #67, #68). v1.13 fulfilled SEED-005 with a templated/rule-based opening-insights pipeline. Backend `opening_insights_service` scans every (entry_position, candidate_move) pair across entry plies [3, 16] via a single LAG-window CTE per (user, color) over `game_positions`, deduplicates by Zobrist hash with deepest-opening attribution, applies an `n ≥ 20` evidence floor and a strict `>` 0.55 win/loss boundary, and emits `OpeningInsightFinding[]` with `entry_san_sequence` so the frontend can replay the line on demand. Frontend `OpeningInsightsBlock` on Openings → Stats renders severity-accented per-finding cards with deep-links into the Move Explorer pre-positioned at the entry FEN. Phase 71.1 refactored the Openings page subnav to match the Endgames pattern. Mid-milestone scope-down on 2026-04-27 dropped Phases 72/73/74. v1.13 deliberately did NOT consume the v1.12 benchmark DB — opening positions are book theory.
 
-v1.12 delivered the operational half of SEED-002: a separate `flawchess-benchmark` PostgreSQL 18 instance on port 5433, a third read-only MCP server (`flawchess-benchmark-db`), Alembic-driven schema parity with dev/prod/test (no fork), a streaming `zgrep` eval pre-filter that drops the ~85% of Lichess dump games without `[%eval` headers before they hit python-chess, a stratified subsampling pipeline at the player-opportunity level on (rating × TC) with separate `WhiteElo`/`BlackElo` per side, and a SIGINT/SIGKILL-resumable per-user checkpoint orchestrator. Smoke-validated end-to-end via a `--per-cell 3` ingest of 274k games / 19.4M positions in 3h 6min.
-
-The milestone was scoped down on 2026-04-26 from 5 phases (69-73) to 1 (69). Phases 70-73 (classifier validation at scale, rating-stratified offsets, Parity validation, `/benchmarks` skill upgrade & rating-bucketed zone recalibration) moved to SEED-006, gated on the full benchmark ingest. The phase-number range 70-74 was subsequently reallocated to v1.13.
-
-A hot-patch mid-Phase 69 dropped two dead columns (`games.eval_depth` and `games.eval_source_version`) after the smoke confirmed Lichess's `/api/games/user` endpoint emits bare `[%eval cp]` annotations with no depth field. Lesson: don't trust documentation about "depth available in PGN" — Lichess **dump** exports include depth, **API** exports do not. Verify with a sample before specifying schema.
+v1.12 Benchmark DB Infrastructure & Ingestion Pipeline shipped 2026-04-26 (PR #65). v1.12 delivered the operational half of SEED-002: a separate `flawchess-benchmark` PostgreSQL 18 instance on port 5433, a third read-only MCP server (`flawchess-benchmark-db`), Alembic-driven schema parity with dev/prod/test (no fork), a streaming `zgrep` eval pre-filter, a stratified subsampling pipeline at the player-opportunity level on (rating × TC) with separate `WhiteElo`/`BlackElo` per side, and a SIGINT/SIGKILL-resumable per-user checkpoint orchestrator. Smoke-validated end-to-end via a `--per-cell 3` ingest of 274k games / 19.4M positions in 3h 6min. Scoped down on 2026-04-26 from 5 phases (69-73) to 1 (69); Phases 70-73 moved to SEED-006. Hot-patch dropped `games.eval_depth` + `games.eval_source_version` after the smoke confirmed Lichess's `/api/games/user` emits bare `[%eval cp]` with no depth field.
 
 </details>
 
@@ -297,6 +274,19 @@ A hot-patch mid-Phase 69 dropped two dead columns (`games.eval_depth` and `games
 | v1.13 scope-down to Phases 70+71+71.1 (72/73/74 descoped) | Move Explorer row tint already conveys the signal at the displayed position; per-finding cards already deliver per-opening actionable signal at finer granularity than an aggregate; bookmark-badge density risked alert fatigue | ✓ Good |
 | Templated/rule-based v1, no LLM | Defer LLM narration until templated findings are in real users' hands and we know which findings are worth narrating; v1.11 LLM stack remains available for v1.13.x or v1.14 | ✓ Good |
 | v1.13 deliberately does NOT consume v1.12 benchmark DB | Opening positions are book theory (engine eval ≈ 0.0); absolute under-/over-performance over n ≥ 20 is actionable without population baselines per SEED-005 § Why Self-Referential Is Sufficient | ✓ Good |
+| Score `(W + 0.5·D)/N` replaces loss/win rate as the canonical metric | One number drives classification, color, and badge; `severity`/`confidence`/`p_value` are derived layers on top. Eliminates the `loss_rate > 0.55` asymmetry of v1.13 | ✓ Good |
+| Trinomial Wald 95% half-width (variance `(W + 0.25·D)/N − score²`) over binomial Wilson | Chess result distribution `X ∈ {0, 0.5, 1}` is trinomial; binomial Wilson over-states uncertainty when draws are common. Standard formula in BayesElo / Ordo. Pure-Python `math` only, no scipy | ✓ Good |
+| Strict `≤` / `≥` boundaries on score and half-width thresholds | Eliminates ambiguity at the boundary; constants live in `opening_insights_constants.py` for retunability | ✓ Good |
+| API exposes both `confidence` (badge) and `p_value` (tooltip) | Frontend renders effect size (severity) + precision (confidence) + significance (tooltip) per finding without overloading any one cue | ✓ Good |
+| `MIN_GAMES_PER_CANDIDATE` 20 → 10 for discovery framing | Confidence badge replaces hard-floor gate; surfaces low-confidence candidates as discovery signal rather than filtering them out | ✓ Good |
+| Sort key `(confidence DESC, |score - 0.50| DESC)` | High-confidence findings rise within each severity bucket; effect-size is within-confidence tiebreak | ✓ Good |
+| INSIGHT-UI-04 descoped (no title rewrite per SEED-008) | Severity word never appeared as user-facing text (only drove border color); confidence badge + sort carry SEED-008 intent without rewriting "Weakness/Strength" titles | ✓ Good |
+| Force grey arrow + skip row tint when `confidence === 'low'` (PR #71, post-Phase 76 inline hotfix) | Board reads cleaner; low-confidence findings still surface in the table with the badge but don't visually claim authority on the board | ✓ Good |
+| Single `compute_confidence_bucket` shared module + CI structural assertion | One implementation, asserted by CI; `opening_insights_service` and the move-explorer payload both consume it; CI consistency test enforces backend/frontend threshold lock-step | ✓ Good |
+| Troll-opening matching frontend-only via side-only FEN piece-placement key | No backend schema / Zobrist hash / API contract change. Small read-only curated set; lookup once per finding render | ✓ Good |
+| Per-ply emission (both colors) in curation script | Pushes ambiguity into human review step instead of guessing at "the defining position" of an opening | ✓ Good |
+| Decorative `<img>` watermark with `alt=""` + `aria-hidden="true"` + `pointer-events-none` | Asset stays cacheable, browser handles scaling, kept out of accessibility tree, doesn't block underlying interactive elements | ✓ Good |
+| Phase 77 added off-roadmap-scope under v1.14 | Frontend-only follow-on with no v1.15 dependency; cheaper to ship under v1.14 than open a hyphenated milestone | ✓ Good |
 
 ## Evolution
 
@@ -316,4 +306,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-28 — v1.14 milestone opened (Score-Based Opening Insights, SEED-007 Option A + SEED-008 folded together); 14 active requirements across Phases 75-76.*
+*Last updated: 2026-04-29 after v1.14 milestone close — Score-Based Opening Insights shipped (Phases 75, 76, 77; INSIGHT-UI-04 descoped). Fourteen milestones complete (v1.0–v1.14), 73 phases. Active section reset for v1.15 (TBD via `/gsd-new-milestone`).*
