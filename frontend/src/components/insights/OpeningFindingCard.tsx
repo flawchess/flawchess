@@ -6,6 +6,7 @@ import {
   formatConfidenceTooltip,
   getSeverityBorderColor,
 } from '@/lib/openingInsights';
+import { sanToSquares } from '@/lib/sanToSquares';
 import { MIN_GAMES_FOR_RELIABLE_STATS, TROLL_WATERMARK_OPACITY, UNRELIABLE_OPACITY } from '@/lib/theme';
 import { isTrollPosition } from '@/lib/trollOpenings';
 import trollFaceUrl from '@/assets/troll-face.svg';
@@ -18,8 +19,8 @@ interface OpeningFindingCardProps {
   onOpenGames: (finding: OpeningInsightFinding) => void;
 }
 
-const MOBILE_BOARD_SIZE = 105;
-const DESKTOP_BOARD_SIZE = 100;
+const MOBILE_BOARD_SIZE = 115;
+const DESKTOP_BOARD_SIZE = 110;
 const UNNAMED_SENTINEL = '<unnamed line>';
 
 export function OpeningFindingCard({
@@ -37,6 +38,15 @@ export function OpeningFindingCard({
     finding.classification,
     finding.severity,
   );
+  // Quick-task 260429-gmj: render a fine score-colored arrow on the mini board
+  // pointing from the candidate move's source to its target square. The same
+  // hex used for the card border tint goes into the arrow so the visuals stay
+  // in lockstep. Illegal/unparseable SAN returns null and the card simply
+  // falls back to no arrow (no try/catch needed at the call site).
+  const moveSquares = sanToSquares(finding.entry_fen, finding.candidate_move_san);
+  const arrows = moveSquares
+    ? ([{ from: moveSquares.from, to: moveSquares.to, color: borderLeftColor }] as const)
+    : undefined;
   const isUnnamed = finding.opening_name === UNNAMED_SENTINEL;
 
   // D-02: Score-based prose (replaces broken loss_rate/win_rate reads removed in Phase 75).
@@ -148,6 +158,7 @@ export function OpeningFindingCard({
             fen={finding.entry_fen}
             flipped={finding.color === 'black'}
             size={MOBILE_BOARD_SIZE}
+            arrows={arrows}
           />
           <div className="flex-1 min-w-0 flex flex-col gap-2">
             {proseLine}
@@ -163,6 +174,7 @@ export function OpeningFindingCard({
           fen={finding.entry_fen}
           flipped={finding.color === 'black'}
           size={DESKTOP_BOARD_SIZE}
+          arrows={arrows}
         />
         <div className="min-w-0 flex-1 flex flex-col gap-2">
           {headerLine}

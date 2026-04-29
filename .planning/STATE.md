@@ -113,9 +113,10 @@ Carried forward from v1.11 close (still relevant):
 | 260428-oxr | Replace Wald CI half-width confidence buckets with p-value thresholds and N>=10 gate | 2026-04-28 | f29617d | [260428-oxr-replace-wald-ci-half-width-confidence-bu](./quick/260428-oxr-replace-wald-ci-half-width-confidence-bu/) |
 | 260428-tgg | Sort opening insights findings by Wald CI bound (direction-aware tiebreak replacing effect-size) | 2026-04-28 | 45c5a20 | [260428-tgg-sort-opening-insights-findings-by-wald-c](./quick/260428-tgg-sort-opening-insights-findings-by-wald-c/) |
 | 260428-v9i | Switch opening insights ranking from Wald CI bound to Wilson score interval bound | 2026-04-28 | 0715fda | [260428-v9i-switch-opening-insights-ranking-from-wal](./quick/260428-v9i-switch-opening-insights-ranking-from-wal/) |
+| 260429-gmj | Insights finding cards: arrow for after-move on mini board | 2026-04-29 | de187ed | [260429-gmj-insights-finding-cards-arrow-for-after-m](./quick/260429-gmj-insights-finding-cards-arrow-for-after-m/) |
 
 ---
-Last activity: 2026-04-28 — Completed quick task 260428-v9i: Switch opening insights ranking from Wald CI bound to Wilson score interval bound.
+Last activity: 2026-04-29 — Completed quick task 260429-gmj: Insights finding cards: arrow for after-move on mini board.
 | 2026-04-27 | fast | Mobile: Moves/Games links beside mini board in OpeningFindingCard | ✅ |
 | 2026-04-27 | fast | widen game card WDL left border | ✅ |
 
