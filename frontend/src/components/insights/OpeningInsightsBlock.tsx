@@ -22,8 +22,8 @@ export const OPENING_INSIGHTS_CONFIDENCE_COPY: ReactNode = (
       from a large difference based on a small number of games:
     </p>
     <ul className="list-disc pl-4 space-y-0.5">
-      <li><em>high</em>: p &lt; 0.05 (very likely a real effect)</li>
-      <li><em>medium</em>: p &lt; 0.10 (likely a real effect)</li>
+      <li><em>high</em>: p &lt; 0.05 (likely a real effect)</li>
+      <li><em>medium</em>: p &lt; 0.10 (possibly a real effect)</li>
       <li><em>low</em>: p ≥ 0.10, or fewer than 10 games (could plausibly be chance)</li>
     </ul>
   </>

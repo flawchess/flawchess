@@ -13,8 +13,8 @@ const CONFIDENCE_PREFIX: Record<ConfidenceLevel, string> = {
 
 const CONFIDENCE_VERDICT: Record<ConfidenceLevel, (noun: string) => string> = {
   low: () => 'could plausibly be chance',
-  medium: (noun) => `is likely a real ${noun}`,
-  high: (noun) => `is very likely a real ${noun}`,
+  medium: (noun) => `is possibly a real ${noun}`,
+  high: (noun) => `is likely a real ${noun}`,
 };
 
 /**
