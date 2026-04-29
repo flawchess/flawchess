@@ -10,8 +10,12 @@ imports these constants, and the service imports from the repository,
 so the constants cannot live in either file.
 """
 
-# Entry-position bounds — unchanged from Phase 70
-OPENING_INSIGHTS_MIN_ENTRY_PLY: int = 3
+# Entry-position bounds — Phase 70 used [3, 16]; lowered to [0, 16] so opening
+# insights also surface findings at white's first move (entry_ply=0), black's
+# first response (entry_ply=1), and white's second move (entry_ply=2). At
+# entry_ply=0 the entry position is the starting position and entry_san_sequence
+# is empty — _replay_san_sequence handles this by returning the starting FEN.
+OPENING_INSIGHTS_MIN_ENTRY_PLY: int = 0
 OPENING_INSIGHTS_MAX_ENTRY_PLY: int = 16
 
 # Discovery floor — was 20, dropped to 10 per INSIGHT-SCORE-05 / D-04.

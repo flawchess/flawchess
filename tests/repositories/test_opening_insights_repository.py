@@ -146,10 +146,6 @@ async def _seed_game_with_positions(
 
 
 # Shared hash constants for position testing
-H_ENTRY_PLY3 = 3001
-H_CANDIDATE_PLY4 = 4001
-H_ENTRY_PLY2 = 2001
-H_CANDIDATE_PLY3 = 3002
 H_ENTRY_PLY16 = 1600
 H_CANDIDATE_PLY17 = 1701
 H_ENTRY_PLY17 = 1700
@@ -183,42 +179,41 @@ def _default_call_args(
 
 
 @pytest.mark.asyncio
-async def test_entry_ply_lower_bound_3_inclusive(db_session: AsyncSession) -> None:
-    """D-32: entry_ply = 3 is included in transition results.
+async def test_entry_ply_lower_bound_0_inclusive(db_session: AsyncSession) -> None:
+    """entry_ply = 0 is included in transition results (lowered from 3 to 0).
 
-    Per zobrist semantics, GamePosition.move_san at ply Y is the move played
-    FROM ply Y (leading to ply Y+1). The entry position is the row whose
-    full_hash and move_san describe (entry_hash, candidate_move). The seed
-    therefore puts the candidate move on the entry row itself, and uses a
-    final position with move_san=None one ply later so LEAD has a row to read.
+    At entry_ply=0 the entry position is the standard starting position and
+    the candidate move is white's first move. entry_san_sequence at ply=0 is
+    NULL/empty (no preceding moves), and the service handles that by
+    replaying zero moves to produce the starting FEN.
     """
     user_id = 10
+    H_CANDIDATE_PLY1 = 1001
     for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
         await _seed_game_with_positions(
             db_session,
             user_id=user_id,
-            result="1-0",  # user_color=black so this is a LOSS
-            user_color="black",
+            result="0-1",  # user_color=white so this is a LOSS for white
+            user_color="white",
             positions=[
-                (0, 10000, SAN_E4),  # ply=0: white's 1st move
-                (1, 10001, SAN_C5),  # ply=1: black's 1st move
-                (2, 10002, SAN_NF3),  # ply=2: white's 2nd move
-                (3, H_ENTRY_PLY3, SAN_NC6),  # ply=3 (entry): candidate move played FROM here
-                (4, H_CANDIDATE_PLY4, None),  # ply=4 (final): no further move; LEAD reads full_hash
+                # ply=0 (entry, starting position): candidate move played FROM here.
+                # The seed helper forces ply=0 hash to STARTING_POSITION_HASH.
+                (0, STARTING_POSITION_HASH, SAN_E4),
+                (1, H_CANDIDATE_PLY1, None),  # ply=1 (final): LEAD reads full_hash
             ],
         )
 
     rows = await query_opening_transitions(
         db_session,
         user_id=user_id,
-        color="black",
-        **_default_call_args("black"),
+        color="white",
+        **_default_call_args("white"),
     )
 
     assert len(rows) == 1
     row = rows[0]
-    assert row.entry_hash == H_ENTRY_PLY3
-    assert row.move_san == SAN_NC6
+    assert row.entry_hash == STARTING_POSITION_HASH
+    assert row.move_san == SAN_E4
     assert row.n == OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
 
 
@@ -259,37 +254,6 @@ async def test_entry_ply_upper_bound_16_inclusive(db_session: AsyncSession) -> N
 
 
 @pytest.mark.asyncio
-async def test_entry_ply_2_excluded(db_session: AsyncSession) -> None:
-    """D-32: entry_ply = 2 is excluded (candidate_ply=3, outside [4,17]).
-
-    Seeds 20 loss games with entry at ply=2 and candidate at ply=3.
-    Expects 0 rows because candidate_ply=3 is outside BETWEEN(4, 17).
-    """
-    user_id = 10
-    for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
-        await _seed_game_with_positions(
-            db_session,
-            user_id=user_id,
-            result="1-0",  # loss for black
-            user_color="black",
-            positions=[
-                (1, 20001, SAN_E4),
-                (2, H_ENTRY_PLY2, SAN_C5),  # entry at ply=2 (excluded)
-                (3, H_CANDIDATE_PLY3, None),  # candidate at ply=3 (outside [4, 17])
-            ],
-        )
-
-    rows = await query_opening_transitions(
-        db_session,
-        user_id=user_id,
-        color="black",
-        **_default_call_args("black"),
-    )
-
-    assert rows == []
-
-
-@pytest.mark.asyncio
 async def test_entry_ply_17_excluded_as_entry_but_included_as_candidate(
     db_session: AsyncSession,
 ) -> None:
@@ -311,7 +275,10 @@ async def test_entry_ply_17_excluded_as_entry_but_included_as_candidate(
         # Only seed ply=17 (entry) and ply=18 (candidate). No prior positions.
         # ply=18 is excluded from the CTE (partial index WHERE ply BETWEEN 1 AND 17)
         # so no candidate_ply=18 row can appear in the outer query.
+        # An explicit ply=0 row with move_san=None satisfies has_standard_start
+        # without surfacing as an entry itself (CTE drops rows with NULL move_san).
         positions = [
+            (0, STARTING_POSITION_HASH, None),  # ply=0: required for has_standard_start
             (17, H_ONLY_ENTRY, "Nf3"),  # entry at ply=17 (within CTE range 1..17)
             (18, H_ONLY_CAND, "Nc6"),  # candidate at ply=18 (outside CTE range)
         ]
@@ -376,8 +343,13 @@ async def test_window_does_not_leak_across_games(
         **_default_call_args("black"),
     )
 
-    # ply=3's move_san is None, so filtered by `move_san IS NOT NULL`.
-    assert rows == []
+    # ply=3's move_san is None, so filtered by `move_san IS NOT NULL`. With
+    # MIN_ENTRY_PLY=0, plies 0..2 may surface as their own entries — we only
+    # assert here that the ply=3 entry (with the deliberately-null move) does
+    # NOT appear, which is the original window-leak invariant.
+    assert not any(r.entry_hash == 30003 for r in rows), (
+        "ply=3 entry with move_san=None must be filtered by `move_san IS NOT NULL`"
+    )
 
     # Re-seed 20 games with a candidate at ply=3 (move_san=Nc6) so a real
     # entry row exists. ply=4 must exist for LEAD(full_hash) at ply=3 to be
@@ -404,11 +376,11 @@ async def test_window_does_not_leak_across_games(
         **_default_call_args("black"),
     )
 
-    assert len(rows2) == 1
-    assert rows2[0].entry_hash == 31003
-    assert rows2[0].move_san == SAN_NC6
-    assert rows2[0].move_san == SAN_NC6
-    assert rows2[0].n == OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
+    # Filter to the target ply=3 entry — plies 0..2 from both seed batches
+    # also surface as their own entries with MIN_ENTRY_PLY=0.
+    target = [r for r in rows2 if r.entry_hash == 31003 and r.move_san == SAN_NC6]
+    assert len(target) == 1
+    assert target[0].n == OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
 
 
 @pytest.mark.asyncio
@@ -690,8 +662,10 @@ async def test_user_color_filter_routes_correct_games(db_session: AsyncSession) 
     )
 
     assert rows_black == [], "color='black' should return 0 rows (no black games)"
-    assert len(rows_white) == 1, "color='white' should return 1 row"
-    assert rows_white[0].entry_hash == H_WHITE_ENTRY
+    # Filter to the target ply=3 entry — plies 0..2 also surface as their own
+    # entries with MIN_ENTRY_PLY=0 but aren't the subject of this color test.
+    target = [r for r in rows_white if r.entry_hash == H_WHITE_ENTRY]
+    assert len(target) == 1, "color='white' should return 1 row matching the ply=3 entry"
 
 
 @pytest.mark.asyncio
@@ -748,7 +722,8 @@ async def test_apply_game_filters_recency_narrows_results(db_session: AsyncSessi
             played_at=old_date,
         )
 
-    # Without cutoff: 30 games total
+    # Without cutoff: 30 games total. Filter to the ply=3 target — plies 0..2
+    # also surface as their own entries with MIN_ENTRY_PLY=0.
     rows_all = await query_opening_transitions(
         db_session,
         user_id=user_id,
@@ -759,8 +734,9 @@ async def test_apply_game_filters_recency_narrows_results(db_session: AsyncSessi
         opponent_type="both",
         recency_cutoff=None,
     )
-    assert len(rows_all) == 1
-    assert rows_all[0].n == 30
+    target_all = [r for r in rows_all if r.entry_hash == H_RECENCY_ENTRY]
+    assert len(target_all) == 1
+    assert target_all[0].n == 30
 
     # With recency cutoff: only 20 recent games
     rows_recent = await query_opening_transitions(
@@ -773,8 +749,9 @@ async def test_apply_game_filters_recency_narrows_results(db_session: AsyncSessi
         opponent_type="both",
         recency_cutoff=cutoff,
     )
-    assert len(rows_recent) == 1
-    assert rows_recent[0].n == 20
+    target_recent = [r for r in rows_recent if r.entry_hash == H_RECENCY_ENTRY]
+    assert len(target_recent) == 1
+    assert target_recent[0].n == 20
 
 
 @pytest.mark.asyncio
@@ -910,9 +887,12 @@ async def test_query_returns_resulting_full_hash(db_session: AsyncSession) -> No
         **_default_call_args("black"),
     )
 
-    assert len(rows) == 1
-    assert rows[0].resulting_full_hash == H_RESULT, (
-        f"Expected resulting_full_hash={H_RESULT}, got {rows[0].resulting_full_hash}"
+    # Filter to the ply=3 target — plies 0..2 also surface as their own
+    # entries with MIN_ENTRY_PLY=0.
+    target = [r for r in rows if r.entry_hash == H_ENTRY]
+    assert len(target) == 1
+    assert target[0].resulting_full_hash == H_RESULT, (
+        f"Expected resulting_full_hash={H_RESULT}, got {target[0].resulting_full_hash}"
     )
 
 
@@ -951,8 +931,11 @@ async def test_query_returns_entry_san_sequence(db_session: AsyncSession) -> Non
         **_default_call_args("black"),
     )
 
-    assert len(rows) == 1
-    row = rows[0]
+    # Filter to the ply=3 target — plies 0..2 also surface as their own
+    # entries with MIN_ENTRY_PLY=0.
+    target = [r for r in rows if r.entry_hash == H_ENTRY]
+    assert len(target) == 1
+    row = target[0]
     assert row.move_san == "Nc6", f"Expected candidate move_san='Nc6', got {row.move_san!r}"
     assert row.entry_san_sequence == ["e4", "c5", "Nf3"], (
         f"Expected entry_san_sequence=['e4', 'c5', 'Nf3'], got {row.entry_san_sequence!r}"
@@ -1047,9 +1030,12 @@ async def test_standard_start_game_included_in_transitions(
         **_default_call_args("black"),
     )
 
-    assert len(rows) == 1
-    assert rows[0].entry_hash == H_GOOD_ENTRY
-    assert rows[0].move_san == "Nc6"
+    # Filter to the ply=3 target — plies 0..2 also surface as their own
+    # entries with MIN_ENTRY_PLY=0; this test only cares that a standard-start
+    # game produces the ply=3 entry (i.e. has_standard_start did not filter it).
+    target = [r for r in rows if r.entry_hash == H_GOOD_ENTRY]
+    assert len(target) == 1
+    assert target[0].move_san == "Nc6"
 
 
 @pytest.mark.asyncio

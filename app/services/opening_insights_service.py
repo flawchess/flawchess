@@ -103,21 +103,13 @@ def _compute_score(row: Any) -> float:
 
 
 def _replay_san_sequence(san_sequence: list[str]) -> str:
-    """Replay a space-separated SAN sequence from the start position.
+    """Replay a SAN sequence from the start position.
 
     Implements D-25 entry-FEN reconstruction by replaying the exact moves
-    the user played up to the entry position. Never falls back to the initial
-    position (D-34).
+    the user played up to the entry position. With MIN_ENTRY_PLY=0 an empty
+    sequence is valid and corresponds to the starting position itself
+    (entry_ply=0, where the candidate is white's first move).
     """
-    if not san_sequence:
-        # D-34: never fall back to the initial position. An empty sequence at
-        # this point indicates a CTE/repository contract violation upstream
-        # (entry_ply >= MIN_ENTRY_PLY = 3 should always yield a non-empty
-        # SAN prefix). Raise loudly so the top-level Sentry handler captures it.
-        raise ValueError(
-            "_replay_san_sequence received an empty SAN sequence; "
-            "expected entry_ply >= MIN_ENTRY_PLY (3)"
-        )
     board = chess.Board()
     for san in san_sequence:
         board.push_san(san)
@@ -175,7 +167,13 @@ def _attribute_finding(
     Attribution path:
     1. Direct: look up entry_hash in openings_by_hash.
     2. Lineage walk: check parent prefix hashes in parents_by_hash (deepest first).
-    3. No match → return None. Sentry tag set by calling pipeline on drop.
+    3. ply=0 fallback: when san_seq is empty (entry IS the starting position),
+       attribute by resulting_full_hash so e.g. "1.e4" surfaces as
+       "King's Pawn Opening" via the position AFTER the candidate move. The
+       openings table has min(ply_count)=1 so direct attribution always misses
+       at ply=0; this fallback keeps the relaxed MIN_ENTRY_PLY=0 actually
+       useful instead of silently dropping every first-move finding.
+    4. No match → return None. Sentry tag set by calling pipeline on drop.
     """
     entry_hash_int = int(row.entry_hash)
 
@@ -187,9 +185,11 @@ def _attribute_finding(
         )
         return direct_opening.name, direct_opening.eco, display_name
 
-    # Pass 2: lineage walk (deepest first). No `or []` fallback — an
-    # empty/None entry_san_sequence violates the CTE contract (D-34).
-    san_seq = list(row.entry_san_sequence)
+    # Pass 2: lineage walk (deepest first). With MIN_ENTRY_PLY=0, ply=0
+    # entries have a NULL entry_san_sequence (array_agg over empty window):
+    # there is no parent lineage to walk in that case, so an empty list
+    # short-circuits the loop and we fall through to the ply=0 fallback.
+    san_seq = list(row.entry_san_sequence or [])
     for prefix_hash in _compute_prefix_hashes(san_seq):
         parent_opening = parents_by_hash.get(prefix_hash)
         if parent_opening is not None:
@@ -197,6 +197,17 @@ def _attribute_finding(
                 parent_opening.name, parent_opening.ply_count, finding_color
             )
             return parent_opening.name, parent_opening.eco, display_name
+
+    # Pass 3: ply=0 fallback via resulting_full_hash (only when san_seq is
+    # empty — i.e. entry IS the starting position).
+    if not san_seq:
+        result_hash_int = int(row.resulting_full_hash)
+        result_opening = openings_by_hash.get(result_hash_int)
+        if result_opening is not None:
+            display_name = _apply_display_name_parity(
+                result_opening.name, result_opening.ply_count, finding_color
+            )
+            return result_opening.name, result_opening.eco, display_name
 
     # No match at any depth — D-34: drop this finding
     return None
@@ -222,33 +233,63 @@ def _dedupe_within_section(
     return [(finding, se) for finding, _ply, se in best.values()]
 
 
+def _robustness(finding: OpeningInsightFinding) -> float:
+    """Directional Wilson-bound signal strength.
+
+    Positive = the 95% CI puts the true score on the claimed side of 0.50;
+    near-zero or negative = the CI straddles 0.50 and the finding is mostly
+    noise. Combines effect size and sample-size uncertainty into a single
+    continuous metric, replacing the old categorical confidence-bucket
+    comparison in dedupe (which had nothing to do with line-collapse choice
+    until MIN_ENTRY_PLY=0 surfaced low-signal shallow findings that began
+    pre-empting more informative deeper ones).
+
+    For weakness: 0.5 - wilson_upper(score, n)
+        — how far below 0.50 the upper bound sits; large = robust weakness.
+    For strength: wilson_lower(score, n) - 0.5
+        — how far above 0.50 the lower bound sits; large = robust strength.
+    """
+    lower, upper = _wilson_bounds(finding.score, finding.n_games)
+    if finding.classification == "weakness":
+        return SCORE_PIVOT - upper
+    return lower - SCORE_PIVOT
+
+
 def _dedupe_continuations(
     sections: dict[str, list[tuple[OpeningInsightFinding, float]]],
 ) -> dict[str, list[tuple[OpeningInsightFinding, float]]]:
-    """Drop findings whose entry position is downstream of a kept finding's candidate.
+    """Collapse each line to its single most-robust finding.
 
-    Phase 71 UAT fix: when consecutive moves in the same line are all weak (or
-    all strong), deeper findings crowd the block with the same opening line
-    (e.g. Caro-Kann B10: 3.exd5, 3...cxd5, 4.d4 all surfacing as separate
-    cards). Keep only the shallowest entry per chain — the player can explore
-    continuations via the deep-link Move Explorer.
+    Phase 71 UAT fix: when consecutive moves in the same line are all weak
+    (or all strong), deeper findings crowd the block with the same opening
+    line (e.g. Caro-Kann B10: 3.exd5, 3...cxd5, 4.d4 all surfacing as
+    separate cards). Originally we kept the SHALLOWEST entry per chain on
+    the assumption that earlier-in-the-line is more actionable, but with
+    MIN_ENTRY_PLY=0 a low-signal ply=1 finding (CI straddling 0.50) would
+    pre-empt a high-signal ply=4 finding in the same line.
 
-    Rule: drop B if there exists a kept A such that A.entry_san_sequence +
-    [A.candidate_move_san] is a prefix of B.entry_san_sequence. Applied
-    globally across all four sections so chains that cross color boundaries
-    (white candidate → black candidate → white candidate) still consolidate
-    to the earliest finding. Tie-break for sibling lines of equal depth:
-    major over minor severity, then higher n_games.
+    Rule: iterate findings most-robust-first (Wilson-bound directional
+    signal); a finding is dropped if its full_path = entry + [candidate] is
+    prefix-related (either direction) to any already-kept finding's
+    full_path. Two findings share a line iff one full_path is a prefix of
+    the other. Tie-breaks (after `-robustness`): shallower depth, major
+    severity, higher n_games — matches the legacy ordering when
+    robustness ties so behavior is unchanged for findings that were
+    indistinguishable under the old rule.
 
-    Quick task 260428-tgg: payload widened from `OpeningInsightFinding` to
-    `(finding, se)` so SE survives this stage and reaches _rank_section. The
-    dedupe logic itself is unchanged — only the carried tuple shape grew.
+    Applied globally across all four sections so chains crossing color
+    boundaries (white candidate → black candidate → white candidate) still
+    consolidate.
+
+    Quick task 260428-tgg: payload is `(finding, se)` so SE survives this
+    stage and reaches _rank_section.
     """
     flat: list[tuple[str, OpeningInsightFinding, float]] = [
         (sk, f, se) for sk, items in sections.items() for f, se in items
     ]
     flat.sort(
         key=lambda kf: (
+            -_robustness(kf[1]),
             len(kf[1].entry_san_sequence),
             0 if kf[1].severity == "major" else 1,
             -kf[1].n_games,
@@ -256,17 +297,28 @@ def _dedupe_continuations(
     )
 
     kept_keys: set[tuple[str, str, str]] = set()
-    cover_prefixes: list[tuple[str, ...]] = []
+    kept_paths: list[tuple[str, tuple[str, ...]]] = []
     for section_key, finding, _se in flat:
-        entry_seq = tuple(finding.entry_san_sequence)
-        downstream = any(
-            len(entry_seq) >= len(cover) and entry_seq[: len(cover)] == cover
-            for cover in cover_prefixes
-        )
-        if downstream:
+        full_path = tuple(finding.entry_san_sequence) + (finding.candidate_move_san,)
+        same_line = False
+        for kept_section_key, kp in kept_paths:
+            shares_line = (
+                len(full_path) >= len(kp) and full_path[: len(kp)] == kp
+            ) or (len(kp) >= len(full_path) and kp[: len(full_path)] == full_path)
+            if not shares_line:
+                continue
+            # D-21 exception: same exact transition reached from different
+            # color perspectives is two distinct findings (e.g. user plays
+            # both colors → "as white, opponents respond with X" and "as
+            # black, you play X" both clear the gates). Keep both.
+            if full_path == kp and section_key != kept_section_key:
+                continue
+            same_line = True
+            break
+        if same_line:
             continue
         kept_keys.add((section_key, finding.entry_full_hash, finding.candidate_move_san))
-        cover_prefixes.append(entry_seq + (finding.candidate_move_san,))
+        kept_paths.append((section_key, full_path))
 
     result: dict[str, list[tuple[OpeningInsightFinding, float]]] = {k: [] for k in sections}
     for section_key, items in sections.items():
@@ -384,21 +436,30 @@ async def compute_insights(
                 elo_threshold=request.elo_threshold,
             )
 
-        # Pass 1: direct attribution for all entry hashes.
-        direct_entry_hashes = list(
-            {int(r.entry_hash) for rows in rows_by_color.values() for r in rows}
+        # Pass 1: direct attribution for all entry hashes. Also include
+        # resulting_full_hash for ply=0 entries (empty SAN sequence) so the
+        # ply=0 attribution fallback in `_attribute_finding` can name them
+        # by the resulting position (e.g. "1.e4" → "King's Pawn Opening").
+        direct_entry_hashes_set: set[int] = set()
+        for rows in rows_by_color.values():
+            for r in rows:
+                direct_entry_hashes_set.add(int(r.entry_hash))
+                if not (r.entry_san_sequence or []):
+                    direct_entry_hashes_set.add(int(r.resulting_full_hash))
+        openings_by_hash = await query_openings_by_hashes(
+            session, list(direct_entry_hashes_set)
         )
-        openings_by_hash = await query_openings_by_hashes(session, direct_entry_hashes)
 
         # Pass 2: parent-lineage attribution for unmatched (BLOCKER-1 / D-34).
         unmatched_parent_hashes: set[int] = set()
         for rows in rows_by_color.values():
             for r in rows:
                 if int(r.entry_hash) not in openings_by_hash:
-                    # D-34: no `or []` fallback. An empty/None SAN sequence here
-                    # indicates a CTE contract violation; let it raise.
+                    # With MIN_ENTRY_PLY=0, ply=0 entries have a NULL SAN
+                    # sequence (no preceding moves) — coerce to [] so the
+                    # prefix walk no-ops instead of crashing.
                     unmatched_parent_hashes.update(
-                        _compute_prefix_hashes(list(r.entry_san_sequence))
+                        _compute_prefix_hashes(list(r.entry_san_sequence or []))
                     )
         parents_by_hash = await query_openings_by_hashes(session, list(unmatched_parent_hashes))
 
@@ -434,16 +495,20 @@ async def compute_insights(
                 opening_name, opening_eco, display_name = attribution
 
                 # BLOCKER-1 / D-25: entry_fen reconstructed by replaying the
-                # actual SAN sequence the user played up to the entry. Never
-                # fall back to chess.Board().fen() (initial position) — D-34.
-                # No `or []` fallback: an empty/None sequence raises in
-                # _replay_san_sequence and surfaces in Sentry.
-                entry_fen = _replay_san_sequence(list(row.entry_san_sequence))
+                # actual SAN sequence the user played up to the entry. With
+                # MIN_ENTRY_PLY=0, ply=0 entries legitimately replay zero
+                # moves and yield the starting FEN — coerce NULL→[] so
+                # _replay_san_sequence sees an empty list instead of None.
+                entry_fen = _replay_san_sequence(list(row.entry_san_sequence or []))
 
                 # Carry the matched Opening.ply_count alongside for D-24
                 # deeper-entry-wins dedupe; use 0 for parent-only matches
                 # (parent-matched entries have lower specificity than direct matches).
+                # ply=0 entries attribute via resulting_full_hash, so mirror
+                # that lookup here to avoid under-counting their depth.
                 matched_opening = openings_by_hash.get(int(row.entry_hash))
+                if matched_opening is None and not (row.entry_san_sequence or []):
+                    matched_opening = openings_by_hash.get(int(row.resulting_full_hash))
                 opening_ply_count = matched_opening.ply_count if matched_opening else 0
 
                 score = _compute_score(row)
@@ -458,8 +523,8 @@ async def compute_insights(
                     display_name=display_name,
                     entry_fen=entry_fen,
                     entry_san_sequence=list(
-                        row.entry_san_sequence
-                    ),  # Phase 71 (D-13): expose SAN sequence for FE deep-link replay; no `or []` fallback (D-34)
+                        row.entry_san_sequence or []
+                    ),  # Phase 71 (D-13): SAN sequence start→entry; empty for entry_ply=0 (no preceding moves)
                     # BLOCKER-5 / Pitfall 1: stringify 64-bit ints at the API boundary.
                     entry_full_hash=str(int(row.entry_hash)),
                     candidate_move_san=row.move_san,
