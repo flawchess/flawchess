@@ -331,10 +331,13 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
         <span className="inline-flex items-center gap-1">
           <span>{entry.move_san}</span>
           {showTroll && (
+            <Tooltip content="Considered a troll opening">
+            <span className="inline-flex">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 64 64"
-              aria-hidden="true"
+              aria-label="Considered a troll opening"
+              role="img"
               data-testid={`move-list-row-${entry.move_san}-troll-icon`}
               className="inline-block h-4 w-4 text-muted-foreground"
             >
@@ -348,6 +351,8 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
                 <path d="M29.3 24h5.4v4h-5.4z" />
               </g>
             </svg>
+            </span>
+            </Tooltip>
           )}
         </span>
       </td>
