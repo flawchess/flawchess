@@ -262,7 +262,7 @@ export function FilterPanel({
 
       {/* Opponent Type */}
       {show('opponent') && (
-        <div>
+        <div className="pt-3 border-t border-border/40">
           <p className="mb-1 text-xs text-muted-foreground">Opponent Type</p>
           <ToggleGroup
             type="single"
