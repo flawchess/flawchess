@@ -17,7 +17,8 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { Tooltip } from '@/components/ui/tooltip';
 import { formatConfidenceTooltip } from '@/lib/openingInsights';
 import { cn } from '@/lib/utils';
-import type { NextMoveEntry } from '@/types/api';
+import { isTrollPosition } from '@/lib/trollOpenings';
+import type { NextMoveEntry, Color } from '@/types/api';
 
 interface MoveExplorerProps {
   moves: NextMoveEntry[];
@@ -64,6 +65,25 @@ export function MoveExplorer({
 }: MoveExplorerProps) {
   // Mobile: first tap highlights a row (shows arrow on board), second tap plays the move
   const [selectedMove, setSelectedMove] = useState<string | null>(null);
+
+  // Derive side-just-moved once from the parent FEN's side-to-move token.
+  // The parent's side TO MOVE is the side that plays each candidate move in
+  // `moves`, so it's also the side that just moved on the resulting position
+  // (D-10). Defensive throw: callers must pass a full FEN — a board-only
+  // placement string has no side-to-move token and would silently produce
+  // wrong results (RESEARCH.md Pitfall 7). This check runs BEFORE the
+  // `moveMap` useMemo so its friendly error message wins over chess.js's
+  // generic "must contain six space-delimited fields" complaint.
+  const sideJustMoved: Color = useMemo(() => {
+    const tokens = position.split(' ');
+    const sideToken = tokens[1];
+    if (sideToken !== 'w' && sideToken !== 'b') {
+      throw new Error(
+        `MoveExplorer: position must be a full FEN with side-to-move, got: ${position}`,
+      );
+    }
+    return sideToken === 'w' ? 'white' : 'black';
+  }, [position]);
 
   const moveMap = useMemo(() => {
     const chess = new Chess(position);
@@ -210,6 +230,7 @@ export function MoveExplorer({
                   highlightPulse={isHighlighted ? highlightedMove.pulse : false}
                   // Only attach the ref to the matching row — we don't need a Map of refs.
                   rowRef={isHighlighted ? highlightedRowRef : undefined}
+                  sideJustMoved={sideJustMoved}
                 />
               );
             })}
@@ -221,7 +242,7 @@ export function MoveExplorer({
 }
 
 /** Move row with inline MiniWDLBar showing percentages */
-function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, highlightColor, highlightPulse, rowRef }: {
+function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, highlightColor, highlightPulse, rowRef, sideJustMoved }: {
   entry: NextMoveEntry;
   selectedMove: string | null;
   onRowClick: (entry: NextMoveEntry) => void;
@@ -233,11 +254,17 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   highlightPulse: boolean;
   /** Ref attached only to the highlighted row so the parent can scrollIntoView once. */
   rowRef?: React.Ref<HTMLTableRowElement>;
+  /** Side that just moved (i.e. the side TO MOVE in the parent position). Used to route the troll-set lookup. */
+  sideJustMoved: Color;
 }) {
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
   // Mute the row only on small samples — confidence is now its own column and
   // is hidden (not muted) when the effect is too small to be interesting.
   const isUnreliable = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
+  // Phase 77 D-06: inline troll-face icon when the resulting position is in
+  // the curated set for the side that just moved. Pure synchronous lookup —
+  // no useMemo (RESEARCH.md anti-pattern note).
+  const showTroll = isTrollPosition(entry.result_fen, sideJustMoved);
   // Hide the per-row confidence indicator for moves below the effect-of-
   // interest threshold (|score - 0.5| < 0.05) and for samples too small to
   // ground a significance test (game_count < 10). The column header stays.
@@ -300,8 +327,34 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
       onMouseEnter={() => onMoveHover?.(entry.move_san)}
       onMouseLeave={() => onMoveHover?.(null)}
     >
-      <td className="py-1 text-sm text-foreground font-normal truncate">
-        {entry.move_san}
+      <td className="py-1 text-sm text-foreground font-normal whitespace-nowrap">
+        <span className="inline-flex items-center gap-1">
+          <span>{entry.move_san}</span>
+          {showTroll && (
+            <Tooltip content="Considered a troll opening">
+            <span className="inline-flex">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 64 64"
+              aria-label="Considered a troll opening"
+              role="img"
+              data-testid={`move-list-row-${entry.move_san}-troll-icon`}
+              className="inline-block h-4 w-4 text-muted-foreground"
+            >
+              <g fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="32" cy="32" r="27" />
+                <path d="M22 43.5c2.9 3 6.3 4.5 10 4.5s7.1-1.5 10-4.5" />
+              </g>
+              <g fill="currentColor">
+                <path d="M11.5 24.5c.5-2.3 2.4-3.5 5.1-3.5h10.1c2.4 0 3.9 1.4 3.5 3.7l-.9 5.8c-.5 3.4-2.7 5.5-6.1 5.5H19c-2.8 0-4.6-1.4-5.4-4.2l-2.1-7.3z" />
+                <path d="M52.5 24.5c-.5-2.3-2.4-3.5-5.1-3.5H37.3c-2.4 0-3.9 1.4-3.5 3.7l.9 5.8c.5 3.4 2.7 5.5 6.1 5.5H45c2.8 0 4.6-1.4 5.4-4.2l2.1-7.3z" />
+                <path d="M29.3 24h5.4v4h-5.4z" />
+              </g>
+            </svg>
+            </span>
+            </Tooltip>
+          )}
+        </span>
       </td>
       <td className="py-1 text-right tabular-nums">
         <span className="inline-flex items-center justify-end gap-0.5">

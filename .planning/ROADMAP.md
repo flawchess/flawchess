@@ -211,17 +211,17 @@ See [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md) for full details.
   - Update `openingInsights.ts` and `OpeningInsightsBlock.tsx` to consume the new `confidence` field.
   - Mobile parity: apply all changes to mobile layouts of Move Explorer and Insights block.
 
-- [ ] Phase 77: Troll-opening watermark on Insights findings (planned)
+- [x] Phase 77: Troll-opening watermark on Insights findings (planned) (completed 2026-04-28)
   - **Goal:** Render `troll-face.svg` as a 30%-opacity bottom-right watermark on `OpeningFindingCard` (mobile + desktop) AND a small inline icon next to qualifying SAN rows in `MoveExplorer` (desktop only) when the user-side position matches a curated troll-opening set (Bongcloud, Grob, Borg, etc.).
   - **Scope:** Frontend-only. Matching is client-side via a side-only FEN piece-placement key (no backend schema, no Zobrist hash, no API contract change). Curation is offline via a Node/TS script that prints candidates to stdout for human pruning per CONTEXT.md D-01.
   - **Plans:** 4 plans across 2 waves (Wave 1: Plans 01+02 in parallel — utility/asset/theme + curation/data; Wave 2: Plans 03+04 in parallel — Insights watermark + Move Explorer icon).
   - **Decisions:** D-01..D-11 in [77-CONTEXT.md](phases/77-troll-opening-watermark-on-insights-findings/77-CONTEXT.md). Research in [77-RESEARCH.md](phases/77-troll-opening-watermark-on-insights-findings/77-RESEARCH.md). Patterns in [77-PATTERNS.md](phases/77-troll-opening-watermark-on-insights-findings/77-PATTERNS.md). Original design notes in [notes/troll-openings-design.md](notes/troll-openings-design.md) (superseded by CONTEXT.md where they conflict — backend Zobrist/TSV/frozenset approach is OUTDATED).
 
   Plans:
-  - [ ] 77-01-PLAN.md — Asset move + theme constant + matcher utility (deriveUserSideKey, isTrollPosition) + unit tests (Wave 1)
-  - [ ] 77-02-PLAN.md — Curation script + hand-pruned static data module (Wave 1, autonomous: false — D-01 human checkpoint)
-  - [ ] 77-03-PLAN.md — OpeningFindingCard watermark + tests (Wave 2)
-  - [ ] 77-04-PLAN.md — Move Explorer inline icon + tests (Wave 2, desktop-only via `hidden sm:inline-block`)
+  - [x] 77-01-PLAN.md — Asset move + theme constant + matcher utility (deriveUserSideKey, isTrollPosition) + unit tests (Wave 1)
+  - [x] 77-02-PLAN.md — Curation script + hand-pruned static data module (Wave 1, autonomous: false — D-01 human checkpoint)
+  - [x] 77-03-PLAN.md — OpeningFindingCard watermark + tests (Wave 2)
+  - [x] 77-04-PLAN.md — Move Explorer inline icon + tests (Wave 2, desktop-only via `hidden sm:inline-block`)
 
 ## Progress
 

@@ -6,7 +6,9 @@ import {
   formatConfidenceTooltip,
   getSeverityBorderColor,
 } from '@/lib/openingInsights';
-import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
+import { MIN_GAMES_FOR_RELIABLE_STATS, TROLL_WATERMARK_OPACITY, UNRELIABLE_OPACITY } from '@/lib/theme';
+import { isTrollPosition } from '@/lib/trollOpenings';
+import trollFaceUrl from '@/assets/troll-face.svg';
 import type { OpeningInsightFinding } from '@/types/insights';
 
 interface OpeningFindingCardProps {
@@ -53,6 +55,10 @@ export function OpeningFindingCard({
     borderLeftColor,
     ...(isUnreliable ? { opacity: UNRELIABLE_OPACITY } : {}),
   };
+
+  // Phase 77 D-02/D-10: Show troll-face watermark when the position is in the curated set.
+  // Pure O(1) Set.has lookup after a tiny string transform — no useMemo needed.
+  const showTroll = isTrollPosition(finding.entry_fen, finding.color);
 
   const headerLine = (
     <div className="flex items-center gap-2 text-sm min-w-0">
@@ -131,7 +137,7 @@ export function OpeningFindingCard({
   return (
     <div
       data-testid={`opening-finding-card-${idx}`}
-      className="block border-l-4 charcoal-texture border border-border/20 rounded px-4 py-3"
+      className="block relative border-l-4 charcoal-texture border border-border/20 rounded px-4 py-4"
       style={cardStyle}
     >
       {/* Mobile: header full-width on top, board + prose/links row below */}
@@ -165,6 +171,20 @@ export function OpeningFindingCard({
           {linksRow}
         </div>
       </div>
+
+      {/* Phase 77 D-02/D-03/D-04/D-05: Troll-opening watermark. Single sibling positioned
+          absolute bottom-right covers both mobile and desktop layouts. pointer-events-none
+          so the Moves/Games buttons remain clickable. Decorative — alt="" + aria-hidden. */}
+      {showTroll && (
+        <img
+          src={trollFaceUrl}
+          alt=""
+          aria-hidden="true"
+          data-testid={`opening-finding-card-${idx}-troll-watermark`}
+          className="hidden sm:block absolute right-3 top-1/2 -translate-y-1/2 sm:h-[100px] w-auto pointer-events-none select-none"
+          style={{ opacity: TROLL_WATERMARK_OPACITY }}
+        />
+      )}
     </div>
   );
 }

@@ -690,7 +690,7 @@ async def query_opening_transitions(
                 None
             ),  # drops final-position rows where LEAD is NULL
             transitions_cte.c.ply.between(
-                OPENING_INSIGHTS_MIN_ENTRY_PLY,  # entry ply 3..16 (current row IS entry)
+                OPENING_INSIGHTS_MIN_ENTRY_PLY,  # entry ply 0..16 (current row IS entry)
                 OPENING_INSIGHTS_MAX_ENTRY_PLY,
             ),
         )

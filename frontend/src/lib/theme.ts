@@ -76,6 +76,12 @@ export const MIN_GAMES_FOR_RELIABLE_STATS = 10;
 // Opacity applied to stats/charts with unreliable data (below MIN_GAMES_FOR_RELIABLE_STATS)
 export const UNRELIABLE_OPACITY = 0.5;
 
+// Opacity applied to the troll-opening watermark on OpeningFindingCard.
+// NOTE: when the parent card has UNRELIABLE_OPACITY applied (n_games < 10 or
+// confidence === 'low'), the watermark renders at 0.25 due to CSS opacity
+// multiplication — accepted per Phase 77 RESEARCH.md Pitfall 4.
+export const TROLL_WATERMARK_OPACITY = 0.5;
+
 // Modified-filter indicator dot — signals "current query uses non-default filters".
 // Uses brand brown to differentiate from the existing red onboarding-hint dot.
 // Tailwind classes (referenced in components): bg-brand-brown, text-brand-brown.
