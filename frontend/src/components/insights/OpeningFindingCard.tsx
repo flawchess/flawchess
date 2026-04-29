@@ -19,8 +19,8 @@ interface OpeningFindingCardProps {
   onOpenGames: (finding: OpeningInsightFinding) => void;
 }
 
-const MOBILE_BOARD_SIZE = 105;
-const DESKTOP_BOARD_SIZE = 100;
+const MOBILE_BOARD_SIZE = 115;
+const DESKTOP_BOARD_SIZE = 110;
 const UNNAMED_SENTINEL = '<unnamed line>';
 
 export function OpeningFindingCard({
