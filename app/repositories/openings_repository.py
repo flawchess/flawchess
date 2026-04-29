@@ -15,7 +15,7 @@ from sqlalchemy.orm import aliased
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.models.opening import Opening
-from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD, apply_game_filters
+from app.repositories.query_utils import apply_game_filters
 from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_MAX_ENTRY_PLY,
     OPENING_INSIGHTS_MIN_ENTRY_PLY,
@@ -58,8 +58,8 @@ def _build_base_query(
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     color: str | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> Any:
     """Build a filtered SELECT that joins game_positions -> games.
 
@@ -104,7 +104,7 @@ def _build_base_query(
         base = base.where(Game.played_at >= recency_cutoff)
     if color is not None:
         base = base.where(Game.user_color == color)
-    if opponent_strength != "any":
+    if opponent_gap_min is not None or opponent_gap_max is not None:
         user_rating = case(
             (Game.user_color == "white", Game.white_rating),
             else_=Game.black_rating,
@@ -114,15 +114,11 @@ def _build_base_query(
             else_=Game.white_rating,
         )
         base = base.where(Game.white_rating.isnot(None), Game.black_rating.isnot(None))
-        if opponent_strength == "stronger":
-            base = base.where(opp_rating >= user_rating + elo_threshold)
-        elif opponent_strength == "similar":
-            base = base.where(
-                opp_rating > user_rating - elo_threshold,
-                opp_rating < user_rating + elo_threshold,
-            )
-        elif opponent_strength == "weaker":
-            base = base.where(opp_rating <= user_rating - elo_threshold)
+        gap = opp_rating - user_rating
+        if opponent_gap_min is not None:
+            base = base.where(gap >= opponent_gap_min)
+        if opponent_gap_max is not None:
+            base = base.where(gap <= opponent_gap_max)
 
     return base
 
@@ -138,8 +134,8 @@ async def query_time_series(
     rated: bool | None = None,
     opponent_type: str = "human",
     recency_cutoff: datetime.datetime | None = None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
     """Return (played_at, result, user_color) tuples for matching games, ordered chronologically.
 
@@ -174,7 +170,7 @@ async def query_time_series(
         stmt = stmt.where(Game.is_computer_game == True)  # noqa: E712
     if recency_cutoff is not None:
         stmt = stmt.where(Game.played_at >= recency_cutoff)
-    if opponent_strength != "any":
+    if opponent_gap_min is not None or opponent_gap_max is not None:
         user_rating = case(
             (Game.user_color == "white", Game.white_rating),
             else_=Game.black_rating,
@@ -184,15 +180,11 @@ async def query_time_series(
             else_=Game.white_rating,
         )
         stmt = stmt.where(Game.white_rating.isnot(None), Game.black_rating.isnot(None))
-        if opponent_strength == "stronger":
-            stmt = stmt.where(opp_rating >= user_rating + elo_threshold)
-        elif opponent_strength == "similar":
-            stmt = stmt.where(
-                opp_rating > user_rating - elo_threshold,
-                opp_rating < user_rating + elo_threshold,
-            )
-        elif opponent_strength == "weaker":
-            stmt = stmt.where(opp_rating <= user_rating - elo_threshold)
+        gap = opp_rating - user_rating
+        if opponent_gap_min is not None:
+            stmt = stmt.where(gap >= opponent_gap_min)
+        if opponent_gap_max is not None:
+            stmt = stmt.where(gap <= opponent_gap_max)
 
     # Wrap in subquery so outer query can order by played_at ASC after DISTINCT ON Game.id
     subq = stmt.subquery()
@@ -212,8 +204,8 @@ async def query_all_results(
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     color: str | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
     """Return (result, user_color) tuples for ALL matching games (for stats).
 
@@ -232,8 +224,8 @@ async def query_all_results(
         opponent_type=opponent_type,
         recency_cutoff=recency_cutoff,
         color=color,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     rows = await session.execute(stmt)
     return list(rows.all())
@@ -250,8 +242,8 @@ async def query_wdl_counts(
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     color: str | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> Row[Any]:
     """Return a single row (total, wins, draws, losses) via SQL aggregation.
 
@@ -275,8 +267,8 @@ async def query_wdl_counts(
         opponent_type=opponent_type,
         recency_cutoff=recency_cutoff,
         color=color,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     ).subquery("dedup")
 
     # W/D/L conditions on the subquery columns (same logic as stats_repository.py)
@@ -314,8 +306,8 @@ async def query_matching_games(
     color: str | None,
     offset: int,
     limit: int,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> tuple[list[Game], int]:
     """Return a paginated list of Game objects and the total matching count.
 
@@ -334,8 +326,8 @@ async def query_matching_games(
         opponent_type=opponent_type,
         recency_cutoff=recency_cutoff,
         color=color,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     ).subquery()
     count_stmt = select(func.count()).select_from(count_subq)
     total: int = (await session.execute(count_stmt)).scalar_one()
@@ -355,8 +347,8 @@ async def query_matching_games(
         opponent_type=opponent_type,
         recency_cutoff=recency_cutoff,
         color=color,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     if target_hash is not None:
         # DISTINCT ON needs id-first ordering for dedup; outer query re-sorts
@@ -387,8 +379,8 @@ async def query_next_moves(
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     color: str | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> list[Any]:
     """Aggregate next moves for a given position with per-move W/D/L stats.
 
@@ -454,8 +446,8 @@ async def query_next_moves(
         opponent_type,
         recency_cutoff,
         color,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     rows = await session.execute(stmt)
@@ -472,8 +464,8 @@ async def query_transposition_counts(
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
     color: str | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> dict[int, int]:
     """Return the total distinct games reaching each result_hash under the same filters.
 
@@ -508,8 +500,8 @@ async def query_transposition_counts(
         opponent_type,
         recency_cutoff,
         color,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     rows = await session.execute(stmt)
@@ -525,8 +517,8 @@ async def query_opening_transitions(
     rated: bool | None,
     opponent_type: str,
     recency_cutoff: datetime.datetime | None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
     """Aggregate (entry_hash, candidate_san) transitions for one user & color.
 
@@ -715,8 +707,8 @@ async def query_opening_transitions(
         opponent_type,
         recency_cutoff,
         color=None,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     result = await session.execute(stmt)

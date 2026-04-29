@@ -37,6 +37,7 @@ from app.services.insights_llm import (
     InsightsRateLimitExceeded,
     InsightsValidationFailure,
 )
+from app.core.opponent_strength import derive_preset
 from app.services.opening_insights_service import compute_insights
 from app.users import current_active_user
 
@@ -90,7 +91,8 @@ async def get_endgame_insights(
         "all_time", "week", "month", "3months", "6months", "year", "3years", "5years"
     ] = Query(default="all_time"),
     rated: bool | None = Query(default=None),
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
+    opponent_gap_min: int | None = Query(default=None),
+    opponent_gap_max: int | None = Query(default=None),
     color: Literal["all", "white", "black"] = Query(default="all"),
 ) -> EndgameInsightsResponse | JSONResponse:
     """Return the LLM-generated EndgameInsightsReport for the authenticated user.
@@ -101,15 +103,35 @@ async def get_endgame_insights(
     other than opponent_strength must be at defaults — see
     `_validate_full_history_filters`.
 
+    Opponent strength is accepted as a (gap_min, gap_max) pair to mirror the
+    range slider. Only the four preset ranges (any/stronger/similar/weaker) are
+    permitted here so the LLM cache key (keyed on preset name) stays stable —
+    custom ranges return 400.
+
     Returns:
         200: EndgameInsightsResponse with status in {fresh, cache_hit, stale_rate_limited}.
-        400: filters_not_supported (any non-default filter other than opponent_strength).
+        400: filters_not_supported (any non-default filter other than opponent_strength,
+             or custom (non-preset) opponent gap range).
         429: InsightsErrorResponse(error='rate_limit_exceeded', retry_after_seconds=N).
         502: InsightsErrorResponse(error='provider_error' | 'validation_failure').
     """
+    preset = derive_preset(opponent_gap_min, opponent_gap_max)
+    if preset == "custom":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "filters_not_supported",
+                "message": (
+                    "Insights only support the preset opponent strength buckets "
+                    "(Any / Stronger / Similar / Weaker). Snap the slider to a "
+                    "preset to generate a report."
+                ),
+                "blocking": ["Snap opponent strength to a preset"],
+            },
+        )
     filter_context = FilterContext(
         recency=recency,
-        opponent_strength=opponent_strength,
+        opponent_strength=preset,
         color=color,
         time_controls=time_control or [],
         platforms=platform or [],

@@ -407,6 +407,28 @@ describe('OpeningFindingCard', () => {
       expect(elements.length).toBe(1);
     });
 
+    it('renders the watermark when the candidate move LEADS to a troll position', () => {
+      // Starting position is not a troll position, but after 1.e4 the resulting
+      // FEN derives (white-side) to the seeded WHITE_TROLL_KEYS entry.
+      const finding = makeFinding({
+        entry_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+        candidate_move_san: 'e4',
+        color: 'white',
+      });
+      renderCard({ finding, idx: 7 });
+      expect(screen.getByTestId('opening-finding-card-7-troll-watermark')).toBeTruthy();
+    });
+
+    it('does not render the watermark when neither entry nor resulting position match', () => {
+      const finding = makeFinding({
+        entry_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+        candidate_move_san: 'd4', // resulting FEN is not the seeded troll key
+        color: 'white',
+      });
+      renderCard({ finding, idx: 7 });
+      expect(screen.queryByTestId('opening-finding-card-7-troll-watermark')).toBeNull();
+    });
+
     it('does not block clicks on the Moves button (D-04)', () => {
       const onFindingClick = vi.fn();
       const finding = makeFinding({ entry_fen: TROLL_FIXTURE_FEN, color: 'white' });

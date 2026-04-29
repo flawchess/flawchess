@@ -40,7 +40,7 @@ const DEFAULT_FILTERS: FilterState = {
   platforms: null,
   rated: null,
   opponentType: 'human',
-  opponentStrength: 'any',
+  opponentStrength: { min: null, max: null },
 };
 
 function makeFinding(overrides: Partial<OpeningInsightFinding> = {}): OpeningInsightFinding {

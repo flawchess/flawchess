@@ -3,6 +3,7 @@ import { BarChart3, Info, Lightbulb, ListChecks, Loader2, Sparkles, UserCircle2 
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { DEFAULT_FILTERS, type FilterState } from '@/components/filters/FilterPanel';
+import { derivePreset } from '@/lib/opponentStrength';
 import { useActiveJobs } from '@/hooks/useImport';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
@@ -56,6 +57,11 @@ function getBlockedReason(
     filters.matchSide !== DEFAULT_FILTERS.matchSide
   ) {
     return 'Reset the filters before generating insights';
+  }
+  // Insights only support the four opponent-strength presets. A custom slider
+  // range (not matching any preset) is rejected by the router.
+  if (derivePreset(filters.opponentStrength) === null) {
+    return 'Snap opponent strength to a preset (Any / Stronger / Similar / Weaker)';
   }
   return null;
 }

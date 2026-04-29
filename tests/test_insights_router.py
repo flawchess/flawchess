@@ -524,7 +524,7 @@ class TestFilterPassing:
         monkeypatch: pytest.MonkeyPatch,
         test_engine: AsyncEngine,
     ) -> None:
-        """opponent_strength is forwarded as FilterContext (v8: the only
+        """opponent_gap_min/max → derived preset on FilterContext (v8: the only
         non-default filter the router accepts)."""
         headers, user = authed_user_with_session
         fake_insights_agent(_sample_report())
@@ -549,7 +549,7 @@ class TestFilterPassing:
         ) as client:
             response = await client.post(
                 INSIGHTS_ENDPOINT,
-                params={"opponent_strength": "stronger"},
+                params={"opponent_gap_min": 50},
                 headers=headers,
             )
 

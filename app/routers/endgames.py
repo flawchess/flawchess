@@ -5,7 +5,7 @@ Endpoints (all mounted under /api/endgames):
 - GET /games: paginated game list filtered by endgame class
 """
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +17,6 @@ from app.schemas.endgames import (
     EndgameGamesResponse,
     EndgameOverviewResponse,
 )
-from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
 from app.services import endgame_service
 from app.users import current_active_user
 
@@ -35,8 +34,8 @@ async def get_endgame_overview(
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
     window: int = Query(default=50, ge=5, le=200),
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
-    elo_threshold: int = Query(default=DEFAULT_ELO_THRESHOLD),
+    opponent_gap_min: int | None = Query(default=None),
+    opponent_gap_max: int | None = Query(default=None),
 ) -> EndgameOverviewResponse:
     """Return all four endgame dashboard payloads in a single response.
 
@@ -56,8 +55,8 @@ async def get_endgame_overview(
         opponent_type=opponent_type,
         recency=recency,
         window=window,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
 
@@ -73,8 +72,8 @@ async def get_endgame_games(
     opponent_type: str = Query(default="human"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = Query(default="any"),
-    elo_threshold: int = Query(default=DEFAULT_ELO_THRESHOLD),
+    opponent_gap_min: int | None = Query(default=None),
+    opponent_gap_max: int | None = Query(default=None),
 ) -> EndgameGamesResponse:
     """Return paginated games filtered by endgame class (D-12, D-14).
 
@@ -96,6 +95,6 @@ async def get_endgame_games(
         recency=recency,
         offset=offset,
         limit=limit,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )

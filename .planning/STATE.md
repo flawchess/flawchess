@@ -126,6 +126,7 @@ Carried forward from v1.11 close (still relevant):
 | 260428-tgg | Sort opening insights findings by Wald CI bound (direction-aware tiebreak replacing effect-size) | 2026-04-28 | 45c5a20 | [260428-tgg-sort-opening-insights-findings-by-wald-c](./quick/260428-tgg-sort-opening-insights-findings-by-wald-c/) |
 | 260428-v9i | Switch opening insights ranking from Wald CI bound to Wilson score interval bound | 2026-04-28 | 0715fda | [260428-v9i-switch-opening-insights-ranking-from-wal](./quick/260428-v9i-switch-opening-insights-ranking-from-wal/) |
 | 260429-gmj | Insights finding cards: arrow for after-move on mini board | 2026-04-29 | de187ed | [260429-gmj-insights-finding-cards-arrow-for-after-m](./quick/260429-gmj-insights-finding-cards-arrow-for-after-m/) |
+| 260429-ty5 | Replace Opponent Strength ToggleGroup with dual-handle range slider + 4 preset chips (Spike 001) | 2026-04-29 | 124237b | [260429-ty5-opponent-strength-slider](./quick/260429-ty5-opponent-strength-slider/) |
 
 ---
-Last activity: 2026-04-29 — v1.14 milestone closed. Score-Based Opening Insights shipped (Phases 75, 76, 77; 16 plans; INSIGHT-UI-04 descoped). Next: open v1.15 via `/gsd-new-milestone`.
+Last activity: 2026-04-29 — Completed quick task 260429-ty5: dual-handle Opponent Strength range slider replacing the four-bucket ToggleGroup (Spike 001).

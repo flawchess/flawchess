@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD, apply_game_filters
+from app.repositories.query_utils import apply_game_filters
 
 # Standalone MetaData (not Base.metadata) keeps the view invisible to Alembic autogenerate.
 _openings_dedup = Table(
@@ -51,7 +51,8 @@ async def query_rating_history(
     recency_cutoff: datetime.datetime | None,
     *,
     opponent_type: str = "human",
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
     """Return one rating data point per (date, time_control_bucket) for a given platform.
 
@@ -91,7 +92,8 @@ async def query_rating_history(
         rated=None,
         opponent_type=opponent_type,
         recency_cutoff=recency_cutoff,
-        opponent_strength=opponent_strength,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     result = await session.execute(stmt)
@@ -105,12 +107,13 @@ async def query_results_by_time_control(
     platform: str | None = None,
     *,
     opponent_type: str = "human",
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
     """Return (time_control_bucket, total, wins, draws, losses) via SQL aggregation.
 
     Excludes games where time_control_bucket is NULL.
-    Optionally filtered by platform, recency, opponent_type, and opponent_strength.
+    Optionally filtered by platform, recency, opponent_type, and opponent gap.
     """
     win_cond = or_(
         and_(Game.result == "1-0", Game.user_color == "white"),
@@ -145,7 +148,8 @@ async def query_results_by_time_control(
         rated=None,
         opponent_type=opponent_type,
         recency_cutoff=recency_cutoff,
-        opponent_strength=opponent_strength,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     result = await session.execute(stmt)
@@ -159,12 +163,13 @@ async def query_results_by_color(
     platform: str | None = None,
     *,
     opponent_type: str = "human",
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
     """Return (user_color, total, wins, draws, losses) via SQL aggregation.
 
     Excludes games where user_color is NULL.
-    Optionally filtered by platform, recency, opponent_type, and opponent_strength.
+    Optionally filtered by platform, recency, opponent_type, and opponent gap.
     """
     win_cond = or_(
         and_(Game.result == "1-0", Game.user_color == "white"),
@@ -199,7 +204,8 @@ async def query_results_by_color(
         rated=None,
         opponent_type=opponent_type,
         recency_cutoff=recency_cutoff,
-        opponent_strength=opponent_strength,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     result = await session.execute(stmt)
@@ -218,8 +224,8 @@ async def query_top_openings_sql_wdl(
     platform: Sequence[str] | None = None,
     rated: bool | None = None,
     opponent_type: str = "human",
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
     """Return top openings with SQL-side WDL aggregation, ranked by position count.
 
@@ -309,8 +315,8 @@ async def query_top_openings_sql_wdl(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     result = await session.execute(stmt)
@@ -339,8 +345,8 @@ async def query_position_wdl_batch(
     rated: bool | None = None,
     opponent_type: str = "human",
     recency_cutoff: datetime.datetime | None = None,
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> dict[int, PositionWDL]:
     """Return {full_hash: PositionWDL} for games passing through each position.
 
@@ -375,8 +381,8 @@ async def query_position_wdl_batch(
         rated,
         opponent_type,
         recency_cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     dedup = dedup.subquery()
 

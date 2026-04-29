@@ -3,8 +3,10 @@ import { apiClient } from '@/api/client';
 import type { NextMovesResponse } from '@/types/api';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import { hashToString } from '@/lib/zobrist';
+import { rangeToQueryParams } from '@/lib/opponentStrength';
 
 export function useNextMoves(fullHash: bigint, filters: FilterState) {
+  const gapParams = rangeToQueryParams(filters.opponentStrength);
   return useQuery<NextMovesResponse>({
     queryKey: [
       'nextMoves',
@@ -14,7 +16,8 @@ export function useNextMoves(fullHash: bigint, filters: FilterState) {
         platform: filters.platforms,
         rated: filters.rated,
         opponent_type: filters.opponentType,
-        opponent_strength: filters.opponentStrength,
+        opponent_gap_min: gapParams.opponent_gap_min ?? null,
+        opponent_gap_max: gapParams.opponent_gap_max ?? null,
         recency: filters.recency,
         color: filters.color,
       },
@@ -26,7 +29,7 @@ export function useNextMoves(fullHash: bigint, filters: FilterState) {
         platform: filters.platforms,
         rated: filters.rated,
         opponent_type: filters.opponentType,
-        opponent_strength: filters.opponentStrength,
+        ...gapParams,
         recency: filters.recency,
         color: filters.color,
       });

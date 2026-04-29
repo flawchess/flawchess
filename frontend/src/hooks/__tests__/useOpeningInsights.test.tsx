@@ -43,7 +43,7 @@ describe('useOpeningInsights', () => {
           platforms: ['chess.com'],
           rated: true,
           opponentType: 'human',
-          opponentStrength: 'similar',
+          opponentStrength: { min: -50, max: 50 },
         }),
       { wrapper: createWrapper() },
     );
@@ -61,7 +61,8 @@ describe('useOpeningInsights', () => {
       platform: ['chess.com'],
       rated: true,
       opponent_type: 'human',
-      opponent_strength: 'similar',
+      opponent_gap_min: -50,
+      opponent_gap_max: 50,
     });
   });
 
@@ -74,7 +75,7 @@ describe('useOpeningInsights', () => {
           platforms: null,
           rated: null,
           opponentType: 'human',
-          opponentStrength: 'any',
+          opponentStrength: { min: null, max: null },
         }),
       { wrapper: createWrapper() },
     );
@@ -98,7 +99,7 @@ describe('useOpeningInsights', () => {
           platforms: null,
           rated: null,
           opponentType: 'human',
-          opponentStrength: 'any',
+          opponentStrength: { min: null, max: null },
         }),
       { wrapper, initialProps: { recency: 'year' as const } },
     );
@@ -150,7 +151,7 @@ describe('useOpeningInsights', () => {
           platforms: null,
           rated: null,
           opponentType: 'human',
-          opponentStrength: 'any',
+          opponentStrength: { min: null, max: null },
         }),
       { wrapper: createWrapper() },
     );

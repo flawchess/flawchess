@@ -1,12 +1,11 @@
 """Stats service: aggregation logic for rating history and global stats."""
 
 import datetime
-from typing import Any, Literal, TypedDict
+from typing import Any, TypedDict
 
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories.query_utils import DEFAULT_ELO_THRESHOLD
 from app.repositories.stats_repository import (
     query_position_wdl_batch,
     query_rating_history,
@@ -57,8 +56,8 @@ class FilterParams(TypedDict):
     rated: bool | None
     opponent_type: str
     recency_cutoff: datetime.datetime | None
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"]
-    elo_threshold: int
+    opponent_gap_min: int | None
+    opponent_gap_max: int | None
 
 
 async def get_rating_history(
@@ -68,7 +67,8 @@ async def get_rating_history(
     platform: str | None = None,
     *,
     opponent_type: str = "human",
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> RatingHistoryResponse:
     """Return per-platform per-game rating data points.
 
@@ -88,7 +88,8 @@ async def get_rating_history(
             platform="chess.com",
             recency_cutoff=cutoff,
             opponent_type=opponent_type,
-            opponent_strength=opponent_strength,
+            opponent_gap_min=opponent_gap_min,
+            opponent_gap_max=opponent_gap_max,
         )
         lichess_rows: list = []
     elif platform == "lichess":
@@ -99,7 +100,8 @@ async def get_rating_history(
             platform="lichess",
             recency_cutoff=cutoff,
             opponent_type=opponent_type,
-            opponent_strength=opponent_strength,
+            opponent_gap_min=opponent_gap_min,
+            opponent_gap_max=opponent_gap_max,
         )
     else:
         chesscom_rows = await query_rating_history(
@@ -108,7 +110,8 @@ async def get_rating_history(
             platform="chess.com",
             recency_cutoff=cutoff,
             opponent_type=opponent_type,
-            opponent_strength=opponent_strength,
+            opponent_gap_min=opponent_gap_min,
+            opponent_gap_max=opponent_gap_max,
         )
         lichess_rows = await query_rating_history(
             session,
@@ -116,7 +119,8 @@ async def get_rating_history(
             platform="lichess",
             recency_cutoff=cutoff,
             opponent_type=opponent_type,
-            opponent_strength=opponent_strength,
+            opponent_gap_min=opponent_gap_min,
+            opponent_gap_max=opponent_gap_max,
         )
 
     def rows_to_points(rows: list) -> list[RatingDataPoint]:
@@ -185,7 +189,8 @@ async def get_global_stats(
     platform: str | None = None,
     *,
     opponent_type: str = "human",
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> GlobalStatsResponse:
     """Return global W/D/L breakdowns by time control and by color.
 
@@ -199,7 +204,8 @@ async def get_global_stats(
         recency_cutoff=cutoff,
         platform=platform,
         opponent_type=opponent_type,
-        opponent_strength=opponent_strength,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     color_rows = await query_results_by_color(
         session,
@@ -207,7 +213,8 @@ async def get_global_stats(
         recency_cutoff=cutoff,
         platform=platform,
         opponent_type=opponent_type,
-        opponent_strength=opponent_strength,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     by_time_control = _rows_to_wdl_categories(
@@ -236,8 +243,8 @@ async def get_most_played_openings(
     platform: list[str] | None = None,
     rated: bool | None = None,
     opponent_type: str = "human",
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any",
-    elo_threshold: int = DEFAULT_ELO_THRESHOLD,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
 ) -> MostPlayedOpeningsResponse:
     """Return top 10 most played openings per color with position-based game counts.
 
@@ -259,8 +266,8 @@ async def get_most_played_openings(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     black_rows = await query_top_openings_sql_wdl(
         session,
@@ -274,8 +281,8 @@ async def get_most_played_openings(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
 
     # Batch-query position-based WDL — games passing through each position,
@@ -288,8 +295,8 @@ async def get_most_played_openings(
         rated=rated,
         opponent_type=opponent_type,
         recency_cutoff=cutoff,
-        opponent_strength=opponent_strength,
-        elo_threshold=elo_threshold,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
     )
     # Row tuple shape: (eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses)
     # full_hash sits at index 5 after the display_name column was added (PRE-01).
@@ -303,8 +310,8 @@ async def get_most_played_openings(
         rated=filter_params["rated"],
         opponent_type=filter_params["opponent_type"],
         recency_cutoff=filter_params["recency_cutoff"],
-        opponent_strength=filter_params["opponent_strength"],
-        elo_threshold=filter_params["elo_threshold"],
+        opponent_gap_min=filter_params["opponent_gap_min"],
+        opponent_gap_max=filter_params["opponent_gap_max"],
     )
     black_position_wdl = await query_position_wdl_batch(
         session,
@@ -316,8 +323,8 @@ async def get_most_played_openings(
         rated=filter_params["rated"],
         opponent_type=filter_params["opponent_type"],
         recency_cutoff=filter_params["recency_cutoff"],
-        opponent_strength=filter_params["opponent_strength"],
-        elo_threshold=filter_params["elo_threshold"],
+        opponent_gap_min=filter_params["opponent_gap_min"],
+        opponent_gap_max=filter_params["opponent_gap_max"],
     )
 
     def rows_to_openings(

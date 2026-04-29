@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanToSquares } from './sanToSquares';
+import { fenAfterMove, sanToSquares } from './sanToSquares';
 
 const STARTING_FEN_WHITE = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -45,5 +45,23 @@ describe('sanToSquares', () => {
   it('returns null on a malformed FEN without throwing', () => {
     expect(() => sanToSquares('this is not a fen', 'e4')).not.toThrow();
     expect(sanToSquares('this is not a fen', 'e4')).toBeNull();
+  });
+});
+
+describe('fenAfterMove', () => {
+  it('returns the resulting FEN after applying e4 from the starting position', () => {
+    const result = fenAfterMove(STARTING_FEN_WHITE, 'e4');
+    expect(result).not.toBeNull();
+    // Piece-placement portion should reflect the e2→e4 push.
+    expect(result!.startsWith('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR')).toBe(true);
+  });
+
+  it('returns null on illegal SAN', () => {
+    expect(fenAfterMove(STARTING_FEN_WHITE, 'Nxd4')).toBeNull();
+  });
+
+  it('returns null on malformed FEN without throwing', () => {
+    expect(() => fenAfterMove('this is not a fen', 'e4')).not.toThrow();
+    expect(fenAfterMove('this is not a fen', 'e4')).toBeNull();
   });
 });

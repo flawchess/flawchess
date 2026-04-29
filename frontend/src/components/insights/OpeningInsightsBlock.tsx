@@ -40,6 +40,10 @@ const OPENING_INSIGHTS_POPOVER_COPY: ReactNode = (
       least 10 games, enough of a difference from 50% to be worth a closer look.
     </p>
     {OPENING_INSIGHTS_CONFIDENCE_COPY}
+    <p className="italic">
+      Tip: Use the filters to select recency, time control, or opponent strength
+      for a more targeted search.
+    </p>
   </div>
 );
 

@@ -38,7 +38,21 @@ type ApiMatchSide = 'white' | 'black' | 'full';
 export type Recency = 'week' | 'month' | '3months' | '6months' | 'year' | '3years' | '5years' | 'all';
 export type Color = 'white' | 'black';
 export type OpponentType = 'human' | 'bot' | 'both';
-export type OpponentStrength = 'any' | 'stronger' | 'similar' | 'weaker';
+
+/**
+ * Opponent-strength filter as a (gap_min, gap_max) range over
+ * opponent_rating - user_rating. `null` on either side means unbounded
+ * (no filter on that side). The default `{ min: null, max: null }` is
+ * the "Any" preset — equivalent to "no filter".
+ */
+export interface OpponentStrengthRange {
+  min: number | null;
+  max: number | null;
+}
+
+/** Named preset shortcuts for the four common opponent-strength buckets. */
+export type OpponentStrengthPreset = 'any' | 'stronger' | 'similar' | 'weaker';
+
 export type UserResult = 'win' | 'draw' | 'loss';
 
 /** Resolves mine/opponent/both + color to the API's white/black/full value */

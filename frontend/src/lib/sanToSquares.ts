@@ -24,3 +24,19 @@ export function sanToSquares(fen: string, san: string): MoveSquares | null {
     return null;
   }
 }
+
+/**
+ * Apply `san` to `fen` and return the resulting full FEN, or `null` if the move
+ * is illegal or the FEN is malformed. Render-time safe — never throws. Used by
+ * OpeningFindingCard to also show the troll-opening watermark when the
+ * candidate move's target position matches a troll line.
+ */
+export function fenAfterMove(fen: string, san: string): string | null {
+  try {
+    const chess = new Chess(fen);
+    chess.move(san);
+    return chess.fen();
+  } catch {
+    return null;
+  }
+}

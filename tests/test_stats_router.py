@@ -352,13 +352,12 @@ class TestGetMostPlayedOpenings:
 
 
 # ---------------------------------------------------------------------------
-# Additional tests for opponent_type/opponent_strength on /stats/global
-# (added to TestGetGlobalStats class below as stand-alone tests outside the class)
+# Additional tests for opponent_type/opponent_gap_min/max on /stats/global
 # ---------------------------------------------------------------------------
 
 
 class TestGetGlobalStatsOpponentFilters:
-    """Tests for opponent_type + opponent_strength params on GET /stats/global."""
+    """Tests for opponent_type + opponent_gap_min/max params on GET /stats/global."""
 
     @pytest.mark.asyncio
     async def test_accepts_opponent_type(self, auth_headers: dict[str, str]) -> None:
@@ -377,34 +376,34 @@ class TestGetGlobalStatsOpponentFilters:
         assert "by_color" in body
 
     @pytest.mark.asyncio
-    async def test_accepts_opponent_strength(self, auth_headers: dict[str, str]) -> None:
-        """Endpoint should accept opponent_strength param without error (D-18)."""
+    async def test_accepts_opponent_gap_range(self, auth_headers: dict[str, str]) -> None:
+        """Endpoint should accept opponent_gap_min/max params without error."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.get(
                 "/api/stats/global",
-                params={"opponent_strength": "stronger"},
+                params={"opponent_gap_min": 50},
                 headers=auth_headers,
             )
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_rejects_invalid_opponent_strength(self, auth_headers: dict[str, str]) -> None:
-        """Invalid opponent_strength returns 422 via Literal validation."""
+    async def test_rejects_non_integer_opponent_gap(self, auth_headers: dict[str, str]) -> None:
+        """Non-integer opponent_gap_min returns 422 via int validation."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.get(
                 "/api/stats/global",
-                params={"opponent_strength": "bogus"},
+                params={"opponent_gap_min": "bogus"},
                 headers=auth_headers,
             )
         assert resp.status_code == 422
 
 
 class TestGetRatingHistoryOpponentFilters:
-    """Tests for opponent_type + opponent_strength params on GET /stats/rating-history."""
+    """Tests for opponent_type + opponent_gap_min/max params on GET /stats/rating-history."""
 
     @pytest.mark.asyncio
     async def test_rating_history_accepts_opponent_type(self, auth_headers: dict[str, str]) -> None:
@@ -414,7 +413,7 @@ class TestGetRatingHistoryOpponentFilters:
         ) as client:
             resp = await client.get(
                 "/api/stats/rating-history",
-                params={"opponent_type": "bot", "opponent_strength": "similar"},
+                params={"opponent_type": "bot", "opponent_gap_min": -50, "opponent_gap_max": 50},
                 headers=auth_headers,
             )
         assert resp.status_code == 200
@@ -423,31 +422,31 @@ class TestGetRatingHistoryOpponentFilters:
         assert "lichess" in body
 
     @pytest.mark.asyncio
-    async def test_rating_history_accepts_opponent_strength(
+    async def test_rating_history_accepts_opponent_gap_range(
         self, auth_headers: dict[str, str]
     ) -> None:
-        """Endpoint should accept opponent_strength param without error (D-18)."""
+        """Endpoint should accept opponent_gap_min/max params without error."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.get(
                 "/api/stats/rating-history",
-                params={"opponent_strength": "similar"},
+                params={"opponent_gap_min": -50, "opponent_gap_max": 50},
                 headers=auth_headers,
             )
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_rating_history_rejects_invalid_opponent_strength(
+    async def test_rating_history_rejects_non_integer_opponent_gap(
         self, auth_headers: dict[str, str]
     ) -> None:
-        """Invalid opponent_strength returns 422 via Literal validation."""
+        """Non-integer opponent_gap_min returns 422 via int validation."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.get(
                 "/api/stats/rating-history",
-                params={"opponent_strength": "bogus"},
+                params={"opponent_gap_min": "bogus"},
                 headers=auth_headers,
             )
         assert resp.status_code == 422

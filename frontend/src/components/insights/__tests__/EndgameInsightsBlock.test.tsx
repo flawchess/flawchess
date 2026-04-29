@@ -43,7 +43,7 @@ const BASE_FILTERS: FilterState = {
   platforms: null,
   rated: null,
   opponentType: 'human',
-  opponentStrength: 'any',
+  opponentStrength: { min: null, max: null },
   recency: null,
   color: 'white',
 };

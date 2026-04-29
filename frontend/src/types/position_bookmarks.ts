@@ -50,7 +50,8 @@ export interface TimeSeriesRequest {
   rated?: boolean | null;
   opponent_type?: 'human' | 'bot' | 'both';
   recency?: 'week' | 'month' | '3months' | '6months' | 'year' | '3years' | '5years' | 'all' | null;
-  opponent_strength?: 'any' | 'stronger' | 'similar' | 'weaker';
+  opponent_gap_min?: number;
+  opponent_gap_max?: number;
 }
 
 export interface TimeSeriesPoint {

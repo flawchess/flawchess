@@ -6,8 +6,9 @@ import type {
   TimeControl,
   Platform,
   OpponentType,
-  OpponentStrength,
+  OpponentStrengthRange,
 } from '@/types/api';
+import { ANY_RANGE, rangeToQueryParams } from '@/lib/opponentStrength';
 
 interface OpeningInsightsFilters {
   recency: Recency | null;
@@ -15,7 +16,7 @@ interface OpeningInsightsFilters {
   platforms: Platform[] | null;
   rated: boolean | null;
   opponentType: OpponentType;
-  opponentStrength: OpponentStrength;
+  opponentStrength: OpponentStrengthRange;
 }
 
 /**
@@ -32,7 +33,8 @@ export function useOpeningInsights(filters?: OpeningInsightsFilters) {
   const platform = filters?.platforms ?? null;
   const rated = filters?.rated ?? null;
   const opponentType = filters?.opponentType ?? 'human';
-  const opponentStrength = filters?.opponentStrength ?? 'any';
+  const opponentStrength = filters?.opponentStrength ?? ANY_RANGE;
+  const gapParams = rangeToQueryParams(opponentStrength);
 
   return useQuery<OpeningInsightsResponse>({
     queryKey: [
@@ -42,7 +44,8 @@ export function useOpeningInsights(filters?: OpeningInsightsFilters) {
       platform,
       rated,
       opponentType,
-      opponentStrength,
+      opponentStrength.min,
+      opponentStrength.max,
     ],
     queryFn: () =>
       apiClient
@@ -52,7 +55,7 @@ export function useOpeningInsights(filters?: OpeningInsightsFilters) {
           platform: platform ?? undefined,
           rated: rated ?? undefined,
           opponent_type: opponentType,
-          opponent_strength: opponentStrength,
+          ...gapParams,
           color: 'all', // D-02: always 'all' regardless of global filter
         })
         .then((r) => r.data),

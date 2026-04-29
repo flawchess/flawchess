@@ -6,7 +6,7 @@ import {
   formatConfidenceTooltip,
   getSeverityBorderColor,
 } from '@/lib/openingInsights';
-import { sanToSquares } from '@/lib/sanToSquares';
+import { fenAfterMove, sanToSquares } from '@/lib/sanToSquares';
 import { MIN_GAMES_FOR_RELIABLE_STATS, TROLL_WATERMARK_OPACITY, UNRELIABLE_OPACITY } from '@/lib/theme';
 import { isTrollPosition } from '@/lib/trollOpenings';
 import trollFaceUrl from '@/assets/troll-face.svg';
@@ -66,9 +66,15 @@ export function OpeningFindingCard({
     ...(isUnreliable ? { opacity: UNRELIABLE_OPACITY } : {}),
   };
 
-  // Phase 77 D-02/D-10: Show troll-face watermark when the position is in the curated set.
-  // Pure O(1) Set.has lookup after a tiny string transform — no useMemo needed.
-  const showTroll = isTrollPosition(finding.entry_fen, finding.color);
+  // Phase 77 D-02/D-10: Show troll-face watermark when the entry position OR the
+  // post-candidate-move position matches a curated troll line. Pure O(1) Set.has
+  // lookups after a tiny string transform — no useMemo needed. fenAfterMove()
+  // returns null on illegal SAN / malformed FEN, which isTrollPosition treats as
+  // a non-match, so the second branch degrades safely.
+  const resultingFen = fenAfterMove(finding.entry_fen, finding.candidate_move_san);
+  const showTroll =
+    isTrollPosition(finding.entry_fen, finding.color) ||
+    (resultingFen !== null && isTrollPosition(resultingFen, finding.color));
 
   const headerLine = (
     <div className="flex items-center gap-2 text-sm min-w-0">
