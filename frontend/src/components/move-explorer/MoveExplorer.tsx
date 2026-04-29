@@ -333,22 +333,20 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
           {showTroll && (
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              viewBox="0 0 64 64"
               aria-hidden="true"
               data-testid={`move-list-row-${entry.move_san}-troll-icon`}
               className="inline-block h-4 w-4 text-muted-foreground"
             >
-              <circle cx="12" cy="12" r="10" />
-              {/* Sunglasses: two filled lenses joined by a thin bridge */}
-              <rect x="4" y="8" width="6" height="4" rx="1" fill="currentColor" stroke="none" />
-              <rect x="14" y="8" width="6" height="4" rx="1" fill="currentColor" stroke="none" />
-              <line x1="10" y1="10" x2="14" y2="10" />
-              <path d="M8 14.5 Q12 17.5 16 14.5" />
+              <g fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="32" cy="32" r="27" />
+                <path d="M22 43.5c2.9 3 6.3 4.5 10 4.5s7.1-1.5 10-4.5" />
+              </g>
+              <g fill="currentColor">
+                <path d="M11.5 24.5c.5-2.3 2.4-3.5 5.1-3.5h10.1c2.4 0 3.9 1.4 3.5 3.7l-.9 5.8c-.5 3.4-2.7 5.5-6.1 5.5H19c-2.8 0-4.6-1.4-5.4-4.2l-2.1-7.3z" />
+                <path d="M52.5 24.5c-.5-2.3-2.4-3.5-5.1-3.5H37.3c-2.4 0-3.9 1.4-3.5 3.7l.9 5.8c.5 3.4 2.7 5.5 6.1 5.5H45c2.8 0 4.6-1.4 5.4-4.2l2.1-7.3z" />
+                <path d="M29.3 24h5.4v4h-5.4z" />
+              </g>
             </svg>
           )}
         </span>
