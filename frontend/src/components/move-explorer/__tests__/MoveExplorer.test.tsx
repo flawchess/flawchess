@@ -394,8 +394,9 @@ describe('Phase 77 — Troll-opening inline icon', () => {
     consoleErrorSpy.mockRestore();
   });
 
-  it('icon is decorative (aria-hidden)', () => {
-    // Inline SVG (no <img>), so no alt attribute — aria-hidden alone covers AT.
+  it('icon is exposed to assistive tech with role and label', () => {
+    // Tooltip is visual-only, so the SVG itself carries role="img" + aria-label
+    // for screen readers (commit d2983dc).
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', result_fen: RESULT_FEN_AFTER_E5 })]}
@@ -406,6 +407,7 @@ describe('Phase 77 — Troll-opening inline icon', () => {
       />,
     );
     const icon = screen.getByTestId('move-list-row-e4-troll-icon');
-    expect(icon.getAttribute('aria-hidden')).toBe('true');
+    expect(icon.getAttribute('role')).toBe('img');
+    expect(icon.getAttribute('aria-label')).toBe('Considered a troll opening');
   });
 });
