@@ -2,9 +2,23 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 
-// IntersectionObserver is not available in jsdom — stub it as a class constructor.
+// IntersectionObserver is not available in jsdom. Stub it as a class
+// constructor that fires the callback synchronously on observe() so
+// LazyMiniBoard mounts MiniBoard immediately and the arrow overlay renders
+// without us having to mock LazyMiniBoard itself. (Quick task 260429-gmj —
+// before this fix, `visible` stayed `false` and MiniBoard never mounted, so
+// arrow-overlay assertions could not work.)
 class MockIntersectionObserver {
-  observe = vi.fn();
+  private cb: IntersectionObserverCallback;
+  constructor(cb: IntersectionObserverCallback) {
+    this.cb = cb;
+  }
+  observe = (el: Element) => {
+    this.cb(
+      [{ isIntersecting: true, target: el } as IntersectionObserverEntry],
+      this as unknown as IntersectionObserver,
+    );
+  };
   disconnect = vi.fn();
   unobserve = vi.fn();
 }
@@ -401,6 +415,72 @@ describe('OpeningFindingCard', () => {
       const movesBtns = screen.getAllByTestId('opening-finding-card-7-moves');
       fireEvent.click(movesBtns[0]!);
       expect(onFindingClick).toHaveBeenCalled();
+    });
+  });
+
+  describe('Quick task 260429-gmj — score-colored after-move arrow', () => {
+    // Test A: arrow overlay renders in BOTH layouts when the candidate move parses.
+    it('renders <svg data-testid="mini-board-arrow-overlay"> in both mobile and desktop layouts', () => {
+      const finding = makeFinding({
+        entry_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+        candidate_move_san: 'e4',
+      });
+      renderCard({ finding, idx: 0 });
+      const overlays = screen.getAllByTestId('mini-board-arrow-overlay');
+      expect(overlays.length).toBe(2); // one in sm:hidden, one in hidden sm:flex
+    });
+
+    // Test B: arrow color = getSeverityBorderColor for all 4 (classification, severity) combos.
+    it.each([
+      ['weakness', 'major', DARK_RED] as const,
+      ['weakness', 'minor', LIGHT_RED] as const,
+      ['strength', 'major', DARK_GREEN] as const,
+      ['strength', 'minor', LIGHT_GREEN] as const,
+    ])(
+      'arrow path fill matches getSeverityBorderColor for %s/%s',
+      (classification, severity, expectedHex) => {
+        const finding = makeFinding({
+          classification: classification as OpeningInsightFinding['classification'],
+          severity: severity as OpeningInsightFinding['severity'],
+          entry_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+          candidate_move_san: 'e4',
+        });
+        renderCard({ finding, idx: 0 });
+        const overlays = screen.getAllByTestId('mini-board-arrow-overlay');
+        const path = overlays[0]!.querySelector('path');
+        expect(path).not.toBeNull();
+        const fillAttr = path!.getAttribute('fill') ?? '';
+        // jsdom may normalize hex → rgb() on inline style but preserves the
+        // raw value when set via the `fill` SVG attribute. Check both forms.
+        expect(
+          fillAttr === expectedHex || fillAttr === hexToRgb(expectedHex),
+        ).toBe(true);
+      },
+    );
+
+    // Test C: illegal/unparseable SAN gracefully degrades to no arrow.
+    it('does not render the arrow overlay when candidate_move_san is illegal in entry_fen', () => {
+      const finding = makeFinding({
+        entry_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+        candidate_move_san: 'Zz9',
+      });
+      renderCard({ finding, idx: 0 });
+      // Card should still render without throwing.
+      expect(screen.getByTestId('opening-finding-card-0')).toBeTruthy();
+      expect(screen.queryAllByTestId('mini-board-arrow-overlay').length).toBe(0);
+    });
+
+    // Test D: arrow renders for both color sides (board flipped for black).
+    it('renders the arrow overlay when finding.color === "black" (flipped board)', () => {
+      const finding = makeFinding({
+        color: 'black',
+        // Position after 1.e4 — black to move. e5 is legal here.
+        entry_fen: 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1',
+        candidate_move_san: 'e5',
+      });
+      renderCard({ finding, idx: 0 });
+      const overlays = screen.getAllByTestId('mini-board-arrow-overlay');
+      expect(overlays.length).toBe(2);
     });
   });
 });
