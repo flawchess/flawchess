@@ -125,7 +125,7 @@ export function OpponentStrengthFilter({ value, onChange }: OpponentStrengthFilt
           thumbLabels={['Minimum opponent Elo gap', 'Maximum opponent Elo gap']}
           data-testid="filter-opponent-strength-slider"
         />
-        <div className="mt-1 flex justify-between text-[10px] tabular-nums text-muted-foreground">
+        <div className="mt-1 flex justify-between text-xs tabular-nums text-muted-foreground">
           <span>≤−{Math.abs(SLIDER_MIN)}</span>
           <span>0</span>
           <span>≥+{SLIDER_MAX}</span>

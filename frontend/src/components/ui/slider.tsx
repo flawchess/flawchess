@@ -37,6 +37,11 @@ function Slider({
   return (
     <SliderPrimitive.Root
       data-slot="slider"
+      // vaul (Drawer) escape hatch: a horizontal drag inside a `direction="right"`
+      // drawer would otherwise be interpreted as swipe-to-close, so the user
+      // can't move the slider thumbs on touch. `data-vaul-no-drag` opts the
+      // slider out of the drawer's drag handler.
+      data-vaul-no-drag=""
       defaultValue={defaultValue}
       value={value}
       min={min}
