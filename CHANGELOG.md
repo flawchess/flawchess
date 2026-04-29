@@ -8,20 +8,49 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.14] Score-Based Opening Insights — 2026-04-29
+
+Replaces the loss/win-rate framing of v1.13 with a calibrated discovery surface
+built on chess score `(W + 0.5·D)/N`. Effect size decides what shows up,
+confidence annotates how sure we are. Trinomial Wald 95% half-width drives a
+low/medium/high confidence badge surfaced on Insights cards and Move Explorer
+moves-list rows. `MIN_GAMES_PER_CANDIDATE` drops 20 → 10 — the badge calibrates
+trust where the hard floor used to gate. Phase 77 adds a frontend-only
+troll-opening watermark on Insights cards and Move Explorer rows. INSIGHT-UI-04
+(soften titles per SEED-008) descoped on close: severity word never appeared
+as user-facing text; confidence badge + sort calibration deliver SEED-008's
+intent without rewriting "Weakness/Strength" titles.
+
 ### Added
-- Move Explorer: new "Conf" column showing low / med / high confidence per move so you can tell how well-sampled each next-move statistic is (Phase 76).
-- Opening Insights cards: each card now shows a "Confidence: low / medium / high" line with a hover tooltip explaining how to read it (Phase 76).
-- Opening Insights section titles: a small `?` icon next to each section title opens a popover explaining score, the 5%-from-pivot effect-size gate, and what confidence means (Phase 76).
+- Phase 75: Trinomial Wald 95% confidence interval per opening insight finding using the actual variance of the chess result distribution `X ∈ {0, 0.5, 1}` — variance `(W + 0.25·D)/N − score²`, not the binomial-Wilson approximation. Pure-Python `math` only, no scipy. Half-width buckets `≤ 0.10 → high`, `≤ 0.20 → medium`, else `low`.
+- Phase 75: `OpeningInsightFinding` API contract extended with `confidence: "low" | "medium" | "high"` and `p_value: float` (two-sided Z-test of observed score vs 0.50, tooltip-grade significance). `severity` retained.
+- Phase 76: Move Explorer "Conf" column showing low / med / high confidence per move so you can tell how well-sampled each next-move statistic is.
+- Phase 76: `NextMoveEntry` API contract extended with `score`, `confidence`, and `p_value` for moves-list parity with Insights findings.
+- Phase 76: Opening Insights cards each show a "Confidence: low / medium / high" line with a hover tooltip explaining how to read it.
+- Phase 76: Opening Insights section titles each gain a small `?` icon that opens a popover explaining score, the 5%-from-pivot effect-size gate, and what confidence means.
+- Phase 77: Troll-opening watermark — `troll-face.svg` renders as a 30%-opacity bottom-right watermark on Opening Insights cards (mobile + desktop) and a small inline icon next to qualifying SAN rows in Move Explorer (desktop only). Pure visual easter egg; matching is frontend-only via a side-only FEN piece-placement key — no backend schema, no API contract change.
 
 ### Changed
-- Opening Insights ranking now uses the Wilson 95% score interval bound instead of Wald. Fixes degeneracy at boundary scores (Wald upper bound for 0/11 was 0.000; Wilson is ~0.259) and demotes small-N extreme findings in favor of large-N moderate findings within each section. Top-of-list mostly stable; mid-list reorders to favor higher-N findings. Backend constant `OPENING_INSIGHTS_WALD_Z_95` renamed to `OPENING_INSIGHTS_CI_Z_95` (value unchanged at 1.96). The trinomial Wald p-value in `score_confidence.py` (separate procedure for the confidence badge) is unchanged (quick task 260428-v9i).
-- Move Explorer arrows and row tints now reflect chess score (W + 0.5D)/N rather than separate win/loss rates. Color encoding stays effect-size only — arrows show how far from a 50% break-even your performance sits (Phase 76).
-- Opening Insights card prose reframed from "You lose / win X%" to "You score X% as colour after move" — same form for both weakness and strength sections (Phase 76).
-- Opening Insights cards within each section now sort by confidence first, then by distance from 50% — high-confidence findings rise to the top (Phase 76).
-- Low-confidence (or low-game-count) Move Explorer rows and Opening Insights cards are visually muted at 50% opacity to flag treat-as-a-hint findings without hiding them (Phase 76).
+- Phase 75: Opening insight classification migrated from loss/win rate to chess score `(W + 0.5·D)/N`. Effect-size gate against a 0.50 pivot with strict `≤`/`≥` boundaries — minor at `score ≤ 0.45` / `≥ 0.55`, major at `≤ 0.40` / `≥ 0.60`. Symmetric on weakness and strength sides, eliminating the prior `loss_rate > 0.55` asymmetry.
+- Phase 75: `MIN_GAMES_PER_CANDIDATE` dropped 20 → 10 to enable discovery framing — confidence badge replaces hard-floor gate.
+- Phase 76: Move Explorer arrows and row tints now reflect chess score `(W + 0.5·D)/N` rather than separate win/loss rates. Color encoding stays effect-size only — arrows show how far from a 50% break-even your performance sits.
+- Phase 76: Opening Insights card prose reframed from "You lose / win X%" to "You score X% as &lt;color&gt; after &lt;move&gt;" — same form for both weakness and strength sections.
+- Phase 76: Opening Insights cards within each section now sort by confidence first, then by distance from 50% — high-confidence findings rise to the top.
+- Phase 76: Low-confidence (or low-game-count) Move Explorer rows and Opening Insights cards are visually muted at 50% opacity to flag treat-as-a-hint findings without hiding them.
+- Quick task 260428-v9i: Opening Insights ranking now uses the Wilson 95% score interval bound instead of Wald. Fixes degeneracy at boundary scores (Wald upper bound for 0/11 was 0.000; Wilson is ~0.259) and demotes small-N extreme findings in favor of large-N moderate findings within each section. Backend constant `OPENING_INSIGHTS_WALD_Z_95` renamed to `OPENING_INSIGHTS_CI_Z_95` (value unchanged at 1.96). The trinomial Wald p-value in `score_confidence.py` (separate procedure for the confidence badge) is unchanged.
+- PR #71 (post-Phase-76 inline hotfix): Move Explorer arrows for low-confidence moves are forced grey and the row tint is skipped — board reads cleaner; low-confidence findings still surface in the table with the badge but don't visually claim authority on the board.
+- Quick task 260429-gmj (PR #73): Opening Insights cards now render an arrow on the mini board showing the after-move position rather than the entry position — clearer at-a-glance read of which candidate move the finding is about.
 
 ### Fixed
-- Opening Insights cards no longer break when the backend stops returning the (now removed) `loss_rate` / `win_rate` fields — cards read `score` directly per the Phase 75 contract (Phase 76).
+- Phase 76: Opening Insights cards no longer break when the backend stops returning the (now removed) `loss_rate` / `win_rate` fields — cards read `score` directly per the Phase 75 contract.
+
+### Removed
+- Phase 75: `loss_rate` and `win_rate` fields removed from the `OpeningInsightFinding` API payload. Score is the canonical metric; raw `w / d / l / n_games` remain as the literal-data display.
+
+### Tests
+- Phase 75: CI consistency test `tests/services/test_opening_insights_arrow_consistency.py` rewritten to assert score-based threshold lock-step between backend classification and `frontend/src/lib/arrowColor.ts`.
+- Phase 76: CI structural assertion ensures `compute_confidence_bucket` has only one implementation across the codebase. `arrowColor.ts` boundary tests cover all six effect-size regions; `OpeningFindingCard` tests cover confidence indicator + tooltip + opacity mute; `OpeningInsightsBlock` tests cover the four `InfoPopover` triggers.
+- Phase 77: 9 new test cases under `OpeningFindingCard.test.tsx` (`describe('Phase 77 — Troll-opening watermark')`) asserting watermark gating per CONTEXT.md decisions D-02..D-05; Move Explorer inline-icon tests under `MoveExplorer.test.tsx`.
 
 ## [v1.13] Opening Insights — 2026-04-27
 
@@ -400,7 +429,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.13...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.14...HEAD
+[v1.14]: https://github.com/flawchess/flawchess/compare/v1.13...v1.14
 [v1.13]: https://github.com/flawchess/flawchess/compare/v1.12...v1.13
 [v1.12]: https://github.com/flawchess/flawchess/compare/v1.11...v1.12
 [v1.11]: https://github.com/flawchess/flawchess/compare/v1.10...v1.11
