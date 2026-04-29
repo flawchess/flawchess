@@ -40,5 +40,6 @@ export const BLACK_TROLL_KEYS: ReadonlySet<string> = new Set([
   // Borg Defence (Reversed Grob) — after 1.e4 g5 (manually added; not in cEDAMVBB study)
   'rnbqkbnr/pppppp1p/8/6p1/8/8/8/8',
   // Fred Defence — after 1.e4 f5 (manually added; not in cEDAMVBB study)
-  'rnbqkbnr/ppppp1pp/8/5p2/8/8/8/8',
+  // Disabled because of false alarms for Dutch defense
+  //'rnbqkbnr/ppppp1pp/8/5p2/8/8/8/8',
 ]);
