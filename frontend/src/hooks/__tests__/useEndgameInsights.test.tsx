@@ -33,7 +33,7 @@ const BASE_FILTERS: FilterState = {
   platforms: ['chess.com'],
   rated: true,
   opponentType: 'human',
-  opponentStrength: 'similar',
+  opponentStrength: { min: -50, max: 50 },
   recency: '90d',
   color: 'white',
 };
@@ -71,7 +71,8 @@ describe('useEndgameInsights', () => {
       platform: ['chess.com'],
       recency: '90d',
       rated: true,
-      opponent_strength: 'similar',
+      opponent_gap_min: -50,
+      opponent_gap_max: 50,
       color: 'white',
     });
   });

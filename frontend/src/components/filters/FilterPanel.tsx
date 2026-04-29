@@ -6,12 +6,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { MatchSide, TimeControl, Recency, Color, Platform, OpponentType, OpponentStrength } from '@/types/api';
+import type { MatchSide, TimeControl, Recency, Color, Platform, OpponentType, OpponentStrengthRange } from '@/types/api';
 import { cn } from '@/lib/utils';
-import { InfoPopover } from '@/components/ui/info-popover';
+import { ANY_RANGE } from '@/lib/opponentStrength';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { Button } from '@/components/ui/button';
+import { OpponentStrengthFilter } from './OpponentStrengthFilter';
 
 export interface FilterState {
   matchSide: MatchSide;
@@ -19,7 +20,11 @@ export interface FilterState {
   platforms: Platform[] | null; // null = all
   rated: boolean | null; // null = all
   opponentType: OpponentType; // default human = computer games excluded
-  opponentStrength: OpponentStrength; // default any = no strength filter
+  /**
+   * Opponent strength as a (gap_min, gap_max) range over opponent_rating - user_rating.
+   * Default `{ min: null, max: null }` = no filter (Any preset).
+   */
+  opponentStrength: OpponentStrengthRange;
   recency: Recency | null; // null = all time
   color: Color;
 }
@@ -31,7 +36,7 @@ export const DEFAULT_FILTERS: FilterState = {
   platforms: null,
   rated: null,
   opponentType: 'human',
-  opponentStrength: 'any',
+  opponentStrength: ANY_RANGE,
   recency: null,
   color: 'white',
 };
@@ -78,6 +83,13 @@ export function areFiltersEqual(
       const setB = new Set<string>(bv as readonly string[]);
       if (!(av as readonly string[]).every((v) => setB.has(v))) return false;
       continue;
+    }
+    // opponentStrength is the only object-shaped field; compare structurally.
+    if (key === 'opponentStrength') {
+      const ar = av as OpponentStrengthRange;
+      const br = bv as OpponentStrengthRange;
+      if (ar.min === br.min && ar.max === br.max) continue;
+      return false;
     }
     return false;
   }
@@ -242,42 +254,10 @@ export function FilterPanel({
 
       {/* Opponent Strength */}
       {show('opponentStrength') && (
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1">
-              Opponent Strength
-              <InfoPopover ariaLabel="Opponent strength filter info" testId="filter-opponent-strength-info" side="bottom">
-                <div className="space-y-2">
-                  <div className="space-y-1">
-                    <p><strong>Stronger:</strong> Rated 50+ ELO above you</p>
-                    <p><strong>Similar:</strong> Within &plusmn;50 ELO</p>
-                    <p><strong>Weaker:</strong> Rated 50+ ELO below you</p>
-                  </div>
-                  <p>
-                    Useful when your games aren&apos;t always rating-matched (casual play, tournaments, arenas), or when you want to isolate how you perform against stronger, similar, or weaker opponents.
-                  </p>
-                </div>
-              </InfoPopover>
-            </span>
-          </p>
-          <ToggleGroup
-            type="single"
-            value={filters.opponentStrength}
-            onValueChange={(v) => {
-              if (!v) return;
-              update({ opponentStrength: v as OpponentStrength });
-            }}
-            variant="outline"
-            size="sm"
-            data-testid="filter-opponent-strength"
-            className="w-full"
-          >
-            <ToggleGroupItem value="any" data-testid="filter-opponent-strength-any" className="min-h-11 sm:min-h-0 flex-1">Any</ToggleGroupItem>
-            <ToggleGroupItem value="stronger" data-testid="filter-opponent-strength-stronger" className="min-h-11 sm:min-h-0 flex-1">Stronger</ToggleGroupItem>
-            <ToggleGroupItem value="similar" data-testid="filter-opponent-strength-similar" className="min-h-11 sm:min-h-0 flex-1">Similar</ToggleGroupItem>
-            <ToggleGroupItem value="weaker" data-testid="filter-opponent-strength-weaker" className="min-h-11 sm:min-h-0 flex-1">Weaker</ToggleGroupItem>
-          </ToggleGroup>
-        </div>
+        <OpponentStrengthFilter
+          value={filters.opponentStrength}
+          onChange={(opponentStrength) => update({ opponentStrength })}
+        />
       )}
 
       {/* Opponent Type */}

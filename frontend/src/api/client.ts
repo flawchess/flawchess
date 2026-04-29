@@ -7,6 +7,8 @@ import type {
 } from '@/types/position_bookmarks';
 import type { RatingHistoryResponse, GlobalStatsResponse, MostPlayedOpeningsResponse } from '@/types/stats';
 import type { EndgameGamesResponse, EndgameOverviewResponse } from '@/types/endgames';
+import type { OpponentStrengthRange } from '@/types/api';
+import { rangeToQueryParams } from '@/lib/opponentStrength';
 
 /**
  * Central Axios instance.
@@ -70,7 +72,7 @@ export function buildFilterParams(params: {
   recency?: string | null;
   rated?: boolean | null;
   opponent_type?: string;
-  opponent_strength?: string;
+  opponent_strength?: OpponentStrengthRange;
   window?: number;
 }): Record<string, string | string[] | number | boolean> {
   const result: Record<string, string | string[] | number | boolean> = {};
@@ -79,7 +81,11 @@ export function buildFilterParams(params: {
   if (params.recency && params.recency !== 'all') result.recency = params.recency;
   if (params.rated !== null && params.rated !== undefined) result.rated = params.rated;
   if (params.opponent_type && params.opponent_type !== 'all') result.opponent_type = params.opponent_type;
-  if (params.opponent_strength && params.opponent_strength !== 'any') result.opponent_strength = params.opponent_strength;
+  if (params.opponent_strength) {
+    const gap = rangeToQueryParams(params.opponent_strength);
+    if (gap.opponent_gap_min !== undefined) result.opponent_gap_min = gap.opponent_gap_min;
+    if (gap.opponent_gap_max !== undefined) result.opponent_gap_max = gap.opponent_gap_max;
+  }
   if (params.window) result.window = params.window;
   return result;
 }
@@ -115,7 +121,7 @@ export const statsApi = {
     recency: string | null,
     platform: string | null,
     opponentType: string,
-    opponentStrength: string,
+    opponentStrength: OpponentStrengthRange,
   ) =>
     apiClient.get<RatingHistoryResponse>('/stats/rating-history', {
       params: buildFilterParams({
@@ -130,7 +136,7 @@ export const statsApi = {
     recency: string | null,
     platform: string | null,
     opponentType: string,
-    opponentStrength: string,
+    opponentStrength: OpponentStrengthRange,
   ) =>
     apiClient.get<GlobalStatsResponse>('/stats/global', {
       params: buildFilterParams({
@@ -147,7 +153,7 @@ export const statsApi = {
     platform?: string[] | null;
     rated?: boolean | null;
     opponent_type?: string;
-    opponent_strength?: string;
+    opponent_strength?: OpponentStrengthRange;
   }) =>
     apiClient.get<MostPlayedOpeningsResponse>('/stats/most-played-openings', {
       params: buildFilterParams(params ?? {}),
@@ -164,7 +170,7 @@ export const endgameApi = {
     recency?: string | null;
     rated?: boolean | null;
     opponent_type?: string;
-    opponent_strength?: string;
+    opponent_strength?: OpponentStrengthRange;
     window?: number;
   }) =>
     apiClient.get<EndgameOverviewResponse>('/endgames/overview', {
@@ -178,7 +184,7 @@ export const endgameApi = {
     recency?: string | null;
     rated?: boolean | null;
     opponent_type?: string;
-    opponent_strength?: string;
+    opponent_strength?: OpponentStrengthRange;
     offset?: number;
     limit?: number;
   }) =>

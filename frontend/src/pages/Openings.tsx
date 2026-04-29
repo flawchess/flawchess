@@ -41,6 +41,7 @@ import {
   useTimeSeries,
 } from '@/hooks/usePositionBookmarks';
 import { useMostPlayedOpenings } from '@/hooks/useStats';
+import { rangeToQueryParams } from '@/lib/opponentStrength';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import { MoveExplorer } from '@/components/move-explorer/MoveExplorer';
 import { MoveList } from '@/components/board/MoveList';
@@ -467,7 +468,7 @@ export function OpeningsPage() {
       platform: debouncedFilters.platforms,
       rated: debouncedFilters.rated,
       opponent_type: debouncedFilters.opponentType,
-      opponent_strength: debouncedFilters.opponentStrength,
+      ...rangeToQueryParams(debouncedFilters.opponentStrength),
       recency: debouncedFilters.recency === 'all' ? null : debouncedFilters.recency,
     };
   }, [chartBookmarks, debouncedFilters]);
