@@ -3,6 +3,7 @@ import { Chessboard } from 'react-chessboard';
 import { arrowSortKey } from '../../lib/arrowColor';
 import { darkSquareStyle, lightSquareStyle, BOARD_DARK_SQUARE, BOARD_LIGHT_SQUARE } from '../../lib/theme';
 import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '../../lib/highlightPulse';
+import { squareToCoords, buildArrowPath } from './arrowGeometry';
 
 interface BoardArrow {
   startSquare: string;
@@ -63,55 +64,6 @@ const ARROW_TIP_OVERSHOOT = 0.15;
 // Constants live in lib/highlightPulse.ts so the MoveExplorer row-pulse
 // stays driven by the same timing.
 const ARROW_PULSE_CLASS = 'animate-arrow-pulse';
-
-const FILES = 'abcdefgh';
-
-function squareToCoords(square: string, flipped: boolean): [number, number] {
-  // safe: square is always a 2-char chess square string like "e4"
-  const file = FILES.indexOf(square[0]!);
-  const rank = parseInt(square[1]!, 10) - 1;
-  const x = flipped ? 7 - file + 0.5 : file + 0.5;
-  const y = flipped ? rank + 0.5 : 7 - rank + 0.5;
-  return [x, y];
-}
-
-function buildArrowPath(
-  x1: number, y1: number, x2: number, y2: number,
-  shaftHalf: number, headHalf: number, headLen: number,
-): string {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const len = Math.sqrt(dx * dx + dy * dy);
-  // Unit vectors: along arrow and perpendicular
-  const ux = dx / len;
-  const uy = dy / len;
-  const px = -uy; // perpendicular
-  const py = ux;
-
-  // Arrowhead base point (where shaft meets head)
-  const bx = x2 - ux * headLen;
-  const by = y2 - uy * headLen;
-
-  // Key points
-  const startLeft = [x1 + px * shaftHalf, y1 + py * shaftHalf];
-  const junctionLeft = [bx + px * shaftHalf, by + py * shaftHalf];
-  const headLeft = [bx + px * headHalf, by + py * headHalf];
-  const tip = [x2, y2];
-  const headRight = [bx - px * headHalf, by - py * headHalf];
-  const junctionRight = [bx - px * shaftHalf, by - py * shaftHalf];
-  const startRight = [x1 - px * shaftHalf, y1 - py * shaftHalf];
-
-  return [
-    `M ${startLeft[0]},${startLeft[1]}`,
-    `L ${junctionLeft[0]},${junctionLeft[1]}`,
-    `L ${headLeft[0]},${headLeft[1]}`,
-    `L ${tip[0]},${tip[1]}`,
-    `L ${headRight[0]},${headRight[1]}`,
-    `L ${junctionRight[0]},${junctionRight[1]}`,
-    `L ${startRight[0]},${startRight[1]}`,
-    'Z',
-  ].join(' ');
-}
 
 // Render priority determined by arrowSortKey: grey = 2 (drawn first = bottom), red = 1 (middle), green = 0 (drawn last = on top).
 // Sort descending by key so grey (2) is rendered first (behind) and colored arrows (0, 1) render last (on top).
