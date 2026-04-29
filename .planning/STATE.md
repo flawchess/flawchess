@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.14
 milestone_name: Score-Based Opening Insights
-status: executing
-last_updated: "2026-04-28T22:08:21.181Z"
-last_activity: 2026-04-28 -- Phase 77 execution started
+status: "Phase 77 shipped — PR #72"
+last_updated: "2026-04-29T09:47:46.188Z"
+last_activity: "2026-04-29 -- Phase 77 shipped — PR #72"
 progress:
   total_phases: 4
   completed_phases: 0
@@ -18,9 +18,9 @@ progress:
 
 Phase: 77 (troll-opening-watermark-on-insights-findings) — EXECUTING
 Plan: 1 of 4
-Status: Executing Phase 77
+Status: Phase 77 shipped — PR #72
 Resume: .planning/phases/75-backend-score-metric-confidence-annotation/75-CONTEXT.md
-Last activity: 2026-04-28 -- Phase 77 execution started
+Last activity: 2026-04-29 -- Phase 77 shipped — PR #72
 
 ## Project Reference
 
