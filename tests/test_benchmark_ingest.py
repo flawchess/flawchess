@@ -123,6 +123,31 @@ def test_player_bucketing_multi_tc_membership() -> None:
     assert sum(1 for cell in out.values() if "specialist" in cell) == 2
 
 
+def test_player_bucketing_per_tc_threshold_dict() -> None:
+    """eval_threshold accepts a per-TC dict; classical can use a lower bar."""
+    from scripts.select_benchmark_users import bucket_players
+
+    player_stats = {
+        # 8 blitz eval games (>=10 fails), 2 classical eval games (>=1 passes)
+        "marathon_runner": _stats(
+            {"blitz": [1500] * 8, "classical": [1500, 1500]},
+            {"blitz": 8, "classical": 2},
+        ),
+        # 12 blitz eval games (>=10 passes), 0 classical (>=1 fails)
+        "blitz_only": _stats(
+            {"blitz": [1500] * 12},
+            {"blitz": 12},
+        ),
+    }
+    threshold_by_tc = {"bullet": 10, "blitz": 10, "rapid": 10, "classical": 1}
+    out = bucket_players(player_stats, eval_threshold=threshold_by_tc)
+
+    assert "marathon_runner" not in out.get((1200, "blitz"), [])
+    assert "marathon_runner" in out.get((1200, "classical"), [])
+    assert "blitz_only" in out.get((1200, "blitz"), [])
+    assert "blitz_only" not in out.get((1200, "classical"), [])
+
+
 def test_player_bucketing_boundaries() -> None:
     """Bucket boundaries: 1199->800, 1200->1200, 1599->1200, 1600->1600, 2399->2000, 2400->2400.
 

@@ -40,7 +40,26 @@ Usage:
         --dump-month 2026-03 \
         --per-cell 1000 \
         --eval-threshold 10 \
+        --eval-threshold-classical 1 \
         --db-url postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark
+
+Eval-threshold strategy:
+    --eval-threshold sets the floor for bullet/blitz/rapid: a user qualifies
+    for a (rating, TC) cell only if they have >= that many eval-bearing games
+    in that TC during the snapshot month. K=10 gives a stable per-TC median
+    Elo from a single month of fast-game data.
+
+    --eval-threshold-classical overrides the floor for classical only.
+    Classical games are rare in a single monthly dump (relatively few players
+    log >= 10 classical games per month at any rating), but classical players
+    typically analyze most of their games. K=1 for classical pulls in real
+    classical players who barely cleared the surface in March; the 36-month
+    per-TC window at ingest time still pulls plenty of analyzed games for
+    each. Without the override, classical-2400 caps out around 30-60 users
+    (vs ~1000 for the bullet/blitz/rapid 2400 cells).
+
+    If --eval-threshold-classical is omitted, classical uses the same value
+    as --eval-threshold (back-compat with one-flag invocations).
 """
 
 from __future__ import annotations
@@ -230,18 +249,29 @@ def _rating_bucket(median_elo: int) -> int | None:
 
 def bucket_players(
     player_stats: dict[str, PlayerStats] | dict[str, dict],
-    eval_threshold: int,
+    eval_threshold: int | dict[str, int],
 ) -> dict[tuple[int, str], list[str]]:
     """Bucket players into (rating_bucket, tc_bucket) cells with per-TC eligibility.
 
     Each user can produce up to 4 entries (one per TC where they have
-    >= eval_threshold eval-bearing games). The user's ELO bucket within a TC
-    is derived from the per-TC median Elo.
+    >= the TC's eval threshold eval-bearing games). The user's ELO bucket
+    within a TC is derived from the per-TC median Elo.
 
     player_stats[username] = {"elos_by_tc": {tc: [int]}, "eval_count_by_tc": {tc: int}}
+    eval_threshold: int (applies to all TCs) or dict[tc -> int] (per-TC override).
+        Classical games are rare in a single monthly dump, but classical
+        players analyze frequently — at ingest time the 36-month per-TC
+        window pulls plenty of eval-bearing games regardless of selection-
+        time threshold. So a typical config is high-K for bullet/blitz/rapid,
+        low-K for classical.
     Returns: {(rating_bucket, tc_bucket): [usernames]}
-    Excludes (per-TC): eval_count_by_tc[tc] < eval_threshold; median Elo in TC < 800.
+    Excludes (per-TC): eval_count_by_tc[tc] < threshold_by_tc[tc]; median Elo in TC < 800.
     """
+    if isinstance(eval_threshold, int):
+        threshold_by_tc: dict[str, int] = {tc: eval_threshold for tc in TC_BUCKETS}
+    else:
+        threshold_by_tc = eval_threshold
+
     out: dict[tuple[int, str], list[str]] = defaultdict(list)
     for username, stats in player_stats.items():
         elos_by_tc = stats["elos_by_tc"]
@@ -249,7 +279,8 @@ def bucket_players(
         for tc, elos in elos_by_tc.items():
             if not elos:
                 continue
-            if eval_count_by_tc.get(tc, 0) < eval_threshold:
+            tc_threshold = threshold_by_tc.get(tc, 0)
+            if eval_count_by_tc.get(tc, 0) < tc_threshold:
                 continue
             sorted_elos = sorted(elos)
             median_elo_in_tc = sorted_elos[len(sorted_elos) // 2]
@@ -403,7 +434,22 @@ def parse_args() -> argparse.Namespace:
         "--eval-threshold",
         type=int,
         default=DEFAULT_EVAL_THRESHOLD,
-        help="Min eval-bearing games per player (D-12)",
+        help=(
+            "Min eval-bearing snapshot-month games per (user, TC) (D-12). "
+            "Applies to bullet/blitz/rapid; classical can be overridden via "
+            "--eval-threshold-classical."
+        ),
+    )
+    parser.add_argument(
+        "--eval-threshold-classical",
+        type=int,
+        default=None,
+        help=(
+            "Per-TC override for classical. Defaults to --eval-threshold if "
+            "not set. Lower than the others is reasonable: classical is rare "
+            "in a monthly dump, but classical players analyze frequently and "
+            "the 36-month ingest window pulls plenty of analyzed games."
+        ),
     )
     parser.add_argument(
         "--db-url",
@@ -418,9 +464,22 @@ async def main() -> None:
     if settings.SENTRY_DSN:
         sentry_sdk.init(dsn=settings.SENTRY_DSN, environment=settings.ENVIRONMENT)
 
+    classical_threshold = (
+        args.eval_threshold_classical
+        if args.eval_threshold_classical is not None
+        else args.eval_threshold
+    )
+    threshold_by_tc: dict[str, int] = {
+        "bullet": args.eval_threshold,
+        "blitz": args.eval_threshold,
+        "rapid": args.eval_threshold,
+        "classical": classical_threshold,
+    }
+
     _log(
         f"Phase 69 selection scan starting: dump={args.dump_path}, "
-        f"month={args.dump_month}, per_cell={args.per_cell}"
+        f"month={args.dump_month}, per_cell={args.per_cell}, "
+        f"eval_threshold={threshold_by_tc}"
     )
 
     # Step 1: Stream the dump
@@ -438,7 +497,7 @@ async def main() -> None:
             eval_counts_by_tc[(username, tc)] = stats["eval_count_by_tc"].get(tc, 0)
 
     # Step 3: Bucket
-    cell_to_users = bucket_players(player_stats, eval_threshold=args.eval_threshold)
+    cell_to_users = bucket_players(player_stats, eval_threshold=threshold_by_tc)
     total_qualifying = sum(len(v) for v in cell_to_users.values())
     _log(
         f"Bucketing complete: {total_qualifying:,} qualifying (user, TC) pairs across "
