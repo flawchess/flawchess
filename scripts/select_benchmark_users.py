@@ -114,7 +114,7 @@ class PlayerStats(TypedDict):
 
 def _log(msg: str = "") -> None:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{ts}] {msg}")
+    print(f"[{ts}] {msg}", flush=True)
 
 
 def _parse_elo(s: str) -> int | None:
