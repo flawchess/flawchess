@@ -5,8 +5,10 @@ dump scan in scripts/select_benchmark_users.py. Created via Base.metadata.create
 against the benchmark engine -- NOT in the canonical Alembic chain (INFRA-02 isolates
 the canonical schema; benchmark-only tables stay out of dev/prod/test).
 
-The (lichess_username) unique constraint makes re-running selection idempotent:
-the same username produced from a re-scan will not duplicate-insert.
+The (lichess_username, tc_bucket) compound unique constraint makes re-running
+selection idempotent and lets one user occupy multiple cells (one per TC where
+they qualify). A user might qualify for both bullet and classical — each cell
+gets its own row with its own per-TC median Elo.
 """
 
 from __future__ import annotations
@@ -36,7 +38,11 @@ class BenchmarkSelectedUser(Base):
 
     __tablename__ = "benchmark_selected_users"
     __table_args__ = (
-        UniqueConstraint("lichess_username", name="uq_benchmark_selected_users_username"),
+        UniqueConstraint(
+            "lichess_username",
+            "tc_bucket",
+            name="uq_benchmark_selected_users_username_tc",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
