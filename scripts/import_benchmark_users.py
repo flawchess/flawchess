@@ -36,13 +36,13 @@ Usage (benchmark DB must be running via bin/benchmark_db.sh start):
     DATABASE_URL=postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark \
       uv run python scripts/import_benchmark_users.py \
         --per-cell 100 \
-        --snapshot-month-end 2026-02-28
+        --snapshot-month-end 2026-03-31
 
     # Dry-run to preview deficit without importing:
     DATABASE_URL=postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark \
       uv run python scripts/import_benchmark_users.py \
         --per-cell 100 \
-        --snapshot-month-end 2026-02-28 \
+        --snapshot-month-end 2026-03-31 \
         --dry-run
 """
 

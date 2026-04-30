@@ -38,8 +38,8 @@ Usage:
     uv run python scripts/select_benchmark_users.py \
         --dump-path /path/to/lichess_db_standard_rated_2026-03.pgn.zst \
         --dump-month 2026-03 \
-        --per-cell 500 \
-        --eval-threshold 5 \
+        --per-cell 1000 \
+        --eval-threshold 10 \
         --db-url postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark
 """
 
