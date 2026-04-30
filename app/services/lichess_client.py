@@ -52,6 +52,8 @@ async def fetch_lichess_games(
     username: str,
     user_id: int,
     since_ms: int | None = None,
+    max_games: int | None = None,
+    perf_type: str | None = None,
     on_game_fetched: Callable[[], None] | None = None,
 ) -> AsyncIterator[NormalizedGame]:
     """Async generator that yields normalized NormalizedGame objects for a lichess user.
@@ -67,6 +69,14 @@ async def fetch_lichess_games(
         user_id: Internal database user ID (denormalized into each game dict).
         since_ms: If provided, only games created at or after this Unix millisecond
             timestamp are returned (lichess ``since`` parameter).
+        max_games: If provided, caps the number of games lichess returns
+            (server-side ``max`` parameter). Used by benchmark ingest to truncate
+            per-(user, TC) volume; user-facing imports leave this ``None``.
+        perf_type: If provided, restricts results to one perfType
+            (``bullet``/``blitz``/``rapid``/``classical``/...). Opt-in because
+            this filter silently truncates: it excludes correspondence, chess960,
+            and imported (fromPosition) games server-side. Benchmark ingest wants
+            exactly that behavior; user-facing imports leave this ``None``.
         on_game_fetched: Optional callback called once per yielded game.
 
     Raises:
@@ -79,11 +89,6 @@ async def fetch_lichess_games(
             ``.planning/debug/prod-import-missed-games.md`` for the chess.com
             sibling of this bug.
     """
-    # Do not pass perfType to the lichess API. The perfType filter is applied
-    # server-side and excludes correspondence, chess960, and imported (fromPosition)
-    # games before any data reaches us — causing silent truncation (e.g. 191 of 1201
-    # games returned). Non-standard variants are correctly filtered at the
-    # normalization layer by normalize_lichess_game() (variant_key != "standard").
     params: dict[str, str | bool] = {
         "pgnInJson": True,
         "moves": True,
@@ -96,6 +101,10 @@ async def fetch_lichess_games(
 
     if since_ms is not None:
         params["since"] = str(since_ms)
+    if max_games is not None:
+        params["max"] = str(max_games)
+    if perf_type is not None:
+        params["perfType"] = perf_type
 
     url = f"{LICHESS_API_URL}/{username}"
     headers = {"Accept": "application/x-ndjson"}
