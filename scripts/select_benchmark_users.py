@@ -40,7 +40,7 @@ Usage:
         --dump-month 2026-03 \
         --per-cell 500 \
         --eval-threshold 10 \
-        --eval-threshold-classical 1 \
+        --eval-threshold-classical 3 \
         --db-url postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark \
         2>&1 | tee logs/benchmark-select-2026-03-$(date +%Y-%m-%d).log
 
