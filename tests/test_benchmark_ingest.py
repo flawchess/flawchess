@@ -172,6 +172,24 @@ def test_player_bucketing_boundaries() -> None:
     assert "p_2400" in out.get((2400, "blitz"), [])
 
 
+def test_compute_tc_bucket_excludes_correspondence() -> None:
+    """Correspondence games (TimeControl='-') return None and are dropped from selection.
+
+    Lichess `perfType=classical` does not include correspondence at ingest time,
+    so correspondence-only users selected as 'classical' would return zero games.
+    Selecting them is dead weight; exclude at the source.
+    """
+    from scripts.select_benchmark_users import compute_tc_bucket
+
+    assert compute_tc_bucket("-") is None
+    assert compute_tc_bucket("") is None
+    # Sanity: real clock formats still bucket correctly
+    assert compute_tc_bucket("60+0") == "bullet"
+    assert compute_tc_bucket("300+0") == "blitz"
+    assert compute_tc_bucket("900+10") == "rapid"
+    assert compute_tc_bucket("1800+30") == "classical"
+
+
 # --- INGEST-01: streaming PGN-header parser --------------------------------------
 
 
@@ -278,23 +296,38 @@ async def test_stub_user_invariants() -> None:
     assert user_obj.is_guest is False
 
 
-def test_compute_deficit_users_skips_completed_in_pool_order() -> None:
-    """compute_deficit_users draws (N - completed_in_cell) usernames in pool order."""
+def test_compute_deficit_users_skips_attempted_counts_only_filled() -> None:
+    """compute_deficit_users uses 'filled' for deficit, 'attempted' for skip-on-resume.
+
+    Two-set semantics so 404'd users (attempted but not filled) don't burn slots —
+    a re-run pulls a replacement from the unattempted pool.
+    """
     from scripts.import_benchmark_users import compute_deficit_users
 
     pool = ["u1", "u2", "u3", "u4", "u5"]
-    completed = {"u1", "u2"}
-    # Deficit = 3 - 2 (already completed in pool) = 1; draw next from pool skipping completed
-    out = compute_deficit_users(pool=pool, completed=completed, target_n=3)
-    assert out == ["u3"]
+    # u1 filled (counts toward target); u2 attempted but skipped (does NOT count)
+    filled = {"u1"}
+    attempted = {"u1", "u2"}
+    # Deficit = 3 - 1 (filled in pool) = 2; pull u3 and u4, skipping u2 (attempted)
+    out = compute_deficit_users(pool=pool, filled=filled, attempted=attempted, target_n=3)
+    assert out == ["u3", "u4"]
 
-    # If target already met: empty list
-    out2 = compute_deficit_users(pool=pool, completed={"u1", "u2", "u3"}, target_n=3)
+    # If target already met by filled: empty list
+    out2 = compute_deficit_users(
+        pool=pool, filled={"u1", "u2", "u3"}, attempted={"u1", "u2", "u3"}, target_n=3
+    )
     assert out2 == []
 
     # If pool is exhausted before target: return what is available
-    out3 = compute_deficit_users(pool=["u1", "u2"], completed=set(), target_n=10)
+    out3 = compute_deficit_users(pool=["u1", "u2"], filled=set(), attempted=set(), target_n=10)
     assert out3 == ["u1", "u2"]
+
+    # All-attempted-none-filled (e.g. cell of all 404s): deficit equals target,
+    # but no unattempted candidates remain, so empty list.
+    out4 = compute_deficit_users(
+        pool=["u1", "u2"], filled=set(), attempted={"u1", "u2"}, target_n=3
+    )
+    assert out4 == []
 
 
 @pytest.mark.asyncio

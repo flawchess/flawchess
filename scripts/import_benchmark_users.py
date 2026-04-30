@@ -1,10 +1,16 @@
 """Benchmark ingestion orchestrator: import games for selected Lichess users.
 
 Reads benchmark_selected_users (populated by scripts/select_benchmark_users.py),
-computes the per-cell deficit (N - already_completed), creates a stub User row
+computes the per-cell deficit (N - already_filled), creates a stub User row
 per username in the benchmark DB, then calls the existing run_import pipeline
 with a per-(user, TC) since_ms_override + perf_type + max_games — recording
 per-(user, TC) checkpoint state in benchmark_ingest_checkpoints.
+
+Slot-filling rule: only users with status='completed' AND games_imported >=
+--min-games count toward --per-cell. Users with fewer games are checkpointed
+as 'skipped'; 404'd or errored users as 'failed'. Both are skipped on resume
+but don't fill a slot — the orchestrator pulls a replacement from the pool
+until the cell hits its target or the unattempted candidates run out.
 
 Design decisions (Phase 69 context):
   - Centipawn convention: signed from White's POV. [%eval 2.35] = +235 cp;
@@ -36,7 +42,8 @@ Usage (benchmark DB must be running via bin/benchmark_db.sh start):
     DATABASE_URL=postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark \
       uv run python scripts/import_benchmark_users.py \
         --per-cell 100 \
-        --snapshot-month-end 2026-03-31
+        --snapshot-month-end 2026-03-31 \
+        2>&1 | tee logs/benchmark-ingest-percell100-$(date +%Y-%m-%d).log
 
     # Dry-run to preview deficit without importing:
     DATABASE_URL=postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark \
@@ -60,7 +67,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import sentry_sdk
-from sqlalchemy import Table, select
+from sqlalchemy import Table, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import cast
 
@@ -68,6 +75,7 @@ from app.core.config import settings
 from app.core.database import async_session_maker, engine
 from app.models.benchmark_ingest_checkpoint import BenchmarkIngestCheckpoint
 from app.models.benchmark_selected_user import BenchmarkSelectedUser
+from app.models.game import Game
 from app.models.oauth_account import OAuthAccount  # noqa: F401 -- required for User relationship
 from app.models.user import User
 from app.services.import_service import create_job, get_job, run_import
@@ -86,8 +94,17 @@ STUB_PASSWORD = "!BENCHMARK_NO_AUTH"  # not a valid bcrypt hash -> cannot auth
 STUB_EMAIL_DOMAIN = "@benchmark.flawchess.local"
 WINDOW_MONTHS = 36  # D-13: import games from the 36 months before snapshot_month_end
 
-# Terminal statuses: skip on resume
-_TERMINAL_STATUSES = {"completed", "skipped", "failed"}
+# Minimum games per (user, TC) to count toward the --per-cell target. Users
+# with fewer than this many imported games are checkpointed as 'skipped' so
+# they aren't re-attempted, but don't fill a benchmark slot — the orchestrator
+# pulls a replacement from the pool. Default 100; tunable via --min-games.
+DEFAULT_MIN_USEFUL_GAMES = 100
+
+# Statuses that count toward the --per-cell target (fill a slot).
+_FILLED_STATUSES = {"completed"}
+# Statuses that block re-attempt on resume but don't necessarily fill a slot.
+# Includes legacy 'skipped' rows from older runs (D-14 20k-cap path).
+_ATTEMPTED_STATUSES = {"completed", "skipped", "failed"}
 
 # --------------------------------------------------------------------------------------
 # Stop flag for SIGINT handling
@@ -123,29 +140,40 @@ def _log(msg: str = "") -> None:
 # --------------------------------------------------------------------------------------
 
 
-def compute_deficit_users(pool: list[str], completed: set[str], target_n: int) -> list[str]:
-    """Return the next (target_n - completed_in_pool) usernames from pool, in order.
+def compute_deficit_users(
+    pool: list[str], filled: set[str], attempted: set[str], target_n: int
+) -> list[str]:
+    """Return the next (target_n - filled_in_pool) usernames to attempt, in pool order.
 
-    Skips usernames already in completed. Returns an empty list if target is already
-    met. Returns up to len(pool) usernames if the pool is exhausted before the target.
+    Two-set semantics separates "fills a slot" from "skip on resume":
+      - filled: usernames that count toward target_n (status='completed' with
+        enough games). 404'd users and low-yield users do NOT fill slots.
+      - attempted: usernames already attempted (any terminal checkpoint). The
+        orchestrator excludes these from the next pull regardless of whether
+        they filled a slot — a 404 on a previous run shouldn't trigger another
+        404 on this run.
+
+    Returns an empty list if the target is already met. Returns fewer than the
+    deficit when the pool runs out of unattempted candidates.
 
     Args:
         pool: Ordered list of all candidate usernames for the cell.
-        completed: Set of usernames that already have a terminal checkpoint status.
-        target_n: Target number of users to have in terminal status for this cell.
+        filled: Subset of pool that has filled a slot (counts toward target).
+        attempted: Superset of filled — usernames already tried (any outcome).
+        target_n: Target number of useful users for this cell.
 
     Returns:
-        List of usernames to import, in pool order.
+        List of usernames to import, in pool order, capped at the deficit.
     """
-    completed_in_pool = sum(1 for u in pool if u in completed)
-    deficit = target_n - completed_in_pool
+    filled_in_pool = sum(1 for u in pool if u in filled)
+    deficit = target_n - filled_in_pool
     if deficit <= 0:
         return []
     out: list[str] = []
     for u in pool:
         if len(out) >= deficit:
             break
-        if u not in completed:
+        if u not in attempted:
             out.append(u)
     return out
 
@@ -276,6 +304,27 @@ async def _update_checkpoint(
     await session.flush()
 
 
+async def _purge_low_yield_user(session: AsyncSession, user_id: int, tc_bucket: str) -> None:
+    """Delete games for a (user, TC) cell that fell below the useful-games floor.
+
+    Removes the games at this TC bucket (game_positions cascades via FK). If the
+    user has no games left across any TC, also deletes the stub User row — every
+    descendant table (games, game_positions, import_jobs) cascades on user_id, and
+    benchmark_ingest_checkpoints.benchmark_user_id is SET NULL on user delete, so
+    the checkpoint audit row is preserved.
+
+    Multi-TC safety: if the same lichess_username qualified for another TC and
+    that import already filled the cell, those games remain — only the low-yield
+    TC's data is purged and the User survives.
+    """
+    await session.execute(
+        delete(Game).where(Game.user_id == user_id, Game.time_control_bucket == tc_bucket)
+    )
+    remaining = await session.execute(select(func.count(Game.id)).where(Game.user_id == user_id))
+    if (remaining.scalar() or 0) == 0:
+        await session.execute(delete(User).where(User.id == user_id))
+
+
 # --------------------------------------------------------------------------------------
 # Per-user import
 # --------------------------------------------------------------------------------------
@@ -287,12 +336,15 @@ async def _import_one_user(
     tc_bucket: str,
     snapshot_month_end: date,
     dry_run: bool,
+    min_useful_games: int,
 ) -> tuple[str, int]:
     """Import games for one (benchmark user, TC) cell.
 
     Returns:
         Tuple of (final_status, games_imported).
-        final_status: "completed" | "failed"
+        final_status: "completed" — useful (games_imported >= min_useful_games)
+                      "skipped"   — too few games for benchmark use
+                      "failed"    — 404 or other error
     """
     if dry_run:
         _log(f"  [dry-run] Would import {lichess_username}")
@@ -348,16 +400,36 @@ async def _import_one_user(
         final_status: str
 
         if job_state.status == "completed":
-            final_status = "completed"
+            # Successful import. Route to 'skipped' if yield is below the
+            # benchmark-usefulness floor — those rows still block re-attempt
+            # (skip on resume) but don't fill a per-cell slot, so the
+            # orchestrator pulls a replacement from the pool.
+            if games_imported < min_useful_games:
+                final_status = "skipped"
+                skip_reason = "too_few_games"
+            else:
+                final_status = "completed"
+                skip_reason = None
             async with async_session_maker() as session:
+                # Update checkpoint FIRST while the User still exists, so the
+                # benchmark_user_id FK lands cleanly. The subsequent purge may
+                # delete the User; ondelete=SET NULL on the checkpoint's FK
+                # then auto-NULLs benchmark_user_id at commit time.
                 await _update_checkpoint(
                     session,
                     lichess_username,
                     tc_bucket,
-                    status="completed",
+                    status=final_status,
                     games_imported=games_imported,
+                    skip_reason=skip_reason,
                     benchmark_user_id=user_id,
                 )
+                # Purge low-yield data so skipped users don't pollute downstream
+                # benchmark queries. _purge_low_yield_user keeps multi-TC users
+                # whose other TC imports filled cells; only the skipped TC's
+                # data is removed.
+                if final_status == "skipped":
+                    await _purge_low_yield_user(session, user_id, tc_bucket)
                 await session.commit()
         else:
             # Import failed (but run_import never re-raises -- it sets status=failed)
@@ -403,12 +475,13 @@ async def _load_cell_data(
     session: AsyncSession,
     rating_bucket: int,
     tc_bucket: str,
-) -> tuple[list[str], set[str]]:
-    """Load (pool, completed) for a given cell from the benchmark DB.
+) -> tuple[list[str], set[str], set[str]]:
+    """Load (pool, filled, attempted) for a given cell from the benchmark DB.
 
     Returns:
         pool: All usernames for this cell (ordered by id).
-        completed: Usernames with terminal checkpoint status.
+        filled: Usernames with status in _FILLED_STATUSES (count toward target).
+        attempted: Usernames with status in _ATTEMPTED_STATUSES (skip on resume).
     """
     pool_result = await session.execute(
         select(BenchmarkSelectedUser.lichess_username)
@@ -420,16 +493,24 @@ async def _load_cell_data(
     )
     pool = list(pool_result.scalars().all())
 
-    completed_result = await session.execute(
-        select(BenchmarkIngestCheckpoint.lichess_username).where(
+    checkpoint_result = await session.execute(
+        select(
+            BenchmarkIngestCheckpoint.lichess_username,
+            BenchmarkIngestCheckpoint.status,
+        ).where(
             BenchmarkIngestCheckpoint.rating_bucket == rating_bucket,
             BenchmarkIngestCheckpoint.tc_bucket == tc_bucket,
-            BenchmarkIngestCheckpoint.status.in_(list(_TERMINAL_STATUSES)),
+            BenchmarkIngestCheckpoint.status.in_(list(_ATTEMPTED_STATUSES)),
         )
     )
-    completed = set(completed_result.scalars().all())
+    filled: set[str] = set()
+    attempted: set[str] = set()
+    for username, status in checkpoint_result.all():
+        attempted.add(username)
+        if status in _FILLED_STATUSES:
+            filled.add(username)
 
-    return pool, completed
+    return pool, filled, attempted
 
 
 # --------------------------------------------------------------------------------------
@@ -459,6 +540,18 @@ def parse_args() -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help="Scan deficit and print the plan without importing anything.",
+    )
+    parser.add_argument(
+        "--min-games",
+        type=int,
+        default=DEFAULT_MIN_USEFUL_GAMES,
+        metavar="N",
+        help=(
+            f"Minimum imported games per (user, TC) to fill a benchmark slot "
+            f"(default: {DEFAULT_MIN_USEFUL_GAMES}). Users below this are "
+            f"checkpointed as 'skipped' (won't retry) but don't count toward "
+            f"--per-cell, so the orchestrator pulls a replacement from the pool."
+        ),
     )
     parser.add_argument(
         "--yes",
@@ -509,29 +602,31 @@ async def main() -> None:
         _log("No benchmark_selected_users found. Run select_benchmark_users.py first.")
         return
 
-    # Load per-cell deficit
-    cell_plans: list[
-        tuple[int, str, list[str], int]
-    ] = []  # (rating_bucket, tc_bucket, to_import, completed_count)
+    # Load per-cell plan: (rating_bucket, tc_bucket, unattempted_pool, filled_count, deficit)
+    cell_plans: list[tuple[int, str, list[str], int, int]] = []
     async with async_session_maker() as session:
         for rating_bucket, tc_bucket in sorted(cells):
-            pool, completed = await _load_cell_data(session, rating_bucket, tc_bucket)
-            to_import = compute_deficit_users(
-                pool=pool, completed=completed, target_n=args.per_cell
-            )
-            cell_plans.append((rating_bucket, tc_bucket, to_import, len(completed)))
+            pool, filled, attempted = await _load_cell_data(session, rating_bucket, tc_bucket)
+            unattempted = [u for u in pool if u not in attempted]
+            filled_count = sum(1 for u in pool if u in filled)
+            deficit = max(0, args.per_cell - filled_count)
+            cell_plans.append((rating_bucket, tc_bucket, unattempted, filled_count, deficit))
 
     # Print plan
     _log()
-    _log(f"Benchmark ingest plan (--per-cell {args.per_cell}):")
-    total_to_import = 0
-    for rating_bucket, tc_bucket, to_import, completed_count in cell_plans:
+    _log(f"Benchmark ingest plan (--per-cell {args.per_cell}, --min-games {args.min_games}):")
+    total_deficit = 0
+    total_unattempted = 0
+    for rating_bucket, tc_bucket, unattempted, filled_count, deficit in cell_plans:
         _log(
             f"  cell ({rating_bucket}, {tc_bucket}): "
-            f"{completed_count} completed, would import {len(to_import)} more"
+            f"{filled_count} filled, deficit {deficit}, {len(unattempted)} unattempted "
+            f"(will attempt up to deficit; more if low-yield/failed)"
         )
-        total_to_import += len(to_import)
-    _log(f"Total users to import: {total_to_import}")
+        total_deficit += deficit
+        total_unattempted += len(unattempted)
+    _log(f"Total deficit: {total_deficit} useful users needed across all cells")
+    _log(f"Total unattempted candidates available: {total_unattempted}")
     _log()
 
     if args.dry_run:
@@ -540,28 +635,42 @@ async def main() -> None:
 
     # Confirmation prompt (unless --yes)
     if not args.yes:
-        response = input(f"Import games for {total_to_import} benchmark users? Proceed? [y/N] ")
+        response = input(
+            f"Attempt up to {total_unattempted} users to fill {total_deficit} useful slots? "
+            f"Proceed? [y/N] "
+        )
         if response.strip().lower() not in ("y", "yes"):
             _log("Aborted.")
             return
 
-    # Execute per-cell import
+    # Execute per-cell import. Walk the unattempted pool in order; stop when the
+    # cell hits its deficit of useful users (status='completed') or the pool runs out.
     total_completed = 0
+    total_skipped = 0
     total_failed = 0
-    total_pending = 0
 
-    for rating_bucket, tc_bucket, to_import, _completed_count in cell_plans:
+    for rating_bucket, tc_bucket, unattempted, _filled_count, deficit in cell_plans:
         if _stop_requested:
             _log("Stop requested -- exiting after current cell.")
             break
+        if deficit == 0:
+            continue
 
-        _log(f"Cell ({rating_bucket}, {tc_bucket}): importing {len(to_import)} users...")
+        _log(
+            f"Cell ({rating_bucket}, {tc_bucket}): need {deficit} useful users "
+            f"(pool of {len(unattempted)} unattempted candidates)..."
+        )
 
-        for username in to_import:
+        cell_filled = 0
+        cell_skipped = 0
+        cell_failed = 0
+
+        for username in unattempted:
             if _stop_requested:
                 _log("  Stop requested -- skipping remaining users in cell.")
-                total_pending += 1
-                continue
+                break
+            if cell_filled >= deficit:
+                break  # target met for this cell
 
             _log(f"  Importing {username}...")
             final_status, games_imported = await _import_one_user(
@@ -570,19 +679,32 @@ async def main() -> None:
                 tc_bucket=tc_bucket,
                 snapshot_month_end=args.snapshot_month_end,
                 dry_run=False,
+                min_useful_games=args.min_games,
             )
             if final_status == "completed":
+                cell_filled += 1
                 total_completed += 1
                 _log(f"  Done: {username} -- {games_imported} games imported.")
-            else:
+            elif final_status == "skipped":
+                cell_skipped += 1
+                total_skipped += 1
+                _log(f"  Skipped: {username} -- only {games_imported} games (< {args.min_games}).")
+            else:  # failed
+                cell_failed += 1
                 total_failed += 1
+
+        if cell_filled < deficit:
+            _log(
+                f"  Cell ({rating_bucket}, {tc_bucket}) pool exhausted: "
+                f"{cell_filled}/{deficit} useful (skipped {cell_skipped}, failed {cell_failed})."
+            )
 
     elapsed = time.time() - start_time
     _log()
     _log("Benchmark ingest complete:")
-    _log(f"  Completed: {total_completed}")
-    _log(f"  Failed: {total_failed}")
-    _log(f"  Pending (interrupted): {total_pending}")
+    _log(f"  Completed (>={args.min_games} games): {total_completed}")
+    _log(f"  Skipped (low yield):                  {total_skipped}")
+    _log(f"  Failed (404/error):                   {total_failed}")
     _log(f"  Duration: {elapsed:.1f}s")
 
 

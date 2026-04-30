@@ -41,7 +41,8 @@ Usage:
         --per-cell 500 \
         --eval-threshold 10 \
         --eval-threshold-classical 1 \
-        --db-url postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark
+        --db-url postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark \
+        2>&1 | tee logs/benchmark-select-2026-03-$(date +%Y-%m-%d).log
 
 Eval-threshold strategy:
     --eval-threshold sets the floor for bullet/blitz/rapid: a user qualifies
@@ -124,17 +125,23 @@ def _parse_elo(s: str) -> int | None:
 
 
 def compute_tc_bucket(time_control: str) -> str | None:
-    """Return 'bullet'|'blitz'|'rapid'|'classical' or None for invalid formats.
+    """Return 'bullet'|'blitz'|'rapid'|'classical' or None for invalid/correspondence.
 
     Mirrors app/services/normalization.py::parse_time_control. Lichess TimeControl
     header is '<base>+<inc>' for clock games or '-' for correspondence/daily.
-    Estimated seconds = base + 40 * increment. Per the plan (Task 04-03), the
-    selection script buckets correspondence ('-') as 'classical' (different from
-    canonical normalization which returns None for '-'); this only affects the
-    selection-time bucketing, not the games-table normalizer.
+    Estimated seconds = base + 40 * increment.
+
+    Correspondence games ('-') are excluded from selection (return None):
+      1. Lichess `perfType=classical` does not include correspondence games at
+         ingest time, so a correspondence-only user selected as 'classical' would
+         return zero games on import.
+      2. The games-table normalizer also returns None for '-', so any
+         correspondence games ingested would be filtered out of the games table.
+      3. Correspondence allows external help and days of thinking time, which
+         makes position-quality and time-pressure metrics meaningless.
     """
     if not time_control or time_control == "-":
-        return "classical"
+        return None
     try:
         if "+" in time_control:
             base_str, inc_str = time_control.split("+", 1)

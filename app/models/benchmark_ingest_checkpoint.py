@@ -5,16 +5,23 @@ orchestrator. Created via Base.metadata.create_all() against the benchmark
 engine -- NOT in the canonical Alembic chain (preserves INFRA-02).
 
 Status lifecycle:
-    pending -> completed   (run_import succeeded)
+    pending -> completed   (run_import succeeded with games_imported >= min)
+    pending -> skipped     (run_import succeeded but games_imported < min)
     pending -> failed      (terminal exception captured to Sentry at outer boundary)
 
-The "skipped" status (previously used for users with >=20k games per D-14) is
-no longer produced -- lichess server-side ``max=`` truncation supersedes the
-post-hoc skip. Existing skipped rows from older runs remain readable.
+The orchestrator distinguishes two terminal-status sets:
+  - "filled" (status='completed'): counts toward --per-cell target.
+  - "attempted" (status in {completed, skipped, failed}): blocks re-attempt on
+    resume but doesn't necessarily fill a slot. A 404 or low-yield user is
+    checkpointed so we don't retry, but the orchestrator pulls a replacement
+    from the candidate pool until the cell hits its useful-user target.
 
-Resume rule: orchestrator skips (username, tc_bucket) pairs with status in
-{completed, skipped, failed} and processes pending/missing pairs. The
-(lichess_username, tc_bucket) compound unique constraint allows one user to
+The 'skipped' status is now used for low-yield users (< min_useful_games);
+historically it also marked users with >=20k games (D-14), now superseded by
+lichess server-side ``max=`` truncation. Both meanings coexist as
+"checkpointed but not useful for benchmarks."
+
+The (lichess_username, tc_bucket) compound unique constraint allows one user to
 have one checkpoint per TC where they qualified. Per-game
 (user_id, platform, platform_game_id) unique constraint makes
 interrupted-then-resumed users no-op on already-imported games.

@@ -65,6 +65,7 @@ class GameProcessingResult(TypedDict):
     result_fen: str | None
     move_count: int
 
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -96,6 +97,19 @@ def _color_hash(board: chess.Board, color: chess.Color) -> int:
         index = 64 * ((piece.piece_type - 1) * 2 + color_pivot) + square
         h ^= chess.polyglot.POLYGLOT_RANDOM_ARRAY[index]
     return ctypes.c_int64(h).value
+
+
+# ---------------------------------------------------------------------------
+# Eval plausibility bounds — values beyond these are clamped to the bound.
+# Both columns are SMALLINT (±32767); the bounds are tighter than int16
+# because evals beyond these magnitudes are never meaningful (the engine has
+# already transitioned to mate scores). Clamping (vs nulling) preserves the
+# sign so a corrupt-but-directionally-correct annotation still indicates
+# which side was winning.
+# ---------------------------------------------------------------------------
+
+EVAL_CP_MAX_ABS = 10000  # ±100 pawns
+EVAL_MATE_MAX_ABS = 200  # no realistic mate-in-N exceeds this
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +186,15 @@ def process_game_pgn(pgn_text: str) -> GameProcessingResult | None:
             w = pov.white()
             eval_cp = w.score(mate_score=None)
             eval_mate = w.mate()
+            # Corrupt PGNs occasionally annotate evals with implausibly large
+            # values (e.g. eval_mate=-1002411246) which overflow the SMALLINT
+            # column and crash the whole batch INSERT. Clamp to plausible
+            # bounds so a single bad annotation cannot poison ingest, while
+            # preserving the sign (which side was winning).
+            if eval_cp is not None:
+                eval_cp = max(-EVAL_CP_MAX_ABS, min(EVAL_CP_MAX_ABS, eval_cp))
+            if eval_mate is not None:
+                eval_mate = max(-EVAL_MATE_MAX_ABS, min(EVAL_MATE_MAX_ABS, eval_mate))
 
         # Compute endgame_class for endgame positions (piece_count <= threshold)
         endgame_class: int | None = None
@@ -278,7 +301,14 @@ def hashes_for_game(
     if result is None:
         return [], None
     hash_tuples: list[tuple[int, int, int, int, str | None, float | None]] = [
-        (p["ply"], p["white_hash"], p["black_hash"], p["full_hash"], p["move_san"], p["clock_seconds"])
+        (
+            p["ply"],
+            p["white_hash"],
+            p["black_hash"],
+            p["full_hash"],
+            p["move_san"],
+            p["clock_seconds"],
+        )
         for p in result["plies"]
     ]
     return hash_tuples, result["result_fen"]
