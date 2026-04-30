@@ -2,22 +2,28 @@
 
 Reads benchmark_selected_users (populated by scripts/select_benchmark_users.py),
 computes the per-cell deficit (N - already_completed), creates a stub User row
-per username in the benchmark DB, pre-seeds an import_jobs row with
-last_synced_at = (snapshot_month_end - 36 months) so that run_import derives
-the correct since_ms window, then calls the existing run_import pipeline and
-records per-user checkpoint state in benchmark_ingest_checkpoints.
+per username in the benchmark DB, then calls the existing run_import pipeline
+with a per-(user, TC) since_ms_override + perf_type + max_games — recording
+per-(user, TC) checkpoint state in benchmark_ingest_checkpoints.
 
 Design decisions (Phase 69 context):
   - Centipawn convention: signed from White's POV. [%eval 2.35] = +235 cp;
     [%eval -0.50] = -50 cp. python-chess uses this convention for node.eval().
     Stored in game_positions.eval_cp (INGEST-06).
-  - 36-month game window (D-13): last_synced_at is set to
-    (snapshot_month_end - 36 months) so run_import's since_ms fetches exactly
-    the 36-month window of games for each benchmark user.
-  - 20k hard-skip rule (D-14): users with >= 20,000 games imported in the
-    36-month window are flagged as outliers. Checkpoint is written as
-    status='skipped', skip_reason='over_20k_games'. The games are retained
-    in the DB but the user is excluded from per-user-rate analytics in Phase 73.
+  - 36-month game window (D-13): since_ms is set to
+    (snapshot_month_end - 36 months) and passed to create_job() as
+    since_ms_override. The lichess client receives this directly — bypassing
+    get_latest_for_user_platform — so the same lichess username can be
+    imported once per TC without the second run inheriting the first run's
+    last_synced_at cursor.
+  - Per-(user, TC) volume cap: lichess `max=MAX_GAMES_PER_USER_TC` truncates
+    server-side. Replaces the prior post-hoc 20k skip path: the long tail is
+    never downloaded, so per-user-rate analytics in Phase 73 are no longer
+    contaminated by users with massive game histories.
+  - perfType filter: passed as `perf_type=tc_bucket` so lichess returns only
+    games for the cell's TC. The perfType silent-truncation behavior
+    (excludes correspondence/chess960/fromPosition) is exactly what the
+    benchmark wants.
   - Cheat contamination (D-01): accepted without mitigation at this phase.
     Lichess's own anti-cheat bans are relied upon; no additional filtering.
   - Batch size: import_service._BATCH_SIZE = 28 (verified in codebase).
@@ -47,7 +53,6 @@ import asyncio
 import signal
 import sys
 import time
-import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -63,7 +68,6 @@ from app.core.config import settings
 from app.core.database import async_session_maker, engine
 from app.models.benchmark_ingest_checkpoint import BenchmarkIngestCheckpoint
 from app.models.benchmark_selected_user import BenchmarkSelectedUser
-from app.models.import_job import ImportJob
 from app.models.oauth_account import OAuthAccount  # noqa: F401 -- required for User relationship
 from app.models.user import User
 from app.services.import_service import create_job, get_job, run_import
@@ -72,7 +76,12 @@ from app.services.import_service import create_job, get_job, run_import
 # Constants
 # --------------------------------------------------------------------------------------
 
-HARD_SKIP_THRESHOLD = 20_000  # D-14: users with >= this many games are flagged as outliers
+# Per-(user, TC) lichess volume cap. Passed as the `max=` parameter so the long
+# tail is truncated server-side and never downloaded. Supersedes the prior
+# post-hoc 20k skip path. 1000 is the locked default — bumpable later by
+# re-running with a higher cap (bulk_insert_games dedups, so it extends history
+# rather than re-fetching).
+MAX_GAMES_PER_USER_TC = 1000
 STUB_PASSWORD = "!BENCHMARK_NO_AUTH"  # not a valid bcrypt hash -> cannot auth
 STUB_EMAIL_DOMAIN = "@benchmark.flawchess.local"
 WINDOW_MONTHS = 36  # D-13: import games from the 36 months before snapshot_month_end
@@ -112,11 +121,6 @@ def _log(msg: str = "") -> None:
 # --------------------------------------------------------------------------------------
 # Pure helper functions (exported for unit tests)
 # --------------------------------------------------------------------------------------
-
-
-def _should_hard_skip(games_count: int) -> bool:
-    """D-14: hard-skip users with >= HARD_SKIP_THRESHOLD window-bounded games."""
-    return games_count >= HARD_SKIP_THRESHOLD
 
 
 def compute_deficit_users(pool: list[str], completed: set[str], target_n: int) -> list[str]:
@@ -220,10 +224,11 @@ async def _upsert_checkpoint_pending(
     rating_bucket: int,
     tc_bucket: str,
 ) -> None:
-    """Insert a 'pending' checkpoint row for a user (idempotent by unique username)."""
+    """Insert a 'pending' checkpoint row for (user, TC) (idempotent by compound unique)."""
     result = await session.execute(
         select(BenchmarkIngestCheckpoint).where(
-            BenchmarkIngestCheckpoint.lichess_username == lichess_username
+            BenchmarkIngestCheckpoint.lichess_username == lichess_username,
+            BenchmarkIngestCheckpoint.tc_bucket == tc_bucket,
         )
     )
     existing = result.scalar_one_or_none()
@@ -246,15 +251,17 @@ async def _upsert_checkpoint_pending(
 async def _update_checkpoint(
     session: AsyncSession,
     lichess_username: str,
+    tc_bucket: str,
     status: str,
     games_imported: int = 0,
     skip_reason: str | None = None,
     benchmark_user_id: int | None = None,
 ) -> None:
-    """Update checkpoint row to a terminal status."""
+    """Update (user, TC) checkpoint row to a terminal status."""
     result = await session.execute(
         select(BenchmarkIngestCheckpoint).where(
-            BenchmarkIngestCheckpoint.lichess_username == lichess_username
+            BenchmarkIngestCheckpoint.lichess_username == lichess_username,
+            BenchmarkIngestCheckpoint.tc_bucket == tc_bucket,
         )
     )
     checkpoint = result.scalar_one_or_none()
@@ -281,11 +288,11 @@ async def _import_one_user(
     snapshot_month_end: date,
     dry_run: bool,
 ) -> tuple[str, int]:
-    """Import games for one benchmark user.
+    """Import games for one (benchmark user, TC) cell.
 
     Returns:
         Tuple of (final_status, games_imported).
-        final_status: "completed" | "skipped" | "failed"
+        final_status: "completed" | "failed"
     """
     if dry_run:
         _log(f"  [dry-run] Would import {lichess_username}")
@@ -316,27 +323,20 @@ async def _import_one_user(
             user_id = await create_stub_user(session, lichess_username)
             await session.commit()
 
-            # Pre-seed a synthetic "previous" import_jobs row so run_import picks up
-            # since_ms = window_start. This is the row that get_latest_for_user_platform
-            # will return as previous_job, driving since_ms through the existing pipeline.
-            # We set last_synced_at = window_start (= snapshot_month_end - 36 months).
-            synthetic_job_id = str(uuid.uuid4())
-            synthetic_job = ImportJob(
-                id=synthetic_job_id,
-                user_id=user_id,
-                platform="lichess",
-                username=lichess_username,
-                status="completed",
-                games_fetched=0,
-                games_imported=0,
-                last_synced_at=window_start,
-                completed_at=window_start,
-            )
-            session.add(synthetic_job)
-            await session.commit()
-
         # Create real import job and run it. run_import opens its own session internally.
-        job_id = create_job(user_id=user_id, platform="lichess", username=lichess_username)
+        # since_ms_override bypasses get_latest_for_user_platform so the second TC
+        # for the same lichess username is not contaminated by the first TC's
+        # last_synced_at cursor; perf_type filters at the lichess API; max_games
+        # caps server-side volume per (user, TC).
+        since_ms = int(window_start.timestamp() * 1000)
+        job_id = create_job(
+            user_id=user_id,
+            platform="lichess",
+            username=lichess_username,
+            since_ms_override=since_ms,
+            max_games=MAX_GAMES_PER_USER_TC,
+            perf_type=tc_bucket,
+        )
         await run_import(job_id)
 
         job_state = get_job(job_id)
@@ -347,28 +347,13 @@ async def _import_one_user(
         games_imported = job_state.games_imported
         final_status: str
 
-        if _should_hard_skip(games_imported):
-            final_status = "skipped"
-            _log(
-                f"  HARD-SKIP {lichess_username}: {games_imported} games >= {HARD_SKIP_THRESHOLD}"
-                f" -- flagging as outlier (D-14)"
-            )
-            async with async_session_maker() as session:
-                await _update_checkpoint(
-                    session,
-                    lichess_username,
-                    status="skipped",
-                    games_imported=games_imported,
-                    skip_reason="over_20k_games",
-                    benchmark_user_id=user_id,
-                )
-                await session.commit()
-        elif job_state.status == "completed":
+        if job_state.status == "completed":
             final_status = "completed"
             async with async_session_maker() as session:
                 await _update_checkpoint(
                     session,
                     lichess_username,
+                    tc_bucket,
                     status="completed",
                     games_imported=games_imported,
                     benchmark_user_id=user_id,
@@ -383,6 +368,7 @@ async def _import_one_user(
                 await _update_checkpoint(
                     session,
                     lichess_username,
+                    tc_bucket,
                     status="failed",
                     games_imported=games_imported,
                     benchmark_user_id=user_id,
@@ -401,7 +387,7 @@ async def _import_one_user(
         # Best-effort: mark checkpoint failed
         try:
             async with async_session_maker() as session:
-                await _update_checkpoint(session, lichess_username, status="failed")
+                await _update_checkpoint(session, lichess_username, tc_bucket, status="failed")
                 await session.commit()
         except Exception:
             pass
@@ -561,7 +547,6 @@ async def main() -> None:
 
     # Execute per-cell import
     total_completed = 0
-    total_skipped = 0
     total_failed = 0
     total_pending = 0
 
@@ -589,8 +574,6 @@ async def main() -> None:
             if final_status == "completed":
                 total_completed += 1
                 _log(f"  Done: {username} -- {games_imported} games imported.")
-            elif final_status == "skipped":
-                total_skipped += 1
             else:
                 total_failed += 1
 
@@ -598,7 +581,6 @@ async def main() -> None:
     _log()
     _log("Benchmark ingest complete:")
     _log(f"  Completed: {total_completed}")
-    _log(f"  Skipped (outlier): {total_skipped}")
     _log(f"  Failed: {total_failed}")
     _log(f"  Pending (interrupted): {total_pending}")
     _log(f"  Duration: {elapsed:.1f}s")

@@ -9,6 +9,29 @@ scope: milestone
 
 # SEED-006: Benchmark population baselines & rating-bucketed zone recalibration
 
+## 2026-04-30 Amendments (post-ingest reality check)
+
+The benchmark DB has been populated (~991 users, 4M games, 295M positions across 4 TC × 5 ELO cells) and a first-pass `/benchmarks` report was produced (`reports/benchmarks-2026-04-29.md`). Three corrections to the seed below before this milestone materializes:
+
+1. **Schema reality vs SEED-002 proposal.** SEED-002 proposed a separate `game_position_evals` table; reality is that evals are inline on `game_positions` as `eval_cp` (smallint) and `eval_mate` (smallint). All Phase 70/71/72 SQL must target those columns, not a separate eval table.
+
+2. **TC-pooling bias direction in the Phase 70 pre-discuss note is wrong.** The note warns that a TC-pooled offset estimate is bullet-dominated. Eval coverage in the populated DB is heavily classical-skewed:
+
+   | TC | total games | with evals | % |
+   |---|---|---|---|
+   | bullet | 1,963,898 | 99,096 | 5.0% |
+   | blitz | 1,467,180 | 212,709 | 14.5% |
+   | rapid | 466,907 | 123,269 | 26.4% |
+   | classical | 100,422 | 41,286 | 41.1% |
+
+   So TC-pooling biases the offset estimate toward longer-TC behavior, not bullet. The supplementary TC-stratified offset table mandated in the original note is still the right safety net; only the bias-direction sentence needs correcting during Phase 70 discuss.
+
+3. **Phase 73 scope additions.** The skill upgrade in Phase 73 must produce more than rating-bucketed zone constants. It must first emit a **Cohen's d collapse verdict per metric × dimension** that determines whether each metric needs cell-specific zones at all, or collapses on TC, ELO, or both. Only metrics that fail to collapse on a given axis get bucketed zones. Methodology is captured in `.planning/notes/benchmark-skill-v2-design.md` (verdict thresholds 0.2 / 0.5 hard-coded; per-metric output shape: 20-cell grid + TC marginal + ELO marginal + heatmap + verdict block; top-axis summary table).
+
+   This expansion does not change Phase 73's deliverables; it constrains the calibration choice. If a metric's TC and ELO axes both collapse (`max |d| < 0.2`), the existing global gauge constant stands and no rating/TC-bucketed variant is shipped.
+
+4. **Pre-SEED-006 calibration cleanup is split out.** The 2026-04-29 report surfaced four findings that don't depend on eval data, rating-bucketing, or skill v2: (a) Endgame Skill upper bound 0.55→0.57, (b) per-endgame-class conv/recov neutral zones, (c) clock-pressure per-TC thresholds, (d) time-pressure-vs-performance per-TC display. These are tracked in **SEED-009** and may ship before this milestone opens, OR fold into Phase 73 if the user prefers a single coordinated PR.
+
 ## Why This Matters
 
 This seed captures the **applied analytics** half of what was originally planned as v1.12 — the work that consumes the populated benchmark DB to validate the material-vs-eval classifier at scale, surface rating-stratified offsets, validate the Parity proxy, and recalibrate the Conversion / Recovery / Endgame Skill gauge zones per rating bucket.

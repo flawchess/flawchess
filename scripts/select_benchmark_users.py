@@ -2,18 +2,24 @@
 
 Scans a single Lichess monthly dump (.pgn.zst) without python-chess game-tree parsing.
 For each game, extracts headers (White, Black, WhiteElo, BlackElo, TimeControl, Variant)
-and a substring [%eval check on the moves line. Aggregates per-player stats, then
-buckets each player into one cell of the 5x4 (rating x TC) grid using median Elo and
-modal TC. Persists the per-cell username pools to benchmark_selected_users in the
-benchmark database.
+and a substring [%eval check on the moves line. Aggregates per-player stats indexed
+by TC bucket, then produces one cell entry per (user, TC) pair where the user meets
+the eval threshold within that TC. Persists the per-cell username pools to
+benchmark_selected_users in the benchmark database, keyed compound on
+(lichess_username, tc_bucket) so one user may occupy multiple cells.
 
 The 5 rating buckets (REQUIREMENTS.md INGEST-02, 400-wide):
   800: 800-1199, 1200: 1200-1599, 1600: 1600-1999, 2000: 2000-2399, 2400: 2400+
 The 4 TC buckets (canonical FlawChess rule):
   bullet < 180s, blitz 180-599s, rapid 600-1800s, classical > 1800s or daily
 
-Players with fewer than K (default 5) eval-bearing snapshot-month games are excluded
-(D-12). Players with median Elo < 800 are excluded.
+Per-TC eligibility: a user qualifies for the (rating, TC) cell if they have at
+least K (default 5) eval-bearing games in that TC during the snapshot month
+(D-12). Their ELO bucket within that TC is derived from the per-TC median Elo,
+not a global median across all their TCs (which previously mis-bucketed
+multi-TC specialists).
+
+Players with per-TC median Elo < 800 are excluded from that TC's cell.
 
 Centipawn convention: signed-from-white-POV, in centipawns. python-chess parses [%eval]
 PGN comments via node.eval(); see tests/test_benchmark_ingest.py::test_centipawn_convention.
@@ -44,7 +50,7 @@ import asyncio
 import io
 import random
 import sys
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, TextIO, TypedDict, cast
@@ -71,11 +77,19 @@ EVAL_GAME_COUNT_CAP = 32_000  # SmallInteger upper bound (signed 16-bit max 32_7
 
 
 class PlayerStats(TypedDict):
-    """Per-player aggregate over snapshot-month games."""
+    """Per-player aggregate over snapshot-month games, indexed by TC bucket.
 
-    elos: list[int]
-    tcs: list[str]
-    eval_count: int
+    elos_by_tc: TC bucket -> list of Elo at game time for that bucket.
+    eval_count_by_tc: TC bucket -> count of eval-bearing games in that bucket.
+
+    Indexing per-TC (vs flat lists across all TCs) lets the selector evaluate
+    eligibility and median Elo per TC, so a multi-TC specialist (e.g.
+    1900-blitz / 2200-classical) lands in the correct ELO bucket within each
+    TC instead of a single conflated median.
+    """
+
+    elos_by_tc: dict[str, list[int]]
+    eval_count_by_tc: dict[str, int]
 
 
 def _log(msg: str = "") -> None:
@@ -218,40 +232,46 @@ def bucket_players(
     player_stats: dict[str, PlayerStats] | dict[str, dict],
     eval_threshold: int,
 ) -> dict[tuple[int, str], list[str]]:
-    """Bucket each qualifying player into one (rating_bucket, tc_bucket) cell.
+    """Bucket players into (rating_bucket, tc_bucket) cells with per-TC eligibility.
 
-    player_stats[username] = {"elos": [int], "tcs": [str], "eval_count": int}
+    Each user can produce up to 4 entries (one per TC where they have
+    >= eval_threshold eval-bearing games). The user's ELO bucket within a TC
+    is derived from the per-TC median Elo.
+
+    player_stats[username] = {"elos_by_tc": {tc: [int]}, "eval_count_by_tc": {tc: int}}
     Returns: {(rating_bucket, tc_bucket): [usernames]}
-    Excludes: eval_count < eval_threshold; median elo < 800.
+    Excludes (per-TC): eval_count_by_tc[tc] < eval_threshold; median Elo in TC < 800.
     """
     out: dict[tuple[int, str], list[str]] = defaultdict(list)
     for username, stats in player_stats.items():
-        if stats["eval_count"] < eval_threshold:
-            continue
-        elos = stats["elos"]
-        tcs = stats["tcs"]
-        if not elos or not tcs:
-            continue
-        sorted_elos = sorted(elos)
-        median_elo = sorted_elos[len(sorted_elos) // 2]
-        rb = _rating_bucket(median_elo)
-        if rb is None:
-            continue
-        modal_tc = Counter(tcs).most_common(1)[0][0]
-        out[(rb, modal_tc)].append(username)
+        elos_by_tc = stats["elos_by_tc"]
+        eval_count_by_tc = stats["eval_count_by_tc"]
+        for tc, elos in elos_by_tc.items():
+            if not elos:
+                continue
+            if eval_count_by_tc.get(tc, 0) < eval_threshold:
+                continue
+            sorted_elos = sorted(elos)
+            median_elo_in_tc = sorted_elos[len(sorted_elos) // 2]
+            rb = _rating_bucket(median_elo_in_tc)
+            if rb is None:
+                continue
+            out[(rb, tc)].append(username)
     return out
 
 
-def scan_dump_for_players(dump_path: str) -> dict[str, PlayerStats]:
-    """Stream the .zst dump and aggregate per-player snapshot-month stats.
+def _new_player_stats() -> PlayerStats:
+    return PlayerStats(elos_by_tc=defaultdict(list), eval_count_by_tc=defaultdict(int))
 
-    Returns: {username: {"elos": [int], "tcs": [str], "eval_count": int}}
+
+def scan_dump_for_players(dump_path: str) -> dict[str, PlayerStats]:
+    """Stream the .zst dump and aggregate per-player, per-TC snapshot-month stats.
+
+    Returns: {username: {"elos_by_tc": {tc: [int]}, "eval_count_by_tc": {tc: int}}}
     Players appear under both colors they played; per-game side-bucketing for
     analytics happens at query time over games.white_rating / games.black_rating.
     """
-    player_stats: dict[str, PlayerStats] = defaultdict(
-        lambda: PlayerStats(elos=[], tcs=[], eval_count=0)
-    )
+    player_stats: dict[str, PlayerStats] = defaultdict(_new_player_stats)
     games_seen = 0
 
     dctx = zstd.ZstdDecompressor()
@@ -275,10 +295,10 @@ def scan_dump_for_players(dump_path: str) -> dict[str, PlayerStats]:
                 for username, elo in sides:
                     if not username or elo is None:
                         continue
-                    player_stats[username]["elos"].append(elo)
-                    player_stats[username]["tcs"].append(tc)
+                    stats = player_stats[username]
+                    stats["elos_by_tc"][tc].append(elo)
                     if record["has_eval"]:
-                        player_stats[username]["eval_count"] += 1
+                        stats["eval_count_by_tc"][tc] = stats["eval_count_by_tc"].get(tc, 0) + 1
 
     _log(f"Scan complete: {games_seen:,} Standard games, {len(player_stats):,} unique players")
     return player_stats
@@ -288,11 +308,16 @@ async def persist_selection(
     db_url: str,
     cell_to_users: dict[tuple[int, str], list[str]],
     per_cell: int,
-    median_elos: dict[str, int],
-    eval_counts: dict[str, int],
+    median_elos_by_tc: dict[tuple[str, str], int],
+    eval_counts_by_tc: dict[tuple[str, str], int],
     dump_month: str,
 ) -> None:
-    """Create benchmark_selected_users (if not exists) and insert per-cell up to N usernames."""
+    """Create benchmark_selected_users (if not exists) and insert per-cell up to N usernames.
+
+    median_elos_by_tc / eval_counts_by_tc are keyed (username, tc_bucket): one user
+    in multiple TCs has one entry per TC. The compound (username, tc_bucket) unique
+    constraint on the table mirrors this — re-runs are idempotent per (user, TC).
+    """
     engine = create_async_engine(db_url, echo=False)
 
     # Create the benchmark_selected_users table on first invocation (INFRA-02:
@@ -314,9 +339,16 @@ async def persist_selection(
     rng = random.Random(42)  # deterministic for reproducibility
 
     async with session_maker() as session:
-        # Fetch existing usernames so re-runs are idempotent
-        result = await session.execute(select(BenchmarkSelectedUser.lichess_username))
-        existing = {row[0] for row in result.all()}
+        # Fetch existing (username, tc_bucket) pairs so re-runs are idempotent
+        # per-cell. The compound dedup matches the new compound unique constraint;
+        # a global username-only set would silently suppress multi-cell membership.
+        result = await session.execute(
+            select(
+                BenchmarkSelectedUser.lichess_username,
+                BenchmarkSelectedUser.tc_bucket,
+            )
+        )
+        existing: set[tuple[str, str]] = {(row[0], row[1]) for row in result.all()}
 
         for (rating_bucket, tc_bucket), usernames in sorted(cell_to_users.items()):
             shuffled = list(usernames)
@@ -327,7 +359,8 @@ async def persist_selection(
                 f"selecting up to {per_cell} -> {len(chosen)}"
             )
             for username in chosen:
-                if username in existing:
+                key = (username, tc_bucket)
+                if key in existing:
                     skipped_dupes += 1
                     continue
                 session.add(
@@ -335,12 +368,12 @@ async def persist_selection(
                         lichess_username=username,
                         rating_bucket=rating_bucket,
                         tc_bucket=tc_bucket,
-                        median_elo=median_elos[username],
-                        eval_game_count=min(eval_counts[username], EVAL_GAME_COUNT_CAP),
+                        median_elo=median_elos_by_tc[key],
+                        eval_game_count=min(eval_counts_by_tc[key], EVAL_GAME_COUNT_CAP),
                         dump_month=dump_month,
                     )
                 )
-                existing.add(username)
+                existing.add(key)
                 inserted += 1
         await session.commit()
 
@@ -393,20 +426,22 @@ async def main() -> None:
     # Step 1: Stream the dump
     player_stats = scan_dump_for_players(args.dump_path)
 
-    # Step 2: Cache median elo + eval count per player for persistence
-    median_elos: dict[str, int] = {}
-    eval_counts: dict[str, int] = {}
+    # Step 2: Cache per-(user, TC) median elo + eval count for persistence
+    median_elos_by_tc: dict[tuple[str, str], int] = {}
+    eval_counts_by_tc: dict[tuple[str, str], int] = {}
     for username, stats in player_stats.items():
-        if stats["elos"]:
-            sorted_elos = sorted(stats["elos"])
-            median_elos[username] = sorted_elos[len(sorted_elos) // 2]
-            eval_counts[username] = stats["eval_count"]
+        for tc, elos in stats["elos_by_tc"].items():
+            if not elos:
+                continue
+            sorted_elos = sorted(elos)
+            median_elos_by_tc[(username, tc)] = sorted_elos[len(sorted_elos) // 2]
+            eval_counts_by_tc[(username, tc)] = stats["eval_count_by_tc"].get(tc, 0)
 
     # Step 3: Bucket
     cell_to_users = bucket_players(player_stats, eval_threshold=args.eval_threshold)
     total_qualifying = sum(len(v) for v in cell_to_users.values())
     _log(
-        f"Bucketing complete: {total_qualifying:,} qualifying players across "
+        f"Bucketing complete: {total_qualifying:,} qualifying (user, TC) pairs across "
         f"{len(cell_to_users)} cells"
     )
 
@@ -415,8 +450,8 @@ async def main() -> None:
         db_url=args.db_url,
         cell_to_users=cell_to_users,
         per_cell=args.per_cell,
-        median_elos=median_elos,
-        eval_counts=eval_counts,
+        median_elos_by_tc=median_elos_by_tc,
+        eval_counts_by_tc=eval_counts_by_tc,
         dump_month=args.dump_month,
     )
 

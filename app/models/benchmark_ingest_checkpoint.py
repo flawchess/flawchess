@@ -1,17 +1,23 @@
 """ORM for the benchmark_ingest_checkpoints table (benchmark DB only).
 
-Phase 69 INGEST-04. Per-user outer-loop checkpoint for the ingestion orchestrator.
-Created via Base.metadata.create_all() against the benchmark engine -- NOT in the
-canonical Alembic chain (preserves INFRA-02).
+Phase 69 INGEST-04. Per-(user, TC) outer-loop checkpoint for the ingestion
+orchestrator. Created via Base.metadata.create_all() against the benchmark
+engine -- NOT in the canonical Alembic chain (preserves INFRA-02).
 
 Status lifecycle:
     pending -> completed   (run_import succeeded)
-    pending -> skipped     (hard-skip per D-14: >20k window-bounded games)
     pending -> failed      (terminal exception captured to Sentry at outer boundary)
 
-Resume rule: orchestrator skips usernames with status in {completed, skipped, failed}
-and processes pending/missing usernames. Per-game (user_id, platform, platform_game_id)
-unique constraint makes interrupted-then-resumed users no-op on already-imported games.
+The "skipped" status (previously used for users with >=20k games per D-14) is
+no longer produced -- lichess server-side ``max=`` truncation supersedes the
+post-hoc skip. Existing skipped rows from older runs remain readable.
+
+Resume rule: orchestrator skips (username, tc_bucket) pairs with status in
+{completed, skipped, failed} and processes pending/missing pairs. The
+(lichess_username, tc_bucket) compound unique constraint allows one user to
+have one checkpoint per TC where they qualified. Per-game
+(user_id, platform, platform_game_id) unique constraint makes
+interrupted-then-resumed users no-op on already-imported games.
 """
 
 from __future__ import annotations
@@ -35,7 +41,9 @@ class BenchmarkIngestCheckpoint(Base):
     __tablename__ = "benchmark_ingest_checkpoints"
     __table_args__ = (
         UniqueConstraint(
-            "lichess_username", name="uq_benchmark_ingest_checkpoints_username"
+            "lichess_username",
+            "tc_bucket",
+            name="uq_benchmark_ingest_checkpoints_username_tc",
         ),
     )
 

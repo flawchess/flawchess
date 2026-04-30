@@ -55,6 +55,15 @@ class JobState:
     games_fetched: int = 0
     games_imported: int = 0
     error: str | None = None
+    # Benchmark ingest hooks (None for user-facing imports — behavior unchanged).
+    # since_ms_override: bypass get_latest_for_user_platform and fetch from this
+    #   millisecond timestamp directly. Lets the same lichess username be imported
+    #   once per perf_type without the second run inheriting the first run's
+    #   last_synced_at cursor.
+    # max_games / perf_type: passed through to the lichess client (max=, perfType=).
+    since_ms_override: int | None = None
+    max_games: int | None = None
+    perf_type: str | None = None
 
 
 # Module-level in-memory job registry
@@ -74,13 +83,26 @@ async def cleanup_orphaned_jobs() -> None:
             logger.info("Marked %d orphaned import job(s) as failed", count)
 
 
-def create_job(user_id: int, platform: str, username: str) -> str:
+def create_job(
+    user_id: int,
+    platform: str,
+    username: str,
+    *,
+    since_ms_override: int | None = None,
+    max_games: int | None = None,
+    perf_type: str | None = None,
+) -> str:
     """Create a new import job and register it in memory.
 
     Args:
         user_id: Internal database user ID.
         platform: 'chess.com' or 'lichess'.
         username: Platform username to import from.
+        since_ms_override: Optional benchmark-only override; when set, run_import
+            uses this Unix-millisecond timestamp instead of consulting the most
+            recent completed import_job for ``last_synced_at``.
+        max_games: Optional benchmark-only cap on lichess ``max`` parameter.
+        perf_type: Optional benchmark-only lichess ``perfType`` filter.
 
     Returns:
         The generated UUID string for the new job.
@@ -91,6 +113,9 @@ def create_job(user_id: int, platform: str, username: str) -> str:
         user_id=user_id,
         platform=platform,
         username=username,
+        since_ms_override=since_ms_override,
+        max_games=max_games,
+        perf_type=perf_type,
     )
     return job_id
 
@@ -140,8 +165,7 @@ def find_active_jobs_for_user(user_id: int) -> list[JobState]:
     return [
         job
         for job in _jobs.values()
-        if job.user_id == user_id
-        and job.status in (JobStatus.PENDING, JobStatus.IN_PROGRESS)
+        if job.user_id == user_id and job.status in (JobStatus.PENDING, JobStatus.IN_PROGRESS)
     ]
 
 
@@ -156,7 +180,8 @@ def count_active_platform_jobs(platform: str, exclude_user_id: int) -> int:
         exclude_user_id: User ID to exclude from the count (the requesting user).
     """
     return sum(
-        1 for job in _jobs.values()
+        1
+        for job in _jobs.values()
         if job.platform == platform
         and job.status in (JobStatus.PENDING, JobStatus.IN_PROGRESS)
         and job.user_id != exclude_user_id
@@ -206,9 +231,7 @@ async def run_import(job_id: str) -> None:
                     job.games_fetched += 1
 
                 async with httpx.AsyncClient(timeout=60.0) as client:
-                    game_iter = _make_game_iterator(
-                        client, job, previous_job, _on_game_fetched
-                    )
+                    game_iter = _make_game_iterator(client, job, previous_job, _on_game_fetched)
                     batch: list[NormalizedGame] = []
 
                     async for game_dict in game_iter:
@@ -272,7 +295,9 @@ async def run_import(job_id: str) -> None:
         logger.warning("Import job %s timed out after %d seconds", job_id, IMPORT_TIMEOUT_SECONDS)
         job.status = JobStatus.FAILED
         job.error = "Import timed out — re-sync to continue where it left off"
-        sentry_sdk.set_context("import", {"job_id": job_id, "user_id": job.user_id, "platform": job.platform})
+        sentry_sdk.set_context(
+            "import", {"job_id": job_id, "user_id": job.user_id, "platform": job.platform}
+        )
         sentry_sdk.capture_exception()
 
         try:
@@ -295,7 +320,9 @@ async def run_import(job_id: str) -> None:
         logger.exception("Import job %s failed: %s", job_id, exc)
         job.status = JobStatus.FAILED
         job.error = str(exc)
-        sentry_sdk.set_context("import", {"job_id": job_id, "user_id": job.user_id, "platform": job.platform})
+        sentry_sdk.set_context(
+            "import", {"job_id": job_id, "user_id": job.user_id, "platform": job.platform}
+        )
         sentry_sdk.capture_exception(exc)
 
         # Attempt to record failure in DB (best-effort)
@@ -341,18 +368,26 @@ async def _make_game_iterator(
             yield game
 
     elif job.platform == "lichess":
-        since_ms = None
-        if previous_job is not None and previous_job.last_synced_at is not None:
-            last_synced = previous_job.last_synced_at
-            if last_synced.tzinfo is None:
-                last_synced = last_synced.replace(tzinfo=timezone.utc)
-            since_ms = int(last_synced.timestamp() * 1000)
+        if job.since_ms_override is not None:
+            # Benchmark ingest path: skip get_latest_for_user_platform entirely.
+            # The same lichess user can be imported once per perf_type, and the
+            # second run must not inherit the first run's last_synced_at cursor.
+            since_ms = job.since_ms_override
+        else:
+            since_ms = None
+            if previous_job is not None and previous_job.last_synced_at is not None:
+                last_synced = previous_job.last_synced_at
+                if last_synced.tzinfo is None:
+                    last_synced = last_synced.replace(tzinfo=timezone.utc)
+                since_ms = int(last_synced.timestamp() * 1000)
 
         async for game in lichess_client.fetch_lichess_games(
             client,
             username=job.username,
             user_id=job.user_id,
             since_ms=since_ms,
+            max_games=job.max_games,
+            perf_type=job.perf_type,
             on_game_fetched=on_game_fetched,
         ):
             yield game
@@ -464,9 +499,7 @@ async def _flush_batch(
         if fen_case_map:
             values_dict["result_fen"] = case(fen_case_map, value=Game.id, else_=None)
         await session.execute(
-            update(Game)
-            .where(Game.id.in_(list(move_counts.keys())))
-            .values(**values_dict)
+            update(Game).where(Game.id.in_(list(move_counts.keys()))).values(**values_dict)
         )
 
     await session.commit()
