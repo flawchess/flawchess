@@ -1,10 +1,10 @@
 """Tests for series resampling helpers in app/services/insights_service.py (Phase 65 Plan 03).
 
 Coverage:
-- D-02: SubsectionFinding.series populated for the 4 timeline subsections only.
+- D-02: SubsectionFinding.series populated for the 3 timeline subsections only
+  (type_win_rate_timeline removed in 260501-s0u).
 - D-03: last_3mo → weekly pass-through; all_time → monthly weighted-by-n mean.
 - D-04: Endgame ELO gap-only + sparse-combo filter (SPARSE_COMBO_FLOOR = 10).
-- D-05: type_win_rate_timeline uses monthly for BOTH all_time AND last_3mo windows.
 
 All tests run against synthetic Pydantic instances — zero DB access.
 """
@@ -217,14 +217,14 @@ class TestEloCombo:
 
 
 # ---------------------------------------------------------------------------
-# TestTypeTimeline — D-05: type_win_rate_timeline uses monthly for both windows.
+# TestTimelineHelpers — weekly vs monthly resampling.
 # ---------------------------------------------------------------------------
 
 
-class TestTypeTimeline:
-    """Unit tests for D-05: type_win_rate monthly for both windows."""
+class TestTimelineHelpers:
+    """Unit tests for _weekly_points_to_time_points resampling."""
 
-    def test_monthly_both_windows(self) -> None:
+    def test_monthly_all_time(self) -> None:
         """Calling _weekly_points_to_time_points with 'all_time' always gives monthly."""
         # Multiple weeks within the same month
         weekly: list[tuple[str, float, int]] = [
@@ -267,8 +267,13 @@ def _make_minimal_response() -> EndgameOverviewResponse:
     )
 
     wdl = EndgameWDLSummary(
-        wins=50, draws=10, losses=40, total=100,
-        win_pct=50.0, draw_pct=10.0, loss_pct=40.0,
+        wins=50,
+        draws=10,
+        losses=40,
+        total=100,
+        win_pct=50.0,
+        draw_pct=10.0,
+        loss_pct=40.0,
     )
     performance = EndgamePerformanceResponse(
         endgame_wdl=wdl,
@@ -280,8 +285,13 @@ def _make_minimal_response() -> EndgameOverviewResponse:
             EndgameCategoryStats(
                 endgame_class="rook",
                 label="Rook",
-                wins=20, draws=5, losses=15, total=40,
-                win_pct=50.0, draw_pct=12.5, loss_pct=37.5,
+                wins=20,
+                draws=5,
+                losses=15,
+                total=40,
+                win_pct=50.0,
+                draw_pct=12.5,
+                loss_pct=37.5,
                 conversion=_make_conv_stats(),
             ),
         ],
@@ -396,15 +406,16 @@ def _make_conv_stats() -> ConversionRecoveryStats:
 
 # ---------------------------------------------------------------------------
 # TestIntegration — D-02 end-to-end: compute_findings populates series only
-# for the 4 timeline subsections.
+# for the 3 timeline subsections (type_win_rate_timeline removed 260501-s0u).
 # ---------------------------------------------------------------------------
 
-_TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset({
-    "score_timeline",
-    "clock_diff_timeline",
-    "endgame_elo_timeline",
-    "type_win_rate_timeline",
-})
+_TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
+    {
+        "score_timeline",
+        "clock_diff_timeline",
+        "endgame_elo_timeline",
+    }
+)
 
 
 class TestIntegration:
@@ -412,7 +423,7 @@ class TestIntegration:
 
     @pytest.mark.asyncio
     async def test_compute_findings_populates_series_only_for_timelines(self) -> None:
-        """series is not None exactly for the 4 timeline subsection_ids (D-02)."""
+        """series is not None exactly for the 3 timeline subsection_ids (D-02)."""
         mock_response = _make_minimal_response()
         with patch.object(
             insights_module,
@@ -420,20 +431,19 @@ class TestIntegration:
             new=AsyncMock(return_value=mock_response),
         ):
             result = await compute_findings(
-                FilterContext(), session=AsyncMock(), user_id=1,
+                FilterContext(),
+                session=AsyncMock(),
+                user_id=1,
             )
 
-        timeline_with_series = {
-            f.subsection_id
-            for f in result.findings
-            if f.series is not None
-        }
+        timeline_with_series = {f.subsection_id for f in result.findings if f.series is not None}
         non_timeline_with_series = [
-            f for f in result.findings
+            f
+            for f in result.findings
             if f.subsection_id not in _TIMELINE_SUBSECTION_IDS and f.series is not None
         ]
 
-        # All 4 timeline subsections must have series populated
+        # All 3 timeline subsections must have series populated
         assert "score_timeline" in timeline_with_series, (
             "score_timeline should have series populated"
         )
@@ -443,46 +453,11 @@ class TestIntegration:
         assert "endgame_elo_timeline" in timeline_with_series, (
             "endgame_elo_timeline should have series populated"
         )
-        assert "type_win_rate_timeline" in timeline_with_series, (
-            "type_win_rate_timeline should have series populated"
-        )
         # Non-timeline findings must NOT have series
         assert non_timeline_with_series == [], (
             f"Non-timeline findings with series: "
             f"{[f.subsection_id for f in non_timeline_with_series]}"
         )
-
-    @pytest.mark.asyncio
-    async def test_type_win_rate_monthly_for_last_3mo(self) -> None:
-        """D-05: type_win_rate_timeline series has monthly bucket_starts even for last_3mo."""
-        mock_response = _make_minimal_response()
-        with patch.object(
-            insights_module,
-            "get_endgame_overview",
-            new=AsyncMock(return_value=mock_response),
-        ):
-            result = await compute_findings(
-                FilterContext(), session=AsyncMock(), user_id=1,
-            )
-
-        # Find type_win_rate_timeline findings for last_3mo window
-        type_timeline_findings = [
-            f for f in result.findings
-            if f.subsection_id == "type_win_rate_timeline"
-            and f.window == "last_3mo"
-            and f.series is not None
-        ]
-
-        assert len(type_timeline_findings) > 0, (
-            "Expected at least one type_win_rate_timeline finding for last_3mo with series"
-        )
-        for finding in type_timeline_findings:
-            assert finding.series is not None
-            for point in finding.series:
-                assert re.match(r"^\d{4}-\d{2}-01$", point.bucket_start), (
-                    f"type_win_rate_timeline last_3mo bucket_start {point.bucket_start!r} "
-                    f"should be monthly (YYYY-MM-01) per D-05"
-                )
 
     @pytest.mark.asyncio
     async def test_score_timeline_emits_three_findings_per_window(self) -> None:
@@ -502,12 +477,15 @@ class TestIntegration:
             new=AsyncMock(return_value=mock_response),
         ):
             result = await compute_findings(
-                FilterContext(), session=AsyncMock(), user_id=1,
+                FilterContext(),
+                session=AsyncMock(),
+                user_id=1,
             )
 
         for window in ("all_time", "last_3mo"):
             st_findings = [
-                f for f in result.findings
+                f
+                for f in result.findings
                 if f.subsection_id == "score_timeline" and f.window == window
             ]
             assert len(st_findings) == 3, (
@@ -549,11 +527,14 @@ class TestIntegration:
             new=AsyncMock(return_value=mock_response),
         ):
             result = await compute_findings(
-                FilterContext(), session=AsyncMock(), user_id=1,
+                FilterContext(),
+                session=AsyncMock(),
+                user_id=1,
             )
 
         st_last_3mo = [
-            f for f in result.findings
+            f
+            for f in result.findings
             if f.subsection_id == "score_timeline" and f.window == "last_3mo"
         ]
         assert len(st_last_3mo) == 3
@@ -631,14 +612,17 @@ class TestScoreTimelineIntegration:
             new=AsyncMock(return_value=mock_response),
         ):
             findings = await compute_findings(
-                FilterContext(), session=AsyncMock(), user_id=1,
+                FilterContext(),
+                session=AsyncMock(),
+                user_id=1,
             )
 
         # --- Finding-level assertions (cross-check compute_findings output) ---
         windows = ("all_time", "last_3mo")
         for window in windows:
             st_findings = [
-                f for f in findings.findings
+                f
+                for f in findings.findings
                 if f.subsection_id == "score_timeline" and f.window == window
             ]
             assert len(st_findings) == 3, (
@@ -713,4 +697,3 @@ class TestScoreTimelineIntegration:
         assert "[summary score_gap]" in overall_slice, (
             "overall subsection missing the bare [summary score_gap] aggregate"
         )
-

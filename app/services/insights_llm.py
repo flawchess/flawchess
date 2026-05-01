@@ -41,7 +41,7 @@ from app.repositories.llm_log_repository import (
     get_latest_successful_log_for_user,
     get_oldest_recent_miss_timestamp,
 )
-from app.schemas.endgames import TimePressureChartResponse
+from app.schemas.endgames import EndgameClass, TimePressureChartResponse
 from app.schemas.insights import (
     EndgameInsightsReport,
     EndgameInsightsResponse,
@@ -52,13 +52,18 @@ from app.schemas.insights import (
     TimePoint,
 )
 from app.schemas.llm_log import LlmLogCreate, LlmLogEndpoint, LlmLogFilterContext
-from app.services.endgame_zones import BUCKETED_ZONE_REGISTRY, ZONE_REGISTRY, ZoneSpec
+from app.services.endgame_zones import (
+    BUCKETED_ZONE_REGISTRY,
+    PER_CLASS_GAUGE_ZONES,
+    ZONE_REGISTRY,
+    ZoneSpec,
+)
 from app.services.insights_service import compute_findings
 
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v17"  # v17 (260501 tone/framing pass): streamlined player-profile tone calibration and recommendations framing in `app/prompts/endgame_insights.md` — observations now link to skill level without prescriptive labeling, recommendations register loosened from SHOULD to MAY for advanced players, second-person "you" narration required throughout, cross-platform rating comparison restrictions and within-noise shift handling clarified across sections. v16 (260425 benchmarks pass): dropped the pawn-type asymmetry special case in both the prompt and the `[asymmetry type=...]` tag generator — Section 6 benchmark data shows queen has the largest conversion/recovery asymmetry (52 pp) and pawn recovery (34%) sits at the top of the typical 25-35 band, contradicting the v11 "expected asymmetry, pawn-specific cohort recovery is lower than 25-35" rationale. All endgame classes now use the standard "closes winning / defends losing" story framing. v15 (v1.11 cleanup pass): dropped stale "check the `Filters:` header" parenthetical from the avg_clock_diff_pct glossary entry — the `Filters:` header was removed in v9 and the insights router rejects non-default time_control filters, so the instruction pointed at nothing. Cache invalidation is automatic via prompt_version cache key. See `app/prompts/endgame_insights.md`. v14 (260424-pc6 UAT pass) introduced the three-metric score_timeline emitter (endgame_score / non_endgame_score / score_gap) plus constant-N disclosure and no-op zone bands for per-part absolute scores.
+_PROMPT_VERSION = "endgame_v21"  # v21 (260501-s0u pass2 polish): score_pct_diff in the type WDL chart is now derived from rounded score_pct − opp_score_pct (avoids 1pp mismatch e.g. 47 − 53 = -6 vs the unrounded -6.8 → -7). Raised SAMPLE_QUALITY_BANDS thin_max from 10 to 20 for per-type subsections (results_by_endgame_type, conversion_recovery_by_type) so 10-19 sequences no longer label as `adequate`. v20 (260501-s0u pass2 type_breakdown cleanup): restored the per-type WDL chart at `### Chart: results_by_endgame_type_wdl` (endgame_class | games | win_pct | draw_pct | loss_pct | score_pct | opp_score_pct | score_pct_diff). The v18 conv/recov delta table was redundant with the conversion_recovery_by_type [summary] blocks (same per-type conv_pct / recov_pct + per-class typical bands) and got dropped. Reordered type_breakdown to chart wdl → results_by_endgame_type → conversion_recovery_by_type so the LLM reads aggregate WDL, then per-type win_rate, then per-type Conv/Recov detail. _format_zone_bounds and the zone classifier (insights_service._findings_conversion_recovery_by_type) now dispatch via PER_CLASS_GAUGE_ZONES when a finding carries `endgame_class` for conversion_win_pct / recovery_save_pct, so per-class [summary] zone labels and inline `(typical LO to UP)` match the table-side per-class baselines. v19 (260501-s0u terminology pass): standardize on "endgame type" instead of "endgame class" in LLM-facing strings — column header is now `endgame_type`, caption and prompt prose use "per-type" / "type-specific" / "type baseline" framing. v18 (260501-s0u benchmark calibration v2): drop per-class win_rate framing in favor of per-class delta-from-baseline. Conversion / Recovery are now narrated against class-specific typical bands sourced from PER_CLASS_GAUGE_ZONES (reports/benchmarks-2026-05-01.md). Per-class user prompt payload replaced win_pct/score_pct rows with conv_pct, recov_pct, class baseline midpoints, and signed deltas. type_win_rate_timeline subsection deprecated — no longer rendered on the UI. v17 (260501 tone/framing pass): streamlined player-profile tone calibration and recommendations framing in `app/prompts/endgame_insights.md` — observations now link to skill level without prescriptive labeling, recommendations register loosened from SHOULD to MAY for advanced players, second-person "you" narration required throughout, cross-platform rating comparison restrictions and within-noise shift handling clarified across sections. v16 (260425 benchmarks pass): dropped the pawn-type asymmetry special case in both the prompt and the `[asymmetry type=...]` tag generator — Section 6 benchmark data shows queen has the largest conversion/recovery asymmetry (52 pp) and pawn recovery (34%) sits at the top of the typical 25-35 band, contradicting the v11 "expected asymmetry, pawn-specific cohort recovery is lower than 25-35" rationale. All endgame classes now use the standard "closes winning / defends losing" story framing. v15 (v1.11 cleanup pass): dropped stale "check the `Filters:` header" parenthetical from the avg_clock_diff_pct glossary entry — the `Filters:` header was removed in v9 and the insights router rejects non-default time_control filters, so the instruction pointed at nothing. Cache invalidation is automatic via prompt_version cache key. See `app/prompts/endgame_insights.md`. v14 (260424-pc6 UAT pass) introduced the three-metric score_timeline emitter (endgame_score / non_endgame_score / score_gap) plus constant-N disclosure and no-op zone bands for per-part absolute scores.
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
@@ -302,7 +307,6 @@ _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
         "score_timeline",
         "clock_diff_timeline",
         "endgame_elo_timeline",
-        "type_win_rate_timeline",
     }
 )
 
@@ -317,6 +321,12 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
     metrics use ZONE_REGISTRY directly. Returns '' for unknown metric_ids
     (defensive — shouldn't fire for valid findings since MetricId is enumerated).
 
+    v20 (260501-s0u pass2): when a conversion_win_pct / recovery_save_pct
+    finding carries an `endgame_class` dimension, dispatch via
+    PER_CLASS_GAUGE_ZONES so the inline bound matches the per-class zone the
+    finding's `zone` label was computed against. Without this, every per-type
+    Conv/Recov line printed the same global band and contradicted the table.
+
     Phase 68 (260424-pc6): endgame_score / non_endgame_score have no
     calibrated zone band — their registry entries span [0, 1] only so
     assign_zone does not raise. Skip the bounds render for those two so
@@ -326,9 +336,18 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
         return ""
     spec: ZoneSpec | None = None
     bucket = dimension.get("bucket") if dimension else None
+    endgame_class = dimension.get("endgame_class") if dimension else None
     bucketed = cast("dict[str, dict[str, ZoneSpec]]", dict(BUCKETED_ZONE_REGISTRY))
     scalar = cast("dict[str, ZoneSpec]", dict(ZONE_REGISTRY))
-    if metric_id in bucketed and bucket is not None:
+    if (
+        metric_id in ("conversion_win_pct", "recovery_save_pct")
+        and endgame_class is not None
+        and endgame_class in PER_CLASS_GAUGE_ZONES
+    ):
+        bands = PER_CLASS_GAUGE_ZONES[cast("EndgameClass", endgame_class)]
+        lo_hi = bands.conversion if metric_id == "conversion_win_pct" else bands.recovery
+        spec = ZoneSpec(lo_hi[0], lo_hi[1], "higher_is_better")
+    elif metric_id in bucketed and bucket is not None:
         spec = bucketed[metric_id].get(bucket)
     elif metric_id in scalar:
         spec = scalar[metric_id]
@@ -530,15 +549,19 @@ def _format_overall_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
 
 
 def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
-    """Render per-endgame-type WDL + Score % as a table.
+    """Render per-endgame-type W/D/L + Score % chart.
 
-    Emits `## Chart: results_by_endgame_type_wdl` followed by one row per
-    endgame category (rook, minor_piece, pawn, queen, mixed) sorted by total
-    descending (matches `EndgameStatsResponse` D-05). score_pct = (wins +
-    0.5*draws) / total. Opponent Score % is the algebraic complement
-    (1 - score_pct) for these samples since both sides played the same games,
-    documented in the caption; not emitted as a separate column. Rows with
-    fewer than _MIN_GAMES_FOR_RELIABLE_BUCKET games are skipped.
+    v20 (260501-s0u pass2): restores the WDL table that v18 had replaced with a
+    delta-from-baseline table. The delta table was redundant with the
+    `conversion_recovery_by_type` [summary] blocks (same conv_pct / recov_pct,
+    same per-class typical bands), so this chart now carries the WDL framing
+    only. Two columns added vs the pre-v18 shape:
+
+    - opp_score_pct = 100 - score_pct (both sides played the same games)
+    - score_pct_diff = score_pct - opp_score_pct (signed margin vs opponents)
+
+    Sorted by `total` descending. Pawnless rows are dropped (hidden in the UI).
+    Rows with fewer than _MIN_GAMES_FOR_RELIABLE_BUCKET games are skipped.
     """
     categories = findings.type_categories
     if not categories:
@@ -558,9 +581,19 @@ def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
         if cat.total < _MIN_GAMES_FOR_RELIABLE_BUCKET:
             continue
         score_pct = (cat.wins + 0.5 * cat.draws) / cat.total * 100.0
+        opp_score_pct = 100.0 - score_pct
+        # Round once per cell, then derive score_pct_diff from the rounded
+        # integers. Otherwise the diff (rounded from a real-valued subtraction)
+        # can disagree with the displayed score_pct − opp_score_pct by 1 pp,
+        # e.g. score_pct=46.6 → 47, opp=53.4 → 53, diff=-6.8 → -7 (mismatch
+        # with 47 − 53 = -6).
+        score_pct_int = round(score_pct)
+        opp_score_pct_int = round(opp_score_pct)
+        score_pct_diff_int = score_pct_int - opp_score_pct_int
         rows.append(
-            f"| {cat.endgame_class:<13} | {cat.total:<5} | {cat.win_pct:.0f}     | "
-            f"{cat.draw_pct:.0f}      | {cat.loss_pct:.0f}      | {score_pct:.0f}       |"
+            f"| {cat.endgame_class:<12} | {cat.total:<5} | {cat.win_pct:.0f}     | "
+            f"{cat.draw_pct:.0f}      | {cat.loss_pct:.0f}      | {score_pct_int}       | "
+            f"{opp_score_pct_int}            | {score_pct_diff_int:+d}            |"
         )
 
     if not rows:
@@ -569,13 +602,19 @@ def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
     lines: list[str] = [
         "### Chart: results_by_endgame_type_wdl (all_time)",
         "Per-endgame-type W/D/L and Score % for the user. All columns are whole-number "
-        "percentages. opp_score_pct = 100 - score_pct (both sides played the same "
-        "games), so a score_pct above 50 means the user outscores their opponents in that type.",
+        "percentages. score_pct uses wins=100, draws=50, losses=0. opp_score_pct = "
+        "100 - score_pct (both sides played the same games), so a score_pct above 50 "
+        "means the user outscores their opponents in that type. score_pct_diff = "
+        "score_pct - opp_score_pct (signed margin; positive means the user outscores).",
     ]
     if weakest_tag:
         lines.append(weakest_tag)
-    lines.append("| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct |")
-    lines.append("| ------------- | ----- | ------- | -------- | -------- | --------- |")
+    lines.append(
+        "| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct | opp_score_pct | score_pct_diff |"
+    )
+    lines.append(
+        "| ------------- | ----- | ------- | -------- | -------- | --------- | ------------- | -------------- |"
+    )
     lines.extend(rows)
     lines.append("")
     return lines
@@ -903,15 +942,11 @@ def _within_noise_shift(
 def _series_granularity(finding: SubsectionFinding) -> str:
     """Weekly for last_3mo; monthly for all_time.
 
-    Exceptions:
-    - type_win_rate_timeline: always monthly (5-way split makes weekly noise).
-    - score_timeline (Phase 68): always weekly (ISO-week is the natural grain
-      of the underlying `_compute_score_gap_timeline`; the two-line chart
-      reads weekly points directly and the insights series is built without
-      monthly resampling — see `_findings_score_timeline`).
+    Exception: score_timeline (Phase 68) is always weekly (ISO-week is the
+    natural grain of the underlying `_compute_score_gap_timeline`; the two-line
+    chart reads weekly points directly and the insights series is built without
+    monthly resampling — see `_findings_score_timeline`).
     """
-    if finding.subsection_id == "type_win_rate_timeline":
-        return "monthly"
     if finding.subsection_id == "score_timeline":
         return "weekly"
     return "weekly" if finding.window == "last_3mo" else "monthly"
@@ -1258,9 +1293,8 @@ _SECTION_LAYOUT: list[tuple[str, list[tuple[str, str]]]] = [
         "type_breakdown",
         [
             ("chart", "results_by_endgame_type_wdl"),
-            ("subsection", "conversion_recovery_by_type"),
-            ("subsection", "type_win_rate_timeline"),
             ("subsection", "results_by_endgame_type"),
+            ("subsection", "conversion_recovery_by_type"),
         ],
     ),
 ]
@@ -1463,8 +1497,8 @@ def _render_subsection_block(
             and subsection_id == "conversion_recovery_by_type"
         ):
             lines.append(
-                "  [typical band 25-35 is cohort-wide; weak here means at/below "
-                "population average, not absolute crisis]"
+                "  [typical bands above are per endgame type from cohort data; weak here "
+                "means at/below the type's population average, not absolute crisis]"
             )
             recovery_note_emitted = True
 

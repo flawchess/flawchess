@@ -19,7 +19,6 @@ import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
 import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES, EndgameScoreOverTimeChart } from '@/components/charts/EndgamePerformanceSection';
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
-import { EndgameTimelineChart } from '@/components/charts/EndgameTimelineChart';
 import { EndgameScoreGapSection } from '@/components/charts/EndgameScoreGapSection';
 import { EndgameClockPressureSection, ClockDiffTimelineChart } from '@/components/charts/EndgameClockPressureSection';
 import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePressureSection';
@@ -236,16 +235,6 @@ export function EndgamesPage() {
     };
   }, [rawStatsData]);
   const perfData = overviewData?.performance;
-  const rawTimelineData = overviewData?.timeline;
-  const timelineData = useMemo(() => {
-    if (!rawTimelineData) return rawTimelineData;
-    const per_type = Object.fromEntries(
-      Object.entries(rawTimelineData.per_type).filter(
-        ([key]) => !HIDDEN_ENDGAME_CLASSES.has(key as EndgameClass),
-      ),
-    );
-    return { ...rawTimelineData, per_type };
-  }, [rawTimelineData]);
   const scoreGapData = overviewData?.score_gap_material;
   const clockPressureData = overviewData?.clock_pressure;
   const timePressureChartData = overviewData?.time_pressure_chart;
@@ -288,7 +277,6 @@ export function EndgamesPage() {
   // ── Category selection handler ──────────────────────────────────────────────
 
   const handleCategorySelect = useCallback((category: EndgameClass) => {
-    // Select category, reset pagination, and scroll to top — user navigates via link icon
     setSelectedCategory(category);
     setGamesOffset(0);
     window.scrollTo(0, 0);
@@ -300,7 +288,6 @@ export function EndgamesPage() {
   const showPerfSection = !!(perfData && perfData.endgame_wdl.total > 0);
   const showClockPressure = !!(clockPressureData && clockPressureData.rows.length > 0);
   const showTimePressureChart = !!(timePressureChartData && timePressureChartData.total_endgame_games > 0);
-  const showTimeline = !!(timelineData && timelineData.overall.length > 0);
 
   const statisticsContent = (
     <div className="flex flex-col gap-4">
@@ -440,11 +427,6 @@ export function EndgamesPage() {
           {statsData.categories.length > 0 && (
             <div className="charcoal-texture rounded-md p-4">
               <EndgameConvRecovChart categories={statsData.categories} />
-            </div>
-          )}
-          {showTimeline && (
-            <div className="charcoal-texture rounded-md p-4">
-              <EndgameTimelineChart data={timelineData} />
             </div>
           )}
           <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />

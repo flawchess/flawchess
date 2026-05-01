@@ -272,7 +272,7 @@ export function EndgameWDLChart({
   return (
     <div data-testid="endgame-wdl-chart">
       <div className="mb-3">
-        <h2 className="text-lg font-medium">
+        <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">
             Results by Endgame Type
             <InfoPopover ariaLabel="Results by endgame type info" testId="endgame-chart-info" side="top">
@@ -295,7 +295,7 @@ export function EndgameWDLChart({
               </div>
             </InfoPopover>
           </span>
-        </h2>
+        </h3>
         <p className="text-sm text-muted-foreground mt-1">
           Win/draw/loss rate for each endgame type. A game can count toward multiple types.
         </p>

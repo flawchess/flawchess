@@ -180,11 +180,12 @@ class SubsectionFinding(BaseModel):
     sample_quality: SampleQuality
     is_headline_eligible: bool
     dimension: dict[str, str] | None = None
-    # Phase 65 D-02: populated ONLY for the 4 timeline subsections
-    # (score_timeline, clock_diff_timeline, endgame_elo_timeline,
-    # type_win_rate_timeline). None for non-timeline findings — default
-    # preserves existing callers unchanged. Append-only: reordering this
-    # field above another existing field would churn findings_hash.
+    # Phase 65 D-02: populated ONLY for the 3 timeline subsections
+    # (score_timeline, clock_diff_timeline, endgame_elo_timeline).
+    # type_win_rate_timeline removed in 260501-s0u.
+    # None for non-timeline findings — default preserves existing callers
+    # unchanged. Append-only: reordering this field above another existing
+    # field would churn findings_hash.
     series: list["TimePoint"] | None = None
 
 

@@ -79,6 +79,9 @@ def _sample_filter_context(**kwargs: Any) -> FilterContext:
     return FilterContext(**defaults)
 
 
+_USE_CURRENT_PROMPT_VERSION = object()  # sentinel for _make_log_row default
+
+
 def _make_log_row(
     user_id: int,
     *,
@@ -86,17 +89,26 @@ def _make_log_row(
     error: str | None = None,
     response_json: dict[str, Any] | None = None,
     cache_hit: bool = False,
-    prompt_version: str = "endgame_v16",
+    prompt_version: Any = _USE_CURRENT_PROMPT_VERSION,
     model: str = "test",
     findings_hash: str = "b" * 64,
     opponent_strength: str = "any",
 ) -> LlmLog:
-    """Build a minimal LlmLog row for seeding rate-limit tests."""
+    """Build a minimal LlmLog row for seeding rate-limit tests.
+
+    Default `prompt_version` is insights_llm._PROMPT_VERSION so cache-hit
+    tests remain valid across version bumps without manual updates.
+    """
+    resolved_version = (
+        insights_llm._PROMPT_VERSION
+        if prompt_version is _USE_CURRENT_PROMPT_VERSION
+        else prompt_version
+    )
     kwargs: dict[str, Any] = dict(
         user_id=user_id,
         endpoint="insights.endgame",
         model=model,
-        prompt_version=prompt_version,
+        prompt_version=resolved_version,
         findings_hash=findings_hash,
         filter_context={"opponent_strength": opponent_strength},
         user_prompt="user",
@@ -182,7 +194,7 @@ class TestPromptVersionAndBody:
     """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v16 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v21 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
@@ -192,8 +204,8 @@ class TestPromptVersionAndBody:
       and the `[n=<N> for every point]` disclosure for constant-N series.
     """
 
-    def test_prompt_version_is_v16(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v16"
+    def test_prompt_version_is_v20(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v21"
 
     def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
         from pathlib import Path
@@ -762,18 +774,32 @@ class TestPromptAssembly:
         assert "### Chart: overall_wdl" not in _assemble_user_prompt(tab_none)
 
     def test_assemble_user_prompt_renders_type_wdl_chart_block(self) -> None:
-        """Per-endgame-type WDL block is rendered, sorted by total descending."""
+        """Per-class WDL block is rendered, sorted by total descending.
+
+        v20 (260501-s0u pass2): the v18 conv/recov delta table was redundant
+        with the conversion_recovery_by_type [summary] blocks and got dropped.
+        The chart again carries WDL framing (games / win_pct / draw_pct /
+        loss_pct / score_pct) plus two new columns: opp_score_pct and
+        score_pct_diff.
+        """
         from app.schemas.endgames import ConversionRecoveryStats, EndgameCategoryStats
 
-        # Helper conversion stub — values irrelevant for the WDL block.
-        conv_stub = ConversionRecoveryStats.model_construct(
-            conversion_games=0,
-            conversion_wins=0,
-            conversion_pct=0.0,
-            recovery_games=0,
-            recovery_saves=0,
-            recovery_pct=0.0,
-        )
+        def _conv(
+            conv_pct: float, recov_pct: float, n_conv: int = 40, n_recov: int = 20
+        ) -> ConversionRecoveryStats:
+            return ConversionRecoveryStats(
+                conversion_pct=conv_pct,
+                conversion_games=n_conv,
+                conversion_wins=int(n_conv * conv_pct / 100),
+                conversion_draws=0,
+                conversion_losses=n_conv - int(n_conv * conv_pct / 100),
+                recovery_pct=recov_pct,
+                recovery_games=n_recov,
+                recovery_saves=int(n_recov * recov_pct / 100),
+                recovery_wins=int(n_recov * recov_pct / 100 * 0.6),
+                recovery_draws=int(n_recov * recov_pct / 100 * 0.4),
+            )
+
         categories = [
             EndgameCategoryStats(
                 endgame_class="rook",
@@ -785,7 +811,7 @@ class TestPromptAssembly:
                 win_pct=50.0,
                 draw_pct=20.0,
                 loss_pct=30.0,
-                conversion=conv_stub,
+                conversion=_conv(conv_pct=68.0, recov_pct=32.0),
             ),
             EndgameCategoryStats(
                 endgame_class="pawn",
@@ -797,7 +823,7 @@ class TestPromptAssembly:
                 win_pct=50.0,
                 draw_pct=16.7,
                 loss_pct=33.3,
-                conversion=conv_stub,
+                conversion=_conv(conv_pct=70.0, recov_pct=28.0),
             ),
             EndgameCategoryStats(
                 endgame_class="queen",
@@ -809,7 +835,7 @@ class TestPromptAssembly:
                 win_pct=66.7,
                 draw_pct=0.0,
                 loss_pct=33.3,
-                conversion=conv_stub,
+                conversion=_conv(conv_pct=75.0, recov_pct=25.0, n_conv=1, n_recov=1),
             ),
         ]
         tab = EndgameTabFindings(
@@ -822,12 +848,21 @@ class TestPromptAssembly:
         prompt = _assemble_user_prompt(tab)
 
         assert "### Chart: results_by_endgame_type_wdl (all_time)" in prompt
-        assert "| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct |" in prompt
+        # v20 WDL columns + two new ones (opp_score_pct, score_pct_diff).
+        assert (
+            "| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct "
+            "| opp_score_pct | score_pct_diff |"
+        ) in prompt
+        # The v18 delta-table columns were dropped.
+        assert "conv_baseline_mid" not in prompt
+        assert "recov_baseline_mid" not in prompt
+        assert "conv_delta" not in prompt
+        assert "recov_delta" not in prompt
         # Sorted by total descending: rook (100) before pawn (30).
         rook_idx = prompt.index("| rook")
         pawn_idx = prompt.index("| pawn")
         assert rook_idx < pawn_idx
-        # Queen (n=3) dropped by 10-game floor.
+        # Queen (total=3, below 10-game floor) dropped.
         assert "| queen" not in prompt
 
     def test_pawnless_findings_are_filtered(self) -> None:
@@ -874,7 +909,23 @@ class TestPromptAssembly:
             dimension={"endgame_class": "pawnless"},
             series=None,
         )
-        conv_stub = ConversionRecoveryStats.model_construct(
+        # Rook: give realistic sequence counts (no longer used by the WDL chart
+        # block, but kept so the conversion_recovery_by_type findings have data).
+        rook_conv = ConversionRecoveryStats(
+            conversion_pct=65.0,
+            conversion_games=30,
+            conversion_wins=20,
+            conversion_draws=0,
+            conversion_losses=10,
+            recovery_pct=30.0,
+            recovery_games=20,
+            recovery_saves=6,
+            recovery_wins=4,
+            recovery_draws=2,
+        )
+        # Pawnless: zero sequences — kept for test intent (filtered anyway by the
+        # pawnless endgame_class guard).
+        pawnless_conv_stub = ConversionRecoveryStats.model_construct(
             conversion_games=0,
             conversion_wins=0,
             conversion_pct=0.0,
@@ -893,7 +944,7 @@ class TestPromptAssembly:
                 win_pct=41.0,
                 draw_pct=12.0,
                 loss_pct=47.0,
-                conversion=conv_stub,
+                conversion=rook_conv,
             ),
             EndgameCategoryStats(
                 endgame_class="pawnless",
@@ -905,7 +956,7 @@ class TestPromptAssembly:
                 win_pct=57.9,
                 draw_pct=26.3,
                 loss_pct=15.8,
-                conversion=conv_stub,
+                conversion=pawnless_conv_stub,
             ),
         ]
         tab = EndgameTabFindings(
@@ -1834,7 +1885,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v16"
+        assert response.report.prompt_version == "endgame_v21"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -1858,7 +1909,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v16"
+        assert log.response_json["prompt_version"] == "endgame_v21"
 
 
 class TestCacheBehavior:
@@ -1884,8 +1935,9 @@ class TestCacheBehavior:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
         # Seed a cache-hit eligible row: error=None, response_json set,
-        # matching (user_id, prompt_version="endgame_v16", model="test",
+        # matching (user_id, prompt_version=current, model="test",
         # opponent_strength="any" via filter_context).
+        # _make_log_row defaults prompt_version to insights_llm._PROMPT_VERSION.
         async with session_maker() as session:
             await _seed(
                 session,
@@ -1904,7 +1956,7 @@ class TestCacheBehavior:
             lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid),
         )
 
-        # Call returns cache_hit because the seeded row matches (hash + prompt_version + model).
+        # Call returns cache_hit because the seeded row matches (prompt_version + model).
         async with session_maker() as session:
             r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
         assert r.status == "cache_hit"

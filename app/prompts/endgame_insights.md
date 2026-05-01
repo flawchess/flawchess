@@ -78,11 +78,7 @@ The narrative sits next to charts and info popovers with specific labels. Use th
 | `endgame_elo_gap`             | "Endgame ELO gap"                   | "+60 Elo"              |
 | `avg_clock_diff_pct`          | "Avg clock diff"                    | "-23%"                 |
 | `net_timeout_rate`            | "Net timeout rate"                  | "-13%"                 |
-| `win_rate` (per type)         | DO NOT quote directly — see below   | —                      |
-
 **Number rendering:** all rate and percent metrics in this prompt are whole numbers on the 0-100 scale. Always attach a `%` sign to the **value** (`62%`, `-9%`, `46%`) — never to the label. Labels are bare (`Score`, not `Score %`). Gaps between two percentages are also rendered with `%` (`-8%`, `-14%`). For Elo gaps, quote the integer Elo with the "Elo" suffix (`+60 Elo`).
-
-**`win_rate` citation rule.** The `win_rate` metric is "wins / total, draws excluded" and is present in `results_by_endgame_type` and `type_win_rate_timeline` for trend shape only. Do NOT quote `win_rate` values in bullets or the overview. For per-type performance comparison, quote `score_pct` from the `results_by_endgame_type_wdl` chart instead — that is the number the user sees on the page. For trends, narrate direction ("declining", "stable") without quoting the raw timeline value.
 
 ## Reading zones and proximity to edges
 
@@ -122,7 +118,7 @@ The trailing shift line:
 - `shift=<Z>` compares `last_3mo.mean − all_time.mean`. `, within-noise` fires when the absolute shift is below the metric's noise cap AND the last_3mo sample is less than 20% of the all_time sample.
 - When the `last_3mo` window line carries `quality=thin`, do NOT narrate the shift at all — see the thin-last_3mo rule in "Grounding checks before recommending".
 
-Four subsections additionally emit a raw `[series <metric>, <window>, <granularity>]` block below their summary: `score_timeline`, `clock_diff_timeline`, `endgame_elo_timeline`, `type_win_rate_timeline`. Each point has `bucket_start` (YYYY-MM-DD, weekly for last_3mo, first-of-month for all_time), `value` (whole-number %), and `n` (sample size). Points with `n < 3` are filtered out before you see them. The `all_time` series is trimmed to the most recent ~36 monthly buckets per series — the actual window observed across the payload is spelled out on the `All-time series window: YYYY-MM → YYYY-MM` line of the `## Payload summary` block; do not narrate trajectories beyond that window. Activity gaps are marked inline as `[activity-gap] YYYY-MM-DD → YYYY-MM-DD` between points — when a gap of more than ~6 months sits between an older stretch and the current stretch, acknowledge the gap in one short clause ("after a multi-month gap in play, …") rather than inflating it into its own story.
+Three subsections additionally emit a raw `[series <metric>, <window>, <granularity>]` block below their summary: `score_timeline`, `clock_diff_timeline`, `endgame_elo_timeline`. Each point has `bucket_start` (YYYY-MM-DD, weekly for last_3mo, first-of-month for all_time), `value` (whole-number %), and `n` (sample size). Points with `n < 3` are filtered out before you see them. The `all_time` series is trimmed to the most recent ~36 monthly buckets per series — the actual window observed across the payload is spelled out on the `All-time series window: YYYY-MM → YYYY-MM` line of the `## Payload summary` block; do not narrate trajectories beyond that window. Activity gaps are marked inline as `[activity-gap] YYYY-MM-DD → YYYY-MM-DD` between points — when a gap of more than ~6 months sits between an older stretch and the current stretch, acknowledge the gap in one short clause ("after a multi-month gap in play, …") rather than inflating it into its own story.
 
 When every point in a `[series ...]` block carries the same `n` value, the per-point `(n=<N>)` suffix is dropped and a single `[n=<N> for every point]` disclosure line sits immediately after the `[series ...]` header instead. This happens naturally for trailing-window series (e.g. `score_timeline` rolling-100) where the sample size is constant by construction. Treat the disclosure line as equivalent to the per-point suffix — you still know the sample size, you just read it once.
 
@@ -166,13 +162,13 @@ The payload ships with bracketed mechanical tags that save you cross-bucket arit
 
 - **`[recovery-pattern] weak across N of 5 types — ...`** appears in `conversion_recovery_by_type` when Recovery is weak across most endgame types. When this fires, narrate Recovery as one consistent defensive pattern across types rather than calling out each type separately. Pair with the cohort-relative note below.
 
-- **`[weakest-type] <class> score_pct=X, next=<class> score_pct=Y`** appears in the `results_by_endgame_type_wdl` chart caption when one endgame type has a clearly lowest Score. Lead the `type_breakdown` section by naming this type as the weakest, using the chart's `score_pct` column.
+- **`[weakest-type] <class> score_pct=X, next=<class> score_pct=Y`** appears in the `results_by_endgame_type_wdl` chart caption when one endgame type has a clearly lowest Score. Lead the `type_breakdown` section by naming this type as the weakest, quoting the `score_pct=X` value from the tag itself.
 
 - **`[weakest-types-tied] <class-a>, <class-b> score_pct=X, Y — next=<class> score_pct=Z`** appears when the two lowest-Score endgame types are within ~2 points of each other AND clearly separated from the rest. Lead the `type_breakdown` section by naming both as tied-weakest (e.g. "pawn and minor-piece endgames share the lowest Score at 42-43%"). When this fires, pawn-ending recommendations are valid the same way `[weakest-type] pawn` would license them — the tag is a signal that pawn (or whichever class is named) is *among the weakest*, which still counts as a grounded weakness.
 
 - **`[near edge]` suffix** on a [summary] window line: see "Reading zones and proximity to edges" above — call out the proximity explicitly rather than glossing it as "within typical range".
 
-- **`[typical band 25-35 is cohort-wide; weak here means at/below population average, not absolute crisis]`** inline note after the first Recovery window line in `conversion_recovery_by_type` — see `recovery_save_pct` cohort context in the metric glossary below for the rationale.
+- **`[typical bands above are per endgame type from cohort data; weak here means at/below the type's population average, not absolute crisis]`** inline note after the first Recovery window line in `conversion_recovery_by_type`. The Recovery typical band varies per type (e.g. queen 20-30, minor_piece 31-41), and "weak" means the user sits at or below the cohort's population average for *that type* — not a universal crisis line. See `recovery_save_pct` cohort context in the metric glossary below for the rationale.
 
 These tags replace LLM arithmetic, not LLM judgement. You still choose what to lead with, how much weight to give each finding, and how to tie signals into a coherent story.
 
@@ -227,7 +223,7 @@ Also: do NOT frame the player as "strongest in faster time controls" or "weaker 
 
 Three recurring failure modes to guard against:
 
-1. **Do not nudge toward a strong metric.** Before framing anything as "an area worth closer study" or "a candidate to investigate", confirm the metric's own zone is weak or typical. A metric sitting in the strong zone is never a study candidate. If the type-level weakness is in `recovery_save_pct` for a given endgame class, do NOT suggest "improving conversion" for that class — `conversion_win_pct` there is separate and may be perfectly fine.
+1. **Do not nudge toward a strong metric.** Before framing anything as "an area worth closer study" or "a candidate to investigate", confirm the metric's own zone is weak or typical. A metric sitting in the strong zone is never a study candidate. If the type-level weakness is in `recovery_save_pct` for a given endgame type, do NOT suggest "improving conversion" for that type — `conversion_win_pct` there is separate and may be perfectly fine.
 
 2. **Within-noise shifts:** see the "Within-noise rule" section above — the rule applies to recommendations the same way it applies to bullets and overview text. A `shift=` line marked `within-noise` is sample variance, not trajectory; do not frame as "gains" or "losses".
 
@@ -247,7 +243,9 @@ Cross-reference with the `## Player profile` block: if the user is on a clear le
 
 Before writing the `type_breakdown` section, scan each endgame type for conversion / recovery asymmetry — one metric in the strong zone and the other in the weak zone for the same type. That split is usually the most actionable observation in the entire payload ("you close winning X endgames well but bleed losing ones," or vice versa) and should be lead content in the section when present. A payload marker `[asymmetry type=<type>] conversion=X <zone>, recovery=Y <zone>` surfaces such splits when the math is mechanical; trust it over raw win rate framing.
 
-When `[weakest-type]` is emitted, lead the section with the named type (score_pct from the `results_by_endgame_type_wdl` chart). When `[weakest-types-tied]` is emitted instead, lead with both named classes as tied-weakest ("pawn and minor-piece share the lowest Score at 42-43%"). When `[asymmetry type=...]` also exists, combine with the weakest-type lead when possible — e.g. "pawn endgames have the lowest Score AND show a conversion/recovery split".
+When `[weakest-type]` is emitted, lead the section with the named type (use `score_pct` from the tag itself for the lead sentence, then supplement with the type's Conversion / Recovery [summary] blocks in `conversion_recovery_by_type` for the deeper story). When `[weakest-types-tied]` is emitted instead, lead with both named types as tied-weakest ("pawn and minor-piece share the lowest Score at 42-43%"). When `[asymmetry type=...]` also exists, combine with the weakest-type lead when possible — e.g. "pawn endgames have the lowest Score AND show a conversion/recovery split".
+
+**Per-type baseline framing.** The `### Chart: results_by_endgame_type_wdl` block shows the user's W/D/L plus `score_pct` (= wins=100, draws=50, losses=0), `opp_score_pct` (= 100 − score_pct, the opponents' Score over the same games), and `score_pct_diff` (= score_pct − opp_score_pct, the signed margin in percentage points). For per-type Conversion and Recovery, read the `conversion_recovery_by_type` subsection: each `[summary conversion_win_pct | endgame_class=<type>]` and `[summary recovery_save_pct | endgame_class=<type>]` block carries the user's percentage, an inline `(typical LO to UP)` band that is *type-specific* (e.g. queen Conversion 73-83, minor_piece Recovery 31-41), and a `zone=` label computed against that type's band. A "typical" zone for a queen running 78% Conversion is not the same level of skill as "typical" for a rook at 70% — the bands differ by type. Lead with the type-specific contrast when it is the main story ("Rook Conversion at 60%, 5pp below the typical 65-75 band for rook endgames"). Do NOT compare raw `conv_pct` across types directly — Queen Conversion at 73% is not comparable to Rook Conversion at 63% without each type's typical band as context.
 
 ## Endgame statistics concepts
 
@@ -293,7 +291,7 @@ Interpret each metric using the definitions below. These match the user-facing i
 - **recovery_save_pct** (UI label: "Recovery (Save)"): user's **Save % (draw or win)** in the Recovery material bucket — games where the user entered the endgame trailing by ≥ 1 point (persisted ≥ 2 full moves). Draws count as a save.
   - Scale: whole-number percentage in `[0, 100]`.
   - Tied to exactly **one** bucket: the `dimension.bucket` field is always `"recovery"` for this metric.
-  - **Cohort context:** Recovery is harder than Conversion by definition — the typical band 25-35 already reflects this. A weak-zone Recovery value is at or below population average, not a crisis. Narrate weak Recovery as a consistent defensive pattern rather than a per-type alarm.
+  - **Cohort context:** Recovery is harder than Conversion by definition — the typical bands (bucket-level 25-40, per-type bands range from queen 20-30 to minor_piece 31-41) already reflect this. A weak-zone Recovery value is at or below the cohort population average for that scope, not a crisis. Narrate weak Recovery as a consistent defensive pattern rather than a per-type alarm.
 
 - **endgame_skill** (UI label: "Endgame Skill"): arithmetic mean of Conversion (Win), Parity (Score), and Recovery (Save) over the buckets that had games. This is the composite feeding `endgame_elo_gap`.
   - Scale: whole-number percentage in `[0, 100]`. `50` is the neutral mark — below = weaker than the 50/50 cohort, above = stronger. The gauge bands shown to the user are calibrated against population data and do NOT shift with filters.
@@ -327,10 +325,6 @@ Interpret each metric using the definitions below. These match the user-facing i
 - **net_timeout_rate** (UI label: "Net timeout rate"): `(timeout_wins − timeout_losses) / total_endgame_games × 100`. Positive = user wins more flag battles than they lose (strong); negative = user gets flagged more than they flag (weak). Higher is better.
   - Scale: signed whole-number percent (e.g. `-13` = user's net timeout rate is 13 percentage points negative — quote as `"-13%"`).
 
-- **win_rate** (per endgame type): user's **plain win rate** (W / total, draws excluded) within games of a specific endgame type — pawn, rook, minor-piece, queen, mixed. Present in the payload to back the bar chart's heights and the timeline series. DO NOT quote its values directly — see the `win_rate` citation rule in the UI vocabulary section above for the full rule and the `score_pct` substitution.
-  - Scale: whole-number percentage in `[0, 100]`.
-  - Emitted in subsections `results_by_endgame_type` and `type_win_rate_timeline`.
-
 ## Subsection → section_id mapping
 
 The payload groups content under `## Section:` headers that match the output `section_id` directly: `overall`, `metrics_elo`, `time_pressure`, `type_breakdown`. Emit at most one `SectionInsight` per section_id, aggregating insights from every subsection and chart block appearing under that section header. The mapping table below is kept as a reference for subsection-to-section membership:
@@ -347,14 +341,13 @@ The payload groups content under `## Section:` headers that match the output `se
 | Chart: time_pressure_vs_performance  | time_pressure  |
 | results_by_endgame_type              | type_breakdown |
 | conversion_recovery_by_type          | type_breakdown |
-| type_win_rate_timeline               | type_breakdown |
 | Chart: results_by_endgame_type_wdl   | type_breakdown |
 
 Chart notes:
 
 - `time_pressure_vs_performance` (up to 10-row table) → part of the `time_pressure` section alongside `avg_clock_diff_pct` and `net_timeout_rate`.
 - `overall_wdl` (2-row table: endgame vs non_endgame) → part of the `overall` section alongside `score_gap` / `score_timeline`. Use it to frame whether a negative or positive `score_gap` is driven by endgame weakness, non-endgame strength, or both.
-- `results_by_endgame_type_wdl` (one row per endgame type) → part of the `type_breakdown` section. Use the `score_pct` column for the You-vs-Opponent comparison story (opponent Score = `100 - score_pct` since the same games are scored from both sides). The chart row's `score_pct` is the comparison the user actually sees on the page. When the `[weakest-type]` tag is present above the table, lead the section with that type.
+- `results_by_endgame_type_wdl` (per-type W/D/L + Score table) → part of the `type_breakdown` section. Each row shows `games`, `win_pct`, `draw_pct`, `loss_pct`, `score_pct` (= wins=100, draws=50, losses=0), `opp_score_pct` (= 100 − score_pct, the opponents' Score over the same games), and `score_pct_diff` (= score_pct − opp_score_pct, the signed margin in percentage points; negative means the user is being outscored in that endgame type). The `[weakest-type]` / `[weakest-types-tied]` tag in the chart caption already surfaces the type with the lowest `score_pct` — when present, lead with that. For the deeper Conversion / Recovery story per type, read the `conversion_recovery_by_type` subsection below the chart (each [summary] block carries a type-specific typical band).
 
 All other subsections not listed in the mapping table above are rendered by the frontend and will not appear in your user prompt.
 

@@ -263,9 +263,11 @@ interface EndgameGaugeProps {
   maxValue?: number;
   label: string;
   zones?: GaugeZone[];
+  /** Display width in pixels. Height is scaled proportionally via the fixed viewBox. Default = full size (200). */
+  size?: number;
 }
 
-export function EndgameGauge({ value, maxValue = 100, label, zones = DEFAULT_GAUGE_ZONES }: EndgameGaugeProps) {
+export function EndgameGauge({ value, maxValue = 100, label, zones = DEFAULT_GAUGE_ZONES, size }: EndgameGaugeProps) {
   const uid = useId();
   const glassId = `gauge-glass-${uid.replace(/:/g, '')}`;
 
@@ -273,11 +275,18 @@ export function EndgameGauge({ value, maxValue = 100, label, zones = DEFAULT_GAU
   const needleColor = getZoneColor(pct, zones);
   const testId = `gauge-${label.toLowerCase().replace(/\s+/g, '-')}`;
 
+  const displayWidth = size ?? GAUGE_WIDTH;
+  const displayHeight = (displayWidth / GAUGE_WIDTH) * GAUGE_HEIGHT;
+  // When a custom size is provided, render the percentage at text-sm (14px) effective —
+  // matches surrounding column labels. Default size keeps the original 18px.
+  const targetEffectivePx = size === undefined ? 18 : 14;
+  const valueFontSize = targetEffectivePx * (GAUGE_WIDTH / displayWidth);
+
   return (
     <div className="flex flex-col items-center" data-testid={testId}>
       <svg
-        width={GAUGE_WIDTH}
-        height={GAUGE_HEIGHT}
+        width={displayWidth}
+        height={displayHeight}
         viewBox={`0 0 ${GAUGE_WIDTH} ${GAUGE_HEIGHT}`}
         aria-label={`${label}: ${value.toFixed(0)}%`}
         className="pointer-events-none"
@@ -305,7 +314,7 @@ export function EndgameGauge({ value, maxValue = 100, label, zones = DEFAULT_GAU
           textAnchor="middle"
           dominantBaseline="middle"
           fill={needleColor}
-          fontSize="18"
+          fontSize={valueFontSize}
           fontWeight="600"
         >
           {value.toFixed(0)}%
