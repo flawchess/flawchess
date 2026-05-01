@@ -109,12 +109,12 @@ function EndgameCategoryRowDesktop({
           <Link
             to="/endgames/games"
             onClick={() => onCategorySelect(cat.endgame_class)}
-            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-1 text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
             aria-label={`View ${cat.label} endgame games`}
             data-testid={`endgame-games-link-${cat.slug}`}
           >
             <span>
-              {cat.total.toLocaleString()} games{isUnreliable && ' (low)'}
+              {cat.total.toLocaleString()} Games{isUnreliable && ' (low)'}
             </span>
             <Swords className="h-3.5 w-3.5" />
           </Link>
@@ -195,12 +195,12 @@ function EndgameCategoryCardMobile({
           <Link
             to="/endgames/games"
             onClick={() => onCategorySelect(cat.endgame_class)}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors tabular-nums"
+            className="inline-flex items-center gap-1 text-xs text-brand-brown-light hover:text-brand-brown-highlight transition-colors tabular-nums"
             aria-label={`View ${cat.label} endgame games`}
             data-testid={`endgame-games-link-${cat.slug}-mobile`}
           >
             <span>
-              {cat.total.toLocaleString()} games{isUnreliable && ' (low)'}
+              {cat.total.toLocaleString()} Games{isUnreliable && ' (low)'}
             </span>
             <Swords className="h-3.5 w-3.5" />
           </Link>

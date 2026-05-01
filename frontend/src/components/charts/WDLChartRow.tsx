@@ -98,11 +98,11 @@ export function WDLChartRow({
               <Link
                 to={gamesLink}
                 onClick={onGamesLinkClick}
-                className="inline-flex items-center gap-1 text-xs text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
+                className="inline-flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
                 aria-label={gamesLinkAriaLabel}
                 data-testid={gamesLinkTestId}
               >
-                <span>{data.total} games{isUnreliable && ' (low)'}</span>
+                <span>{data.total} Games{isUnreliable && ' (low)'}</span>
                 <Swords className="h-3.5 w-3.5" />
               </Link>
             </Tooltip>
