@@ -93,13 +93,14 @@ _OPPONENT_TYPE: str = "human"
 # no SubsectionFinding is emitted for them.
 SPARSE_COMBO_FLOOR: int = 10
 
-# The 4 timeline SubsectionIds that receive a populated `series` field (D-02).
+# The 3 timeline SubsectionIds that receive a populated `series` field (D-02).
+# type_win_rate_timeline was removed in 260501-s0u: the per-type WDL timeline
+# chart was deleted from the UI in favour of static Conversion/Recovery gauge cards.
 _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
         "score_timeline",
         "clock_diff_timeline",
         "endgame_elo_timeline",
-        "type_win_rate_timeline",
     }
 )
 
@@ -388,7 +389,6 @@ def _compute_subsection_findings(
     findings.append(_finding_time_pressure_vs_performance(response, window))
     findings.extend(_findings_results_by_endgame_type(response, window))
     findings.extend(_findings_conversion_recovery_by_type(response, window))
-    findings.extend(_findings_type_win_rate_timeline(response, window))
 
     return findings
 
@@ -1062,74 +1062,6 @@ def _findings_conversion_recovery_by_type(
                 )
             )
 
-    return findings
-
-
-def _findings_type_win_rate_timeline(
-    response: EndgameOverviewResponse,
-    window: Window,
-) -> list[SubsectionFinding]:
-    """type_win_rate_timeline -> per-class trend over timeline.per_type series.
-
-    parent_subsection_id = "results_by_endgame_type" per D-13. These
-    findings are NEVER headline-eligible — they are supporting only.
-    """
-    per_type = response.timeline.per_type
-    findings: list[SubsectionFinding] = []
-
-    if not per_type:
-        findings.append(
-            _empty_finding(
-                "type_win_rate_timeline",
-                window,
-                "win_rate",
-                parent="results_by_endgame_type",
-            )
-        )
-        return findings
-
-    for endgame_class, points in per_type.items():
-        dim = {"endgame_class": endgame_class}
-        if not points:
-            findings.append(
-                _empty_finding(
-                    "type_win_rate_timeline",
-                    window,
-                    "win_rate",
-                    parent="results_by_endgame_type",
-                    dimension=dim,
-                )
-            )
-            continue
-        values = [p.win_rate for p in points]
-        trend, weekly_points = _compute_trend(values)
-        last_value = values[-1]
-        sample_size = len(values)
-        quality = sample_quality("type_win_rate_timeline", sample_size)
-        # D-02/D-05: populate resampled series. type_win_rate uses monthly for
-        # BOTH windows (5-way split makes weekly noise).
-        weekly: list[tuple[str, float, int]] = [
-            (p.date, p.win_rate, p.per_week_game_count) for p in points
-        ]
-        findings.append(
-            SubsectionFinding(
-                subsection_id="type_win_rate_timeline",
-                parent_subsection_id="results_by_endgame_type",
-                window=window,
-                metric="win_rate",
-                value=last_value,
-                zone=assign_zone("win_rate", last_value),
-                trend=trend,
-                weekly_points_in_window=weekly_points,
-                sample_size=sample_size,
-                sample_quality=quality,
-                # D-13: type_win_rate_timeline is never headline-eligible.
-                is_headline_eligible=False,
-                dimension=dim,
-                # D-05: type_win_rate uses monthly for both windows (5-way split makes weekly noise).
-                series=_weekly_points_to_time_points(weekly, "all_time"),
-            )
-        )
     return findings
 
 

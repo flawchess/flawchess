@@ -1,63 +1,31 @@
 /**
- * Grouped vertical bar chart for Conversion & Recovery percentages
- * by endgame type (D-08, D-09).
+ * Per-type Conversion & Recovery mini-gauge cards (260501-s0u).
+ *
+ * Replaces the grouped bar chart with six per-type cards, each showing two
+ * EndgameGauge instances using per-type typical bands from PER_CLASS_GAUGE_ZONES.
  */
 
-import { useState, useEffect } from 'react';
-import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { EndgameGauge } from '@/components/charts/EndgameGauge';
+import {
+  colorizeGaugeZones,
+  MIN_GAMES_FOR_RELIABLE_STATS,
+} from '@/lib/theme';
+import {
+  PER_CLASS_GAUGE_ZONES,
+  type EndgameClassKey,
+} from '@/generated/endgameZones';
 import { MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/charts/EndgamePerformanceSection';
-import { ZONE_SUCCESS } from '@/lib/theme';
 import type { EndgameCategoryStats } from '@/types/endgames';
-import type { ChartConfig } from '@/components/ui/chart';
-
-const MOBILE_BREAKPOINT_PX = 768;
-
-function useIsMobile(): boolean {
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined'
-      && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
-    const update = () => setIsMobile(mq.matches);
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
-  return isMobile;
-}
-
-const chartConfig: ChartConfig = {
-  // Conversion uses the success (green) zone color from theme
-  conversion_pct: { label: 'Conversion', color: ZONE_SUCCESS },
-  // Recovery uses a blue that is intentionally distinct from WDL_DRAW (grey-blue) — it represents a positive "saved" outcome
-  recovery_pct: { label: 'Recovery', color: 'oklch(0.55 0.18 260)' },
-};
-
-interface ConvRecovDataPoint {
-  label: string;
-  conversion_pct: number;
-  recovery_pct: number;
-  conversion_games: number;
-  recovery_games: number;
-}
 
 interface EndgameConvRecovChartProps {
   categories: EndgameCategoryStats[];
 }
 
 export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps) {
-  const isMobile = useIsMobile();
-  const chartData: ConvRecovDataPoint[] = categories
-    .filter(c => c.conversion.conversion_games > 0 || c.conversion.recovery_games > 0)
-    .map(c => ({
-      label: c.label,
-      conversion_pct: c.conversion.conversion_pct,
-      recovery_pct: c.conversion.recovery_pct,
-      conversion_games: c.conversion.conversion_games,
-      recovery_games: c.conversion.recovery_games,
-    }));
+  const activeCategories = categories.filter(
+    (c) => c.conversion.conversion_games > 0 || c.conversion.recovery_games > 0,
+  );
 
   return (
     <div data-testid="conv-recov-chart">
@@ -68,70 +36,101 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
             <InfoPopover ariaLabel="Conversion and Recovery info" testId="conv-recov-chart-info" side="top">
               <div className="space-y-2">
                 <p>
-                  <strong>Conversion</strong>: percentage of endgame sequences per type with a material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at least {PERSISTENCE_MOVES} moves) where you went on to win the game.
+                  <strong>Conversion</strong>: percentage of endgame sequences per type with a
+                  material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for
+                  at least {PERSISTENCE_MOVES} moves) where you went on to win the game.
                 </p>
                 <p>
-                  <strong>Recovery</strong>: percentage of endgame sequences per type with a material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for at least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game.
+                  <strong>Recovery</strong>: percentage of endgame sequences per type with a
+                  material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for
+                  at least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game.
+                </p>
+                <p>
+                  Gauge zones are per-type typical bands sourced from pooled FlawChess benchmark
+                  data. Blue = typical for that type, red = below, green = above. Zones differ by
+                  type because each endgame type has its own natural distribution.
                 </p>
               </div>
             </InfoPopover>
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Which endgame types you convert best and which you defend best.
+          Which endgame types you convert best and which you defend best, compared to type-specific baselines.
         </p>
       </div>
 
-      {chartData.length === 0 ? (
+      {activeCategories.length === 0 ? (
         <p className="text-sm text-muted-foreground py-4">
           Not enough data for conversion/recovery analysis
         </p>
       ) : (
-        <div className={isMobile ? '' : 'flex items-stretch'}>
-          {!isMobile && (
-            <div
-              className="flex items-center text-xs text-muted-foreground shrink-0 pt-35 -mr-1"
-              style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
-            >
-              Rate %
-            </div>
-          )}
-          <ChartContainer config={chartConfig} className="w-full h-64">
-            <BarChart data={chartData} margin={{ left: isMobile ? 0 : 4, right: 4, bottom: 20 }}>
-              <CartesianGrid vertical={false} />
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 11 }}
-              />
-              <YAxis
-                domain={[0, 100]}
-                tickFormatter={(v: number) => `${v}%`}
-                width={44}
-              />
-            <ChartTooltip
-              content={({ active, payload }) => {
-                if (!active || !payload?.length) return null;
-                // safe: payload.length check above guarantees index 0 exists
-                const d = payload[0]!.payload as ConvRecovDataPoint;
-                return (
-                  <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
-                    <div className="font-medium">{d.label}</div>
-                    {/* safe: chartConfig keys are defined as literal string constants above */}
-                    <div style={{ color: chartConfig['conversion_pct']?.color }}>
-                      Conversion: {d.conversion_pct.toFixed(1)}% ({d.conversion_games} sequences)
-                    </div>
-                    <div style={{ color: chartConfig['recovery_pct']?.color }}>
-                      Recovery: {d.recovery_pct.toFixed(1)}% ({d.recovery_games} sequences)
-                    </div>
+        <div
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+          data-testid="conv-recov-grid"
+        >
+          {activeCategories.map((cat) => {
+            const classKey = cat.endgame_class as EndgameClassKey;
+            const bands = PER_CLASS_GAUGE_ZONES[classKey];
+            // noUncheckedIndexedAccess guard — should always exist for the six known classes
+            if (!bands) return null;
+
+            const [convLower, convUpper] = bands.conversion;
+            const [recovLower, recovUpper] = bands.recovery;
+
+            const convZones = colorizeGaugeZones([
+              { from: 0, to: convLower },
+              { from: convLower, to: convUpper },
+              { from: convUpper, to: 1.0 },
+            ]);
+            const recovZones = colorizeGaugeZones([
+              { from: 0, to: recovLower },
+              { from: recovLower, to: recovUpper },
+              { from: recovUpper, to: 1.0 },
+            ]);
+
+            const totalGames =
+              cat.conversion.conversion_games + cat.conversion.recovery_games;
+            const isSparse = totalGames > 0 && totalGames < MIN_GAMES_FOR_RELIABLE_STATS;
+
+            return (
+              <div
+                key={cat.endgame_class}
+                className="rounded border border-border p-4 space-y-3"
+                data-testid={`class-gauge-${cat.endgame_class}`}
+              >
+                <div className="flex items-baseline justify-between">
+                  <h4 className="text-sm font-medium">{cat.label}</h4>
+                  {isSparse && (
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      n={totalGames}
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col items-center">
+                    <div className="text-sm text-muted-foreground mb-1">Conversion (Win)</div>
+                    <EndgameGauge
+                      value={cat.conversion.conversion_pct}
+                      maxValue={100}
+                      label="Conversion"
+                      zones={convZones}
+                      size={130}
+                    />
                   </div>
-                );
-              }}
-            />
-            <ChartLegend content={<ChartLegendContent />} />
-              <Bar dataKey="conversion_pct" fill="var(--color-conversion_pct)" radius={[2, 2, 0, 0]} />
-              <Bar dataKey="recovery_pct" fill="var(--color-recovery_pct)" radius={[2, 2, 0, 0]} />
-            </BarChart>
-          </ChartContainer>
+                  <div className="flex flex-col items-center">
+                    <div className="text-sm text-muted-foreground mb-1">Recovery (Save)</div>
+                    <EndgameGauge
+                      value={cat.conversion.recovery_pct}
+                      maxValue={100}
+                      label="Recovery"
+                      zones={recovZones}
+                      size={130}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

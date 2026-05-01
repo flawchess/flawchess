@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from app.schemas.endgames import MaterialBucket
+from app.schemas.endgames import EndgameClass, MaterialBucket
 
 # ---------------------------------------------------------------------------
 # Literal type aliases — the Pydantic schemas in app/schemas/insights.py (Plan
@@ -58,7 +58,6 @@ SubsectionId = Literal[
     "time_pressure_vs_performance",
     "results_by_endgame_type",
     "conversion_recovery_by_type",
-    "type_win_rate_timeline",
 ]
 
 BucketedMetricId = Literal[
@@ -110,7 +109,9 @@ NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD: int = 100
 # Neutral band for clock-diff percentage of base time (mirrors the inline
 # frontend constant in EndgameClockPressureSection.tsx line 18). Used by the
 # `clock_entry_advantage` / `no_clock_entry_advantage` flags (D-09).
-NEUTRAL_PCT_THRESHOLD: float = 10.0
+# Tightened from 10.0 to 5.0 — pooled IQR from reports/benchmarks-2026-05-01.md
+# (260501-s0u benchmark calibration v2).
+NEUTRAL_PCT_THRESHOLD: float = 5.0
 
 # Neutral band for net timeout rate in percentage points (mirrors the inline
 # frontend constant in EndgameClockPressureSection.tsx line 23).
@@ -185,10 +186,9 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         direction="higher_is_better",
     ),
     # Plain win rate (W / total, draws excluded) for per-type findings in the
-    # results_by_endgame_type and type_win_rate_timeline subsections. Band
-    # mirrors endgame_skill (0.45-0.55) because before the relabel these same
-    # values were zoned with the endgame_skill spec. Kept identical to
-    # preserve all prior zone assignments.
+    # results_by_endgame_type subsection. Band mirrors endgame_skill (0.45-0.55)
+    # because before the relabel these same values were zoned with the
+    # endgame_skill spec. Kept identical to preserve all prior zone assignments.
     "win_rate": ZoneSpec(
         typical_lower=0.45,
         typical_upper=0.55,
@@ -215,13 +215,13 @@ BUCKETED_ZONE_REGISTRY: Mapping[BucketedMetricId, Mapping[MaterialBucket, ZoneSp
         "recovery": ZoneSpec(0.45, 0.55, "higher_is_better"),
     },
     "recovery_save_pct": {
-        # D-10: recovery typical band re-centered to [0.25, 0.35] (was [0.30, 0.40]).
-        # Pooled benchmark median is 0.32 — re-centering makes "typical" honest.
-        # Same change applied to FIXED_GAUGE_ZONES.recovery in
-        # EndgameScoreGapSection.tsx so FE and registry agree.
-        "conversion": ZoneSpec(0.25, 0.35, "higher_is_better"),
-        "parity": ZoneSpec(0.25, 0.35, "higher_is_better"),
-        "recovery": ZoneSpec(0.25, 0.35, "higher_is_better"),
+        # 260501-s0u: widened to [0.25, 0.40] — pooled p25/p75 from
+        # reports/benchmarks-2026-05-01.md (was [0.25, 0.35], re-centered D-10).
+        # Same change applied to FIXED_GAUGE_ZONES.recovery via codegen so FE
+        # and registry agree.
+        "conversion": ZoneSpec(0.25, 0.40, "higher_is_better"),
+        "parity": ZoneSpec(0.25, 0.40, "higher_is_better"),
+        "recovery": ZoneSpec(0.25, 0.40, "higher_is_better"),
     },
 }
 
@@ -243,7 +243,35 @@ SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
     "time_pressure_vs_performance": (30, 100),
     "results_by_endgame_type": (10, 40),
     "conversion_recovery_by_type": (10, 40),
-    "type_win_rate_timeline": (5, 20),
+}
+
+
+# ---------------------------------------------------------------------------
+# PER_CLASS_GAUGE_ZONES — per-endgame-class typical bands for Conversion and
+# Recovery. Source: reports/benchmarks-2026-05-01.md (260501-s0u benchmark
+# calibration v2), pooled p25/p75 per class. Codegen'd to frontend via
+# scripts/gen_endgame_zones_ts.py.
+#
+# Each entry: conversion=(lower, upper), recovery=(lower, upper).
+# Values are 0.0-1.0 fractions matching the frontend gauge scale.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PerClassBands:
+    """Typical [lower, upper] bands for Conversion and Recovery for one endgame type."""
+
+    conversion: tuple[float, float]
+    recovery: tuple[float, float]
+
+
+PER_CLASS_GAUGE_ZONES: Mapping[EndgameClass, PerClassBands] = {
+    "rook": PerClassBands(conversion=(0.65, 0.75), recovery=(0.28, 0.38)),
+    "minor_piece": PerClassBands(conversion=(0.63, 0.73), recovery=(0.31, 0.41)),
+    "pawn": PerClassBands(conversion=(0.67, 0.77), recovery=(0.26, 0.36)),
+    "queen": PerClassBands(conversion=(0.73, 0.83), recovery=(0.20, 0.30)),
+    "mixed": PerClassBands(conversion=(0.65, 0.75), recovery=(0.28, 0.38)),
+    "pawnless": PerClassBands(conversion=(0.70, 0.80), recovery=(0.21, 0.31)),
 }
 
 

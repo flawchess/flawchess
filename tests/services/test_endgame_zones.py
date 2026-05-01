@@ -63,40 +63,22 @@ class TestAssignBucketedZone:
 
     def test_recovery_band_after_d10(self) -> None:
         """D-10 re-centered recovery band to [0.25, 0.35]. 0.30 is now typical."""
-        assert (
-            assign_bucketed_zone("recovery_save_pct", "recovery", 0.30) == "typical"
-        )
+        assert assign_bucketed_zone("recovery_save_pct", "recovery", 0.30) == "typical"
 
     def test_recovery_below_band_is_weak(self) -> None:
-        assert (
-            assign_bucketed_zone("recovery_save_pct", "recovery", 0.20) == "weak"
-        )
+        assert assign_bucketed_zone("recovery_save_pct", "recovery", 0.20) == "weak"
 
     def test_recovery_above_band_is_strong(self) -> None:
-        assert (
-            assign_bucketed_zone("recovery_save_pct", "recovery", 0.40) == "strong"
-        )
+        assert assign_bucketed_zone("recovery_save_pct", "recovery", 0.40) == "strong"
 
     def test_conversion_band_unchanged(self) -> None:
         """Conversion band stays [0.65, 0.75] per D-11 (only recovery changed)."""
-        assert (
-            assign_bucketed_zone("conversion_win_pct", "conversion", 0.70)
-            == "typical"
-        )
-        assert (
-            assign_bucketed_zone("conversion_win_pct", "conversion", 0.80)
-            == "strong"
-        )
-        assert (
-            assign_bucketed_zone("conversion_win_pct", "conversion", 0.50)
-            == "weak"
-        )
+        assert assign_bucketed_zone("conversion_win_pct", "conversion", 0.70) == "typical"
+        assert assign_bucketed_zone("conversion_win_pct", "conversion", 0.80) == "strong"
+        assert assign_bucketed_zone("conversion_win_pct", "conversion", 0.50) == "weak"
 
     def test_nan_returns_typical(self) -> None:
-        assert (
-            assign_bucketed_zone("recovery_save_pct", "recovery", float("nan"))
-            == "typical"
-        )
+        assert assign_bucketed_zone("recovery_save_pct", "recovery", float("nan")) == "typical"
 
 
 class TestSampleQuality:
@@ -150,11 +132,12 @@ class TestRegistrySanity:
         assert spec.typical_upper == NEUTRAL_TIMEOUT_THRESHOLD
         assert spec.typical_lower == -NEUTRAL_TIMEOUT_THRESHOLD
 
-    def test_bucketed_recovery_matches_d10(self) -> None:
-        """D-10 locked: recovery typical band is [0.25, 0.35] in both FE
-        and registry. All three buckets share the same band per metric."""
+    def test_bucketed_recovery_matches_benchmark(self) -> None:
+        """260501-s0u: recovery typical band widened to [0.25, 0.40] — pooled
+        p25/p75 from reports/benchmarks-2026-05-01.md (was [0.25, 0.35], D-10).
+        All three buckets share the same band per metric."""
         for bucket in ("conversion", "parity", "recovery"):
             spec = BUCKETED_ZONE_REGISTRY["recovery_save_pct"][bucket]
             assert spec.typical_lower == 0.25
-            assert spec.typical_upper == 0.35
+            assert spec.typical_upper == 0.40
             assert spec.direction == "higher_is_better"

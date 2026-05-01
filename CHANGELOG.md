@@ -8,6 +8,15 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+- Quick task 260501-s0u: Clock-pressure neutral band tightened from ±10pp to ±5pp based on pooled benchmark data (reports/benchmarks-2026-05-01.md).
+- Quick task 260501-s0u: Recovery gauge typical band widened from [25%, 35%] to [25%, 40%] across all endgame classes based on pooled p25/p75 from benchmark data.
+- Quick task 260501-s0u: Endgame type breakdown replaces grouped WDL bar chart with six per-class Conversion/Recovery mini-gauge cards, each using class-specific typical bands sourced from benchmark data (Queen Conversion ~78%, Minor Piece Recovery ~36%, etc.).
+- Quick task 260501-s0u: LLM endgame insights prompt (v18) reframes Conversion/Recovery narration as delta-from-class-baseline rather than absolute percentages, so observations like "65% Conversion" are contextualised against the class-specific typical midpoint.
+
+### Removed
+- Quick task 260501-s0u: Win Rate by Endgame Type timeline chart removed from the Endgame page.
+
 ## [v1.14] Score-Based Opening Insights — 2026-04-29
 
 Replaces the loss/win-rate framing of v1.13 with a calibrated discovery surface

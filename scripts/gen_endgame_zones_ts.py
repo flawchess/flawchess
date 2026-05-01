@@ -28,6 +28,7 @@ from app.services.endgame_zones import (  # noqa: E402
     BUCKETED_ZONE_REGISTRY,
     NEUTRAL_PCT_THRESHOLD,
     NEUTRAL_TIMEOUT_THRESHOLD,
+    PER_CLASS_GAUGE_ZONES,
     ZONE_REGISTRY,
 )
 
@@ -57,6 +58,20 @@ def _format_bucket_zones(bucket: str) -> str:
         f"    {{ from: {spec.typical_lower}, to: {spec.typical_upper} }},\n"
         f"    {{ from: {spec.typical_upper}, to: 1.0 }},\n"
     )
+
+
+def _format_per_class_gauge_zones() -> str:
+    """Emit the PER_CLASS_GAUGE_ZONES object literal.
+
+    Each class entry has { conversion: [lower, upper], recovery: [lower, upper] }.
+    Consumers wrap with colorizeGaugeZones() on the FE side, same as FIXED_GAUGE_ZONES.
+    """
+    lines: list[str] = []
+    for cls, bands in PER_CLASS_GAUGE_ZONES.items():
+        c_lo, c_hi = bands.conversion
+        r_lo, r_hi = bands.recovery
+        lines.append(f"  {cls}: {{ conversion: [{c_lo}, {c_hi}], recovery: [{r_lo}, {r_hi}] }},")
+    return "\n".join(lines) + "\n"
 
 
 def _render() -> str:
@@ -94,6 +109,17 @@ def _render() -> str:
         f"export const NEUTRAL_TIMEOUT_THRESHOLD = {NEUTRAL_TIMEOUT_THRESHOLD};\n"
         f"export const SCORE_GAP_NEUTRAL_MIN = {_SCORE_GAP_SPEC.typical_lower};\n"
         f"export const SCORE_GAP_NEUTRAL_MAX = {_SCORE_GAP_SPEC.typical_upper};\n"
+        "\n"
+        "// Per-endgame-class typical bands for Conversion and Recovery.\n"
+        "// Source: reports/benchmarks-2026-05-01.md (pooled p25/p75 per class).\n"
+        "// Each entry: { conversion: [lower, upper], recovery: [lower, upper] }.\n"
+        "// Wrap with colorizeGaugeZones() before passing to EndgameGauge (same\n"
+        "// pattern as FIXED_GAUGE_ZONES in EndgameScoreGapSection).\n"
+        "export const PER_CLASS_GAUGE_ZONES = {\n"
+        + _format_per_class_gauge_zones()
+        + "} as const;\n"
+        "\n"
+        "export type EndgameClassKey = keyof typeof PER_CLASS_GAUGE_ZONES;\n"
     )
 
 

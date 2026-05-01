@@ -28,6 +28,7 @@ from app.schemas.insights import (
     FilterContext,
     SectionInsight,
 )
+from app.services import insights_llm
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +251,7 @@ class TestHappyPath:
                     findings_hash="m" * 64,
                     error=None,
                     model="test",
-                    prompt_version="endgame_v16",
+                    prompt_version=insights_llm._PROMPT_VERSION,
                 ),
             )
 
@@ -389,7 +390,7 @@ class TestRateLimit:
                 _make_row(
                     user.id,
                     response_json=valid_report.model_dump(),
-                    prompt_version="endgame_v16",  # matches get_latest_report_for_user filter
+                    prompt_version=insights_llm._PROMPT_VERSION,  # matches get_latest_report_for_user filter
                     findings_hash="k" * 64,
                     opponent_strength="stronger",
                 ),
