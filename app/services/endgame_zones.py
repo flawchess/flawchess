@@ -241,8 +241,13 @@ SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
     "time_pressure_at_entry": (10, 50),
     "clock_diff_timeline": (10, 52),
     "time_pressure_vs_performance": (30, 100),
-    "results_by_endgame_type": (10, 40),
-    "conversion_recovery_by_type": (10, 40),
+    # 260501-s0u pass2: raised thin_max from 10 to 20 for per-type subsections.
+    # 10-19 sequences was being labeled `adequate` and the LLM treated those
+    # last_3mo windows as load-bearing (e.g. n=14 conv → "strong" headlines).
+    # 20 is the minimum across the per-type emitter calls in the benchmark
+    # cohort (≥20 endgame games per user gate).
+    "results_by_endgame_type": (20, 40),
+    "conversion_recovery_by_type": (20, 40),
 }
 
 
@@ -321,6 +326,39 @@ def assign_bucketed_zone(
     if math.isnan(value):
         return "typical"
     return _zone_from_spec(BUCKETED_ZONE_REGISTRY[metric_id][bucket], value)
+
+
+def per_class_zone_spec(
+    metric_id: Literal["conversion_win_pct", "recovery_save_pct"],
+    endgame_class: EndgameClass,
+) -> ZoneSpec:
+    """Return the per-endgame-class ZoneSpec for Conv/Recov.
+
+    PER_CLASS_GAUGE_ZONES holds class-specific typical bands sourced from
+    pooled FlawChess benchmark data (reports/benchmarks-2026-05-01.md).
+    Conversion is always higher_is_better; recovery is always
+    higher_is_better. Both are 0.0-1.0 fractions.
+    """
+    bands = PER_CLASS_GAUGE_ZONES[endgame_class]
+    lo, hi = bands.conversion if metric_id == "conversion_win_pct" else bands.recovery
+    return ZoneSpec(lo, hi, "higher_is_better")
+
+
+def assign_per_class_zone(
+    metric_id: Literal["conversion_win_pct", "recovery_save_pct"],
+    endgame_class: EndgameClass,
+    value: float,
+) -> Zone:
+    """Assign a zone using per-endgame-class typical bands.
+
+    Used by the per-type conversion_recovery_by_type findings so the
+    [summary] zone label and the inline (typical LO to UP) bound both
+    reflect the class-specific baseline rather than a one-size-fits-all
+    bucket band. Returns `"typical"` for NaN (see `assign_zone`).
+    """
+    if math.isnan(value):
+        return "typical"
+    return _zone_from_spec(per_class_zone_spec(metric_id, endgame_class), value)
 
 
 def sample_quality(subsection_id: SubsectionId, sample_size: int) -> SampleQuality:

@@ -73,6 +73,7 @@ from app.services.endgame_zones import (
     Trend,
     Window,
     assign_bucketed_zone,
+    assign_per_class_zone,
     assign_zone,
     sample_quality,
 )
@@ -1016,7 +1017,9 @@ def _findings_conversion_recovery_by_type(
                     window=window,
                     metric="conversion_win_pct",
                     value=conv_value,
-                    zone=assign_bucketed_zone("conversion_win_pct", "conversion", conv_value),
+                    zone=assign_per_class_zone(
+                        "conversion_win_pct", cat.endgame_class, conv_value
+                    ),
                     trend="n_a",
                     weekly_points_in_window=0,
                     sample_size=conv_games,
@@ -1052,7 +1055,9 @@ def _findings_conversion_recovery_by_type(
                     window=window,
                     metric="recovery_save_pct",
                     value=recov_value,
-                    zone=assign_bucketed_zone("recovery_save_pct", "recovery", recov_value),
+                    zone=assign_per_class_zone(
+                        "recovery_save_pct", cat.endgame_class, recov_value
+                    ),
                     trend="n_a",
                     weekly_points_in_window=0,
                     sample_size=recov_games,

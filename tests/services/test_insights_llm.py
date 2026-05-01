@@ -194,7 +194,7 @@ class TestPromptVersionAndBody:
     """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v19 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v21 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
@@ -204,8 +204,8 @@ class TestPromptVersionAndBody:
       and the `[n=<N> for every point]` disclosure for constant-N series.
     """
 
-    def test_prompt_version_is_v19(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v19"
+    def test_prompt_version_is_v20(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v21"
 
     def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
         from pathlib import Path
@@ -774,11 +774,13 @@ class TestPromptAssembly:
         assert "### Chart: overall_wdl" not in _assemble_user_prompt(tab_none)
 
     def test_assemble_user_prompt_renders_type_wdl_chart_block(self) -> None:
-        """Per-class Conversion & Recovery delta block is rendered, sorted by total descending.
+        """Per-class WDL block is rendered, sorted by total descending.
 
-        v18 (260501-s0u): chart now shows conv_pct, conv_baseline_mid, conv_delta,
-        recov_pct, recov_baseline_mid, recov_delta, n_seq per class rather than
-        win_pct/score_pct columns.
+        v20 (260501-s0u pass2): the v18 conv/recov delta table was redundant
+        with the conversion_recovery_by_type [summary] blocks and got dropped.
+        The chart again carries WDL framing (games / win_pct / draw_pct /
+        loss_pct / score_pct) plus two new columns: opp_score_pct and
+        score_pct_diff.
         """
         from app.schemas.endgames import ConversionRecoveryStats, EndgameCategoryStats
 
@@ -846,18 +848,21 @@ class TestPromptAssembly:
         prompt = _assemble_user_prompt(tab)
 
         assert "### Chart: results_by_endgame_type_wdl (all_time)" in prompt
-        # v18 column headers (delta-from-baseline table).
-        assert "conv_baseline_mid" in prompt
-        assert "recov_baseline_mid" in prompt
-        assert "conv_delta" in prompt
-        assert "recov_delta" in prompt
-        # Old win_pct/score_pct columns removed.
-        assert "| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct |" not in prompt
+        # v20 WDL columns + two new ones (opp_score_pct, score_pct_diff).
+        assert (
+            "| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct "
+            "| opp_score_pct | score_pct_diff |"
+        ) in prompt
+        # The v18 delta-table columns were dropped.
+        assert "conv_baseline_mid" not in prompt
+        assert "recov_baseline_mid" not in prompt
+        assert "conv_delta" not in prompt
+        assert "recov_delta" not in prompt
         # Sorted by total descending: rook (100) before pawn (30).
         rook_idx = prompt.index("| rook")
         pawn_idx = prompt.index("| pawn")
         assert rook_idx < pawn_idx
-        # Queen (n_seq=2, below 10-game floor) dropped.
+        # Queen (total=3, below 10-game floor) dropped.
         assert "| queen" not in prompt
 
     def test_pawnless_findings_are_filtered(self) -> None:
@@ -904,7 +909,8 @@ class TestPromptAssembly:
             dimension={"endgame_class": "pawnless"},
             series=None,
         )
-        # Rook: give realistic sequence counts so the delta table renders.
+        # Rook: give realistic sequence counts (no longer used by the WDL chart
+        # block, but kept so the conversion_recovery_by_type findings have data).
         rook_conv = ConversionRecoveryStats(
             conversion_pct=65.0,
             conversion_games=30,
@@ -917,8 +923,8 @@ class TestPromptAssembly:
             recovery_wins=4,
             recovery_draws=2,
         )
-        # Pawnless: zero sequences — keeps existing test intent (would be filtered anyway by
-        # the pawnless endgame_class guard, but also dropped by n_seq < 10).
+        # Pawnless: zero sequences — kept for test intent (filtered anyway by the
+        # pawnless endgame_class guard).
         pawnless_conv_stub = ConversionRecoveryStats.model_construct(
             conversion_games=0,
             conversion_wins=0,
@@ -1879,7 +1885,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v19"
+        assert response.report.prompt_version == "endgame_v21"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -1903,7 +1909,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v19"
+        assert log.response_json["prompt_version"] == "endgame_v21"
 
 
 class TestCacheBehavior:
