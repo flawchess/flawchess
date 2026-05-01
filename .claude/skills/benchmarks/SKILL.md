@@ -57,7 +57,7 @@ WITH selected_users AS (
 )
 ```
 
-Then JOIN `selected_users su` on `g.user_id = su.user_id` and filter `g.time_control_bucket = su.tc_bucket`. Cells are formed from `(su.rating_bucket, su.tc_bucket)`.
+Then JOIN `selected_users su` on `g.user_id = su.user_id` and filter `g.time_control_bucket::text = su.tc_bucket`. Cells are formed from `(su.rating_bucket, su.tc_bucket)`. **Cast note**: `games.time_control_bucket` is a custom enum (`timecontrolbucket`) and `benchmark_selected_users.tc_bucket` is `varchar` — without the `::text` cast Postgres errors with `operator does not exist: timecontrolbucket = character varying`.
 
 **Why the checkpoint join is non-optional**: `benchmark_selected_users` is the candidate *pool*. The ingest orchestrator (`scripts/import_benchmark_users.py`) walks the pool, marking each `(lichess_username, tc_bucket)` row as `completed`, `skipped` (low yield, games purged), `failed` (404/error), or leaving it `null` (never attempted because earlier candidates filled the slot). Only `completed` rows have games in this TC. Skipping the filter pulls in 'skipped' multi-TC qualifiers (whose games for this TC were deleted) and never-attempted pool members, both of which appear as 0-game users in cell aggregates.
 
@@ -283,7 +283,7 @@ rows AS (
   JOIN selected_users su ON su.user_id = g.user_id
   LEFT JOIN endgame_game_ids eg ON eg.game_id = g.id
   WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket = su.tc_bucket
+    AND g.time_control_bucket::text = su.tc_bucket
 ),
 per_user AS (
   SELECT
@@ -386,7 +386,7 @@ bucketed AS (
     ON ap.game_id = g.id AND ap.ply = fe.entry_ply + 4
    AND ap.endgame_class IS NOT NULL
   WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket = su.tc_bucket
+    AND g.time_control_bucket::text = su.tc_bucket
 ),
 classified AS (
   SELECT
@@ -530,7 +530,7 @@ endgame_games AS (
     ON ap.game_id = g.id AND ap.ply = fe.entry_ply + 4
    AND ap.endgame_class IS NOT NULL
   WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket = su.tc_bucket
+    AND g.time_control_bucket::text = su.tc_bucket
     AND (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) IS NOT NULL
 ),
 window_games AS (
@@ -661,7 +661,7 @@ clock_raw AS (
   LEFT JOIN game_positions p1 ON p1.game_id = g.id AND p1.ply = fe.entry_ply
   LEFT JOIN game_positions p2 ON p2.game_id = g.id AND p2.ply = fe.entry_ply + 1
   WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket = su.tc_bucket
+    AND g.time_control_bucket::text = su.tc_bucket
 ),
 routed AS (
   SELECT
@@ -779,7 +779,7 @@ clock_raw AS (
   LEFT JOIN game_positions p1 ON p1.game_id = g.id AND p1.ply = fe.entry_ply
   LEFT JOIN game_positions p2 ON p2.game_id = g.id AND p2.ply = fe.entry_ply + 1
   WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket = su.tc_bucket
+    AND g.time_control_bucket::text = su.tc_bucket
     AND g.base_time_seconds > 0
 ),
 game_pct AS (
@@ -873,7 +873,7 @@ bucketed AS (
    AND ap.ply = cs.entry_ply + 4
    AND ap.endgame_class = cs.endgame_class
   WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket = su.tc_bucket
+    AND g.time_control_bucket::text = su.tc_bucket
 )
 SELECT
   elo_bucket, tc,
