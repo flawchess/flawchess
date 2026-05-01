@@ -30,7 +30,7 @@ Anecdotally Adrian estimated 5-30 lines per typical user. We want a real distrib
 
 ## Q-002: Per-ply signed material balance — stored or computed?
 
-**Asked:** 2026-05-01 (during `/gsd-explore` on Analysis page milestone, SEED-010)
+**Asked:** 2026-05-01 (during `/gsd-explore` on Library page milestone, SEED-010)
 
 **Context:** SEED-010's new material-delta filter ("show games where I reached ≥+X material sustained ≥4 plies, anywhere") is filtered on-the-fly from `game_positions` rather than via precomputed columns on `games`. The query needs per-ply signed material balance from one side's POV.
 
@@ -49,7 +49,7 @@ If the value is already a column on `game_positions`, the filter is a window fun
 
 ## Q-003: Middlegame transition definition for phase markers
 
-**Asked:** 2026-05-01 (during `/gsd-explore` on Analysis page milestone, SEED-010)
+**Asked:** 2026-05-01 (during `/gsd-explore` on Library page milestone, SEED-010)
 
 **Context:** The Analysis page viewer shows phase markers (opening / middlegame / endgame) on the timeline. Endgame transition is already classified at import (`endgame_start_ply` or similar). Middlegame transition is less obvious — common definitions:
 
@@ -70,7 +70,7 @@ If the value is already a column on `game_positions`, the filter is a window fun
 
 ## Q-004: Per-ply clock storage — confirmed for both chess.com and lichess?
 
-**Asked:** 2026-05-01 (during `/gsd-explore` on Analysis page milestone, SEED-010)
+**Asked:** 2026-05-01 (during `/gsd-explore` on Library page milestone, SEED-010)
 
 **Context:** The Analysis viewer shows remaining clock per ply for both players. chess.com PGN provides `%clk` annotations; lichess provides `clk` arrays. Both should be stored on `game_positions` at import.
 
@@ -84,7 +84,7 @@ If the value is already a column on `game_positions`, the filter is a window fun
 
 ## Q-005: Lichess imported Stockfish eval coverage — what % of games?
 
-**Asked:** 2026-05-01 (during `/gsd-explore` on Analysis page milestone, SEED-010)
+**Asked:** 2026-05-01 (during `/gsd-explore` on Library page milestone, SEED-010)
 
 **Context:** Tactical filters (missed forks/pins, blunder-driven losses) are deferred from SEED-010 v1, gated on imported Stockfish eval coverage being high enough to make the feature reliable. Today only a minority of lichess games have evals (chess.com imports never do). The eval-bar / eval-timeline UI in the v1 viewer also only renders when the loaded game has evals.
 
