@@ -1,10 +1,21 @@
 ---
 id: SEED-002
-status: dormant
+status: closed
 planted: 2026-04-19
+closed: 2026-05-01
 planted_during: v1.10 Advanced Analytics (executing, post-Phase 57.1)
-trigger_when: milestone v1.12 opens (after v1.11 Insights)
+closed_during: PR #77 (quick-260501-s0u "benchmark calibration v2") merged
 scope: milestone
+---
+
+## Closure Note (2026-05-01)
+
+Closed. The infrastructure half of this seed (Phase A — benchmark ingestion pipeline, separate Postgres on :5433, MCP server, Lichess monthly-dump ingestion with `[%eval]` pre-filter, resumable ingest, eval columns inline on `game_positions`) shipped as v1.12 and the DB now holds 1,912 users / 1.3M games / 95M positions across 4 TC × 5 ELO cells.
+
+The applied-analytics half (Phases B-E — classifier-validation replication, rating-stratified offsets, Parity proxy validation, `/benchmarks` skill upgrade with rating-bucketed zones in `theme.ts`) was forked into SEED-006, which is also being closed today. See the SEED-006 closure note for the deliberate decision to skip the Phase 70 Stockfish-eval gate and the rating-bucketed `theme.ts` shipping in favour of the Cohen's d collapse-verdict pipeline driving ad-hoc calibration PRs (PR #77 was the first such PR).
+
+Nothing in this seed is unfinished beyond what SEED-006 captures.
+
 ---
 
 # SEED-002: Benchmark database for population baselines and rating-stratified validation

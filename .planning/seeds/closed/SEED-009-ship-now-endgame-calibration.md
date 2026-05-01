@@ -1,10 +1,26 @@
 ---
 id: SEED-009
-status: dormant
+status: closed
 planted: 2026-04-30
+closed: 2026-05-01
 planted_during: post-v1.14, after first benchmark DB populated and `/benchmarks` v1 report produced
-trigger_when: ready to land calibration UI improvements ahead of SEED-006 milestone, OR folded into SEED-006 Phase 73 if a coordinated PR is preferred
+closed_during: PR #77 (quick-260501-s0u "benchmark calibration v2") merged
 scope: phase (or merged into SEED-006 Phase 73)
+---
+
+## Closure Note (2026-05-01)
+
+Closed deliberately. PR #77 shipped item #2 (per-class conv/recov bands) verbatim and a partial of #3 (clock band tightened pooled, not per-TC). Items #1, #3-per-TC, and #4 were dropped, and the newer `reports/benchmarks-2026-05-01.md` (1,912 users, up from 991) justifies that decision:
+
+- **#1 (Endgame Skill 0.55 → 0.57): invalidated.** New pooled p75 = 0.559 (not 0.5715). Report recommendation table marks current `[0.45, 0.55]` as "keep acceptable"; the global alternative is `[0.46, 0.56]`, not 0.57. The original recommendation was a small-sample artifact.
+- **#3 per-TC clock thresholds: invalidated.** Cohen's d verdict for clock-diff %: TC collapse (d=0.16) / ELO collapse (d=0.12). User-level distributions across TCs collapse — the per-TC plumbing was based on raw event-rate differences, which are not the right level. Single global threshold (current ±5; ±6 would be more literal) is what the report endorses.
+- **#3 per-TC timeout thresholds: wrong axis.** Verdict: TC collapse (d=0.04) / ELO keep separate (d=0.60). Real stratification axis is ELO, not TC. Belongs to SEED-006 Phase 73 (rating-bucketed zones), not here.
+- **#4 time-pressure-vs-performance per-TC: wrong axis.** Verdict: TC review (d=0.31) / ELO review (d=0.49). Report recommends per-ELO overlay for the 80-100% time-bucket region, not per-TC. Also belongs to SEED-006 Phase 73.
+
+Net: the seed's "ship now without waiting for SEED-006" framing held for the per-class bands, but the per-TC items it called for were the wrong axis. The right axis (per-ELO) is exactly what SEED-006 Phase 73 will handle via the Cohen's d collapse pipeline. No remaining work belongs in a SEED-009-shaped follow-up.
+
+Minor drift left in code: `NEUTRAL_PCT_THRESHOLD = 5.0` is 1pp tighter than the report's literal recommendation (±6.0). Defensible round number; flag if a follow-up calibration PR happens.
+
 ---
 
 # SEED-009: Ship-now endgame gauge calibration (pre-SEED-006 cleanup)

@@ -1,10 +1,23 @@
 ---
 id: SEED-006
-status: dormant
+status: closed
 planted: 2026-04-26
+closed: 2026-05-01
 planted_during: v1.12 Benchmark DB & Population Baselines (executing, Phase 69 mid-ingest)
-trigger_when: full benchmark DB ingest completes (operational task started after v1.12 closes)
+closed_during: PR #77 (quick-260501-s0u "benchmark calibration v2") merged
 scope: milestone
+---
+
+## Closure Note (2026-05-01)
+
+Closed deliberately, even though VALID-01..04 (classifier-validation replication, rating-stratified offsets, Parity proxy validation) remain unexecuted. The pragmatic reasoning:
+
+- The Cohen's d collapse pipeline in `reports/benchmarks-2026-05-01.md` (1,912 users / 1.3M games / 95M positions) effectively replaces the planned Phase 70 gate as the calibration driver. For every gauge constant, the report emits a per-axis verdict (TC collapse / ELO keep / etc.) and a recommended band. PR #77 acted on the report's recommendations directly without first re-running the 2026-04-07 Stockfish-eval validation at scale.
+- The rating-bucketed zone shipping (BENCH-02 / BENCH-03) is deferred indefinitely: the report shows that for several metrics (Conversion, Recovery, Parity, Endgame Skill, Net-timeout, Time-pressure curve) ELO is the dominant axis and would benefit from per-ELO bands, but the engineering cost of plumbing user-rating-aware lookup at gauge render time has not been judged worth the resolution gain yet. If/when that judgment changes, re-open as a fresh phase rather than reviving this seed — the population data, the analytical methodology (Cohen's d collapse), and the report format have all moved on from what this seed assumed.
+- Phase 70 classifier-validation replication at benchmark scale is also deferred. The 2026-04-07 small-sample report's "good enough; accept the offset" conclusion stands as the operating assumption. No rating-stratified Stockfish-eval analysis has been done; if a future investigation requires it, run it as a one-off report rather than reviving this milestone shape.
+
+Net: the milestone shape (4 phases, gate verdict, theme.ts shipping) is no longer the right container for this work. The remaining valuable pieces (per-ELO rating-bucketed zones for Recovery / Net-timeout / Time-pressure) live as ad-hoc follow-ups when prioritized, and the classifier-validation replication is a separate one-off report.
+
 ---
 
 # SEED-006: Benchmark population baselines & rating-bucketed zone recalibration
