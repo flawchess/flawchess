@@ -64,6 +64,10 @@ Each row in the list is a **game card**. Cards show the existing summary fields 
 - Existing link out to the platform site (chess.com / lichess) where the game was played.
 - New "Analyze" link → switches Library to the Analysis subtab with the selected game loaded.
 
+**List defaults:**
+- **Sort:** date played, descending (most recent first). No user-controllable sort in v1.
+- **Pagination:** matches the existing Openings → Games subtab pagination pattern. Planner: reuse the same component and page size unless there's a concrete reason to diverge.
+
 ### New filter: Material Delta
 
 User picks a target material delta from a preset slider/button group, similar to the existing **opponent strength** filter:
@@ -109,6 +113,7 @@ Locked to:
 Full page width when active. Hosts:
 
 - Chessboard, click/keyboard navigation through plies. Read-only — no move input from user. Reuses the existing chess board component if feasible (planner: confirm whether the Openings board can be wrapped, or whether a viewer-specific component is justified).
+- **Move list (SAN)** — standard PGN-style numbered move list (`1. e4 e5 2. Nf3 Nc6 ...`), with the current ply highlighted and every move clickable to jump directly to that position. This is the primary navigation surface alongside arrow-key stepping; without it, users cannot orient themselves in the game or jump to a specific move efficiently.
 - Player names + colors (which side the user played).
 - Per-ply remaining clock for both players.
 - **Material balance timeline** (per-ply, always available — derivable from positions).
@@ -120,6 +125,33 @@ Full page width when active. Hosts:
 ### Mobile
 
 Drawer pattern from Openings on the Games subtab (filter sidebar collapses into a drawer on small screens). The Analysis subtab on mobile stacks the indicators below the chessboard rather than alongside (planner: confirm during UI design). Subtab switching uses the standard tab control already established in Openings/Endgames.
+
+## Open questions for milestone discuss-phase
+
+These are UX/scope decisions surfaced during the explore session that were intentionally left unresolved. They are NOT data-model unknowns (those are in `.planning/research/questions.md`) and NOT deferred-to-a-later-seed work (those are below). They should be answered during `/gsd-discuss-phase` for the relevant milestone phase.
+
+### G-1: URL deep-linking for game and ply
+
+Should the Analysis subtab have URL-able state? Candidates:
+
+- `/library/analysis/{game_id}` — minimal, supports browser back/forward and game-level sharing
+- `/library/analysis/{game_id}?ply={N}` — supports sharing a specific position within a game
+- Filter state on the Games subtab as URL query params — supports sharing a filtered view
+
+The Openings explorer already has deep-linking, so users will expect it here. **Recommended default:** ship `/library/analysis/{game_id}` with `?ply` in v1 (cheap to add, high payoff for sharing/orientation), and Games-subtab filter state in URL params (matches Openings precedent). Discuss-phase should confirm or reject.
+
+### G-2: Drill-in wiring from existing pages
+
+Library is positioned as both a destination and a drill-in target for stat pages, but the explore session did not enumerate which existing stat surfaces actually link into Library and with what filter preset. Without this list, drill-in risks becoming a phase-2 task that never gets prioritized.
+
+Candidates surfaced during exploration:
+
+- **Endgame Analytics conversion bar** → Library Games subtab pre-filtered to "endgames entered up ≥X material, lost". *Caveat:* v1's material-delta filter is phase-anywhere, not phase-scoped, so a faithful drill-in would either need a phase-scoped variant of the filter (deferred — see Configurable phase scoping below) or a degraded match (filter to ≥X material, lost; the user sees a superset of the bar's contributing games).
+- **Endgame Analytics recovery bar** → mirror of the above, recovery direction.
+- **Time Management flag rate** → Library filtered to losses by timeout (requires the Games-subtab filter to expose termination type, which v1 does not do today; planner: assess scope).
+- **Insights endpoints** (`POST /api/insights/openings`, `POST /api/insights/endgame`) — does the LLM-narrated feedback link out to specific games in Library?
+
+**Recommendation:** in milestone discuss-phase, pick a small concrete subset (e.g. just the two Endgame Analytics conversion/recovery bars in v1) and explicitly defer the rest, rather than leaving "drill-in" aspirational across the board.
 
 ## Deferred extensions (separate seeds when triggered)
 
@@ -188,3 +220,7 @@ This is a milestone-sized seed. Likely 4-6 phases:
 - **Material-delta filter shape:** preset slider -3..+3, fixed sustainment 4 plies, phase-anywhere, user POV.
 - **Stats panel:** WDL bar + count only; conversion%/recovery% rejected as redundant with filter+WDL.
 - **Data model:** filter on-the-fly from `game_positions`; rejected the precomputed-columns approach for flexibility.
+- **Move list (SAN):** explicitly part of the Analysis subtab — the primary navigation surface alongside arrow-key stepping.
+- **List defaults:** date played descending, pagination matching Openings → Games subtab pattern. No user-controllable sort in v1.
+- **Open gaps:** URL deep-linking (G-1) and drill-in wiring from existing pages (G-2) intentionally left unresolved for milestone discuss-phase.
+- **Bookmarks:** explicitly *not* introducing game-level bookmarks in v1 (would require new entity + UI). Existing position bookmarks remain in Openings; Library v1 has no bookmark surface of its own.
