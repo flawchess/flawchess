@@ -37,6 +37,7 @@ benchmark_selected_users
 - **Per-user TC anchoring**: one user can occupy multiple cells, one per TC where they qualified at selection time (compound `(lichess_username, tc_bucket)` key). Each row contributes only its TC's games via `g.time_control_bucket = bsu.tc_bucket`. A user in `(2000, bullet)` and `(2000, classical)` is two distinct cell members, scored on each TC's games independently.
 - **Per-user history caveat**: each user contributes up to 1000 games per TC (`max=1000` cap on the lichess API at ingest time), bounded by a 36-month window before the selection snapshot. `rating_bucket` is the per-TC median rating at snapshot, not at game-time. Interpret "ELO bucket effect" as "current rating cohort effect" rather than "rating-at-game-time effect". Surface this caveat in the report header.
 - **Selection vs ingest**: per-cell selection target is `--per-cell` (typically 100–500). Multi-TC qualifiers add a small amount of incidental cross-cell membership (~0–10 users per ELO bucket overlap two cells). All cells should clear the ≥10 users/cell floor after ingest; verify with the sample-size query below.
+- **Checkpoint-status filter (mandatory)**: the canonical CTE MUST join `benchmark_ingest_checkpoints` and filter `bic.status = 'completed'`. `benchmark_selected_users` is the *candidate pool*, not the ingested set — it includes rows that were never attempted (`null` checkpoint), 404'd / errored on import (`failed`), or fell below the `--min-games` ingest floor (`skipped`, with their games purged but stub `users` row preserved if a sibling TC filled). Without this filter, multi-TC qualifiers leak into queries with zero games for the unselected TC, dragging medians to zero. See "Sparse-cell exclusion" below.
 - **Selection provenance**: 2026-03 Lichess monthly dump (single `dump_month` for the current DB). When new dumps land, group by `dump_month` so cross-snapshot drift is observable.
 
 ### Standard CTE — `selected_users`
@@ -48,24 +49,68 @@ WITH selected_users AS (
   SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket,
          bsu.median_elo, bsu.eval_game_count
   FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
   JOIN users u ON u.lichess_username = bsu.lichess_username
 )
 ```
 
 Then JOIN `selected_users su` on `g.user_id = su.user_id` and filter `g.time_control_bucket = su.tc_bucket`. Cells are formed from `(su.rating_bucket, su.tc_bucket)`.
 
+**Why the checkpoint join is non-optional**: `benchmark_selected_users` is the candidate *pool*. The ingest orchestrator (`scripts/import_benchmark_users.py`) walks the pool, marking each `(lichess_username, tc_bucket)` row as `completed`, `skipped` (low yield, games purged), `failed` (404/error), or leaving it `null` (never attempted because earlier candidates filled the slot). Only `completed` rows have games in this TC. Skipping the filter pulls in 'skipped' multi-TC qualifiers (whose games for this TC were deleted) and never-attempted pool members, both of which appear as 0-game users in cell aggregates.
+
 ### Sample size check
 
-Verify cell coverage before running a full report:
+Verify cell coverage (count of `status='completed'` users) before running a full report:
 
 ```sql
-SELECT bsu.rating_bucket, bsu.tc_bucket, COUNT(DISTINCT u.id) AS users_ingested
+SELECT bsu.rating_bucket, bsu.tc_bucket, COUNT(DISTINCT u.id) AS users_completed
 FROM benchmark_selected_users bsu
+JOIN benchmark_ingest_checkpoints bic
+  ON bic.lichess_username = bsu.lichess_username
+ AND bic.tc_bucket = bsu.tc_bucket
+ AND bic.status = 'completed'
 JOIN users u ON u.lichess_username = bsu.lichess_username
-JOIN games g ON g.user_id = u.id
 GROUP BY 1, 2
 ORDER BY 2, 1;
 ```
+
+Optionally also report the full status breakdown to spot pool exhaustion:
+
+```sql
+SELECT bsu.rating_bucket, bsu.tc_bucket,
+       COALESCE(bic.status, 'unattempted') AS status,
+       COUNT(*) AS n
+FROM benchmark_selected_users bsu
+LEFT JOIN benchmark_ingest_checkpoints bic
+  ON bic.lichess_username = bsu.lichess_username
+ AND bic.tc_bucket = bsu.tc_bucket
+GROUP BY 1, 2, 3
+ORDER BY 2, 1, 3;
+```
+
+A cell is **pool-exhausted** when `unattempted = 0` and `completed < target`. Topping up via re-running the orchestrator does nothing — the only fix is widening selection criteria in `select_benchmark_users.py` and re-running selection.
+
+### Sparse-cell exclusion
+
+**Known sparse cell**: `(rating_bucket=2400, tc_bucket='classical')` is structurally undersampled and pool-exhausted as of the 2026-03 dump (12 completed users out of a 23-user pool, ~55 games/user vs ~900 in 2400-bullet). This is a property of the Lichess 2400-classical population (low player count × low games-per-player), not a fixable ingestion gap.
+
+**Rule**: this cell **MUST be excluded from cross-axis aggregations** (TC marginals, ELO marginals, pooled overall, and Cohen's d on either axis) but **kept in cell-level 5×4 tables** for transparency. Add a footnote to the cell value and to every report header.
+
+**Implementation pattern**: when computing marginals or pooled values, gate the aggregation:
+
+```sql
+-- Marginal / pooled aggregation: exclude the sparse cell
+... WHERE NOT (elo_bucket = 2400 AND tc = 'classical') ...
+
+-- Cell-level 5×4 grid: keep the cell, render with a footnote (e.g. "n=12*")
+```
+
+The Cohen's d marginal pools must apply the same exclusion — both the per-level `(n, mean, var)` aggregates and any pairwise comparisons it feeds. A 2400-row of an ELO-axis Cohen's d that includes (2400, classical) at n=12 would be statistically dominated by the other three TCs anyway, but mixing the sparse cell in distorts the variance estimate at the marginal level.
+
+**Future extensions of this skill (new sections, new metrics) MUST honor this exclusion**: any new query that computes a TC marginal, ELO marginal, pooled overall, or Cohen's d input must apply the `NOT (elo_bucket = 2400 AND tc = 'classical')` filter at the marginal aggregation stage. Cell-level outputs should still include the cell with a footnote. If a future Lichess dump produces a denser 2400-classical cell (e.g. ≥40 completed users with ≥200 games/user), revisit this rule and document the change in the report header.
 
 ## Collapse verdict methodology (Cohen's d)
 
@@ -76,8 +121,8 @@ Per metric, answer: does this metric collapse across TC? across ELO? both? neith
 For each per-user metric:
 
 1. Compute one value per user, labeled by their `(rating_bucket, tc_bucket)` cell. Floor: ≥10 users/cell for inclusion.
-2. **TC marginal**: 4 levels (bullet/blitz/rapid/classical) — pool users across ELO within each TC.
-3. **ELO marginal**: 5 levels (800/1200/1600/2000/2400) — pool users across TC within each ELO.
+2. **TC marginal**: 4 levels (bullet/blitz/rapid/classical) — pool users across ELO within each TC. **Exclude `(2400, classical)` users from the classical pool** (see "Sparse-cell exclusion").
+3. **ELO marginal**: 5 levels (800/1200/1600/2000/2400) — pool users across TC within each ELO. **Exclude `(2400, classical)` users from the 2400 pool** for the same reason.
 4. Compute pairwise Cohen's d on user-level distributions:
    - TC axis: 4 levels → 6 pairs → take **`max |d|`** (`tc_d_max`).
    - ELO axis: 5 levels → 10 pairs → take **`max |d|`** (`elo_d_max`).
@@ -211,6 +256,10 @@ Every query: `g.rated AND NOT g.is_computer_game`. Do not apply `opponent_streng
 WITH selected_users AS (
   SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket
   FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
   JOIN users u ON u.lichess_username = bsu.lichess_username
 ),
 endgame_game_ids AS (
@@ -302,6 +351,10 @@ Unweighted mean of the non-empty per-bucket rates. A user with all three buckets
 WITH selected_users AS (
   SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket
   FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
   JOIN users u ON u.lichess_username = bsu.lichess_username
 ),
 first_endgame AS (
@@ -436,6 +489,10 @@ The benchmark DB is lichess-only, so platform drops out — Section 3 is per-(TC
 WITH selected_users AS (
   SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket
   FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
   JOIN users u ON u.lichess_username = bsu.lichess_username
 ),
 first_endgame AS (
@@ -577,6 +634,10 @@ The backend scans ply arrays for the first non-NULL clock per parity. SQL approx
 WITH selected_users AS (
   SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket
   FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
   JOIN users u ON u.lichess_username = bsu.lichess_username
 ),
 first_endgame AS (
@@ -691,6 +752,10 @@ The metric is per-time-bucket (10 buckets, 0–100% time-remaining), not a singl
 WITH selected_users AS (
   SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket
   FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
   JOIN users u ON u.lichess_username = bsu.lichess_username
 ),
 first_endgame AS (
@@ -769,6 +834,10 @@ ORDER BY elo_bucket, tc, time_bucket;
 WITH selected_users AS (
   SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket
   FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
   JOIN users u ON u.lichess_username = bsu.lichess_username
 ),
 class_span AS (
@@ -861,10 +930,11 @@ Write to `reports/benchmarks-YYYY-MM-DD.md` (UTC date). Layout:
 - **Cell anchoring**: 400-wide ELO buckets via benchmark_selected_users.rating_bucket; tc_bucket from same table; per-user TC restricted to selected tc_bucket
 - **Selection provenance**: 2026-03 Lichess monthly dump, 9133 selected users, <N_ingested> ingested at ~50/cell
 - **Per-user history caveat**: rating_bucket is per-TC median rating at selection snapshot; each user contributes up to 1000 games per TC over a 36-month window at varying ratings; "ELO bucket effect" = "current rating cohort effect"
-- **Base filters**: g.rated AND NOT g.is_computer_game; per-user filter g.time_control_bucket = bsu.tc_bucket
+- **Base filters**: g.rated AND NOT g.is_computer_game; per-user filter g.time_control_bucket = bsu.tc_bucket; benchmark_ingest_checkpoints.status = 'completed' (mandatory canonical-CTE filter)
+- **Sparse-cell exclusion**: `(2400, classical)` is excluded from TC marginals, ELO marginals, pooled overall, and Cohen's d on both axes (n=12 completed users, ~55 games/user, pool exhausted). It is still shown in cell-level 5×4 tables with an `n=12*` footnote. Revisit if a future dump produces ≥40 completed users at ≥200 games/user.
 - **Verdict thresholds**: Cohen's d < 0.2 collapse / 0.2–0.5 review / ≥ 0.5 keep separate
 - **Sample floors**: <floors used per section>
-- **Cell coverage** (users_ingested per cell): <inline 5×4 table>
+- **Cell coverage** (status='completed' users per cell): <inline 5×4 table, sparse cell flagged>
 
 ## 1. Score gap (endgame vs non-endgame)
 ... (cell table, marginals, recommendations, **collapse verdict block**)
