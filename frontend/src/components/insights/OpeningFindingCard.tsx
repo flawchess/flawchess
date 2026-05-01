@@ -1,11 +1,8 @@
 import { ArrowRightLeft, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { Tooltip } from '@/components/ui/tooltip';
-import {
-  formatCandidateMove,
-  formatConfidenceTooltip,
-  getSeverityBorderColor,
-} from '@/lib/openingInsights';
+import { ConfidenceTooltipContent } from '@/components/insights/ConfidenceTooltipContent';
+import { formatCandidateMove, getSeverityBorderColor } from '@/lib/openingInsights';
 import { fenAfterMove, sanToSquares } from '@/lib/sanToSquares';
 import { MIN_GAMES_FOR_RELIABLE_STATS, TROLL_WATERMARK_OPACITY, UNRELIABLE_OPACITY } from '@/lib/theme';
 import { isTrollPosition } from '@/lib/trollOpenings';
@@ -112,7 +109,16 @@ export function OpeningFindingCard({
       data-testid={`opening-finding-card-${idx}-confidence`}
     >
       Confidence:{' '}
-      <Tooltip content={formatConfidenceTooltip(finding.confidence, finding.p_value, finding.score)}>
+      <Tooltip
+        content={
+          <ConfidenceTooltipContent
+            level={finding.confidence}
+            pValue={finding.p_value}
+            score={finding.score}
+            gameCount={finding.n_games}
+          />
+        }
+      >
         <span className="font-medium" data-testid={`opening-finding-card-${idx}-confidence-info`}>
           {finding.confidence}
         </span>

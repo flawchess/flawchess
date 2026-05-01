@@ -2,43 +2,9 @@ import { DARK_RED, LIGHT_RED, DARK_GREEN, LIGHT_GREEN } from '@/lib/arrowColor';
 import type { OpeningInsightFinding } from '@/types/insights';
 
 // OPENING_INSIGHTS_POPOVER_COPY lives in OpeningInsightsBlock.tsx (JSX co-location).
-
-type ConfidenceLevel = 'low' | 'medium' | 'high';
-
-const CONFIDENCE_PREFIX: Record<ConfidenceLevel, string> = {
-  low: 'Low confidence',
-  medium: 'Medium confidence',
-  high: 'High confidence',
-};
-
-const CONFIDENCE_VERDICT: Record<ConfidenceLevel, (noun: string) => string> = {
-  low: () => 'could plausibly be chance',
-  medium: (noun) => `is possibly a real ${noun}`,
-  high: (noun) => `is likely a real ${noun}`,
-};
-
-/**
- * Tooltip copy for confidence indicators — significance level explainer with the
- * observed score, its signed distance from the 50% break-even line, and the p-value.
- * `noun` is the directional thing being claimed: "strength" when score ≥ 50%,
- * otherwise "weakness".
- */
-export function formatConfidenceTooltip(
-  level: ConfidenceLevel,
-  pValue: number,
-  score: number,
-): string {
-  const noun: 'strength' | 'weakness' = score >= 0.5 ? 'strength' : 'weakness';
-  const scorePct = score * 100;
-  const roundedScore = Math.round(scorePct);
-  const diff = scorePct - 50;
-  const roundedDiff = Math.round(Math.abs(diff));
-  const scoreDescriptor =
-    roundedDiff === 0
-      ? `${roundedScore}% score (at 50%)`
-      : `${roundedScore}% score (${roundedDiff}% ${diff >= 0 ? 'above' : 'below'} 50%)`;
-  return `${CONFIDENCE_PREFIX[level]}: ${scoreDescriptor} ${CONFIDENCE_VERDICT[level](noun)} (p = ${pValue.toFixed(3)})`;
-}
+// ConfidenceTooltipContent (JSX tooltip body) lives in
+// components/insights/ConfidenceTooltipContent.tsx — kept separate so
+// react-refresh can fast-refresh component vs. helper changes.
 
 /**
  * Map a classification + severity tuple to the appropriate border-left color hex.

@@ -15,7 +15,7 @@ import {
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Tooltip } from '@/components/ui/tooltip';
-import { formatConfidenceTooltip } from '@/lib/openingInsights';
+import { ConfidenceTooltipContent } from '@/components/insights/ConfidenceTooltipContent';
 import { cn } from '@/lib/utils';
 import { isTrollPosition } from '@/lib/trollOpenings';
 import type { NextMoveEntry, Color } from '@/types/api';
@@ -370,7 +370,16 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
       </td>
       <td className="py-1 text-center text-muted-foreground tabular-nums">
         {showConfidence && (
-          <Tooltip content={formatConfidenceTooltip(entry.confidence, entry.p_value, entry.score)}>
+          <Tooltip
+            content={
+              <ConfidenceTooltipContent
+                level={entry.confidence}
+                pValue={entry.p_value}
+                score={entry.score}
+                gameCount={entry.game_count}
+              />
+            }
+          >
             <span>{entry.confidence === 'medium' ? 'med' : entry.confidence}</span>
           </Tooltip>
         )}
