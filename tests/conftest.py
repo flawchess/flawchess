@@ -228,6 +228,28 @@ async def fresh_test_user(test_engine) -> AsyncGenerator[User, None]:
         await session.commit()
 
 
+@pytest_asyncio.fixture(scope="session")
+async def engine_started():
+    """Start Stockfish once per pytest session (D-02).
+
+    Session-scoped so the UCI process is shared across all engine wrapper tests
+    instead of restarting per test. Skips silently if Stockfish is not on PATH
+    (the individual tests handle the skipif marker).
+    """
+    import shutil
+
+    from app.services.engine import start_engine, stop_engine
+
+    if shutil.which("stockfish") is None:
+        yield
+        return
+    await start_engine()
+    try:
+        yield
+    finally:
+        await stop_engine()
+
+
 @pytest.fixture
 def fake_insights_agent(monkeypatch: pytest.MonkeyPatch):
     """Factory fixture that monkeypatches get_insights_agent() with a TestModel.
