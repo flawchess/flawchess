@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: "Eval-Based Endgame Classification"
-status: "planning"
+status: "in_progress"
 last_updated: "2026-05-02T00:00:00.000Z"
-last_activity: "2026-05-02 -- v1.15 Eval-Based Endgame Classification milestone opened"
+last_activity: "2026-05-02 -- v1.15 roadmap created, Phase 78 ready to plan"
 progress:
-  total_phases: 0
+  total_phases: 1
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -16,20 +16,20 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 78 — Stockfish-Eval Cutover for Endgame Classification (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-05-02 — Milestone v1.15 Eval-Based Endgame Classification started
+Status: Ready to plan via `/gsd-plan-phase 78`
+Last activity: 2026-05-02 — v1.15 roadmap created, single-phase milestone (Phase 78) scoped
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-02 for v1.15 open)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report (now score-based with low/medium/high confidence calibration).
-Current focus: v1.15 single-phase milestone — replace the material-imbalance + 4-ply persistence proxy for endgame conv/recov classification with Stockfish eval (depth 15) populated into existing `eval_cp` / `eval_mate` columns. Backfill benchmark + prod, refactor endgame queries, hard cutover. SEED-010 Library milestone gated until v1.15 ships. SEED-002 / SEED-006 still dormant, gated on full benchmark ingest.
+Current focus: v1.15 Phase 78 — replace the material-imbalance + 4-ply persistence proxy for endgame conv/recov classification with Stockfish eval (depth 15) populated into existing `eval_cp` / `eval_mate` columns. Backfill benchmark + prod, refactor endgame queries, hard cutover. SEED-010 Library milestone gated until v1.15 ships. SEED-002 / SEED-006 still dormant, gated on full benchmark ingest.
 
 ## Milestone Progress
 
-Fourteen milestones complete (v1.0–v1.14). v1.14 Score-Based Opening Insights shipped 2026-04-29 with 3 phases (75, 76, 77), 16 plans, delivered via PRs #69, #70, #71 (inline confidence-mute hotfix), #72, #73 (quick task). Stats: 123 files changed, +18,701 / -787 lines over 2 days since v1.13 (commit f15b3cc → fa5ac64). 73 phases total (+4 inserted: 27.1, 28.1, 41.1, 57.1, 71.1).
+Fourteen milestones complete (v1.0–v1.14). v1.15 opened 2026-05-02 with a single phase (78). v1.14 Score-Based Opening Insights shipped 2026-04-29 with 3 phases (75, 76, 77), 16 plans, delivered via PRs #69, #70, #71 (inline confidence-mute hotfix), #72, #73 (quick task). 73 phases total before v1.15 (+4 inserted: 27.1, 28.1, 41.1, 57.1, 71.1).
 
 ## Key Context
 
@@ -39,8 +39,10 @@ Fourteen milestones complete (v1.0–v1.14). v1.14 Score-Based Opening Insights 
 - Core algorithm: Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import
 - Deployment: Docker Compose on Hetzner CX32 (4 vCPUs, 7.6 GB RAM + 2 GB swap)
 - v1.11 LLM stack: pydantic-ai Agent with env-var-driven model selection (`PYDANTIC_AI_MODEL_INSIGHTS`), `genai-prices` for cost accounting, generic `llm_logs` Postgres table
-- v1.12 Benchmark DB: separate PostgreSQL 18 instance on port 5433 — dormant (gated on full ingest); SEED-002 / SEED-006 still pending
-- v1.14 score plumbing: trinomial Wald 95% half-width drives `confidence: "low" | "medium" | "high"`; `OpeningInsightFinding` and `NextMoveEntry` payloads expose `score`, `confidence`, `p_value`. `compute_confidence_bucket` is the single shared helper (CI structural assertion). `arrowColor.ts` and backend constants are kept in lock-step by `tests/services/test_opening_insights_arrow_consistency.py`. Natural next consumer: LLM narration of opening insights.
+- v1.12 Benchmark DB: separate PostgreSQL 18 instance on port 5433 — used by v1.15 as the first backfill target before prod; SEED-002 / SEED-006 still pending full ingest
+- v1.14 score plumbing: trinomial Wald 95% half-width drives `confidence: "low" | "medium" | "high"`; `OpeningInsightFinding` and `NextMoveEntry` payloads expose `score`, `confidence`, `p_value`. `compute_confidence_bucket` is the single shared helper (CI structural assertion). `arrowColor.ts` and backend constants are kept in lock-step by `tests/services/test_opening_insights_arrow_consistency.py`.
+- v1.15 inputs: `eval_cp` / `eval_mate` columns already exist on `game_positions` (white-perspective, set in `app/services/zobrist.py:170-220` from lichess `%eval`). Only ~22% of prod positions have eval today (lichess subset). Backfill targets endgame span entries only — `MIN(ply)` of each `(game_id, endgame_class)` group with `count(ply) ≥ ENDGAME_PLY_THRESHOLD`.
+- v1.15 source report: `reports/conv-recov-validation-2026-05-02.md` — proxy holds at ~81.5% agreement vs Stockfish on the populated subset, but misses ~24% of substantive material-edge sequences. Queen and pawnless classes underperform structurally. ~1.5M positions × 35 ms at depth 15 ≈ 2 hours on 8 cores for the benchmark backfill.
 
 ## Accumulated Context
 
@@ -98,8 +100,7 @@ Carried forward from v1.11 close (still relevant):
 
 - v1.0–v1.14 shipped (see .planning/MILESTONES.md)
 - v1.14 shipped 2026-04-29 with 3 phases (75, 76, 77), 16 plans, delivered via PRs #69, #70, #71 (inline confidence-mute hotfix), #72, #73 (quick task). INSIGHT-UI-04 descoped per Phase 76 D-04.
-- 2026-04-28: Phase 77 (troll-opening watermark) added off-roadmap-scope under v1.14 — frontend-only follow-on with no v1.15 dependency.
-- 2026-04-28: Phase 75 amended INSIGHT-SCORE-04 from binomial Wilson → trinomial Wald (D-05) and INSIGHT-SCORE-06 to add `p_value` alongside `confidence` (D-09). REQUIREMENTS.md updated in Plan 75-04.
+- 2026-05-02: v1.15 opened — single-phase milestone (Phase 78). Source: `reports/conv-recov-validation-2026-05-02.md`. All 16 v1.15 requirements (ENG-01..03, FILL-01..04, IMP-01..02, REFAC-01..05, VAL-01..02) mapped to Phase 78. SEED-010 Library gated until v1.15 ships.
 
 ### Pending Todos
 
@@ -109,6 +110,7 @@ Carried forward from v1.11 close (still relevant):
 ### Blockers/Concerns
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
+- Prod backfill run sequencing: benchmark first → operator validates → prod (FILL-03). Do not run prod backfill blindly.
 
 ### Quick Tasks Completed
 
@@ -130,4 +132,4 @@ Carried forward from v1.11 close (still relevant):
 | 260429-ty5 | Replace Opponent Strength ToggleGroup with dual-handle range slider + 4 preset chips (Spike 001) | 2026-04-29 | 124237b | [260429-ty5-opponent-strength-slider](./quick/260429-ty5-opponent-strength-slider/) |
 
 ---
-Last activity: 2026-04-29 — Completed quick task 260429-ty5: dual-handle Opponent Strength range slider replacing the four-bucket ToggleGroup (Spike 001).
+Last activity: 2026-05-02 — v1.15 roadmap created. Phase 78 (Stockfish-Eval Cutover for Endgame Classification) is the only phase in this milestone; ready for `/gsd-plan-phase 78`.

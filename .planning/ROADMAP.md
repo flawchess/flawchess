@@ -17,8 +17,29 @@
 - ✅ **v1.12 Benchmark DB Infrastructure & Ingestion Pipeline** — Phase 69 (shipped 2026-04-26) — see [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md)
 - ✅ **v1.13 Opening Insights** — Phases 70, 71, 71.1 (shipped 2026-04-27; Phases 72-74 descoped) — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md)
 - ✅ **v1.14 Score-Based Opening Insights** — Phases 75, 76, 77 (shipped 2026-04-29; INSIGHT-UI-04 descoped) — see [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md)
+- 🚧 **v1.15 Eval-Based Endgame Classification** — Phase 78 (in progress, opened 2026-05-02) — single-phase Stockfish eval cutover for endgame conv/recov classification
 
 ## Phases
+
+<details open>
+<summary>🚧 v1.15 Eval-Based Endgame Classification (Phase 78) — IN PROGRESS (opened 2026-05-02)</summary>
+
+- [ ] Phase 78: Stockfish-Eval Cutover for Endgame Classification (0/0 plans) — not started — ENG-01..03, FILL-01..04, IMP-01..02, REFAC-01..05, VAL-01..02
+
+### Phase 78: Stockfish-Eval Cutover for Endgame Classification
+**Goal**: Replace the material-imbalance + 4-ply persistence proxy for endgame conv/recov classification with Stockfish eval (depth 15) populated into the existing `eval_cp` / `eval_mate` columns on `game_positions`. Backfill historical span-entry positions across benchmark + prod, eval new span-entry positions during import going forward, refactor endgame queries to threshold on eval, and remove the proxy entirely (hard cutover).
+**Depends on**: v1.14 shipped (Phase 77)
+**Requirements**: ENG-01, ENG-02, ENG-03, FILL-01, FILL-02, FILL-03, FILL-04, IMP-01, IMP-02, REFAC-01, REFAC-02, REFAC-03, REFAC-04, REFAC-05, VAL-01, VAL-02
+**Success Criteria** (what must be TRUE):
+  1. The backend Docker image ships a pinned Stockfish binary, and a single shared engine wrapper module exposes a depth-15 evaluation API consumed by both the backfill script and the import path.
+  2. After the benchmark backfill completes, every endgame span-entry row in the benchmark DB has either `eval_cp` or `eval_mate` populated; the prod backfill achieves the same coverage on prod span-entry rows (existing lichess `%eval` annotations preserved, never overwritten).
+  3. New game imports populate `eval_cp` / `eval_mate` on per-class span-entry rows where the lichess `%eval` annotation did not already do so, adding well under 1 second to the typical-game import path.
+  4. `app/repositories/endgame_repository.py` queries (`query_endgame_entry_rows`, `query_endgame_bucket_rows`, `query_endgame_elo_timeline_rows`) classify conv/parity/recov by thresholding `eval_cp` (±100 cp after color-sign flip) and `eval_mate` directly at the span-entry row — no contiguity-checked persistence lookup remains.
+  5. `_MATERIAL_ADVANTAGE_THRESHOLD`, `PERSISTENCE_PLIES`, and the `array_agg(... ORDER BY ply)[PERSISTENCE_PLIES + 1]` contiguity case-expression no longer appear anywhere in the codebase; the `material_imbalance` column is retained for other consumers; `ix_gp_user_endgame_game` has been migrated via Alembic so the rewritten queries stay index-only.
+  6. Re-running the `/conv-recov-validation` skill on the benchmark DB post-backfill produces ~100% agreement on the populated subset by construction, and the live-UI endgame gauges for representative test users show only the expected accuracy-driven shifts (operator smoke check).
+**Plans**: TBD
+
+</details>
 
 <details>
 <summary>✅ v1.0 Initial Platform (Phases 1-10) — SHIPPED 2024-03-15</summary>
@@ -221,6 +242,7 @@ See [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md) for full details.
 | 69. Benchmark DB Infra & Ingestion | v1.12 | 6/6 | Complete (follow-on phases → SEED-006) | 2026-04-26 |
 | 70-71.1. v1.13 phases | v1.13 | 14/14 | Complete (Phases 72/73/74 descoped) | 2026-04-27 |
 | 75-77. v1.14 phases | v1.14 | 16/16 | Complete (INSIGHT-UI-04 descoped) | 2026-04-29 |
+| 78. Eval-based endgame classification | v1.15 | 0/0 | In progress | — |
 
 ## Backlog
 

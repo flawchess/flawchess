@@ -69,19 +69,19 @@
 
 | REQ-ID    | Phase | Notes                                   |
 |-----------|-------|-----------------------------------------|
-| ENG-01    | TBD   | Pending roadmap                         |
-| ENG-02    | TBD   | Pending roadmap                         |
-| ENG-03    | TBD   | Pending roadmap                         |
-| FILL-01   | TBD   | Pending roadmap                         |
-| FILL-02   | TBD   | Pending roadmap                         |
-| FILL-03   | TBD   | Pending roadmap                         |
-| FILL-04   | TBD   | Pending roadmap                         |
-| IMP-01    | TBD   | Pending roadmap                         |
-| IMP-02    | TBD   | Pending roadmap                         |
-| REFAC-01  | TBD   | Pending roadmap                         |
-| REFAC-02  | TBD   | Pending roadmap                         |
-| REFAC-03  | TBD   | Pending roadmap                         |
-| REFAC-04  | TBD   | Pending roadmap                         |
-| REFAC-05  | TBD   | Pending roadmap                         |
-| VAL-01    | TBD   | Pending roadmap                         |
-| VAL-02    | TBD   | Pending roadmap                         |
+| ENG-01    | 78    | Stockfish runtime in backend image      |
+| ENG-02    | 78    | Async engine wrapper, depth 15          |
+| ENG-03    | 78    | Shared by backfill + import             |
+| FILL-01   | 78    | Span-entry NULL-eval backfill script    |
+| FILL-02   | 78    | Idempotent, resumable, hash-dedup       |
+| FILL-03   | 78    | Benchmark first, then prod              |
+| FILL-04   | 78    | Prod span-entry rows fully populated    |
+| IMP-01    | 78    | Import-time eval of new span entries    |
+| IMP-02    | 78    | Sub-1s eval budget per typical game     |
+| REFAC-01  | 78    | Endgame repo queries threshold on eval  |
+| REFAC-02  | 78    | Color-sign flip + ±100 cp + mate rule   |
+| REFAC-03  | 78    | Proxy constants/patterns deleted        |
+| REFAC-04  | 78    | `ix_gp_user_endgame_game` migrated      |
+| REFAC-05  | 78    | `material_imbalance` retained           |
+| VAL-01    | 78    | `/conv-recov-validation` post-backfill  |
+| VAL-02    | 78    | Live-UI gauge smoke check               |
