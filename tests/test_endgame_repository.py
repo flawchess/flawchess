@@ -102,12 +102,15 @@ async def _seed_game_position(
     material_signature: str = "KR_KR",
     material_imbalance: int = 0,
     endgame_class: int | None = 1,  # Default 1 (rook) matching default material_signature KR_KR
+    eval_cp: int | None = None,
+    eval_mate: int | None = None,
 ) -> GamePosition:
     """Insert a GamePosition row with endgame-relevant metadata.
 
     piece_count defaults to 2 (KR_KR — rook endgame, safely below threshold of 6).
     endgame_class defaults to 1 (rook), matching the default material_signature KR_KR.
     Use endgame_class=None for non-endgame positions.
+    eval_cp and eval_mate are white-perspective Stockfish eval (REFAC-02 cutover).
     """
     pos = GamePosition(
         game_id=game.id,
@@ -122,6 +125,8 @@ async def _seed_game_position(
         material_signature=material_signature,
         material_imbalance=material_imbalance,
         endgame_class=endgame_class,
+        eval_cp=eval_cp,
+        eval_mate=eval_mate,
     )
     session.add(pos)
     await session.flush()
@@ -201,8 +206,8 @@ class TestQueryEndgameEntryRows:
             endgame_class,
             result,
             user_color,
-            user_material_imbalance,
-            user_material_imbalance_after,
+            eval_cp,
+            eval_mate,
         ) = rows[0]
         assert game_id == game.id
         assert endgame_class == 1  # rook
@@ -262,17 +267,17 @@ class TestQueryEndgameEntryRows:
         assert all(r[0] == game.id for r in rows)
 
     @pytest.mark.asyncio
-    async def test_entry_imbalance_at_first_ply_of_span(self, db_session: AsyncSession) -> None:
-        """material_imbalance at the first (MIN) ply of each span is used for conversion/recovery."""
+    async def test_entry_eval_at_first_ply_of_span(self, db_session: AsyncSession) -> None:
+        """eval_cp at the first (MIN) ply of each span is used for conversion/recovery classification."""
         game = await _seed_game(db_session, user_color="white")
-        # Seed 6 rook positions; first at ply=20 with imbalance=200, rest with different values
+        # Seed 6 rook positions; first at ply=20 with eval_cp=200, rest with different values
         await _seed_game_position(
             db_session,
             game=game,
             ply=20,
             material_signature="KR_KR",
             endgame_class=1,
-            material_imbalance=200,
+            eval_cp=200,
         )
         for ply in range(21, 26):
             await _seed_game_position(
@@ -281,7 +286,7 @@ class TestQueryEndgameEntryRows:
                 ply=ply,
                 material_signature="KR_KR",
                 endgame_class=1,
-                material_imbalance=50,  # different from entry ply
+                eval_cp=50,  # different from entry ply
             )
 
         rows = await query_endgame_entry_rows(
@@ -299,15 +304,13 @@ class TestQueryEndgameEntryRows:
             _endgame_class,
             _result,
             user_color,
-            user_material_imbalance,
-            user_material_imbalance_after,
+            eval_cp,
+            eval_mate,
         ) = rows[0]
-        # For white user, user_material_imbalance = material_imbalance at entry ply (ply=20)
+        # eval_cp is white-perspective at entry ply (ply=20); no sign flip in SQL
         assert user_color == "white"
-        assert user_material_imbalance == 200  # from first ply of span
-        # user_material_imbalance_after = imbalance at ply=24 (entry+4 = ply 20+4)
-        # All plies 21-25 have imbalance=50, so after-value is 50
-        assert user_material_imbalance_after == 50
+        assert eval_cp == 200  # from first ply of span
+        assert eval_mate is None
 
     @pytest.mark.asyncio
     async def test_time_control_filter(self, db_session: AsyncSession) -> None:
@@ -637,12 +640,10 @@ class TestQueryEndgameBucketRows:
         assert rows == []
 
     @pytest.mark.asyncio
-    async def test_long_endgame_returns_imbalance_after(self, db_session: AsyncSession) -> None:
-        """Game with endgame >= ENDGAME_PLY_THRESHOLD plies returns non-NULL user_material_imbalance_after."""
+    async def test_long_endgame_returns_entry_eval_cp(self, db_session: AsyncSession) -> None:
+        """Game with endgame >= ENDGAME_PLY_THRESHOLD plies returns eval_cp from entry ply."""
         game = await _seed_game(db_session, result="1-0", user_color="white")
         entry_ply = 30
-        # Seed ENDGAME_PLY_THRESHOLD plies so the game qualifies under the uniform rule;
-        # the first PERSISTENCE_PLIES+1 plies also cover the imbalance_after position.
         for offset in range(ENDGAME_PLY_THRESHOLD):
             await _seed_game_position(
                 db_session,
@@ -650,7 +651,7 @@ class TestQueryEndgameBucketRows:
                 ply=entry_ply + offset,
                 material_signature="KR_KR",
                 endgame_class=1,
-                material_imbalance=150,  # conversion-qualifying
+                eval_cp=150,  # conversion-qualifying from white POV
             )
 
         rows = await query_endgame_bucket_rows(
@@ -664,13 +665,13 @@ class TestQueryEndgameBucketRows:
         )
 
         assert len(rows) == 1
-        _game_id, _endgame_class, _result, _user_color, imb, imb_after = rows[0]
-        assert imb == 150
-        assert imb_after == 150  # conversion-qualifying, persisted PERSISTENCE_PLIES plies
+        _game_id, _endgame_class, _result, _user_color, eval_cp, eval_mate = rows[0]
+        assert eval_cp == 150  # entry-ply eval (white-perspective, no sign flip)
+        assert eval_mate is None
 
     @pytest.mark.asyncio
-    async def test_black_user_sign_flip(self, db_session: AsyncSession) -> None:
-        """material_imbalance is sign-flipped when user_color == black (user perspective)."""
+    async def test_eval_projects_white_perspective_no_sign_flip(self, db_session: AsyncSession) -> None:
+        """eval_cp and eval_mate are projected raw (white-perspective); service layer applies color flip."""
         game = await _seed_game(db_session, result="0-1", user_color="black")
         entry_ply = 30
         for offset in range(ENDGAME_PLY_THRESHOLD):
@@ -680,7 +681,7 @@ class TestQueryEndgameBucketRows:
                 ply=entry_ply + offset,
                 material_signature="KR_KR",
                 endgame_class=1,
-                material_imbalance=-150,  # white is behind by 150 → black (user) is ahead by 150
+                eval_cp=-150,  # white is behind → black (user) is ahead by 150 from white POV
             )
 
         rows = await query_endgame_bucket_rows(
@@ -694,10 +695,12 @@ class TestQueryEndgameBucketRows:
         )
 
         assert len(rows) == 1
-        _game_id, _endgame_class, _result, user_color, imb, imb_after = rows[0]
+        _game_id, _endgame_class, _result, user_color, eval_cp, eval_mate = rows[0]
         assert user_color == "black"
-        assert imb == 150  # sign-flipped: user is +150 from their perspective
-        assert imb_after == 150
+        # eval_cp is raw white-perspective (-150): service _classify_endgame_bucket
+        # applies sign=-1 for black → user_cp=150 → conversion
+        assert eval_cp == -150
+        assert eval_mate is None
 
     @pytest.mark.asyncio
     async def test_invariant_matches_performance_rows_count(self, db_session: AsyncSession) -> None:
