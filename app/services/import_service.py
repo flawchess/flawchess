@@ -9,25 +9,56 @@ Manages import jobs from chess.com and lichess, including:
 """
 
 import asyncio
+import io
 import logging
+import time
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+import chess
+import chess.pgn
 import httpx
 import sentry_sdk
 from sqlalchemy import case, select, update
 
 from app.core.database import async_session_maker
 from app.models.game import Game
+from app.models.game_position import GamePosition
 from app.repositories import game_repository, import_job_repository
+from app.repositories.endgame_repository import ENDGAME_PLY_THRESHOLD
 from app.schemas.normalization import NormalizedGame
-from app.services import chesscom_client, lichess_client
-from app.services.zobrist import process_game_pgn
+from app.services import chesscom_client, engine as engine_service, lichess_client
+from app.services.zobrist import PlyData, process_game_pgn
 
 logger = logging.getLogger(__name__)
+
+
+def _board_at_ply(pgn_text: str, target_ply: int) -> chess.Board | None:
+    """Replay PGN to the board state at *target_ply* (0-indexed, pre-push).
+
+    Phase 78 IMP-01: used by the import-time eval pass to reconstruct the board
+    at a span-entry ply without retaining chess.Board objects in memory during
+    the main PGN walk. Mirrors the backfill script approach (Option A, RESEARCH.md).
+
+    Returns None if the PGN is unparseable or the game ends before target_ply.
+    """
+    try:
+        game = chess.pgn.read_game(io.StringIO(pgn_text))
+    except Exception:
+        return None
+    if game is None:
+        return None
+    board = game.board()
+    for i, node in enumerate(game.mainline()):
+        if i == target_ply:
+            return board
+        board.push(node.move)
+    return None
+
 
 # Number of games per DB insert batch. Each game produces ~80 position rows,
 # so batch_size=28 means ~2,240 position rows per INSERT (split into 2 chunks
@@ -441,6 +472,9 @@ async def _flush_batch(
     position_rows: list[dict[str, Any]] = []
     move_counts: dict[int, int] = {}
     result_fens: dict[int, str | None] = {}
+    # Phase 78 IMP-01: retain per-game data for the post-insert eval pass.
+    # Each entry is (game_id, pgn_text, plies_list) — collected alongside position_rows.
+    game_eval_data: list[tuple[int, str, list[PlyData]]] = []
 
     for game_id, platform_game_id in id_platform_pairs:
         pgn = pgn_by_platform_id.get(platform_game_id, "")
@@ -460,6 +494,9 @@ async def _flush_batch(
         # Accumulate move_count and result_fen for bulk UPDATE (D-04)
         move_counts[game_id] = processing_result["move_count"]
         result_fens[game_id] = processing_result["result_fen"]
+
+        # Retain plies for the eval pass — done here to avoid a second PGN parse loop.
+        game_eval_data.append((game_id, pgn, list(processing_result["plies"])))
 
         # Build position rows from plies
         for ply_data in processing_result["plies"]:
@@ -488,6 +525,78 @@ async def _flush_batch(
     # 5. Bulk insert positions (chunked at 1,700 rows)
     if position_rows:
         await game_repository.bulk_insert_positions(session, position_rows)
+
+    # 5a. Phase 78 IMP-01: evaluate per-class span-entry rows where lichess %eval did NOT
+    # already populate them. Runs AFTER bulk_insert_positions (rows exist in DB) and BEFORE
+    # the final session.commit() so all eval UPDATEs land in the same transaction.
+    # No asyncio.gather — sequential per CLAUDE.md constraint.
+    eval_pass_start = time.perf_counter()
+    eval_calls_made = 0
+    eval_calls_failed = 0
+    for g_id, pgn_text, plies_list in game_eval_data:
+        # Group plies by endgame_class; only endgame plies have a non-None class.
+        class_plies: dict[int, list[PlyData]] = defaultdict(list)
+        for pd in plies_list:
+            ec = pd["endgame_class"]
+            if ec is not None:
+                class_plies[ec].append(pd)
+
+        for ec, pds in class_plies.items():
+            if len(pds) < ENDGAME_PLY_THRESHOLD:
+                # Fewer plies than threshold — this class never becomes a span entry.
+                continue
+
+            # Find the span-entry ply (MIN ply for this endgame class).
+            span_pd = min(pds, key=lambda p: p["ply"])
+
+            if span_pd["eval_cp"] is not None or span_pd["eval_mate"] is not None:
+                # Lichess %eval already populated this ply — do not overwrite (T-78-17).
+                continue
+
+            board = _board_at_ply(pgn_text, span_pd["ply"])
+            if board is None:
+                # PGN replay failed — skip row, no Sentry (parse error is unusual but not urgent).
+                continue
+
+            eval_cp, eval_mate = await engine_service.evaluate(board)
+            eval_calls_made += 1
+
+            if eval_cp is None and eval_mate is None:
+                # D-11: engine error / timeout — skip row, capture to Sentry, continue import.
+                eval_calls_failed += 1
+                sentry_sdk.set_context("eval", {
+                    "game_id": g_id,
+                    "ply": span_pd["ply"],
+                    "endgame_class": ec,
+                    # NO pgn, NO user_id, NO fen — information-disclosure mitigation T-78-18
+                })
+                sentry_sdk.set_tag("source", "import")
+                sentry_sdk.capture_message(
+                    "import-time engine returned None tuple", level="warning"
+                )
+                continue
+
+            # Update the span-entry row with the engine eval.
+            await session.execute(
+                update(GamePosition)
+                .where(
+                    GamePosition.game_id == g_id,
+                    GamePosition.ply == span_pd["ply"],
+                    GamePosition.endgame_class == ec,
+                )
+                .values(eval_cp=eval_cp, eval_mate=eval_mate)
+            )
+
+    eval_pass_ms = (time.perf_counter() - eval_pass_start) * 1000
+    logger.info(
+        "import_eval_pass",
+        extra={
+            "games_in_batch": len(game_eval_data),
+            "eval_calls_made": eval_calls_made,
+            "eval_calls_failed": eval_calls_failed,
+            "eval_pass_ms": round(eval_pass_ms, 1),
+        },
+    )
 
     # 6. Bulk UPDATE move_count and result_fen via CASE expressions (D-04)
     if move_counts:
