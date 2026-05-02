@@ -64,10 +64,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.core.config import settings  # noqa: E402
 from app.models.game import Game  # noqa: E402
 from app.models.game_position import GamePosition  # noqa: E402
+from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD  # noqa: E402
 from app.services.engine import evaluate, start_engine, stop_engine  # noqa: E402
+from app.services.position_classifier import (  # noqa: E402
+    MIDGAME_MAJORS_AND_MINORS_THRESHOLD,
+    MIDGAME_MIXEDNESS_THRESHOLD,
+)
 
 # D-09: COMMIT every 100 evals — progress visible at ~7s granularity at 70ms/eval.
 EVAL_BATCH_SIZE = 100
+
+# Phase 79 PHASE-FILL-01: chunk size for phase-column UPDATE pass.
+# 10_000 is a defensive default — tighter lock duration vs more transaction overhead trade-off (D-79-01).
+# Operator may tune up/down based on EXPLAIN (ANALYZE) on benchmark.
+PHASE_BACKFILL_CHUNK_SIZE = 10_000
 
 # Port map for --db targets per CLAUDE.md.
 _TARGET_PORT: dict[str, int] = {
@@ -262,93 +272,152 @@ async def run_backfill(
         async_engine = None  # type: ignore[assignment]  # not created here; nothing to dispose
         session_maker = _session_maker
 
+    # Phase 79 PHASE-FILL-01: chunked SQL CASE UPDATE for phase column.
+    # Pure function of (piece_count, backrank_sparse, mixedness) — no PGN replay needed.
+    # Idempotent on re-run via WHERE phase IS NULL. Threshold constants are interpolated
+    # from position_classifier.py so SQL and Python share one source of truth (D-79-01).
+    phase_update_sql = text(
+        f"""
+        UPDATE game_positions
+        SET phase = CASE
+            WHEN piece_count <= {ENDGAME_PIECE_COUNT_THRESHOLD} THEN 2
+            WHEN (piece_count <= {MIDGAME_MAJORS_AND_MINORS_THRESHOLD}
+                  OR backrank_sparse
+                  OR mixedness >= {MIDGAME_MIXEDNESS_THRESHOLD}) THEN 1
+            ELSE 0
+        END
+        WHERE phase IS NULL
+          AND id BETWEEN :lo AND :hi
+        """
+    )
+
+    async with session_maker() as phase_session:
+        bounds_row = (
+            await phase_session.execute(
+                text(
+                    "SELECT COALESCE(MIN(id), 0), COALESCE(MAX(id), 0) "
+                    "FROM game_positions WHERE phase IS NULL"
+                )
+            )
+        ).one()
+        lo_total, hi_total = bounds_row
+        if hi_total > 0:
+            _log(
+                f"Phase-column backfill: id range [{lo_total}, {hi_total}], "
+                f"chunk size {PHASE_BACKFILL_CHUNK_SIZE}"
+            )
+            if dry_run:
+                null_count = (
+                    await phase_session.execute(
+                        text("SELECT COUNT(*) FROM game_positions WHERE phase IS NULL")
+                    )
+                ).scalar_one()
+                _log(f"--dry-run: would update {null_count} rows with NULL phase")
+            else:
+                cursor = lo_total
+                updated_total = 0
+                while cursor <= hi_total:
+                    chunk_hi = cursor + PHASE_BACKFILL_CHUNK_SIZE - 1
+                    result = await phase_session.execute(
+                        phase_update_sql, {"lo": cursor, "hi": chunk_hi}
+                    )
+                    updated_total += result.rowcount or 0  # ty: ignore[unresolved-attribute]  # CursorResult from DML execute
+                    await phase_session.commit()
+                    cursor = chunk_hi + 1
+                    if updated_total and updated_total % (PHASE_BACKFILL_CHUNK_SIZE * 10) == 0:
+                        _log(
+                            f"  phase backfill: {updated_total} rows updated, "
+                            f"cursor={cursor}"
+                        )
+                _log(f"Phase-column backfill complete: {updated_total} rows updated")
+        else:
+            _log("Phase-column backfill: zero rows with NULL phase (no-op)")
+
     # Count / fetch phase: a single SELECT, then close the session.
     async with session_maker() as count_session:
-        stmt = _build_span_entry_stmt(user_id, limit)
-        rows = (await count_session.execute(stmt)).all()
+        span_stmt = _build_span_entry_stmt(user_id, limit)
+        span_rows = (await count_session.execute(span_stmt)).all()
 
     _log(
-        f"Found {len(rows)} span-entry rows with NULL eval "
+        f"Endgame span-entry eval: {len(span_rows)} rows queued "
         f"(db={db}, user_id={user_id}, limit={limit})"
     )
 
     if dry_run:
-        _log("--dry-run: exiting without starting engine or writing")
+        _log(f"--dry-run: would evaluate {len(span_rows)} endgame span-entry rows")
         if dispose_engine and async_engine is not None:
             await async_engine.dispose()
         return
 
-    if not rows:
-        _log("Nothing to do.")
-        if dispose_engine and async_engine is not None:
-            await async_engine.dispose()
-        return
+    if not span_rows:
+        _log("No endgame span-entry rows to evaluate.")
+    else:
+        # Eval + write phase: start engine, process rows, COMMIT every 100.
+        await start_engine()
+        try:
+            async with session_maker() as session:
+                evaluated = 0
+                skipped_no_board = 0
+                skipped_engine_err = 0
 
-    # Eval + write phase: start engine, process rows, COMMIT every 100.
-    await start_engine()
-    try:
-        async with session_maker() as session:
-            evaluated = 0
-            skipped_no_board = 0
-            skipped_engine_err = 0
+                for i, row in enumerate(span_rows):
+                    board = _board_at_ply(row.pgn, row.ply)
+                    if board is None:
+                        skipped_no_board += 1
+                        _log(f"WARNING: could not replay PGN for game_id={row.game_id} ply={row.ply}; skipping")
+                        continue
 
-            for i, row in enumerate(rows):
-                board = _board_at_ply(row.pgn, row.ply)
-                if board is None:
-                    skipped_no_board += 1
-                    _log(f"WARNING: could not replay PGN for game_id={row.game_id} ply={row.ply}; skipping")
-                    continue
+                    eval_cp, eval_mate = await evaluate(board)
 
-                eval_cp, eval_mate = await evaluate(board)
+                    if eval_cp is None and eval_mate is None:
+                        # Engine timeout or crash; wrapper already restarted it.
+                        # Capture to Sentry with bounded context (T-78-13: no PGN, no user_id).
+                        skipped_engine_err += 1
+                        sentry_sdk.set_context(
+                            "backfill_eval",
+                            {
+                                "game_position_id": row.id,
+                                "game_id": row.game_id,
+                                "ply": row.ply,
+                                "db_target": db,
+                            },
+                        )
+                        sentry_sdk.set_tag("source", "backfill")
+                        sentry_sdk.set_tag("eval_kind", "endgame_span_entry")
+                        sentry_sdk.capture_message(
+                            "backfill engine returned (None, None) tuple", level="warning"
+                        )
+                        continue
 
-                if eval_cp is None and eval_mate is None:
-                    # Engine timeout or crash; wrapper already restarted it.
-                    # Capture to Sentry with bounded context (T-78-13: no PGN, no user_id).
-                    skipped_engine_err += 1
-                    sentry_sdk.set_context(
-                        "backfill_eval",
-                        {
-                            "game_position_id": row.id,
-                            "game_id": row.game_id,
-                            "ply": row.ply,
-                            "db_target": db,
-                        },
+                    # Row-level UPDATE (FILL-01).  All DB writes are sequential within
+                    # the same session (CLAUDE.md hard constraint: no concurrent session use).
+                    await session.execute(
+                        update(GamePosition)
+                        .where(GamePosition.id == row.id)
+                        .values(eval_cp=eval_cp, eval_mate=eval_mate)
                     )
-                    sentry_sdk.set_tag("source", "backfill")
-                    sentry_sdk.capture_message(
-                        "backfill engine returned (None, None) tuple", level="warning"
-                    )
-                    continue
+                    evaluated += 1
 
-                # Row-level UPDATE (FILL-01).  All DB writes are sequential within
-                # the same session (CLAUDE.md hard constraint: no concurrent session use).
-                await session.execute(
-                    update(GamePosition)
-                    .where(GamePosition.id == row.id)
-                    .values(eval_cp=eval_cp, eval_mate=eval_mate)
+                    # D-09: COMMIT every 100 evals so a mid-run kill loses at most 100 rows.
+                    if (i + 1) % EVAL_BATCH_SIZE == 0:
+                        await session.commit()
+                        _log(
+                            f"  [endgame_span_entry] committed {i + 1}/{len(span_rows)} rows "
+                            f"(evaluated={evaluated}, "
+                            f"skipped_no_board={skipped_no_board}, "
+                            f"skipped_engine_err={skipped_engine_err})"
+                        )
+
+                # Final commit for remainder.
+                await session.commit()
+                _log(
+                    f"Endgame span-entry eval complete: "
+                    f"evaluated={evaluated}, "
+                    f"skipped_no_board={skipped_no_board}, "
+                    f"skipped_engine_err={skipped_engine_err}"
                 )
-                evaluated += 1
-
-                # D-09: COMMIT every 100 evals so a mid-run kill loses at most 100 rows.
-                if (i + 1) % EVAL_BATCH_SIZE == 0:
-                    await session.commit()
-                    _log(
-                        f"Committed {i + 1}/{len(rows)} rows "
-                        f"(evaluated={evaluated}, "
-                        f"skipped_no_board={skipped_no_board}, "
-                        f"skipped_engine_err={skipped_engine_err})"
-                    )
-
-            # Final commit for remainder.
-            await session.commit()
-            _log(
-                f"Final commit. "
-                f"Total evaluated={evaluated}, "
-                f"skipped_no_board={skipped_no_board}, "
-                f"skipped_engine_err={skipped_engine_err}"
-            )
-    finally:
-        await stop_engine()
+        finally:
+            await stop_engine()
 
     # VACUUM ANALYZE outside a transaction (cannot run inside transaction block).
     # Skipped when using an injected session maker (test mode: VACUUM not meaningful
