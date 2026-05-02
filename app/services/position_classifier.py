@@ -10,10 +10,12 @@ Provides a pure function that accepts a ``chess.Board`` and returns a
 - ``piece_count`` — count of major+minor pieces (Q+R+B+N) for both sides combined, excluding kings and pawns
 - ``backrank_sparse`` — True when < 4 pieces on either side's back rank (Lichess middlegame detection)
 - ``mixedness`` — Lichess Divider.scala mixedness score (0..~400)
+- ``phase`` — game phase per lichess Divider.scala (0=opening, 1=middlegame, 2=endgame)
 
-Game phase (opening/middlegame/endgame) and endgame class are derived at query
-time from material_count + ply + material_signature + piece_count + backrank_sparse
-+ mixedness, allowing threshold tuning without data migration.
+Game phase (opening/middlegame/endgame) is derived at classification time from
+piece_count, backrank_sparse, and mixedness via the lichess Divider.scala predicates.
+Endgame class is derived at query time from material_signature, allowing threshold
+tuning without data migration.
 
 No I/O, no DB access, no async.  All computation is deterministic.
 """
@@ -21,8 +23,11 @@ No I/O, no DB access, no async.  All computation is deterministic.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import chess
+
+from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD
 
 # ---------------------------------------------------------------------------
 # Named constants (no magic numbers in conditionals per CLAUDE.md)
@@ -62,6 +67,12 @@ _SIGNATURE_LETTER: dict[int, str] = {
 # on their back rank, the position is considered "backrank sparse".
 BACKRANK_SPARSE_THRESHOLD = 4
 
+# Lichess Divider.scala default: middlegame iff majors+minors piece_count <= 10.
+MIDGAME_MAJORS_AND_MINORS_THRESHOLD = 10
+
+# Lichess Divider.scala default: middlegame iff mixedness >= 10.
+MIDGAME_MIXEDNESS_THRESHOLD = 10
+
 # ---------------------------------------------------------------------------
 # Mixedness precomputed tables (Lichess Divider.scala algorithm)
 # ---------------------------------------------------------------------------
@@ -97,6 +108,7 @@ class PositionClassification:
     piece_count: int  # count of Q+R+B+N for both sides combined (excludes kings and pawns)
     backrank_sparse: bool  # True when < 4 pieces on either side's back rank
     mixedness: int  # Lichess mixedness score (0..~400)
+    phase: Literal[0, 1, 2]  # 0=opening, 1=middlegame, 2=endgame; lichess Divider.scala
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +234,29 @@ def _compute_backrank_sparse(board: chess.Board) -> bool:
     )
 
 
+def is_endgame(piece_count: int) -> bool:
+    """Lichess Divider.scala isEndGame predicate.
+
+    True iff piece_count <= ENDGAME_PIECE_COUNT_THRESHOLD (default 6).
+    """
+    return piece_count <= ENDGAME_PIECE_COUNT_THRESHOLD
+
+
+def is_middlegame(piece_count: int, backrank_sparse: bool, mixedness: int) -> bool:
+    """Lichess Divider.scala isMidGame predicate.
+
+    True iff piece_count <= MIDGAME_MAJORS_AND_MINORS_THRESHOLD (default 10)
+    OR backrank_sparse OR mixedness >= MIDGAME_MIXEDNESS_THRESHOLD (default 10).
+
+    Note: caller must check is_endgame FIRST so the endgame case wins when both fire.
+    """
+    return (
+        piece_count <= MIDGAME_MAJORS_AND_MINORS_THRESHOLD
+        or backrank_sparse
+        or mixedness >= MIDGAME_MIXEDNESS_THRESHOLD
+    )
+
+
 def _mixedness_score(y: int, white: int, black: int) -> int:
     """Return the mixedness contribution for a 2x2 region.
 
@@ -298,17 +333,38 @@ def classify_position(board: chess.Board) -> PositionClassification:
         board: Any ``chess.Board`` instance.
 
     Returns:
-        A frozen ``PositionClassification`` dataclass with seven fields:
+        A frozen ``PositionClassification`` dataclass with eight fields:
         ``material_count``, ``material_signature``, ``material_imbalance``,
         ``has_opposite_color_bishops``, ``piece_count``,
-        ``backrank_sparse``, and ``mixedness``.
+        ``backrank_sparse``, ``mixedness``, and ``phase``
+        (0=opening, 1=middlegame, 2=endgame per lichess Divider.scala).
     """
+    material_count = _compute_material_count(board)
+    material_signature = _compute_material_signature(board)
+    material_imbalance = _compute_material_imbalance(board)
+    has_opposite_color_bishops = _compute_opposite_color_bishops(board)
+    piece_count = _compute_piece_count(board)
+    backrank_sparse = _compute_backrank_sparse(board)
+    mixedness = _compute_mixedness(board)
+
+    # Phase 79 CLASS-02: derive phase from already-computed inputs (no second board scan).
+    # is_endgame is checked first so PHASE-INV-01 (phase=2 ⟺ endgame_class IS NOT NULL)
+    # holds by construction (per D-79-06).
+    phase: Literal[0, 1, 2]
+    if is_endgame(piece_count):
+        phase = 2
+    elif is_middlegame(piece_count, backrank_sparse, mixedness):
+        phase = 1
+    else:
+        phase = 0
+
     return PositionClassification(
-        material_count=_compute_material_count(board),
-        material_signature=_compute_material_signature(board),
-        material_imbalance=_compute_material_imbalance(board),
-        has_opposite_color_bishops=_compute_opposite_color_bishops(board),
-        piece_count=_compute_piece_count(board),
-        backrank_sparse=_compute_backrank_sparse(board),
-        mixedness=_compute_mixedness(board),
+        material_count=material_count,
+        material_signature=material_signature,
+        material_imbalance=material_imbalance,
+        has_opposite_color_bishops=has_opposite_color_bishops,
+        piece_count=piece_count,
+        backrank_sparse=backrank_sparse,
+        mixedness=mixedness,
+        phase=phase,
     )
