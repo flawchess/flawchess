@@ -34,7 +34,7 @@ def _make_mock_processing_result(
                 "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
                 "material_imbalance": 0, "has_opposite_color_bishops": False,
                 "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                "endgame_class": None,
+                "endgame_class": None, "phase": 0,
             },
             {
                 "ply": 1, "white_hash": 4, "black_hash": 5, "full_hash": 6,
@@ -43,7 +43,7 @@ def _make_mock_processing_result(
                 "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
                 "material_imbalance": 0, "has_opposite_color_bishops": False,
                 "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                "endgame_class": None,
+                "endgame_class": None, "phase": 0,
             },
         ]
     return {"plies": plies, "result_fen": result_fen, "move_count": move_count}
@@ -501,7 +501,7 @@ class TestRunImport:
                     "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
                     "material_imbalance": 0, "has_opposite_color_bishops": False,
                     "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                    "endgame_class": None,
+                    "endgame_class": None, "phase": 0,
                 },
                 {
                     "ply": 1, "white_hash": 400, "black_hash": 500, "full_hash": 600,
@@ -510,7 +510,7 @@ class TestRunImport:
                     "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
                     "material_imbalance": 0, "has_opposite_color_bishops": False,
                     "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                    "endgame_class": None,
+                    "endgame_class": None, "phase": 0,
                 },
                 {
                     "ply": 2, "white_hash": 700, "black_hash": 800, "full_hash": 900,
@@ -519,7 +519,7 @@ class TestRunImport:
                     "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
                     "material_imbalance": 0, "has_opposite_color_bishops": False,
                     "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                    "endgame_class": None,
+                    "endgame_class": None, "phase": 0,
                 },
             ],
             move_count=1,
