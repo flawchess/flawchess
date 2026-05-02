@@ -126,6 +126,7 @@ Carried forward from v1.11 close (still relevant):
 | 260428-v9i | Switch opening insights ranking from Wald CI bound to Wilson score interval bound | 2026-04-28 | 0715fda | [260428-v9i-switch-opening-insights-ranking-from-wal](./quick/260428-v9i-switch-opening-insights-ranking-from-wal/) |
 | 260429-gmj | Insights finding cards: arrow for after-move on mini board | 2026-04-29 | de187ed | [260429-gmj-insights-finding-cards-arrow-for-after-m](./quick/260429-gmj-insights-finding-cards-arrow-for-after-m/) |
 | 260429-ty5 | Replace Opponent Strength ToggleGroup with dual-handle range slider + 4 preset chips (Spike 001) | 2026-04-29 | 124237b | [260429-ty5-opponent-strength-slider](./quick/260429-ty5-opponent-strength-slider/) |
+| 260503-0t8 | Speed up scripts/backfill_eval.py with parallel Stockfish EnginePool, batched UPDATE, and group-by-game PGN parsing (--workers N, default 1) | 2026-05-03 | _pending_ | [260503-0t8-speed-up-scripts-backfill-eval-py-with-p](./quick/260503-0t8-speed-up-scripts-backfill-eval-py-with-p/) |
 
 ---
-Last activity: 2026-05-02 — Plan 78-05 (endgame refactor, eval_cp/eval_mate) complete. _classify_endgame_bucket added; three repository queries rewritten; Alembic migration c92af8282d1a created. Current plan: 2 of 6 (78-06 cutover execution is next).
+Last activity: 2026-05-03 — Quick task 260503-0t8: backfill_eval.py parallelized via new EnginePool (singleton path untouched). Also recently: Plan 78-05 (endgame refactor, eval_cp/eval_mate) complete; current plan 2 of 6 (78-06 cutover execution is next).

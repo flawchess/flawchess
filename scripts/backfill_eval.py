@@ -38,6 +38,19 @@ Usage:
     uv run python scripts/backfill_eval.py --db benchmark
     uv run python scripts/backfill_eval.py --db prod --user-id 1
     uv run python scripts/backfill_eval.py --db prod --dry-run
+
+Parallelism (--workers, default 1):
+    The eval phase runs N independent Stockfish processes via EnginePool.
+    Default 1 = byte-identical to the legacy singleton path. On a 16 vCPU
+    workstation, 10–12 workers is a good upper bound (leave headroom for
+    Postgres + the SSH tunnel + OS). Each worker is configured with
+    Threads=1, so N×1 scales much better than 1×N for independent positions.
+
+        uv run python scripts/backfill_eval.py --db prod --workers 10
+
+    Do NOT raise --workers on the prod server (4 vCPU / 8 GB) — the import
+    path uses the engine module's singleton, and a multi-engine pool there
+    would starve the API and Postgres.
 """
 
 from __future__ import annotations
@@ -55,7 +68,7 @@ from urllib.parse import urlparse, urlunparse
 import chess
 import chess.pgn
 import sentry_sdk
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.sql import Select
 
@@ -66,14 +79,22 @@ from app.core.config import settings  # noqa: E402
 from app.models.game import Game  # noqa: E402
 from app.models.game_position import GamePosition  # noqa: E402
 from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD  # noqa: E402
-from app.services.engine import evaluate, start_engine, stop_engine  # noqa: E402
+from app.services.engine import EnginePool  # noqa: E402
 from app.services.position_classifier import (  # noqa: E402
     MIDGAME_MAJORS_AND_MINORS_THRESHOLD,
     MIDGAME_MIXEDNESS_THRESHOLD,
 )
 
-# D-09: COMMIT every 100 evals — progress visible at ~7s granularity at 70ms/eval.
-EVAL_BATCH_SIZE = 100
+# D-09: COMMIT every 500 evals — at 10 workers × ~70ms/eval that's ~3.5s of work
+# per chunk. Each chunk now collapses to one batched UPDATE … FROM (VALUES …)
+# round-trip instead of EVAL_BATCH_SIZE individual UPDATEs, so the SSH tunnel to
+# prod sees ~1/500th the round-trip overhead. Resume semantics are unchanged: a
+# mid-run kill loses at most one chunk's worth of evaluated rows.
+EVAL_BATCH_SIZE = 500
+
+# Default to single-worker mode = byte-identical legacy behavior. CLI --workers
+# overrides; a 16 vCPU workstation can comfortably run 10–12.
+DEFAULT_WORKERS = 1
 
 # Phase 79 PHASE-FILL-01: chunk size (in game_id units) for phase-column UPDATE pass.
 # Phase assignment is now per-game (Lichess Divider semantics — monotonic),
@@ -161,6 +182,39 @@ def _board_at_ply(pgn_text: str, target_ply: int) -> chess.Board | None:
         board.push(node.move)
     # target_ply >= number of moves → return final position
     return board
+
+
+def _boards_at_plies(pgn_text: str, plies: Sequence[int]) -> dict[int, chess.Board]:
+    """Replay PGN once, return {ply: board} for all requested plies.
+
+    Same per-ply semantics as _board_at_ply: board state BEFORE the move at
+    that ply; ply >= mainline length → final position. Returns an empty dict
+    if the PGN cannot be parsed; callers treat missing keys as a skip.
+
+    Used by the backfill eval loop to amortize PGN parsing across all rows
+    that share a game_id (a game with one middlegame entry plus several
+    endgame span entries used to re-parse its PGN N times).
+    """
+    if not plies:
+        return {}
+    try:
+        game = chess.pgn.read_game(io.StringIO(pgn_text))
+    except Exception:
+        return {}
+    if game is None:
+        return {}
+
+    plies_set = set(plies)
+    captured: dict[int, chess.Board] = {}
+    board = game.board()
+    for i, node in enumerate(game.mainline()):
+        if i in plies_set:
+            captured[i] = board.copy()
+        board.push(node.move)
+    # Any requested ply >= mainline length → final position (after last push).
+    for ply in plies_set:
+        captured.setdefault(ply, board)
+    return captured
 
 
 def _build_span_entry_stmt(
@@ -321,67 +375,147 @@ def _build_middlegame_entry_stmt(
     return stmt
 
 
+def _resolve_boards_grouped(
+    rows: Sequence[Any],
+) -> list[tuple[Any, chess.Board | None]]:
+    """Replay each game's PGN once across all of its rows.
+
+    Rows arrive ordered by (game_id, ply); itertools.groupby gives us one
+    contiguous block per game so we can hand all of that game's plies to
+    `_boards_at_plies` and walk the mainline a single time. A game with one
+    middlegame entry plus several endgame span entries used to re-parse its
+    PGN N times — now it parses once.
+
+    Returns a list of (row, board_or_None) preserving the input order. None
+    means the PGN failed to parse; callers count that as `skipped_no_board`.
+    """
+    from itertools import groupby
+
+    out: list[tuple[Any, chess.Board | None]] = []
+    for _gid, group_iter in groupby(rows, key=lambda r: r.game_id):
+        group = list(group_iter)
+        plies = [r.ply for r in group]
+        boards = _boards_at_plies(group[0].pgn, plies)
+        for r in group:
+            out.append((r, boards.get(r.ply)))
+    return out
+
+
+def _build_batch_update_sql(batch_size: int) -> str:
+    """Render the batched UPDATE … FROM (VALUES …) template for `batch_size` rows.
+
+    One round-trip writes the whole chunk instead of one UPDATE per row.
+
+    The explicit ::integer casts on every VALUES tuple are required because
+    asyncpg binds Python ints as untyped parameters and Postgres infers `text`
+    for the resulting columns ("operator does not exist: integer = text" on
+    the JOIN). Casting every tuple (not just the first) is safe and avoids a
+    NULL-on-the-first-row gotcha: eval_cp may be NULL on mate positions and
+    eval_mate may be NULL on non-mate positions, so neither column has a
+    reliable type-anchor row. Postgres coerces integer to the SMALLINT
+    column types on the SET assignment.
+    """
+    values = ", ".join(
+        f"((:id_{i})::integer, (:cp_{i})::integer, (:mate_{i})::integer)"
+        for i in range(batch_size)
+    )
+    return (
+        "UPDATE game_positions gp "
+        "SET eval_cp = v.cp, eval_mate = v.mate "
+        f"FROM (VALUES {values}) AS v(id, cp, mate) "
+        "WHERE gp.id = v.id "
+        "AND gp.eval_cp IS NULL AND gp.eval_mate IS NULL"
+    )
+
+
+async def _flush_writes(
+    session: AsyncSession,
+    writes: list[tuple[int, int | None, int | None]],
+) -> None:
+    """Apply pending (id, eval_cp, eval_mate) writes as one batched UPDATE."""
+    if not writes:
+        return
+    sql = _build_batch_update_sql(len(writes))
+    params: dict[str, int | None] = {}
+    for i, (rid, cp, mate) in enumerate(writes):
+        params[f"id_{i}"] = rid
+        params[f"cp_{i}"] = cp
+        params[f"mate_{i}"] = mate
+    # The CAST happens via the column types on game_positions; psycopg/asyncpg
+    # binds None as SQL NULL natively, and the UPDATE's column types coerce.
+    await session.execute(text(sql), params)
+
+
 async def _evaluate_and_write_rows(
     rows: Sequence[Any],
     session: AsyncSession,
     *,
     db: str,
     eval_kind: Literal["endgame_span_entry", "middlegame_entry"],
+    pool: EnginePool,
 ) -> tuple[int, int, int]:
     """Evaluate and write eval_cp / eval_mate for a batch of rows.
 
     Shared between the endgame-span and middlegame-entry eval passes.
     eval_kind is set on Sentry as a tag so the two row sets are filterable.
 
+    Concurrency: each chunk fan-outs `EVAL_BATCH_SIZE` evaluate() calls via
+    asyncio.gather; the EnginePool's internal queue caps in-flight analyses
+    at `pool.size`, so a 1-worker pool serializes (legacy behavior) while a
+    10-worker pool gets ~10× throughput. Writes are deferred to a single
+    batched UPDATE per chunk → one round-trip instead of EVAL_BATCH_SIZE.
+
     Returns (evaluated_count, skipped_no_board, skipped_engine_err).
     """
-    evaluated = 0
+    resolved = _resolve_boards_grouped(rows)
     skipped_no_board = 0
-    skipped_engine_err = 0
-    for i, row in enumerate(rows):
-        board = _board_at_ply(row.pgn, row.ply)
+    eval_targets: list[tuple[Any, chess.Board]] = []
+    for row, board in resolved:
         if board is None:
             skipped_no_board += 1
             _log(f"WARNING: could not replay PGN for game_id={row.game_id} ply={row.ply}; skipping")
             continue
-        eval_cp, eval_mate = await evaluate(board)
-        if eval_cp is None and eval_mate is None:
-            skipped_engine_err += 1
-            sentry_sdk.set_context(
-                "backfill_eval",
-                {
-                    "game_position_id": row.id,
-                    "game_id": row.game_id,
-                    "ply": row.ply,
-                    "db_target": db,
-                },
-            )
-            sentry_sdk.set_tag("source", "backfill")
-            sentry_sdk.set_tag("eval_kind", eval_kind)
-            sentry_sdk.capture_message(
-                "backfill engine returned (None, None) tuple", level="warning"
-            )
-            continue
+        eval_targets.append((row, board))
 
-        await session.execute(
-            update(GamePosition)
-            .where(GamePosition.id == row.id)
-            .values(eval_cp=eval_cp, eval_mate=eval_mate)
+    evaluated = 0
+    skipped_engine_err = 0
+    total = len(eval_targets)
+
+    for chunk_start in range(0, total, EVAL_BATCH_SIZE):
+        chunk = eval_targets[chunk_start : chunk_start + EVAL_BATCH_SIZE]
+        results = await asyncio.gather(*(pool.evaluate(b) for _, b in chunk))
+
+        writes: list[tuple[int, int | None, int | None]] = []
+        for (row, _board), (eval_cp, eval_mate) in zip(chunk, results):
+            if eval_cp is None and eval_mate is None:
+                skipped_engine_err += 1
+                sentry_sdk.set_context(
+                    "backfill_eval",
+                    {
+                        "game_position_id": row.id,
+                        "game_id": row.game_id,
+                        "ply": row.ply,
+                        "db_target": db,
+                    },
+                )
+                sentry_sdk.set_tag("source", "backfill")
+                sentry_sdk.set_tag("eval_kind", eval_kind)
+                sentry_sdk.capture_message(
+                    "backfill engine returned (None, None) tuple", level="warning"
+                )
+                continue
+            writes.append((row.id, eval_cp, eval_mate))
+            evaluated += 1
+
+        await _flush_writes(session, writes)
+        await session.commit()
+        _log(
+            f"  [{eval_kind}] committed {min(chunk_start + len(chunk), total)}/{total} rows "
+            f"(evaluated={evaluated}, "
+            f"skipped_no_board={skipped_no_board}, "
+            f"skipped_engine_err={skipped_engine_err})"
         )
-        evaluated += 1
 
-        # D-09: COMMIT every EVAL_BATCH_SIZE evals so a mid-run kill loses at most that many rows.
-        if (i + 1) % EVAL_BATCH_SIZE == 0:
-            await session.commit()
-            _log(
-                f"  [{eval_kind}] committed {i + 1}/{len(rows)} rows "
-                f"(evaluated={evaluated}, "
-                f"skipped_no_board={skipped_no_board}, "
-                f"skipped_engine_err={skipped_engine_err})"
-            )
-
-    # Final commit for the tail batch.
-    await session.commit()
     return evaluated, skipped_no_board, skipped_engine_err
 
 
@@ -391,7 +525,9 @@ async def run_backfill(
     user_id: int | None,
     dry_run: bool,
     limit: int | None,
+    workers: int = DEFAULT_WORKERS,
     _session_maker: async_sessionmaker[AsyncSession] | None = None,
+    _pool: EnginePool | None = None,
 ) -> None:
     """FILL-01/02/03 backfill driver. Public callable for testability.
 
@@ -403,9 +539,14 @@ async def run_backfill(
 
     main() parses argv and calls this function with keyword-only args.
 
-    _session_maker: internal test hook to inject a pre-configured session maker
-    (e.g. bound to the test DB).  Production callers omit this; the production
-    path builds its own engine from _db_url(db).
+    workers: size of the Stockfish EnginePool. Default 1 = legacy serial
+    behavior. Raise on hosts with spare CPU/RAM (e.g. 10 on a 16 vCPU box).
+    Do NOT raise on the prod server — the live import path uses the engine
+    module's singleton and would compete for CPU.
+
+    _session_maker / _pool: internal test hooks. Production callers omit both;
+    the production path builds its own engine from _db_url(db) and starts an
+    EnginePool of `workers` Stockfish processes.
     """
     dispose_engine = _session_maker is None
     if _session_maker is None:
@@ -534,18 +675,29 @@ async def run_backfill(
             await async_engine.dispose()
         return
 
-    # Eval + write phase: start engine once for both eval passes.
-    await start_engine()
+    # Eval + write phase: spin up an EnginePool of `workers` Stockfish processes.
+    # _pool is a test hook; production builds its own from `workers`.
+    dispose_pool = _pool is None
+    if _pool is None:
+        pool = EnginePool(workers)
+        await pool.start()
+        _log(f"EnginePool started with {workers} worker(s).")
+    else:
+        pool = _pool
+
     try:
         if span_rows:
             async with session_maker() as endgame_session:
-                endgame_evaluated, endgame_no_board, endgame_engine_err = (
-                    await _evaluate_and_write_rows(
-                        span_rows,
-                        endgame_session,
-                        db=db,
-                        eval_kind="endgame_span_entry",
-                    )
+                (
+                    endgame_evaluated,
+                    endgame_no_board,
+                    endgame_engine_err,
+                ) = await _evaluate_and_write_rows(
+                    span_rows,
+                    endgame_session,
+                    db=db,
+                    eval_kind="endgame_span_entry",
+                    pool=pool,
                 )
             _log(
                 f"Endgame span-entry eval complete: "
@@ -559,13 +711,12 @@ async def run_backfill(
         # Phase 79 PHASE-FILL-02: middlegame entry eval pass.
         if midgame_rows:
             async with session_maker() as midgame_session:
-                mid_evaluated, mid_no_board, mid_engine_err = (
-                    await _evaluate_and_write_rows(
-                        midgame_rows,
-                        midgame_session,
-                        db=db,
-                        eval_kind="middlegame_entry",
-                    )
+                mid_evaluated, mid_no_board, mid_engine_err = await _evaluate_and_write_rows(
+                    midgame_rows,
+                    midgame_session,
+                    db=db,
+                    eval_kind="middlegame_entry",
+                    pool=pool,
                 )
             _log(
                 f"Middlegame entry eval complete: "
@@ -576,7 +727,8 @@ async def run_backfill(
         else:
             _log("No middlegame entry rows to evaluate.")
     finally:
-        await stop_engine()
+        if dispose_pool:
+            await pool.stop()
 
     # VACUUM ANALYZE outside a transaction (cannot run inside transaction block).
     # Skipped when using an injected session maker (test mode: VACUUM not meaningful
@@ -625,7 +777,24 @@ def parse_args() -> argparse.Namespace:
         metavar="N",
         help="Cap evaluations at N rows.  Useful for smoke checks and staging rounds.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=DEFAULT_WORKERS,
+        metavar="N",
+        help=(
+            f"Number of parallel Stockfish workers (default {DEFAULT_WORKERS}). "
+            "Each worker is its own UCI process configured Threads=1, so N×1 "
+            "scales much better than 1×N for independent positions. On a 16 vCPU "
+            "workstation, 10–12 is a good upper bound. Do NOT raise this on the "
+            "prod server (4 vCPU / 8 GB) — the live import path uses the engine "
+            "module's singleton."
+        ),
+    )
+    args = parser.parse_args()
+    if args.workers < 1:
+        parser.error(f"--workers must be >= 1, got {args.workers}")
+    return args
 
 
 async def main() -> None:
@@ -637,13 +806,14 @@ async def main() -> None:
 
     _log(
         f"Starting backfill: db={args.db} user_id={args.user_id} "
-        f"dry_run={args.dry_run} limit={args.limit}"
+        f"dry_run={args.dry_run} limit={args.limit} workers={args.workers}"
     )
     await run_backfill(
         db=args.db,
         user_id=args.user_id,
         dry_run=args.dry_run,
         limit=args.limit,
+        workers=args.workers,
     )
     _log("Done.")
 

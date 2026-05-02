@@ -11,6 +11,7 @@ Data isolation: each test class seeds its own committed data using test_engine
 so run_backfill's independently-created sessions can see it.  Cleanup is
 handled in teardown via DELETE on the committed rows.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -128,8 +129,10 @@ async def _ensure_user(session: AsyncSession, user_id: int) -> None:
     from app.models.user import User
 
     existing = (
-        await session.execute(select(User).where(User.id == user_id))
-    ).unique().scalar_one_or_none()
+        (await session.execute(select(User).where(User.id == user_id)))
+        .unique()
+        .scalar_one_or_none()
+    )
     if existing is None:
         session.add(
             User(id=user_id, email=f"backfill-test-{user_id}@example.com", hashed_password="x")
@@ -171,10 +174,10 @@ class TestDryRun:
             await setup.commit()
 
         try:
-            with patch(
-                "scripts.backfill_eval.evaluate",
-                new=AsyncMock(return_value=(150, None)),
-            ) as mock_eval:
+            with patch("scripts.backfill_eval.EnginePool") as MockPoolCls:
+                mock_pool = AsyncMock()
+                mock_pool.evaluate = AsyncMock(return_value=(150, None))
+                MockPoolCls.return_value = mock_pool
                 await run_backfill(
                     db="dev",
                     user_id=user_id,
@@ -183,7 +186,9 @@ class TestDryRun:
                     _session_maker=session_maker,
                 )
 
-            assert mock_eval.call_count == 0
+            # Dry-run returns before the pool is constructed/started.
+            assert MockPoolCls.call_count == 0
+            assert mock_pool.evaluate.call_count == 0
 
             # Entry row must still have NULL eval (nothing written)
             async with session_maker() as verify:
@@ -214,14 +219,11 @@ class TestIdempotency:
             await setup.commit()
 
         try:
-            with (
-                patch("scripts.backfill_eval.start_engine", new=AsyncMock()),
-                patch("scripts.backfill_eval.stop_engine", new=AsyncMock()),
-                patch(
-                    "scripts.backfill_eval.evaluate",
-                    new=AsyncMock(return_value=(150, None)),
-                ) as mock_eval,
-            ):
+            with patch("scripts.backfill_eval.EnginePool") as MockPoolCls:
+                mock_pool = AsyncMock()
+                mock_pool.evaluate = AsyncMock(return_value=(150, None))
+                MockPoolCls.return_value = mock_pool
+                mock_eval = mock_pool.evaluate
                 await run_backfill(
                     db="dev",
                     user_id=user_id,
@@ -271,14 +273,11 @@ class TestLichessPreservation:
             await setup.commit()
 
         try:
-            with (
-                patch("scripts.backfill_eval.start_engine", new=AsyncMock()),
-                patch("scripts.backfill_eval.stop_engine", new=AsyncMock()),
-                patch(
-                    "scripts.backfill_eval.evaluate",
-                    new=AsyncMock(return_value=(999, None)),
-                ) as mock_eval,
-            ):
+            with patch("scripts.backfill_eval.EnginePool") as MockPoolCls:
+                mock_pool = AsyncMock()
+                mock_pool.evaluate = AsyncMock(return_value=(999, None))
+                MockPoolCls.return_value = mock_pool
+                mock_eval = mock_pool.evaluate
                 await run_backfill(
                     db="dev",
                     user_id=user_id,
@@ -327,14 +326,11 @@ class TestLimit:
             await setup.commit()
 
         try:
-            with (
-                patch("scripts.backfill_eval.start_engine", new=AsyncMock()),
-                patch("scripts.backfill_eval.stop_engine", new=AsyncMock()),
-                patch(
-                    "scripts.backfill_eval.evaluate",
-                    new=AsyncMock(return_value=(100, None)),
-                ) as mock_eval,
-            ):
+            with patch("scripts.backfill_eval.EnginePool") as MockPoolCls:
+                mock_pool = AsyncMock()
+                mock_pool.evaluate = AsyncMock(return_value=(100, None))
+                MockPoolCls.return_value = mock_pool
+                mock_eval = mock_pool.evaluate
                 await run_backfill(
                     db="dev",
                     user_id=user_id,
@@ -374,14 +370,11 @@ class TestUserFilter:
             await setup.commit()
 
         try:
-            with (
-                patch("scripts.backfill_eval.start_engine", new=AsyncMock()),
-                patch("scripts.backfill_eval.stop_engine", new=AsyncMock()),
-                patch(
-                    "scripts.backfill_eval.evaluate",
-                    new=AsyncMock(return_value=(50, None)),
-                ) as mock_eval,
-            ):
+            with patch("scripts.backfill_eval.EnginePool") as MockPoolCls:
+                mock_pool = AsyncMock()
+                mock_pool.evaluate = AsyncMock(return_value=(50, None))
+                MockPoolCls.return_value = mock_pool
+                mock_eval = mock_pool.evaluate
                 await run_backfill(
                     db="dev",
                     user_id=user_a,
@@ -395,16 +388,12 @@ class TestUserFilter:
 
             async with session_maker() as verify:
                 # User B's entry still NULL
-                eval_cp_b, eval_mate_b = await _get_entry_eval(
-                    verify, game_b_id, _SPAN_START_PLY
-                )
+                eval_cp_b, eval_mate_b = await _get_entry_eval(verify, game_b_id, _SPAN_START_PLY)
                 assert eval_cp_b is None
                 assert eval_mate_b is None
 
                 # User A's entry was populated
-                eval_cp_a, eval_mate_a = await _get_entry_eval(
-                    verify, game_a_id, _SPAN_START_PLY
-                )
+                eval_cp_a, eval_mate_a = await _get_entry_eval(verify, game_a_id, _SPAN_START_PLY)
                 assert eval_cp_a == 50
                 assert eval_mate_a is None
         finally:
@@ -438,9 +427,12 @@ class TestIslandDetection:
             game_id = game.id
 
             layout = [
-                (10, 1), (11, 1),
-                (12, 2), (13, 2),
-                (14, 1), (15, 1),
+                (10, 1),
+                (11, 1),
+                (12, 2),
+                (13, 2),
+                (14, 1),
+                (15, 1),
             ]
             for ply, ec in layout:
                 setup.add(
@@ -463,14 +455,11 @@ class TestIslandDetection:
             await setup.commit()
 
         try:
-            with (
-                patch("scripts.backfill_eval.start_engine", new=AsyncMock()),
-                patch("scripts.backfill_eval.stop_engine", new=AsyncMock()),
-                patch(
-                    "scripts.backfill_eval.evaluate",
-                    new=AsyncMock(return_value=(77, None)),
-                ) as mock_eval,
-            ):
+            with patch("scripts.backfill_eval.EnginePool") as MockPoolCls:
+                mock_pool = AsyncMock()
+                mock_pool.evaluate = AsyncMock(return_value=(77, None))
+                MockPoolCls.return_value = mock_pool
+                mock_eval = mock_pool.evaluate
                 await run_backfill(
                     db="dev",
                     user_id=user_id,
