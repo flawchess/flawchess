@@ -39,10 +39,10 @@
   6. Re-running the `/conv-recov-validation` skill on the benchmark DB post-backfill produces ~100% agreement on the populated subset by construction, and the live-UI endgame gauges for representative test users show only the expected accuracy-driven shifts (operator smoke check).
 **Plans**: 6 plans
   - [ ] 78-01-PLAN.md — Stockfish in backend Docker image (ENG-01)
-  - [ ] 78-02-PLAN.md — Engine wrapper module + lifespan integration (ENG-02, ENG-03)
+  - [x] 78-02-PLAN.md — Engine wrapper module + lifespan integration (ENG-02, ENG-03)
   - [ ] 78-03-PLAN.md — Backfill script (FILL-01, FILL-02 relaxed, FILL-03)
   - [ ] 78-04-PLAN.md — Import-path integration (IMP-01, IMP-02)
-  - [ ] 78-05-PLAN.md — Endgame repository + service refactor + index migration (REFAC-01..05)
+  - [x] 78-05-PLAN.md — Endgame repository + service refactor + index migration (REFAC-01..05)
   - [ ] 78-06-PLAN.md — Operator-driven cutover execution (FILL-03, FILL-04, VAL-01, VAL-02)
 
 </details>
@@ -248,7 +248,7 @@ See [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md) for full details.
 | 69. Benchmark DB Infra & Ingestion | v1.12 | 6/6 | Complete (follow-on phases → SEED-006) | 2026-04-26 |
 | 70-71.1. v1.13 phases | v1.13 | 14/14 | Complete (Phases 72/73/74 descoped) | 2026-04-27 |
 | 75-77. v1.14 phases | v1.14 | 16/16 | Complete (INSIGHT-UI-04 descoped) | 2026-04-29 |
-| 78. Eval-based endgame classification | v1.15 | 0/0 | In progress | — |
+| 78. Eval-based endgame classification | v1.15 | 2/6 | In Progress|  |
 
 ## Backlog
 

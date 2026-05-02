@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
 status: executing
-last_updated: "2026-05-02T12:19:56.167Z"
-last_activity: 2026-05-02 -- Phase 78 execution started
+last_updated: "2026-05-02T12:58:25.165Z"
+last_activity: 2026-05-02
 ---
 
 # Project State: FlawChess
@@ -12,9 +12,9 @@ last_activity: 2026-05-02 -- Phase 78 execution started
 ## Current Position
 
 Phase: 78 (Stockfish-Eval Cutover for Endgame Classification) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 78
-Last activity: 2026-05-02 -- Phase 78 execution started
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-05-02
 
 ## Project Reference
 
@@ -127,4 +127,4 @@ Carried forward from v1.11 close (still relevant):
 | 260429-ty5 | Replace Opponent Strength ToggleGroup with dual-handle range slider + 4 preset chips (Spike 001) | 2026-04-29 | 124237b | [260429-ty5-opponent-strength-slider](./quick/260429-ty5-opponent-strength-slider/) |
 
 ---
-Last activity: 2026-05-02 — v1.15 roadmap created. Phase 78 (Stockfish-Eval Cutover for Endgame Classification) is the only phase in this milestone; ready for `/gsd-plan-phase 78`.
+Last activity: 2026-05-02 — Plan 78-05 (endgame refactor, eval_cp/eval_mate) complete. _classify_endgame_bucket added; three repository queries rewritten; Alembic migration c92af8282d1a created. Current plan: 2 of 6 (78-06 cutover execution is next).
