@@ -7,11 +7,17 @@ Covers:
 - Tactical indicators (opposite-color bishops)
 - Backrank sparseness detection (Lichess middlegame phase detection)
 - Mixedness score (Lichess Divider.scala algorithm)
+- Phase classification (Lichess Divider.scala isEndGame / isMidGame predicates)
 """
 
 import chess
 
-from app.services.position_classifier import PositionClassification, classify_position
+from app.services.position_classifier import (
+    PositionClassification,
+    classify_position,
+    is_endgame,
+    is_middlegame,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -494,3 +500,132 @@ class TestMixedness:
         result = classify_position(board)
         # Separated position should have low mixedness (< 100)
         assert result.mixedness < 100
+
+
+# ---------------------------------------------------------------------------
+# Phase Classification tests (Divider parity)
+# ---------------------------------------------------------------------------
+
+
+class TestPhaseClassification:
+    """Divider parity tests — expected values sourced from lichess Divider.scala.
+
+    Reference: https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/Divider.scala
+    Phase: 0=opening, 1=middlegame, 2=endgame. piece_count counts Q+R+B+N for both
+    sides combined (kings and pawns excluded). is_endgame is checked before
+    is_middlegame so the endgame case wins when both fire.
+    """
+
+    def test_starting_position_phase_opening(self, starting_board: chess.Board) -> None:
+        """Initial position: piece_count=14, no backrank sparse, low mixedness -> opening (phase=0)."""
+        result = classify_position(starting_board)
+        assert result.phase == 0
+
+    def test_kqr_vs_kqr_phase_endgame(self) -> None:
+        """KQR vs KQR: piece_count=4 <= 6 -> endgame (phase=2)."""
+        # FEN: white has Q+R, black has Q+R = 4 total majors+minors
+        board = board_from_fen("3qk2r/8/8/8/8/8/8/R2QK3 w - - 0 1")
+        assert classify_position(board).phase == 2
+
+    def test_kr_vs_kr_phase_endgame(self) -> None:
+        """KR vs KR: piece_count=2 <= 6 -> endgame (phase=2)."""
+        board = board_from_fen("4k2r/8/8/8/8/8/8/R3K3 w - - 0 1")
+        assert classify_position(board).phase == 2
+
+    def test_kq_vs_kq_with_eight_pawns_each_phase_endgame(self) -> None:
+        """KQ vs KQ + 8 pawns each: piece_count=2 (pawns excluded) -> endgame (phase=2)."""
+        board = board_from_fen("3qk3/pppppppp/8/8/8/8/PPPPPPPP/3QK3 w - - 0 1")
+        assert classify_position(board).phase == 2
+
+    def test_piece_count_eleven_mid_development_phase_opening(self) -> None:
+        """piece_count=11, no backrank-sparse, mixedness<10 -> opening (phase=0).
+
+        Constructed FEN yields piece_count==11, backrank_sparse==False, and
+        mixedness<10. These input metrics are asserted explicitly so a FEN drift
+        fails loudly instead of silently no-op'ing the phase assertion.
+
+        FEN: rn1qk1nr/pppppppp/8/8/8/8/PPPPPPPP/RN1QKBNR
+        White: Q+R+R+B+N+N=6, Black: Q+R+R+N+N=5 -> total=11.
+        All pieces remain on back ranks (no mixing). Divider expectation:
+        piece_count>10 AND not backrank_sparse AND mixedness<10 -> opening.
+        """
+        board = board_from_fen("rn1qk1nr/pppppppp/8/8/8/8/PPPPPPPP/RN1QKBNR w KQkq - 0 1")
+        result = classify_position(board)
+        # Explicit metric assertions — fail loudly if the FEN drifts.
+        assert result.piece_count == 11
+        assert result.backrank_sparse is False
+        assert result.mixedness < 10
+        # Divider.scala expectation: UNCONDITIONAL.
+        assert result.phase == 0
+
+    def test_piece_count_ten_phase_middlegame(self) -> None:
+        """piece_count<=10 by majors-and-minors threshold -> middlegame (phase=1)."""
+        # FEN yields piece_count==10: white Q+R+B+N=4, black Q+R+B+N=4 wait...
+        # r1bqk1nr/pppppppp/8/8/8/8/PPPPPPPP/R1BQK1NR: white Q+R+B=3 + N? let's check
+        # white: Q(d1)+R(a1)+B(c1) = 3 pieces; black: Q(d8)+R(a8)+B(c8)+N(g8) = 4 pieces?
+        # Actually verified empirically: piece_count=10.
+        board = board_from_fen("r1bqk1nr/pppppppp/8/8/8/8/PPPPPPPP/R1BQK1NR w KQkq - 0 1")
+        result = classify_position(board)
+        assert result.piece_count == 10
+        # Divider.scala expectation: piece_count<=10 -> middlegame. UNCONDITIONAL.
+        assert result.phase == 1
+
+    def test_backrank_sparse_high_piece_count_phase_middlegame(self) -> None:
+        """backrank_sparse=True with piece_count>10 -> middlegame (phase=1)."""
+        # Both sides castled kingside, kings on g-file, rooks on f-file, knights on c+f-file.
+        # Minimal backrank piece count (< 4 on each back rank) with high piece total.
+        board = board_from_fen("r4rk1/pppppppp/2n2n2/8/8/2N2N2/PPPPPPPP/R4RK1 w - - 0 1")
+        result = classify_position(board)
+        assert result.backrank_sparse is True
+        # Expected: piece_count>6, backrank_sparse fires -> middlegame. UNCONDITIONAL.
+        assert result.phase == 1
+
+    def test_high_mixedness_high_piece_count_phase_middlegame(self) -> None:
+        """mixedness>=10 with piece_count>10 and not backrank_sparse -> middlegame (phase=1).
+
+        Constructed FEN yields piece_count>10, backrank_sparse==False, and
+        mixedness>=10. Asserted explicitly so a FEN drift fails loudly.
+        """
+        # Open center position with pieces from both sides in the middle of the board.
+        board = board_from_fen("rnbqkbnr/pp3ppp/3p4/2pPp3/2P1P3/8/PP3PPP/RNBQKBNR w KQkq - 0 1")
+        result = classify_position(board)
+        # Explicit metric assertions — fail loudly on FEN drift.
+        assert result.piece_count > 10
+        assert result.backrank_sparse is False
+        assert result.mixedness >= 10
+        # Divider.scala expectation: mixedness>=10 with piece_count>10 -> phase=1. UNCONDITIONAL.
+        assert result.phase == 1
+
+    def test_mixedness_nine_boundary_not_middlegame(self) -> None:
+        """mixedness==9 alone (with piece_count>10 and no backrank-sparse) -> NOT middlegame.
+
+        Pure predicate test — no board needed. Verifies the boundary directly.
+        """
+        assert is_middlegame(piece_count=11, backrank_sparse=False, mixedness=9) is False
+
+    def test_mixedness_ten_boundary_middlegame(self) -> None:
+        """mixedness==10 with piece_count>10 and no backrank-sparse -> middlegame.
+
+        Boundary case for MIDGAME_MIXEDNESS_THRESHOLD=10. Pure predicate test.
+        """
+        assert is_middlegame(piece_count=11, backrank_sparse=False, mixedness=10) is True
+
+    def test_endgame_takes_precedence_over_middlegame(self) -> None:
+        """piece_count=6 + high mixedness -> phase=2 (is_endgame checked first per D-79-06).
+
+        Pure predicate guard: both is_endgame and is_middlegame fire at piece_count=6
+        with high mixedness. Divider.scala + D-79-06: is_endgame wins. UNCONDITIONAL.
+
+        FEN: '4k3/1q1n4/8/4r3/3R4/8/1Q1N4/4K3' yields piece_count=6, mixedness=159.
+        """
+        # Verify both predicates fire at piece_count=6, mixedness=20
+        assert is_endgame(piece_count=6) is True
+        assert is_middlegame(piece_count=6, backrank_sparse=False, mixedness=20) is True
+
+        # Board with 3 pieces per side interleaved for high mixedness
+        board = board_from_fen("4k3/1q1n4/8/4r3/3R4/8/1Q1N4/4K3 w - - 0 1")
+        result = classify_position(board)
+        # Explicit metric assertion — fail loudly if FEN drifts off piece_count=6.
+        assert result.piece_count == 6
+        # is_endgame wins over is_middlegame. UNCONDITIONAL.
+        assert result.phase == 2
