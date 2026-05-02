@@ -157,11 +157,57 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
     return "pawnless"
 
 
-# Minimum material imbalance (in centipawns) to count as conversion or recovery.
-# Lowered from 300cp to 100cp alongside the persistence filter — the persistence
-# requirement (imbalance must also hold 4 plies later) eliminates transient noise
-# from piece trades, allowing a lower threshold for a larger meaningful dataset.
-_MATERIAL_ADVANTAGE_THRESHOLD = 100
+# Minimum Stockfish eval (in centipawns) to count as conversion or recovery.
+# A single-point eval at the span-entry ply replaces the old material_imbalance +
+# 4-ply persistence proxy (REFAC-02). 100cp corresponds roughly to being up a pawn.
+EVAL_ADVANTAGE_THRESHOLD = 100
+
+
+def _classify_endgame_bucket(
+    eval_cp: int | None,
+    eval_mate: int | None,
+    user_color: str,
+) -> Literal["conversion", "parity", "recovery"]:
+    """Classify a single endgame span into conversion / parity / recovery.
+
+    Args:
+        eval_cp:   White-perspective centipawn eval at span-entry ply (NULL = unknown).
+        eval_mate: White-perspective mate-in-N eval at span-entry ply (NULL = not a forced mate).
+        user_color: "white" or "black" — determines sign flip.
+
+    Returns:
+        "conversion" if the user entered with eval >= +EVAL_ADVANTAGE_THRESHOLD,
+        "recovery"   if the user entered with eval <= -EVAL_ADVANTAGE_THRESHOLD,
+        "parity"     otherwise (including NULL eval).
+
+    Sign convention:
+        Raw SQL eval is always white-perspective. For black users the sign is
+        flipped so positive user_eval = user is ahead. Mate scores override cp:
+        eval_mate > 0 means the white side has a forced mate; < 0 means black has one.
+    """
+    # NULL eval routes to parity — engine error or not yet backfilled.
+    if eval_mate is None and eval_cp is None:
+        return "parity"
+
+    # Determine the user-perspective eval score.
+    sign = 1 if user_color == "white" else -1
+
+    if eval_mate is not None:
+        # Mate score: a positive value means the side that is to-move has mate,
+        # but the raw white-perspective convention treats eval_mate > 0 as white winning.
+        # We use large magnitude to guarantee threshold crossing.
+        user_eval: int = sign * (1_000_000 if eval_mate > 0 else -1_000_000)
+    elif eval_cp is not None:
+        user_eval = sign * eval_cp
+    else:
+        # Both None — already handled by the early return above; unreachable.
+        return "parity"
+
+    if user_eval >= EVAL_ADVANTAGE_THRESHOLD:
+        return "conversion"
+    if user_eval <= -EVAL_ADVANTAGE_THRESHOLD:
+        return "recovery"
+    return "parity"
 
 # Phase 60: minimum opponent sample size required to display the opponent
 # baseline in the Conversion/Even/Recovery bullet chart. Matches the WDL-bar
@@ -178,15 +224,15 @@ def _aggregate_endgame_stats(
 ) -> list[EndgameCategoryStats]:
     """Aggregate raw per-(game, class) endgame rows into EndgameCategoryStats list.
 
-    Each row is: (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after)
+    Each row is: (game_id, endgame_class_int, result, user_color, eval_cp, eval_mate)
     where endgame_class_int is 1-6 (see EndgameClassInt).
     A game_id may appear multiple times (once per endgame class it spent >= 6 plies in).
     Per D-02: multi-class per game.
 
     Computes per-category:
     - W/D/L counts and percentages
-    - Conversion: win rate when user entered with material advantage (imbalance > 0) — D-08
-    - Recovery: draw+win rate when user entered with material disadvantage (imbalance < 0) — D-09
+    - Conversion: win rate when user entered with eval advantage (REFAC-02) — D-08
+    - Recovery: draw+win rate when user entered with eval deficit (REFAC-02) — D-09
 
     Returns categories sorted by total game count descending (D-05).
     """
@@ -197,11 +243,11 @@ def _aggregate_endgame_stats(
     wdl: dict[EndgameClass, dict[str, int]] = defaultdict(
         lambda: {"wins": 0, "draws": 0, "losses": 0}
     )
-    # Conversion: games where user was up material at endgame entry
+    # Conversion: games where user entered with eval advantage
     conv: dict[EndgameClass, dict[str, int]] = defaultdict(
         lambda: {"games": 0, "wins": 0, "draws": 0}
     )
-    # Recovery: games where user was down material at endgame entry
+    # Recovery: games where user entered with eval deficit
     recov: dict[EndgameClass, dict[str, int]] = defaultdict(
         lambda: {"games": 0, "wins": 0, "draws": 0}
     )
@@ -211,8 +257,8 @@ def _aggregate_endgame_stats(
         endgame_class_int,
         result,
         user_color,
-        user_material_imbalance,
-        user_material_imbalance_after,
+        eval_cp,
+        eval_mate,
     ) in rows:
         endgame_class = _INT_TO_CLASS.get(endgame_class_int)
         if endgame_class is None:
@@ -237,28 +283,18 @@ def _aggregate_endgame_stats(
         else:
             wdl[endgame_class]["losses"] += 1
 
-        # Conversion: user entered with significant material advantage (>= 100cp)
-        # that persisted 4 plies into the endgame — filters transient trade imbalances.
-        if (
-            user_material_imbalance is not None
-            and user_material_imbalance >= _MATERIAL_ADVANTAGE_THRESHOLD
-            and user_material_imbalance_after is not None
-            and user_material_imbalance_after >= _MATERIAL_ADVANTAGE_THRESHOLD
-        ):
+        bucket = _classify_endgame_bucket(eval_cp, eval_mate, user_color)
+
+        # Conversion: user entered with significant eval advantage (REFAC-02)
+        if bucket == "conversion":
             conv[endgame_class]["games"] += 1
             if outcome == "win":
                 conv[endgame_class]["wins"] += 1
             elif outcome == "draw":
                 conv[endgame_class]["draws"] += 1
 
-        # Recovery: user entered with significant material deficit (<= -100cp)
-        # that persisted 4 plies into the endgame.
-        if (
-            user_material_imbalance is not None
-            and user_material_imbalance <= -_MATERIAL_ADVANTAGE_THRESHOLD
-            and user_material_imbalance_after is not None
-            and user_material_imbalance_after <= -_MATERIAL_ADVANTAGE_THRESHOLD
-        ):
+        # Recovery: user entered with significant eval deficit (REFAC-02)
+        if bucket == "recovery":
             recov[endgame_class]["games"] += 1
             if outcome == "win":
                 recov[endgame_class]["wins"] += 1
@@ -650,14 +686,14 @@ def _compute_score_gap_material(
         non_endgame_wdl: WDL summary for games that never reached an endgame.
         entry_rows: One row per endgame game from query_endgame_bucket_rows.
             Each row: (game_id, endgame_class_int, result, user_color,
-                       user_material_imbalance, user_material_imbalance_after).
+                       eval_cp, eval_mate).
             Both endgame_wdl and entry_rows are produced with the uniform
             ENDGAME_PLY_THRESHOLD HAVING (quick-260414-ae4), so they count the
             same population of games — `sum(material_rows.games) ==
             endgame_wdl.total` holds by construction. The function still
             dedupes by game_id defensively. For any game where
-            `user_material_imbalance_after` is NULL (endgame didn't persist
-            for 4 plies), the game routes to the "parity" bucket.
+            eval_cp/eval_mate is NULL (not yet backfilled), the game routes to
+            the "parity" bucket via _classify_endgame_bucket.
         timeline: Pre-computed score-gap timeline. The orchestrator builds
             this from the unfiltered-by-recency performance rows (so the
             rolling window is pre-filled with games before the cutoff) and
@@ -677,10 +713,10 @@ def _compute_score_gap_material(
     bucket_losses: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
     bucket_games: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
 
-    # Phase 59: group rows by game_id, then pick one span per game.
+    # Phase 59 / REFAC-02: group rows by game_id, then pick one span per game.
     # Priority within a game's rows:
-    #   1) any row satisfying CONVERSION persistence (imbalance >= +threshold AND imbalance_after >= +threshold)
-    #   2) else any row satisfying RECOVERY persistence (imbalance <= -threshold AND imbalance_after <= -threshold)
+    #   1) any row satisfying CONVERSION (_classify_endgame_bucket returns "conversion")
+    #   2) else any row satisfying RECOVERY (_classify_endgame_bucket returns "recovery")
     #   3) else fall back to the row with the LOWEST endgame_class_int for determinism; bucket as "parity".
     #
     # Conversion-over-recovery tiebreak (priority 1 > priority 2): when a game has BOTH a
@@ -690,10 +726,9 @@ def _compute_score_gap_material(
     # would systematically double-penalize conversion failures. Do NOT change this without
     # updating the invariant test (see tests/test_endgame_service.py::TestScoreGapMaterialInvariant).
     #
-    # NULL imbalance rows (user_material_imbalance is None OR user_material_imbalance_after
-    # is None) cannot satisfy priorities 1 or 2, so they fall through to priority 3 and the
-    # game is bucketed as "parity". This replaces the Phase 53 `continue` that silently
-    # dropped such games and broke sum(material_rows.games) == endgame_wdl.total.
+    # NULL eval rows cannot satisfy priorities 1 or 2 (they route to "parity" via
+    # _classify_endgame_bucket), so they fall through to priority 3. This preserves the
+    # invariant sum(material_rows.games) == endgame_wdl.total (same as Phase 53 fix).
 
     # rows carry labeled columns in prod (see query_endgame_bucket_rows /
     # query_endgame_entry_rows) and a matching NamedTuple stand-in in tests,
@@ -709,14 +744,7 @@ def _compute_score_gap_material(
 
         # Pass 1: look for a CONVERSION-qualifying span.
         for r in game_rows:
-            imb = r.user_material_imbalance
-            imb_after = r.user_material_imbalance_after
-            if (
-                imb is not None
-                and imb_after is not None
-                and imb >= _MATERIAL_ADVANTAGE_THRESHOLD
-                and imb_after >= _MATERIAL_ADVANTAGE_THRESHOLD
-            ):
+            if _classify_endgame_bucket(r.eval_cp, r.eval_mate, r.user_color) == "conversion":
                 chosen_row = r
                 chosen_bucket = "conversion"
                 break
@@ -724,14 +752,7 @@ def _compute_score_gap_material(
         # Pass 2: look for a RECOVERY-qualifying span (only if no conversion match).
         if chosen_row is None:
             for r in game_rows:
-                imb = r.user_material_imbalance
-                imb_after = r.user_material_imbalance_after
-                if (
-                    imb is not None
-                    and imb_after is not None
-                    and imb <= -_MATERIAL_ADVANTAGE_THRESHOLD
-                    and imb_after <= -_MATERIAL_ADVANTAGE_THRESHOLD
-                ):
+                if _classify_endgame_bucket(r.eval_cp, r.eval_mate, r.user_color) == "recovery":
                     chosen_row = r
                     chosen_bucket = "recovery"
                     break
@@ -894,18 +915,14 @@ def _endgame_skill_from_bucket_rows(
 
     Row tuple shape (matches query_endgame_elo_timeline_rows bucket output):
         (played_at, platform, time_control_bucket, user_color,
-         white_rating, black_rating, user_material_imbalance,
-         user_material_imbalance_after, result).
+         white_rating, black_rating, eval_cp, eval_mate, result).
 
-    Bucketing (matches _compute_score_gap_material):
-    - conversion: user_material_imbalance_after is not None AND >= 100
-        (user stayed up material across the 4-ply persistence window)
+    Bucketing (matches _compute_score_gap_material via _classify_endgame_bucket):
+    - conversion: _classify_endgame_bucket returns "conversion" (eval >= +EVAL_ADVANTAGE_THRESHOLD)
         -> per-row rate = 1 if user won else 0 (Conv Win %)
-    - recovery: user_material_imbalance_after is not None AND <= -100
-        (user stayed down material across the 4-ply persistence window)
+    - recovery: _classify_endgame_bucket returns "recovery" (eval <= -EVAL_ADVANTAGE_THRESHOLD)
         -> per-row rate = 1 if user won or drew else 0 (Recov Save %)
-    - parity: everything else (NULL imbalance_after routes here per the
-        NULL-handling rule plus any abs(imbalance) < 100 at persistence ply)
+    - parity: everything else (NULL eval routes here via _classify_endgame_bucket)
         -> per-row rate = user chess score (1 for win, 0.5 for draw, 0 for loss;
         Parity Score %)
 
@@ -928,18 +945,19 @@ def _endgame_skill_from_bucket_rows(
             user_color,
             _white_rating,
             _black_rating,
-            _imbalance_entry,
-            imbalance_after,
+            eval_cp,
+            eval_mate,
             result,
         ) = row
 
         outcome = derive_user_result(result, user_color)  # "win"/"draw"/"loss"
+        bucket = _classify_endgame_bucket(eval_cp, eval_mate, user_color)
 
-        if imbalance_after is not None and imbalance_after >= 100:
+        if bucket == "conversion":
             conv_count += 1
             if outcome == "win":
                 conv_wins += 1
-        elif imbalance_after is not None and imbalance_after <= -100:
+        elif bucket == "recovery":
             recov_count += 1
             if outcome in ("win", "draw"):
                 recov_saves += 1
@@ -992,7 +1010,7 @@ def _compute_endgame_elo_weekly_series(
 
     bucket_rows tuple shape matches query_endgame_elo_timeline_rows bucket output:
       (played_at, platform, tc, user_color, white_rating, black_rating,
-       imbalance_entry, imbalance_after, result)
+       eval_cp, eval_mate, result)
     all_rows tuple shape:
       (played_at, platform, tc, user_color, white_rating, black_rating)
     actual_elo_dates / actual_elo_ratings: parallel arrays sorted by date ASC,

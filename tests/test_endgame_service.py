@@ -24,6 +24,7 @@ from app.services.endgame_service import (
     SCORE_GAP_TIMELINE_WINDOW,
     _aggregate_endgame_stats,
     _build_bucket_series,
+    _classify_endgame_bucket,
     _compute_clock_pressure,
     _compute_clock_pressure_timeline,
     _compute_endgame_elo_weekly_series,
@@ -50,16 +51,16 @@ class _FakeRow(NamedTuple):
 
     Mirrors the labeled columns produced by query_endgame_entry_rows and
     query_endgame_bucket_rows so _compute_score_gap_material can access
-    .game_id / .endgame_class / .result / .user_color / .user_material_imbalance
-    / .user_material_imbalance_after directly.
+    .game_id / .endgame_class / .result / .user_color / .eval_cp / .eval_mate
+    directly (REFAC-02 cutover: eval replaces material_imbalance proxy).
     """
 
     game_id: int
     endgame_class: int
     result: str
     user_color: str
-    user_material_imbalance: Any
-    user_material_imbalance_after: Any
+    eval_cp: Any
+    eval_mate: Any
 
 
 class TestClassifyEndgameClass:
@@ -122,13 +123,67 @@ class TestClassifyEndgameClass:
         assert classify_endgame_class("KQPP_KQP") == "queen"
 
 
+class TestClassifyEndgameBucket:
+    """Unit tests for _classify_endgame_bucket helper (REFAC-02).
+
+    Covers the eval_cp threshold and eval_mate sign semantics, user-color sign flip,
+    and NULL eval fallback to parity.
+    """
+
+    def test_white_positive_cp_above_threshold_is_conversion(self):
+        """White user with eval_cp=150 (above +100 threshold) is conversion."""
+        assert _classify_endgame_bucket(eval_cp=150, eval_mate=None, user_color="white") == "conversion"
+
+    def test_black_user_with_white_negative_cp_is_conversion(self):
+        """Black user with white-perspective eval_cp=-300 (black is +300) is conversion."""
+        assert _classify_endgame_bucket(eval_cp=-300, eval_mate=None, user_color="black") == "conversion"
+
+    def test_user_mate_for_white_is_conversion(self):
+        """White user with eval_mate=3 (white mates in 3) is conversion."""
+        assert _classify_endgame_bucket(eval_cp=None, eval_mate=3, user_color="white") == "conversion"
+
+    def test_user_being_mated_is_recovery(self):
+        """White user with eval_mate=-3 (white is being mated) is recovery."""
+        assert _classify_endgame_bucket(eval_cp=None, eval_mate=-3, user_color="white") == "recovery"
+
+    def test_below_threshold_is_parity(self):
+        """White user with eval_cp=50 (below +100 threshold) is parity."""
+        assert _classify_endgame_bucket(eval_cp=50, eval_mate=None, user_color="white") == "parity"
+
+    def test_null_eval_is_parity(self):
+        """NULL eval (engine error / not yet backfilled) defaults to parity."""
+        assert _classify_endgame_bucket(eval_cp=None, eval_mate=None, user_color="white") == "parity"
+
+    def test_white_negative_cp_is_recovery(self):
+        """White user with eval_cp=-200 (below -100 threshold) is recovery."""
+        assert _classify_endgame_bucket(eval_cp=-200, eval_mate=None, user_color="white") == "recovery"
+
+    def test_threshold_boundary_inclusive_at_100(self):
+        """eval_cp == +100 (exactly at threshold) is conversion (>= 100)."""
+        assert _classify_endgame_bucket(eval_cp=100, eval_mate=None, user_color="white") == "conversion"
+
+    def test_threshold_boundary_exclusive_at_99(self):
+        """eval_cp == +99 (just below threshold) is parity (< 100)."""
+        assert _classify_endgame_bucket(eval_cp=99, eval_mate=None, user_color="white") == "parity"
+
+    def test_black_user_mate_for_black_is_conversion(self):
+        """Black user with eval_mate=-2 (black mates in 2 from white POV) is conversion."""
+        # eval_mate=-2 means white is being mated; from black's perspective this is a win
+        assert _classify_endgame_bucket(eval_cp=None, eval_mate=-2, user_color="black") == "conversion"
+
+    def test_black_user_being_mated_is_recovery(self):
+        """Black user with eval_mate=5 (white mates in 5 from white POV) is recovery."""
+        # eval_mate=5 means white mates in 5; from black's perspective this is a deficit
+        assert _classify_endgame_bucket(eval_cp=None, eval_mate=5, user_color="black") == "recovery"
+
+
 class TestAggregateEndgameStats:
     """Unit tests for endgame stats aggregation logic.
 
-    Rows use the new shape: (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after)
+    Rows use the shape: (game_id, endgame_class_int, result, user_color, eval_cp, eval_mate)
     where endgame_class_int is 1=rook, 2=minor_piece, 3=pawn, 4=queen, 5=mixed, 6=pawnless.
-    The 6th element (user_material_imbalance_after) is the imbalance 4 plies after entry — used
-    for the persistence check: both entry AND entry+4 must meet the threshold.
+    eval_cp and eval_mate are white-perspective Stockfish eval at the span-entry ply (REFAC-02);
+    classification uses _classify_endgame_bucket(eval_cp, eval_mate, user_color).
     """
 
     def test_empty_input_returns_empty(self):
@@ -140,12 +195,12 @@ class TestAggregateEndgameStats:
         """D-05: Categories sorted by game count descending."""
         # 1 rook game (endgame_class_int=1), 3 pawn games (endgame_class_int=3)
         rows = [
-            # 1 rook game (win)
-            (1, 1, "1-0", "white", 100, 100),
+            # 1 rook game (win) — conversion eval
+            (1, 1, "1-0", "white", 100, None),
             # 3 pawn games (2 wins, 1 loss)
-            (2, 3, "1-0", "white", 50, 50),
-            (3, 3, "1-0", "white", 0, 0),
-            (4, 3, "0-1", "white", -100, -100),
+            (2, 3, "1-0", "white", 50, None),
+            (3, 3, "1-0", "white", 0, None),
+            (4, 3, "0-1", "white", -100, None),
         ]
         result = _aggregate_endgame_stats(rows)
         # Pawn category has 3 games, rook has 1 — pawn should come first
@@ -157,9 +212,9 @@ class TestAggregateEndgameStats:
     def test_win_draw_loss_percentages(self):
         """Percentages computed correctly for 1W/1D/1L split."""
         rows = [
-            (1, 1, "1-0", "white", 0, 0),  # rook win (endgame_class_int=1)
-            (2, 1, "1/2-1/2", "white", 0, 0),  # rook draw
-            (3, 1, "0-1", "white", 0, 0),  # rook loss
+            (1, 1, "1-0", "white", 0, None),  # rook win (endgame_class_int=1)
+            (2, 1, "1/2-1/2", "white", 0, None),  # rook draw
+            (3, 1, "0-1", "white", 0, None),  # rook loss
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -170,31 +225,16 @@ class TestAggregateEndgameStats:
         assert abs(rook.win_pct - 33.3) < 1
 
     def test_conversion_pct_per_category(self):
-        """D-08: Conversion = win rate when user entered endgame with >= 100cp material advantage (persisted)."""
+        """D-08: Conversion = win rate when user entered endgame with eval >= +100cp."""
         rows = [
-            (1, 1, "1-0", "white", 500, 500),  # rook, up 500cp, persisted, won → converted
-            (2, 1, "0-1", "white", 350, 350),  # rook, up 350cp, persisted, lost → failed conversion
-            (
-                3,
-                1,
-                "1/2-1/2",
-                "white",
-                100,
-                100,
-            ),  # rook, up 100cp (threshold), persisted, draw → draw conversion
-            (
-                4,
-                1,
-                "1-0",
-                "white",
-                200,
-                50,
-            ),  # rook, up 200cp at entry but only 50cp after → NOT conversion (didn't persist)
-            (5, 1, "1-0", "white", -400, -400),  # rook, down, won → not a conversion game
+            (1, 1, "1-0", "white", 500, None),  # rook, up 500cp, won → converted
+            (2, 1, "0-1", "white", 350, None),  # rook, up 350cp, lost → failed conversion
+            (3, 1, "1/2-1/2", "white", 100, None),  # rook, up 100cp (threshold), draw → draw conversion
+            (4, 1, "1-0", "white", -400, None),  # rook, down, won → not a conversion game
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
-        # 3 games with persisted >= 100cp: 1 win, 1 draw, 1 loss → 33.3% conversion
+        # 3 games with eval >= 100cp: 1 win, 1 draw, 1 loss → 33.3% conversion
         assert rook.conversion.conversion_games == 3
         assert rook.conversion.conversion_wins == 1
         assert rook.conversion.conversion_draws == 1
@@ -202,37 +242,15 @@ class TestAggregateEndgameStats:
         assert abs(rook.conversion.conversion_pct - 33.3) < 0.1
 
     def test_recovery_pct_per_category(self):
-        """D-09: Recovery = draw+win rate when user entered endgame with <= -100cp material deficit (persisted)."""
+        """D-09: Recovery = draw+win rate when user entered endgame with eval <= -100cp."""
         rows = [
-            (1, 1, "1-0", "white", -400, -400),  # rook, down 400cp, persisted, won → recovery win
-            (
-                2,
-                1,
-                "1/2-1/2",
-                "white",
-                -500,
-                -500,
-            ),  # rook, down 500cp, persisted, draw → recovery draw
-            (
-                3,
-                1,
-                "0-1",
-                "white",
-                -100,
-                -100,
-            ),  # rook, down 100cp (threshold), persisted, lost → not recovered
-            (
-                4,
-                1,
-                "0-1",
-                "white",
-                -200,
-                -50,
-            ),  # rook, down 200cp but only -50cp after → NOT recovery (didn't persist)
+            (1, 1, "1-0", "white", -400, None),  # rook, down 400cp, won → recovery win
+            (2, 1, "1/2-1/2", "white", -500, None),  # rook, down 500cp, draw → recovery draw
+            (3, 1, "0-1", "white", -100, None),  # rook, down 100cp (threshold), lost → not recovered
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
-        # 3 games with persisted <= -100cp, 2 saves (win + draw) → 66.7%
+        # 3 games with eval <= -100cp, 2 saves (win + draw) → 66.7%
         assert rook.conversion.recovery_games == 3
         assert rook.conversion.recovery_wins == 1
         assert rook.conversion.recovery_draws == 1
@@ -242,7 +260,7 @@ class TestAggregateEndgameStats:
     def test_no_game_phase_breakdown(self):
         """D-11: Single aggregate per endgame type, no opening/middlegame/endgame sub-breakdown."""
         rows = [
-            (1, 1, "1-0", "white", 100, 100),  # rook, endgame_class_int=1
+            (1, 1, "1-0", "white", 100, None),  # rook, endgame_class_int=1
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -256,9 +274,9 @@ class TestAggregateEndgameStats:
     def test_multiple_categories_aggregated_correctly(self):
         """Multiple categories are computed independently, not mixed together."""
         rows = [
-            (1, 1, "1-0", "white", 0, 0),  # rook win (endgame_class_int=1)
-            (2, 1, "0-1", "white", 0, 0),  # rook loss
-            (3, 4, "1-0", "white", 0, 0),  # queen win (endgame_class_int=4)
+            (1, 1, "1-0", "white", 0, None),  # rook win (endgame_class_int=1)
+            (2, 1, "0-1", "white", 0, None),  # rook loss
+            (3, 4, "1-0", "white", 0, None),  # queen win (endgame_class_int=4)
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -270,10 +288,10 @@ class TestAggregateEndgameStats:
         assert queen.wins == 1
 
     def test_zero_conversion_games_returns_zero_pct(self):
-        """When no games have material advantage, conversion_pct should be 0 (not a divide-by-zero error)."""
+        """When no games have eval advantage, conversion_pct should be 0 (not a divide-by-zero error)."""
         rows = [
-            (1, 1, "1-0", "white", -100, -100),  # rook, down, won → recovery only
-            (2, 1, "0-1", "white", 0, 0),  # rook, equal, lost → neither
+            (1, 1, "1-0", "white", -100, None),  # rook, down, won → recovery only
+            (2, 1, "0-1", "white", 0, None),  # rook, equal, lost → neither
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -281,10 +299,10 @@ class TestAggregateEndgameStats:
         assert rook.conversion.conversion_pct == 0.0
 
     def test_zero_recovery_games_returns_zero_pct(self):
-        """When no games have material disadvantage, recovery_pct should be 0."""
+        """When no games have eval disadvantage, recovery_pct should be 0."""
         rows = [
-            (1, 1, "1-0", "white", 200, 200),  # rook, up, won → conversion only
-            (2, 1, "0-1", "white", 0, 0),  # rook, equal, lost → neither
+            (1, 1, "1-0", "white", 200, None),  # rook, up, won → conversion only
+            (2, 1, "0-1", "white", 0, None),  # rook, equal, lost → neither
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -295,10 +313,10 @@ class TestAggregateEndgameStats:
         """A game_id appearing with two different endgame_class_int values contributes to both classes."""
         rows = [
             # Same game (game_id=1) in two classes: rook (1) and pawn (3)
-            (1, 1, "1-0", "white", 100, 100),  # rook class for game 1
-            (1, 3, "1-0", "white", 50, 50),  # pawn class for game 1
+            (1, 1, "1-0", "white", 100, None),  # rook class for game 1
+            (1, 3, "1-0", "white", 50, None),  # pawn class for game 1
             # Another game in rook only
-            (2, 1, "0-1", "white", 0, 0),
+            (2, 1, "0-1", "white", 0, None),
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -312,32 +330,24 @@ class TestAggregateEndgameStats:
         # Pawn: 1 win
         assert pawn.wins == 1
 
-    def test_persistence_filter_excludes_transient_imbalance(self):
-        """Imbalance must persist 4 plies after entry — transient trade imbalances are excluded."""
+    def test_eval_below_threshold_is_parity_not_conversion(self):
+        """eval_cp below +100 threshold is parity — no persistence requirement (REFAC-02 cutover)."""
         rows = [
-            # Entry imbalance 200cp but after 4 plies only 50cp -> NOT conversion (transient)
-            (1, 1, "1-0", "white", 200, 50),
-            # Entry imbalance -300cp but after 4 plies only -80cp -> NOT recovery (transient)
-            (2, 1, "0-1", "white", -300, -80),
-            # Entry 150cp, persisted at 120cp -> IS conversion (both >= 100)
-            (3, 1, "1-0", "white", 150, 120),
-            # Entry -200cp, persisted at -150cp -> IS recovery (both <= -100)
-            (4, 1, "1/2-1/2", "white", -200, -150),
+            # eval_cp=50 → parity (below threshold); eval_cp=150 → conversion
+            (1, 1, "1-0", "white", 50, None),
+            (2, 1, "1-0", "white", 150, None),
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
-        # Only game 3 qualifies for conversion
+        # Only game 2 qualifies for conversion
         assert rook.conversion.conversion_games == 1
         assert rook.conversion.conversion_wins == 1
-        # Only game 4 qualifies for recovery
-        assert rook.conversion.recovery_games == 1
-        assert rook.conversion.recovery_draws == 1
 
-    def test_persistence_none_after_value_excluded(self):
-        """If imbalance_after is None (shouldn't happen with ply threshold, but safety), exclude from conv/recov."""
+    def test_null_eval_is_parity_not_counted_for_conv_recov(self):
+        """NULL eval (engine not yet backfilled) is parity — not counted for conv/recov."""
         rows = [
-            (1, 1, "1-0", "white", 200, None),
-            (2, 1, "0-1", "white", -200, None),
+            (1, 1, "1-0", "white", None, None),
+            (2, 1, "0-1", "white", None, None),
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -1123,9 +1133,9 @@ class TestScoreGapMaterial:
     # --- _compute_score_gap_material tests ---
 
     def test_score_gap_material_conversion_bucket(self):
-        """Entry row with imbalance=150 preserved goes into 'conversion' bucket."""
-        # entry_rows: (game_id, endgame_class_int, result, user_color, user_material_imbalance, user_material_imbalance_after)
-        entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, 150)]
+        """Entry row with eval_cp=150 goes into 'conversion' bucket."""
+        # entry_rows: (game_id, endgame_class_int, result, user_color, eval_cp, eval_mate)
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, None)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1135,8 +1145,8 @@ class TestScoreGapMaterial:
         assert conversion.win_pct == 100.0
 
     def test_score_gap_material_even_bucket(self):
-        """Entry row with imbalance=50 goes into 'parity' bucket."""
-        entry_rows = [_FakeRow(1, 1, "1-0", "white", 50, 50)]
+        """Entry row with eval_cp=50 (below threshold) goes into 'parity' bucket."""
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 50, None)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1145,8 +1155,8 @@ class TestScoreGapMaterial:
         assert even.games == 1
 
     def test_score_gap_material_recovery_bucket(self):
-        """Entry row with imbalance=-200 preserved goes into 'recovery' bucket."""
-        entry_rows = [_FakeRow(1, 1, "0-1", "white", -200, -200)]
+        """Entry row with eval_cp=-200 goes into 'recovery' bucket."""
+        entry_rows = [_FakeRow(1, 1, "0-1", "white", -200, None)]
         endgame_wdl = self._make_wdl(0, 0, 1)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1158,8 +1168,8 @@ class TestScoreGapMaterial:
     def test_score_gap_material_deduplication(self):
         """Two rows with same game_id but different endgame_class -> only 1 game in material table."""
         entry_rows = [
-            _FakeRow(1, 1, "1-0", "white", 150, 150),  # game_id=1, class rook
-            _FakeRow(1, 3, "1-0", "white", 150, 150),  # game_id=1, class pawn — duplicate
+            _FakeRow(1, 1, "1-0", "white", 150, None),  # game_id=1, class rook
+            _FakeRow(1, 3, "1-0", "white", 150, None),  # game_id=1, class pawn — duplicate
         ]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1168,15 +1178,15 @@ class TestScoreGapMaterial:
         assert conversion.bucket == "conversion"
         assert conversion.games == 1  # not 2
 
-    def test_score_gap_material_none_imbalance_bucketed_as_even(self):
-        """Entry row with user_material_imbalance=None goes into the 'parity' bucket (Phase 59)."""
+    def test_score_gap_material_none_eval_bucketed_as_even(self):
+        """Entry row with eval_cp=None and eval_mate=None goes into the 'parity' bucket."""
         entry_rows = [_FakeRow(1, 1, "1-0", "white", None, None)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
         assert result.material_rows[0].games == 0  # conversion
         assert result.material_rows[1].bucket == "parity"
-        assert result.material_rows[1].games == 1  # even — NULL rows now land here
+        assert result.material_rows[1].games == 1  # even — NULL rows land here
         assert result.material_rows[2].games == 0  # recovery
 
     def test_score_gap_material_empty_rows(self):
@@ -1197,39 +1207,14 @@ class TestScoreGapMaterial:
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
         assert result.score_difference == pytest.approx(-0.15, abs=1e-9)
 
-    def test_score_gap_material_persistence_required_for_conversion(self):
-        """Material bucket applies 4-ply persistence rule matching conversion/recovery.
-
-        A row with imbalance=150 (advantage threshold) but imbalance_after=-50
-        falls into the 'parity' bucket because the advantage did not persist.
-        This filters transient imbalances from trades at the endgame boundary.
-        """
-        entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, -50)]  # imbalance_after negative
+    def test_score_gap_material_eval_mate_conversion(self):
+        """Entry row with eval_mate=3 (white mates in 3) goes into 'conversion' bucket."""
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", None, 3)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        assert result.material_rows[0].games == 0  # conversion: not counted
-        assert result.material_rows[1].games == 1  # even: counted here
-        assert result.material_rows[1].bucket == "parity"
-
-    def test_score_gap_material_persistence_required_for_recovery(self):
-        """Transient deficit that does not persist falls into 'parity' bucket."""
-        entry_rows = [_FakeRow(1, 1, "0-1", "white", -150, 50)]  # imbalance_after positive
-        endgame_wdl = self._make_wdl(0, 0, 1)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        assert result.material_rows[2].games == 0  # recovery: not counted
-        assert result.material_rows[1].games == 1  # even: counted here
-        assert result.material_rows[1].bucket == "parity"
-
-    def test_score_gap_material_persistence_none_after_falls_to_even(self):
-        """imbalance_after=None means persistence cannot be verified -> 'parity' bucket."""
-        entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, None)]
-        endgame_wdl = self._make_wdl(1, 0, 0)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        assert result.material_rows[0].games == 0  # conversion: not counted
-        assert result.material_rows[1].games == 1  # even: counted here
+        assert result.material_rows[0].games == 1  # conversion: mate is conversion
+        assert result.material_rows[0].bucket == "conversion"
 
     def test_score_gap_material_all_three_rows_always_present(self):
         """All three material_rows (conversion, even, recovery) present even when games=0."""
@@ -1240,8 +1225,8 @@ class TestScoreGapMaterial:
         assert buckets == ["conversion", "parity", "recovery"]
 
     def test_score_gap_material_boundary_conversion(self):
-        """Imbalance exactly == 100 (preserved) -> 'conversion' bucket (>= 100)."""
-        entry_rows = [_FakeRow(1, 1, "1-0", "white", 100, 100)]
+        """eval_cp exactly == +100 (at threshold) -> 'conversion' bucket (>= 100)."""
+        entry_rows = [_FakeRow(1, 1, "1-0", "white", 100, None)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1249,8 +1234,8 @@ class TestScoreGapMaterial:
         assert result.material_rows[0].games == 1
 
     def test_score_gap_material_boundary_recovery(self):
-        """Imbalance exactly == -100 (preserved) -> 'recovery' bucket (<= -100)."""
-        entry_rows = [_FakeRow(1, 1, "0-1", "white", -100, -100)]
+        """eval_cp exactly == -100 (at threshold) -> 'recovery' bucket (<= -100)."""
+        entry_rows = [_FakeRow(1, 1, "0-1", "white", -100, None)]
         endgame_wdl = self._make_wdl(0, 0, 1)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
@@ -1262,13 +1247,15 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
     """Phase 59 (Decision 4): assert sum(material_rows[i].games) == endgame_wdl.total.
 
     Inherits _make_wdl and _make_wdl_pct helpers from TestScoreGapMaterial.
+    Updated for REFAC-02: rows now use (eval_cp, eval_mate) instead of
+    (user_material_imbalance, user_material_imbalance_after) — persistence is gone.
     """
 
     def test_invariant_single_span_each_bucket(self):
         entry_rows = [
-            _FakeRow(1, 1, "1-0", "white", 150, 150),  # conversion
-            _FakeRow(2, 1, "0-1", "white", -150, -150),  # recovery
-            _FakeRow(3, 1, "1/2-1/2", "white", 50, 50),  # even
+            _FakeRow(1, 1, "1-0", "white", 150, None),  # conversion
+            _FakeRow(2, 1, "0-1", "white", -150, None),  # recovery
+            _FakeRow(3, 1, "1/2-1/2", "white", 50, None),  # parity
         ]
         endgame_wdl = self._make_wdl(1, 1, 1)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1276,14 +1263,14 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
         total = sum(row.games for row in result.material_rows)
         assert total == endgame_wdl.total == 3
         assert result.material_rows[0].games == 1  # conversion
-        assert result.material_rows[1].games == 1  # even
+        assert result.material_rows[1].games == 1  # parity
         assert result.material_rows[2].games == 1  # recovery
 
     def test_invariant_multi_span_conversion_over_recovery(self):
         """Decision 2 tiebreak: when a game has both conversion and recovery spans, pick conversion."""
         entry_rows = [
-            _FakeRow(1, 1, "1-0", "white", 150, 150),  # conversion span (rook)
-            _FakeRow(1, 3, "1-0", "white", -150, -150),  # recovery span (pawn) — same game
+            _FakeRow(1, 1, "1-0", "white", 150, None),  # conversion span (rook)
+            _FakeRow(1, 3, "1-0", "white", -150, None),  # recovery span (pawn) — same game
         ]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1298,7 +1285,7 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
             _FakeRow(
                 1, 1, "1-0", "white", None, None
             ),  # NULL first (would have been dropped pre-Phase 59)
-            _FakeRow(1, 3, "1-0", "white", 150, 150),  # qualifying conversion span
+            _FakeRow(1, 3, "1-0", "white", 150, None),  # qualifying conversion span
         ]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1307,24 +1294,24 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
         assert result.material_rows[0].bucket == "conversion"
         assert result.material_rows[0].games == 1
 
-    def test_invariant_null_imbalance_lands_in_even(self):
-        """Decision 1: NULL imbalance -> 'parity' bucket (not dropped)."""
+    def test_invariant_null_eval_lands_in_even(self):
+        """NULL eval -> 'parity' bucket (not dropped)."""
         entry_rows = [_FakeRow(1, 1, "1/2-1/2", "white", None, None)]
         endgame_wdl = self._make_wdl(0, 1, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
         assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 1
-        assert result.material_rows[1].games == 1  # even
+        assert result.material_rows[1].games == 1  # parity
         assert result.material_rows[1].draw_pct == 100.0
 
-    def test_invariant_null_after_lands_in_even(self):
-        """Decision 1: NULL user_material_imbalance_after (non-contiguous span) -> 'parity'."""
+    def test_invariant_cp_above_threshold_is_conversion(self):
+        """eval_cp=150 with no eval_mate -> 'conversion' bucket."""
         entry_rows = [_FakeRow(1, 1, "1-0", "white", 150, None)]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
         assert sum(row.games for row in result.material_rows) == endgame_wdl.total == 1
-        assert result.material_rows[1].games == 1  # even
+        assert result.material_rows[0].games == 1  # conversion
 
     def test_invariant_empty_input_no_divide_by_zero(self):
         endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1341,22 +1328,22 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
         """10 distinct games across all decision cases; sum must equal endgame_wdl.total=10."""
         entry_rows = [
             # 3 pure conversion
-            _FakeRow(1, 1, "1-0", "white", 150, 150),
-            _FakeRow(2, 1, "1-0", "white", 200, 200),
-            _FakeRow(3, 1, "0-1", "white", 150, 150),
+            _FakeRow(1, 1, "1-0", "white", 150, None),
+            _FakeRow(2, 1, "1-0", "white", 200, None),
+            _FakeRow(3, 1, "0-1", "white", 150, None),
             # 2 pure recovery
-            _FakeRow(4, 1, "1/2-1/2", "white", -150, -150),
-            _FakeRow(5, 1, "0-1", "white", -200, -200),
-            # 2 pure even (below threshold)
-            _FakeRow(6, 1, "1-0", "white", 50, 50),
-            _FakeRow(7, 1, "0-1", "white", -50, -50),
+            _FakeRow(4, 1, "1/2-1/2", "white", -150, None),
+            _FakeRow(5, 1, "0-1", "white", -200, None),
+            # 2 pure parity (below threshold)
+            _FakeRow(6, 1, "1-0", "white", 50, None),
+            _FakeRow(7, 1, "0-1", "white", -50, None),
             # 1 multi-span conversion-over-recovery
-            _FakeRow(8, 1, "1-0", "white", 150, 150),
-            _FakeRow(8, 3, "1-0", "white", -150, -150),
+            _FakeRow(8, 1, "1-0", "white", 150, None),
+            _FakeRow(8, 3, "1-0", "white", -150, None),
             # 1 NULL-first but conversion-qualifying second
             _FakeRow(9, 1, "1-0", "white", None, None),
-            _FakeRow(9, 3, "1-0", "white", 150, 150),
-            # 1 all-NULL (lands in even)
+            _FakeRow(9, 3, "1-0", "white", 150, None),
+            # 1 all-NULL (lands in parity)
             _FakeRow(10, 1, "1/2-1/2", "white", None, None),
         ]
         endgame_wdl = self._make_wdl(6, 2, 2)  # total=10
@@ -1367,12 +1354,12 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
     def test_invariant_deterministic_ordering(self):
         """Decision 2: within the 'parity' fallback, lowest endgame_class_int wins for reproducibility."""
         rows_order_a = [
-            _FakeRow(1, 1, "1-0", "white", 50, 50),
-            _FakeRow(1, 3, "0-1", "white", 40, 40),
+            _FakeRow(1, 1, "1-0", "white", 50, None),
+            _FakeRow(1, 3, "0-1", "white", 40, None),
         ]
         rows_order_b = [
-            _FakeRow(1, 3, "0-1", "white", 40, 40),
-            _FakeRow(1, 1, "1-0", "white", 50, 50),
+            _FakeRow(1, 3, "0-1", "white", 40, None),
+            _FakeRow(1, 1, "1-0", "white", 50, None),
         ]
         endgame_wdl = self._make_wdl(1, 0, 0)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
@@ -1402,17 +1389,17 @@ class TestScoreGapMaterialOpponentBaseline(TestScoreGapMaterial):
 
     @staticmethod
     def _conversion_row(game_id: int, result: str) -> _FakeRow:
-        # imbalance >= +100 AND imbalance_after >= +100 -> conversion
-        return _FakeRow(game_id, 1, result, "white", 150, 150)
+        # eval_cp >= +100 -> conversion
+        return _FakeRow(game_id, 1, result, "white", 150, None)
 
     @staticmethod
     def _recovery_row(game_id: int, result: str) -> _FakeRow:
-        # imbalance <= -100 AND imbalance_after <= -100 -> recovery
-        return _FakeRow(game_id, 1, result, "white", -150, -150)
+        # eval_cp <= -100 -> recovery
+        return _FakeRow(game_id, 1, result, "white", -150, None)
 
     @staticmethod
     def _even_row(game_id: int, result: str) -> _FakeRow:
-        return _FakeRow(game_id, 1, result, "white", 0, 0)
+        return _FakeRow(game_id, 1, result, "white", 0, None)
 
     def test_opponent_baseline_symmetric_60_40(self):
         """User Conv 60% over 100 games and User Recov 40% over 100 games:
@@ -2891,11 +2878,16 @@ def _elo_bucket_row(
     user_color: str,
     white_rating: int,
     black_rating: int,
-    imbalance_entry: int | None,
-    imbalance_after: int | None,
+    eval_cp: int | None,
+    eval_mate: int | None,
     result: str,
 ) -> tuple:
-    """Row matching query_endgame_elo_timeline_rows bucket output (9 columns)."""
+    """Row matching query_endgame_elo_timeline_rows bucket output (9 columns).
+
+    Columns: (played_at, platform, time_control_bucket, user_color,
+              white_rating, black_rating, eval_cp, eval_mate, result)
+    eval_cp and eval_mate are white-perspective Stockfish eval at span-entry ply (REFAC-02).
+    """
     return (
         played_at,
         platform,
@@ -2903,8 +2895,8 @@ def _elo_bucket_row(
         user_color,
         white_rating,
         black_rating,
-        imbalance_entry,
-        imbalance_after,
+        eval_cp,
+        eval_mate,
         result,
     )
 
@@ -2940,7 +2932,7 @@ class TestEndgameSkillFromBucketRows:
         assert _endgame_skill_from_bucket_rows([]) is None
 
     def test_only_parity_rows_uses_chess_score(self):
-        # 2 wins + 2 draws + 0 losses, all parity (abs imbalance < 100 after).
+        # 2 wins + 2 draws + 0 losses, all parity (abs eval_cp < 100).
         # Score = (2*1 + 2*0.5) / 4 = 0.75
         rows = [
             _elo_bucket_row(
@@ -2950,8 +2942,8 @@ class TestEndgameSkillFromBucketRows:
                 "white",
                 1500,
                 1500,
-                0,
-                0,
+                0,      # eval_cp = 0 (parity)
+                None,   # eval_mate
                 "1-0",
             ),
             _elo_bucket_row(
@@ -2962,7 +2954,7 @@ class TestEndgameSkillFromBucketRows:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1-0",
             ),
             _elo_bucket_row(
@@ -2973,7 +2965,7 @@ class TestEndgameSkillFromBucketRows:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             ),
             _elo_bucket_row(
@@ -2984,7 +2976,7 @@ class TestEndgameSkillFromBucketRows:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             ),
         ]
@@ -3001,8 +2993,8 @@ class TestEndgameSkillFromBucketRows:
                 "white",
                 1500,
                 1500,
-                200,
-                200,
+                200,    # eval_cp = +200 (conversion)
+                None,   # eval_mate
                 "1-0",
             ),
             _elo_bucket_row(
@@ -3013,7 +3005,7 @@ class TestEndgameSkillFromBucketRows:
                 1500,
                 1500,
                 200,
-                200,
+                None,
                 "1-0",
             ),
             _elo_bucket_row(
@@ -3024,7 +3016,7 @@ class TestEndgameSkillFromBucketRows:
                 1500,
                 1500,
                 200,
-                200,
+                None,
                 "1-0",
             ),
             _elo_bucket_row(
@@ -3035,15 +3027,15 @@ class TestEndgameSkillFromBucketRows:
                 1500,
                 1500,
                 200,
-                200,
+                None,
                 "0-1",
             ),
         ]
         result = _endgame_skill_from_bucket_rows(rows)
         assert result == pytest.approx(0.75)
 
-    def test_null_imbalance_after_routes_to_parity(self):
-        # imbalance_after=None => parity bucket (NULL-handling rule).
+    def test_null_eval_routes_to_parity(self):
+        # eval_cp=None and eval_mate=None => parity bucket (NULL-handling rule).
         rows = [
             _elo_bucket_row(
                 datetime.datetime(2026, 1, 1),
@@ -3052,8 +3044,8 @@ class TestEndgameSkillFromBucketRows:
                 "white",
                 1500,
                 1500,
-                200,
-                None,
+                None,  # eval_cp
+                None,  # eval_mate
                 "1-0",
             ),
         ]
@@ -3073,8 +3065,8 @@ class TestEndgameSkillFromBucketRows:
                 "white",
                 1500,
                 1500,
-                200,
-                200,
+                200,    # eval_cp = +200 (conversion)
+                None,
                 "1-0",
             ),
             _elo_bucket_row(
@@ -3085,7 +3077,7 @@ class TestEndgameSkillFromBucketRows:
                 1500,
                 1500,
                 200,
-                200,
+                None,
                 "0-1",
             ),
             _elo_bucket_row(
@@ -3095,8 +3087,8 @@ class TestEndgameSkillFromBucketRows:
                 "white",
                 1500,
                 1500,
-                0,
-                0,
+                0,      # eval_cp = 0 (parity)
+                None,
                 "1-0",
             ),
             _elo_bucket_row(
@@ -3107,7 +3099,7 @@ class TestEndgameSkillFromBucketRows:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1-0",
             ),
         ]
@@ -3133,7 +3125,7 @@ class TestEndgameEloTimeline:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1-0",
             )
             for i in range(9)
@@ -3167,7 +3159,7 @@ class TestEndgameEloTimeline:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             )
             for i in range(10)
@@ -3216,7 +3208,7 @@ class TestEndgameEloTimeline:
                 1400,
                 1400,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             )
             for i in range(10)
@@ -3264,12 +3256,12 @@ class TestEndgameEloTimeline:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             )
             for i in range(10)
         ] + [
-            _elo_bucket_row(wk2, "chess.com", "blitz", "white", 1500, 1500, 0, 0, "1/2-1/2"),
+            _elo_bucket_row(wk2, "chess.com", "blitz", "white", 1500, 1500, 0, None, "1/2-1/2"),
         ]
         all_rows = [
             _elo_all_row(
@@ -3312,7 +3304,7 @@ class TestEndgameEloTimeline:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             )
             for i in range(150)
@@ -3363,7 +3355,7 @@ class TestEndgameEloTimeline:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             )
             for i in range(12)
@@ -3376,7 +3368,7 @@ class TestEndgameEloTimeline:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             ),
         ]
@@ -3423,7 +3415,7 @@ class TestEndgameEloTimeline:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             )
             for i in range(10)
@@ -3479,7 +3471,7 @@ class TestEndgameEloTimeline:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             )
             for i in range(10)
@@ -3525,7 +3517,7 @@ class TestEndgameEloTimeline:
                 1400,
                 1400,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             )
             for i in range(10)
@@ -3572,7 +3564,7 @@ class TestEndgameEloTimeline:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             )
             for i in range(15)
@@ -3585,7 +3577,7 @@ class TestEndgameEloTimeline:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             )
             for i in range(12)
@@ -3641,7 +3633,7 @@ class TestEndgameEloTimeline:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             )
             for i in range(10)
@@ -3679,7 +3671,7 @@ class TestEndgameEloTimeline:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             )
             for i in range(10)
@@ -3744,7 +3736,7 @@ class TestEndgameEloTimeline:
                 1500,
                 1500,
                 0,
-                0,
+                None,
                 "1/2-1/2",
             )
             for i in range(10)

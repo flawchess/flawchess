@@ -21,13 +21,13 @@ class GamePosition(Base):
         Index("ix_gp_user_full_hash_move_san", "user_id", "full_hash", "move_san"),
         # Covering index for endgame GROUP BY queries — enables index-only scans for:
         # 1. Span aggregation: GROUP BY game_id, endgame_class HAVING COUNT(ply) >= threshold
-        # 2. Entry-ply material lookup: array_agg(material_imbalance ORDER BY ply)[1]
-        # INCLUDE(material_imbalance) avoids a 5M+ row seq scan for the entry-ply join.
+        # 2. Entry-ply eval lookup: array_agg(eval_cp ORDER BY ply)[1], array_agg(eval_mate ORDER BY ply)[1]
+        # INCLUDE(eval_cp, eval_mate) avoids a 5M+ row seq scan for the entry-ply eval lookup (REFAC-02).
         Index(
             "ix_gp_user_endgame_game",
             "user_id", "game_id", "endgame_class", "ply",
             postgresql_where=text("endgame_class IS NOT NULL"),
-            postgresql_include=["material_imbalance"],
+            postgresql_include=["eval_cp", "eval_mate"],
         ),
         # Phase 70 (v1.13): partial composite covering index for the
         # opening_insights_service transition aggregation. COLUMN ORDER
