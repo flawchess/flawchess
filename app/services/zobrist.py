@@ -52,6 +52,7 @@ class PlyData(TypedDict):
     backrank_sparse: bool
     mixedness: int
     endgame_class: int | None
+    phase: int  # 0=opening, 1=middlegame, 2=endgame; lichess Divider.scala (D-79-07)
 
 
 class GameProcessingResult(TypedDict):
@@ -223,6 +224,7 @@ def process_game_pgn(pgn_text: str) -> GameProcessingResult | None:
                 backrank_sparse=classification.backrank_sparse,
                 mixedness=classification.mixedness,
                 endgame_class=endgame_class,
+                phase=classification.phase,
             )
         )
 
@@ -252,6 +254,7 @@ def process_game_pgn(pgn_text: str) -> GameProcessingResult | None:
             backrank_sparse=classification.backrank_sparse,
             mixedness=classification.mixedness,
             endgame_class=endgame_class_final,
+            phase=classification.phase,
         )
     )
 
