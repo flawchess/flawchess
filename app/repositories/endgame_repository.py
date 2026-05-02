@@ -13,7 +13,7 @@ import datetime
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import case, func, select, type_coerce
+from sqlalchemy import func, select, type_coerce
 from sqlalchemy.dialects.postgresql import ARRAY, aggregate_order_by
 from sqlalchemy.engine import Row
 from sqlalchemy.types import Float as FloatType
@@ -64,11 +64,6 @@ def _any_endgame_ply_subquery(user_id: int) -> Any:
         .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
         .subquery("any_endgame_game_ids")
     )
-
-
-# Number of plies after endgame entry to check for persistence of material imbalance.
-# Filters out transient imbalances from piece trades at the endgame transition.
-PERSISTENCE_PLIES = 4
 
 
 async def count_filtered_games(
@@ -156,61 +151,42 @@ async def query_endgame_entry_rows(
     """Return one row per (game, endgame_class) span meeting the ply threshold.
 
     Per D-02: a game can appear in MULTIPLE endgame classes if it spent >= ENDGAME_PLY_THRESHOLD
-    plies in each class. Per D-04: material_imbalance at the FIRST position of each class span
-    determines conversion/recovery classification.
+    plies in each class. Per REFAC-02: eval_cp/eval_mate at the FIRST position of each class span
+    determines conversion/recovery classification via _classify_endgame_bucket in the service layer.
 
-    Returns rows of: (game_id, endgame_class, result, user_color, user_material_imbalance, user_material_imbalance_after)
+    Returns rows of: (game_id, endgame_class, result, user_color, eval_cp, eval_mate)
     where endgame_class is an integer (1-6, see EndgameClassInt).
 
-    user_material_imbalance = material_imbalance if user_color == "white" else -material_imbalance.
-    This sign flip normalizes to user perspective: positive = user has more material.
-
-    user_material_imbalance_after = material_imbalance at entry + PERSISTENCE_PLIES (4 plies later).
-    Used by the service layer for persistence check: both entry AND entry+4 must meet the threshold
-    to count as conversion/recovery (filters transient trade imbalances).
+    eval_cp and eval_mate are white-perspective Stockfish eval at the span-entry ply.
+    NO sign flip in SQL — the service layer's _classify_endgame_bucket applies the
+    user-color flip. NULL eval (engine error / not yet backfilled) is handled by the
+    service layer as parity.
 
     NO color filter is applied per D-02 — stats cover both white and black games.
     """
     # Single subquery: group by (game_id, endgame_class), count plies per span,
-    # AND grab material_imbalance at entry ply via array_agg ordered by ply.
-    # This eliminates a separate entry_pos subquery that caused a 5M+ row seq scan.
-    # The INCLUDE(material_imbalance) on ix_gp_user_endgame_game enables index-only scans.
+    # AND grab eval_cp/eval_mate at entry ply via array_agg ordered by ply.
+    # The INCLUDE(eval_cp, eval_mate) on ix_gp_user_endgame_game enables index-only scans
+    # for array_agg(eval_cp ORDER BY ply) and array_agg(eval_mate ORDER BY ply).
     #
-    # (array_agg(material_imbalance ORDER BY ply))[1] gets the value at the min ply
+    # (array_agg(eval_cp ORDER BY ply))[1] gets the value at the min ply
     # without needing a separate lookup join.
-    entry_imbalance_agg = type_coerce(
-        func.array_agg(aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())),
+    entry_eval_cp_agg = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.eval_cp, GamePosition.ply.asc())),
         ARRAY(SmallIntegerType),
     )[1]
 
-    # Imbalance 4 plies after entry — used for persistence check.
-    # A game can exit and re-enter the same endgame class (e.g. via promotion),
-    # making the GROUP BY (game_id, endgame_class) combine non-contiguous plies.
-    # We must verify that the 5th ply is exactly 4 after the 1st (contiguous span);
-    # otherwise the persistence value comes from a different game segment and is
-    # meaningless. Returns NULL for non-contiguous spans, which the service layer's
-    # "is not None" check correctly excludes from conversion/recovery.
-    raw_imbalance_after = type_coerce(
-        func.array_agg(aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())),
+    entry_eval_mate_agg = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.eval_mate, GamePosition.ply.asc())),
         ARRAY(SmallIntegerType),
-    )[PERSISTENCE_PLIES + 1]
-
-    ply_at_persistence = type_coerce(
-        func.array_agg(aggregate_order_by(GamePosition.ply, GamePosition.ply.asc())),
-        ARRAY(SmallIntegerType),
-    )[PERSISTENCE_PLIES + 1]
-
-    imbalance_after_persistence_agg = case(
-        (ply_at_persistence == func.min(GamePosition.ply) + PERSISTENCE_PLIES, raw_imbalance_after),
-        else_=None,
-    )
+    )[1]
 
     span_subq = (
         select(
             GamePosition.game_id.label("game_id"),
             GamePosition.endgame_class.label("endgame_class"),
-            entry_imbalance_agg.label("entry_imbalance"),
-            imbalance_after_persistence_agg.label("entry_imbalance_after"),
+            entry_eval_cp_agg.label("entry_eval_cp"),
+            entry_eval_mate_agg.label("entry_eval_mate"),
         )
         .where(
             GamePosition.user_id == user_id,
@@ -221,22 +197,18 @@ async def query_endgame_entry_rows(
         .subquery("span")
     )
 
-    # Sign flip for black: material_imbalance is always from white's perspective in DB.
-    # Multiply by -1 when user is black so positive value = user has more material.
-    color_sign = case(
-        (Game.user_color == "white", 1),
-        else_=-1,
-    )
-
     # Main query: join Game -> span_subq (no second subquery needed).
+    # eval_cp and eval_mate are projected raw (white-perspective, no SQL color flip).
+    # The service layer's _classify_endgame_bucket(eval_cp, eval_mate, user_color)
+    # applies the sign flip at read time (REFAC-02).
     stmt = (
         select(
             Game.id.label("game_id"),
             span_subq.c.endgame_class,
             Game.result,
             Game.user_color,
-            (span_subq.c.entry_imbalance * color_sign).label("user_material_imbalance"),
-            (span_subq.c.entry_imbalance_after * color_sign).label("user_material_imbalance_after"),
+            span_subq.c.entry_eval_cp.label("eval_cp"),
+            span_subq.c.entry_eval_mate.label("eval_mate"),
         )
         .join(span_subq, Game.id == span_subq.c.game_id)
         .where(Game.user_id == user_id)
@@ -277,8 +249,7 @@ async def query_endgame_bucket_rows(
     preserving the invariant `sum(material_rows.games) == endgame_wdl.total` by
     construction.
 
-    Returns rows of: (game_id, endgame_class, result, user_color,
-    user_material_imbalance, user_material_imbalance_after)
+    Returns rows of: (game_id, endgame_class, result, user_color, eval_cp, eval_mate)
 
     Tuple shape matches `query_endgame_entry_rows` so callers of
     `_compute_score_gap_material` can swap queries without change. The
@@ -288,61 +259,36 @@ async def query_endgame_bucket_rows(
 
     Semantics:
     - One row per endgame game (no per-class split).
-    - `user_material_imbalance` = material_imbalance at the game's first
-      endgame position, sign-flipped for black so positive = user ahead.
-    - `user_material_imbalance_after` = material_imbalance 4 plies later in
-      the SAME game, but only if that position ALSO has
-      `endgame_class IS NOT NULL`. If the endgame ended (or the game
-      ended) within 4 plies, this is NULL and the game routes to the
-      "parity" bucket via the NULL-handling rule in
-      `_compute_score_gap_material`.
+    - `eval_cp` / `eval_mate` = Stockfish eval at the game's first endgame position
+      (white-perspective raw). NO sign flip in SQL — the service layer's
+      _classify_endgame_bucket applies the user-color flip (REFAC-02).
+    - NULL eval (engine error / not yet backfilled) routes to the "parity" bucket
+      via NULL-handling in _classify_endgame_bucket.
     """
-    # Single per-game aggregation: pull entry endgame_class, entry material_imbalance,
-    # and material_imbalance at entry+PERSISTENCE_PLIES from one index-only scan over
-    # ix_gp_user_endgame_game (which INCLUDEs material_imbalance).
-    #
-    # The previous form joined two GamePosition aliases (entry_pos, after_pos) on
-    # (user_id, game_id, ply) and (user_id, game_id, ply+4). The planner could not
-    # reliably push the join keys into the index conditions for after_pos — for
-    # users with smaller endgame populations it fell back to scanning all of the
-    # user's endgame rows per outer game (3000 loops × 110k rows = 340M heap fetches).
+    # Single per-game aggregation: pull entry endgame_class, eval_cp, eval_mate
+    # from one index-only scan over ix_gp_user_endgame_game (INCLUDE(eval_cp, eval_mate)).
     # Same array_agg trick already used by `query_endgame_entry_rows` (see line 175).
-    entry_imbalance_agg = type_coerce(
-        func.array_agg(aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())),
-        ARRAY(SmallIntegerType),
-    )[1]
-
     entry_endgame_class_agg = type_coerce(
         func.array_agg(aggregate_order_by(GamePosition.endgame_class, GamePosition.ply.asc())),
         ARRAY(SmallIntegerType),
     )[1]
 
-    raw_imbalance_after = type_coerce(
-        func.array_agg(aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())),
+    entry_eval_cp_agg = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.eval_cp, GamePosition.ply.asc())),
         ARRAY(SmallIntegerType),
-    )[PERSISTENCE_PLIES + 1]
+    )[1]
 
-    ply_at_persistence = type_coerce(
-        func.array_agg(aggregate_order_by(GamePosition.ply, GamePosition.ply.asc())),
+    entry_eval_mate_agg = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.eval_mate, GamePosition.ply.asc())),
         ARRAY(SmallIntegerType),
-    )[PERSISTENCE_PLIES + 1]
-
-    # NULL when the (entry_ply + PERSISTENCE_PLIES) position is non-contiguous (i.e.
-    # the game exited the endgame between MIN(ply) and MIN(ply)+4 and re-entered
-    # later). The service layer's "is not None" check then routes such games to the
-    # parity bucket — same semantics as the old `after_pos.endgame_class IS NOT NULL`
-    # outer-join filter.
-    imbalance_after_persistence_agg = case(
-        (ply_at_persistence == func.min(GamePosition.ply) + PERSISTENCE_PLIES, raw_imbalance_after),
-        else_=None,
-    )
+    )[1]
 
     span_subq = (
         select(
             GamePosition.game_id.label("game_id"),
             entry_endgame_class_agg.label("endgame_class"),
-            entry_imbalance_agg.label("entry_imbalance"),
-            imbalance_after_persistence_agg.label("entry_imbalance_after"),
+            entry_eval_cp_agg.label("entry_eval_cp"),
+            entry_eval_mate_agg.label("entry_eval_mate"),
         )
         .where(
             GamePosition.user_id == user_id,
@@ -353,19 +299,17 @@ async def query_endgame_bucket_rows(
         .subquery("first_endgame")
     )
 
-    color_sign = case(
-        (Game.user_color == "white", 1),
-        else_=-1,
-    )
-
+    # eval_cp and eval_mate are projected raw (white-perspective, no SQL color flip).
+    # The service layer's _classify_endgame_bucket(eval_cp, eval_mate, user_color)
+    # applies the sign flip at read time (REFAC-02).
     stmt = (
         select(
             Game.id.label("game_id"),
             span_subq.c.endgame_class,
             Game.result,
             Game.user_color,
-            (span_subq.c.entry_imbalance * color_sign).label("user_material_imbalance"),
-            (span_subq.c.entry_imbalance_after * color_sign).label("user_material_imbalance_after"),
+            span_subq.c.entry_eval_cp.label("eval_cp"),
+            span_subq.c.entry_eval_mate.label("eval_mate"),
         )
         .join(span_subq, Game.id == span_subq.c.game_id)
         .where(Game.user_id == user_id)
@@ -813,11 +757,10 @@ async def query_endgame_elo_timeline_rows(
     bucket_rows: one row per ENDGAME game (uniform 6-ply rule via entry_subq HAVING).
         Tuple shape:
             (played_at, platform, time_control_bucket, user_color,
-             white_rating, black_rating,
-             user_material_imbalance, user_material_imbalance_after, result)
-        where user_material_imbalance is sign-flipped for black
-        (mirrors query_endgame_bucket_rows). Drives per-window skill computation
-        AND avg(opponent_rating).
+             white_rating, black_rating, eval_cp, eval_mate, result)
+        eval_cp and eval_mate are white-perspective Stockfish eval at the span-entry ply.
+        NO sign flip in SQL — the service layer's _classify_endgame_bucket applies the
+        user-color flip (REFAC-02). Drives per-window skill computation AND avg(opponent_rating).
 
     all_rows: one row per ALL user games (endgame + non-endgame) for the combo.
         Tuple shape:
@@ -843,33 +786,25 @@ async def query_endgame_elo_timeline_rows(
     # ── bucket_rows: one row per endgame game (uniform 6-ply rule) ─────────
     # Single per-game aggregation (mirrors query_endgame_bucket_rows / _entry_rows).
     # Avoids two GamePosition self-joins whose plan was unstable across users — the
-    # planner couldn't reliably push (game_id, ply+4) into after_pos's index cond
+    # planner couldn't reliably push (game_id, ply+N) into after_pos's index cond
     # and would scan the user's full endgame population per outer game.
-    entry_imbalance_agg = type_coerce(
-        func.array_agg(aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())),
+    # INCLUDE(eval_cp, eval_mate) on ix_gp_user_endgame_game enables index-only scans
+    # for array_agg(eval_cp ORDER BY ply) and array_agg(eval_mate ORDER BY ply).
+    entry_eval_cp_agg = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.eval_cp, GamePosition.ply.asc())),
         ARRAY(SmallIntegerType),
     )[1]
 
-    raw_imbalance_after = type_coerce(
-        func.array_agg(aggregate_order_by(GamePosition.material_imbalance, GamePosition.ply.asc())),
+    entry_eval_mate_agg = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.eval_mate, GamePosition.ply.asc())),
         ARRAY(SmallIntegerType),
-    )[PERSISTENCE_PLIES + 1]
-
-    ply_at_persistence = type_coerce(
-        func.array_agg(aggregate_order_by(GamePosition.ply, GamePosition.ply.asc())),
-        ARRAY(SmallIntegerType),
-    )[PERSISTENCE_PLIES + 1]
-
-    imbalance_after_persistence_agg = case(
-        (ply_at_persistence == func.min(GamePosition.ply) + PERSISTENCE_PLIES, raw_imbalance_after),
-        else_=None,
-    )
+    )[1]
 
     entry_subq = (
         select(
             GamePosition.game_id.label("game_id"),
-            entry_imbalance_agg.label("entry_imbalance"),
-            imbalance_after_persistence_agg.label("entry_imbalance_after"),
+            entry_eval_cp_agg.label("entry_eval_cp"),
+            entry_eval_mate_agg.label("entry_eval_mate"),
         )
         .where(
             GamePosition.user_id == user_id,
@@ -880,11 +815,9 @@ async def query_endgame_elo_timeline_rows(
         .subquery("elo_entry")
     )
 
-    color_sign = case(
-        (Game.user_color == "white", 1),
-        else_=-1,
-    )
-
+    # eval_cp and eval_mate are projected raw (white-perspective, no SQL color flip).
+    # The service layer's _classify_endgame_bucket(eval_cp, eval_mate, user_color)
+    # applies the sign flip at read time (REFAC-02).
     bucket_stmt = (
         select(
             Game.played_at,
@@ -893,10 +826,8 @@ async def query_endgame_elo_timeline_rows(
             Game.user_color,
             Game.white_rating,
             Game.black_rating,
-            (entry_subq.c.entry_imbalance * color_sign).label("user_material_imbalance"),
-            (entry_subq.c.entry_imbalance_after * color_sign).label(
-                "user_material_imbalance_after"
-            ),
+            entry_subq.c.entry_eval_cp.label("eval_cp"),
+            entry_subq.c.entry_eval_mate.label("eval_mate"),
             Game.result,
         )
         .join(entry_subq, Game.id == entry_subq.c.game_id)
