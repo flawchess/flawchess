@@ -58,6 +58,7 @@ def _make_endgame_plies(
     """Return *count* ply dicts all in *endgame_class*.
 
     eval_cp / eval_mate default to None (chess.com: no lichess eval).
+    phase=2 (endgame) matches endgame_class being non-None (PHASE-INV-01).
     """
     plies: list[dict[str, Any]] = []
     for i in range(count):
@@ -78,6 +79,7 @@ def _make_endgame_plies(
             "backrank_sparse": True,
             "mixedness": 0,
             "endgame_class": endgame_class,
+            "phase": 2,  # endgame_class non-None ⟺ phase=2 (PHASE-INV-01)
         })
     return plies
 
@@ -86,6 +88,7 @@ def _make_two_class_plies() -> list[dict[str, Any]]:
     """Return 8 rook-endgame plies (ply 0-7) + 8 pawn-endgame plies (ply 8-15).
 
     Two distinct endgame classes, each >= ENDGAME_PLY_THRESHOLD, eval_cp=None throughout.
+    phase=2 for all since endgame_class is non-None (PHASE-INV-01).
     """
     rook_plies = _make_endgame_plies(count=8, endgame_class=_EC_ROOK, eval_cp=None, start_ply=0)
     pawn_plies: list[dict[str, Any]] = []
@@ -107,6 +110,7 @@ def _make_two_class_plies() -> list[dict[str, Any]]:
             "backrank_sparse": True,
             "mixedness": 0,
             "endgame_class": _EC_PAWN,
+            "phase": 2,  # endgame_class non-None ⟺ phase=2 (PHASE-INV-01)
         })
     return rook_plies + pawn_plies
 
@@ -482,7 +486,7 @@ class TestImportEvalNoEndgame:
                 "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
                 "material_imbalance": 0, "has_opposite_color_bishops": False,
                 "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                "endgame_class": None,
+                "endgame_class": None, "phase": 0,
             },
             {
                 "ply": 1, "white_hash": 4, "black_hash": 5, "full_hash": 6,
@@ -492,7 +496,7 @@ class TestImportEvalNoEndgame:
                 "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
                 "material_imbalance": 0, "has_opposite_color_bishops": False,
                 "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                "endgame_class": None,
+                "endgame_class": None, "phase": 0,
             },
         ]
         processing_result: dict[str, Any] = {
@@ -1028,6 +1032,7 @@ class TestImportEvalIslandDetection:
         mock_maker = _mock_session_maker(mock_session)
 
         # Build interleaved layout: rook[0,1], pawn[2,3], rook[4,5]
+        # All endgame plies have phase=2 (via _make_endgame_plies).
         plies: list[dict[str, Any]] = []
         plies.extend(_make_endgame_plies(count=2, endgame_class=_EC_ROOK, start_ply=0))
         plies.extend(_make_endgame_plies(count=2, endgame_class=_EC_PAWN, start_ply=2))

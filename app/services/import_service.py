@@ -518,6 +518,7 @@ async def _flush_batch(
                 "backrank_sparse": ply_data["backrank_sparse"],
                 "mixedness": ply_data["mixedness"],
                 "endgame_class": ply_data["endgame_class"],
+                "phase": ply_data["phase"],
             }
             position_rows.append(row)
 
@@ -539,6 +540,43 @@ async def _flush_batch(
     eval_calls_made = 0
     eval_calls_failed = 0
     for g_id, pgn_text, plies_list in game_eval_data:
+        # Phase 79 PHASE-IMP-01: middlegame entry eval — MIN(ply) where phase == 1.
+        # At most one middlegame entry per game (later phase=1 stretches after an
+        # endgame are NOT re-evaluated, mirroring lichess Divider's single
+        # Division(midGame, endGame) return — D-79-08).
+        midgame_entries = [pd for pd in plies_list if pd["phase"] == 1]
+        if midgame_entries:
+            mid_pd = min(midgame_entries, key=lambda p: p["ply"])
+            # T-78-17 lichess preservation: skip if lichess %eval already populated the row.
+            if mid_pd["eval_cp"] is None and mid_pd["eval_mate"] is None:
+                board = _board_at_ply(pgn_text, mid_pd["ply"])
+                if board is not None:
+                    mid_eval_cp, mid_eval_mate = await engine_service.evaluate(board)
+                    eval_calls_made += 1
+                    if mid_eval_cp is None and mid_eval_mate is None:
+                        eval_calls_failed += 1
+                        # Bounded Sentry context (D-79-04, T-78-18: no PGN/FEN/user_id).
+                        # MUST contain only game_id and ply — see W-2 grep gate below.
+                        sentry_sdk.set_context(
+                            "eval",
+                            {"game_id": g_id, "ply": mid_pd["ply"]},
+                        )
+                        sentry_sdk.set_tag("source", "import")
+                        sentry_sdk.set_tag("eval_kind", "middlegame_entry")
+                        sentry_sdk.capture_message(
+                            "import-time engine returned None tuple", level="warning"
+                        )
+                    else:
+                        await session.execute(
+                            update(GamePosition)
+                            .where(
+                                GamePosition.game_id == g_id,
+                                GamePosition.ply == mid_pd["ply"],
+                            )
+                            .values(eval_cp=mid_eval_cp, eval_mate=mid_eval_mate)
+                        )
+
+        # Existing Phase 78 per-class endgame span entry loop continues unchanged below.
         # Group plies by endgame_class; only endgame plies have a non-None class.
         class_plies: dict[int, list[PlyData]] = defaultdict(list)
         for pd in plies_list:
@@ -587,6 +625,7 @@ async def _flush_batch(
                         # NO pgn, NO user_id, NO fen — information-disclosure mitigation T-78-18
                     })
                     sentry_sdk.set_tag("source", "import")
+                    sentry_sdk.set_tag("eval_kind", "endgame_span_entry")
                     sentry_sdk.capture_message(
                         "import-time engine returned None tuple", level="warning"
                     )
