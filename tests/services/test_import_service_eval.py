@@ -557,8 +557,13 @@ class TestImportEvalNoEndgame:
 
         import_service._jobs.clear()
 
-    async def test_below_threshold_endgame_plies_no_engine_call(self) -> None:
-        """Game has 3 endgame plies < ENDGAME_PLY_THRESHOLD=6: engine NOT called."""
+    async def test_short_span_below_threshold_still_evaluated(self) -> None:
+        """Spans shorter than ENDGAME_PLY_THRESHOLD still get one entry-eval.
+
+        ENDGAME_PLY_THRESHOLD is the repository's display rule, not a gate on
+        eval coverage — short endgame phases are evaluated too so the eval
+        column has uniform coverage for downstream analyses.
+        """
         import app.services.import_service as import_service
 
         import_service._jobs.clear()
@@ -571,7 +576,7 @@ class TestImportEvalNoEndgame:
         mock_session.execute.return_value = select_result
         mock_maker = _mock_session_maker(mock_session)
 
-        # 3 endgame plies < threshold (6) — no span entry created
+        # 3 endgame plies forming one contiguous run — one entry-eval expected.
         few_plies = _make_endgame_plies(count=3, endgame_class=_EC_ROOK, eval_cp=None)
         processing_result = _make_processing_result(few_plies)
 
@@ -624,10 +629,9 @@ class TestImportEvalNoEndgame:
         ):
             await import_service.run_import(job_id)
 
-        assert mock_evaluate.call_count == 0, (
-            f"Engine should NOT be called when endgame ply count ({3}) < "
-            f"ENDGAME_PLY_THRESHOLD ({_ENDGAME_PLY_THRESHOLD}). "
-            f"Got {mock_evaluate.call_count} calls."
+        assert mock_evaluate.call_count == 1, (
+            "Short single-run endgame span should produce exactly one entry-eval "
+            f"(got {mock_evaluate.call_count} calls)."
         )
 
         import_service._jobs.clear()
@@ -710,6 +714,95 @@ class TestImportEvalMultiClass:
         assert mock_evaluate.call_count == 2, (
             f"Expected exactly 2 engine.evaluate calls for two distinct endgame classes, "
             f"got {mock_evaluate.call_count}"
+        )
+
+        import_service._jobs.clear()
+
+
+# ---------------------------------------------------------------------------
+# Test 6: same class repeated — each contiguous run gets its own entry-eval
+# ---------------------------------------------------------------------------
+
+
+class TestImportEvalIslandDetection:
+    async def test_same_class_repeated_runs_each_get_entry_eval(self) -> None:
+        """A class=1 → class=2 → class=1 sequence yields two class=1 entry evals.
+
+        Layout: rook plies [0,1] then pawn plies [2,3] then rook plies [4,5].
+        Expected entries: rook@0, pawn@2, rook@4 → 3 engine calls.
+        """
+        import app.services.import_service as import_service
+
+        import_service._jobs.clear()
+        job_id = import_service.create_job(user_id=1, platform="chess.com", username="alice")
+
+        mock_evaluate = AsyncMock(return_value=(50, None))
+        mock_session = _make_mock_session()
+        select_result = MagicMock()
+        select_result.fetchall.return_value = [(999, "game-island-1")]
+        mock_session.execute.return_value = select_result
+        mock_maker = _mock_session_maker(mock_session)
+
+        # Build interleaved layout: rook[0,1], pawn[2,3], rook[4,5]
+        plies: list[dict[str, Any]] = []
+        plies.extend(_make_endgame_plies(count=2, endgame_class=_EC_ROOK, start_ply=0))
+        plies.extend(_make_endgame_plies(count=2, endgame_class=_EC_PAWN, start_ply=2))
+        plies.extend(_make_endgame_plies(count=2, endgame_class=_EC_ROOK, start_ply=4))
+        processing_result = _make_processing_result(plies)
+
+        async def _yield_one(*args: Any, **kwargs: Any) -> Any:
+            yield {
+                "platform": "chess.com",
+                "platform_game_id": "game-island-1",
+                "pgn": _CHESS_COM_PGN,
+                "user_id": 1,
+            }
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_one,
+            ),
+            patch(
+                "app.services.import_service.httpx.AsyncClient",
+                return_value=_mock_http_ctx(),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[999]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.process_game_pgn",
+                return_value=processing_result,
+            ),
+            patch(
+                "app.services.import_service.engine_service.evaluate",
+                new=mock_evaluate,
+            ),
+        ):
+            await import_service.run_import(job_id)
+
+        # 3 contiguous runs → 3 engine calls. Both rook runs get their own entry eval.
+        assert mock_evaluate.call_count == 3, (
+            "Two contiguous rook runs separated by a pawn run should yield 3 "
+            f"entry-evals (rook@0, pawn@2, rook@4); got {mock_evaluate.call_count}."
         )
 
         import_service._jobs.clear()

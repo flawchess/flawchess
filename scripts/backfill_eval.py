@@ -51,7 +51,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.core.config import settings  # noqa: E402
 from app.models.game import Game  # noqa: E402
 from app.models.game_position import GamePosition  # noqa: E402
-from app.repositories.endgame_repository import ENDGAME_PLY_THRESHOLD  # noqa: E402
 from app.services.engine import evaluate, start_engine, stop_engine  # noqa: E402
 
 # D-09: COMMIT every 100 evals — progress visible at ~7s granularity at 70ms/eval.
@@ -130,27 +129,60 @@ def _build_span_entry_stmt(
     Selects GamePosition rows where:
     1. eval_cp IS NULL AND eval_mate IS NULL  (row-level idempotency, FILL-02)
     2. endgame_class IS NOT NULL              (endgame row)
-    3. ply == MIN(ply) for its (user_id, game_id, endgame_class) group
-    4. that group has COUNT(ply) >= ENDGAME_PLY_THRESHOLD (valid span)
+    3. ply == MIN(ply) for its contiguous-run group (user_id, game_id,
+       endgame_class, island_id)
 
-    The subquery computes per-group MIN(ply) only for groups that exceed the
-    threshold.  Joining on all four keys pins the outer row to the span entry.
+    Each contiguous run of the same endgame_class within a game is treated as
+    its own span. If a game enters class=1, switches to class=2, then
+    re-enters class=1, both class=1 stretches get an entry eval — not just
+    the earliest. Spans of any length (including 1-ply) are included; the
+    repository's ENDGAME_PLY_THRESHOLD is intentionally not enforced here.
+
+    Island detection uses the gaps-and-islands trick: within a partition of
+    (user_id, game_id, endgame_class), `ply - row_number()` is constant for
+    consecutive plies and changes whenever a non-class row breaks the run,
+    so it serves as a stable per-run group key.
 
     Optional filters:
     - user_id: scopes to a single user (--user-id flag)
     - limit: caps result set (--limit flag)
     """
-    # Subquery: per (user_id, game_id, endgame_class), MIN(ply) where group is long enough
-    span_min = (
+    # Per-class row number, ordered by ply. ply - rn is constant within a
+    # contiguous run of the same endgame_class in the same game.
+    island_rn = func.row_number().over(
+        partition_by=(
+            GamePosition.user_id,
+            GamePosition.game_id,
+            GamePosition.endgame_class,
+        ),
+        order_by=GamePosition.ply,
+    )
+
+    classified = (
         select(
             GamePosition.user_id.label("uid"),
             GamePosition.game_id.label("gid"),
             GamePosition.endgame_class.label("ec"),
-            func.min(GamePosition.ply).label("min_ply"),
+            GamePosition.ply.label("ply"),
+            (GamePosition.ply - island_rn).label("island_id"),
         )
         .where(GamePosition.endgame_class.isnot(None))
-        .group_by(GamePosition.user_id, GamePosition.game_id, GamePosition.endgame_class)
-        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
+        .subquery("classified")
+    )
+
+    span_min = (
+        select(
+            classified.c.uid,
+            classified.c.gid,
+            classified.c.ec,
+            func.min(classified.c.ply).label("min_ply"),
+        )
+        .group_by(
+            classified.c.uid,
+            classified.c.gid,
+            classified.c.ec,
+            classified.c.island_id,
+        )
         .subquery("span_min")
     )
 

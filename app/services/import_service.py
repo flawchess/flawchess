@@ -29,7 +29,6 @@ from app.core.database import async_session_maker
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.repositories import game_repository, import_job_repository
-from app.repositories.endgame_repository import ENDGAME_PLY_THRESHOLD
 from app.schemas.normalization import NormalizedGame
 from app.services import chesscom_client, engine as engine_service, lichess_client
 from app.services.zobrist import PlyData, process_game_pgn
@@ -530,6 +529,12 @@ async def _flush_batch(
     # already populate them. Runs AFTER bulk_insert_positions (rows exist in DB) and BEFORE
     # the final session.commit() so all eval UPDATEs land in the same transaction.
     # No asyncio.gather — sequential per CLAUDE.md constraint.
+    #
+    # Each contiguous run of the same endgame_class within a game is its own
+    # span: a class=1 → class=2 → class=1 sequence yields two class=1 entry
+    # evals, not one. Spans of any length are evaluated; the repository's
+    # ENDGAME_PLY_THRESHOLD is intentionally not enforced here so endgame
+    # eval coverage stays uniform across short and long spans.
     eval_pass_start = time.perf_counter()
     eval_calls_made = 0
     eval_calls_failed = 0
@@ -542,50 +547,61 @@ async def _flush_batch(
                 class_plies[ec].append(pd)
 
         for ec, pds in class_plies.items():
-            if len(pds) < ENDGAME_PLY_THRESHOLD:
-                # Fewer plies than threshold — this class never becomes a span entry.
-                continue
+            # Split per-class plies into contiguous runs ("islands"). A new
+            # island starts whenever the ply gap to the previous entry is > 1
+            # — i.e. the class was interrupted by a non-class ply. plies_list
+            # is already in ply order, so pds is too; sort defensively.
+            pds_sorted = sorted(pds, key=lambda p: p["ply"])
+            islands: list[list[PlyData]] = []
+            current: list[PlyData] = []
+            for pd in pds_sorted:
+                if current and pd["ply"] != current[-1]["ply"] + 1:
+                    islands.append(current)
+                    current = []
+                current.append(pd)
+            if current:
+                islands.append(current)
 
-            # Find the span-entry ply (MIN ply for this endgame class).
-            span_pd = min(pds, key=lambda p: p["ply"])
+            for island in islands:
+                span_pd = island[0]  # entry ply = first ply of the contiguous run
 
-            if span_pd["eval_cp"] is not None or span_pd["eval_mate"] is not None:
-                # Lichess %eval already populated this ply — do not overwrite (T-78-17).
-                continue
+                if span_pd["eval_cp"] is not None or span_pd["eval_mate"] is not None:
+                    # Lichess %eval already populated this ply — do not overwrite (T-78-17).
+                    continue
 
-            board = _board_at_ply(pgn_text, span_pd["ply"])
-            if board is None:
-                # PGN replay failed — skip row, no Sentry (parse error is unusual but not urgent).
-                continue
+                board = _board_at_ply(pgn_text, span_pd["ply"])
+                if board is None:
+                    # PGN replay failed — skip row, no Sentry (parse error is unusual but not urgent).
+                    continue
 
-            eval_cp, eval_mate = await engine_service.evaluate(board)
-            eval_calls_made += 1
+                eval_cp, eval_mate = await engine_service.evaluate(board)
+                eval_calls_made += 1
 
-            if eval_cp is None and eval_mate is None:
-                # D-11: engine error / timeout — skip row, capture to Sentry, continue import.
-                eval_calls_failed += 1
-                sentry_sdk.set_context("eval", {
-                    "game_id": g_id,
-                    "ply": span_pd["ply"],
-                    "endgame_class": ec,
-                    # NO pgn, NO user_id, NO fen — information-disclosure mitigation T-78-18
-                })
-                sentry_sdk.set_tag("source", "import")
-                sentry_sdk.capture_message(
-                    "import-time engine returned None tuple", level="warning"
+                if eval_cp is None and eval_mate is None:
+                    # D-11: engine error / timeout — skip row, capture to Sentry, continue import.
+                    eval_calls_failed += 1
+                    sentry_sdk.set_context("eval", {
+                        "game_id": g_id,
+                        "ply": span_pd["ply"],
+                        "endgame_class": ec,
+                        # NO pgn, NO user_id, NO fen — information-disclosure mitigation T-78-18
+                    })
+                    sentry_sdk.set_tag("source", "import")
+                    sentry_sdk.capture_message(
+                        "import-time engine returned None tuple", level="warning"
+                    )
+                    continue
+
+                # Update the span-entry row with the engine eval.
+                await session.execute(
+                    update(GamePosition)
+                    .where(
+                        GamePosition.game_id == g_id,
+                        GamePosition.ply == span_pd["ply"],
+                        GamePosition.endgame_class == ec,
+                    )
+                    .values(eval_cp=eval_cp, eval_mate=eval_mate)
                 )
-                continue
-
-            # Update the span-entry row with the engine eval.
-            await session.execute(
-                update(GamePosition)
-                .where(
-                    GamePosition.game_id == g_id,
-                    GamePosition.ply == span_pd["ply"],
-                    GamePosition.endgame_class == ec,
-                )
-                .values(eval_cp=eval_cp, eval_mate=eval_mate)
-            )
 
     eval_pass_ms = (time.perf_counter() - eval_pass_start) * 1000
     logger.info(

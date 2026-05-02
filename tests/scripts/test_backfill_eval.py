@@ -412,3 +412,86 @@ class TestUserFilter:
                 await _delete_user_data(teardown, user_a)
                 await _delete_user_data(teardown, user_b)
                 await teardown.commit()
+
+
+# ---------------------------------------------------------------------------
+# TestIslandDetection
+# ---------------------------------------------------------------------------
+
+
+class TestIslandDetection:
+    async def test_two_islands_same_class_both_get_entry_eval(
+        self, test_engine: AsyncEngine
+    ) -> None:
+        """A game that re-enters the same endgame_class gets one entry-eval per
+        contiguous run, not just on the first run.
+
+        Layout: plies 10-11 = class 1, plies 12-13 = class 2, plies 14-15 = class 1.
+        Expected entries: (10, class=1), (12, class=2), (14, class=1) → 3 evals.
+        """
+        user_id = 90007
+        session_maker = _make_session_maker(test_engine)
+
+        async with session_maker() as setup:
+            await _ensure_user(setup, user_id)
+            game = await _seed_game(setup, user_id=user_id)
+            game_id = game.id
+
+            layout = [
+                (10, 1), (11, 1),
+                (12, 2), (13, 2),
+                (14, 1), (15, 1),
+            ]
+            for ply, ec in layout:
+                setup.add(
+                    GamePosition(
+                        game_id=game_id,
+                        user_id=user_id,
+                        ply=ply,
+                        full_hash=hash(f"{game_id}-{ply}") & 0x7FFFFFFFFFFFFFFF,
+                        white_hash=hash(f"w-{game_id}-{ply}") & 0x7FFFFFFFFFFFFFFF,
+                        black_hash=hash(f"b-{game_id}-{ply}") & 0x7FFFFFFFFFFFFFFF,
+                        piece_count=2,
+                        material_count=1000,
+                        material_signature="KR_KR",
+                        material_imbalance=0,
+                        endgame_class=ec,
+                        eval_cp=None,
+                        eval_mate=None,
+                    )
+                )
+            await setup.commit()
+
+        try:
+            with (
+                patch("scripts.backfill_eval.start_engine", new=AsyncMock()),
+                patch("scripts.backfill_eval.stop_engine", new=AsyncMock()),
+                patch(
+                    "scripts.backfill_eval.evaluate",
+                    new=AsyncMock(return_value=(77, None)),
+                ) as mock_eval,
+            ):
+                await run_backfill(
+                    db="dev",
+                    user_id=user_id,
+                    dry_run=False,
+                    limit=None,
+                    _session_maker=session_maker,
+                )
+
+            assert mock_eval.call_count == 3
+
+            async with session_maker() as verify:
+                # All three entry plies got the eval; the in-run plies stay NULL.
+                for entry_ply in (10, 12, 14):
+                    cp, mate = await _get_entry_eval(verify, game_id, entry_ply)
+                    assert cp == 77, f"entry ply {entry_ply} should have eval_cp=77"
+                    assert mate is None
+                for non_entry_ply in (11, 13, 15):
+                    cp, mate = await _get_entry_eval(verify, game_id, non_entry_ply)
+                    assert cp is None, f"non-entry ply {non_entry_ply} should stay NULL"
+                    assert mate is None
+        finally:
+            async with session_maker() as teardown:
+                await _delete_user_data(teardown, user_id)
+                await teardown.commit()
