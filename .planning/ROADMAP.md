@@ -24,7 +24,7 @@
 <details open>
 <summary>🚧 v1.15 Eval-Based Endgame Classification (Phase 78) — IN PROGRESS (opened 2026-05-02)</summary>
 
-- 🚧 Phase 78: Stockfish-Eval Cutover for Endgame Classification (3/6 plans — Wave 1 complete: 78-01 docker, 78-02 wrapper, 78-05 endgame refactor) — ENG-01..03, FILL-01..04, IMP-01..02, REFAC-01..05, VAL-01..02
+- 🚧 Phase 78: Stockfish-Eval Cutover for Endgame Classification (5/6 plans — Wave 2 complete: 78-01 docker, 78-02 wrapper, 78-03 backfill, 78-04 import, 78-05 endgame refactor) — ENG-01..03, FILL-01..04, IMP-01..02, REFAC-01..05, VAL-01..02
 
 ### Phase 78: Stockfish-Eval Cutover for Endgame Classification
 **Goal**: Replace the material-imbalance + 4-ply persistence proxy for endgame conv/recov classification with Stockfish eval (depth 15) populated into the existing `eval_cp` / `eval_mate` columns on `game_positions`. Backfill historical span-entry positions across benchmark + prod, eval new span-entry positions during import going forward, refactor endgame queries to threshold on eval, and remove the proxy entirely (hard cutover).
