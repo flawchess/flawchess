@@ -125,7 +125,11 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 
 ### Active (v1.15)
 
-(No active requirements yet — pick direction via `/gsd-new-milestone`.)
+- [ ] **EVAL-01**: Endgame conv/recov classification uses Stockfish eval (depth 15) at the entry position instead of the material-imbalance + 4-ply persistence proxy
+- [ ] **EVAL-02**: New game imports populate `eval_cp` / `eval_mate` for span-entry positions where the lichess `%eval` annotation is absent
+- [ ] **EVAL-03**: Historical span-entry positions across benchmark and prod databases are backfilled with engine evals
+- [ ] **EVAL-04**: Endgame queries simplified to threshold on `eval_cp` / `eval_mate` directly; the proxy code path is removed (hard cutover)
+- [ ] **EVAL-05**: Validation report (`/conv-recov-validation` skill) re-run post-backfill confirms agreement is engineered to ~100% by construction on the now-fully-populated subset and headline gauges remain stable
 
 ### Deferred (gated on full benchmark ingest — SEED-006)
 
@@ -143,9 +147,19 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: v1.15 (TBD — pick via `/gsd-new-milestone`)
+## Current Milestone: v1.15 Eval-Based Endgame Classification
 
-v1.14 shipped 2026-04-29. Next milestone is unselected — open with `/gsd-new-milestone`.
+**Goal:** Replace the material-imbalance + 4-ply persistence proxy for endgame conversion/recovery classification with Stockfish eval (depth 15) populated into the existing `eval_cp` / `eval_mate` columns on `game_positions`. Backfill historical span-entry positions across benchmark + prod, eval new span-entry positions during import going forward, refactor endgame queries to threshold on eval, and remove the proxy entirely (hard cutover). Trust existing lichess `%eval` annotations where present; only fill gaps. Keep the `material_imbalance` column for other downstream features.
+
+**Target features:**
+- Stockfish (depth 15) integrated as a backend runtime dependency, with a thin engine wrapper that backfill and the import path share
+- One-time backfill script that populates `eval_cp` / `eval_mate` for endgame span-entry rows where both columns are NULL — runs on benchmark first, then prod
+- Import pipeline change: after endgame classification, eval the entry position of each per-class span (1-3 positions per game)
+- Endgame service / repository refactor: drop `_MATERIAL_ADVANTAGE_THRESHOLD`, drop `PERSISTENCE_PLIES`, drop the `array_agg(... ORDER BY ply)[5]` contiguity case-expression — replace with a direct lookup of `eval_cp` / `eval_mate` at the span-entry row, with the existing `color_sign` flip and mate handling as max conv/recov
+- Index migration: swap `INCLUDE` columns on `ix_gp_user_endgame_game` so the new query stays index-only
+- Validation: re-run `/conv-recov-validation` on benchmark post-backfill; agreement should be ~100% by construction on the subset that previously had eval, and headline gauges should not shift more than expected for any `(rating, TC)` cell
+
+**Source:** Validation report at `reports/conv-recov-validation-2026-05-02.md` flagged that the proxy holds at ~81.5% agreement vs Stockfish on the populated subset (22% eval coverage from lichess only) but misses ~24% of substantive material-edge sequences. Queen and pawnless classes underperform structurally. Conversation between user and Claude on 2026-05-02 quantified the cost (~1.5M positions × 35 ms at depth 15 ≈ 2 hours on 8 cores for the benchmark backfill) and confirmed `eval_cp` / `eval_mate` already exist on `game_positions` (lichess-perspective, white POV — same convention as `material_imbalance`).
 
 ## Current State
 
@@ -306,4 +320,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-29 after v1.14 milestone close — Score-Based Opening Insights shipped (Phases 75, 76, 77; INSIGHT-UI-04 descoped). Fourteen milestones complete (v1.0–v1.14), 73 phases. Active section reset for v1.15 (TBD via `/gsd-new-milestone`).*
+*Last updated: 2026-05-02 — v1.15 Eval-Based Endgame Classification opened. Single-phase milestone: replace the material-imbalance + 4-ply persistence proxy for endgame conv/recov classification with Stockfish eval (depth 15). Source: `reports/conv-recov-validation-2026-05-02.md`. SEED-010 Library milestone gated until v1.15 ships.*

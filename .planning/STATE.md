@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
-milestone: none
-milestone_name: "(planning v1.15 via /gsd-new-milestone)"
-status: "v1.14 shipped 2026-04-29"
-last_updated: "2026-04-29T10:50:00.000Z"
-last_activity: "2026-04-29 -- v1.14 milestone closed"
+milestone: v1.15
+milestone_name: "Eval-Based Endgame Classification"
+status: "planning"
+last_updated: "2026-05-02T00:00:00.000Z"
+last_activity: "2026-05-02 -- v1.15 Eval-Based Endgame Classification milestone opened"
 progress:
   total_phases: 0
   completed_phases: 0
@@ -16,15 +16,16 @@ progress:
 
 ## Current Position
 
-Milestone: v1.14 SHIPPED 2026-04-29
-Next: open v1.15 via `/gsd-new-milestone`
-Last activity: 2026-04-29 — v1.14 milestone closed (Score-Based Opening Insights; Phases 75, 76, 77; INSIGHT-UI-04 descoped)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-02 — Milestone v1.15 Eval-Based Endgame Classification started
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-29 after v1.14 close)
+See: .planning/PROJECT.md (updated 2026-05-02 for v1.15 open)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report (now score-based with low/medium/high confidence calibration).
-Current focus: v1.15 unselected — pick direction via `/gsd-new-milestone`. SEED-002 (benchmark population baselines) and SEED-006 (zone recalibration) remain dormant, gated on full benchmark ingest. LLM narration of opening insights is the natural next consumer of the v1.14 calibrated data plumbing (effect size + confidence + p_value).
+Current focus: v1.15 single-phase milestone — replace the material-imbalance + 4-ply persistence proxy for endgame conv/recov classification with Stockfish eval (depth 15) populated into existing `eval_cp` / `eval_mate` columns. Backfill benchmark + prod, refactor endgame queries, hard cutover. SEED-010 Library milestone gated until v1.15 ships. SEED-002 / SEED-006 still dormant, gated on full benchmark ingest.
 
 ## Milestone Progress
 
