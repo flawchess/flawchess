@@ -6,6 +6,10 @@ Tests cover:
 - lichess eval preservation: rows with eval_cp already set are not overwritten
 - limit: --limit N caps evaluations at N rows
 - user filter: --user-id scopes rows to a single user
+
+Data isolation: each test class seeds its own committed data using test_engine
+so run_backfill's independently-created sessions can see it.  Cleanup is
+handled in teardown via DELETE on the committed rows.
 """
 from __future__ import annotations
 
@@ -15,7 +19,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
@@ -43,7 +47,6 @@ async def _seed_game(
     pgn: str = "1. e4 e5 *",
 ) -> Game:
     """Insert a minimal Game row and flush to get an ID."""
-    import datetime as dt
     game = Game(
         user_id=user_id,
         platform="chess.com",
@@ -58,7 +61,7 @@ async def _seed_game(
         rated=True,
         is_computer_game=False,
     )
-    game.played_at = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+    game.played_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
     session.add(game)
     await session.flush()
     return game
@@ -86,9 +89,9 @@ async def _seed_span(
             game_id=game.id,
             user_id=user_id,
             ply=span_start_ply + offset,
-            full_hash=hash(f"{game.id}-{span_start_ply + offset}"),
-            white_hash=hash(f"w-{game.id}-{span_start_ply + offset}"),
-            black_hash=hash(f"b-{game.id}-{span_start_ply + offset}"),
+            full_hash=hash(f"{game.id}-{span_start_ply + offset}") & 0x7FFFFFFFFFFFFFFF,
+            white_hash=hash(f"w-{game.id}-{span_start_ply + offset}") & 0x7FFFFFFFFFFFFFFF,
+            black_hash=hash(f"b-{game.id}-{span_start_ply + offset}") & 0x7FFFFFFFFFFFFFFF,
             piece_count=2,
             material_count=1000,
             material_signature="KR_KR",
@@ -101,16 +104,53 @@ async def _seed_span(
     await session.flush()
 
 
-async def _get_entry_eval(session: AsyncSession, game_id: int, ply: int) -> tuple[int | None, int | None]:
+async def _get_entry_eval(
+    session: AsyncSession,
+    game_id: int,
+    ply: int,
+) -> tuple[int | None, int | None]:
     """Fetch (eval_cp, eval_mate) for a specific game_id + ply."""
     from sqlalchemy import select
+
     row = (
         await session.execute(
-            select(GamePosition.eval_cp, GamePosition.eval_mate)
-            .where(GamePosition.game_id == game_id, GamePosition.ply == ply)
+            select(GamePosition.eval_cp, GamePosition.eval_mate).where(
+                GamePosition.game_id == game_id,
+                GamePosition.ply == ply,
+            )
         )
     ).one()
     return row.eval_cp, row.eval_mate
+
+
+async def _ensure_user(session: AsyncSession, user_id: int) -> None:
+    """Ensure test user exists (FK constraint)."""
+    from sqlalchemy import select
+    from app.models.user import User
+
+    existing = (
+        await session.execute(select(User).where(User.id == user_id))
+    ).unique().scalar_one_or_none()
+    if existing is None:
+        session.add(
+            User(id=user_id, email=f"backfill-test-{user_id}@example.com", hashed_password="x")
+        )
+        await session.flush()
+
+
+async def _delete_user_data(session: AsyncSession, user_id: int) -> None:
+    """Delete all game/position data for user_id (test cleanup)."""
+    from sqlalchemy import delete as sa_delete
+    from app.models.user import User
+
+    # GamePositions and Games cascade-delete when the User is deleted.
+    await session.execute(sa_delete(User).where(User.id == user_id))
+    await session.flush()
+
+
+def _make_session_maker(test_engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """Build a committed-write session maker on the test engine."""
+    return async_sessionmaker(test_engine, expire_on_commit=False)
 
 
 # ---------------------------------------------------------------------------
@@ -119,27 +159,42 @@ async def _get_entry_eval(session: AsyncSession, game_id: int, ply: int) -> tupl
 
 
 class TestDryRun:
-    async def test_dry_run_writes_nothing(
-        self, db_session: AsyncSession, test_engine
-    ) -> None:
+    async def test_dry_run_writes_nothing(self, test_engine: AsyncEngine) -> None:
         """Dry-run counts rows but performs zero engine calls and zero DB writes."""
-        from tests.conftest import ensure_test_user
-
         user_id = 90001
-        await ensure_test_user(db_session, user_id)
-        game = await _seed_game(db_session, user_id=user_id)
-        await _seed_span(db_session, user_id=user_id, game=game)
-        await db_session.flush()
+        session_maker = _make_session_maker(test_engine)
 
-        with patch("scripts.backfill_eval.evaluate", new=AsyncMock(return_value=(150, None))) as mock_eval:
-            await run_backfill(db="dev", user_id=user_id, dry_run=True, limit=None)
+        async with session_maker() as setup:
+            await _ensure_user(setup, user_id)
+            game = await _seed_game(setup, user_id=user_id)
+            game_id = game.id
+            await _seed_span(setup, user_id=user_id, game=game)
+            await setup.commit()
 
-        assert mock_eval.call_count == 0
+        try:
+            with patch(
+                "scripts.backfill_eval.evaluate",
+                new=AsyncMock(return_value=(150, None)),
+            ) as mock_eval:
+                await run_backfill(
+                    db="dev",
+                    user_id=user_id,
+                    dry_run=True,
+                    limit=None,
+                    _session_maker=session_maker,
+                )
 
-        # Entry row must still have NULL eval (nothing written)
-        eval_cp, eval_mate = await _get_entry_eval(db_session, game.id, _SPAN_START_PLY)
-        assert eval_cp is None
-        assert eval_mate is None
+            assert mock_eval.call_count == 0
+
+            # Entry row must still have NULL eval (nothing written)
+            async with session_maker() as verify:
+                eval_cp, eval_mate = await _get_entry_eval(verify, game_id, _SPAN_START_PLY)
+            assert eval_cp is None
+            assert eval_mate is None
+        finally:
+            async with session_maker() as teardown:
+                await _delete_user_data(teardown, user_id)
+                await teardown.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -148,26 +203,49 @@ class TestDryRun:
 
 
 class TestIdempotency:
-    async def test_second_run_zero_engine_calls(
-        self, db_session: AsyncSession, test_engine
-    ) -> None:
+    async def test_second_run_zero_engine_calls(self, test_engine: AsyncEngine) -> None:
         """Second run performs zero engine calls (row-level idempotency check)."""
-        from tests.conftest import ensure_test_user
-
         user_id = 90002
-        await ensure_test_user(db_session, user_id)
-        game = await _seed_game(db_session, user_id=user_id)
-        await _seed_span(db_session, user_id=user_id, game=game)
-        await db_session.flush()
+        session_maker = _make_session_maker(test_engine)
 
-        with patch("scripts.backfill_eval.evaluate", new=AsyncMock(return_value=(150, None))) as mock_eval:
-            await run_backfill(db="dev", user_id=user_id, dry_run=False, limit=None)
-            first_run_calls = mock_eval.call_count
-            assert first_run_calls == 1  # one span entry to evaluate
+        async with session_maker() as setup:
+            await _ensure_user(setup, user_id)
+            game = await _seed_game(setup, user_id=user_id)
+            await _seed_span(setup, user_id=user_id, game=game)
+            await setup.commit()
 
-            mock_eval.reset_mock()
-            await run_backfill(db="dev", user_id=user_id, dry_run=False, limit=None)
-            assert mock_eval.call_count == 0  # idempotent: already populated
+        try:
+            with (
+                patch("scripts.backfill_eval.start_engine", new=AsyncMock()),
+                patch("scripts.backfill_eval.stop_engine", new=AsyncMock()),
+                patch(
+                    "scripts.backfill_eval.evaluate",
+                    new=AsyncMock(return_value=(150, None)),
+                ) as mock_eval,
+            ):
+                await run_backfill(
+                    db="dev",
+                    user_id=user_id,
+                    dry_run=False,
+                    limit=None,
+                    _session_maker=session_maker,
+                )
+                first_run_calls = mock_eval.call_count
+                assert first_run_calls == 1  # one span entry to evaluate
+
+                mock_eval.reset_mock()
+                await run_backfill(
+                    db="dev",
+                    user_id=user_id,
+                    dry_run=False,
+                    limit=None,
+                    _session_maker=session_maker,
+                )
+                assert mock_eval.call_count == 0  # idempotent: already populated
+        finally:
+            async with session_maker() as teardown:
+                await _delete_user_data(teardown, user_id)
+                await teardown.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -176,33 +254,52 @@ class TestIdempotency:
 
 
 class TestLichessPreservation:
-    async def test_lichess_eval_not_overwritten(
-        self, db_session: AsyncSession, test_engine
-    ) -> None:
+    async def test_lichess_eval_not_overwritten(self, test_engine: AsyncEngine) -> None:
         """Rows with eval_cp already set (e.g. from lichess) are NOT overwritten."""
-        from tests.conftest import ensure_test_user
-
         user_id = 90003
-        await ensure_test_user(db_session, user_id)
-        game = await _seed_game(db_session, user_id=user_id)
-        await _seed_span(
-            db_session,
-            user_id=user_id,
-            game=game,
-            eval_cp_for_entry=-42,  # lichess pre-populated
-        )
-        await db_session.flush()
+        session_maker = _make_session_maker(test_engine)
 
-        with patch("scripts.backfill_eval.evaluate", new=AsyncMock(return_value=(999, None))) as mock_eval:
-            await run_backfill(db="dev", user_id=user_id, dry_run=False, limit=None)
+        async with session_maker() as setup:
+            await _ensure_user(setup, user_id)
+            game = await _seed_game(setup, user_id=user_id)
+            game_id = game.id
+            await _seed_span(
+                setup,
+                user_id=user_id,
+                game=game,
+                eval_cp_for_entry=-42,  # lichess pre-populated
+            )
+            await setup.commit()
 
-        # The row had eval_cp set → skipped by WHERE eval_cp IS NULL AND eval_mate IS NULL
-        assert mock_eval.call_count == 0
+        try:
+            with (
+                patch("scripts.backfill_eval.start_engine", new=AsyncMock()),
+                patch("scripts.backfill_eval.stop_engine", new=AsyncMock()),
+                patch(
+                    "scripts.backfill_eval.evaluate",
+                    new=AsyncMock(return_value=(999, None)),
+                ) as mock_eval,
+            ):
+                await run_backfill(
+                    db="dev",
+                    user_id=user_id,
+                    dry_run=False,
+                    limit=None,
+                    _session_maker=session_maker,
+                )
 
-        # Original value preserved byte-for-byte (FILL-04 invariant)
-        eval_cp, eval_mate = await _get_entry_eval(db_session, game.id, _SPAN_START_PLY)
-        assert eval_cp == -42
-        assert eval_mate is None
+            # The row had eval_cp set → skipped by WHERE eval_cp IS NULL AND eval_mate IS NULL
+            assert mock_eval.call_count == 0
+
+            # Original value preserved byte-for-byte (FILL-04 invariant)
+            async with session_maker() as verify:
+                eval_cp, eval_mate = await _get_entry_eval(verify, game_id, _SPAN_START_PLY)
+            assert eval_cp == -42
+            assert eval_mate is None
+        finally:
+            async with session_maker() as teardown:
+                await _delete_user_data(teardown, user_id)
+                await teardown.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -211,33 +308,47 @@ class TestLichessPreservation:
 
 
 class TestLimit:
-    async def test_limit_caps_evaluations(
-        self, db_session: AsyncSession, test_engine
-    ) -> None:
+    async def test_limit_caps_evaluations(self, test_engine: AsyncEngine) -> None:
         """--limit N processes at most N span-entry rows."""
-        from tests.conftest import ensure_test_user
-
         user_id = 90004
-        await ensure_test_user(db_session, user_id)
+        session_maker = _make_session_maker(test_engine)
 
-        # Seed 3 games, each with one NULL-eval span entry
-        games = []
-        for i in range(3):
-            game = await _seed_game(db_session, user_id=user_id)
-            await _seed_span(
-                db_session,
-                user_id=user_id,
-                game=game,
-                # Stagger span start so each game has a distinct ply — still valid
-                span_start_ply=_SPAN_START_PLY + i * ENDGAME_PLY_THRESHOLD,
-            )
-            games.append(game)
-        await db_session.flush()
+        async with session_maker() as setup:
+            await _ensure_user(setup, user_id)
+            # Seed 3 games, each with one NULL-eval span entry
+            for i in range(3):
+                game = await _seed_game(setup, user_id=user_id)
+                # Stagger span start so each game has a distinct ply group
+                await _seed_span(
+                    setup,
+                    user_id=user_id,
+                    game=game,
+                    span_start_ply=_SPAN_START_PLY + i * ENDGAME_PLY_THRESHOLD,
+                )
+            await setup.commit()
 
-        with patch("scripts.backfill_eval.evaluate", new=AsyncMock(return_value=(100, None))) as mock_eval:
-            await run_backfill(db="dev", user_id=user_id, dry_run=False, limit=2)
+        try:
+            with (
+                patch("scripts.backfill_eval.start_engine", new=AsyncMock()),
+                patch("scripts.backfill_eval.stop_engine", new=AsyncMock()),
+                patch(
+                    "scripts.backfill_eval.evaluate",
+                    new=AsyncMock(return_value=(100, None)),
+                ) as mock_eval,
+            ):
+                await run_backfill(
+                    db="dev",
+                    user_id=user_id,
+                    dry_run=False,
+                    limit=2,
+                    _session_maker=session_maker,
+                )
 
-        assert mock_eval.call_count == 2
+            assert mock_eval.call_count == 2
+        finally:
+            async with session_maker() as teardown:
+                await _delete_user_data(teardown, user_id)
+                await teardown.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -246,35 +357,59 @@ class TestLimit:
 
 
 class TestUserFilter:
-    async def test_user_id_scopes_rows(
-        self, db_session: AsyncSession, test_engine
-    ) -> None:
+    async def test_user_id_scopes_rows(self, test_engine: AsyncEngine) -> None:
         """--user-id X only processes rows belonging to user X."""
-        from tests.conftest import ensure_test_user
-
         user_a = 90005
         user_b = 90006
-        await ensure_test_user(db_session, user_a)
-        await ensure_test_user(db_session, user_b)
+        session_maker = _make_session_maker(test_engine)
 
-        game_a = await _seed_game(db_session, user_id=user_a)
-        game_b = await _seed_game(db_session, user_id=user_b)
-        await _seed_span(db_session, user_id=user_a, game=game_a)
-        await _seed_span(db_session, user_id=user_b, game=game_b)
-        await db_session.flush()
+        async with session_maker() as setup:
+            await _ensure_user(setup, user_a)
+            await _ensure_user(setup, user_b)
+            game_a = await _seed_game(setup, user_id=user_a)
+            game_b = await _seed_game(setup, user_id=user_b)
+            game_a_id = game_a.id
+            game_b_id = game_b.id
+            await _seed_span(setup, user_id=user_a, game=game_a)
+            await _seed_span(setup, user_id=user_b, game=game_b)
+            await setup.commit()
 
-        with patch("scripts.backfill_eval.evaluate", new=AsyncMock(return_value=(50, None))) as mock_eval:
-            await run_backfill(db="dev", user_id=user_a, dry_run=False, limit=None)
+        try:
+            with (
+                patch("scripts.backfill_eval.start_engine", new=AsyncMock()),
+                patch("scripts.backfill_eval.stop_engine", new=AsyncMock()),
+                patch(
+                    "scripts.backfill_eval.evaluate",
+                    new=AsyncMock(return_value=(50, None)),
+                ) as mock_eval,
+            ):
+                await run_backfill(
+                    db="dev",
+                    user_id=user_a,
+                    dry_run=False,
+                    limit=None,
+                    _session_maker=session_maker,
+                )
 
-        # Only user A's row was processed
-        assert mock_eval.call_count == 1
+            # Only user A's row was processed
+            assert mock_eval.call_count == 1
 
-        # User B's entry still NULL
-        eval_cp_b, eval_mate_b = await _get_entry_eval(db_session, game_b.id, _SPAN_START_PLY)
-        assert eval_cp_b is None
-        assert eval_mate_b is None
+            async with session_maker() as verify:
+                # User B's entry still NULL
+                eval_cp_b, eval_mate_b = await _get_entry_eval(
+                    verify, game_b_id, _SPAN_START_PLY
+                )
+                assert eval_cp_b is None
+                assert eval_mate_b is None
 
-        # User A's entry was populated
-        eval_cp_a, eval_mate_a = await _get_entry_eval(db_session, game_a.id, _SPAN_START_PLY)
-        assert eval_cp_a == 50
-        assert eval_mate_a is None
+                # User A's entry was populated
+                eval_cp_a, eval_mate_a = await _get_entry_eval(
+                    verify, game_a_id, _SPAN_START_PLY
+                )
+                assert eval_cp_a == 50
+                assert eval_mate_a is None
+        finally:
+            async with session_maker() as teardown:
+                await _delete_user_data(teardown, user_a)
+                await _delete_user_data(teardown, user_b)
+                await teardown.commit()
