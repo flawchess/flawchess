@@ -451,3 +451,56 @@ def test_hashes_for_game_wrapper_matches_process_game_pgn():
         assert fh == ply_data["full_hash"]
         assert move_san == ply_data["move_san"]
         assert clock == ply_data["clock_seconds"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 79 SCHEMA-02 — PlyData phase field (TDD RED)
+# ---------------------------------------------------------------------------
+
+
+def test_plydata_has_phase_annotation() -> None:
+    """PlyData TypedDict must carry a runtime 'phase: int' annotation (SCHEMA-02).
+
+    Fails until PlyData gains the 'phase' key.
+    """
+    from app.services.zobrist import PlyData  # noqa: PLC0415 — re-import for clarity
+
+    assert "phase" in PlyData.__annotations__, (
+        "PlyData TypedDict is missing the 'phase' key required by SCHEMA-02"
+    )
+    assert PlyData.__annotations__["phase"] is int, (
+        "PlyData.phase must be annotated as bare 'int' (not Literal[0,1,2])"
+    )
+
+
+def test_process_game_pgn_all_plies_have_phase() -> None:
+    """Every PlyData returned by process_game_pgn must include a 'phase' key in {0,1,2}.
+
+    This covers both the intermediate-ply loop and the final-position append.
+    Fails until both ply loops populate classification.phase.
+    """
+    pgn = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Be7 4. O-O d6 5. d3 Nf6 1/2-1/2"
+    result = process_game_pgn(pgn)
+    assert result is not None
+    assert len(result["plies"]) >= 2, "Need at least 2 plies to cover both loop variants"
+    for pd in result["plies"]:
+        assert "phase" in pd, f"PlyData at ply={pd['ply']} is missing 'phase' key"
+        assert pd["phase"] in {0, 1, 2}, (
+            f"PlyData at ply={pd['ply']} has invalid phase={pd['phase']!r} (must be 0, 1, or 2)"
+        )
+
+
+def test_process_game_pgn_opening_phase_is_zero() -> None:
+    """Starting position (piece_count=14, backrank_sparse=False, mixedness=0) must have phase=0.
+
+    This verifies that the phase value flowing through from classify_position is correct,
+    not just that the key exists.
+    """
+    pgn = "1. e4 *"
+    result = process_game_pgn(pgn)
+    assert result is not None
+    # ply 0 = starting position before e4 — opening phase
+    ply0 = result["plies"][0]
+    assert ply0["phase"] == 0, (
+        f"Starting position must have phase=0 (opening), got phase={ply0['phase']!r}"
+    )
