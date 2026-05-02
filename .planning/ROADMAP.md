@@ -48,14 +48,17 @@
 
 ### Phase 79: Position-phase classifier and middlegame eval
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Add a per-position `phase` SmallInteger column (0=opening, 1=middlegame, 2=endgame) to `game_positions` via a Python port of lichess Divider.scala using existing `piece_count`, `backrank_sparse`, `mixedness` inputs. Extend Phase 78's import-time eval pass and `scripts/backfill_eval.py` so the middlegame entry position (MIN(ply) of phase=1 rows per game) is also evaluated with Stockfish at depth 15, populated into the existing `eval_cp` / `eval_mate` columns. Run the combined Phase 78 + Phase 79 backfill against benchmark first, then prod, then merge 78+79 to main and deploy. Folds in Phase 78's deferred operational steps (FILL-03, FILL-04, VAL-01, VAL-02).
+**Requirements**: CLASS-01, CLASS-02, SCHEMA-01, SCHEMA-02, PHASE-IMP-01, PHASE-IMP-02, PHASE-FILL-01, PHASE-FILL-02, PHASE-FILL-03, PHASE-VAL-01, PHASE-VAL-02, PHASE-VAL-03, PHASE-INV-01
 **Depends on:** Phase 78 (engine wrapper, backfill script, import-path integration)
-**Plans:** 0 plans
+**Plans:** 4 plans
 **Context:** Adds a `phase` SmallInteger column (0=opening, 1=middlegame, 2=endgame) to `game_positions`, computed via a port of [lichess Divider.scala](https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/Divider.scala) using existing `piece_count`, `backrank_sparse`, `mixedness` inputs. Extends import path and backfill script to also evaluate the middlegame entry position with Stockfish (depth 15). Then runs the combined endgame + middlegame backfill on benchmark + prod (folds in phase 78's deferred operational steps), validates ≥99% agreement, merges 78+79 to main, and deploys.
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 79 to break down)
+- [ ] 79-01-PLAN.md — Schema migration + Divider classifier port + parity test fixture (SCHEMA-01, CLASS-01, CLASS-02, PHASE-VAL-01)
+- [ ] 79-02-PLAN.md — Import-path integration: phase column writes + middlegame entry import-time eval (SCHEMA-02, PHASE-IMP-01, PHASE-IMP-02)
+- [ ] 79-03-PLAN.md — Backfill script extension: phase UPDATE pass + middlegame entry eval pass (PHASE-FILL-01, PHASE-FILL-02)
+- [ ] 79-04-PLAN.md — Operator-driven cutover: dev smoke + benchmark backfill + VAL-01 + prod backfill + combined PR merge + deploy + UI smoke check (PHASE-FILL-03, PHASE-VAL-02, PHASE-VAL-03, PHASE-INV-01)
 
 </details>
 
