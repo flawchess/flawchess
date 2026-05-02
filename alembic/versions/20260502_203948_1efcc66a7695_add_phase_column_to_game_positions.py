@@ -8,7 +8,6 @@ Create Date: 2026-05-02 20:39:48.590428+00:00
 from typing import Sequence, Union
 
 from alembic import op
-import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
@@ -25,13 +24,14 @@ def upgrade() -> None:
     scripts/backfill_eval.py (PHASE-FILL-01), not by this migration. New rows
     inserted by the import path (after this migration deploys) are populated
     at insert time via classify_position(board).phase.
+
+    Idempotent (IF NOT EXISTS) so the column may be created manually in prod
+    ahead of deploy to allow the backfill to run before the new code ships;
+    the migration then no-ops on container startup.
     """
-    op.add_column(
-        "game_positions",
-        sa.Column("phase", sa.SmallInteger(), nullable=True),
-    )
+    op.execute("ALTER TABLE game_positions ADD COLUMN IF NOT EXISTS phase SMALLINT")
 
 
 def downgrade() -> None:
     """Drop the phase column."""
-    op.drop_column("game_positions", "phase")
+    op.execute("ALTER TABLE game_positions DROP COLUMN IF EXISTS phase")
