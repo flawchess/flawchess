@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
 status: executing
-last_updated: "2026-05-02T13:18:00.000Z"
-last_activity: 2026-05-02 -- Phase 78 Wave 2 complete (5 of 6 plans done)
+last_updated: "2026-05-02T13:42:00.000Z"
+last_activity: 2026-05-02 -- Phase 78 code complete (6/6 plans); operational backfill+deploy deferred to post-phase-79
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 78 (Stockfish-Eval Cutover for Endgame Classification) — EXECUTING
-Plan: Wave 2 complete (5 of 6 plans done: 78-01, 78-02, 78-03, 78-04, 78-05) — Wave 3 next (78-06 cutover)
-Status: Executing Phase 78
-Last activity: 2026-05-02 -- Phase 78 Wave 2 complete
+Phase: 78 (Stockfish-Eval Cutover for Endgame Classification) — CODE COMPLETE (operational rollout deferred)
+Plan: 6 of 6 (78-06 ran with slimmed scope: dev-DB smoke for user 28 only; benchmark/prod backfill, VAL-01, deploy, VAL-02 deferred)
+Status: Phase 78 ready for code review; awaiting Phase 79 (lichess Divider phase column + middlegame eval) before combined backfill on benchmark + prod and deploy
+Last activity: 2026-05-02 -- Phase 78 dev smoke complete (3758 evals, 0 errors, idempotent)
 
 ## Project Reference
 
