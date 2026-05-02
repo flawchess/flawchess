@@ -56,8 +56,8 @@
 
 Plans:
 - [x] 79-01-PLAN.md — Schema migration + Divider classifier port + parity test fixture (SCHEMA-01, CLASS-01, CLASS-02, PHASE-VAL-01)
-- [ ] 79-02-PLAN.md — Import-path integration: phase column writes + middlegame entry import-time eval (SCHEMA-02, PHASE-IMP-01, PHASE-IMP-02)
-- [ ] 79-03-PLAN.md — Backfill script extension: phase UPDATE pass + middlegame entry eval pass (PHASE-FILL-01, PHASE-FILL-02)
+- [x] 79-02-PLAN.md — Import-path integration: phase column writes + middlegame entry import-time eval (SCHEMA-02, PHASE-IMP-01, PHASE-IMP-02)
+- [x] 79-03-PLAN.md — Backfill script extension: phase UPDATE pass + middlegame entry eval pass (PHASE-FILL-01, PHASE-FILL-02)
 - [ ] 79-04-PLAN.md — Operator-driven cutover: dev smoke + benchmark backfill + VAL-01 + prod backfill + combined PR merge + deploy + UI smoke check (PHASE-FILL-03, PHASE-VAL-02, PHASE-VAL-03, PHASE-INV-01)
 
 </details>
