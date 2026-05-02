@@ -43,6 +43,15 @@ if [ "$OPENINGS_COUNT" -eq 0 ]; then
   uv run python -m scripts.seed_openings
 fi
 
+# Stockfish binary for local dev (Phase 78). Prod ships the pinned sf_17 AVX2 binary
+# at /usr/local/bin/stockfish via Dockerfile; locally we use ~/.local/stockfish/sf.
+export STOCKFISH_PATH="${STOCKFISH_PATH:-$HOME/.local/stockfish/sf}"
+if [ ! -x "$STOCKFISH_PATH" ]; then
+  echo "Error: Stockfish binary not found at $STOCKFISH_PATH"
+  echo "See .planning/milestones/v1.15-phases/78-stockfish-eval-cutover-for-endgame-classification/78-06-SUMMARY.md for install steps."
+  exit 1
+fi
+
 # Start backend
 echo "Starting backend..."
 uv run uvicorn app.main:app --reload --port 8000 &
