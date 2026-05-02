@@ -1,12 +1,12 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.15
-milestone_name: "Eval-Based Endgame Classification"
-status: "in_progress"
-last_updated: "2026-05-02T00:00:00.000Z"
-last_activity: "2026-05-02 -- v1.15 roadmap created, Phase 78 ready to plan"
+milestone_name: Eval-Based Endgame Classification
+status: executing
+last_updated: "2026-05-02T11:45:39.384Z"
+last_activity: 2026-05-02 -- Phase 78 planning complete
 progress:
-  total_phases: 1
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -18,8 +18,8 @@ progress:
 
 Phase: 78 — Stockfish-Eval Cutover for Endgame Classification (not started)
 Plan: —
-Status: Ready to plan via `/gsd-plan-phase 78`
-Last activity: 2026-05-02 — v1.15 roadmap created, single-phase milestone (Phase 78) scoped
+Status: Ready to execute
+Last activity: 2026-05-02 -- Phase 78 planning complete
 
 ## Project Reference
 

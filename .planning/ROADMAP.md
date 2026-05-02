@@ -24,7 +24,7 @@
 <details open>
 <summary>🚧 v1.15 Eval-Based Endgame Classification (Phase 78) — IN PROGRESS (opened 2026-05-02)</summary>
 
-- [ ] Phase 78: Stockfish-Eval Cutover for Endgame Classification (0/0 plans) — not started — ENG-01..03, FILL-01..04, IMP-01..02, REFAC-01..05, VAL-01..02
+- [ ] Phase 78: Stockfish-Eval Cutover for Endgame Classification (0/6 plans) — not started — ENG-01..03, FILL-01..04, IMP-01..02, REFAC-01..05, VAL-01..02
 
 ### Phase 78: Stockfish-Eval Cutover for Endgame Classification
 **Goal**: Replace the material-imbalance + 4-ply persistence proxy for endgame conv/recov classification with Stockfish eval (depth 15) populated into the existing `eval_cp` / `eval_mate` columns on `game_positions`. Backfill historical span-entry positions across benchmark + prod, eval new span-entry positions during import going forward, refactor endgame queries to threshold on eval, and remove the proxy entirely (hard cutover).
@@ -37,7 +37,13 @@
   4. `app/repositories/endgame_repository.py` queries (`query_endgame_entry_rows`, `query_endgame_bucket_rows`, `query_endgame_elo_timeline_rows`) classify conv/parity/recov by thresholding `eval_cp` (±100 cp after color-sign flip) and `eval_mate` directly at the span-entry row — no contiguity-checked persistence lookup remains.
   5. `_MATERIAL_ADVANTAGE_THRESHOLD`, `PERSISTENCE_PLIES`, and the `array_agg(... ORDER BY ply)[PERSISTENCE_PLIES + 1]` contiguity case-expression no longer appear anywhere in the codebase; the `material_imbalance` column is retained for other consumers; `ix_gp_user_endgame_game` has been migrated via Alembic so the rewritten queries stay index-only.
   6. Re-running the `/conv-recov-validation` skill on the benchmark DB post-backfill produces ~100% agreement on the populated subset by construction, and the live-UI endgame gauges for representative test users show only the expected accuracy-driven shifts (operator smoke check).
-**Plans**: TBD
+**Plans**: 6 plans
+  - [ ] 78-01-PLAN.md — Stockfish in backend Docker image (ENG-01)
+  - [ ] 78-02-PLAN.md — Engine wrapper module + lifespan integration (ENG-02, ENG-03)
+  - [ ] 78-03-PLAN.md — Backfill script (FILL-01, FILL-02 relaxed, FILL-03)
+  - [ ] 78-04-PLAN.md — Import-path integration (IMP-01, IMP-02)
+  - [ ] 78-05-PLAN.md — Endgame repository + service refactor + index migration (REFAC-01..05)
+  - [ ] 78-06-PLAN.md — Operator-driven cutover execution (FILL-03, FILL-04, VAL-01, VAL-02)
 
 </details>
 
