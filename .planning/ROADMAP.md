@@ -55,7 +55,7 @@
 **Context:** Adds a `phase` SmallInteger column (0=opening, 1=middlegame, 2=endgame) to `game_positions`, computed via a port of [lichess Divider.scala](https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/Divider.scala) using existing `piece_count`, `backrank_sparse`, `mixedness` inputs. Extends import path and backfill script to also evaluate the middlegame entry position with Stockfish (depth 15). Then runs the combined endgame + middlegame backfill on benchmark + prod (folds in phase 78's deferred operational steps), validates ≥99% agreement, merges 78+79 to main, and deploys.
 
 Plans:
-- [ ] 79-01-PLAN.md — Schema migration + Divider classifier port + parity test fixture (SCHEMA-01, CLASS-01, CLASS-02, PHASE-VAL-01)
+- [x] 79-01-PLAN.md — Schema migration + Divider classifier port + parity test fixture (SCHEMA-01, CLASS-01, CLASS-02, PHASE-VAL-01)
 - [ ] 79-02-PLAN.md — Import-path integration: phase column writes + middlegame entry import-time eval (SCHEMA-02, PHASE-IMP-01, PHASE-IMP-02)
 - [ ] 79-03-PLAN.md — Backfill script extension: phase UPDATE pass + middlegame entry eval pass (PHASE-FILL-01, PHASE-FILL-02)
 - [ ] 79-04-PLAN.md — Operator-driven cutover: dev smoke + benchmark backfill + VAL-01 + prod backfill + combined PR merge + deploy + UI smoke check (PHASE-FILL-03, PHASE-VAL-02, PHASE-VAL-03, PHASE-INV-01)
