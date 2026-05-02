@@ -38,10 +38,10 @@ The validation report at `reports/conv-recov-validation-2026-05-02.md` (the sour
    - Target: New script (under `scripts/`) takes a DB target (benchmark | prod) and walks span-entry rows with `eval_cp IS NULL AND eval_mate IS NULL`, evaluates them at depth 15 via the wrapper, writes `eval_cp` / `eval_mate` back
    - Acceptance: Running the script against a tiny seeded benchmark subset populates `eval_cp` or `eval_mate` for every targeted span-entry row; a dry-run mode lists the row count without writing
 
-5. **FILL-02 — Idempotent, resumable, hash-deduped**: The script is idempotent (rerunning it does not re-evaluate already-populated rows), resumable (interruption mid-run does not require restart from scratch), and dedupes evaluations by `full_hash` so identical positions are not re-evaluated.
+5. **FILL-02 — Idempotent, resumable**: The script is idempotent (rerunning it does not re-evaluate already-populated rows) and resumable (interruption mid-run does not require restart from scratch). Idempotency is row-level: skip rows where `eval_cp` OR `eval_mate` is already non-NULL. No cross-row dedup — endgame span-entry positions are effectively unique across games, so cross-row cache lookup would cost more than re-evaluating the astronomically rare collision.
    - Current: No backfill semantics exist
-   - Target: Re-running the script over an already-completed dataset performs zero engine calls; mid-run kill leaves committed work intact and skips it on resume; identical `full_hash` values across different `(game_id, ply)` pairs share a single evaluation
-   - Acceptance: A test seeded with N span-entry rows produces N or fewer engine calls (≤ N because of hash dedup); a second run produces zero engine calls; killing the script after batch K and rerunning resumes from row K+1 without re-evaluating rows ≤ K
+   - Target: Re-running the script over an already-completed dataset performs zero engine calls; mid-run kill leaves committed work intact and skips it on resume
+   - Acceptance: A test seeded with N span-entry rows produces N engine calls; a second run produces zero engine calls; killing the script after batch K and rerunning resumes from row K+1 without re-evaluating rows ≤ K
 
 6. **FILL-03 — Benchmark first, prod second, operator-gated**: The script runs against the benchmark database to completion and the operator validates the result before running it against prod.
    - Current: No procedure exists
@@ -127,7 +127,7 @@ The validation report at `reports/conv-recov-validation-2026-05-02.md` (the sour
 - **Depth 15 fixed.** No per-call depth tuning, no time-budget mode. Same depth for backfill and import to keep results comparable.
 - **White-perspective sign convention preserved.** `eval_cp` / `eval_mate` already follow lichess `%eval` semantics in `app/services/zobrist.py:170-220`; the wrapper must not flip signs at write time. Sign flip happens at read time inside the endgame queries based on `user_color`.
 - **Lichess `%eval` values are never overwritten.** Backfill and import paths both check existing values and skip evaluation when set.
-- **Backfill must dedupe by `full_hash`.** The same position can recur across users / games; one engine call per unique hash is the budget.
+- **Backfill idempotency is row-level only.** Skip rows where `eval_cp` OR `eval_mate` is already non-NULL. No cross-row hash dedup — endgame span-entry positions are effectively unique across games and a hash cache lookup costs more than re-evaluating the rare collision.
 - **Backfill is benchmark-first.** Operator reruns `/conv-recov-validation` against benchmark and signs off before prod backfill starts.
 - **Index-only scans are non-negotiable.** REFAC-04 must keep `EXPLAIN` showing Index Only Scan on the rewritten queries; if the new INCLUDE shape regresses to Heap Fetches, the migration must be revised before merge.
 - **Sub-1-second import budget.** IMP-02 sets the budget; if depth-15 wall-clock blows past it on typical games, the wrapper or engine options must be tuned (within the depth-15 constraint above) before merge.
@@ -140,7 +140,7 @@ The validation report at `reports/conv-recov-validation-2026-05-02.md` (the sour
 - [ ] One engine wrapper module under `app/` exposes a single depth-15 `evaluate(board) -> (eval_cp, eval_mate)` async-friendly API; sign convention matches `app/services/zobrist.py:170-220`
 - [ ] Both the backfill script and the import path call the wrapper; engine option configuration appears only inside the wrapper module
 - [ ] Backfill script targets endgame span-entry rows with `eval_cp IS NULL AND eval_mate IS NULL`, replays SAN to the entry ply, evaluates, and writes back
-- [ ] Backfill script is idempotent (re-run does zero engine calls), resumable (mid-run kill resumes without redo), and dedupes by `full_hash`
+- [ ] Backfill script is idempotent (re-run does zero engine calls) and resumable (mid-run kill resumes without redo) — row-level idempotency only, no cross-row hash dedup
 - [ ] Backfill ran against benchmark first, operator validated, then ran against prod
 - [ ] Post-prod-backfill SQL confirms zero endgame span-entry rows with both `eval_cp` and `eval_mate` NULL
 - [ ] Import path evaluates per-class span-entry rows that lichess `%eval` did not populate; lichess values are byte-for-byte unchanged

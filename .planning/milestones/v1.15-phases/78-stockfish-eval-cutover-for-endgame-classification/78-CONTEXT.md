@@ -37,10 +37,6 @@ Downstream agents MUST read `78-SPEC.md` before planning or implementing. Requir
 - Classifier validation replication at scale (deferred to SEED-002 / SEED-006)
 - A reversible cutover, dual-writing both proxies, or feature-flagging the new classifier
 
-### SPEC drift to surface during planning
-
-**FILL-02 hash-dedup requirement should be relaxed.** SPEC says the backfill "dedupes evaluations by `full_hash` so identical positions are not re-evaluated." Operator decision during discuss: skip the cross-row hash cache. Endgame span-entry positions are effectively unique across games (each game arrives at its endgame through a distinct path), so cross-row cache hits are astronomically rare and the dedup lookup costs more than re-evaluating. Keep row-level idempotency only: skip rows where `eval_cp` OR `eval_mate` is already populated (this still satisfies FILL-04's "lichess values never overwritten"). Planner should ack this drift in PLAN.md or update SPEC.md FILL-02 wording.
-
 </spec_lock>
 
 <decisions>
@@ -67,7 +63,7 @@ Downstream agents MUST read `78-SPEC.md` before planning or implementing. Requir
   - Stockfish runs locally for all three rounds (binary installed on operator's host). Wrapper module is the single source of engine config (ENG-03).
 - **D-08 — Script CLI: `--db {dev|benchmark|prod}` (or env-var-driven DB target), `--user-id <int>` (optional), `--dry-run` (count without writing), `--limit <int>` (cap rows for testing).** Per-user filter enables targeted eval runs (e.g. for one test account on prod). Default = all users.
 - **D-09 — Sequential, single engine, COMMIT every 100 evals.** One engine, one row at a time. Resume = `SELECT WHERE eval_cp IS NULL AND eval_mate IS NULL` over span-entry rows; previously-committed rows are naturally skipped on rerun. ~70 ms/eval × 100 = ~7s per batch → progress visible at small granularity. Avoids the `asyncio.gather` parallel-engines complication and respects CLAUDE.md's "no asyncio.gather on same AsyncSession".
-- **D-10 — No cross-row hash dedup.** See SPEC drift note above. Row-level idempotency only.
+- **D-10 — Row-level idempotency only, no cross-row hash dedup.** Skip rows where `eval_cp` OR `eval_mate` is already non-NULL. Endgame span-entry positions are effectively unique across games (each game arrives at its endgame through a distinct path), so a cross-row hash cache lookup costs more than re-evaluating the astronomically rare collision.
 
 ### Import-path failure handling
 

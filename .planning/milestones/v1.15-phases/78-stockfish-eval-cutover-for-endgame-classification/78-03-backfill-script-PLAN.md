@@ -9,12 +9,12 @@ files_modified:
   - tests/scripts/test_backfill_eval.py
 autonomous: true
 requirements: [FILL-01, FILL-02, FILL-03]
-tags: [backfill, script, scripts, idempotent, resumable, fill-02-drift]
+tags: [backfill, script, scripts, idempotent, resumable]
 
 must_haves:
   truths:
     - "Backfill identifies endgame span-entry rows with `eval_cp IS NULL AND eval_mate IS NULL` and replays SAN to the entry ply, evaluates via the shared wrapper, and writes back (FILL-01)."
-    - "**FILL-02 hash-dedup is intentionally relaxed per CONTEXT.md D-10: row-level idempotency only (skip rows where `eval_cp IS NOT NULL OR eval_mate IS NOT NULL`). Cross-row hash cache lookup costs more than re-evaluating the rare collision; endgame span entries are effectively unique across games. Plan-checker should NOT BLOCKER on the missing hash dedup — this drift is locked.**"
+    - "FILL-02 idempotency is row-level only (skip rows where `eval_cp IS NOT NULL OR eval_mate IS NOT NULL`). No cross-row hash dedup — endgame span entries are effectively unique across games, so a hash cache lookup costs more than re-evaluating the astronomically rare collision (locked per CONTEXT.md D-10 and SPEC.md FILL-02)."
     - "Re-running the script over a populated dataset performs zero engine calls (idempotency by row-level NULL check)."
     - "Mid-run kill leaves committed work intact; resume picks up from the next NULL-eval span-entry row (COMMIT every 100 evals per D-09)."
     - "CLI shape per D-08: `--db {dev|benchmark|prod}`, `--user-id <int>` (optional), `--dry-run`, `--limit <int>`. DB target is REQUIRED; default user filter is all users."
@@ -42,11 +42,11 @@ must_haves:
 <objective>
 Implement `scripts/backfill_eval.py` — the standalone asyncio CLI script that walks endgame span-entry rows where both `eval_cp` and `eval_mate` are NULL, replays SAN from the game's PGN to the entry ply, evaluates via `app.services.engine.evaluate()`, and writes results back. Targets dev / benchmark / prod via `--db` flag (D-07/D-08). Provides Wave 0 idempotency + resume tests on a tiny seeded fixture.
 
-Purpose: FILL-01, FILL-02 (relaxed per D-10), FILL-03. The script is the operator's tool for the three-round cutover ordering in Plan 78-06: dev → benchmark → prod. Without this script, the prod backfill cannot happen before the deploy and there is a broken-classification window post-deploy.
+Purpose: FILL-01, FILL-02, FILL-03. The script is the operator's tool for the three-round cutover ordering in Plan 78-06: dev → benchmark → prod. Without this script, the prod backfill cannot happen before the deploy and there is a broken-classification window post-deploy.
 
 Output: Idempotent, resumable, dry-run-capable backfill script under `scripts/`, plus a small Wave 0 test suite proving idempotency and dry-run behavior.
 
-**FILL-02 SPEC drift acknowledgement (REQUIRED for plan-checker):** SPEC.md FILL-02 says "dedupes evaluations by `full_hash` so identical positions are not re-evaluated." This is intentionally relaxed per CONTEXT.md D-10 — row-level idempotency only (skip rows where `eval_cp IS NOT NULL OR eval_mate IS NOT NULL`). Endgame span-entry positions are effectively unique across games (each game arrives at its endgame through a distinct path), so cross-row cache hits are astronomically rare and the dedup lookup costs more than re-evaluating. Plan-checker should NOT flag this as a BLOCKER — the drift is locked.
+**FILL-02 idempotency model:** Row-level only. Skip rows where `eval_cp IS NOT NULL OR eval_mate IS NOT NULL`. No cross-row hash dedup (locked per SPEC.md FILL-02 and CONTEXT.md D-10) — endgame span-entry positions are effectively unique across games and a hash cache lookup costs more than re-evaluating the rare collision.
 </objective>
 
 <execution_context>
@@ -283,9 +283,10 @@ def _board_at_ply(pgn_text: str, target_ply: int) -> chess.Board | None:
     ```python
     """Backfill Stockfish eval into endgame span-entry rows (Phase 78 FILL-01/02/03).
 
-    SPEC drift: FILL-02 hash-dedup is RELAXED per CONTEXT.md D-10. Row-level
-    idempotency only (skip rows where eval_cp OR eval_mate is already populated).
-    Cross-row hash cache lookup costs more than re-evaluating the rare collision.
+    Row-level idempotency only (skip rows where eval_cp OR eval_mate is already
+    populated). No cross-row hash dedup — endgame span entries are effectively
+    unique across games and a hash cache lookup costs more than re-evaluating
+    the rare collision.
 
     Three-round runbook (D-07, executed by Plan 78-06):
         Round 1 (dev):       --db dev --limit 50          # smoke check
@@ -579,9 +580,9 @@ def _board_at_ply(pgn_text: str, target_ply: int) -> chess.Board | None:
 - Mid-run kill resumes via the SELECT NULL clause (no checkpoint file).
 - CLI shape matches D-08.
 - Wave 0 tests cover dry-run, idempotency, lichess preservation, limit, user filter.
-- FILL-02 drift acknowledgement is explicit (in PLAN truths and module docstring).
+- FILL-02 idempotency is row-level only (no cross-row hash dedup); module docstring states this clearly.
 </success_criteria>
 
 <output>
-After completion, create `.planning/milestones/v1.15-phases/78-stockfish-eval-cutover-for-endgame-classification/78-03-SUMMARY.md` recording: span-entry SELECT shape used, row count observed against dev DB during smoke check, FILL-02 drift acknowledgement.
+After completion, create `.planning/milestones/v1.15-phases/78-stockfish-eval-cutover-for-endgame-classification/78-03-SUMMARY.md` recording: span-entry SELECT shape used, row count observed against dev DB during smoke check.
 </output>
