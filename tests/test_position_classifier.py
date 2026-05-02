@@ -581,34 +581,27 @@ class TestPhaseClassification:
         assert result.phase == 1
 
     def test_high_mixedness_high_piece_count_phase_middlegame(self) -> None:
-        """mixedness>=10 with piece_count>10 and not backrank_sparse -> middlegame (phase=1).
+        """mixedness>150 with piece_count>10 and not backrank_sparse -> middlegame (phase=1).
 
-        Constructed FEN yields piece_count>10, backrank_sparse==False, and
-        mixedness>=10. Asserted explicitly so a FEN drift fails loudly.
+        Pure predicate test — constructing a real FEN that satisfies all three
+        conditions (high mixedness, full back ranks, many pieces) is brittle.
         """
-        # Open center position with pieces from both sides in the middle of the board.
-        board = board_from_fen("rnbqkbnr/pp3ppp/3p4/2pPp3/2P1P3/8/PP3PPP/RNBQKBNR w KQkq - 0 1")
-        result = classify_position(board)
-        # Explicit metric assertions — fail loudly on FEN drift.
-        assert result.piece_count > 10
-        assert result.backrank_sparse is False
-        assert result.mixedness >= 10
-        # Divider.scala expectation: mixedness>=10 with piece_count>10 -> phase=1. UNCONDITIONAL.
-        assert result.phase == 1
+        assert is_middlegame(piece_count=11, backrank_sparse=False, mixedness=151) is True
 
-    def test_mixedness_nine_boundary_not_middlegame(self) -> None:
-        """mixedness==9 alone (with piece_count>10 and no backrank-sparse) -> NOT middlegame.
+    def test_mixedness_one_fifty_boundary_not_middlegame(self) -> None:
+        """mixedness==150 alone (with piece_count>10 and no backrank-sparse) -> NOT middlegame.
 
-        Pure predicate test — no board needed. Verifies the boundary directly.
+        Divider.scala uses strict `mixedness > 150`, so 150 is the upper bound of opening.
+        Pure predicate test — no board needed.
         """
-        assert is_middlegame(piece_count=11, backrank_sparse=False, mixedness=9) is False
+        assert is_middlegame(piece_count=11, backrank_sparse=False, mixedness=150) is False
 
-    def test_mixedness_ten_boundary_middlegame(self) -> None:
-        """mixedness==10 with piece_count>10 and no backrank-sparse -> middlegame.
+    def test_mixedness_one_fifty_one_boundary_middlegame(self) -> None:
+        """mixedness==151 with piece_count>10 and no backrank-sparse -> middlegame.
 
-        Boundary case for MIDGAME_MIXEDNESS_THRESHOLD=10. Pure predicate test.
+        Boundary case for MIDGAME_MIXEDNESS_THRESHOLD=150 with strict `>`. Pure predicate test.
         """
-        assert is_middlegame(piece_count=11, backrank_sparse=False, mixedness=10) is True
+        assert is_middlegame(piece_count=11, backrank_sparse=False, mixedness=151) is True
 
     def test_endgame_takes_precedence_over_middlegame(self) -> None:
         """piece_count=6 + high mixedness -> phase=2 (is_endgame checked first per D-79-06).

@@ -408,7 +408,7 @@ async def run_backfill(
             WHEN piece_count <= {ENDGAME_PIECE_COUNT_THRESHOLD} THEN 2
             WHEN (piece_count <= {MIDGAME_MAJORS_AND_MINORS_THRESHOLD}
                   OR backrank_sparse
-                  OR mixedness >= {MIDGAME_MIXEDNESS_THRESHOLD}) THEN 1
+                  OR mixedness > {MIDGAME_MIXEDNESS_THRESHOLD}) THEN 1
             ELSE 0
         END
         WHERE phase IS NULL

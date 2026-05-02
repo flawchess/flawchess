@@ -70,8 +70,8 @@ BACKRANK_SPARSE_THRESHOLD = 4
 # Lichess Divider.scala default: middlegame iff majors+minors piece_count <= 10.
 MIDGAME_MAJORS_AND_MINORS_THRESHOLD = 10
 
-# Lichess Divider.scala default: middlegame iff mixedness >= 10.
-MIDGAME_MIXEDNESS_THRESHOLD = 10
+# Lichess Divider.scala default: middlegame iff mixedness > 150.
+MIDGAME_MIXEDNESS_THRESHOLD = 150
 
 # ---------------------------------------------------------------------------
 # Mixedness precomputed tables (Lichess Divider.scala algorithm)
@@ -246,14 +246,14 @@ def is_middlegame(piece_count: int, backrank_sparse: bool, mixedness: int) -> bo
     """Lichess Divider.scala isMidGame predicate.
 
     True iff piece_count <= MIDGAME_MAJORS_AND_MINORS_THRESHOLD (default 10)
-    OR backrank_sparse OR mixedness >= MIDGAME_MIXEDNESS_THRESHOLD (default 10).
+    OR backrank_sparse OR mixedness > MIDGAME_MIXEDNESS_THRESHOLD (default 150).
 
     Note: caller must check is_endgame FIRST so the endgame case wins when both fire.
     """
     return (
         piece_count <= MIDGAME_MAJORS_AND_MINORS_THRESHOLD
         or backrank_sparse
-        or mixedness >= MIDGAME_MIXEDNESS_THRESHOLD
+        or mixedness > MIDGAME_MIXEDNESS_THRESHOLD
     )
 
 
