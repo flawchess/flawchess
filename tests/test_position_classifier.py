@@ -14,6 +14,7 @@ import chess
 
 from app.services.position_classifier import (
     PositionClassification,
+    assign_game_phases,
     classify_position,
     is_endgame,
     is_middlegame,
@@ -503,122 +504,112 @@ class TestMixedness:
 
 
 # ---------------------------------------------------------------------------
-# Phase Classification tests (Divider parity)
+# Predicate tests (per-position helpers used by assign_game_phases)
 # ---------------------------------------------------------------------------
 
 
-class TestPhaseClassification:
-    """Divider parity tests — expected values sourced from lichess Divider.scala.
-
-    Reference: https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/Divider.scala
-    Phase: 0=opening, 1=middlegame, 2=endgame. piece_count counts Q+R+B+N for both
-    sides combined (kings and pawns excluded). is_endgame is checked before
-    is_middlegame so the endgame case wins when both fire.
+class TestPhasePredicates:
+    """Per-position midgame/endgame predicate tests — building blocks for
+    ``assign_game_phases``. Verifies thresholds and boundary behavior match
+    Divider.scala.
     """
-
-    def test_starting_position_phase_opening(self, starting_board: chess.Board) -> None:
-        """Initial position: piece_count=14, no backrank sparse, low mixedness -> opening (phase=0)."""
-        result = classify_position(starting_board)
-        assert result.phase == 0
-
-    def test_kqr_vs_kqr_phase_endgame(self) -> None:
-        """KQR vs KQR: piece_count=4 <= 6 -> endgame (phase=2)."""
-        # FEN: white has Q+R, black has Q+R = 4 total majors+minors
-        board = board_from_fen("3qk2r/8/8/8/8/8/8/R2QK3 w - - 0 1")
-        assert classify_position(board).phase == 2
-
-    def test_kr_vs_kr_phase_endgame(self) -> None:
-        """KR vs KR: piece_count=2 <= 6 -> endgame (phase=2)."""
-        board = board_from_fen("4k2r/8/8/8/8/8/8/R3K3 w - - 0 1")
-        assert classify_position(board).phase == 2
-
-    def test_kq_vs_kq_with_eight_pawns_each_phase_endgame(self) -> None:
-        """KQ vs KQ + 8 pawns each: piece_count=2 (pawns excluded) -> endgame (phase=2)."""
-        board = board_from_fen("3qk3/pppppppp/8/8/8/8/PPPPPPPP/3QK3 w - - 0 1")
-        assert classify_position(board).phase == 2
-
-    def test_piece_count_eleven_mid_development_phase_opening(self) -> None:
-        """piece_count=11, no backrank-sparse, mixedness<10 -> opening (phase=0).
-
-        Constructed FEN yields piece_count==11, backrank_sparse==False, and
-        mixedness<10. These input metrics are asserted explicitly so a FEN drift
-        fails loudly instead of silently no-op'ing the phase assertion.
-
-        FEN: rn1qk1nr/pppppppp/8/8/8/8/PPPPPPPP/RN1QKBNR
-        White: Q+R+R+B+N+N=6, Black: Q+R+R+N+N=5 -> total=11.
-        All pieces remain on back ranks (no mixing). Divider expectation:
-        piece_count>10 AND not backrank_sparse AND mixedness<10 -> opening.
-        """
-        board = board_from_fen("rn1qk1nr/pppppppp/8/8/8/8/PPPPPPPP/RN1QKBNR w KQkq - 0 1")
-        result = classify_position(board)
-        # Explicit metric assertions — fail loudly if the FEN drifts.
-        assert result.piece_count == 11
-        assert result.backrank_sparse is False
-        assert result.mixedness < 10
-        # Divider.scala expectation: UNCONDITIONAL.
-        assert result.phase == 0
-
-    def test_piece_count_ten_phase_middlegame(self) -> None:
-        """piece_count<=10 by majors-and-minors threshold -> middlegame (phase=1)."""
-        # FEN yields piece_count==10: white Q+R+B+N=4, black Q+R+B+N=4 wait...
-        # r1bqk1nr/pppppppp/8/8/8/8/PPPPPPPP/R1BQK1NR: white Q+R+B=3 + N? let's check
-        # white: Q(d1)+R(a1)+B(c1) = 3 pieces; black: Q(d8)+R(a8)+B(c8)+N(g8) = 4 pieces?
-        # Actually verified empirically: piece_count=10.
-        board = board_from_fen("r1bqk1nr/pppppppp/8/8/8/8/PPPPPPPP/R1BQK1NR w KQkq - 0 1")
-        result = classify_position(board)
-        assert result.piece_count == 10
-        # Divider.scala expectation: piece_count<=10 -> middlegame. UNCONDITIONAL.
-        assert result.phase == 1
-
-    def test_backrank_sparse_high_piece_count_phase_middlegame(self) -> None:
-        """backrank_sparse=True with piece_count>10 -> middlegame (phase=1)."""
-        # Both sides castled kingside, kings on g-file, rooks on f-file, knights on c+f-file.
-        # Minimal backrank piece count (< 4 on each back rank) with high piece total.
-        board = board_from_fen("r4rk1/pppppppp/2n2n2/8/8/2N2N2/PPPPPPPP/R4RK1 w - - 0 1")
-        result = classify_position(board)
-        assert result.backrank_sparse is True
-        # Expected: piece_count>6, backrank_sparse fires -> middlegame. UNCONDITIONAL.
-        assert result.phase == 1
-
-    def test_high_mixedness_high_piece_count_phase_middlegame(self) -> None:
-        """mixedness>150 with piece_count>10 and not backrank_sparse -> middlegame (phase=1).
-
-        Pure predicate test — constructing a real FEN that satisfies all three
-        conditions (high mixedness, full back ranks, many pieces) is brittle.
-        """
-        assert is_middlegame(piece_count=11, backrank_sparse=False, mixedness=151) is True
 
     def test_mixedness_one_fifty_boundary_not_middlegame(self) -> None:
         """mixedness==150 alone (with piece_count>10 and no backrank-sparse) -> NOT middlegame.
 
         Divider.scala uses strict `mixedness > 150`, so 150 is the upper bound of opening.
-        Pure predicate test — no board needed.
         """
         assert is_middlegame(piece_count=11, backrank_sparse=False, mixedness=150) is False
 
     def test_mixedness_one_fifty_one_boundary_middlegame(self) -> None:
         """mixedness==151 with piece_count>10 and no backrank-sparse -> middlegame.
 
-        Boundary case for MIDGAME_MIXEDNESS_THRESHOLD=150 with strict `>`. Pure predicate test.
+        Boundary case for MIDGAME_MIXEDNESS_THRESHOLD=150 with strict `>`.
         """
         assert is_middlegame(piece_count=11, backrank_sparse=False, mixedness=151) is True
 
-    def test_endgame_takes_precedence_over_middlegame(self) -> None:
-        """piece_count=6 + high mixedness -> phase=2 (is_endgame checked first per D-79-06).
+    def test_piece_count_ten_is_middlegame(self) -> None:
+        """piece_count<=10 fires the midgame predicate regardless of other inputs."""
+        assert is_middlegame(piece_count=10, backrank_sparse=False, mixedness=0) is True
 
-        Pure predicate guard: both is_endgame and is_middlegame fire at piece_count=6
-        with high mixedness. Divider.scala + D-79-06: is_endgame wins. UNCONDITIONAL.
-
-        FEN: '4k3/1q1n4/8/4r3/3R4/8/1Q1N4/4K3' yields piece_count=6, mixedness=159.
-        """
-        # Verify both predicates fire at piece_count=6, mixedness=20
+    def test_piece_count_six_is_endgame(self) -> None:
+        """piece_count<=6 fires the endgame predicate."""
         assert is_endgame(piece_count=6) is True
-        assert is_middlegame(piece_count=6, backrank_sparse=False, mixedness=20) is True
+        assert is_endgame(piece_count=7) is False
 
-        # Board with 3 pieces per side interleaved for high mixedness
-        board = board_from_fen("4k3/1q1n4/8/4r3/3R4/8/1Q1N4/4K3 w - - 0 1")
-        result = classify_position(board)
-        # Explicit metric assertion — fail loudly if FEN drifts off piece_count=6.
-        assert result.piece_count == 6
-        # is_endgame wins over is_middlegame. UNCONDITIONAL.
-        assert result.phase == 2
+
+# ---------------------------------------------------------------------------
+# Game-level phase assignment (Lichess Divider semantics, monotonic)
+# ---------------------------------------------------------------------------
+
+
+class TestAssignGamePhases:
+    """Tests for monotonic per-game phase assignment matching Divider.scala.
+
+    Reference: https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/Divider.scala
+    Phases: 0=opening, 1=middlegame, 2=endgame. Once a game enters middlegame
+    it never returns to opening, even if the per-position predicate stops
+    firing on later plies.
+    """
+
+    def test_empty_input_returns_empty(self) -> None:
+        assert assign_game_phases([]) == []
+
+    def test_all_opening_when_no_predicate_fires(self) -> None:
+        """A game where the midgame predicate never fires stays in opening throughout."""
+        predicates = [(14, False, 0), (14, False, 50), (12, False, 100)]
+        assert assign_game_phases(predicates) == [0, 0, 0]
+
+    def test_monotonic_no_oscillation_back_to_opening(self) -> None:
+        """Once the midgame predicate fires, later plies stay middlegame even if
+        the per-position predicate would say opening (Lichess monotonic semantics).
+        """
+        # Ply 0/1: opening. Ply 2: mixedness>150 fires midgame. Ply 3: predicate
+        # no longer fires (mixedness=100, no backrank sparse, piece_count>10) —
+        # but phase must stay middlegame.
+        predicates = [
+            (14, False, 0),  # opening
+            (14, False, 50),  # opening
+            (14, False, 160),  # midgame predicate fires
+            (14, False, 100),  # would say opening per-position, but stays midgame
+        ]
+        assert assign_game_phases(predicates) == [0, 0, 1, 1]
+
+    def test_endgame_after_middlegame(self) -> None:
+        """Middlegame entry then endgame entry — boundaries assigned correctly."""
+        predicates = [
+            (14, False, 0),  # ply 0 opening
+            (10, False, 0),  # ply 1 midgame fires (piece_count<=10)
+            (8, False, 0),  # ply 2 still midgame (piece_count>6)
+            (6, False, 0),  # ply 3 endgame fires (piece_count<=6)
+            (4, False, 0),  # ply 4 endgame
+        ]
+        assert assign_game_phases(predicates) == [0, 1, 1, 2, 2]
+
+    def test_no_middlegame_when_endgame_fires_at_or_before_midgame(self) -> None:
+        """When endgame fires at the same ply midgame fires (or earlier — both
+        predicates fire together on a piece_count<=6 row), Lichess drops midgame.
+        Game goes opening → endgame with no middlegame phase.
+        """
+        # Ply 0/1: opening. Ply 2: piece_count drops to 6 — both midgame and
+        # endgame predicates fire on the same ply. Lichess: midgame is dropped.
+        predicates = [
+            (14, False, 0),
+            (14, False, 0),
+            (6, False, 0),
+            (4, False, 0),
+        ]
+        assert assign_game_phases(predicates) == [0, 0, 2, 2]
+
+    def test_starting_position_only_is_opening(self) -> None:
+        """A single-ply 'game' at the starting position — pure opening."""
+        assert assign_game_phases([(14, False, 0)]) == [0]
+
+    def test_backrank_sparse_triggers_midgame(self) -> None:
+        """backrank_sparse alone fires the midgame predicate regardless of other inputs."""
+        predicates = [
+            (14, False, 0),
+            (14, True, 0),  # backrank sparse — midgame entry
+            (14, False, 0),  # back to non-sparse — phase stays midgame
+        ]
+        assert assign_game_phases(predicates) == [0, 1, 1]

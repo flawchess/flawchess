@@ -21,7 +21,7 @@ import sentry_sdk
 
 from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD
 from app.services.endgame_service import _CLASS_TO_INT, classify_endgame_class
-from app.services.position_classifier import classify_position
+from app.services.position_classifier import assign_game_phases, classify_position
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ def process_game_pgn(pgn_text: str) -> GameProcessingResult | None:
                 backrank_sparse=classification.backrank_sparse,
                 mixedness=classification.mixedness,
                 endgame_class=endgame_class,
-                phase=classification.phase,
+                phase=0,  # placeholder — overwritten by assign_game_phases below
             )
         )
 
@@ -254,9 +254,18 @@ def process_game_pgn(pgn_text: str) -> GameProcessingResult | None:
             backrank_sparse=classification.backrank_sparse,
             mixedness=classification.mixedness,
             endgame_class=endgame_class_final,
-            phase=classification.phase,
+            phase=0,  # placeholder — overwritten by assign_game_phases below
         )
     )
+
+    # Phase assignment requires the full game timeline (Lichess Divider semantics:
+    # monotonic opening → middlegame → endgame, no oscillation). Compute now that
+    # all per-ply predicates are known and overwrite the placeholder phase values.
+    phases = assign_game_phases(
+        [(pd["piece_count"], pd["backrank_sparse"], pd["mixedness"]) for pd in plies]
+    )
+    for pd, phase in zip(plies, phases, strict=True):
+        pd["phase"] = phase
 
     result_fen = board.board_fen()
     move_count = (len(nodes) + 1) // 2

@@ -10,18 +10,21 @@ Provides a pure function that accepts a ``chess.Board`` and returns a
 - ``piece_count`` — count of major+minor pieces (Q+R+B+N) for both sides combined, excluding kings and pawns
 - ``backrank_sparse`` — True when < 4 pieces on either side's back rank (Lichess middlegame detection)
 - ``mixedness`` — Lichess Divider.scala mixedness score (0..~400)
-- ``phase`` — game phase per lichess Divider.scala (0=opening, 1=middlegame, 2=endgame)
 
-Game phase (opening/middlegame/endgame) is derived at classification time from
-piece_count, backrank_sparse, and mixedness via the lichess Divider.scala predicates.
-Endgame class is derived at query time from material_signature, allowing threshold
-tuning without data migration.
+Game phase is NOT a per-position attribute under Lichess Divider semantics —
+it requires the full game ply timeline so the assignment is monotonic
+(opening → middlegame → endgame, never back). Use ``assign_game_phases()``
+on a per-ply predicate sequence to derive phase values.
+
+Endgame class is derived at query time from material_signature, allowing
+threshold tuning without data migration.
 
 No I/O, no DB access, no async.  All computation is deterministic.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -108,7 +111,6 @@ class PositionClassification:
     piece_count: int  # count of Q+R+B+N for both sides combined (excludes kings and pawns)
     backrank_sparse: bool  # True when < 4 pieces on either side's back rank
     mixedness: int  # Lichess mixedness score (0..~400)
-    phase: Literal[0, 1, 2]  # 0=opening, 1=middlegame, 2=endgame; lichess Divider.scala
 
 
 # ---------------------------------------------------------------------------
@@ -333,11 +335,15 @@ def classify_position(board: chess.Board) -> PositionClassification:
         board: Any ``chess.Board`` instance.
 
     Returns:
-        A frozen ``PositionClassification`` dataclass with eight fields:
+        A frozen ``PositionClassification`` dataclass with seven fields:
         ``material_count``, ``material_signature``, ``material_imbalance``,
         ``has_opposite_color_bishops``, ``piece_count``,
-        ``backrank_sparse``, ``mixedness``, and ``phase``
-        (0=opening, 1=middlegame, 2=endgame per lichess Divider.scala).
+        ``backrank_sparse``, and ``mixedness``.
+
+        Game phase (opening/middlegame/endgame) is NOT included — under
+        Lichess Divider semantics it requires the full game's ply timeline.
+        Pass per-ply ``(piece_count, backrank_sparse, mixedness)`` tuples to
+        ``assign_game_phases()`` to derive monotonic phase values.
     """
     material_count = _compute_material_count(board)
     material_signature = _compute_material_signature(board)
@@ -347,17 +353,6 @@ def classify_position(board: chess.Board) -> PositionClassification:
     backrank_sparse = _compute_backrank_sparse(board)
     mixedness = _compute_mixedness(board)
 
-    # Phase 79 CLASS-02: derive phase from already-computed inputs (no second board scan).
-    # is_endgame is checked first so PHASE-INV-01 (phase=2 ⟺ endgame_class IS NOT NULL)
-    # holds by construction (per D-79-06).
-    phase: Literal[0, 1, 2]
-    if is_endgame(piece_count):
-        phase = 2
-    elif is_middlegame(piece_count, backrank_sparse, mixedness):
-        phase = 1
-    else:
-        phase = 0
-
     return PositionClassification(
         material_count=material_count,
         material_signature=material_signature,
@@ -366,5 +361,67 @@ def classify_position(board: chess.Board) -> PositionClassification:
         piece_count=piece_count,
         backrank_sparse=backrank_sparse,
         mixedness=mixedness,
-        phase=phase,
     )
+
+
+def assign_game_phases(
+    predicates: Sequence[tuple[int, bool, int]],
+) -> list[Literal[0, 1, 2]]:
+    """Assign monotonic per-ply game phases per Lichess Divider.scala semantics.
+
+    Reference: https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/Divider.scala
+
+    Algorithm:
+      1. Find ``mid_ply`` — the FIRST ply where the midgame predicate fires
+         (piece_count <= 10 OR backrank_sparse OR mixedness > 150).
+      2. If ``mid_ply`` is set, find ``end_ply`` — the FIRST ply where
+         ``piece_count <= 6``. The endgame search starts from ply 0, NOT from
+         ``mid_ply`` — Lichess searches from the beginning.
+      3. If ``end_ply`` exists and ``end_ply <= mid_ply``, drop ``mid_ply``
+         (Lichess: ``midGame.filter(m => endGame.fold(true)(m < _))``). The
+         game then has no middlegame phase — it goes straight from opening
+         to endgame.
+      4. Assign phase per ply by ply-range membership:
+           ``ply < mid_ply`` → 0 (opening)
+           ``mid_ply <= ply < end_ply`` → 1 (middlegame)
+           ``ply >= end_ply`` → 2 (endgame)
+         Once a game enters middlegame it can never return to opening, even
+         if pieces re-occupy the back rank or mixedness drops below 150.
+
+    Args:
+        predicates: per-ply ``(piece_count, backrank_sparse, mixedness)``
+            tuples in ply order, starting from ply 0.
+
+    Returns:
+        A list of phase values (0/1/2), one per input tuple.
+    """
+    n = len(predicates)
+    if n == 0:
+        return []
+
+    mid_ply: int | None = None
+    for i, (piece_count, backrank_sparse, mixedness) in enumerate(predicates):
+        if is_middlegame(piece_count, backrank_sparse, mixedness):
+            mid_ply = i
+            break
+
+    end_ply: int | None = None
+    if mid_ply is not None:
+        for i, (piece_count, _, _) in enumerate(predicates):
+            if is_endgame(piece_count):
+                end_ply = i
+                break
+        # Lichess: midGame.filter(m => endGame.fold(true)(m < _))
+        # If endgame fires at or before midgame, drop midgame entirely.
+        if end_ply is not None and mid_ply >= end_ply:
+            mid_ply = None
+
+    phases: list[Literal[0, 1, 2]] = []
+    for i in range(n):
+        if end_ply is not None and i >= end_ply:
+            phases.append(2)
+        elif mid_ply is not None and i >= mid_ply:
+            phases.append(1)
+        else:
+            phases.append(0)
+    return phases

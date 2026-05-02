@@ -75,9 +75,10 @@ from app.services.position_classifier import (  # noqa: E402
 # D-09: COMMIT every 100 evals — progress visible at ~7s granularity at 70ms/eval.
 EVAL_BATCH_SIZE = 100
 
-# Phase 79 PHASE-FILL-01: chunk size for phase-column UPDATE pass.
-# 10_000 is a defensive default — tighter lock duration vs more transaction overhead trade-off (D-79-01).
-# Operator may tune up/down based on EXPLAIN (ANALYZE) on benchmark.
+# Phase 79 PHASE-FILL-01: chunk size (in game_id units) for phase-column UPDATE pass.
+# Phase assignment is now per-game (Lichess Divider semantics — monotonic),
+# so chunking is by game_id range, not row id. 10_000 games keeps lock duration
+# bounded while amortizing transaction overhead.
 PHASE_BACKFILL_CHUNK_SIZE = 10_000
 
 # Port map for --db targets per CLAUDE.md.
@@ -94,12 +95,21 @@ def _log(msg: str = "") -> None:
     print(f"[{ts}] {msg}")
 
 
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
 def _db_url(target: str) -> str:
     """Build the asyncpg URL for the chosen --db target.
 
     Derives the URL from settings.DATABASE_URL by replacing the host:port
     with localhost:<target-port>.  The target-specific BACKFILL_{TARGET}_DB_URL
-    env var overrides this for operators who use non-default credentials.
+    env var overrides this for operators who use non-default credentials —
+    typically only needed for prod, whose password differs from the dev DB.
+
+    All targets are reached via localhost (dev/benchmark via Docker, prod via
+    the SSH tunnel from bin/prod_db_tunnel.sh).  Overrides MUST therefore use
+    a localhost host; a non-local host (e.g. the docker-internal `db`) will
+    fail to resolve from a developer workstation.  This is enforced below.
 
     Ports:
         dev:       localhost:5432  (flawchess-dev Docker compose)
@@ -109,8 +119,17 @@ def _db_url(target: str) -> str:
     if target not in _TARGET_PORT:
         raise ValueError(f"Unknown --db target: {target!r}. Must be one of: {list(_TARGET_PORT)}")
 
-    override = os.environ.get(f"BACKFILL_{target.upper()}_DB_URL")
+    override_var = f"BACKFILL_{target.upper()}_DB_URL"
+    override = os.environ.get(override_var)
     if override:
+        host = urlparse(override).hostname
+        if host not in _LOCAL_HOSTS:
+            raise ValueError(
+                f"{override_var} host is {host!r}, but this script always reaches "
+                f"the database via localhost (dev/benchmark via Docker, prod via "
+                f"the SSH tunnel from bin/prod_db_tunnel.sh). Update the override "
+                f"to use localhost:{_TARGET_PORT[target]} (keeping the credentials)."
+            )
         return override
 
     port = _TARGET_PORT[target]
@@ -397,22 +416,56 @@ async def run_backfill(
         async_engine = None  # type: ignore[assignment]  # not created here; nothing to dispose
         session_maker = _session_maker
 
-    # Phase 79 PHASE-FILL-01: chunked SQL CASE UPDATE for phase column.
-    # Pure function of (piece_count, backrank_sparse, mixedness) — no PGN replay needed.
-    # Idempotent on re-run via WHERE phase IS NULL. Threshold constants are interpolated
-    # from position_classifier.py so SQL and Python share one source of truth (D-79-01).
+    # Phase 79 PHASE-FILL-01: per-game phase backfill matching Lichess Divider.scala.
+    # Phase is monotonic across the game's ply timeline (opening → middlegame → endgame,
+    # never backwards), so it must be computed at game level — a per-row CASE would
+    # let phase oscillate on positions where pieces re-occupy the back rank.
+    # Chunked by game_id range to bound lock duration. Idempotent on re-run because
+    # the affected_games CTE only includes games where at least one ply has phase IS NULL.
+    # Threshold constants are interpolated from position_classifier.py so SQL and Python
+    # share one source of truth (D-79-01).
     phase_update_sql = text(
         f"""
-        UPDATE game_positions
+        WITH affected_games AS (
+            SELECT DISTINCT game_id
+            FROM game_positions
+            WHERE phase IS NULL
+              AND game_id BETWEEN :lo AND :hi
+        ),
+        per_game AS (
+            SELECT
+                gp.game_id,
+                MIN(gp.ply) FILTER (
+                    WHERE gp.piece_count <= {MIDGAME_MAJORS_AND_MINORS_THRESHOLD}
+                       OR gp.backrank_sparse
+                       OR gp.mixedness > {MIDGAME_MIXEDNESS_THRESHOLD}
+                ) AS mid_ply_raw,
+                MIN(gp.ply) FILTER (
+                    WHERE gp.piece_count <= {ENDGAME_PIECE_COUNT_THRESHOLD}
+                ) AS end_ply
+            FROM game_positions gp
+            JOIN affected_games ag ON gp.game_id = ag.game_id
+            GROUP BY gp.game_id
+        ),
+        adjusted AS (
+            SELECT
+                game_id,
+                CASE
+                    WHEN end_ply IS NOT NULL AND mid_ply_raw >= end_ply THEN NULL
+                    ELSE mid_ply_raw
+                END AS mid_ply,
+                end_ply
+            FROM per_game
+        )
+        UPDATE game_positions gp
         SET phase = CASE
-            WHEN piece_count <= {ENDGAME_PIECE_COUNT_THRESHOLD} THEN 2
-            WHEN (piece_count <= {MIDGAME_MAJORS_AND_MINORS_THRESHOLD}
-                  OR backrank_sparse
-                  OR mixedness > {MIDGAME_MIXEDNESS_THRESHOLD}) THEN 1
+            WHEN a.end_ply IS NOT NULL AND gp.ply >= a.end_ply THEN 2
+            WHEN a.mid_ply IS NOT NULL AND gp.ply >= a.mid_ply THEN 1
             ELSE 0
         END
-        WHERE phase IS NULL
-          AND id BETWEEN :lo AND :hi
+        FROM adjusted a
+        WHERE gp.game_id = a.game_id
+          AND gp.phase IS NULL
         """
     )
 
@@ -420,7 +473,7 @@ async def run_backfill(
         bounds_row = (
             await phase_session.execute(
                 text(
-                    "SELECT COALESCE(MIN(id), 0), COALESCE(MAX(id), 0) "
+                    "SELECT COALESCE(MIN(game_id), 0), COALESCE(MAX(game_id), 0) "
                     "FROM game_positions WHERE phase IS NULL"
                 )
             )
@@ -428,8 +481,8 @@ async def run_backfill(
         lo_total, hi_total = bounds_row
         if hi_total > 0:
             _log(
-                f"Phase-column backfill: id range [{lo_total}, {hi_total}], "
-                f"chunk size {PHASE_BACKFILL_CHUNK_SIZE}"
+                f"Phase-column backfill: game_id range [{lo_total}, {hi_total}], "
+                f"chunk size {PHASE_BACKFILL_CHUNK_SIZE} games"
             )
             if dry_run:
                 null_count = (
@@ -449,11 +502,6 @@ async def run_backfill(
                     updated_total += result.rowcount or 0  # ty: ignore[unresolved-attribute]  # CursorResult from DML execute
                     await phase_session.commit()
                     cursor = chunk_hi + 1
-                    if updated_total and updated_total % (PHASE_BACKFILL_CHUNK_SIZE * 10) == 0:
-                        _log(
-                            f"  phase backfill: {updated_total} rows updated, "
-                            f"cursor={cursor}"
-                        )
                 _log(f"Phase-column backfill complete: {updated_total} rows updated")
         else:
             _log("Phase-column backfill: zero rows with NULL phase (no-op)")
