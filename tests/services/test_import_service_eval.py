@@ -638,6 +638,290 @@ class TestImportEvalNoEndgame:
 
 
 # ---------------------------------------------------------------------------
+# Phase 79 PHASE-IMP-01 tests — middlegame entry eval (TDD RED)
+# ---------------------------------------------------------------------------
+
+
+def _make_midgame_plies(
+    count: int = 8,
+    eval_cp: int | None = None,
+    eval_mate: int | None = None,
+    start_ply: int = 0,
+) -> list[dict[str, Any]]:
+    """Return *count* ply dicts all in phase=1 (middlegame), no endgame_class."""
+    plies: list[dict[str, Any]] = []
+    for i in range(count):
+        plies.append({
+            "ply": start_ply + i,
+            "white_hash": start_ply + i + 100,
+            "black_hash": start_ply + i + 200,
+            "full_hash": start_ply + i + 300,
+            "move_san": "Rd1" if i % 2 == 0 else None,
+            "clock_seconds": None,
+            "eval_cp": eval_cp,
+            "eval_mate": eval_mate,
+            "material_count": 4000,
+            "material_signature": "KQRBN_KQRBN",
+            "material_imbalance": 0,
+            "has_opposite_color_bishops": False,
+            "piece_count": 10,
+            "backrank_sparse": True,
+            "mixedness": 30,
+            "endgame_class": None,
+            "phase": 1,
+        })
+    return plies
+
+
+class TestImportEvalMiddlegameEntry:
+    async def test_chesscom_middlegame_game_evaluates_entry_ply(self) -> None:
+        """chess.com game with only middlegame plies (no endgame): engine called once (PHASE-IMP-01).
+
+        The MIN(ply) phase=1 row must be evaluated. Fails until the middlegame block
+        is added to the eval pass in import_service.py.
+        """
+        import app.services.import_service as import_service
+
+        import_service._jobs.clear()
+        job_id = import_service.create_job(user_id=1, platform="chess.com", username="alice")
+
+        mock_evaluate = AsyncMock(return_value=(300, None))
+        mock_session = _make_mock_session()
+        select_result = MagicMock()
+        select_result.fetchall.return_value = [(999, "game-midgame-1")]
+        mock_session.execute.return_value = select_result
+        mock_maker = _mock_session_maker(mock_session)
+
+        midgame_plies = _make_midgame_plies(count=8, eval_cp=None, start_ply=0)
+        processing_result = _make_processing_result(midgame_plies)
+
+        async def _yield_one(*args: Any, **kwargs: Any) -> Any:
+            yield {
+                "platform": "chess.com",
+                "platform_game_id": "game-midgame-1",
+                "pgn": _CHESS_COM_PGN,
+                "user_id": 1,
+            }
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_one,
+            ),
+            patch(
+                "app.services.import_service.httpx.AsyncClient",
+                return_value=_mock_http_ctx(),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[999]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.process_game_pgn",
+                return_value=processing_result,
+            ),
+            patch(
+                "app.services.import_service.engine_service.evaluate",
+                new=mock_evaluate,
+            ),
+        ):
+            await import_service.run_import(job_id)
+
+        # Middlegame entry eval: exactly one engine call for the MIN(ply) phase=1 row.
+        assert mock_evaluate.call_count == 1, (
+            f"Expected exactly 1 engine.evaluate call for middlegame entry (PHASE-IMP-01), "
+            f"got {mock_evaluate.call_count}"
+        )
+
+        import_service._jobs.clear()
+
+    async def test_lichess_midgame_entry_with_eval_skips_engine(self) -> None:
+        """Lichess game whose MIN(ply) phase=1 row already has eval_cp: engine NOT called (T-78-17)."""
+        import app.services.import_service as import_service
+
+        import_service._jobs.clear()
+        job_id = import_service.create_job(user_id=1, platform="lichess", username="alice")
+
+        # engine would return 999 — if called, test will fail
+        mock_evaluate = AsyncMock(return_value=(999, None))
+        mock_session = _make_mock_session()
+        select_result = MagicMock()
+        select_result.fetchall.return_value = [(999, "game-lichess-mid-1")]
+        mock_session.execute.return_value = select_result
+        mock_maker = _mock_session_maker(mock_session)
+
+        # Middlegame plies with eval already set (lichess %eval populated)
+        midgame_plies = _make_midgame_plies(count=8, eval_cp=25, start_ply=0)
+        processing_result = _make_processing_result(midgame_plies)
+
+        async def _yield_one(*args: Any, **kwargs: Any) -> Any:
+            yield {
+                "platform": "lichess",
+                "platform_game_id": "game-lichess-mid-1",
+                "pgn": _LICHESS_PGN_WITH_EVAL,
+                "user_id": 1,
+            }
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.lichess_client.fetch_lichess_games",
+                side_effect=_yield_one,
+            ),
+            patch(
+                "app.services.import_service.httpx.AsyncClient",
+                return_value=_mock_http_ctx(),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[999]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.process_game_pgn",
+                return_value=processing_result,
+            ),
+            patch(
+                "app.services.import_service.engine_service.evaluate",
+                new=mock_evaluate,
+            ),
+        ):
+            await import_service.run_import(job_id)
+
+        # eval_cp=25 already set — engine MUST NOT be called (T-78-17 preservation)
+        assert mock_evaluate.call_count == 0, (
+            f"Engine must NOT be called when lichess eval already set on middlegame entry "
+            f"(T-78-17). Got {mock_evaluate.call_count} calls."
+        )
+
+        import_service._jobs.clear()
+
+    async def test_opening_only_game_no_midgame_engine_call(self) -> None:
+        """Game with only opening plies (phase=0, no phase=1 rows): engine NOT called."""
+        import app.services.import_service as import_service
+
+        import_service._jobs.clear()
+        job_id = import_service.create_job(user_id=1, platform="chess.com", username="alice")
+
+        mock_evaluate = AsyncMock(return_value=(0, None))
+        mock_session = _make_mock_session()
+        select_result = MagicMock()
+        select_result.fetchall.return_value = [(999, "game-opening-only-1")]
+        mock_session.execute.return_value = select_result
+        mock_maker = _mock_session_maker(mock_session)
+
+        # Opening-only plies: phase=0, no endgame, no middlegame
+        opening_plies: list[dict[str, Any]] = [
+            {
+                "ply": i, "white_hash": i + 100, "black_hash": i + 200, "full_hash": i + 300,
+                "move_san": "e4" if i == 0 else None, "clock_seconds": None,
+                "eval_cp": None, "eval_mate": None,
+                "material_count": 7800,
+                "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
+                "material_imbalance": 0, "has_opposite_color_bishops": False,
+                "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
+                "endgame_class": None,
+                "phase": 0,
+            }
+            for i in range(3)
+        ]
+        processing_result: dict[str, Any] = {
+            "plies": opening_plies,
+            "result_fen": None,
+            "move_count": 2,
+        }
+
+        async def _yield_one(*args: Any, **kwargs: Any) -> Any:
+            yield {
+                "platform": "chess.com",
+                "platform_game_id": "game-opening-only-1",
+                "pgn": "1. e4 e5 1/2-1/2",
+                "user_id": 1,
+            }
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_one,
+            ),
+            patch(
+                "app.services.import_service.httpx.AsyncClient",
+                return_value=_mock_http_ctx(),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[999]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.process_game_pgn",
+                return_value=processing_result,
+            ),
+            patch(
+                "app.services.import_service.engine_service.evaluate",
+                new=mock_evaluate,
+            ),
+        ):
+            await import_service.run_import(job_id)
+
+        # No phase=1 plies → zero middlegame engine calls
+        assert mock_evaluate.call_count == 0, (
+            f"Engine must NOT be called for opening-only game (no phase=1 plies). "
+            f"Got {mock_evaluate.call_count} calls."
+        )
+
+        import_service._jobs.clear()
+
+
+# ---------------------------------------------------------------------------
 # Test 5: multi-class span entries — engine called once per class
 # ---------------------------------------------------------------------------
 
