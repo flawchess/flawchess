@@ -15,6 +15,7 @@ from app.routers.endgames import router as endgames_router
 from app.routers.insights import router as insights_router
 from app.routers.stats import router as stats_router
 from app.routers.users import router as users_router
+from app.services.engine import start_engine, stop_engine
 from app.services.import_service import cleanup_orphaned_jobs
 from app.services.insights_llm import get_insights_agent
 
@@ -49,7 +50,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # propagates, aborting uvicorn startup (D-36).
     get_insights_agent()
     await cleanup_orphaned_jobs()
-    yield
+    # Phase 78 D-02: long-lived Stockfish UCI process. Comes AFTER existing startup
+    # so engine startup failure does not mask deploy-blocker validation. try/finally
+    # ensures stop_engine runs on exception during yield (graceful shutdown of UCI).
+    await start_engine()
+    try:
+        yield
+    finally:
+        await stop_engine()
 
 
 if settings.SENTRY_DSN:
