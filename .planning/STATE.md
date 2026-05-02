@@ -96,6 +96,7 @@ Carried forward from v1.11 close (still relevant):
 - v1.0–v1.14 shipped (see .planning/MILESTONES.md)
 - v1.14 shipped 2026-04-29 with 3 phases (75, 76, 77), 16 plans, delivered via PRs #69, #70, #71 (inline confidence-mute hotfix), #72, #73 (quick task). INSIGHT-UI-04 descoped per Phase 76 D-04.
 - 2026-05-02: v1.15 opened — single-phase milestone (Phase 78). Source: `reports/conv-recov-validation-2026-05-02.md`. All 16 v1.15 requirements (ENG-01..03, FILL-01..04, IMP-01..02, REFAC-01..05, VAL-01..02) mapped to Phase 78. SEED-010 Library gated until v1.15 ships.
+- 2026-05-02: Phase 79 added to v1.15 — position-phase classifier (opening/middlegame/endgame) via lichess Divider port plus middlegame Stockfish eval. Phase 78's operational backfill (benchmark + prod) and deploy moved to a single combined run after phase 79 ships, so one backfill pass populates both endgame and middlegame eval entries. Phase 78 stays unmerged in the meantime.
 
 ### Pending Todos
 

@@ -17,14 +17,15 @@
 - ✅ **v1.12 Benchmark DB Infrastructure & Ingestion Pipeline** — Phase 69 (shipped 2026-04-26) — see [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md)
 - ✅ **v1.13 Opening Insights** — Phases 70, 71, 71.1 (shipped 2026-04-27; Phases 72-74 descoped) — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md)
 - ✅ **v1.14 Score-Based Opening Insights** — Phases 75, 76, 77 (shipped 2026-04-29; INSIGHT-UI-04 descoped) — see [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md)
-- 🚧 **v1.15 Eval-Based Endgame Classification** — Phase 78 (in progress, opened 2026-05-02) — single-phase Stockfish eval cutover for endgame conv/recov classification
+- 🚧 **v1.15 Eval-Based Endgame Classification** — Phases 78-79 (in progress, opened 2026-05-02) — Stockfish eval cutover for endgame conv/recov classification, plus position-phase classifier (opening/middlegame/endgame) and middlegame eval
 
 ## Phases
 
 <details open>
-<summary>🚧 v1.15 Eval-Based Endgame Classification (Phase 78) — IN PROGRESS (opened 2026-05-02)</summary>
+<summary>🚧 v1.15 Eval-Based Endgame Classification (Phases 78-79) — IN PROGRESS (opened 2026-05-02)</summary>
 
 - 🚧 Phase 78: Stockfish-Eval Cutover for Endgame Classification (6/6 plans, code complete; operational backfill + VAL-01 + deploy + VAL-02 deferred to post-phase-79 combined run) — ENG-01..03, FILL-01..04, IMP-01..02, REFAC-01..05, VAL-01..02
+- [ ] Phase 79: Position-phase classifier and middlegame eval (0 plans) — not planned yet
 
 ### Phase 78: Stockfish-Eval Cutover for Endgame Classification
 **Goal**: Replace the material-imbalance + 4-ply persistence proxy for endgame conv/recov classification with Stockfish eval (depth 15) populated into the existing `eval_cp` / `eval_mate` columns on `game_positions`. Backfill historical span-entry positions across benchmark + prod, eval new span-entry positions during import going forward, refactor endgame queries to threshold on eval, and remove the proxy entirely (hard cutover).
@@ -44,6 +45,17 @@
   - [ ] 78-04-PLAN.md — Import-path integration (IMP-01, IMP-02)
   - [x] 78-05-PLAN.md — Endgame repository + service refactor + index migration (REFAC-01..05)
   - [ ] 78-06-PLAN.md — Operator-driven cutover execution (FILL-03, FILL-04, VAL-01, VAL-02)
+
+### Phase 79: Position-phase classifier and middlegame eval
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 78 (engine wrapper, backfill script, import-path integration)
+**Plans:** 0 plans
+**Context:** Adds a `phase` SmallInteger column (0=opening, 1=middlegame, 2=endgame) to `game_positions`, computed via a port of [lichess Divider.scala](https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/Divider.scala) using existing `piece_count`, `backrank_sparse`, `mixedness` inputs. Extends import path and backfill script to also evaluate the middlegame entry position with Stockfish (depth 15). Then runs the combined endgame + middlegame backfill on benchmark + prod (folds in phase 78's deferred operational steps), validates ≥99% agreement, merges 78+79 to main, and deploys.
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 79 to break down)
 
 </details>
 
@@ -288,4 +300,3 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
-
