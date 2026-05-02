@@ -20,6 +20,19 @@ DB target host:port mapping (CLAUDE.md):
 DB URL is derived from settings.DATABASE_URL by swapping the port.  To override,
 set BACKFILL_DEV_DB_URL, BACKFILL_BENCHMARK_DB_URL, or BACKFILL_PROD_DB_URL.
 
+Stockfish binary:
+    The script invokes app.services.engine, which reads STOCKFISH_PATH (default
+    /usr/local/bin/stockfish — the path baked into the prod Docker image).
+    Locally that binary does not exist; bin/run_local.sh exports
+    STOCKFISH_PATH=$HOME/.local/stockfish/sf, but standalone script runs do not
+    inherit that, so you must set it yourself:
+
+        export STOCKFISH_PATH=$HOME/.local/stockfish/sf
+        uv run python scripts/backfill_eval.py --db dev --user-id 13
+
+    See .planning/milestones/v1.15-phases/78-stockfish-eval-cutover-for-endgame-classification/78-06-SUMMARY.md
+    for install steps if the binary is missing.
+
 Usage:
     uv run python scripts/backfill_eval.py --db dev --limit 50
     uv run python scripts/backfill_eval.py --db benchmark
