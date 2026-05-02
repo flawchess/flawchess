@@ -22,31 +22,17 @@ pytestmark = pytest.mark.asyncio
 # ---------------------------------------------------------------------------
 
 # A minimal valid PGN for _board_at_ply replay in import_service.
-# King + Rook vs King + Rook — all moves remain in the KR_KR endgame (piece_count=2).
-_KR_KR_PGN = (
-    "[Event 'Test']\n"
-    "[Site 'chess.com']\n"
-    "[White 'alice']\n"
-    "[Black 'bob']\n"
-    "[Result '1/2-1/2']\n"
-    "[TimeControl '600']\n"
-    "\n"
-    "1. Rh1 Rh8 2. Rf1 Rf8 3. Rg1 Rg8 4. Rd1 Rd8 1/2-1/2\n"
-)
+# process_game_pgn is mocked in tests, so this PGN is only used by _board_at_ply
+# to reconstruct the board at the span-entry ply. It just needs to be parseable
+# with at least one legal move so _board_at_ply can return the board at ply 0.
+_CHESS_COM_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Be7 4. O-O d6 5. d3 Nf6 1/2-1/2"
 
-# A lichess PGN with %eval annotations — span-entry ply has eval already populated.
+# A lichess PGN with %eval annotations at ply 0 — used to test that the eval pass
+# skips span-entry plies that already have eval_cp populated from lichess.
 _LICHESS_PGN_WITH_EVAL = (
-    "[Event 'Test']\n"
-    "[Site 'lichess.org']\n"
-    "[White 'alice']\n"
-    "[Black 'bob']\n"
-    "[Result '1/2-1/2']\n"
-    "[TimeControl '600']\n"
-    "\n"
-    "1. Rh1 { [%eval 0.15] } Rh8 { [%eval 0.12] } "
-    "2. Rf1 { [%eval 0.10] } Rf8 { [%eval 0.08] } "
-    "3. Rg1 { [%eval 0.05] } Rg8 { [%eval 0.02] } "
-    "4. Rd1 { [%eval 0.00] } Rd8 { [%eval 0.00] } 1/2-1/2\n"
+    "1. e4 { [%eval 0.15] } e5 { [%eval 0.12] } "
+    "2. Nf3 { [%eval 0.10] } Nc6 { [%eval 0.08] } "
+    "3. Bc4 { [%eval 0.05] } Be7 { [%eval 0.02] } 1/2-1/2"
 )
 
 # ENDGAME_PLY_THRESHOLD = 6 (from endgame_repository constant)
@@ -197,7 +183,7 @@ class TestImportEvalChessCom:
             yield {
                 "platform": "chess.com",
                 "platform_game_id": "game-eval-1",
-                "pgn": _KR_KR_PGN,
+                "pgn": _CHESS_COM_PGN,
                 "user_id": 1,
             }
 
@@ -374,7 +360,7 @@ class TestImportEvalEngineError:
             yield {
                 "platform": "chess.com",
                 "platform_game_id": "game-error-1",
-                "pgn": _KR_KR_PGN,
+                "pgn": _CHESS_COM_PGN,
                 "user_id": 1,
             }
 
@@ -593,7 +579,7 @@ class TestImportEvalNoEndgame:
             yield {
                 "platform": "chess.com",
                 "platform_game_id": "game-few-1",
-                "pgn": _KR_KR_PGN,
+                "pgn": _CHESS_COM_PGN,
                 "user_id": 1,
             }
 
@@ -675,7 +661,7 @@ class TestImportEvalMultiClass:
             yield {
                 "platform": "chess.com",
                 "platform_game_id": "game-multi-1",
-                "pgn": _KR_KR_PGN,
+                "pgn": _CHESS_COM_PGN,
                 "user_id": 1,
             }
 
