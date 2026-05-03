@@ -45,7 +45,7 @@ Plans:
 - [x] 80-04-PLAN.md — Frontend: openingStatsZones constants + hide ChessBoard on Stats subtab (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 80-02-PLAN.md — Backend: query_opening_mg_metrics_batch + service wiring (Wave 2)
+- [x] 80-02-PLAN.md — Backend: query_opening_mg_metrics_batch + service wiring (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 80-05-PLAN.md — Frontend: MostPlayedOpeningsTable new columns + mobile second-line + ConfidencePill + clockFormat extracts (Wave 3)
@@ -278,7 +278,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 70-71.1. v1.13 phases | v1.13 | 14/14 | Complete (Phases 72/73/74 descoped) | 2026-04-27 |
 | 75-77. v1.14 phases | v1.14 | 16/16 | Complete (INSIGHT-UI-04 descoped) | 2026-04-29 |
 | 78-79. v1.15 phases | v1.15 | 10/10 | Complete (VAL-01 / PHASE-VAL-01 rescinded) | 2026-05-03 |
-| 80. Opening stats: middlegame-entry eval and clock-diff columns | v1.16 | 3/6 | In Progress|  |
+| 80. Opening stats: middlegame-entry eval and clock-diff columns | v1.16 | 4/6 | In Progress|  |
 
 ## Backlog
 
