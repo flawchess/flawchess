@@ -2,9 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
-status: executing
-last_updated: "2026-05-02T20:31:50.381Z"
-last_activity: 2026-05-02 -- Phase 79 execution started
+status: "v1.15 shipped — draft PR #78 (artifacts to follow)"
+last_updated: "2026-05-03T12:10:33.257Z"
+last_activity: "2026-05-03 -- Phases 78+79 shipped as draft PR #78"
+progress:
+  total_phases: 6
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State: FlawChess
@@ -13,8 +18,8 @@ last_activity: 2026-05-02 -- Phase 79 execution started
 
 Phase: 79 (Position-phase classifier and middlegame eval) — EXECUTING
 Plan: 1 of 4
-Status: Executing Phase 79
-Last activity: 2026-05-02 -- Phase 79 execution started
+Status: v1.15 shipped — draft PR #78 (artifacts to follow)
+Last activity: 2026-05-03 -- Phases 78+79 shipped as draft PR #78
 
 ## Project Reference
 
