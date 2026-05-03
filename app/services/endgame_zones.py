@@ -152,8 +152,10 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     ),
     # Endgame Skill: simple average of Conv/Parity/Recov rates (0.0-1.0).
     # Mirrors ENDGAME_SKILL_ZONES in EndgameScoreGapSection.tsx lines 101-105.
+    # 260503: lower bound shifted 0.45 -> 0.47 to better center on pooled p25
+    # (0.466) from reports/benchmarks-2026-05-03.md.
     "endgame_skill": ZoneSpec(
-        typical_lower=0.45,
+        typical_lower=0.47,
         typical_upper=0.55,
         direction="higher_is_better",
     ),
@@ -204,10 +206,13 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
 # ---------------------------------------------------------------------------
 
 BUCKETED_ZONE_REGISTRY: Mapping[BucketedMetricId, Mapping[MaterialBucket, ZoneSpec]] = {
+    # 260503: upper bound shifted 0.75 -> 0.77 — pooled p75 = 0.769 in
+    # reports/benchmarks-2026-05-03.md, current 0.75 clipped ~25% of users
+    # into the "above neutral" band.
     "conversion_win_pct": {
-        "conversion": ZoneSpec(0.65, 0.75, "higher_is_better"),
-        "parity": ZoneSpec(0.65, 0.75, "higher_is_better"),
-        "recovery": ZoneSpec(0.65, 0.75, "higher_is_better"),
+        "conversion": ZoneSpec(0.65, 0.77, "higher_is_better"),
+        "parity": ZoneSpec(0.65, 0.77, "higher_is_better"),
+        "recovery": ZoneSpec(0.65, 0.77, "higher_is_better"),
     },
     "parity_score_pct": {
         "conversion": ZoneSpec(0.45, 0.55, "higher_is_better"),
@@ -215,13 +220,13 @@ BUCKETED_ZONE_REGISTRY: Mapping[BucketedMetricId, Mapping[MaterialBucket, ZoneSp
         "recovery": ZoneSpec(0.45, 0.55, "higher_is_better"),
     },
     "recovery_save_pct": {
-        # 260501-s0u: widened to [0.25, 0.40] — pooled p25/p75 from
-        # reports/benchmarks-2026-05-01.md (was [0.25, 0.35], re-centered D-10).
-        # Same change applied to FIXED_GAUGE_ZONES.recovery via codegen so FE
-        # and registry agree.
-        "conversion": ZoneSpec(0.25, 0.40, "higher_is_better"),
-        "parity": ZoneSpec(0.25, 0.40, "higher_is_better"),
-        "recovery": ZoneSpec(0.25, 0.40, "higher_is_better"),
+        # 260503: tightened to [0.24, 0.36] — pooled p25/p75 = [0.243, 0.364]
+        # in reports/benchmarks-2026-05-03.md. Previous [0.25, 0.40] upper
+        # bound sat well above population p75 so almost no users ever read
+        # "above neutral" on the recovery gauge.
+        "conversion": ZoneSpec(0.24, 0.36, "higher_is_better"),
+        "parity": ZoneSpec(0.24, 0.36, "higher_is_better"),
+        "recovery": ZoneSpec(0.24, 0.36, "higher_is_better"),
     },
 }
 
@@ -270,10 +275,14 @@ class PerClassBands:
     recovery: tuple[float, float]
 
 
+# 260503 shifts (reports/benchmarks-2026-05-03.md): rook recovery (0.28→0.26,
+# 0.38→0.36) and pawn recovery (0.26→0.23, 0.36→0.34) — both pooled means sat
+# below the previous lower bound. Pawn conversion upper bound nudged 0.77→0.79
+# (pooled mean 0.738).
 PER_CLASS_GAUGE_ZONES: Mapping[EndgameClass, PerClassBands] = {
-    "rook": PerClassBands(conversion=(0.65, 0.75), recovery=(0.28, 0.38)),
+    "rook": PerClassBands(conversion=(0.65, 0.75), recovery=(0.26, 0.36)),
     "minor_piece": PerClassBands(conversion=(0.63, 0.73), recovery=(0.31, 0.41)),
-    "pawn": PerClassBands(conversion=(0.67, 0.77), recovery=(0.26, 0.36)),
+    "pawn": PerClassBands(conversion=(0.67, 0.79), recovery=(0.23, 0.34)),
     "queen": PerClassBands(conversion=(0.73, 0.83), recovery=(0.20, 0.30)),
     "mixed": PerClassBands(conversion=(0.65, 0.75), recovery=(0.28, 0.38)),
     "pawnless": PerClassBands(conversion=(0.70, 0.80), recovery=(0.21, 0.31)),

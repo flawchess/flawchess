@@ -1036,8 +1036,8 @@ class TestPromptAssembly:
 
         # v7 whole-number scale: score_gap band is -10 to +10.
         assert "weak (typical -10 to +10)" in prompt
-        # conversion bucket band is +65 to +75.
-        assert "weak (typical +65 to +75)" in prompt
+        # conversion bucket band is +65 to +77 (260503 calibration).
+        assert "weak (typical +65 to +77)" in prompt
         # net_timeout_rate band is now higher_is_better (positive is strong): typical -5 to +5.
         assert "weak (typical -5 to +5)" in prompt
         assert "lower is better" not in prompt  # v7: no lower_is_better metrics left.

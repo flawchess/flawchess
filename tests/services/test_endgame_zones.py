@@ -27,8 +27,9 @@ class TestAssignZone:
         assert assign_zone("endgame_skill", 0.50) == "typical"
 
     def test_higher_is_better_at_lower_boundary_is_typical(self) -> None:
-        """Lower boundary is inclusive on the typical side (>= typical_lower)."""
-        assert assign_zone("endgame_skill", 0.45) == "typical"
+        """Lower boundary is inclusive on the typical side (>= typical_lower).
+        260503: lower bound shifted 0.45 -> 0.47 to better center on pooled p25."""
+        assert assign_zone("endgame_skill", 0.47) == "typical"
 
     def test_higher_is_better_below_lower_is_weak(self) -> None:
         assert assign_zone("endgame_skill", 0.30) == "weak"
@@ -133,11 +134,11 @@ class TestRegistrySanity:
         assert spec.typical_lower == -NEUTRAL_TIMEOUT_THRESHOLD
 
     def test_bucketed_recovery_matches_benchmark(self) -> None:
-        """260501-s0u: recovery typical band widened to [0.25, 0.40] — pooled
-        p25/p75 from reports/benchmarks-2026-05-01.md (was [0.25, 0.35], D-10).
-        All three buckets share the same band per metric."""
+        """260503: recovery typical band tightened to [0.24, 0.36] — pooled
+        p25/p75 = [0.243, 0.364] from reports/benchmarks-2026-05-03.md (was
+        [0.25, 0.40], 260501-s0u). All three buckets share the same band."""
         for bucket in ("conversion", "parity", "recovery"):
             spec = BUCKETED_ZONE_REGISTRY["recovery_save_pct"][bucket]
-            assert spec.typical_lower == 0.25
-            assert spec.typical_upper == 0.40
+            assert spec.typical_lower == 0.24
+            assert spec.typical_upper == 0.36
             assert spec.direction == "higher_is_better"
