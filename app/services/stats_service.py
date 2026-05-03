@@ -386,7 +386,7 @@ async def get_most_played_openings(
             else:
                 win_pct = draw_pct = loss_pct = 0.0
 
-            # Phase 80: phase-entry eval + clock-diff finalizer (D-01, D-04, D-05, D-08, D-09).
+            # Phase 80: phase-entry eval + clock-diff finalizer (D-01, D-04, D-05, D-08).
             pe = phase_entry_metrics.get(full_hash) if full_hash else None
 
             # MG-entry pillar (D-01, D-04, D-08)
@@ -402,16 +402,7 @@ async def get_most_played_openings(
             avg_clock_diff_seconds: float | None = None
             clock_diff_n = 0
 
-            # EG-entry pillar (D-09 — parallel to MG)
-            avg_eval_endgame_entry_pawns: float | None = None
-            eval_endgame_ci_low_pawns: float | None = None
-            eval_endgame_ci_high_pawns: float | None = None
-            eval_endgame_n = 0
-            eval_endgame_p_value: float | None = None
-            eval_endgame_confidence: Literal["low", "medium", "high"] = "low"
-
             if pe is not None and pe.eval_n_mg > 0:
-                # compute_eval_confidence_bucket called once for MG (D-09)
                 confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
                     pe.eval_sum_mg, pe.eval_sumsq_mg, pe.eval_n_mg
                 )
@@ -422,19 +413,6 @@ async def get_most_played_openings(
                 eval_n = pe.eval_n_mg
                 eval_p_value = p_value_mg
                 eval_confidence = confidence_mg
-
-            if pe is not None and pe.eval_n_eg > 0:
-                # compute_eval_confidence_bucket called once for EG (D-09)
-                confidence_eg, p_value_eg, mean_cp_eg, ci_half_eg = compute_eval_confidence_bucket(
-                    pe.eval_sum_eg, pe.eval_sumsq_eg, pe.eval_n_eg
-                )
-                avg_eval_endgame_entry_pawns = mean_cp_eg / 100.0  # cp -> pawns
-                if pe.eval_n_eg >= 2:
-                    eval_endgame_ci_low_pawns = (mean_cp_eg - ci_half_eg) / 100.0
-                    eval_endgame_ci_high_pawns = (mean_cp_eg + ci_half_eg) / 100.0
-                eval_endgame_n = pe.eval_n_eg
-                eval_endgame_p_value = p_value_eg
-                eval_endgame_confidence = confidence_eg
 
             if pe is not None and pe.clock_diff_n > 0 and pe.base_time_sum > 0:
                 avg_clock_diff_seconds = pe.clock_diff_sum / pe.clock_diff_n
@@ -474,13 +452,6 @@ async def get_most_played_openings(
                     avg_clock_diff_pct=avg_clock_diff_pct,
                     avg_clock_diff_seconds=avg_clock_diff_seconds,
                     clock_diff_n=clock_diff_n,
-                    # Phase 80 EG-entry eval fields
-                    avg_eval_endgame_entry_pawns=avg_eval_endgame_entry_pawns,
-                    eval_endgame_ci_low_pawns=eval_endgame_ci_low_pawns,
-                    eval_endgame_ci_high_pawns=eval_endgame_ci_high_pawns,
-                    eval_endgame_n=eval_endgame_n,
-                    eval_endgame_p_value=eval_endgame_p_value,
-                    eval_endgame_confidence=eval_endgame_confidence,
                 )
             )
         # Sort by position-based game count descending (may differ from
@@ -498,11 +469,11 @@ def _phase80_item_from_metrics(
     target_hash: str,
     pe: OpeningPhaseEntryMetrics | None,
 ) -> BookmarkPhaseEntryItem:
-    """Compute the 14 Phase 80 display fields for a single hash.
+    """Compute the Phase 80 display fields for a single hash.
 
-    Mirrors the inline finalizer in get_most_played_openings.rows_to_openings (D-01,
-    D-04, D-05, D-08, D-09). Kept as a separate helper so the bookmark endpoint can
-    reuse the same numerical logic without depending on the OpeningWDL row shape.
+    Mirrors the inline finalizer in get_most_played_openings.rows_to_openings
+    (D-01, D-04, D-05, D-08). Kept as a separate helper so the bookmark endpoint
+    can reuse the same numerical logic without depending on the OpeningWDL row shape.
     """
     item = BookmarkPhaseEntryItem(target_hash=target_hash)
     if pe is None:
@@ -519,18 +490,6 @@ def _phase80_item_from_metrics(
         item.eval_n = pe.eval_n_mg
         item.eval_p_value = p_value_mg
         item.eval_confidence = confidence_mg
-
-    if pe.eval_n_eg > 0:
-        confidence_eg, p_value_eg, mean_cp_eg, ci_half_eg = compute_eval_confidence_bucket(
-            pe.eval_sum_eg, pe.eval_sumsq_eg, pe.eval_n_eg
-        )
-        item.avg_eval_endgame_entry_pawns = mean_cp_eg / 100.0
-        if pe.eval_n_eg >= 2:
-            item.eval_endgame_ci_low_pawns = (mean_cp_eg - ci_half_eg) / 100.0
-            item.eval_endgame_ci_high_pawns = (mean_cp_eg + ci_half_eg) / 100.0
-        item.eval_endgame_n = pe.eval_n_eg
-        item.eval_endgame_p_value = p_value_eg
-        item.eval_endgame_confidence = confidence_eg
 
     if pe.clock_diff_n > 0 and pe.base_time_sum > 0:
         avg_clock_diff_seconds = pe.clock_diff_sum / pe.clock_diff_n

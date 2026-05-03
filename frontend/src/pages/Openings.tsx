@@ -62,11 +62,8 @@ import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
   EVAL_NEUTRAL_MIN_PAWNS,
-  EVAL_ENDGAME_BULLET_DOMAIN_PAWNS,
-  EVAL_ENDGAME_NEUTRAL_MAX_PAWNS,
-  EVAL_ENDGAME_NEUTRAL_MIN_PAWNS,
 } from '@/lib/openingStatsZones';
-import { formatSignedPct1, formatSignedSeconds } from '@/lib/clockFormat';
+import { formatSignedEvalPawns, formatSignedPct1, formatSignedSeconds } from '@/lib/clockFormat';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
 import { pgnToSanArray } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
@@ -170,24 +167,32 @@ function MobileMostPlayedRows({
                 maxTotal={maxTotal}
               />
 
-              {/* Phase 80 D-06: Mobile line 2 — MG-entry triple (bullet + pill + clock-diff). */}
+              {/* Phase 80 D-06: Mobile line 2 — MG-entry row (eval text + bullet + pill + clock-diff). */}
               {(() => {
                 const isMgUnreliable =
                   (o.eval_n ?? 0) < MIN_GAMES_FOR_RELIABLE_STATS || o.eval_confidence === 'low';
-                const mgBulletContent =
-                  o.eval_n === 0 || o.avg_eval_pawns === null || o.avg_eval_pawns === undefined ? (
-                    <span className="text-muted-foreground">—</span>
-                  ) : (
-                    <MiniBulletChart
-                      value={o.avg_eval_pawns}
-                      ciLow={o.eval_ci_low_pawns ?? undefined}
-                      ciHigh={o.eval_ci_high_pawns ?? undefined}
-                      neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
-                      neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
-                      domain={EVAL_BULLET_DOMAIN_PAWNS}
-                      ariaLabel={`Avg eval at MG entry: ${o.avg_eval_pawns.toFixed(2)} pawns`}
-                    />
-                  );
+                const hasMgEval =
+                  o.eval_n > 0 &&
+                  o.avg_eval_pawns !== null &&
+                  o.avg_eval_pawns !== undefined;
+                const mgEvalTextContent = hasMgEval ? (
+                  formatSignedEvalPawns(o.avg_eval_pawns as number)
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                );
+                const mgBulletContent = hasMgEval ? (
+                  <MiniBulletChart
+                    value={o.avg_eval_pawns as number}
+                    ciLow={o.eval_ci_low_pawns ?? undefined}
+                    ciHigh={o.eval_ci_high_pawns ?? undefined}
+                    neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
+                    neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
+                    domain={EVAL_BULLET_DOMAIN_PAWNS}
+                    ariaLabel={`Avg eval at MG entry: ${(o.avg_eval_pawns as number).toFixed(2)} pawns`}
+                  />
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                );
                 const clockDiffContent =
                   o.clock_diff_n === 0 ||
                   o.avg_clock_diff_pct === null ||
@@ -203,10 +208,17 @@ function MobileMostPlayedRows({
                   );
                 return (
                   <div
-                    className="mt-2 grid grid-cols-[auto_1fr_auto_auto] gap-2 items-center"
+                    className="mt-2 grid grid-cols-[auto_auto_1fr_auto_auto] gap-2 items-center pb-1"
                     data-testid={`${testIdPrefix}-mobile-mg-line-${rowKey}`}
                   >
                     <span className="text-xs text-muted-foreground">MG entry</span>
+                    <div
+                      className="text-sm tabular-nums"
+                      data-testid={`${testIdPrefix}-eval-text-mobile-${rowKey}`}
+                      style={isMgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
+                    >
+                      {mgEvalTextContent}
+                    </div>
                     <div
                       data-testid={`${testIdPrefix}-bullet-mobile-${rowKey}`}
                       style={isMgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
@@ -227,52 +239,6 @@ function MobileMostPlayedRows({
                       className="text-right text-sm tabular-nums"
                     >
                       {clockDiffContent}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Phase 80 D-06: Mobile line 3 — EG-entry pair (bullet + pill). */}
-              {(() => {
-                const isEgUnreliable =
-                  (o.eval_endgame_n ?? 0) < MIN_GAMES_FOR_RELIABLE_STATS ||
-                  o.eval_endgame_confidence === 'low';
-                const egBulletContent =
-                  o.eval_endgame_n === 0 ||
-                  o.avg_eval_endgame_entry_pawns === null ||
-                  o.avg_eval_endgame_entry_pawns === undefined ? (
-                    <span className="text-muted-foreground">—</span>
-                  ) : (
-                    <MiniBulletChart
-                      value={o.avg_eval_endgame_entry_pawns}
-                      ciLow={o.eval_endgame_ci_low_pawns ?? undefined}
-                      ciHigh={o.eval_endgame_ci_high_pawns ?? undefined}
-                      neutralMin={EVAL_ENDGAME_NEUTRAL_MIN_PAWNS}
-                      neutralMax={EVAL_ENDGAME_NEUTRAL_MAX_PAWNS}
-                      domain={EVAL_ENDGAME_BULLET_DOMAIN_PAWNS}
-                      ariaLabel={`Avg eval at EG entry: ${o.avg_eval_endgame_entry_pawns.toFixed(2)} pawns`}
-                    />
-                  );
-                return (
-                  <div
-                    className="mt-1 grid grid-cols-[auto_1fr_auto] gap-2 items-center pb-1"
-                    data-testid={`${testIdPrefix}-mobile-eg-line-${rowKey}`}
-                  >
-                    <span className="text-xs text-muted-foreground">EG entry</span>
-                    <div
-                      data-testid={`${testIdPrefix}-eg-bullet-mobile-${rowKey}`}
-                      style={isEgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
-                    >
-                      {egBulletContent}
-                    </div>
-                    <div data-testid={`${testIdPrefix}-eg-confidence-mobile-${rowKey}`}>
-                      <ConfidencePill
-                        level={o.eval_endgame_confidence}
-                        pValue={o.eval_endgame_p_value}
-                        gameCount={o.eval_endgame_n}
-                        evalMeanPawns={o.avg_eval_endgame_entry_pawns}
-                        testId={`${testIdPrefix}-eg-confidence-mobile-${rowKey}-info`}
-                      />
                     </div>
                   </div>
                 );
@@ -1154,12 +1120,6 @@ export function OpeningsPage() {
                 avg_clock_diff_pct: pe?.avg_clock_diff_pct ?? null,
                 avg_clock_diff_seconds: pe?.avg_clock_diff_seconds ?? null,
                 clock_diff_n: pe?.clock_diff_n ?? 0,
-                avg_eval_endgame_entry_pawns: pe?.avg_eval_endgame_entry_pawns ?? null,
-                eval_endgame_ci_low_pawns: pe?.eval_endgame_ci_low_pawns ?? null,
-                eval_endgame_ci_high_pawns: pe?.eval_endgame_ci_high_pawns ?? null,
-                eval_endgame_n: pe?.eval_endgame_n ?? 0,
-                eval_endgame_p_value: pe?.eval_endgame_p_value ?? null,
-                eval_endgame_confidence: pe?.eval_endgame_confidence ?? 'low',
               };
               return [row];
             })

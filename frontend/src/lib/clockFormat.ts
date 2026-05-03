@@ -31,3 +31,14 @@ export function formatSignedPct1(pct: number | null): string {
   if (rounded > 0) return `+${rounded.toFixed(1)}%`;
   return `${rounded.toFixed(1)}%`;
 }
+
+/**
+ * Format signed eval in pawns to one decimal place with explicit sign.
+ *
+ * Examples: 2.13 -> '+2.1', -0.47 -> '-0.5', 0 -> '+0.0'.
+ * Used for the "MG eval" text column in MostPlayedOpeningsTable (Phase 80).
+ */
+export function formatSignedEvalPawns(value: number): string {
+  const sign = value >= 0 ? '+' : '';
+  return `${sign}${value.toFixed(1)}`;
+}

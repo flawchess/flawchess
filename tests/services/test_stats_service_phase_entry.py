@@ -1,15 +1,14 @@
-"""Service-level integration tests for phase-entry eval + clock-diff fields in
+"""Service-level integration tests for MG-entry eval + clock-diff fields in
 get_most_played_openings (Plan 02, Task 2).
 
-Coverage (8 tests):
+Coverage:
 - MG-entry eval fields populated when phase=1 rows exist
-- EG-entry eval fields populated when phase=2 rows exist
-- eval_n == 0 / eval_endgame_n == 0 when no phase-entry rows
+- eval_n == 0 when no phase-entry rows have eval
 - Clock-diff pct and seconds populated from MG-entry clock data
-- Filter consistency: eval_n <= total AND eval_endgame_n <= total
+- Filter consistency: eval_n <= total
 - No asyncio.gather in stats_service (CLAUDE.md critical constraint)
-- Color-flip symmetry propagates correctly through service for both phases
-- Outlier trim propagates from repository to response (eval_n reduced by 1)
+- Color-flip symmetry propagates correctly through service
+- Outlier trim propagates from repository to response
 """
 
 import datetime
@@ -33,7 +32,6 @@ from app.services.stats_service import MIN_PLY_WHITE, get_most_played_openings
 # ---------------------------------------------------------------------------
 
 _USER_SS_MG = 701
-_USER_SS_EG = 702
 _USER_SS_EMPTY = 703
 _USER_SS_CLOCK = 704
 _USER_SS_FILTER = 705
@@ -43,7 +41,6 @@ _USER_SS_CLOCK_HETERO = 708
 
 _ALL_USER_IDS = [
     _USER_SS_MG,
-    _USER_SS_EG,
     _USER_SS_EMPTY,
     _USER_SS_CLOCK,
     _USER_SS_FILTER,
@@ -74,12 +71,7 @@ def _unique_id() -> str:
 async def _get_white_opening_with_min_ply(
     session: AsyncSession, min_ply: int = 3
 ) -> tuple[str, str, int] | None:
-    """Return (eco, name, full_hash) for a white-defined opening with ply_count >= min_ply.
-
-    White-defined openings have odd ply_count (e.g. ply_count=3 means the third
-    half-move, which is white's second move). These pass the MIN_PLY_WHITE filter
-    and appear in the white response from get_most_played_openings.
-    """
+    """Return (eco, name, full_hash) for a white-defined opening with ply_count >= min_ply."""
     row = (
         await session.execute(
             _select(
@@ -88,7 +80,6 @@ async def _get_white_opening_with_min_ply(
                 _openings_dedup.c.full_hash,
                 _openings_dedup.c.ply_count,
             )
-            # ply_count odd = white-defined; ply_count >= min_ply passes MIN_PLY_WHITE
             .where(
                 _openings_dedup.c.ply_count >= min_ply,
                 _openings_dedup.c.ply_count % 2 == 1,
@@ -114,7 +105,6 @@ async def _get_black_opening_with_min_ply(
                 _openings_dedup.c.full_hash,
                 _openings_dedup.c.ply_count,
             )
-            # ply_count even = black-defined
             .where(
                 _openings_dedup.c.ply_count >= min_ply,
                 _openings_dedup.c.ply_count % 2 == 0,
@@ -138,7 +128,6 @@ async def _seed_game_with_phases(
     opening_name: str,
     ply_count: int,
     mg_eval_cp: int | None = None,
-    eg_eval_cp: int | None = None,
     user_clock: float | None = None,
     opp_clock: float | None = None,
     base_time_seconds: int | None = 300,
@@ -148,7 +137,7 @@ async def _seed_game_with_phases(
     played_at: datetime.datetime | None = None,
     result: str = "1-0",
 ) -> Game:
-    """Seed a Game + opening anchor position + MG-entry + EG-entry + opp-clock rows."""
+    """Seed a Game + opening anchor position + MG-entry + opp-clock rows."""
     if played_at is None:
         played_at = datetime.datetime.now(tz=datetime.timezone.utc)
 
@@ -214,26 +203,12 @@ async def _seed_game_with_phases(
             )
         )
 
-    # EG-entry row (phase=2)
-    session.add(
-        GamePosition(
-            game_id=game.id,
-            user_id=user_id,
-            ply=ply_count + 30,
-            full_hash=full_hash,
-            white_hash=full_hash + 1000,
-            black_hash=full_hash + 2000,
-            phase=2,
-            eval_cp=eg_eval_cp,
-        )
-    )
-
     await session.flush()
     return game
 
 
 class TestGetMostPlayedOpeningsPhaseEntry:
-    """Service-level tests for phase-entry eval + clock-diff fields (Plan 02)."""
+    """Service-level tests for MG-entry eval + clock-diff fields (Plan 02)."""
 
     @pytest.mark.asyncio
     async def test_get_most_played_openings_populates_mg_eval_fields(
@@ -275,55 +250,10 @@ class TestGetMostPlayedOpeningsPhaseEntry:
         assert opening.eval_ci_low_pawns < opening.avg_eval_pawns < opening.eval_ci_high_pawns
 
     @pytest.mark.asyncio
-    async def test_get_most_played_openings_populates_eg_eval_fields(
-        self, db_session: AsyncSession
-    ) -> None:
-        """EG-entry eval fields populated for opening with eval_n_eg > 0."""
-        uid = _USER_SS_EG
-        opening_info = await _get_white_opening_with_min_ply(db_session, MIN_PLY_WHITE)
-        if opening_info is None:
-            pytest.skip("openings_dedup not seeded")
-        eco, opening_name, full_hash = opening_info
-
-        # 12 games with varying EG eval centred around +120 cp (need variance for CI bounds)
-        eg_vals = [100, 105, 110, 115, 118, 120, 120, 122, 125, 130, 132, 143]
-        for cp in eg_vals:
-            await _seed_game_with_phases(
-                db_session,
-                user_id=uid,
-                user_color="white",
-                full_hash=full_hash,
-                eco=eco,
-                opening_name=opening_name,
-                ply_count=MIN_PLY_WHITE,
-                eg_eval_cp=cp,
-            )
-        expected_mean_eg = sum(eg_vals) / len(eg_vals)
-
-        response = await get_most_played_openings(db_session, uid)
-        opening = next((o for o in response.white if o.full_hash == str(full_hash)), None)
-        assert opening is not None, f"Opening {opening_name} not found in white list"
-
-        assert opening.eval_endgame_n == 12
-        assert opening.avg_eval_endgame_entry_pawns is not None
-        assert opening.avg_eval_endgame_entry_pawns == pytest.approx(
-            expected_mean_eg / 100.0, rel=0.01
-        )
-        assert opening.eval_endgame_confidence in ("low", "medium", "high")
-        assert opening.eval_endgame_p_value is not None
-        assert opening.eval_endgame_ci_low_pawns is not None
-        assert opening.eval_endgame_ci_high_pawns is not None
-        assert (
-            opening.eval_endgame_ci_low_pawns
-            < opening.avg_eval_endgame_entry_pawns
-            < opening.eval_endgame_ci_high_pawns
-        )
-
-    @pytest.mark.asyncio
     async def test_get_most_played_openings_eval_n_zero_when_no_phase_data(
         self, db_session: AsyncSession
     ) -> None:
-        """When no phase-entry rows have eval, eval_n / eval_endgame_n == 0 and avg_eval == None."""
+        """When no phase-entry rows have eval, eval_n == 0 and avg_eval_pawns == None."""
         uid = _USER_SS_EMPTY
         opening_info = await _get_white_opening_with_min_ply(db_session, MIN_PLY_WHITE)
         if opening_info is None:
@@ -341,7 +271,6 @@ class TestGetMostPlayedOpeningsPhaseEntry:
                 opening_name=opening_name,
                 ply_count=MIN_PLY_WHITE,
                 mg_eval_cp=None,
-                eg_eval_cp=None,
             )
 
         response = await get_most_played_openings(db_session, uid)
@@ -351,9 +280,6 @@ class TestGetMostPlayedOpeningsPhaseEntry:
         assert opening.eval_n == 0
         assert opening.avg_eval_pawns is None
         assert opening.eval_confidence == "low"
-        assert opening.eval_endgame_n == 0
-        assert opening.avg_eval_endgame_entry_pawns is None
-        assert opening.eval_endgame_confidence == "low"
 
     @pytest.mark.asyncio
     async def test_get_most_played_openings_clock_diff_pct_signed(
@@ -394,40 +320,7 @@ class TestGetMostPlayedOpeningsPhaseEntry:
     async def test_clock_diff_pct_heterogeneous_base_time(
         self, db_session: AsyncSession
     ) -> None:
-        """WR-04: avg_clock_diff_pct uses per-game mean, not sum-weighted ratio.
-
-        3 bullet games (base_time=180s): user +30s ahead → diff_pct = 30/180*100 = 16.67%
-        2 blitz games  (base_time=300s): user +30s ahead → diff_pct = 30/300*100 = 10.00%
-
-        Per-game mean (Option A, correct):
-          avg_seconds = 30  (uniform diff across all games)
-          avg_base = (3*180 + 2*300) / 5 = 540 + 600 / 5 = 1140/5 = 228
-          avg_pct = 30/228 * 100 ≈ 13.16%
-
-        Sum-weighted ratio (old formula, wrong):
-          sum_diff = 5*30 = 150; sum_base = 3*180 + 2*300 = 1140
-          pct = 150/1140 * 100 ≈ 13.16%
-
-        In this equal-diff case both formulas agree. Use unequal diffs to distinguish:
-          3 bullet games: user -10s behind → diff = -10s; pct_per_game = -10/180*100 = -5.56%
-          2 blitz games:  user +60s ahead  → diff = +60s; pct_per_game = +60/300*100 = +20.00%
-
-        Per-game mean:
-          avg_seconds = (3*(-10) + 2*60) / 5 = (-30 + 120) / 5 = 90/5 = +18s
-          avg_base    = (3*180 + 2*300) / 5 = 228
-          avg_pct     = 18/228 * 100 ≈ +7.89%
-
-        Sum-weighted ratio:
-          sum_diff = 3*(-10) + 2*60 = 90; sum_base = 1140
-          pct = 90/1140 * 100 ≈ +7.89%
-
-        Both agree again because avg_pct = avg_seconds / avg_base * 100
-        = (sum_diff/n) / (sum_base/n) * 100 = sum_diff/sum_base * 100.
-
-        The formulas are mathematically identical when using the same n. The key fix
-        is semantic consistency (both use per-game averages), and the guard is that
-        avg_seconds and avg_pct / avg_base form a consistent triple.
-        """
+        """WR-04: avg_clock_diff_pct uses per-game mean, consistent with avg_clock_diff_seconds."""
         uid = _USER_SS_CLOCK_HETERO
         opening_info = await _get_white_opening_with_min_ply(db_session, MIN_PLY_WHITE)
         if opening_info is None:
@@ -473,19 +366,16 @@ class TestGetMostPlayedOpeningsPhaseEntry:
         assert opening is not None
         assert opening.clock_diff_n == 5
 
-        # avg_clock_diff_seconds = (3*(-10) + 2*60) / 5 = 90/5 = +18.0s
         expected_avg_seconds = (3 * (-10.0) + 2 * 60.0) / 5
         assert opening.avg_clock_diff_seconds == pytest.approx(expected_avg_seconds, rel=0.01)
 
-        # avg_base_time = (3*180 + 2*300) / 5 = 1140/5 = 228.0s
-        # avg_clock_diff_pct = avg_seconds / avg_base * 100 = 18/228 * 100 ≈ 7.89%
         expected_avg_base = (3 * 180.0 + 2 * 300.0) / 5
         expected_pct = (expected_avg_seconds / expected_avg_base) * 100.0
         assert opening.avg_clock_diff_pct == pytest.approx(expected_pct, rel=0.01)
 
     @pytest.mark.asyncio
     async def test_filter_threading_eval_n_le_total(self, db_session: AsyncSession) -> None:
-        """Filter consistency: eval_n <= total AND eval_endgame_n <= total AND clock_diff_n <= total."""
+        """Filter consistency: eval_n <= total AND clock_diff_n <= total."""
         uid = _USER_SS_FILTER
         opening_info = await _get_white_opening_with_min_ply(db_session, MIN_PLY_WHITE)
         if opening_info is None:
@@ -502,13 +392,11 @@ class TestGetMostPlayedOpeningsPhaseEntry:
                 opening_name=opening_name,
                 ply_count=MIN_PLY_WHITE,
                 mg_eval_cp=cp,
-                eg_eval_cp=cp,
             )
 
         response = await get_most_played_openings(db_session, uid)
         for opening in response.white + response.black:
             assert opening.eval_n <= opening.total
-            assert opening.eval_endgame_n <= opening.total
             assert opening.clock_diff_n <= opening.total
 
     @pytest.mark.asyncio
@@ -527,10 +415,10 @@ class TestGetMostPlayedOpeningsPhaseEntry:
         )
 
     @pytest.mark.asyncio
-    async def test_color_flip_symmetry_through_service_both_phases(
+    async def test_color_flip_symmetry_through_service(
         self, db_session: AsyncSession
     ) -> None:
-        """Sign convention: same raw eval_cp (+50 MG, +200 EG) → white +, black - after sign flip."""
+        """Sign convention: same raw eval_cp=+50 → white +0.50, black -0.50 after sign flip."""
         uid = _USER_SS_FLIP
 
         # White-defined opening for white games
@@ -545,7 +433,7 @@ class TestGetMostPlayedOpeningsPhaseEntry:
             pytest.skip("openings_dedup has no black-defined opening with ply >= 3")
         eco_b, name_b, hash_b = black_info
 
-        # White games: raw eval_cp = +50 MG, +200 EG → sign = +1 → user_eval = +50, +200
+        # White games: raw eval_cp = +50 → sign = +1 → user_eval = +50
         for _ in range(3):
             await _seed_game_with_phases(
                 db_session,
@@ -556,10 +444,9 @@ class TestGetMostPlayedOpeningsPhaseEntry:
                 opening_name=name_w,
                 ply_count=MIN_PLY_WHITE,
                 mg_eval_cp=50,
-                eg_eval_cp=200,
             )
 
-        # Black games: raw eval_cp = +50 MG, +200 EG → sign = -1 → user_eval = -50, -200
+        # Black games: raw eval_cp = +50 → sign = -1 → user_eval = -50
         for _ in range(3):
             game = Game(
                 user_id=uid,
@@ -603,18 +490,6 @@ class TestGetMostPlayedOpeningsPhaseEntry:
                     eval_cp=50,
                 )
             )
-            db_session.add(
-                GamePosition(
-                    game_id=game.id,
-                    user_id=uid,
-                    ply=MIN_PLY_WHITE + 30,
-                    full_hash=hash_b,
-                    white_hash=hash_b + 1000,
-                    black_hash=hash_b + 2000,
-                    phase=2,
-                    eval_cp=200,
-                )
-            )
             await db_session.flush()
 
         response = await get_most_played_openings(db_session, uid)
@@ -623,13 +498,11 @@ class TestGetMostPlayedOpeningsPhaseEntry:
         opening_w = next((o for o in response.white if o.full_hash == str(hash_w)), None)
         assert opening_w is not None, f"White opening hash {hash_w} not found"
         assert opening_w.avg_eval_pawns == pytest.approx(0.50, rel=0.01)
-        assert opening_w.avg_eval_endgame_entry_pawns == pytest.approx(2.00, rel=0.01)
 
         # Black games: user is black, sign=-1 → negative eval
         opening_b = next((o for o in response.black if o.full_hash == str(hash_b)), None)
         assert opening_b is not None, f"Black opening hash {hash_b} not found"
         assert opening_b.avg_eval_pawns == pytest.approx(-0.50, rel=0.01)
-        assert opening_b.avg_eval_endgame_entry_pawns == pytest.approx(-2.00, rel=0.01)
 
     @pytest.mark.asyncio
     async def test_outlier_trim_propagates_to_response(self, db_session: AsyncSession) -> None:

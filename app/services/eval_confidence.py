@@ -1,8 +1,8 @@
 """Two-sided Wald-z p-value + N-gate confidence helper for one-sample mean-vs-zero tests.
 
-Used for Stockfish eval at phase entry — both middlegame entry (D-04) and endgame entry
-(D-09). Callers supply already-trimmed inputs per D-08: rows with |eval_cp| >= 2000 are
-excluded upstream in SQL via FILTER predicates; the helper math is phase-agnostic.
+Used for Stockfish eval at middlegame entry (D-04). Callers supply already-trimmed
+inputs per D-08: rows with |eval_cp| >= 2000 are excluded upstream in SQL via FILTER
+predicates; the helper math is phase-agnostic.
 
 Bucketing rule (thresholds imported from opening_insights_constants to maintain visual
 and semantic consistency with the WDL confidence pills introduced in Phase 75 v1.14):
@@ -28,9 +28,9 @@ critical (CLAUDE.md); adding scipy is out of scope. Using math.erfc is consisten
 score_confidence.compute_confidence_bucket, which uses the same stdlib approximation.
 
 Call sites (Phase 80):
-  Called twice per opening row in app.services.stats_service.get_most_played_openings
-  finalizer — once for MG-entry eval (eval_sum, eval_sumsq, eval_n) and once for
-  EG-entry eval (eval_endgame sums) — per D-09. Not exposed via routers directly.
+  Called once per opening row in app.services.stats_service.get_most_played_openings
+  finalizer — for MG-entry eval (eval_sum_mg, eval_sumsq_mg, eval_n_mg).
+  Not exposed via routers directly.
 """
 
 import math

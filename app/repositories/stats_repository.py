@@ -37,16 +37,13 @@ EVAL_OUTLIER_TRIM_CP: int = 2000
 
 @dataclass(slots=True)
 class OpeningPhaseEntryMetrics:
-    """Accumulated phase-entry metrics per opening (full_hash key) for both
-    middlegame entry (phase=1) and endgame entry (phase=2).
-
-    Per D-09 we aggregate both phases in a single SQL pass using
-    ``FILTER (WHERE phase = 1)`` / ``FILTER (WHERE phase = 2)``.
+    """Accumulated phase-entry metrics per opening (full_hash key) for
+    middlegame entry (phase=1).
 
     Per-phase partition invariant: for every opening with at least one
     phase-entry row, ``eval_n + mate_n + null_eval_n + outlier_n`` equals the
-    phase-entry-row count for that phase. The four buckets are mutually
-    exclusive at the phase-entry row:
+    phase-entry-row count. The four buckets are mutually exclusive at the
+    phase-entry row:
 
     - ``eval_n``      — eval_cp NOT NULL AND eval_mate IS NULL AND |eval_cp| < 2000 (continuous, in-domain)
     - ``mate_n``      — eval_mate IS NOT NULL (forced-mate; excluded from mean)
@@ -65,18 +62,10 @@ class OpeningPhaseEntryMetrics:
     null_eval_n_mg: int  # phase=1 rows with both eval_cp and eval_mate NULL
     outlier_n_mg: int  # phase=1 rows with |eval_cp| >= 2000 (D-08)
 
-    # Clock diff at MG entry (D-05) — no EG-entry parallel
+    # Clock diff at MG entry (D-05)
     clock_diff_sum: float  # sum of (user_clock - opp_clock) at MG entry, in seconds
     base_time_sum: float  # sum of base_time_seconds across the same games
     clock_diff_n: int  # games with both user_clock and opp_clock NOT NULL at MG entry
-
-    # Endgame-entry pillar (D-09 — parallel to MG-entry pillar)
-    eval_sum_eg: float  # signed user-perspective sum at EG entry
-    eval_sumsq_eg: float  # sum of squared signed eval_cp at EG entry
-    eval_n_eg: int  # phase=2 rows with continuous in-domain eval
-    mate_n_eg: int  # phase=2 rows with eval_mate IS NOT NULL
-    null_eval_n_eg: int  # phase=2 rows with both eval_cp and eval_mate NULL
-    outlier_n_eg: int  # phase=2 rows with |eval_cp| >= 2000 (D-08)
 
 
 # Standalone MetaData (not Base.metadata) keeps the view invisible to Alembic autogenerate.
@@ -482,10 +471,9 @@ async def query_opening_phase_entry_metrics_batch(
 ) -> dict[int, OpeningPhaseEntryMetrics]:
     """Return {full_hash: OpeningPhaseEntryMetrics} for games passing through each position.
 
-    Aggregates both middlegame-entry (phase=1) and endgame-entry (phase=2) metrics in a
-    single SQL pass using ``FILTER (WHERE phase = 1)`` / ``FILTER (WHERE phase = 2)``
-    partitioning (D-09). The phase-entry row per (game, phase) is identified via
-    ROW_NUMBER() OVER (PARTITION BY game_id, phase ORDER BY ply) filtered to rn=1.
+    Aggregates middlegame-entry (phase=1) eval and clock-diff metrics in a single SQL
+    pass. The phase-entry row per game is identified via DISTINCT ON
+    ``(game_id, phase ORDER BY ply)`` filtered to phase=1.
 
     Outlier trim: |eval_cp| >= EVAL_OUTLIER_TRIM_CP rows are excluded from the eval mean
     and counted separately as outlier_n (D-08). Mate rows (eval_mate IS NOT NULL) are
@@ -559,18 +547,17 @@ async def query_opening_phase_entry_metrics_batch(
     phase_entry_subq = (
         select(
             GamePosition.game_id.label("game_id"),
-            GamePosition.phase.label("phase"),
             GamePosition.ply.label("entry_ply"),
             GamePosition.eval_cp.label("eval_cp"),
             GamePosition.eval_mate.label("eval_mate"),
             GamePosition.clock_seconds.label("user_clock"),
         )
         .where(
-            GamePosition.phase.in_([1, 2]),
+            GamePosition.phase == 1,
             GamePosition.game_id.in_(select(dedup_subq.c.game_id)),
         )
-        .distinct(GamePosition.game_id, GamePosition.phase)
-        .order_by(GamePosition.game_id, GamePosition.phase, GamePosition.ply)
+        .distinct(GamePosition.game_id)
+        .order_by(GamePosition.game_id, GamePosition.ply)
     ).subquery("phase_entry")
 
     # Step 3: gp_opp is the entry_ply+1 row, used only for opponent clock at MG entry.
@@ -586,10 +573,6 @@ async def query_opening_phase_entry_metrics_batch(
 
     # Clock-diff: user_clock (entry_ply) minus opp_clock (entry_ply+1).
     clock_diff_expr = phase_entry_subq.c.user_clock - gp_opp.clock_seconds
-
-    # Phase predicates for FILTER partitioning (D-09):
-    is_phase_mg = phase_entry_subq.c.phase == 1
-    is_phase_eg = phase_entry_subq.c.phase == 2
 
     # Eval-state predicates. Trim threshold = EVAL_OUTLIER_TRIM_CP (D-08).
     has_continuous_in_domain_eval = and_(
@@ -616,52 +599,29 @@ async def query_opening_phase_entry_metrics_batch(
     agg_select = (
         select(
             dedup_subq.c.full_hash,
-            # --- MG-entry aggregations (FILTER WHERE phase = 1) ---
+            # --- MG-entry aggregations (phase=1, filtered upstream) ---
             func.coalesce(
-                func.sum(user_eval_expr).filter(and_(is_phase_mg, has_continuous_in_domain_eval)),
+                func.sum(user_eval_expr).filter(has_continuous_in_domain_eval),
                 0.0,
             ).label("eval_sum_mg"),
             func.coalesce(
-                func.sum(user_eval_expr * user_eval_expr).filter(
-                    and_(is_phase_mg, has_continuous_in_domain_eval)
-                ),
+                func.sum(user_eval_expr * user_eval_expr).filter(has_continuous_in_domain_eval),
                 0.0,
             ).label("eval_sumsq_mg"),
-            func.count()
-            .filter(and_(is_phase_mg, has_continuous_in_domain_eval))
-            .label("eval_n_mg"),
-            func.count().filter(and_(is_phase_mg, has_mate)).label("mate_n_mg"),
-            func.count().filter(and_(is_phase_mg, has_null_eval)).label("null_eval_n_mg"),
-            func.count().filter(and_(is_phase_mg, has_outlier_eval)).label("outlier_n_mg"),
-            # --- Clock-diff aggregations — only at MG entry (phase=1) ---
+            func.count().filter(has_continuous_in_domain_eval).label("eval_n_mg"),
+            func.count().filter(has_mate).label("mate_n_mg"),
+            func.count().filter(has_null_eval).label("null_eval_n_mg"),
+            func.count().filter(has_outlier_eval).label("outlier_n_mg"),
+            # --- Clock-diff aggregations at MG entry ---
             func.coalesce(
-                func.sum(clock_diff_expr).filter(and_(is_phase_mg, has_user_and_opp_clock)),
+                func.sum(clock_diff_expr).filter(has_user_and_opp_clock),
                 0.0,
             ).label("clock_diff_sum"),
             func.coalesce(
-                func.sum(dedup_subq.c.base_time_seconds).filter(
-                    and_(is_phase_mg, has_user_and_opp_clock)
-                ),
+                func.sum(dedup_subq.c.base_time_seconds).filter(has_user_and_opp_clock),
                 0.0,
             ).label("base_time_sum"),
-            func.count().filter(and_(is_phase_mg, has_user_and_opp_clock)).label("clock_diff_n"),
-            # --- EG-entry aggregations (FILTER WHERE phase = 2) ---
-            func.coalesce(
-                func.sum(user_eval_expr).filter(and_(is_phase_eg, has_continuous_in_domain_eval)),
-                0.0,
-            ).label("eval_sum_eg"),
-            func.coalesce(
-                func.sum(user_eval_expr * user_eval_expr).filter(
-                    and_(is_phase_eg, has_continuous_in_domain_eval)
-                ),
-                0.0,
-            ).label("eval_sumsq_eg"),
-            func.count()
-            .filter(and_(is_phase_eg, has_continuous_in_domain_eval))
-            .label("eval_n_eg"),
-            func.count().filter(and_(is_phase_eg, has_mate)).label("mate_n_eg"),
-            func.count().filter(and_(is_phase_eg, has_null_eval)).label("null_eval_n_eg"),
-            func.count().filter(and_(is_phase_eg, has_outlier_eval)).label("outlier_n_eg"),
+            func.count().filter(has_user_and_opp_clock).label("clock_diff_n"),
         )
         .select_from(dedup_subq)
         .join(phase_entry_subq, phase_entry_subq.c.game_id == dedup_subq.c.game_id)
@@ -685,12 +645,6 @@ async def query_opening_phase_entry_metrics_batch(
             clock_diff_sum=float(row[7]),
             base_time_sum=float(row[8]),
             clock_diff_n=int(row[9]),
-            eval_sum_eg=float(row[10]),
-            eval_sumsq_eg=float(row[11]),
-            eval_n_eg=int(row[12]),
-            mate_n_eg=int(row[13]),
-            null_eval_n_eg=int(row[14]),
-            outlier_n_eg=int(row[15]),
         )
         for row in result.fetchall()
     }

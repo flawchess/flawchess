@@ -69,28 +69,9 @@ class OpeningWDL(BaseModel):
     eval_confidence: Literal["low", "medium", "high"] = "low"
 
     # Phase 80 additions — clock-diff at middlegame entry (D-05)
-    # No endgame-entry parallel (Endgame page already shows EG clock metrics).
     avg_clock_diff_pct: float | None = None  # signed % of base time; None when clock_diff_n == 0
     avg_clock_diff_seconds: float | None = None  # signed seconds; None when clock_diff_n == 0
     clock_diff_n: int = 0  # games with both user and opp clock present at MG entry
-
-    # Phase 80 additions — endgame-entry Stockfish eval (D-09 — parallel pillar)
-    # Same trim policy (D-08) and helper as MG-entry; different SQL filter (phase = 2).
-    # 99.99% coverage per bench §3 line 353; no analyzed-games caveat (handled in D-10 tooltip).
-    avg_eval_endgame_entry_pawns: float | None = (
-        None  # signed, user-perspective; None when eval_endgame_n == 0
-    )
-    eval_endgame_ci_low_pawns: float | None = (
-        None  # 95% CI lower bound; None when eval_endgame_n < 2
-    )
-    eval_endgame_ci_high_pawns: float | None = (
-        None  # 95% CI upper bound; None when eval_endgame_n < 2
-    )
-    eval_endgame_n: int = (
-        0  # games used in the EG mean (mate-excluded, NULL-excluded, outlier-trimmed)
-    )
-    eval_endgame_p_value: float | None = None  # two-sided p-value vs zero (EG-entry sample)
-    eval_endgame_confidence: Literal["low", "medium", "high"] = "low"
 
 
 class MostPlayedOpeningsResponse(BaseModel):
@@ -104,8 +85,8 @@ class BookmarkPhaseEntryItem(BaseModel):
     """Phase 80 fields for a single bookmark target_hash (parallel to OpeningWDL's
     Phase 80 subset). Returned by ``POST /stats/bookmark-phase-entry-metrics``.
 
-    The 14 fields below mirror the OpeningWDL Phase 80 additions exactly so the
-    frontend can spread them onto a synthetic OpeningWDL row for bookmarks.
+    Mirrors the OpeningWDL Phase 80 additions exactly so the frontend can spread
+    them onto a synthetic OpeningWDL row for bookmarks.
     """
 
     target_hash: str  # echoed back; key for the frontend lookup map
@@ -122,14 +103,6 @@ class BookmarkPhaseEntryItem(BaseModel):
     avg_clock_diff_pct: float | None = None
     avg_clock_diff_seconds: float | None = None
     clock_diff_n: int = 0
-
-    # EG-entry pillar
-    avg_eval_endgame_entry_pawns: float | None = None
-    eval_endgame_ci_low_pawns: float | None = None
-    eval_endgame_ci_high_pawns: float | None = None
-    eval_endgame_n: int = 0
-    eval_endgame_p_value: float | None = None
-    eval_endgame_confidence: Literal["low", "medium", "high"] = "low"
 
 
 class BookmarkPhaseEntryQuery(BaseModel):

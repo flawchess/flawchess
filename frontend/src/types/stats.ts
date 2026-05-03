@@ -52,18 +52,10 @@ export interface OpeningWDL {
   eval_p_value?: number | null;
   eval_confidence: 'low' | 'medium' | 'high';
 
-  // Phase 80 clock diff at MG entry (D-05) — no EG parallel.
+  // Phase 80 clock diff at MG entry (D-05).
   avg_clock_diff_pct?: number | null;
   avg_clock_diff_seconds?: number | null;
   clock_diff_n: number;
-
-  // Phase 80 EG-entry pillar (D-09).
-  avg_eval_endgame_entry_pawns?: number | null;
-  eval_endgame_ci_low_pawns?: number | null;
-  eval_endgame_ci_high_pawns?: number | null;
-  eval_endgame_n: number;
-  eval_endgame_p_value?: number | null;
-  eval_endgame_confidence: 'low' | 'medium' | 'high';
 }
 
 export interface MostPlayedOpeningsResponse {
@@ -90,13 +82,6 @@ export interface BookmarkPhaseEntryItem {
   avg_clock_diff_pct?: number | null;
   avg_clock_diff_seconds?: number | null;
   clock_diff_n: number;
-
-  avg_eval_endgame_entry_pawns?: number | null;
-  eval_endgame_ci_low_pawns?: number | null;
-  eval_endgame_ci_high_pawns?: number | null;
-  eval_endgame_n: number;
-  eval_endgame_p_value?: number | null;
-  eval_endgame_confidence: 'low' | 'medium' | 'high';
 }
 
 export interface BookmarkPhaseEntryRequest {

@@ -2,8 +2,8 @@
 
 Verifies that:
 - Existing callers with only the 14 legacy fields still parse correctly.
-- All 15 new Phase 80 fields (6 MG eval + 3 clock diff + 6 EG eval) parse when present.
-- Literal types for eval_confidence and eval_endgame_confidence reject invalid values.
+- The 9 Phase 80 fields (6 MG eval + 3 clock diff) parse when present.
+- Literal type for eval_confidence rejects invalid values.
 - Optional fields default correctly when omitted.
 """
 
@@ -50,20 +50,12 @@ def test_opening_wdl_old_payload_still_parses() -> None:
     assert m.avg_clock_diff_pct is None
     assert m.avg_clock_diff_seconds is None
 
-    # EG-entry eval defaults
-    assert m.eval_endgame_n == 0
-    assert m.eval_endgame_confidence == "low"
-    assert m.avg_eval_endgame_entry_pawns is None
-    assert m.eval_endgame_ci_low_pawns is None
-    assert m.eval_endgame_ci_high_pawns is None
-    assert m.eval_endgame_p_value is None
-
 
 # --- Full Phase 80 payload (new fields) ----------------------------------
 
 
 def test_opening_wdl_new_payload_parses() -> None:
-    """All 15 new Phase 80 fields parse correctly and round-trip via model_dump."""
+    """All Phase 80 fields parse correctly and round-trip via model_dump."""
     payload: dict[str, object] = {
         **_LEGACY,
         # MG-entry eval
@@ -77,13 +69,6 @@ def test_opening_wdl_new_payload_parses() -> None:
         "avg_clock_diff_pct": 8.2,
         "avg_clock_diff_seconds": 24.0,
         "clock_diff_n": 40,
-        # EG-entry eval
-        "avg_eval_endgame_entry_pawns": -0.30,
-        "eval_endgame_ci_low_pawns": -0.70,
-        "eval_endgame_ci_high_pawns": 0.10,
-        "eval_endgame_n": 38,
-        "eval_endgame_p_value": 0.073,
-        "eval_endgame_confidence": "medium",
     }
     m = OpeningWDL.model_validate(payload)
 
@@ -95,8 +80,6 @@ def test_opening_wdl_new_payload_parses() -> None:
     assert m.avg_eval_pawns == pytest.approx(0.15)
     assert m.eval_confidence == "high"
     assert m.clock_diff_n == 40
-    assert m.eval_endgame_confidence == "medium"
-    assert m.avg_eval_endgame_entry_pawns == pytest.approx(-0.30)
 
 
 # --- Literal type enforcement -------------------------------------------
@@ -109,13 +92,6 @@ def test_eval_confidence_literal_rejects_invalid() -> None:
         OpeningWDL.model_validate(payload)
 
 
-def test_eval_endgame_confidence_literal_rejects_invalid() -> None:
-    """eval_endgame_confidence='bogus' should raise ValidationError."""
-    payload: dict[str, object] = {**_LEGACY, "eval_endgame_confidence": "bogus"}
-    with pytest.raises(ValidationError):
-        OpeningWDL.model_validate(payload)
-
-
 # --- Optional field defaults when omitted --------------------------------
 
 
@@ -123,9 +99,3 @@ def test_avg_eval_pawns_none_when_omitted() -> None:
     """avg_eval_pawns defaults to None when not supplied."""
     m = OpeningWDL.model_validate(_LEGACY)
     assert m.avg_eval_pawns is None
-
-
-def test_avg_eval_endgame_entry_pawns_none_when_omitted() -> None:
-    """avg_eval_endgame_entry_pawns defaults to None when not supplied."""
-    m = OpeningWDL.model_validate(_LEGACY)
-    assert m.avg_eval_endgame_entry_pawns is None
