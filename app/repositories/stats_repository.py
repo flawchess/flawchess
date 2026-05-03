@@ -502,7 +502,8 @@ async def query_opening_phase_entry_metrics_batch(
     the original bug report and fix rationale). Run EXPLAIN ANALYZE on heavy users pre-merge.
 
     Uses apply_game_filters() from query_utils — same filter set as query_position_wdl_batch
-    (CLAUDE.md "Shared Query Filters"). Never use asyncio.gather on the shared session.
+    (CLAUDE.md "Shared Query Filters"). AsyncSession is not safe for concurrent use — callers
+    must await this sequentially, not concurrently.
     """
     if not hashes:
         return {}
