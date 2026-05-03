@@ -421,6 +421,19 @@ The mate-score handling matches `_classify_endgame_bucket` exactly — mate scor
 - parity → user score `1.0 / 0.5 / 0.0` (Score %)
 - recovery → `1.0` if user won or drew else `0.0` (Save %)
 
+### Population bucket prevalence (reference, 2026-05-03)
+
+How endgame-entry games partition into the three buckets across the benchmark DB (selected users, `status='completed'`, sparse `(2400, classical)` cell excluded). Useful as a sanity check for bucketing changes — if a refactor of the eval rule moves these numbers more than ~1pp it warrants investigation.
+
+Cell = `n (%) [avg user_eval_cp]`. The eval is `sign * eval_cp` (user-perspective), averaged across games where `eval_cp IS NOT NULL` (mate scores excluded from the average; their counts are reported in the `mate_games` column for reference).
+
+| Filter | n_games | conversion | parity | recovery | overall avg eval | mate games |
+|---|---:|---:|---:|---:|---:|---:|
+| Base only (`rated AND NOT is_computer_game`) | 708,032 | 274,391 (38.76%) [+430 cp] | 177,987 (25.14%) [+1 cp] | 255,654 (36.11%) [−429 cp] | +12 cp | 16,715 |
+| Base + equal-footing (`abs(opp_rating − user_rating) ≤ 100`) | 554,608 | 211,443 (38.12%) [+430 cp] | 137,133 (24.73%) [+0 cp] | 206,032 (37.15%) [−430 cp] | +4 cp | 12,922 |
+
+The equal-footing filter retains ~78% of games and shrinks the conversion–recovery gap from +2.7pp to +1.0pp, consistent with higher-rated cohorts padding their conversion rate via softer matchmaking. The overall user-perspective eval also shrinks from +12 cp to +4 cp, confirming the same matchmaking confound at the eval level. Per-bucket eval magnitudes (~±430 cp) are nearly identical across filter regimes — the equal-footing filter changes which games qualify, not the within-bucket eval distribution. Buckets are roughly balanced (≈38 / 25 / 37), so eval-coverage regressions to NULL would noticeably swell the parity bucket and shift its avg-eval column toward the games-without-eval cohort's true distribution.
+
 ### Endgame Skill
 Unweighted mean of the non-empty per-bucket rates. A user with all three buckets has `skill = (conv + par + recov) / 3`; one with only parity has `skill = parity_rate`. Sample floor: ≥20 endgame games per user per cell + ≥2 of 3 buckets non-empty (defensive — with eval coverage near 100% essentially every user has all three).
 
