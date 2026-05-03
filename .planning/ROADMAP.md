@@ -51,7 +51,7 @@ Plans:
 - [x] 80-05-PLAN.md — Frontend: MostPlayedOpeningsTable new columns + mobile second-line + ConfidencePill + clockFormat extracts (Wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 80-06-PLAN.md — Smoke / regression matrix + CHANGELOG + human UI checkpoint (Wave 4)
+- [x] 80-06-PLAN.md — Smoke / regression matrix + CHANGELOG + human UI checkpoint (Wave 4)
 
 ### Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance
 
@@ -278,7 +278,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 70-71.1. v1.13 phases | v1.13 | 14/14 | Complete (Phases 72/73/74 descoped) | 2026-04-27 |
 | 75-77. v1.14 phases | v1.14 | 16/16 | Complete (INSIGHT-UI-04 descoped) | 2026-04-29 |
 | 78-79. v1.15 phases | v1.15 | 10/10 | Complete (VAL-01 / PHASE-VAL-01 rescinded) | 2026-05-03 |
-| 80. Opening stats: middlegame-entry eval and clock-diff columns | v1.16 | 5/6 | In Progress|  |
+| 80. Opening stats: middlegame-entry eval and clock-diff columns | v1.16 | 6/6 | Complete   | 2026-05-03 |
 
 ## Backlog
 
