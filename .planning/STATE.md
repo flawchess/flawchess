@@ -127,6 +127,7 @@ Carried forward from v1.11 close (still relevant):
 | 260429-gmj | Insights finding cards: arrow for after-move on mini board | 2026-04-29 | de187ed | [260429-gmj-insights-finding-cards-arrow-for-after-m](./quick/260429-gmj-insights-finding-cards-arrow-for-after-m/) |
 | 260429-ty5 | Replace Opponent Strength ToggleGroup with dual-handle range slider + 4 preset chips (Spike 001) | 2026-04-29 | 124237b | [260429-ty5-opponent-strength-slider](./quick/260429-ty5-opponent-strength-slider/) |
 | 260503-0t8 | Speed up scripts/backfill_eval.py with parallel Stockfish EnginePool, batched UPDATE, and group-by-game PGN parsing (--workers N, default 1) | 2026-05-03 | d1346b4 | [260503-0t8-speed-up-scripts-backfill-eval-py-with-p](./quick/260503-0t8-speed-up-scripts-backfill-eval-py-with-p/) |
+| 260503-fef | Add equal-footing opponent filter (abs(opp - user) <= 100) to /benchmarks SKILL §2/§3/§6 + capture framing decision in note (gsd-fast, no quick/ dir) | 2026-05-03 | 6773475 | n/a |
 
 ---
-Last activity: 2026-05-03 — Quick task 260503-0t8: backfill_eval.py parallelized via new EnginePool (singleton path untouched). Also recently: Plan 78-05 (endgame refactor, eval_cp/eval_mate) complete; current plan 2 of 6 (78-06 cutover execution is next).
+Last activity: 2026-05-03 — gsd-fast 260503-fef: equal-footing opponent filter wired into benchmarks SKILL §2/§3/§6; report rerun deferred (todo created). Earlier: 260503-0t8 (backfill_eval.py parallelized via EnginePool); Plan 78-05 (endgame refactor, eval_cp/eval_mate) complete; current plan 2 of 6 (78-06 cutover execution is next).
