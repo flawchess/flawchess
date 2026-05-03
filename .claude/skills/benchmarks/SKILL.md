@@ -93,6 +93,25 @@ ORDER BY 2, 1, 3;
 
 A cell is **pool-exhausted** when `unattempted = 0` and `completed < target`. Topping up via re-running the orchestrator does nothing — the only fix is widening selection criteria in `select_benchmark_users.py` and re-running selection.
 
+### Eval coverage check
+
+Sections 2/3/6 depend on Stockfish eval being present at the first endgame ply. Coverage should be ~100% on the benchmark DB. If it dips below 99% the report header should flag it (NULL eval routes to parity, biasing the parity bucket).
+
+```sql
+WITH first_endgame AS (
+  SELECT game_id, min(ply) AS entry_ply
+  FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id HAVING count(*) >= 6
+)
+SELECT
+  count(*) AS endgame_games,
+  count(*) FILTER (WHERE ep.eval_cp IS NOT NULL OR ep.eval_mate IS NOT NULL) AS with_eval,
+  round(100.0 * count(*) FILTER (WHERE ep.eval_cp IS NOT NULL OR ep.eval_mate IS NOT NULL) / count(*), 2) AS pct_with_eval
+FROM first_endgame fe
+JOIN game_positions ep ON ep.game_id = fe.game_id AND ep.ply = fe.entry_ply;
+```
+
 ### Sparse-cell exclusion
 
 **Known sparse cell**: `(rating_bucket=2400, tc_bucket='classical')` is structurally undersampled and pool-exhausted as of the 2026-03 dump (12 completed users out of a 23-user pool, ~55 games/user vs ~900 in 2400-bullet). This is a property of the Lichess 2400-classical population (low player count × low games-per-player), not a fixable ingestion gap.
@@ -187,7 +206,7 @@ Before running each section, grep the code for the constants the section's gauge
 |---|---|---|---|
 | 1 | Score gap (eg vs non-eg) + timeline | `frontend/src/components/charts/EndgamePerformanceSection.tsx` | `SCORE_GAP_NEUTRAL_MIN/MAX`, `SCORE_GAP_DOMAIN`, `SCORE_TIMELINE_Y_DOMAIN`, any `SCORE_TIMELINE_NEUTRAL_*` constants |
 | 2 | Conv / Par / Recov + Endgame Skill | `frontend/src/components/charts/EndgameScoreGapSection.tsx`, `frontend/src/generated/endgameZones.ts` | `FIXED_GAUGE_ZONES`, `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`, `ENDGAME_SKILL_ZONES` |
-| 3 | Endgame ELO formula | `app/services/endgame_service.py` | `ENDGAME_ELO_TIMELINE_WINDOW`, `_ENDGAME_ELO_SKILL_CLAMP_LO/HI`, `MIN_GAMES_FOR_TIMELINE`, `_MATERIAL_ADVANTAGE_THRESHOLD` |
+| 3 | Endgame ELO formula | `app/services/endgame_service.py` | `ENDGAME_ELO_TIMELINE_WINDOW`, `_ENDGAME_ELO_SKILL_CLAMP_LO/HI`, `MIN_GAMES_FOR_TIMELINE`, `EVAL_ADVANTAGE_THRESHOLD` |
 | 4 | Clock-diff + net timeout | `frontend/src/components/charts/EndgameClockPressureSection.tsx` | `NEUTRAL_PCT_THRESHOLD`, `NEUTRAL_TIMEOUT_THRESHOLD` |
 | 5 | Time-pressure chart | `app/services/endgame_service.py::_compute_time_pressure_chart`, `EndgameTimePressureSection.tsx` | `Y_AXIS_DOMAIN`, `X_AXIS_DOMAIN`, `MIN_GAMES_FOR_CLOCK_STATS` |
 | 6 | Per-class score-diff + conv/recov | `frontend/src/components/charts/EndgameWDLChart.tsx`, `EndgameConvRecovChart.tsx` | `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`; conv/recov chart has no per-class zones today |
@@ -333,10 +352,19 @@ ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapi
 
 **Question:** How do per-user Conversion/Parity/Recovery rates and composite Endgame Skill distribute across cells? Does each metric collapse across TC and/or ELO?
 
-### Material-bucket rule (mirrors `_compute_score_gap_material`)
-- `entry_imb_user = entry.material_imbalance * sign` (`sign = +1` white, `-1` black)
-- `after_imb_user = after.material_imbalance * sign` where `after` is at `entry_ply + 4` AND `after.endgame_class IS NOT NULL` (else NULL)
-- Bucket: `conversion` if both ≥ +100, `recovery` if both ≤ −100, else `parity` (including NULL after)
+### Eval-bucket rule (REFAC-02 — mirrors `_classify_endgame_bucket`)
+
+Per-game classification uses the Stockfish eval at the **first endgame ply** of the game. The old `material_imbalance + 4-ply persistence` proxy is gone — REFAC-02 replaced it with a single-point engine eval. With ~100% engine-eval coverage at endgame entry on the benchmark DB, NULL eval should be a rounding error; any remaining NULLs route to `parity`.
+
+- `user_eval = sign * eval_cp` where `sign = +1` for white, `−1` for black.
+- If `eval_mate IS NOT NULL`: treat as ±∞ in the user's perspective (positive `user_eval = sign * eval_mate > 0` ⇒ user has the mate ⇒ conversion; negative ⇒ recovery).
+- Else if `eval_cp IS NOT NULL`: bucket on `user_eval` vs `EVAL_ADVANTAGE_THRESHOLD = 100` cp.
+  - `conversion` if `user_eval >=  100`
+  - `recovery`   if `user_eval <= -100`
+  - `parity`     otherwise
+- Else (both NULL): `parity`.
+
+The mate-score handling matches `_classify_endgame_bucket` exactly — mate scores skip the cp threshold and force conversion/recovery.
 
 ### Per-bucket rate definitions (mirror `_endgame_skill_from_bucket_rows`)
 - conversion → `1.0` if user won else `0.0` (Win %)
@@ -344,7 +372,7 @@ ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapi
 - recovery → `1.0` if user won or drew else `0.0` (Save %)
 
 ### Endgame Skill
-Unweighted mean of the non-empty per-bucket rates. A user with all three buckets has `skill = (conv + par + recov) / 3`; one with only parity has `skill = parity_rate`. Need ≥2 of 3 buckets non-empty + ≥20 endgame games per user per cell.
+Unweighted mean of the non-empty per-bucket rates. A user with all three buckets has `skill = (conv + par + recov) / 3`; one with only parity has `skill = parity_rate`. Sample floor: ≥20 endgame games per user per cell + ≥2 of 3 buckets non-empty (defensive — with eval coverage near 100% essentially every user has all three).
 
 ### Query
 ```sql
@@ -375,33 +403,35 @@ bucketed AS (
       ELSE 0.0
     END AS score,
     CASE WHEN g.user_color='white' THEN 1 ELSE -1 END AS color_sign,
-    ep.material_imbalance AS entry_imb,
-    ap.material_imbalance AS after_imb
+    ep.eval_cp   AS entry_eval_cp,    -- white-perspective Stockfish eval at endgame entry
+    ep.eval_mate AS entry_eval_mate   -- white-perspective mate-in-N at endgame entry
   FROM games g
   JOIN selected_users su ON su.user_id = g.user_id
   JOIN first_endgame fe ON fe.game_id = g.id
   JOIN game_positions ep
     ON ep.game_id = g.id AND ep.ply = fe.entry_ply
-  LEFT JOIN game_positions ap
-    ON ap.game_id = g.id AND ap.ply = fe.entry_ply + 4
-   AND ap.endgame_class IS NOT NULL
   WHERE g.rated AND NOT g.is_computer_game
     AND g.time_control_bucket::text = su.tc_bucket
 ),
 classified AS (
+  -- Mirrors _classify_endgame_bucket: mate first (forces conv/recov), then cp vs ±100, NULL = parity.
   SELECT
     user_id, elo_bucket, tc, score,
     CASE
-      WHEN entry_imb IS NULL OR after_imb IS NULL THEN 'parity'
-      WHEN (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100 THEN 'conversion'
-      WHEN (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100 THEN 'recovery'
+      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) > 0 THEN 'conversion'
+      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) < 0 THEN 'recovery'
+      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) >=  100 THEN 'conversion'
+      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) <= -100 THEN 'recovery'
       ELSE 'parity'
     END AS bucket,
     CASE
-      WHEN entry_imb IS NULL OR after_imb IS NULL THEN score
-      WHEN (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100
+      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) > 0
         THEN CASE WHEN score = 1.0 THEN 1.0 ELSE 0.0 END
-      WHEN (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100
+      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) < 0
+        THEN CASE WHEN score >= 0.5 THEN 1.0 ELSE 0.0 END
+      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) >=  100
+        THEN CASE WHEN score = 1.0 THEN 1.0 ELSE 0.0 END
+      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) <= -100
         THEN CASE WHEN score >= 0.5 THEN 1.0 ELSE 0.0 END
       ELSE score
     END AS bucket_contribution
@@ -516,8 +546,8 @@ endgame_games AS (
       ELSE 0.0
     END AS score,
     CASE WHEN g.user_color='white' THEN 1 ELSE -1 END AS color_sign,
-    ep.material_imbalance AS entry_imb,
-    ap.material_imbalance AS after_imb,
+    ep.eval_cp   AS entry_eval_cp,    -- white-perspective Stockfish eval at endgame entry (REFAC-02)
+    ep.eval_mate AS entry_eval_mate,  -- white-perspective mate-in-N at endgame entry
     row_number() OVER (
       PARTITION BY g.user_id
       ORDER BY g.played_at DESC, g.id DESC
@@ -526,9 +556,6 @@ endgame_games AS (
   JOIN selected_users su ON su.user_id = g.user_id
   JOIN first_endgame fe ON fe.game_id = g.id
   JOIN game_positions ep ON ep.game_id = g.id AND ep.ply = fe.entry_ply
-  LEFT JOIN game_positions ap
-    ON ap.game_id = g.id AND ap.ply = fe.entry_ply + 4
-   AND ap.endgame_class IS NOT NULL
   WHERE g.rated AND NOT g.is_computer_game
     AND g.time_control_bucket::text = su.tc_bucket
     AND (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) IS NOT NULL
@@ -538,20 +565,25 @@ window_games AS (
   SELECT * FROM endgame_games WHERE rn_desc <= 100
 ),
 classified AS (
+  -- Same eval-based bucketing as Section 2 — see _classify_endgame_bucket.
   SELECT
     user_id, elo_bucket, tc, score, user_rating, played_at, game_id,
     CASE
-      WHEN entry_imb IS NULL OR after_imb IS NULL THEN score
-      WHEN (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100
+      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) > 0
         THEN CASE WHEN score = 1.0 THEN 1.0 ELSE 0.0 END
-      WHEN (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100
+      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) < 0
+        THEN CASE WHEN score >= 0.5 THEN 1.0 ELSE 0.0 END
+      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) >=  100
+        THEN CASE WHEN score = 1.0 THEN 1.0 ELSE 0.0 END
+      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) <= -100
         THEN CASE WHEN score >= 0.5 THEN 1.0 ELSE 0.0 END
       ELSE score
     END AS bucket_contribution,
     CASE
-      WHEN entry_imb IS NULL OR after_imb IS NULL THEN 'parity'
-      WHEN (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100 THEN 'conversion'
-      WHEN (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100 THEN 'recovery'
+      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) > 0 THEN 'conversion'
+      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) < 0 THEN 'recovery'
+      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) >=  100 THEN 'conversion'
+      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) <= -100 THEN 'recovery'
       ELSE 'parity'
     END AS bucket
   FROM window_games
@@ -827,7 +859,7 @@ ORDER BY elo_bucket, tc, time_bucket;
 
 **Multi-class semantics**: per `query_endgame_entry_rows`, each `(game, endgame_class)` span ≥6 plies contributes one row. A single game traversing queen→rook contributes once to each. This is the same convention as the live Endgame Categories tab.
 
-**Persistence approximation**: SQL uses `entry_ply + 4` with same-class join, approximating the backend's stricter `array_agg` + contiguity check. Small systematic difference, document in report.
+**Bucketing**: per REFAC-02, conv/recov is determined by the Stockfish eval at the **first ply of each class span** (not at the game's first endgame ply). This matches `query_endgame_entry_rows`, which projects `eval_cp` / `eval_mate` per (game, endgame_class) span via `array_agg(... ORDER BY ply)[1]`. The classification rule is identical to Section 2: mate scores force conv/recov; otherwise cp vs ±`EVAL_ADVANTAGE_THRESHOLD = 100`; NULL routes to parity. There is no longer a 4-ply persistence join — the old material-imbalance proxy is gone.
 
 ### Query
 ```sql
@@ -848,6 +880,8 @@ class_span AS (
   HAVING count(*) >= 6
 ),
 bucketed AS (
+  -- Pull the Stockfish eval at the FIRST ply of each (game, class) span (REFAC-02).
+  -- White-perspective raw; sign flip happens below via color_sign.
   SELECT
     g.id AS game_id,
     g.user_id,
@@ -861,19 +895,28 @@ bucketed AS (
       ELSE 0.0
     END AS score,
     CASE WHEN g.user_color='white' THEN 1 ELSE -1 END AS color_sign,
-    ep.material_imbalance AS entry_imb,
-    ap.material_imbalance AS after_imb
+    ep.eval_cp   AS entry_eval_cp,
+    ep.eval_mate AS entry_eval_mate
   FROM games g
   JOIN selected_users su ON su.user_id = g.user_id
   JOIN class_span cs ON cs.game_id = g.id
   JOIN game_positions ep
     ON ep.game_id = g.id AND ep.ply = cs.entry_ply
-  LEFT JOIN game_positions ap
-    ON ap.game_id = g.id
-   AND ap.ply = cs.entry_ply + 4
-   AND ap.endgame_class = cs.endgame_class
   WHERE g.rated AND NOT g.is_computer_game
     AND g.time_control_bucket::text = su.tc_bucket
+),
+classified AS (
+  -- Apply _classify_endgame_bucket: mate first, else cp vs ±100, else parity (NULL or in-band).
+  SELECT
+    *,
+    CASE
+      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) > 0 THEN 'conversion'
+      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) < 0 THEN 'recovery'
+      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) >=  100 THEN 'conversion'
+      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) <= -100 THEN 'recovery'
+      ELSE 'parity'
+    END AS bucket
+  FROM bucketed
 )
 SELECT
   elo_bucket, tc,
@@ -889,13 +932,13 @@ SELECT
   count(DISTINCT user_id) AS users,
   round(avg(score)::numeric, 4) AS score,
   round((avg(score) * 2 - 1)::numeric, 4) AS score_diff,
-  count(*) FILTER (WHERE (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100) AS conv_games,
+  count(*) FILTER (WHERE bucket = 'conversion') AS conv_games,
   round((avg(CASE WHEN score = 1.0 THEN 1.0 ELSE 0.0 END)
-         FILTER (WHERE (entry_imb * color_sign) >=  100 AND (after_imb * color_sign) >=  100))::numeric, 4) AS conversion,
-  count(*) FILTER (WHERE (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100) AS recov_games,
+         FILTER (WHERE bucket = 'conversion'))::numeric, 4) AS conversion,
+  count(*) FILTER (WHERE bucket = 'recovery') AS recov_games,
   round((avg(CASE WHEN score >= 0.5 THEN 1.0 ELSE 0.0 END)
-         FILTER (WHERE (entry_imb * color_sign) <= -100 AND (after_imb * color_sign) <= -100))::numeric, 4) AS recovery
-FROM bucketed
+         FILTER (WHERE bucket = 'recovery'))::numeric, 4) AS recovery
+FROM classified
 GROUP BY elo_bucket, tc, endgame_class_int
 ORDER BY elo_bucket,
          CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END,
@@ -931,6 +974,8 @@ Write to `reports/benchmarks-YYYY-MM-DD.md` (UTC date). Layout:
 - **Selection provenance**: 2026-03 Lichess monthly dump, 9133 selected users, <N_ingested> ingested at ~50/cell
 - **Per-user history caveat**: rating_bucket is per-TC median rating at selection snapshot; each user contributes up to 1000 games per TC over a 36-month window at varying ratings; "ELO bucket effect" = "current rating cohort effect"
 - **Base filters**: g.rated AND NOT g.is_computer_game; per-user filter g.time_control_bucket = bsu.tc_bucket; benchmark_ingest_checkpoints.status = 'completed' (mandatory canonical-CTE filter)
+- **Conv/Parity/Recovery bucketing**: Stockfish eval at the first endgame ply (or first ply of each class span in section 6). Mirrors `_classify_endgame_bucket` (`EVAL_ADVANTAGE_THRESHOLD = 100` cp; mate scores force conv/recov; NULL → parity). REFAC-02 — the old `material_imbalance + 4-ply persistence` proxy is gone; sections 2/3/6 read `eval_cp` / `eval_mate` directly.
+- **Eval coverage**: <pct>% of qualifying endgame entries have non-NULL eval (`eval_cp IS NOT NULL OR eval_mate IS NOT NULL`). Expected ~100% on the benchmark DB after the Stockfish backfill — flag if < 99%.
 - **Sparse-cell exclusion**: `(2400, classical)` is excluded from TC marginals, ELO marginals, pooled overall, and Cohen's d on both axes (n=12 completed users, ~55 games/user, pool exhausted). It is still shown in cell-level 5×4 tables with an `n=12*` footnote. Revisit if a future dump produces ≥40 completed users at ≥200 games/user.
 - **Verdict thresholds**: Cohen's d < 0.2 collapse / 0.2–0.5 review / ≥ 0.5 keep separate
 - **Sample floors**: <floors used per section>
