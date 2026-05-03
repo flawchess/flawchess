@@ -18,16 +18,17 @@
 - ✅ **v1.13 Opening Insights** — Phases 70, 71, 71.1 (shipped 2026-04-27; Phases 72-74 descoped) — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md)
 - ✅ **v1.14 Score-Based Opening Insights** — Phases 75, 76, 77 (shipped 2026-04-29; INSIGHT-UI-04 descoped) — see [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md)
 - ✅ **v1.15 Eval-Based Endgame Classification** — Phases 78, 79 (shipped 2026-05-03; VAL-01 / PHASE-VAL-01 rescinded) — see [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md)
-- 🚧 **v1.16 Stockfish Eval Analyses** — Phase 80+ (in progress, opened 2026-05-03) — Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp`/`eval_mate`). First phase: opening-stats columns for middlegame-entry eval and clock diff. More phases TBD.
+- 🚧 **v1.16 Stockfish Eval Analyses** — Phases 80, 81+ (in progress, opened 2026-05-03) — Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp`/`eval_mate`). Phase 80: opening-stats columns for middlegame-entry eval and clock diff. Phase 81: twin-tile (entry eval + score gap) decomposition in Endgame Overall Performance. More phases TBD.
 
 ## Phases
 
 <details open>
-<summary>🚧 v1.16 Stockfish Eval Analyses (Phase 80+) — IN PROGRESS (opened 2026-05-03)</summary>
+<summary>🚧 v1.16 Stockfish Eval Analyses (Phases 80, 81+) — IN PROGRESS (opened 2026-05-03)</summary>
 
 Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp` / `eval_mate` on `game_positions`). Additional phases will be added as new analyses are scoped from `.planning/notes/phase-aware-analytics-ideas.md` and other brainstorms.
 
 - [ ] Phase 80: Opening stats: middlegame-entry eval and clock-diff columns (0 plans) — not planned yet
+- [ ] Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance (0 plans) — not planned yet
 
 ### Phase 80: Opening stats: middlegame-entry eval and clock-diff columns
 
@@ -39,6 +40,17 @@ Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlega
 
 Plans:
 - [ ] TBD (run `/gsd-plan-phase 80` to break down)
+
+### Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance
+
+**Goal:** Add **avg eval at endgame entry** as a first-class metric in the Endgame Overall Performance section of the Endgames page, paired with the existing Score Gap as a twin-tile decomposition: *"where you start"* (avg eval at endgame entry, in pawns) + *"what you do with it"* (endgame vs non-endgame score gap). Both tiles use the existing `MiniBulletChart` with sig-test gating against 0 (one-sample t-test, p < 0.05, min n=30). Lifts Score Gap out of its current cell in the WDL table into its own dedicated tile so the two metrics read as a coherent pair. WDL table becomes 4-column (Endgame, Games, WDL, Score). Both desktop and mobile (stacked, entry first) layouts updated. Concept-explainer accordion gains an "Avg eval at endgame entry" paragraph.
+**Requirements**: TBD (defined during /gsd-spec-phase 81 or /gsd-discuss-phase 81)
+**Depends on:** v1.15 shipped (Phase 79 — needs endgame-entry `eval_cp`/`eval_mate` populated on benchmark + prod). Independent of Phase 80 (different page, different subset of positions).
+**Plans:** 0 plans
+**Context:** Backend reuses the existing `first_endgame` ply walk (the same SQL path conv/parity/recov already use in `app/repositories/endgame_repository.py`) — adding entry-eval aggregation is one extra column, not a new pipeline. `EndgamePerformanceResponse` gains three fields: `entry_eval_mean_pawns: float`, `entry_eval_n: int` (mate excluded, eval_cp NOT NULL), `entry_eval_p_value: float | None` (None when n < 30). Same sig-test fields added to Score Gap for visual consistency. Frontend reuses `MiniBulletChart`; new component is just the tile container + sig-test color logic. Population baseline: ~0 cp under equal-footing (per benchmark DB 2026-05-03), so test against 0 is the right framing. Per-game SD ≈ 418 cp ⇒ sig test reliably catches users systematically entering at ≳+150 cp on a few-hundred-game corpus; UI copy phrases the null as "we can't tell" not "no advantage." Decision NOT to pair entry eval with clock-diff in this section: cross-user analysis showed the "paid for it with time" trade-off only holds for bullet/blitz (r ≈ −0.4), vanishes for rapid/classical (r ≈ 0). Full design + open questions: `.planning/notes/endgame-entry-eval-tile-design.md`. Population reference data: `.claude/skills/benchmarks/SKILL.md` §2 + `reports/benchmarks-2026-05-03.md`.
+
+Plans:
+- [ ] TBD (run `/gsd-plan-phase 81` to break down)
 
 </details>
 
