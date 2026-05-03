@@ -159,7 +159,8 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
 
 # Minimum Stockfish eval (in centipawns) to count as conversion or recovery.
 # A single-point eval at the span-entry ply replaces the old material_imbalance +
-# 4-ply persistence proxy (REFAC-02). 100cp corresponds roughly to being up a pawn.
+# 4-ply persistence proxy (REFAC-02). 100 cp == 1.0 pawn — surfaced to the user
+# as "+1.0" / "-1.0" in tooltips and bucket labels.
 EVAL_ADVANTAGE_THRESHOLD = 100
 
 
@@ -552,12 +553,16 @@ def _wdl_to_score(wdl: EndgameWDLSummary) -> float:
     return (wdl.win_pct + wdl.draw_pct / 2) / 100
 
 
-# Display labels for material buckets (section 2 of endgame-analysis-v2.md).
+# Display labels for the eval-stratified buckets (section 2 of
+# endgame-analysis-v2.md). Threshold values reflect the Stockfish eval at the
+# endgame-entry ply (REFAC-02), expressed in pawn units with one decimal place
+# to match the rest of the page's eval rendering. Bucket name kept as
+# MaterialBucket for wire-format compatibility.
 # Unicode: \u2265 = >=, \u2264 = <=, \u2212 = minus sign
 _MATERIAL_BUCKET_LABELS: dict[MaterialBucket, str] = {
-    "conversion": "Conversion (\u2265 +1)",
+    "conversion": "Conversion (\u2265 +1.0)",
     "parity": "Parity",
-    "recovery": "Recovery (\u2264 \u22121)",
+    "recovery": "Recovery (\u2264 \u22121.0)",
 }
 
 
@@ -679,7 +684,13 @@ def _compute_score_gap_material(
     timeline: list[ScoreGapTimelinePoint] | None = None,
     timeline_window: int = SCORE_GAP_TIMELINE_WINDOW,
 ) -> ScoreGapMaterialResponse:
-    """Compute endgame score gap and material-stratified WDL table.
+    """Compute endgame score gap and eval-stratified WDL table.
+
+    Buckets are split by the Stockfish evaluation at the endgame-entry ply
+    (REFAC-02 — the old material_imbalance + 4-ply persistence proxy is gone):
+    conversion (eval >= +1.0), recovery (eval <= -1.0), parity (in between).
+    Function and field names retain the `material` prefix for wire-format
+    compatibility with the response schema (ScoreGapMaterialResponse).
 
     Args:
         endgame_wdl: WDL summary for games that reached an endgame.
