@@ -244,8 +244,8 @@ class TestGetMostPlayedOpeningsPhaseEntry:
             pytest.skip("openings_dedup not seeded")
         eco, opening_name, full_hash = opening_info
 
-        # 12 games with MG eval = +30 cp
-        for _ in range(12):
+        # 12 games with varying MG eval centred around +30 cp (need variance for CI bounds)
+        for cp in [20, 25, 25, 28, 30, 30, 30, 32, 35, 35, 38, 42]:
             await _seed_game_with_phases(
                 db_session,
                 user_id=uid,
@@ -254,8 +254,9 @@ class TestGetMostPlayedOpeningsPhaseEntry:
                 eco=eco,
                 opening_name=opening_name,
                 ply_count=MIN_PLY_WHITE,
-                mg_eval_cp=30,
+                mg_eval_cp=cp,
             )
+        expected_mean = sum([20, 25, 25, 28, 30, 30, 30, 32, 35, 35, 38, 42]) / 12
 
         response = await get_most_played_openings(db_session, uid)
         opening = next((o for o in response.white if o.full_hash == str(full_hash)), None)
@@ -263,9 +264,10 @@ class TestGetMostPlayedOpeningsPhaseEntry:
 
         assert opening.eval_n == 12
         assert opening.avg_eval_pawns is not None
-        assert opening.avg_eval_pawns == pytest.approx(0.30, rel=0.01)
+        assert opening.avg_eval_pawns == pytest.approx(expected_mean / 100.0, rel=0.01)
         assert opening.eval_confidence in ("low", "medium", "high")
         assert opening.eval_p_value is not None
+        # With variance in eval, CI bounds should straddle the mean
         assert opening.eval_ci_low_pawns is not None
         assert opening.eval_ci_high_pawns is not None
         assert opening.eval_ci_low_pawns < opening.avg_eval_pawns < opening.eval_ci_high_pawns
@@ -281,8 +283,9 @@ class TestGetMostPlayedOpeningsPhaseEntry:
             pytest.skip("openings_dedup not seeded")
         eco, opening_name, full_hash = opening_info
 
-        # 12 games with EG eval = +120 cp
-        for _ in range(12):
+        # 12 games with varying EG eval centred around +120 cp (need variance for CI bounds)
+        eg_vals = [100, 105, 110, 115, 118, 120, 120, 122, 125, 130, 132, 143]
+        for cp in eg_vals:
             await _seed_game_with_phases(
                 db_session,
                 user_id=uid,
@@ -291,8 +294,9 @@ class TestGetMostPlayedOpeningsPhaseEntry:
                 eco=eco,
                 opening_name=opening_name,
                 ply_count=MIN_PLY_WHITE,
-                eg_eval_cp=120,
+                eg_eval_cp=cp,
             )
+        expected_mean_eg = sum(eg_vals) / len(eg_vals)
 
         response = await get_most_played_openings(db_session, uid)
         opening = next((o for o in response.white if o.full_hash == str(full_hash)), None)
@@ -300,7 +304,9 @@ class TestGetMostPlayedOpeningsPhaseEntry:
 
         assert opening.eval_endgame_n == 12
         assert opening.avg_eval_endgame_entry_pawns is not None
-        assert opening.avg_eval_endgame_entry_pawns == pytest.approx(1.20, rel=0.01)
+        assert opening.avg_eval_endgame_entry_pawns == pytest.approx(
+            expected_mean_eg / 100.0, rel=0.01
+        )
         assert opening.eval_endgame_confidence in ("low", "medium", "high")
         assert opening.eval_endgame_p_value is not None
         assert opening.eval_endgame_ci_low_pawns is not None

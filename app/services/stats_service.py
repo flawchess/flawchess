@@ -1,12 +1,15 @@
 """Stats service: aggregation logic for rating history and global stats."""
 
 import datetime
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.stats_repository import (
+    OpeningPhaseEntryMetrics,
+    PositionWDL,
+    query_opening_phase_entry_metrics_batch,
     query_position_wdl_batch,
     query_rating_history,
     query_results_by_color,
@@ -21,6 +24,7 @@ from app.schemas.stats import (
     RatingHistoryResponse,
     WDLByCategory,
 )
+from app.services.eval_confidence import compute_eval_confidence_bucket
 from app.services.openings_service import recency_cutoff
 
 # Minimum number of games required for an opening to appear in top openings.
@@ -251,6 +255,10 @@ async def get_most_played_openings(
     Opening selection uses the games table (by opening_eco/name), but the
     displayed game count comes from game_positions (games passing through
     the position). This matches the count shown in "Results by Opening".
+
+    Phase 80: also populates MG-entry eval + clock-diff + EG-entry eval fields
+    via query_opening_phase_entry_metrics_batch (D-01, D-04, D-05, D-08, D-09).
+    Sequential awaits within the same session (CLAUDE.md: AsyncSession not safe for concurrent use).
     """
     cutoff = recency_cutoff(recency)
 
@@ -313,7 +321,36 @@ async def get_most_played_openings(
         opponent_gap_min=filter_params["opponent_gap_min"],
         opponent_gap_max=filter_params["opponent_gap_max"],
     )
+    # Phase 80: batch-query phase-entry metrics (MG + EG eval + clock-diff).
+    # Sequential await — same session, AsyncSession not safe for concurrent use (CLAUDE.md).
+    white_phase_entry_metrics = await query_opening_phase_entry_metrics_batch(
+        session,
+        user_id,
+        [row[5] for row in white_rows if row[5] is not None],
+        color="white",
+        time_control=filter_params["time_control"],
+        platform=filter_params["platform"],
+        rated=filter_params["rated"],
+        opponent_type=filter_params["opponent_type"],
+        recency_cutoff=filter_params["recency_cutoff"],
+        opponent_gap_min=filter_params["opponent_gap_min"],
+        opponent_gap_max=filter_params["opponent_gap_max"],
+    )
     black_position_wdl = await query_position_wdl_batch(
+        session,
+        user_id,
+        [row[5] for row in black_rows if row[5] is not None],
+        color="black",
+        time_control=filter_params["time_control"],
+        platform=filter_params["platform"],
+        rated=filter_params["rated"],
+        opponent_type=filter_params["opponent_type"],
+        recency_cutoff=filter_params["recency_cutoff"],
+        opponent_gap_min=filter_params["opponent_gap_min"],
+        opponent_gap_max=filter_params["opponent_gap_max"],
+    )
+    # Sequential await — same session, AsyncSession not safe for concurrent use.
+    black_phase_entry_metrics = await query_opening_phase_entry_metrics_batch(
         session,
         user_id,
         [row[5] for row in black_rows if row[5] is not None],
@@ -329,7 +366,8 @@ async def get_most_played_openings(
 
     def rows_to_openings(
         rows: list[Row[Any]],
-        position_wdl: dict,
+        position_wdl: dict[int, PositionWDL],
+        phase_entry_metrics: dict[int, OpeningPhaseEntryMetrics],
     ) -> list[OpeningWDL]:
         openings = []
         for eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses in rows:
@@ -344,6 +382,62 @@ async def get_most_played_openings(
                 loss_pct = round(losses / total * 100, 1)
             else:
                 win_pct = draw_pct = loss_pct = 0.0
+
+            # Phase 80: phase-entry eval + clock-diff finalizer (D-01, D-04, D-05, D-08, D-09).
+            pe = phase_entry_metrics.get(full_hash) if full_hash else None
+
+            # MG-entry pillar (D-01, D-04, D-08)
+            avg_eval_pawns: float | None = None
+            eval_ci_low_pawns: float | None = None
+            eval_ci_high_pawns: float | None = None
+            eval_n = 0
+            eval_p_value: float | None = None
+            eval_confidence: Literal["low", "medium", "high"] = "low"
+
+            # Clock diff at MG entry (D-05)
+            avg_clock_diff_pct: float | None = None
+            avg_clock_diff_seconds: float | None = None
+            clock_diff_n = 0
+
+            # EG-entry pillar (D-09 — parallel to MG)
+            avg_eval_endgame_entry_pawns: float | None = None
+            eval_endgame_ci_low_pawns: float | None = None
+            eval_endgame_ci_high_pawns: float | None = None
+            eval_endgame_n = 0
+            eval_endgame_p_value: float | None = None
+            eval_endgame_confidence: Literal["low", "medium", "high"] = "low"
+
+            if pe is not None and pe.eval_n_mg > 0:
+                # compute_eval_confidence_bucket called once for MG (D-09)
+                confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
+                    pe.eval_sum_mg, pe.eval_sumsq_mg, pe.eval_n_mg
+                )
+                avg_eval_pawns = mean_cp_mg / 100.0  # cp -> pawns
+                if pe.eval_n_mg >= 2:
+                    eval_ci_low_pawns = (mean_cp_mg - ci_half_mg) / 100.0
+                    eval_ci_high_pawns = (mean_cp_mg + ci_half_mg) / 100.0
+                eval_n = pe.eval_n_mg
+                eval_p_value = p_value_mg
+                eval_confidence = confidence_mg
+
+            if pe is not None and pe.eval_n_eg > 0:
+                # compute_eval_confidence_bucket called once for EG (D-09)
+                confidence_eg, p_value_eg, mean_cp_eg, ci_half_eg = compute_eval_confidence_bucket(
+                    pe.eval_sum_eg, pe.eval_sumsq_eg, pe.eval_n_eg
+                )
+                avg_eval_endgame_entry_pawns = mean_cp_eg / 100.0  # cp -> pawns
+                if pe.eval_n_eg >= 2:
+                    eval_endgame_ci_low_pawns = (mean_cp_eg - ci_half_eg) / 100.0
+                    eval_endgame_ci_high_pawns = (mean_cp_eg + ci_half_eg) / 100.0
+                eval_endgame_n = pe.eval_n_eg
+                eval_endgame_p_value = p_value_eg
+                eval_endgame_confidence = confidence_eg
+
+            if pe is not None and pe.clock_diff_n > 0 and pe.base_time_sum > 0:
+                avg_clock_diff_seconds = pe.clock_diff_sum / pe.clock_diff_n
+                avg_clock_diff_pct = (pe.clock_diff_sum / pe.base_time_sum) * 100.0
+                clock_diff_n = pe.clock_diff_n
+
             openings.append(
                 OpeningWDL(
                     opening_eco=eco,
@@ -360,6 +454,24 @@ async def get_most_played_openings(
                     win_pct=win_pct,
                     draw_pct=draw_pct,
                     loss_pct=loss_pct,
+                    # Phase 80 MG-entry eval fields
+                    avg_eval_pawns=avg_eval_pawns,
+                    eval_ci_low_pawns=eval_ci_low_pawns,
+                    eval_ci_high_pawns=eval_ci_high_pawns,
+                    eval_n=eval_n,
+                    eval_p_value=eval_p_value,
+                    eval_confidence=eval_confidence,
+                    # Phase 80 clock-diff at MG entry
+                    avg_clock_diff_pct=avg_clock_diff_pct,
+                    avg_clock_diff_seconds=avg_clock_diff_seconds,
+                    clock_diff_n=clock_diff_n,
+                    # Phase 80 EG-entry eval fields
+                    avg_eval_endgame_entry_pawns=avg_eval_endgame_entry_pawns,
+                    eval_endgame_ci_low_pawns=eval_endgame_ci_low_pawns,
+                    eval_endgame_ci_high_pawns=eval_endgame_ci_high_pawns,
+                    eval_endgame_n=eval_endgame_n,
+                    eval_endgame_p_value=eval_endgame_p_value,
+                    eval_endgame_confidence=eval_endgame_confidence,
                 )
             )
         # Sort by position-based game count descending (may differ from
@@ -368,6 +480,6 @@ async def get_most_played_openings(
         return openings
 
     return MostPlayedOpeningsResponse(
-        white=rows_to_openings(white_rows, white_position_wdl),
-        black=rows_to_openings(black_rows, black_position_wdl),
+        white=rows_to_openings(white_rows, white_position_wdl, white_phase_entry_metrics),
+        black=rows_to_openings(black_rows, black_position_wdl, black_phase_entry_metrics),
     )
