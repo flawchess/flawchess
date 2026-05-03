@@ -27,7 +27,7 @@
 
 Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp` / `eval_mate` on `game_positions`). Additional phases will be added as new analyses are scoped from `.planning/notes/phase-aware-analytics-ideas.md` and other brainstorms.
 
-- [ ] Phase 80: Opening stats: middlegame-entry eval and clock-diff columns (0 plans) — not planned yet
+- [ ] Phase 80: Opening stats: middlegame-entry eval and clock-diff columns (6 plans) — planned
 - [ ] Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance (0 plans) — not planned yet
 
 ### Phase 80: Opening stats: middlegame-entry eval and clock-diff columns
@@ -35,11 +35,23 @@ Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlega
 **Goal:** Extend the Openings → Stats subtab tables (bookmarked openings + most-played openings) with three new columns that consume the Phase 79 middlegame-entry Stockfish evals: (1) **Avg eval at middlegame entry ± std**, oriented from the user's POV (positive = user better, regardless of color); (2) **Eval significance** via a one-sample t-test of mean eval vs 0, surfaced with low/medium/high confidence buckets analogous to the opening insights cards; (3) **Avg clock diff at middlegame entry**, analogous to the existing "Avg clock diff" column in *Time Pressure at Endgame Entry*. Together these answer "does this opening leave me better off in position and on the clock when the real fight starts?" Both tables (bookmarked + most-played) get the same new columns; both desktop and mobile layouts updated.
 **Requirements**: TBD (defined during /gsd-spec-phase 80 or /gsd-discuss-phase 80)
 **Depends on:** v1.15 shipped (Phase 79 — needs `phase` SmallInteger column populated and middlegame-entry positions Stockfish-evaluated on benchmark + prod)
-**Plans:** 0 plans
+**Plans:** 6 plans
 **Context:** Sources opening-stats data from positions where `phase = 1` AND it is `MIN(ply)` per game (the middlegame-entry row already populated by Phase 79). Eval is signed user-perspective via the existing color-flip helper used by endgame conv/recov queries. T-test confidence reuses the **10-game minimum threshold** from opening insights (matches `compute_confidence_bucket` in `app/services/opening_insights/`). Avg clock diff at middlegame entry mirrors the SQL pattern from "Avg clock diff at endgame entry" in `app/repositories/endgame_repository.py` — read user clock and opponent clock at the middlegame-entry row, average the diff. Source brainstorm: `.planning/notes/phase-aware-analytics-ideas.md` (Active focus section).
 
 Plans:
-- [ ] TBD (run `/gsd-plan-phase 80` to break down)
+**Wave 1**
+- [ ] 80-01-PLAN.md — Backend: eval_confidence helper + extend OpeningWDL schema (Wave 1)
+- [ ] 80-03-PLAN.md — Frontend: extend MiniBulletChart with CI whisker (Wave 1)
+- [ ] 80-04-PLAN.md — Frontend: openingStatsZones constants + hide ChessBoard on Stats subtab (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 80-02-PLAN.md — Backend: query_opening_mg_metrics_batch + service wiring (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 80-05-PLAN.md — Frontend: MostPlayedOpeningsTable new columns + mobile second-line + ConfidencePill + clockFormat extracts (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 80-06-PLAN.md — Smoke / regression matrix + CHANGELOG + human UI checkpoint (Wave 4)
 
 ### Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance
 
@@ -266,7 +278,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 70-71.1. v1.13 phases | v1.13 | 14/14 | Complete (Phases 72/73/74 descoped) | 2026-04-27 |
 | 75-77. v1.14 phases | v1.14 | 16/16 | Complete (INSIGHT-UI-04 descoped) | 2026-04-29 |
 | 78-79. v1.15 phases | v1.15 | 10/10 | Complete (VAL-01 / PHASE-VAL-01 rescinded) | 2026-05-03 |
-| 80. Opening stats: middlegame-entry eval and clock-diff columns | v1.16 | 0/0 | Not started |  |
+| 80. Opening stats: middlegame-entry eval and clock-diff columns | v1.16 | 0/6 | Planned |  |
 
 ## Backlog
 
