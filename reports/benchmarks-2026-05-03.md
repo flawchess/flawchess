@@ -9,7 +9,7 @@
 - **Base filters**: `g.rated AND NOT g.is_computer_game`; per-user filter `g.time_control_bucket = bsu.tc_bucket`; `benchmark_ingest_checkpoints.status = 'completed'` (mandatory)
 - **Equal-footing filter (universal — all sections)**: `abs(opp_rating - user_rating) <= 100`. Applied to every per-game CTE in §1, §2, §4, §5, §6 to remove the matchmaking confound. Higher-rated cohorts otherwise play systematically weaker opponents (per-cell `avg_opp_minus_user` ranged from +47 in 800-classical down to -372 in 2400-classical in the unfiltered data), inflating the apparent ELO ramp on every per-game metric. Live UI uses unfiltered games — the gap above the equal-footing baseline is the intended skill signal. **Scope changed from §2/§6-only to universal on 2026-05-03**; pre-2026-05-03 §1/§4/§5 numbers in older reports are not directly comparable. Rationale: `.planning/notes/benchmark-equal-footing-framing.md`.
 - **Conv/Parity/Recovery bucketing (REFAC-02)**: Stockfish eval at the first endgame ply (or first ply of each class span in §6). Mirrors `_classify_endgame_bucket` (`EVAL_ADVANTAGE_THRESHOLD = 100` cp; mate scores force conv/recov; NULL → parity). The old `material_imbalance + 4-ply persistence` proxy is gone — sections 2/6 read `eval_cp` / `eval_mate` directly.
-- **Eval coverage**: **99.99%** of qualifying endgame entries have non-NULL eval (767,343 of 767,398). Stockfish backfill is effectively complete.
+- **Eval coverage**: **99.99%** of qualifying endgame entries have non-NULL eval (875,393 of 875,463 phase=2 entries; 767,343 of 767,398 ≥6-ply endgame entries). Stockfish backfill is effectively complete for endgame entries. **Middlegame entries (§3 only): 66.38%** (862,392 of 1,299,252 phase=1 entries). The Stockfish backfill targeted endgame entries; middlegame-entry coverage reflects Lichess's original analysis coverage. §3 per-user middlegame medians are computed only over the analyzed-game subset and may be biased toward longer / more-interesting games. See §3 for mitigation footnotes.
 - **Sparse-cell exclusion**: `(2400, classical)` excluded from TC marginals, ELO marginals, pooled overall, and Cohen's d on both axes (n=12 completed users, ~55 games/user, 14.6% equal-footing retention → ~184 games total). Still shown in cell-level 5×4 tables with `*`. Some §1/§2/§4 cells in 800/1200-classical also reduced after equal-footing filtering — flagged inline.
 - **Verdict thresholds**: Cohen's d < 0.2 = collapse / 0.2-0.5 = review / ≥ 0.5 = keep separate
 - **Sample floors**: §1 ≥30 endgame AND ≥30 non-endgame games/user; §2 ≥20 endgame games/user, ≥2 of 3 buckets; §4 ≥20 endgame games/user; §5 per-bucket cell ≥100 games; §6 ≥100 score / ≥30 conv / ≥30 recov per cell. All Cohen's d marginals require ≥10 users per level.
@@ -332,6 +332,144 @@ The equal-footing filter retains ~78% of games and shrinks the conversion–reco
 
 - TC axis: max |d| = 0.18 → **collapse**
 - ELO axis: max |d| = 0.78 (800 vs 2400) → **keep separate** (rating-cohort effect is real, but a single band is fine since the ramp is the intended skill signal)
+
+---
+
+## 3. Evals at game phase transitions
+
+Per-user median signed user-POV Stockfish eval (cp) at the first ply of each phase. Two metrics, intended as twin-tile bullet-chart inputs (Phase 80 area). Sample floor: ≥20 games-with-eval-at-entry per user; cell shown if ≥10 users.
+
+### Currently set in code
+
+- **TBD** — bullet chart components not yet implemented (target `frontend/src/components/charts/PhaseEntryEvalSection.tsx` or similar). This section produces *initial* threshold proposals rather than comparisons against live constants.
+
+### Phase-entry definitions
+
+Both entry plies come from `game_positions.phase` (SmallInteger, `0=opening / 1=middlegame / 2=endgame`; see `app/models/game_position.py:90-94`). The endgame-entry definition is consistent with §2/§4/§6's `endgame_class IS NOT NULL` thanks to **PHASE-INV-01** (`phase=2 ⟺ endgame_class IS NOT NULL`).
+
+### Eval-coverage caveat (significant, asymmetric)
+
+- **Middlegame entry (phase=1): 66.38% coverage** (862,392 / 1,299,252 games). Reflects Lichess's analysis coverage on imported games — analyzed games tend to be longer and more interesting, so the per-user median may skew toward those games' character.
+- **Endgame entry (phase=2): 99.99% coverage** (875,393 / 875,463). Stockfish backfill is essentially complete for endgame entries.
+
+This 33pp coverage gap means **the two metrics are not measuring the same population of games**. Treat the middlegame metric as conditional on "Lichess analyzed this game". Backfilling middlegame eval would close the gap; until then, the bullet-chart copy should not promise an interpretation that requires representativeness across all games (e.g. "your typical middlegame entry") — phrase as "your typical *analyzed* middlegame entry" or similar.
+
+### Equal-footing retention
+
+Identical filter to §2/§4 (same per-game CTE pattern). Retention table at top of report applies. Per-cell sample sizes after filter + 20-game-floor + 10-users-cell-floor:
+
+- Middlegame: all cells ≥48 users except `(2400, classical)` which falls to **n=3*** (sparse cell × 66% coverage × 14.6% EF retention compounds — 12 → ~3 users with ≥20 mid-eval games).
+- Endgame: all cells ≥48 users except `(2400, classical)` at **n=2*** (12 → ~2 users with ≥20 eg-eval games at the EF floor).
+
+Both sparse-cell values are kept in the 5×4 cell tables with `*` and excluded from marginals + Cohen's d per the canonical sparse-cell rule.
+
+---
+
+### Middlegame-entry eval
+
+#### Cell table — per-user median signed cp (n_users)
+
+| ELO | bullet | blitz | rapid | classical |
+|---|---|---|---|---|
+| **800** | -19.5 (100) | -1.5 (100) | 0.5 (98) | -47.0 (53) |
+| **1200** | -8.5 (97) | 3.0 (98) | 9.0 (96) | 8.0 (77) |
+| **1600** | -4.0 (92) | 7.5 (96) | 3.0 (99) | 2.5 (89) |
+| **2000** | 7.3 (86) | 4.5 (98) | 2.0 (99) | 1.8 (72) |
+| **2400** | 3.0 (84) | -1.5 (100) | 2.0 (97) | 23.0 (3*) |
+
+Pattern: 800 cohort skews negative (loses the opening more often before reaching middlegame); 1200+ all hover near zero with mild positive bias. TC differences are small.
+
+#### TC marginal — per-user median (sparse-cell excluded)
+
+| TC | n_users | mean | p05 | p25 | p50 | p75 | p95 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| bullet | 459 | -12.5 | -114.2 | -30.0 | 0.0 | 23.3 | 62.1 |
+| blitz | 492 | -3.0 | -75.7 | -19.6 | 1.0 | 21.1 | 54.2 |
+| rapid | 489 | -3.9 | -97.3 | -15.0 | 3.5 | 20.0 | 58.0 |
+| classical | 291 | -8.6 | -134.5 | -20.5 | 2.0 | 25.8 | 68.5 |
+
+#### ELO marginal — per-user median (sparse-cell excluded)
+
+| ELO | n_users | mean | p05 | p25 | p50 | p75 | p95 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 800 | 351 | -25.8 | -187.3 | -58.0 | -6.0 | 29.8 | 86.5 |
+| 1200 | 368 | -7.7 | -132.3 | -30.0 | 3.5 | 30.6 | 64.0 |
+| 1600 | 376 | -3.0 | -73.8 | -19.6 | 2.0 | 18.6 | 51.8 |
+| 2000 | 355 | 2.4 | -43.2 | -12.0 | 4.0 | 20.5 | 38.0 |
+| 2400 | 281 | 2.0 | -28.5 | -9.0 | 1.0 | 13.5 | 36.0 |
+
+#### Pooled overall (sparse-cell excluded)
+
+n=1,731 users. mean **−6.7 cp**, p05 **−111.8**, p25 **−21.8**, p50 **+1.5**, p75 **+22.0**, p95 **+59.5**. Variance shrinks monotonically with ELO (var: 8784 → 459) — high-rated players' middlegame entries are tightly distributed near zero, low-rated have a long left tail.
+
+#### Recommendations
+
+- **Proposed neutral-zone bounds**: pooled `[p25, p75]` = `[−21.8, +22.0]` cp. Rounded for chart legibility: **`[−20, +20] cp`** (symmetric — population median is +1.5, well below any meaningful asymmetry threshold).
+- **Proposed chart domain**: `[p05, p95]` = `[−112, +60]` cp. The asymmetry (longer left tail) is real but mostly driven by the 800 cohort. A symmetric **±150 cp** domain covers >95% of users and aligns with the score-gap convention of round symmetric bounds. Stretching to **±200 cp** would also cover the 800 cohort's p05.
+- **Cohort note**: 800-rated users sit ~25 cp left of pooled. Higher-rated cohorts are tightly centered near zero. The bullet chart will visually show this naturally — no per-cohort stratification needed.
+- **Coverage warning**: bullet-chart copy should reference "analyzed games" given 66% coverage. Worth filing a backlog item to backfill middlegame eval if this metric becomes user-facing.
+
+#### Collapse verdict
+
+- TC axis: max |d| = **0.17** (bullet vs blitz) → **collapse**
+- ELO axis: max |d| = **0.41** (800 vs 2000) → **review** (small but noticeable; single zone fine, 800 cohort sits left of center as the natural skill signal)
+
+---
+
+### Endgame-entry eval
+
+#### Cell table — per-user median signed cp (n_users)
+
+| ELO | bullet | blitz | rapid | classical |
+|---|---|---|---|---|
+| **800** | -33.0 (99) | 0.0 (100) | 0.0 (97) | -84.8 (48) |
+| **1200** | -10.5 (100) | 0.0 (100) | 6.0 (100) | 0.5 (78) |
+| **1600** | -4.0 (100) | 4.5 (100) | 0.0 (100) | 2.0 (87) |
+| **2000** | 0.0 (100) | 7.0 (100) | 5.5 (98) | 0.0 (69) |
+| **2400** | 1.0 (100) | 2.0 (100) | 1.5 (97) | 173.8 (2*) |
+
+Pattern: same 800-skews-negative + higher-cohorts-near-zero shape, but with much wider variance per cell (var: 75K at 800, 2.7K at 2400) — endgame entries swing harder than middlegame entries. The (2400, classical) `n=2*` cell with median +173.8 is dominated by two high-rated users who reach endgames from winning positions; not generalizable.
+
+#### TC marginal — per-user median (sparse-cell excluded)
+
+| TC | n_users | mean | p05 | p25 | p50 | p75 | p95 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| bullet | 499 | -25.4 | -411.5 | -80.8 | 0.0 | 46.3 | 258.7 |
+| blitz | 500 | 0.4 | -226.8 | -19.1 | 1.8 | 31.6 | 171.6 |
+| rapid | 492 | 8.9 | -251.2 | -14.6 | 1.0 | 45.1 | 238.3 |
+| classical | 282 | -15.8 | -431.8 | -45.9 | 0.0 | 40.9 | 347.5 |
+
+Bullet has the heaviest left tail (p05 = −412 cp) and the most negative mean. Rapid is the most positive cohort.
+
+#### ELO marginal — per-user median (sparse-cell excluded)
+
+| ELO | n_users | mean | p05 | p25 | p50 | p75 | p95 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 800 | 344 | -55.9 | -499.7 | -233.8 | -10.0 | 69.8 | 431.9 |
+| 1200 | 378 | -9.7 | -349.9 | -67.0 | 0.0 | 61.0 | 285.0 |
+| 1600 | 387 | 4.9 | -178.1 | -21.5 | 0.0 | 46.3 | 174.2 |
+| 2000 | 367 | 13.3 | -89.7 | -8.3 | 2.0 | 32.3 | 145.9 |
+| 2400 | 297 | 12.2 | -42.8 | -3.0 | 2.0 | 19.0 | 107.4 |
+
+Strong monotonic ramp: variance collapses from 75K (800) to 2.7K (2400). The high-ELO endgame-entry distribution is tightly clustered near 0 — these users routinely reach endgames in slightly-favorable or even positions. Low-ELO users frequently arrive in lost positions (p25 of −234 at 800 means 25% of users *typically* enter the endgame already losing by 2.3 pawns).
+
+#### Pooled overall (sparse-cell excluded)
+
+n=1,773 users. mean **−7.1 cp**, p05 **−338.4**, p25 **−31.0**, p50 **0.0**, p75 **+41.0**, p95 **+238.6**. Right-skewed at the tails (p95 vs |p05|: 239 vs 338) but median is exactly 0 — most users' endgames are balanced on average.
+
+#### Recommendations
+
+- **Proposed neutral-zone bounds**: pooled `[p25, p75]` = `[−31.0, +41.0]` cp. Two options:
+  - Honor the data: **`[−30, +40] cp`** (mildly asymmetric, reflects population's right-skew at the IQR).
+  - Round symmetric: **`[−35, +35] cp`** (cleaner, gives up ~5 cp of fidelity for legibility).
+  - Recommendation: **symmetric `±35 cp`** unless the chart designer explicitly wants to surface "users typically enter endgames slightly winning". The 5-cp asymmetry is below typical chart-perception threshold.
+- **Proposed chart domain**: `[p05, p95]` = `[−338, +239]` cp. Symmetric **±350 cp** covers >95% of users without over-padding. This is wider than the middlegame domain because endgame entries are higher-variance — a single endgame transitioned-into-losing can pull the per-user median noticeably.
+- **Cohort note**: 800-rated users sit ~50 cp left of pooled and have ~28× the variance of 2400-rated users. The bullet-chart visual contrast across cohorts will be much more dramatic than for middlegame entry.
+
+#### Collapse verdict
+
+- TC axis: max |d| = **0.21** (bullet vs rapid) → **review** (bullet's heavier negative tail vs rapid's positive bias; small but real, single zone still defensible)
+- ELO axis: max |d| = **0.35** (800 vs 2000) → **review** (rating-cohort effect, same skill-ramp interpretation as §2's Endgame Skill — single zone is the right call, 800 cohort naturally sits left)
 
 ---
 
@@ -746,6 +884,8 @@ The TC verdict for conversion and recovery is consistent with §2 (whole-game): 
 | Parity (per-user) | collapse (0.12) | review (0.48) | Single zone fine; ELO ramp expected |
 | Recovery (per-user) | **keep separate** (1.10) | review (0.40) | Stratify by TC; bullet much higher than classical |
 | Endgame Skill (per-user) | collapse (0.18) | **keep separate** (0.78) | Single zone correct; ELO ramp is the skill signal |
+| Middlegame-entry eval (per-user median) | collapse (0.17) | review (0.41) | Single `[−20, +20] cp` zone; 800 cohort sits left as skill signal |
+| Endgame-entry eval (per-user median) | review (0.21) | review (0.35) | Single `±35 cp` zone; bullet has heavier negative tail than rapid |
 | Clock pressure %-of-base | review (0.23) | review (0.21) | Borderline collapse; ±5% is fine population-wide |
 | Net timeout rate | collapse (0.07) | review (0.41) | Single zone OK; high-rated win more on time |
 | Time-pressure curve (per-bucket) | review (0.34) | collapse (0.17) | TC stratification driven by bucket-0; UI already per-TC |
@@ -765,6 +905,8 @@ The TC verdict for conversion and recovery is consistent with §2 (whole-game): 
 | Parity neutral | `FIXED_GAUGE_ZONES.parity` | [0.45, 0.55] | [0.45, 0.55] | TC collapse / ELO review | **keep** |
 | Recovery neutral | `FIXED_GAUGE_ZONES.recovery` | [0.25, 0.40] | per-TC: bullet [0.30,0.40] / blitz [0.25,0.36] / rapid [0.23,0.33] / classical [0.18,0.32] | TC keep / ELO review | **stratify per TC** |
 | Endgame Skill neutral | `ENDGAME_SKILL_ZONES` | [0.45, 0.55] | [0.47, 0.55] | TC collapse / ELO keep | **keep** |
+| Middlegame-entry eval neutral | TBD (no chart yet) | — | `[−20, +20] cp` (domain ±150 cp) | TC collapse / ELO review | **add** as initial bullet-chart zone |
+| Endgame-entry eval neutral | TBD (no chart yet) | — | `±35 cp` (domain ±350 cp) | TC review / ELO review | **add** as initial bullet-chart zone |
 | Clock pressure neutral | `NEUTRAL_PCT_THRESHOLD` | ±5.0 | ±5.0 | both review | **keep** |
 | Net timeout neutral | `NEUTRAL_TIMEOUT_THRESHOLD` | ±5.0 | ±5.0 | TC collapse / ELO review | **keep** |
 | Time-pressure Y-axis | `Y_AXIS_DOMAIN` | [0.2, 0.8] | [0.2, 0.8] | — | **keep** |
