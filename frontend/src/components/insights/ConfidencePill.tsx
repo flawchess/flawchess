@@ -20,6 +20,12 @@ interface ConfidencePillProps {
   score?: number | null;
   /** Game count used in the test (passed to tooltip). */
   gameCount?: number | null;
+  /**
+   * Average eval at phase entry in pawns (signed, user perspective).
+   * When provided, the tooltip renders eval-context language instead of
+   * WDL score/strength/weakness language.
+   */
+  evalMeanPawns?: number | null;
   /** Optional data-testid for the pill span. */
   testId?: string;
 }
@@ -29,6 +35,7 @@ export function ConfidencePill({
   pValue = null,
   score = null,
   gameCount = null,
+  evalMeanPawns,
   testId,
 }: ConfidencePillProps): ReactElement {
   return (
@@ -39,6 +46,7 @@ export function ConfidencePill({
           pValue={pValue ?? 1}
           score={score ?? 0.5}
           gameCount={gameCount ?? 0}
+          evalMeanPawns={evalMeanPawns}
         />
       }
     >

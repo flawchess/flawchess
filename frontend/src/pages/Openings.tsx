@@ -218,6 +218,8 @@ function MobileMostPlayedRows({
                         level={o.eval_confidence}
                         pValue={o.eval_p_value}
                         gameCount={o.eval_n}
+                        evalMeanPawns={o.avg_eval_pawns}
+                        testId={`${testIdPrefix}-confidence-mobile-${rowKey}-info`}
                       />
                     </div>
                     <div
@@ -268,6 +270,8 @@ function MobileMostPlayedRows({
                         level={o.eval_endgame_confidence}
                         pValue={o.eval_endgame_p_value}
                         gameCount={o.eval_endgame_n}
+                        evalMeanPawns={o.avg_eval_endgame_entry_pawns}
+                        testId={`${testIdPrefix}-eg-confidence-mobile-${rowKey}-info`}
                       />
                     </div>
                   </div>
