@@ -8,9 +8,15 @@ afterEach(() => {
   cleanup();
 });
 
-// Mock Tooltip so tests don't require TooltipProvider
+// Mock Tooltip: render both children (the pill span) and content (the tooltip body)
+// so tests can inspect what gets passed to ConfidenceTooltipContent.
 vi.mock('@/components/ui/tooltip', () => ({
-  Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  Tooltip: ({ children, content }: { children: ReactNode; content?: ReactNode }) => (
+    <>
+      {children}
+      {content}
+    </>
+  ),
 }));
 
 // Partial mock: render ConfidenceTooltipContent with real implementation for branch testing,
