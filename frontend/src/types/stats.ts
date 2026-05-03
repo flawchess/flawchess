@@ -41,6 +41,29 @@ export interface OpeningWDL {
   win_pct: number;
   draw_pct: number;
   loss_pct: number;
+
+  // Phase 80 MG-entry pillar (D-01, D-04, D-08).
+  // avg_eval_pawns is signed user-perspective (positive = user better).
+  // eval_n counts games used in the mean (mate-excluded, outlier-trimmed).
+  avg_eval_pawns?: number | null;
+  eval_ci_low_pawns?: number | null;
+  eval_ci_high_pawns?: number | null;
+  eval_n: number;
+  eval_p_value?: number | null;
+  eval_confidence: 'low' | 'medium' | 'high';
+
+  // Phase 80 clock diff at MG entry (D-05) — no EG parallel.
+  avg_clock_diff_pct?: number | null;
+  avg_clock_diff_seconds?: number | null;
+  clock_diff_n: number;
+
+  // Phase 80 EG-entry pillar (D-09).
+  avg_eval_endgame_entry_pawns?: number | null;
+  eval_endgame_ci_low_pawns?: number | null;
+  eval_endgame_ci_high_pawns?: number | null;
+  eval_endgame_n: number;
+  eval_endgame_p_value?: number | null;
+  eval_endgame_confidence: 'low' | 'medium' | 'high';
 }
 
 export interface MostPlayedOpeningsResponse {

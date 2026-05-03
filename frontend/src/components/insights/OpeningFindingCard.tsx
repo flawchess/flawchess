@@ -1,7 +1,7 @@
 import { ArrowRightLeft, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { Tooltip } from '@/components/ui/tooltip';
-import { ConfidenceTooltipContent } from '@/components/insights/ConfidenceTooltipContent';
+import { ConfidencePill } from '@/components/insights/ConfidencePill';
 import { formatCandidateMove, getSeverityBorderColor } from '@/lib/openingInsights';
 import { fenAfterMove, sanToSquares } from '@/lib/sanToSquares';
 import { MIN_GAMES_FOR_RELIABLE_STATS, TROLL_WATERMARK_OPACITY, UNRELIABLE_OPACITY } from '@/lib/theme';
@@ -103,26 +103,20 @@ export function OpeningFindingCard({
 
   // "Confidence: low/medium/high" line — tooltip on hover over the level word
   // matches the Moves/Games link pattern (hover-only, no tap-friendly trigger).
+  // Phase 80: refactored to use shared <ConfidencePill> component (DRY with MostPlayedOpeningsTable).
   const confidenceLine = (
     <p
       className="text-sm text-muted-foreground flex items-center gap-1"
       data-testid={`opening-finding-card-${idx}-confidence`}
     >
       Confidence:{' '}
-      <Tooltip
-        content={
-          <ConfidenceTooltipContent
-            level={finding.confidence}
-            pValue={finding.p_value}
-            score={finding.score}
-            gameCount={finding.n_games}
-          />
-        }
-      >
-        <span className="font-medium" data-testid={`opening-finding-card-${idx}-confidence-info`}>
-          {finding.confidence}
-        </span>
-      </Tooltip>
+      <ConfidencePill
+        level={finding.confidence}
+        pValue={finding.p_value}
+        score={finding.score}
+        gameCount={finding.n_games}
+        testId={`opening-finding-card-${idx}-confidence-info`}
+      />
     </p>
   );
 
