@@ -18,6 +18,7 @@
 - ✅ **v1.13 Opening Insights** — Phases 70, 71, 71.1 (shipped 2026-04-27; Phases 72-74 descoped) — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md)
 - ✅ **v1.14 Score-Based Opening Insights** — Phases 75, 76, 77 (shipped 2026-04-29; INSIGHT-UI-04 descoped) — see [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md)
 - 🚧 **v1.15 Eval-Based Endgame Classification** — Phases 78-79 (in progress, opened 2026-05-02) — Stockfish eval cutover for endgame conv/recov classification, plus position-phase classifier (opening/middlegame/endgame) and middlegame eval
+- 📦 **v1.16 Stockfish Eval Analyses** — Phase 80+ (planned, opened 2026-05-03) — Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp`/`eval_mate`). First phase: opening-stats columns for middlegame-entry eval and clock diff. More phases TBD.
 
 ## Phases
 
@@ -25,7 +26,7 @@
 <summary>🚧 v1.15 Eval-Based Endgame Classification (Phases 78-79) — IN PROGRESS (opened 2026-05-02)</summary>
 
 - 🚧 Phase 78: Stockfish-Eval Cutover for Endgame Classification (6/6 plans, code complete; operational backfill + VAL-01 + deploy + VAL-02 deferred to post-phase-79 combined run) — ENG-01..03, FILL-01..04, IMP-01..02, REFAC-01..05, VAL-01..02
-- [ ] Phase 79: Position-phase classifier and middlegame eval (0 plans) — not planned yet
+- 🚧 Phase 79: Position-phase classifier and middlegame eval (3/4 plans) — CLASS-01..02, SCHEMA-01..02, PHASE-IMP-01..02, PHASE-FILL-01..03, PHASE-VAL-01..03, PHASE-INV-01
 
 ### Phase 78: Stockfish-Eval Cutover for Endgame Classification
 **Goal**: Replace the material-imbalance + 4-ply persistence proxy for endgame conv/recov classification with Stockfish eval (depth 15) populated into the existing `eval_cp` / `eval_mate` columns on `game_positions`. Backfill historical span-entry positions across benchmark + prod, eval new span-entry positions during import going forward, refactor endgame queries to threshold on eval, and remove the proxy entirely (hard cutover).
@@ -59,6 +60,26 @@ Plans:
 - [x] 79-02-PLAN.md — Import-path integration: phase column writes + middlegame entry import-time eval (SCHEMA-02, PHASE-IMP-01, PHASE-IMP-02)
 - [x] 79-03-PLAN.md — Backfill script extension: phase UPDATE pass + middlegame entry eval pass (PHASE-FILL-01, PHASE-FILL-02)
 - [ ] 79-04-PLAN.md — Operator-driven cutover: dev smoke + benchmark backfill + VAL-01 + prod backfill + combined PR merge + deploy + UI smoke check (PHASE-FILL-03, PHASE-VAL-02, PHASE-VAL-03, PHASE-INV-01)
+
+</details>
+
+<details>
+<summary>📦 v1.16 Stockfish Eval Analyses (Phase 80+) — PLANNED (opened 2026-05-03)</summary>
+
+Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp` / `eval_mate` on `game_positions`). Additional phases will be added as new analyses are scoped from `.planning/notes/phase-aware-analytics-ideas.md` and other brainstorms.
+
+- [ ] Phase 80: Opening stats: middlegame-entry eval and clock-diff columns (0 plans) — not planned yet
+
+### Phase 80: Opening stats: middlegame-entry eval and clock-diff columns
+
+**Goal:** Extend the Openings → Stats subtab tables (bookmarked openings + most-played openings) with three new columns that consume the Phase 79 middlegame-entry Stockfish evals: (1) **Avg eval at middlegame entry ± std**, oriented from the user's POV (positive = user better, regardless of color); (2) **Eval significance** via a one-sample t-test of mean eval vs 0, surfaced with low/medium/high confidence buckets analogous to the opening insights cards; (3) **Avg clock diff at middlegame entry**, analogous to the existing "Avg clock diff" column in *Time Pressure at Endgame Entry*. Together these answer "does this opening leave me better off in position and on the clock when the real fight starts?" Both tables (bookmarked + most-played) get the same new columns; both desktop and mobile layouts updated.
+**Requirements**: TBD (defined during /gsd-spec-phase 80 or /gsd-discuss-phase 80)
+**Depends on:** v1.15 shipped (Phase 79 — needs `phase` SmallInteger column populated and middlegame-entry positions Stockfish-evaluated on benchmark + prod)
+**Plans:** 0 plans
+**Context:** Sources opening-stats data from positions where `phase = 1` AND it is `MIN(ply)` per game (the middlegame-entry row already populated by Phase 79). Eval is signed user-perspective via the existing color-flip helper used by endgame conv/recov queries. T-test confidence reuses the **10-game minimum threshold** from opening insights (matches `compute_confidence_bucket` in `app/services/opening_insights/`). Avg clock diff at middlegame entry mirrors the SQL pattern from "Avg clock diff at endgame entry" in `app/repositories/endgame_repository.py` — read user clock and opponent clock at the middlegame-entry row, average the diff. Source brainstorm: `.planning/notes/phase-aware-analytics-ideas.md` (Active focus section).
+
+Plans:
+- [ ] TBD (run `/gsd-plan-phase 80` to break down)
 
 </details>
 
@@ -303,3 +324,4 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
+
