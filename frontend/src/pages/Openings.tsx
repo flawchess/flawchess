@@ -61,6 +61,7 @@ import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
 import { OpeningInsightsBlock } from '@/components/insights/OpeningInsightsBlock';
 import { getSeverityBorderColor } from '@/lib/openingInsights';
+import { getBoardContainerClassName } from '@/lib/openingsBoardLayout';
 import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '@/lib/highlightPulse';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
@@ -1274,7 +1275,7 @@ export function OpeningsPage() {
               </TabsTrigger>
             </TabsList>
             <div className="mt-4 flex flex-row items-start gap-6">
-              <div className="flex flex-col gap-2 w-[400px] shrink-0">
+              <div className={getBoardContainerClassName(activeTab)} data-testid="openings-board-container">
                 <ChessBoard
                   position={chess.position}
                   onPieceDrop={chess.makeMove}
