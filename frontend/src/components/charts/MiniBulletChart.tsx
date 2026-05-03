@@ -45,6 +45,10 @@ interface MiniBulletChartProps {
   heightClass?: string;
   /** Height class for the foreground value bar, default h-2 (thinner than zones). */
   valueHeightClass?: string;
+  /** Optional 95% CI lower bound (in domain units, signed). Renders a thin whisker over the value bar when both ciLow and ciHigh are provided. */
+  ciLow?: number;
+  /** Optional 95% CI upper bound (in domain units, signed). Renders a thin whisker over the value bar when both ciLow and ciHigh are provided. */
+  ciHigh?: number;
 }
 
 function formatSigned(value: number): string {
@@ -60,6 +64,8 @@ export function MiniBulletChart({
   ariaLabel,
   heightClass = 'h-5',
   valueHeightClass = 'h-2',
+  ciLow,
+  ciHigh,
 }: MiniBulletChartProps) {
   const clamped = Math.max(-domain, Math.min(domain, value));
 
@@ -150,6 +156,44 @@ export function MiniBulletChart({
           backgroundColor: fillColor,
         }}
       />
+      {/* CI whisker overlay — only rendered when both ciLow and ciHigh are provided */}
+      {ciLow !== undefined && ciHigh !== undefined && (() => {
+        const ciLowClamped = Math.max(-domain, ciLow);
+        const ciHighClamped = Math.min(domain, ciHigh);
+        const lowOpen = ciLow < -domain;
+        const highOpen = ciHigh > domain;
+        const ciLowPct = toPct(ciLowClamped);
+        const ciHighPct = toPct(ciHighClamped);
+        return (
+          <>
+            {/* Whisker line */}
+            <div
+              className="absolute top-1/2 -translate-y-1/2 h-px bg-foreground/70 pointer-events-none"
+              style={{ left: `${ciLowPct}%`, width: `${ciHighPct - ciLowPct}%` }}
+              data-testid="mini-bullet-whisker"
+              aria-hidden="true"
+            />
+            {/* Left end cap (suppressed when CI extends past the left domain edge) */}
+            {!lowOpen && (
+              <div
+                className="absolute top-1/4 bottom-1/4 w-px bg-foreground/70 pointer-events-none"
+                style={{ left: `${ciLowPct}%` }}
+                data-testid="mini-bullet-whisker-cap-low"
+                aria-hidden="true"
+              />
+            )}
+            {/* Right end cap (suppressed when CI extends past the right domain edge) */}
+            {!highOpen && (
+              <div
+                className="absolute top-1/4 bottom-1/4 w-px bg-foreground/70 pointer-events-none"
+                style={{ left: `${ciHighPct}%` }}
+                data-testid="mini-bullet-whisker-cap-high"
+                aria-hidden="true"
+              />
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }

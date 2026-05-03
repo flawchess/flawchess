@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
 status: executing
-last_updated: "2026-05-03T17:20:58.572Z"
-last_activity: 2026-05-03 -- Phase 80 planning complete
+last_updated: "2026-05-03T18:08:32.598Z"
+last_activity: 2026-05-03 -- Phase 80 execution started
 progress:
   total_phases: 6
   completed_phases: 0
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 79 (Position-phase classifier and middlegame eval) — CODE COMPLETE; draft PR #78 open, deploy + UI smoke pending
-Plan: 4 of 4 (operator cutover) — rounds 1-3 (dev / benchmark / prod backfill) complete; PR merge + bin/deploy.sh + post-deploy UI smoke remaining
-Status: Ready to execute
-Last activity: 2026-05-03 -- Phase 80 planning complete
+Phase: 80 (opening-stats-middlegame-entry-eval-and-clock-diff-columns) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 80
+Last activity: 2026-05-03 -- Phase 80 execution started
 
 ## Project Reference
 
