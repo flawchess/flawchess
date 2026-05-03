@@ -60,6 +60,7 @@ import asyncio
 import io
 import os
 import sys
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Sequence
@@ -92,6 +93,15 @@ from app.services.position_classifier import (  # noqa: E402
 # prod sees ~1/500th the round-trip overhead. Resume semantics are unchanged: a
 # mid-run kill loses at most one chunk's worth of evaluated rows.
 EVAL_BATCH_SIZE = 500
+
+# Upstream streaming bound (rows materialized in Python at a time, in game-units).
+# The previous code did `(await session.execute(stmt)).all()` for both the span
+# and middlegame eval queries, materializing ~2M rows × full PGN string each →
+# ~15 GB RSS → OOM-killed on the benchmark DB. We now stream rows from a
+# server-side cursor and yield game-batched lists; only one batch is alive in
+# Python at a time. 5_000 games per batch = a few thousand entry rows × ~2 KB
+# PGN ≈ tens of MB, comfortably below any RAM ceiling on dev/benchmark/prod.
+EVAL_GAMES_PER_BATCH = 5_000
 
 # Default to single-worker mode = byte-identical legacy behavior. CLI --workers
 # overrides; a 16 vCPU workstation can comfortably run 10–12.
@@ -417,8 +427,7 @@ def _build_batch_update_sql(batch_size: int) -> str:
     column types on the SET assignment.
     """
     values = ", ".join(
-        f"((:id_{i})::integer, (:cp_{i})::integer, (:mate_{i})::integer)"
-        for i in range(batch_size)
+        f"((:id_{i})::integer, (:cp_{i})::integer, (:mate_{i})::integer)" for i in range(batch_size)
     )
     return (
         "UPDATE game_positions gp "
@@ -445,6 +454,82 @@ async def _flush_writes(
     # The CAST happens via the column types on game_positions; psycopg/asyncpg
     # binds None as SQL NULL natively, and the UPDATE's column types coerce.
     await session.execute(text(sql), params)
+
+
+async def _stream_eval_target_rows(
+    session_maker: async_sessionmaker[AsyncSession],
+    stmt: Select[Any],
+    games_per_batch: int,
+) -> AsyncIterator[list[Any]]:
+    """Stream query rows from a server-side cursor, yielding game-batched lists.
+
+    The result set's ORDER BY (game_id, ply) means rows for one game are
+    contiguous, so we can detect a new game by checking game_id and flush
+    a batch as soon as we cross `games_per_batch` distinct game_ids. Postgres
+    holds the cursor state; only one batch is alive in Python at a time.
+
+    Replaces `(await session.execute(stmt)).all()` which OOM'd at 2M rows
+    by materializing the entire result set with full PGN strings up front.
+    """
+    async with session_maker() as read_session:
+        result = await read_session.stream(stmt)
+        batch: list[Any] = []
+        seen_games: set[int] = set()
+        async for row in result:
+            gid = row.game_id
+            if gid not in seen_games:
+                if len(seen_games) >= games_per_batch:
+                    yield batch
+                    batch = []
+                    seen_games = set()
+                seen_games.add(gid)
+            batch.append(row)
+        if batch:
+            yield batch
+
+
+async def _evaluate_and_write_streaming(
+    session_maker: async_sessionmaker[AsyncSession],
+    stmt: Select[Any],
+    *,
+    db: str,
+    eval_kind: Literal["endgame_span_entry", "middlegame_entry"],
+    pool: EnginePool,
+    games_per_batch: int = EVAL_GAMES_PER_BATCH,
+) -> tuple[int, int, int, int]:
+    """Stream rows in game-batches and run the eval+write loop on each batch.
+
+    Returns (rows_seen, evaluated, skipped_no_board, skipped_engine_err).
+    Pool, write session, and intra-batch chunking are reused across batches —
+    only the upstream row buffer is bounded.
+    """
+    rows_seen = 0
+    evaluated_total = 0
+    no_board_total = 0
+    engine_err_total = 0
+    batch_idx = 0
+    async with session_maker() as write_session:
+        async for batch in _stream_eval_target_rows(session_maker, stmt, games_per_batch):
+            batch_idx += 1
+            ev, nb, ee = await _evaluate_and_write_rows(
+                batch,
+                write_session,
+                db=db,
+                eval_kind=eval_kind,
+                pool=pool,
+            )
+            rows_seen += len(batch)
+            evaluated_total += ev
+            no_board_total += nb
+            engine_err_total += ee
+            _log(
+                f"  [{eval_kind}] batch {batch_idx} done "
+                f"({len(batch)} rows; cumulative seen={rows_seen}, "
+                f"evaluated={evaluated_total}, "
+                f"skipped_no_board={no_board_total}, "
+                f"skipped_engine_err={engine_err_total})"
+            )
+    return rows_seen, evaluated_total, no_board_total, engine_err_total
 
 
 async def _evaluate_and_write_rows(
@@ -661,35 +746,39 @@ async def run_backfill(
             _log("Phase-column backfill: zero rows with NULL phase (no-op)")
 
     # Phase 78: endgame span-entry eval pass.
-    async with session_maker() as endgame_count_session:
-        span_stmt = _build_span_entry_stmt(user_id, limit)
-        span_rows = (await endgame_count_session.execute(span_stmt)).all()
-
-    _log(f"Endgame span-entry eval: {len(span_rows)} rows queued")
-
-    # Phase 79 PHASE-FILL-02: middlegame entry eval pass — count rows for dry-run reporting.
-    async with session_maker() as midgame_count_session:
-        midgame_stmt = _build_middlegame_entry_stmt(user_id, limit)
-        midgame_rows = (await midgame_count_session.execute(midgame_stmt)).all()
-
-    _log(f"Middlegame entry eval: {len(midgame_rows)} rows queued")
+    # Phase 79 PHASE-FILL-02: middlegame entry eval pass.
+    # Both passes stream rows from server-side cursors in game-batches; the
+    # previous .all()-based path materialized the full result set (with PGN
+    # per row) and OOM'd on the benchmark DB at ~2M rows / ~15 GB RSS.
+    span_stmt = _build_span_entry_stmt(user_id, limit)
+    midgame_stmt = _build_middlegame_entry_stmt(user_id, limit)
 
     if dry_run:
-        _log(f"--dry-run: would evaluate {len(span_rows)} endgame span-entry rows")
-        _log(f"--dry-run: would evaluate {len(midgame_rows)} middlegame entry rows")
+        async with session_maker() as count_session:
+            span_count = (
+                await count_session.execute(select(func.count()).select_from(span_stmt.subquery()))
+            ).scalar_one()
+            midgame_count = (
+                await count_session.execute(
+                    select(func.count()).select_from(midgame_stmt.subquery())
+                )
+            ).scalar_one()
+        _log(f"Endgame span-entry eval: {span_count} rows queued")
+        _log(f"Middlegame entry eval: {midgame_count} rows queued")
+        _log(f"--dry-run: would evaluate {span_count} endgame span-entry rows")
+        _log(f"--dry-run: would evaluate {midgame_count} middlegame entry rows")
         _log("--dry-run: exiting without starting engine or writing")
         if dispose_engine and async_engine is not None:
             await async_engine.dispose()
         return
 
-    if not span_rows and not midgame_rows:
-        _log("Nothing to do.")
-        if dispose_engine and async_engine is not None:
-            await async_engine.dispose()
-        return
+    _log(f"Endgame span-entry eval: streaming rows in batches of {EVAL_GAMES_PER_BATCH} games")
+    _log(f"Middlegame entry eval: streaming rows in batches of {EVAL_GAMES_PER_BATCH} games")
 
     # Eval + write phase: spin up an EnginePool of `workers` Stockfish processes.
-    # _pool is a test hook; production builds its own from `workers`.
+    # _pool is a test hook; production builds its own from `workers`. We start
+    # the pool unconditionally (cheap — N process spawns) since streaming
+    # defers the "are there any rows?" question to the cursor.
     dispose_pool = _pool is None
     if _pool is None:
         pool = EnginePool(workers)
@@ -699,21 +788,22 @@ async def run_backfill(
         pool = _pool
 
     try:
-        if span_rows:
-            async with session_maker() as endgame_session:
-                (
-                    endgame_evaluated,
-                    endgame_no_board,
-                    endgame_engine_err,
-                ) = await _evaluate_and_write_rows(
-                    span_rows,
-                    endgame_session,
-                    db=db,
-                    eval_kind="endgame_span_entry",
-                    pool=pool,
-                )
+        (
+            endgame_seen,
+            endgame_evaluated,
+            endgame_no_board,
+            endgame_engine_err,
+        ) = await _evaluate_and_write_streaming(
+            session_maker,
+            span_stmt,
+            db=db,
+            eval_kind="endgame_span_entry",
+            pool=pool,
+        )
+        if endgame_seen:
             _log(
                 f"Endgame span-entry eval complete: "
+                f"rows={endgame_seen}, "
                 f"evaluated={endgame_evaluated}, "
                 f"skipped_no_board={endgame_no_board}, "
                 f"skipped_engine_err={endgame_engine_err}"
@@ -721,18 +811,22 @@ async def run_backfill(
         else:
             _log("No endgame span-entry rows to evaluate.")
 
-        # Phase 79 PHASE-FILL-02: middlegame entry eval pass.
-        if midgame_rows:
-            async with session_maker() as midgame_session:
-                mid_evaluated, mid_no_board, mid_engine_err = await _evaluate_and_write_rows(
-                    midgame_rows,
-                    midgame_session,
-                    db=db,
-                    eval_kind="middlegame_entry",
-                    pool=pool,
-                )
+        (
+            mid_seen,
+            mid_evaluated,
+            mid_no_board,
+            mid_engine_err,
+        ) = await _evaluate_and_write_streaming(
+            session_maker,
+            midgame_stmt,
+            db=db,
+            eval_kind="middlegame_entry",
+            pool=pool,
+        )
+        if mid_seen:
             _log(
                 f"Middlegame entry eval complete: "
+                f"rows={mid_seen}, "
                 f"evaluated={mid_evaluated}, "
                 f"skipped_no_board={mid_no_board}, "
                 f"skipped_engine_err={mid_engine_err}"
