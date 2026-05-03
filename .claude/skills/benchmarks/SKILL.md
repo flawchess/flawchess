@@ -434,6 +434,58 @@ Cell = `n (%) [avg user_eval_cp]`. The eval is `sign * eval_cp` (user-perspectiv
 
 The equal-footing filter retains ~78% of games and shrinks the conversion–recovery gap from +2.7pp to +1.0pp, consistent with higher-rated cohorts padding their conversion rate via softer matchmaking. The overall user-perspective eval also shrinks from +12 cp to +4 cp, confirming the same matchmaking confound at the eval level. Per-bucket eval magnitudes (~±430 cp) are nearly identical across filter regimes — the equal-footing filter changes which games qualify, not the within-bucket eval distribution. Buckets are roughly balanced (≈38 / 25 / 37), so eval-coverage regressions to NULL would noticeably swell the parity bucket and shift its avg-eval column toward the games-without-eval cohort's true distribution.
 
+### Eval distribution at endgame entry (reference, 2026-05-03)
+
+Shape of the per-game user-perspective eval (`sign * eval_cp`) at first endgame ply, equal-footing filter applied, mate scores and NULL eval excluded. Useful when evaluating whether to surface "avg eval at endgame entry" as a user-facing metric — the per-game noise is the relevant constraint for any per-user mean displayed in the live UI.
+
+**Summary** (n = 541,642): mean = **+4.0 cp**, **SD = 417.9 cp**, median = 0, IQR `[−300, +312]`, p05/p95 `[−681, +684]`.
+
+**Histogram (100 cp bins, % of games):**
+
+| bin (cp) | pct | bin (cp) | pct |
+|---:|---:|---:|---:|
+| ≤ −1000 | 0.45 | +0…+100 | **13.76** |
+| −1000…−900 | 0.55 | +100…+200 | 6.44 |
+| −900…−800 | 1.18 | +200…+300 | 5.72 |
+| −800…−700 | 2.28 | +300…+400 | 5.71 |
+| −700…−600 | 3.18 | +400…+500 | 7.08 |
+| −600…−500 | 4.97 | +500…+600 | 5.07 |
+| −500…−400 | 6.87 | +600…+700 | 3.26 |
+| −400…−300 | 5.50 | +700…+800 | 2.29 |
+| −300…−200 | 5.53 | +800…+900 | 1.22 |
+| −200…−100 | 6.29 | +900…+1000 | 0.56 |
+| −100…0 | **11.62** | ≥ +1000 | 0.48 |
+
+**Shape:** strong central peak (~25% of games within ±100 cp), gentle dip in ±200–300, mild secondary shoulders around ±400–500 ("piece hung in the middlegame" cohort), symmetric tails decaying out past ±1000. **Trimodal-ish, not bimodal** — the central peak dominates by a wide margin. Conv-vs-recov bucket counts (38/25/37) are not a faithful split of the eval distribution: most parity-bucket games sit in the central spike, but conversion/recovery buckets have substantial mass at moderate evals (±150-300) on top of the heavy ±400-500 shoulder.
+
+**Sample-size implications for per-user mean significance** (test against 0, α=0.05, 80% power, with σ ≈ 418 cp ⇒ n ≈ 16·σ²/Δ²):
+
+| effect Δ (cp) | n endgame games |
+|---:|---:|
+| +50 | ~1,100 |
+| +100 | ~280 |
+| +200 | ~70 |
+
+So a per-user sig test against 0 reliably catches users systematically entering at ≳+150 cp ("you outplay opponents into endgames") on a few-hundred-game corpus, and will say "no signal" for genuine +50 to +100 cp users. UI copy should phrase the null as "we can't tell" rather than "no advantage."
+
+### Eval × clock-diff cross-user correlation (reference, 2026-05-03)
+
+Cross-user Pearson correlation between **per-user mean eval at endgame entry** (cp) and **per-user mean clock-diff %** (`(user_clk - opp_clk) / base_time_seconds * 100`). Filter floor: ≥30 endgame games/user/TC, mate scores excluded, equal-footing applied. Computed to test whether the proposed user-facing narrative *"you enter endgames at +X cp but pay for it with Y% less time"* is supported by population-level co-movement.
+
+| TC | n users | Pearson r | avg user_mean_eval (cp) | avg user_mean_clock_diff (%) |
+|---|---:|---:|---:|---:|
+| bullet | 494 | **−0.43** | −2 | −0.16 |
+| blitz | 494 | **−0.33** | +14 | −1.38 |
+| rapid | 482 | −0.00 | +22 | −1.47 |
+| classical | 212 | +0.06 | +7 | −4.52 |
+| pooled | 1,682 | −0.13 | +11 | −1.44 |
+
+**Interpretation:** the trade-off is real in **bullet/blitz** — users who systematically enter endgames at higher eval do systematically have lower relative clock. r ≈ −0.4 is moderate but unambiguous. In **rapid/classical** the correlation collapses to zero — time isn't the binding constraint, so eval differences and clock differences come from independent sources (skill vs move-pace habits). The pooled r = −0.13 is dominated by the bullet/blitz signal.
+
+**Design implication:** a global "you paid for it with time" framing in the live UI would tell a false causal story to roughly half of users (everyone on rapid/classical). Three honest options: (a) show the two numbers as independent facts, (b) compute per-user across-game r and gate the trade-off framing on it, (c) TC-gate the framing (bullet/blitz only). Note that this is **cross-user** correlation; the within-user across-games version is what actually backs a user's own dashboard claim, but the cross-user zero in slow TCs strongly suggests the within-user effect is unlikely to be robust there either.
+
+**Per-user-mean averaging caveat:** the user-weighted mean eval (+11 cp pooled) sits higher than the game-weighted population mean (+4 cp from the prevalence table) because each user counts equally regardless of game count. Both numbers are "right" — pick the unit that matches the framing.
+
 ### Endgame Skill
 Unweighted mean of the non-empty per-bucket rates. A user with all three buckets has `skill = (conv + par + recov) / 3`; one with only parity has `skill = parity_rate`. Sample floor: ≥20 endgame games per user per cell + ≥2 of 3 buckets non-empty (defensive — with eval coverage near 100% essentially every user has all three).
 
