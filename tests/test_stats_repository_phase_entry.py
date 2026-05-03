@@ -312,8 +312,12 @@ class TestOpeningPhaseEntryMetrics:
             )
         # mate game: eval_cp=NULL, eval_mate=3
         await _make_game_with_phase_entries(
-            db_session, full_hash=full_hash, mg_eval_cp=None, mg_eval_mate=3,
-            eg_eval_cp=None, eg_eval_mate=3
+            db_session,
+            full_hash=full_hash,
+            mg_eval_cp=None,
+            mg_eval_mate=3,
+            eg_eval_cp=None,
+            eg_eval_mate=3,
         )
 
         result = await query_opening_phase_entry_metrics_batch(
@@ -390,9 +394,7 @@ class TestOpeningPhaseEntryMetrics:
         await _make_game_with_phase_entries(
             db_session, full_hash=full_hash, mg_eval_cp=None, mg_eval_mate=None
         )
-        await _make_game_with_phase_entries(
-            db_session, full_hash=full_hash, mg_eval_cp=2500
-        )
+        await _make_game_with_phase_entries(db_session, full_hash=full_hash, mg_eval_cp=2500)
 
         result = await query_opening_phase_entry_metrics_batch(
             db_session, _USER_PHASE_ENTRY, [full_hash]
@@ -438,18 +440,25 @@ class TestOpeningPhaseEntryMetrics:
                 db_session, full_hash=full_hash, mg_eval_cp=cp, eg_eval_cp=cp
             )
 
-        filter_kwargs = dict(
+        wdl_result = await query_position_wdl_batch(
+            db_session,
+            _USER_PHASE_ENTRY,
+            [full_hash],
             time_control=["blitz"],
             platform=["lichess"],
             rated=True,
             opponent_type="human",
             recency_cutoff=None,
         )
-        wdl_result = await query_position_wdl_batch(
-            db_session, _USER_PHASE_ENTRY, [full_hash], **filter_kwargs
-        )
         phase_result = await query_opening_phase_entry_metrics_batch(
-            db_session, _USER_PHASE_ENTRY, [full_hash], **filter_kwargs
+            db_session,
+            _USER_PHASE_ENTRY,
+            [full_hash],
+            time_control=["blitz"],
+            platform=["lichess"],
+            rated=True,
+            opponent_type="human",
+            recency_cutoff=None,
         )
 
         assert full_hash in wdl_result
@@ -465,8 +474,7 @@ class TestOpeningPhaseEntryMetrics:
         """Games with NULL user clock excluded from clock_diff_n; eval still counted."""
         full_hash = 10_013
         await _make_game_with_phase_entries(
-            db_session, full_hash=full_hash, mg_eval_cp=100,
-            user_clock=None, opp_clock=None
+            db_session, full_hash=full_hash, mg_eval_cp=100, user_clock=None, opp_clock=None
         )
 
         result = await query_opening_phase_entry_metrics_batch(
@@ -481,9 +489,7 @@ class TestOpeningPhaseEntryMetrics:
     @pytest.mark.asyncio
     async def test_empty_hashes_returns_empty_dict(self, db_session: AsyncSession) -> None:
         """query_opening_phase_entry_metrics_batch([]) returns {} immediately."""
-        result = await query_opening_phase_entry_metrics_batch(
-            db_session, _USER_PHASE_ENTRY, []
-        )
+        result = await query_opening_phase_entry_metrics_batch(db_session, _USER_PHASE_ENTRY, [])
         assert result == {}
 
     @pytest.mark.asyncio

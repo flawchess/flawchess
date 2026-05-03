@@ -2,6 +2,7 @@
 
 import datetime
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from sqlalchemy import (
@@ -23,10 +24,60 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.repositories.query_utils import apply_game_filters
+
+# D-08: trim |eval_cp| >= 2000 (>= ±20 pawns) from eval mean. Decisive positions
+# are statistically uninformative for "typical opening character".
+EVAL_OUTLIER_TRIM_CP: int = 2000
+
+
+@dataclass(slots=True)
+class OpeningPhaseEntryMetrics:
+    """Accumulated phase-entry metrics per opening (full_hash key) for both
+    middlegame entry (phase=1) and endgame entry (phase=2).
+
+    Per D-09 we aggregate both phases in a single SQL pass using
+    ``FILTER (WHERE phase = 1)`` / ``FILTER (WHERE phase = 2)``.
+
+    Per-phase partition invariant: for every opening with at least one
+    phase-entry row, ``eval_n + mate_n + null_eval_n + outlier_n`` equals the
+    phase-entry-row count for that phase. The four buckets are mutually
+    exclusive at the phase-entry row:
+
+    - ``eval_n``      — eval_cp NOT NULL AND eval_mate IS NULL AND |eval_cp| < 2000 (continuous, in-domain)
+    - ``mate_n``      — eval_mate IS NOT NULL (forced-mate; excluded from mean)
+    - ``null_eval_n`` — eval_cp IS NULL AND eval_mate IS NULL (no score available)
+    - ``outlier_n``   — eval_cp NOT NULL AND eval_mate IS NULL AND |eval_cp| >= 2000 (D-08 trim)
+
+    Note: trimmed rows are NOT counted as null_eval; they are explicitly
+    classified as outlier_n so the partition invariant remains testable.
+    """
+
+    # MG-entry pillar (D-01, D-04, D-08)
+    eval_sum_mg: float  # signed user-perspective sum, in centipawns
+    eval_sumsq_mg: float  # sum of squared signed eval_cp values
+    eval_n_mg: int  # phase=1 rows with continuous in-domain eval
+    mate_n_mg: int  # phase=1 rows with eval_mate IS NOT NULL
+    null_eval_n_mg: int  # phase=1 rows with both eval_cp and eval_mate NULL
+    outlier_n_mg: int  # phase=1 rows with |eval_cp| >= 2000 (D-08)
+
+    # Clock diff at MG entry (D-05) — no EG-entry parallel
+    clock_diff_sum: float  # sum of (user_clock - opp_clock) at MG entry, in seconds
+    base_time_sum: float  # sum of base_time_seconds across the same games
+    clock_diff_n: int  # games with both user_clock and opp_clock NOT NULL at MG entry
+
+    # Endgame-entry pillar (D-09 — parallel to MG-entry pillar)
+    eval_sum_eg: float  # signed user-perspective sum at EG entry
+    eval_sumsq_eg: float  # sum of squared signed eval_cp at EG entry
+    eval_n_eg: int  # phase=2 rows with continuous in-domain eval
+    mate_n_eg: int  # phase=2 rows with eval_mate IS NOT NULL
+    null_eval_n_eg: int  # phase=2 rows with both eval_cp and eval_mate NULL
+    outlier_n_eg: int  # phase=2 rows with |eval_cp| >= 2000 (D-08)
+
 
 # Standalone MetaData (not Base.metadata) keeps the view invisible to Alembic autogenerate.
 _openings_dedup = Table(
@@ -411,5 +462,230 @@ async def query_position_wdl_batch(
     result = await session.execute(stmt)
     return {
         row[0]: PositionWDL(total=row[1], wins=row[2], draws=row[3], losses=row[4])
+        for row in result.fetchall()
+    }
+
+
+async def query_opening_phase_entry_metrics_batch(
+    session: AsyncSession,
+    user_id: int,
+    hashes: list[int],
+    color: Literal["white", "black"] | None = None,
+    time_control: Sequence[str] | None = None,
+    platform: Sequence[str] | None = None,
+    rated: bool | None = None,
+    opponent_type: str = "human",
+    recency_cutoff: datetime.datetime | None = None,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
+) -> dict[int, OpeningPhaseEntryMetrics]:
+    """Return {full_hash: OpeningPhaseEntryMetrics} for games passing through each position.
+
+    Aggregates both middlegame-entry (phase=1) and endgame-entry (phase=2) metrics in a
+    single SQL pass using ``FILTER (WHERE phase = 1)`` / ``FILTER (WHERE phase = 2)``
+    partitioning (D-09). The phase-entry row per (game, phase) is identified via
+    ROW_NUMBER() OVER (PARTITION BY game_id, phase ORDER BY ply) filtered to rn=1.
+
+    Outlier trim: |eval_cp| >= EVAL_OUTLIER_TRIM_CP rows are excluded from the eval mean
+    and counted separately as outlier_n (D-08). Mate rows (eval_mate IS NOT NULL) are
+    excluded and counted as mate_n. This preserves the per-phase partition invariant:
+    eval_n + mate_n + null_eval_n + outlier_n == phase_entry_row_count.
+
+    Sign convention: eval_cp is signed at SQL level via ``case(user_color='white', 1, else=-1) * eval_cp``
+    matching the endgame_service._classify_endgame_bucket convention.
+
+    Clock-diff: computed only at MG entry (phase=1). Uses the entry_ply row for user clock
+    and entry_ply+1 for the opponent's clock (LEFT JOIN — absent when next ply missing).
+
+    Performance note: uses GROUP BY + JOIN shape (not IN(subquery)) — the IN(subquery) form
+    caused planner Nested Loop hangs on heavy users (see endgame_repository.py:687-692 for
+    the original bug report and fix rationale). Run EXPLAIN ANALYZE on heavy users pre-merge.
+
+    Uses apply_game_filters() from query_utils — same filter set as query_position_wdl_batch
+    (CLAUDE.md "Shared Query Filters"). Never use asyncio.gather on the shared session.
+    """
+    if not hashes:
+        return {}
+
+    # Step 1: Per-game per-phase entry ply via ROW_NUMBER (D-09).
+    # phase IN (1, 2) — single scan; rn=1 picks the lowest ply per (game, phase).
+    rn = (
+        func.row_number()
+        .over(
+            partition_by=(GamePosition.game_id, GamePosition.phase),
+            order_by=GamePosition.ply,
+        )
+        .label("rn")
+    )
+    phase_entry_inner = (
+        select(
+            GamePosition.game_id.label("game_id"),
+            GamePosition.phase.label("phase"),
+            GamePosition.ply.label("entry_ply"),
+            rn,
+        ).where(
+            GamePosition.user_id == user_id,
+            GamePosition.phase.in_([1, 2]),
+        )
+    ).subquery("phase_entry_inner")
+    phase_entry_subq = (
+        select(
+            phase_entry_inner.c.game_id,
+            phase_entry_inner.c.phase,
+            phase_entry_inner.c.entry_ply,
+        ).where(phase_entry_inner.c.rn == 1)
+    ).subquery("phase_entry")
+
+    # Step 2: Dedup (full_hash, game_id) for the opening filter — same as query_position_wdl_batch.
+    # Include user_color and base_time_seconds for sign convention and clock-diff denominator.
+    dedup = (
+        select(
+            GamePosition.full_hash.label("full_hash"),
+            Game.id.label("game_id"),
+            Game.user_color.label("user_color"),
+            Game.base_time_seconds.label("base_time_seconds"),
+        )
+        .join(Game, GamePosition.game_id == Game.id)
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.full_hash.in_(hashes),
+        )
+        .distinct(GamePosition.full_hash, Game.id)
+    )
+    if color is not None:
+        dedup = dedup.where(Game.user_color == color)
+    dedup = apply_game_filters(
+        dedup,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+    )
+    dedup_subq = dedup.subquery("dedup")
+
+    # Step 3: JOIN the phase-entry row (gp_entry) and the entry_ply+1 row (gp_opp).
+    # gp_opp is only used for clock-diff at MG entry (phase=1); LEFT JOIN so that
+    # games without an entry_ply+1 row still contribute to eval aggregations.
+    gp_entry = aliased(GamePosition, name="gp_entry")
+    gp_opp = aliased(GamePosition, name="gp_opp")
+
+    # Sign expression mirrors endgame_service._classify_endgame_bucket convention.
+    sign_expr = case((dedup_subq.c.user_color == "white", 1), else_=-1)
+    user_eval_expr = sign_expr * gp_entry.eval_cp  # signed centipawns; NULL when eval_cp NULL
+
+    # Clock-diff: user_clock (at entry_ply) minus opponent_clock (at entry_ply+1).
+    clock_diff_expr = gp_entry.clock_seconds - gp_opp.clock_seconds
+
+    # Phase predicates for FILTER partitioning (D-09):
+    is_phase_mg = phase_entry_subq.c.phase == 1
+    is_phase_eg = phase_entry_subq.c.phase == 2
+
+    # Eval-state predicates. Trim threshold = EVAL_OUTLIER_TRIM_CP (D-08).
+    # Four mutually exclusive buckets:
+    has_continuous_in_domain_eval = and_(
+        gp_entry.eval_cp.isnot(None),
+        gp_entry.eval_mate.is_(None),
+        func.abs(gp_entry.eval_cp) < EVAL_OUTLIER_TRIM_CP,
+    )
+    has_mate = gp_entry.eval_mate.isnot(None)
+    has_null_eval = and_(gp_entry.eval_cp.is_(None), gp_entry.eval_mate.is_(None))
+    has_outlier_eval = and_(
+        gp_entry.eval_cp.isnot(None),
+        gp_entry.eval_mate.is_(None),
+        func.abs(gp_entry.eval_cp) >= EVAL_OUTLIER_TRIM_CP,
+    )
+
+    has_user_and_opp_clock = and_(
+        gp_entry.clock_seconds.isnot(None),
+        gp_opp.clock_seconds.isnot(None),
+    )
+
+    agg_select = (
+        select(
+            dedup_subq.c.full_hash,
+            # --- MG-entry aggregations (FILTER WHERE phase = 1) ---
+            func.coalesce(
+                func.sum(user_eval_expr).filter(and_(is_phase_mg, has_continuous_in_domain_eval)),
+                0.0,
+            ).label("eval_sum_mg"),
+            func.coalesce(
+                func.sum(user_eval_expr * user_eval_expr).filter(
+                    and_(is_phase_mg, has_continuous_in_domain_eval)
+                ),
+                0.0,
+            ).label("eval_sumsq_mg"),
+            func.count()
+            .filter(and_(is_phase_mg, has_continuous_in_domain_eval))
+            .label("eval_n_mg"),
+            func.count().filter(and_(is_phase_mg, has_mate)).label("mate_n_mg"),
+            func.count().filter(and_(is_phase_mg, has_null_eval)).label("null_eval_n_mg"),
+            func.count().filter(and_(is_phase_mg, has_outlier_eval)).label("outlier_n_mg"),
+            # --- Clock-diff aggregations — only at MG entry (phase=1) ---
+            func.coalesce(
+                func.sum(clock_diff_expr).filter(and_(is_phase_mg, has_user_and_opp_clock)),
+                0.0,
+            ).label("clock_diff_sum"),
+            func.coalesce(
+                func.sum(dedup_subq.c.base_time_seconds).filter(
+                    and_(is_phase_mg, has_user_and_opp_clock)
+                ),
+                0.0,
+            ).label("base_time_sum"),
+            func.count().filter(and_(is_phase_mg, has_user_and_opp_clock)).label("clock_diff_n"),
+            # --- EG-entry aggregations (FILTER WHERE phase = 2) ---
+            func.coalesce(
+                func.sum(user_eval_expr).filter(and_(is_phase_eg, has_continuous_in_domain_eval)),
+                0.0,
+            ).label("eval_sum_eg"),
+            func.coalesce(
+                func.sum(user_eval_expr * user_eval_expr).filter(
+                    and_(is_phase_eg, has_continuous_in_domain_eval)
+                ),
+                0.0,
+            ).label("eval_sumsq_eg"),
+            func.count()
+            .filter(and_(is_phase_eg, has_continuous_in_domain_eval))
+            .label("eval_n_eg"),
+            func.count().filter(and_(is_phase_eg, has_mate)).label("mate_n_eg"),
+            func.count().filter(and_(is_phase_eg, has_null_eval)).label("null_eval_n_eg"),
+            func.count().filter(and_(is_phase_eg, has_outlier_eval)).label("outlier_n_eg"),
+        )
+        .select_from(dedup_subq)
+        .join(phase_entry_subq, phase_entry_subq.c.game_id == dedup_subq.c.game_id)
+        .join(
+            gp_entry,
+            (gp_entry.game_id == phase_entry_subq.c.game_id)
+            & (gp_entry.ply == phase_entry_subq.c.entry_ply),
+        )
+        .outerjoin(
+            gp_opp,
+            (gp_opp.game_id == phase_entry_subq.c.game_id)
+            & (gp_opp.ply == phase_entry_subq.c.entry_ply + 1),
+        )
+        .group_by(dedup_subq.c.full_hash)
+    )
+
+    result = await session.execute(agg_select)
+    return {
+        row[0]: OpeningPhaseEntryMetrics(
+            eval_sum_mg=float(row[1]),
+            eval_sumsq_mg=float(row[2]),
+            eval_n_mg=int(row[3]),
+            mate_n_mg=int(row[4]),
+            null_eval_n_mg=int(row[5]),
+            outlier_n_mg=int(row[6]),
+            clock_diff_sum=float(row[7]),
+            base_time_sum=float(row[8]),
+            clock_diff_n=int(row[9]),
+            eval_sum_eg=float(row[10]),
+            eval_sumsq_eg=float(row[11]),
+            eval_n_eg=int(row[12]),
+            mate_n_eg=int(row[13]),
+            null_eval_n_eg=int(row[14]),
+            outlier_n_eg=int(row[15]),
+        )
         for row in result.fetchall()
     }
