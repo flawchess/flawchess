@@ -1,5 +1,7 @@
 """Pydantic v2 schemas for stats endpoints."""
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -55,6 +57,40 @@ class OpeningWDL(BaseModel):
     win_pct: float
     draw_pct: float
     loss_pct: float
+
+    # Phase 80 additions — middlegame-entry Stockfish eval (D-01, D-04, D-08)
+    # All optional with defaults so existing callers/tests keep working.
+    # Trim |eval_cp| >= 2000 happens upstream in SQL (Plan 02) per D-08.
+    avg_eval_pawns: float | None = None  # signed, user-perspective; None when eval_n == 0
+    eval_ci_low_pawns: float | None = None  # 95% CI lower bound; None when eval_n < 2
+    eval_ci_high_pawns: float | None = None  # 95% CI upper bound; None when eval_n < 2
+    eval_n: int = 0  # games used in the mean (mate-excluded, NULL-excluded, outlier-trimmed)
+    eval_p_value: float | None = None  # two-sided p-value vs zero
+    eval_confidence: Literal["low", "medium", "high"] = "low"
+
+    # Phase 80 additions — clock-diff at middlegame entry (D-05)
+    # No endgame-entry parallel (Endgame page already shows EG clock metrics).
+    avg_clock_diff_pct: float | None = None  # signed % of base time; None when clock_diff_n == 0
+    avg_clock_diff_seconds: float | None = None  # signed seconds; None when clock_diff_n == 0
+    clock_diff_n: int = 0  # games with both user and opp clock present at MG entry
+
+    # Phase 80 additions — endgame-entry Stockfish eval (D-09 — parallel pillar)
+    # Same trim policy (D-08) and helper as MG-entry; different SQL filter (phase = 2).
+    # 99.99% coverage per bench §3 line 353; no analyzed-games caveat (handled in D-10 tooltip).
+    avg_eval_endgame_entry_pawns: float | None = (
+        None  # signed, user-perspective; None when eval_endgame_n == 0
+    )
+    eval_endgame_ci_low_pawns: float | None = (
+        None  # 95% CI lower bound; None when eval_endgame_n < 2
+    )
+    eval_endgame_ci_high_pawns: float | None = (
+        None  # 95% CI upper bound; None when eval_endgame_n < 2
+    )
+    eval_endgame_n: int = (
+        0  # games used in the EG mean (mate-excluded, NULL-excluded, outlier-trimmed)
+    )
+    eval_endgame_p_value: float | None = None  # two-sided p-value vs zero (EG-entry sample)
+    eval_endgame_confidence: Literal["low", "medium", "high"] = "low"
 
 
 class MostPlayedOpeningsResponse(BaseModel):
