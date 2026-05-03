@@ -79,6 +79,7 @@ from app.core.config import settings  # noqa: E402
 from app.models.game import Game  # noqa: E402
 from app.models.game_position import GamePosition  # noqa: E402
 from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD  # noqa: E402
+from app.services import engine as _engine_module  # noqa: E402
 from app.services.engine import EnginePool  # noqa: E402
 from app.services.position_classifier import (  # noqa: E402
     MIDGAME_MAJORS_AND_MINORS_THRESHOLD,
@@ -526,6 +527,7 @@ async def run_backfill(
     dry_run: bool,
     limit: int | None,
     workers: int = DEFAULT_WORKERS,
+    timeout: float | None = None,
     _session_maker: async_sessionmaker[AsyncSession] | None = None,
     _pool: EnginePool | None = None,
 ) -> None:
@@ -544,10 +546,21 @@ async def run_backfill(
     Do NOT raise on the prod server — the live import path uses the engine
     module's singleton and would compete for CPU.
 
+    timeout: per-eval timeout in seconds. None = use engine module default
+    (_TIMEOUT_S = 2.0). Raise to recover positions that consistently time out
+    at depth 15 (typically dense early-endgame positions with queens + rooks
+    + minor pieces + many pawns). The override mutates the engine module's
+    _TIMEOUT_S global before the pool is started; pool workers read the
+    global at every evaluate() call so the override applies to all workers.
+
     _session_maker / _pool: internal test hooks. Production callers omit both;
     the production path builds its own engine from _db_url(db) and starts an
     EnginePool of `workers` Stockfish processes.
     """
+    if timeout is not None:
+        _engine_module._TIMEOUT_S = timeout
+        _log(f"Engine per-eval timeout overridden: {timeout}s (default 2.0s)")
+
     dispose_engine = _session_maker is None
     if _session_maker is None:
         url = _db_url(db)
@@ -791,9 +804,24 @@ def parse_args() -> argparse.Namespace:
             "module's singleton."
         ),
     )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "Override the engine's per-eval timeout (default 2.0s in "
+            "app/services/engine.py:_TIMEOUT_S). Raise to recover positions "
+            "that time out at depth 15 — typically dense early-endgame "
+            "positions with queens + rooks + minor pieces + many pawns. "
+            "Applies to every pool worker."
+        ),
+    )
     args = parser.parse_args()
     if args.workers < 1:
         parser.error(f"--workers must be >= 1, got {args.workers}")
+    if args.timeout is not None and args.timeout <= 0:
+        parser.error(f"--timeout must be > 0, got {args.timeout}")
     return args
 
 
@@ -806,7 +834,8 @@ async def main() -> None:
 
     _log(
         f"Starting backfill: db={args.db} user_id={args.user_id} "
-        f"dry_run={args.dry_run} limit={args.limit} workers={args.workers}"
+        f"dry_run={args.dry_run} limit={args.limit} workers={args.workers} "
+        f"timeout={args.timeout}"
     )
     await run_backfill(
         db=args.db,
@@ -814,6 +843,7 @@ async def main() -> None:
         dry_run=args.dry_run,
         limit=args.limit,
         workers=args.workers,
+        timeout=args.timeout,
     )
     _log("Done.")
 
