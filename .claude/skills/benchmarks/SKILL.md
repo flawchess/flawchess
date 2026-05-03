@@ -194,6 +194,45 @@ Then for each pair `(a, b)`: `pooled_sd = sqrt(((n_a-1)*var_a + (n_b-1)*var_b) /
 
 The heatmap is a 5×4 grid of per-user p50 — visual sanity check for interaction effects that marginals would miss.
 
+## Equal-footing opponent filter (§2 / §3 / §6 only)
+
+**Apply `abs(opp_rating - user_rating) <= 100` to the bucketed CTE in §2, §3, and §6 — NOT in §1, §4, §5.**
+
+### Why
+
+Without the filter, the 2400 cohort plays opponents averaging 50–130 Elo weaker (and 2400-classical is even more skewed). That matchmaking confound inflates the apparent ELO skill ramp and makes it look like cohort skill differences are larger than they actually are. The 2026-05-03 report measured per-cell `avg_opp_minus_user` ranging from +47 (800-classical) down to -372 (2400-classical) — see that report's opponent-gap analysis section.
+
+### Framing — design decision
+
+Benchmark zones are calibrated as the **"skill at equal footing"** baseline. The user's measured value in the live UI still uses unfiltered games (their real performance, including any matchmaking advantage), but the zones it's compared against are confound-free. Higher-rated players will naturally see their measurement sit above the equal-footing baseline — *that* is the intended signal. Users who want to view skill-only stats apply the in-app opponent-strength filter, which collapses their measurement to the equal-footing comparator. Full rationale in `.planning/notes/benchmark-equal-footing-framing.md`.
+
+### Scope
+
+- **In scope** (filter required): §2 Conv/Par/Recov + Endgame Skill, §3 Endgame ELO gap, §6 per-class breakdown — these are skill-stratification metrics.
+- **Out of scope** (no filter): §1 Score gap (whole-game outcome distribution), §4 Time pressure stats (clock behavior), §5 Time pressure vs performance (clock behavior).
+
+### SQL fragment
+
+In every §2/§3/§6 query, the filter goes inside the bucketed CTE alongside the existing `g.rated AND NOT g.is_computer_game` clause:
+
+```sql
+WHERE g.rated AND NOT g.is_computer_game
+  AND g.time_control_bucket::text = su.tc_bucket
+  AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+  AND abs(
+        (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
+      - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
+      ) <= 100
+```
+
+Both rating columns must be NOT NULL — the abs() expression silently returns NULL if either side is missing, and a NULL-comparing predicate evaluates to NULL (drops the row), but explicitly stating the NOT NULL keeps the intent legible and prevents accidental interaction with future SQL refactors.
+
+### Reporting
+
+Add an "Equal-footing retention" subsection under §2/§3/§6 cell coverage, showing the per-cell game retention vs the unfiltered baseline. The 2026-05-03 retention pattern was: mid-ELO cells retain ~85–90%, 2400-rapid drops to ~51%, 2400-classical to ~15% (already excluded as sparse cell). Flag any cell that drops below the per-user sample floor.
+
+When comparing across snapshots, always note in the report header which sections were filtered — comparing filtered §2 against unfiltered §2 is meaningless.
+
 ## Score-gap re-centering — out of scope
 
 Score-gap gauge currently uses symmetric `±0.10`. **Do not propose re-centering for sub-5pp population median offsets** — round bounds beat data-fitted asymmetry below that threshold. (2026-04-30 design decision.)
@@ -412,6 +451,12 @@ bucketed AS (
     ON ep.game_id = g.id AND ep.ply = fe.entry_ply
   WHERE g.rated AND NOT g.is_computer_game
     AND g.time_control_bucket::text = su.tc_bucket
+    -- Equal-footing filter (§2/§3/§6 only) — see "Equal-footing opponent filter" methodology section
+    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+    AND abs(
+          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
+        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
+        ) <= 100
 ),
 classified AS (
   -- Mirrors _classify_endgame_bucket: mate first (forces conv/recov), then cp vs ±100, NULL = parity.
@@ -559,6 +604,12 @@ endgame_games AS (
   WHERE g.rated AND NOT g.is_computer_game
     AND g.time_control_bucket::text = su.tc_bucket
     AND (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) IS NOT NULL
+    -- Equal-footing filter (§2/§3/§6 only) — see "Equal-footing opponent filter" methodology section
+    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+    AND abs(
+          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
+        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
+        ) <= 100
 ),
 window_games AS (
   -- Trailing 100 endgame games per user (matches ENDGAME_ELO_TIMELINE_WINDOW = 100)
@@ -904,6 +955,12 @@ bucketed AS (
     ON ep.game_id = g.id AND ep.ply = cs.entry_ply
   WHERE g.rated AND NOT g.is_computer_game
     AND g.time_control_bucket::text = su.tc_bucket
+    -- Equal-footing filter (§2/§3/§6 only) — see "Equal-footing opponent filter" methodology section
+    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+    AND abs(
+          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
+        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
+        ) <= 100
 ),
 classified AS (
   -- Apply _classify_endgame_bucket: mate first, else cp vs ±100, else parity (NULL or in-band).
@@ -974,6 +1031,7 @@ Write to `reports/benchmarks-YYYY-MM-DD.md` (UTC date). Layout:
 - **Selection provenance**: 2026-03 Lichess monthly dump, 9133 selected users, <N_ingested> ingested at ~50/cell
 - **Per-user history caveat**: rating_bucket is per-TC median rating at selection snapshot; each user contributes up to 1000 games per TC over a 36-month window at varying ratings; "ELO bucket effect" = "current rating cohort effect"
 - **Base filters**: g.rated AND NOT g.is_computer_game; per-user filter g.time_control_bucket = bsu.tc_bucket; benchmark_ingest_checkpoints.status = 'completed' (mandatory canonical-CTE filter)
+- **Equal-footing filter (§2/§3/§6 only)**: `abs(opp_rating - user_rating) <= 100`. Calibrates skill-stratification metrics on equal-footing games; matchmaking advantage at high ratings would otherwise inflate the apparent ELO ramp. §1/§4/§5 are not skill-stratification metrics and use unfiltered games. See `.planning/notes/benchmark-equal-footing-framing.md` for rationale.
 - **Conv/Parity/Recovery bucketing**: Stockfish eval at the first endgame ply (or first ply of each class span in section 6). Mirrors `_classify_endgame_bucket` (`EVAL_ADVANTAGE_THRESHOLD = 100` cp; mate scores force conv/recov; NULL → parity). REFAC-02 — the old `material_imbalance + 4-ply persistence` proxy is gone; sections 2/3/6 read `eval_cp` / `eval_mate` directly.
 - **Eval coverage**: <pct>% of qualifying endgame entries have non-NULL eval (`eval_cp IS NOT NULL OR eval_mate IS NOT NULL`). Expected ~100% on the benchmark DB after the Stockfish backfill — flag if < 99%.
 - **Sparse-cell exclusion**: `(2400, classical)` is excluded from TC marginals, ELO marginals, pooled overall, and Cohen's d on both axes (n=12 completed users, ~55 games/user, pool exhausted). It is still shown in cell-level 5×4 tables with an `n=12*` footnote. Revisit if a future dump produces ≥40 completed users at ≥200 games/user.
