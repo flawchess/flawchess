@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
 status: "v1.15 shipped as draft PR #78 — artifacts to follow (full STATE refresh in this commit; 79-04-PLAN test-plan checkboxes; post-deploy VAL-02 / VAL-03 UI smoke)"
-last_updated: "2026-05-03T14:12:59.111Z"
+last_updated: "2026-05-03T16:18:09.618Z"
 last_activity: 2026-05-03
 progress:
   total_phases: 6
