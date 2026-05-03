@@ -478,6 +478,7 @@ async def query_opening_phase_entry_metrics_batch(
     recency_cutoff: datetime.datetime | None = None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    hash_column: Literal["full", "white", "black"] = "full",
 ) -> dict[int, OpeningPhaseEntryMetrics]:
     """Return {full_hash: OpeningPhaseEntryMetrics} for games passing through each position.
 
@@ -508,40 +509,22 @@ async def query_opening_phase_entry_metrics_batch(
     if not hashes:
         return {}
 
-    # Step 1: Per-game per-phase entry ply via ROW_NUMBER (D-09).
-    # phase IN (1, 2) — single scan; rn=1 picks the lowest ply per (game, phase).
-    rn = (
-        func.row_number()
-        .over(
-            partition_by=(GamePosition.game_id, GamePosition.phase),
-            order_by=GamePosition.ply,
-        )
-        .label("rn")
-    )
-    phase_entry_inner = (
-        select(
-            GamePosition.game_id.label("game_id"),
-            GamePosition.phase.label("phase"),
-            GamePosition.ply.label("entry_ply"),
-            rn,
-        ).where(
-            GamePosition.user_id == user_id,
-            GamePosition.phase.in_([1, 2]),
-        )
-    ).subquery("phase_entry_inner")
-    phase_entry_subq = (
-        select(
-            phase_entry_inner.c.game_id,
-            phase_entry_inner.c.phase,
-            phase_entry_inner.c.entry_ply,
-        ).where(phase_entry_inner.c.rn == 1)
-    ).subquery("phase_entry")
+    # Resolve the hash column. Bookmark callers may filter by white_hash or
+    # black_hash (match_side="mine"/"opponent"); most-played callers use full_hash.
+    hash_col_map = {
+        "full": GamePosition.full_hash,
+        "white": GamePosition.white_hash,
+        "black": GamePosition.black_hash,
+    }
+    hash_col = hash_col_map[hash_column]
 
-    # Step 2: Dedup (full_hash, game_id) for the opening filter — same as query_position_wdl_batch.
-    # Include user_color and base_time_seconds for sign convention and clock-diff denominator.
-    dedup = (
+    # Step 1: Dedup (hash, game_id) for the opening filter, materialized as a CTE so
+    # Postgres only evaluates the user_id+hash scan once even though we reference it
+    # from the phase_entry derivation below. (Inlined subquery references caused the
+    # planner to recompute the heavy DISTINCT-ON twice.)
+    dedup_select = (
         select(
-            GamePosition.full_hash.label("full_hash"),
+            hash_col.label("full_hash"),
             Game.id.label("game_id"),
             Game.user_color.label("user_color"),
             Game.base_time_seconds.label("base_time_seconds"),
@@ -549,14 +532,14 @@ async def query_opening_phase_entry_metrics_batch(
         .join(Game, GamePosition.game_id == Game.id)
         .where(
             GamePosition.user_id == user_id,
-            GamePosition.full_hash.in_(hashes),
+            hash_col.in_(hashes),
         )
-        .distinct(GamePosition.full_hash, Game.id)
+        .distinct(hash_col, Game.id)
     )
     if color is not None:
-        dedup = dedup.where(Game.user_color == color)
-    dedup = apply_game_filters(
-        dedup,
+        dedup_select = dedup_select.where(Game.user_color == color)
+    dedup_select = apply_game_filters(
+        dedup_select,
         time_control,
         platform,
         rated,
@@ -565,42 +548,68 @@ async def query_opening_phase_entry_metrics_batch(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
-    dedup_subq = dedup.subquery("dedup")
+    dedup_subq = dedup_select.cte("dedup")
 
-    # Step 3: JOIN the phase-entry row (gp_entry) and the entry_ply+1 row (gp_opp).
-    # gp_opp is only used for clock-diff at MG entry (phase=1); LEFT JOIN so that
-    # games without an entry_ply+1 row still contribute to eval aggregations.
-    gp_entry = aliased(GamePosition, name="gp_entry")
+    # Step 2: Per-game per-phase entry ROW (not just ply) via DISTINCT ON.
+    # Inlines eval_cp / eval_mate / clock_seconds into the phase_entry subquery so
+    # the heavy gp_entry JOIN can be eliminated entirely (was a Bitmap Heap Scan
+    # over (game_id, ply) without a composite index — ~100k row scans for a heavy user).
+    # Restricted to dedup's game_id set so the scan is ~10x smaller than the full
+    # user partition.
+    phase_entry_subq = (
+        select(
+            GamePosition.game_id.label("game_id"),
+            GamePosition.phase.label("phase"),
+            GamePosition.ply.label("entry_ply"),
+            GamePosition.eval_cp.label("eval_cp"),
+            GamePosition.eval_mate.label("eval_mate"),
+            GamePosition.clock_seconds.label("user_clock"),
+        )
+        .where(
+            GamePosition.phase.in_([1, 2]),
+            GamePosition.game_id.in_(select(dedup_subq.c.game_id)),
+        )
+        .distinct(GamePosition.game_id, GamePosition.phase)
+        .order_by(GamePosition.game_id, GamePosition.phase, GamePosition.ply)
+    ).subquery("phase_entry")
+
+    # Step 3: gp_opp is the entry_ply+1 row, used only for opponent clock at MG entry.
+    # Cannot inline via DISTINCT ON (target row may belong to a different phase), so
+    # this is a LEFT JOIN. Predicate is (game_id, ply = entry_ply + 1); the user_id
+    # predicate is dropped because dedup is already user_id-filtered (game_id implies
+    # the user via FK and the dedup pipeline).
     gp_opp = aliased(GamePosition, name="gp_opp")
 
     # Sign expression mirrors endgame_service._classify_endgame_bucket convention.
     sign_expr = case((dedup_subq.c.user_color == "white", 1), else_=-1)
-    user_eval_expr = sign_expr * gp_entry.eval_cp  # signed centipawns; NULL when eval_cp NULL
+    user_eval_expr = sign_expr * phase_entry_subq.c.eval_cp  # signed cp; NULL when eval_cp NULL
 
-    # Clock-diff: user_clock (at entry_ply) minus opponent_clock (at entry_ply+1).
-    clock_diff_expr = gp_entry.clock_seconds - gp_opp.clock_seconds
+    # Clock-diff: user_clock (entry_ply) minus opp_clock (entry_ply+1).
+    clock_diff_expr = phase_entry_subq.c.user_clock - gp_opp.clock_seconds
 
     # Phase predicates for FILTER partitioning (D-09):
     is_phase_mg = phase_entry_subq.c.phase == 1
     is_phase_eg = phase_entry_subq.c.phase == 2
 
     # Eval-state predicates. Trim threshold = EVAL_OUTLIER_TRIM_CP (D-08).
-    # Four mutually exclusive buckets:
     has_continuous_in_domain_eval = and_(
-        gp_entry.eval_cp.isnot(None),
-        gp_entry.eval_mate.is_(None),
-        func.abs(gp_entry.eval_cp) < EVAL_OUTLIER_TRIM_CP,
+        phase_entry_subq.c.eval_cp.isnot(None),
+        phase_entry_subq.c.eval_mate.is_(None),
+        func.abs(phase_entry_subq.c.eval_cp) < EVAL_OUTLIER_TRIM_CP,
     )
-    has_mate = gp_entry.eval_mate.isnot(None)
-    has_null_eval = and_(gp_entry.eval_cp.is_(None), gp_entry.eval_mate.is_(None))
+    has_mate = phase_entry_subq.c.eval_mate.isnot(None)
+    has_null_eval = and_(
+        phase_entry_subq.c.eval_cp.is_(None),
+        phase_entry_subq.c.eval_mate.is_(None),
+    )
     has_outlier_eval = and_(
-        gp_entry.eval_cp.isnot(None),
-        gp_entry.eval_mate.is_(None),
-        func.abs(gp_entry.eval_cp) >= EVAL_OUTLIER_TRIM_CP,
+        phase_entry_subq.c.eval_cp.isnot(None),
+        phase_entry_subq.c.eval_mate.is_(None),
+        func.abs(phase_entry_subq.c.eval_cp) >= EVAL_OUTLIER_TRIM_CP,
     )
 
     has_user_and_opp_clock = and_(
-        gp_entry.clock_seconds.isnot(None),
+        phase_entry_subq.c.user_clock.isnot(None),
         gp_opp.clock_seconds.isnot(None),
     )
 
@@ -656,17 +665,10 @@ async def query_opening_phase_entry_metrics_batch(
         )
         .select_from(dedup_subq)
         .join(phase_entry_subq, phase_entry_subq.c.game_id == dedup_subq.c.game_id)
-        .join(
-            gp_entry,
-            (gp_entry.game_id == phase_entry_subq.c.game_id)
-            & (gp_entry.ply == phase_entry_subq.c.entry_ply)
-            & (gp_entry.user_id == user_id),
-        )
         .outerjoin(
             gp_opp,
             (gp_opp.game_id == phase_entry_subq.c.game_id)
-            & (gp_opp.ply == phase_entry_subq.c.entry_ply + 1)
-            & (gp_opp.user_id == user_id),
+            & (gp_opp.ply == phase_entry_subq.c.entry_ply + 1),
         )
         .group_by(dedup_subq.c.full_hash)
     )

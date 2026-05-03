@@ -70,3 +70,46 @@ export interface MostPlayedOpeningsResponse {
   white: OpeningWDL[];
   black: OpeningWDL[];
 }
+
+export interface BookmarkPhaseEntryQuery {
+  target_hash: string;
+  match_side: 'white' | 'black' | 'full';
+  color: 'white' | 'black' | null;
+}
+
+export interface BookmarkPhaseEntryItem {
+  target_hash: string;
+
+  avg_eval_pawns?: number | null;
+  eval_ci_low_pawns?: number | null;
+  eval_ci_high_pawns?: number | null;
+  eval_n: number;
+  eval_p_value?: number | null;
+  eval_confidence: 'low' | 'medium' | 'high';
+
+  avg_clock_diff_pct?: number | null;
+  avg_clock_diff_seconds?: number | null;
+  clock_diff_n: number;
+
+  avg_eval_endgame_entry_pawns?: number | null;
+  eval_endgame_ci_low_pawns?: number | null;
+  eval_endgame_ci_high_pawns?: number | null;
+  eval_endgame_n: number;
+  eval_endgame_p_value?: number | null;
+  eval_endgame_confidence: 'low' | 'medium' | 'high';
+}
+
+export interface BookmarkPhaseEntryRequest {
+  bookmarks: BookmarkPhaseEntryQuery[];
+  time_control?: string[] | null;
+  platform?: string[] | null;
+  rated?: boolean | null;
+  opponent_type?: string;
+  opponent_gap_min?: number | null;
+  opponent_gap_max?: number | null;
+  recency?: string | null;
+}
+
+export interface BookmarkPhaseEntryResponse {
+  items: BookmarkPhaseEntryItem[];
+}

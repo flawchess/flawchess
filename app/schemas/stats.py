@@ -98,3 +98,66 @@ class MostPlayedOpeningsResponse(BaseModel):
 
     white: list[OpeningWDL]
     black: list[OpeningWDL]
+
+
+class BookmarkPhaseEntryItem(BaseModel):
+    """Phase 80 fields for a single bookmark target_hash (parallel to OpeningWDL's
+    Phase 80 subset). Returned by ``POST /stats/bookmark-phase-entry-metrics``.
+
+    The 14 fields below mirror the OpeningWDL Phase 80 additions exactly so the
+    frontend can spread them onto a synthetic OpeningWDL row for bookmarks.
+    """
+
+    target_hash: str  # echoed back; key for the frontend lookup map
+
+    # MG-entry pillar
+    avg_eval_pawns: float | None = None
+    eval_ci_low_pawns: float | None = None
+    eval_ci_high_pawns: float | None = None
+    eval_n: int = 0
+    eval_p_value: float | None = None
+    eval_confidence: Literal["low", "medium", "high"] = "low"
+
+    # Clock-diff at MG entry
+    avg_clock_diff_pct: float | None = None
+    avg_clock_diff_seconds: float | None = None
+    clock_diff_n: int = 0
+
+    # EG-entry pillar
+    avg_eval_endgame_entry_pawns: float | None = None
+    eval_endgame_ci_low_pawns: float | None = None
+    eval_endgame_ci_high_pawns: float | None = None
+    eval_endgame_n: int = 0
+    eval_endgame_p_value: float | None = None
+    eval_endgame_confidence: Literal["low", "medium", "high"] = "low"
+
+
+class BookmarkPhaseEntryQuery(BaseModel):
+    """Single bookmark coordinate for the phase-entry batch lookup."""
+
+    target_hash: str  # 64-bit signed integer as a string (mirrors OpeningWDL.full_hash)
+    match_side: Literal["white", "black", "full"]
+    color: Literal["white", "black"] | None = None
+
+
+class BookmarkPhaseEntryRequest(BaseModel):
+    """Request body for ``POST /stats/bookmark-phase-entry-metrics``.
+
+    bookmarks groups by (match_side, color) at the service layer; each group is
+    a single batched DB call.
+    """
+
+    bookmarks: list[BookmarkPhaseEntryQuery]
+    time_control: list[str] | None = None
+    platform: list[str] | None = None
+    rated: bool | None = None
+    opponent_type: str = "human"
+    opponent_gap_min: int | None = None
+    opponent_gap_max: int | None = None
+    recency: str | None = None  # "30d" / "90d" / "1y" / "all" / None — handled like other endpoints
+
+
+class BookmarkPhaseEntryResponse(BaseModel):
+    """Phase 80 fields keyed by target_hash (string form)."""
+
+    items: list[BookmarkPhaseEntryItem]

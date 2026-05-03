@@ -17,6 +17,9 @@ from app.repositories.stats_repository import (
     query_top_openings_sql_wdl,
 )
 from app.schemas.stats import (
+    BookmarkPhaseEntryItem,
+    BookmarkPhaseEntryQuery,
+    BookmarkPhaseEntryResponse,
     GlobalStatsResponse,
     MostPlayedOpeningsResponse,
     OpeningWDL,
@@ -489,3 +492,108 @@ async def get_most_played_openings(
         white=rows_to_openings(white_rows, white_position_wdl, white_phase_entry_metrics),
         black=rows_to_openings(black_rows, black_position_wdl, black_phase_entry_metrics),
     )
+
+
+def _phase80_item_from_metrics(
+    target_hash: str,
+    pe: OpeningPhaseEntryMetrics | None,
+) -> BookmarkPhaseEntryItem:
+    """Compute the 14 Phase 80 display fields for a single hash.
+
+    Mirrors the inline finalizer in get_most_played_openings.rows_to_openings (D-01,
+    D-04, D-05, D-08, D-09). Kept as a separate helper so the bookmark endpoint can
+    reuse the same numerical logic without depending on the OpeningWDL row shape.
+    """
+    item = BookmarkPhaseEntryItem(target_hash=target_hash)
+    if pe is None:
+        return item
+
+    if pe.eval_n_mg > 0:
+        confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
+            pe.eval_sum_mg, pe.eval_sumsq_mg, pe.eval_n_mg
+        )
+        item.avg_eval_pawns = mean_cp_mg / 100.0
+        if pe.eval_n_mg >= 2:
+            item.eval_ci_low_pawns = (mean_cp_mg - ci_half_mg) / 100.0
+            item.eval_ci_high_pawns = (mean_cp_mg + ci_half_mg) / 100.0
+        item.eval_n = pe.eval_n_mg
+        item.eval_p_value = p_value_mg
+        item.eval_confidence = confidence_mg
+
+    if pe.eval_n_eg > 0:
+        confidence_eg, p_value_eg, mean_cp_eg, ci_half_eg = compute_eval_confidence_bucket(
+            pe.eval_sum_eg, pe.eval_sumsq_eg, pe.eval_n_eg
+        )
+        item.avg_eval_endgame_entry_pawns = mean_cp_eg / 100.0
+        if pe.eval_n_eg >= 2:
+            item.eval_endgame_ci_low_pawns = (mean_cp_eg - ci_half_eg) / 100.0
+            item.eval_endgame_ci_high_pawns = (mean_cp_eg + ci_half_eg) / 100.0
+        item.eval_endgame_n = pe.eval_n_eg
+        item.eval_endgame_p_value = p_value_eg
+        item.eval_endgame_confidence = confidence_eg
+
+    if pe.clock_diff_n > 0 and pe.base_time_sum > 0:
+        avg_clock_diff_seconds = pe.clock_diff_sum / pe.clock_diff_n
+        avg_base_time = pe.base_time_sum / pe.clock_diff_n
+        item.avg_clock_diff_seconds = avg_clock_diff_seconds
+        item.avg_clock_diff_pct = (avg_clock_diff_seconds / avg_base_time) * 100.0
+        item.clock_diff_n = pe.clock_diff_n
+
+    return item
+
+
+async def get_bookmark_phase_entry_metrics(
+    session: AsyncSession,
+    user_id: int,
+    bookmarks: list[BookmarkPhaseEntryQuery],
+    *,
+    recency: str | None = None,
+    time_control: list[str] | None = None,
+    platform: list[str] | None = None,
+    rated: bool | None = None,
+    opponent_type: str = "human",
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
+) -> BookmarkPhaseEntryResponse:
+    """Phase 80 fields for arbitrary bookmark target_hashes.
+
+    Groups bookmarks by (match_side, color) — each group is one batched DB call to
+    query_opening_phase_entry_metrics_batch with the matching hash_column. Sequential
+    awaits within the same session (CLAUDE.md: AsyncSession not safe for concurrent use).
+    """
+    if not bookmarks:
+        return BookmarkPhaseEntryResponse(items=[])
+
+    cutoff = recency_cutoff(recency)
+
+    # Group by (match_side, color). Bookmarks with the same group share one DB call.
+    grouped: dict[tuple[Literal["white", "black", "full"], Literal["white", "black"] | None], list[int]] = {}
+    for b in bookmarks:
+        key = (b.match_side, b.color)
+        grouped.setdefault(key, []).append(int(b.target_hash))
+
+    # Result map: target_hash (signed int) -> OpeningPhaseEntryMetrics
+    metrics_by_hash: dict[int, OpeningPhaseEntryMetrics] = {}
+    for (match_side, color), hashes in grouped.items():
+        # Sequential await — same session.
+        group_metrics = await query_opening_phase_entry_metrics_batch(
+            session,
+            user_id,
+            hashes,
+            color=color,
+            time_control=time_control,
+            platform=platform,
+            rated=rated,
+            opponent_type=opponent_type,
+            recency_cutoff=cutoff,
+            opponent_gap_min=opponent_gap_min,
+            opponent_gap_max=opponent_gap_max,
+            hash_column=match_side,
+        )
+        metrics_by_hash.update(group_metrics)
+
+    items = [
+        _phase80_item_from_metrics(b.target_hash, metrics_by_hash.get(int(b.target_hash)))
+        for b in bookmarks
+    ]
+    return BookmarkPhaseEntryResponse(items=items)

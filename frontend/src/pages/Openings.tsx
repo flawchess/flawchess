@@ -40,7 +40,7 @@ import {
   useUpdateMatchSide,
   useTimeSeries,
 } from '@/hooks/usePositionBookmarks';
-import { useMostPlayedOpenings } from '@/hooks/useStats';
+import { useMostPlayedOpenings, useBookmarkPhaseEntryMetrics } from '@/hooks/useStats';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import { MoveExplorer } from '@/components/move-explorer/MoveExplorer';
@@ -558,7 +558,11 @@ export function OpeningsPage() {
   // ── Stats tab data ─────────────────────────────────────────────────────────────
 
   // Most played openings — filter params applied to show top openings per color
-  const { data: mostPlayedData } = useMostPlayedOpenings({
+  const {
+    data: mostPlayedData,
+    isLoading: mostPlayedLoading,
+    isError: mostPlayedError,
+  } = useMostPlayedOpenings({
     recency: debouncedFilters.recency,
     timeControls: debouncedFilters.timeControls,
     platforms: debouncedFilters.platforms,
@@ -575,6 +579,37 @@ export function OpeningsPage() {
     () => bookmarks.filter(b => chartEnabledMap[b.id] !== false),
     [bookmarks, chartEnabledMap],
   );
+
+  // Phase 80 fix: per-bookmark MG/EG entry eval + clock-diff metrics.
+  // Without this, bookmark rows in the Stats subtab tables permanently render with
+  // eval_n=0 / "low" / "0 games" because buildBookmarkRows hardcoded those fields.
+  const bookmarkMetricsRequest = useMemo(
+    () =>
+      chartBookmarks.map((b) => ({
+        target_hash: b.target_hash,
+        match_side: resolveMatchSide(b.match_side, (b.color ?? 'white') as Color),
+        color: b.color,
+      })),
+    [chartBookmarks],
+  );
+  const { data: bookmarkPhaseEntryData } = useBookmarkPhaseEntryMetrics(
+    bookmarkMetricsRequest,
+    {
+      recency: debouncedFilters.recency,
+      timeControls: debouncedFilters.timeControls,
+      platforms: debouncedFilters.platforms,
+      rated: debouncedFilters.rated,
+      opponentType: debouncedFilters.opponentType,
+      opponentStrength: debouncedFilters.opponentStrength,
+    },
+  );
+  const bookmarkPhaseEntryByHash = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof bookmarkPhaseEntryData>['items'][number]>();
+    for (const item of bookmarkPhaseEntryData?.items ?? []) {
+      map.set(item.target_hash, item);
+    }
+    return map;
+  }, [bookmarkPhaseEntryData]);
 
   const timeSeriesRequest: TimeSeriesRequest | null = useMemo(() => {
     if (chartBookmarks.length === 0) return null;
@@ -1093,6 +1128,7 @@ export function OpeningsPage() {
               const winPct = s.total > 0 ? (s.wins / s.total) * 100 : 0;
               const drawPct = s.total > 0 ? (s.draws / s.total) * 100 : 0;
               const lossPct = s.total > 0 ? (s.losses / s.total) * 100 : 0;
+              const pe = bookmarkPhaseEntryByHash.get(b.target_hash);
               const row: OpeningWDL = {
                 opening_eco: '',
                 opening_name: b.label,
@@ -1109,12 +1145,21 @@ export function OpeningsPage() {
                 win_pct: winPct,
                 draw_pct: drawPct,
                 loss_pct: lossPct,
-                // Phase 80 required fields: bookmark rows have no eval/clock data yet.
-                eval_n: 0,
-                eval_confidence: 'low',
-                clock_diff_n: 0,
-                eval_endgame_n: 0,
-                eval_endgame_confidence: 'low',
+                avg_eval_pawns: pe?.avg_eval_pawns ?? null,
+                eval_ci_low_pawns: pe?.eval_ci_low_pawns ?? null,
+                eval_ci_high_pawns: pe?.eval_ci_high_pawns ?? null,
+                eval_n: pe?.eval_n ?? 0,
+                eval_p_value: pe?.eval_p_value ?? null,
+                eval_confidence: pe?.eval_confidence ?? 'low',
+                avg_clock_diff_pct: pe?.avg_clock_diff_pct ?? null,
+                avg_clock_diff_seconds: pe?.avg_clock_diff_seconds ?? null,
+                clock_diff_n: pe?.clock_diff_n ?? 0,
+                avg_eval_endgame_entry_pawns: pe?.avg_eval_endgame_entry_pawns ?? null,
+                eval_endgame_ci_low_pawns: pe?.eval_endgame_ci_low_pawns ?? null,
+                eval_endgame_ci_high_pawns: pe?.eval_endgame_ci_high_pawns ?? null,
+                eval_endgame_n: pe?.eval_endgame_n ?? 0,
+                eval_endgame_p_value: pe?.eval_endgame_p_value ?? null,
+                eval_endgame_confidence: pe?.eval_endgame_confidence ?? 'low',
               };
               return [row];
             })
@@ -1211,6 +1256,25 @@ export function OpeningsPage() {
       {tsData && (
         <div className="charcoal-texture rounded-md p-4">
           <WinRateChart bookmarks={chartBookmarks} series={tsData.series} />
+        </div>
+      )}
+      {/* Most Played Openings — error / loading branches per CLAUDE.md.
+          Without these, a failed or hanging /stats/most-played-openings request
+          silently hides both color sections. */}
+      {mostPlayedError && (
+        <div
+          className="charcoal-texture rounded-md p-4 text-center text-muted-foreground"
+          data-testid="mpo-error"
+        >
+          Failed to load most-played openings. Something went wrong. Please try again in a moment.
+        </div>
+      )}
+      {!mostPlayedError && mostPlayedLoading && !mostPlayedData && (
+        <div
+          className="charcoal-texture rounded-md p-4 text-center text-muted-foreground"
+          data-testid="mpo-loading"
+        >
+          Loading most-played openings...
         </div>
       )}
       {/* Most Played Openings as White */}
