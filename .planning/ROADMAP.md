@@ -17,54 +17,13 @@
 - ✅ **v1.12 Benchmark DB Infrastructure & Ingestion Pipeline** — Phase 69 (shipped 2026-04-26) — see [milestones/v1.12-ROADMAP.md](milestones/v1.12-ROADMAP.md)
 - ✅ **v1.13 Opening Insights** — Phases 70, 71, 71.1 (shipped 2026-04-27; Phases 72-74 descoped) — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md)
 - ✅ **v1.14 Score-Based Opening Insights** — Phases 75, 76, 77 (shipped 2026-04-29; INSIGHT-UI-04 descoped) — see [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md)
-- 🚧 **v1.15 Eval-Based Endgame Classification** — Phases 78-79 (in progress, opened 2026-05-02) — Stockfish eval cutover for endgame conv/recov classification, plus position-phase classifier (opening/middlegame/endgame) and middlegame eval
-- 📦 **v1.16 Stockfish Eval Analyses** — Phase 80+ (planned, opened 2026-05-03) — Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp`/`eval_mate`). First phase: opening-stats columns for middlegame-entry eval and clock diff. More phases TBD.
+- ✅ **v1.15 Eval-Based Endgame Classification** — Phases 78, 79 (shipped 2026-05-03; VAL-01 / PHASE-VAL-01 rescinded) — see [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md)
+- 🚧 **v1.16 Stockfish Eval Analyses** — Phase 80+ (in progress, opened 2026-05-03) — Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp`/`eval_mate`). First phase: opening-stats columns for middlegame-entry eval and clock diff. More phases TBD.
 
 ## Phases
 
 <details open>
-<summary>🚧 v1.15 Eval-Based Endgame Classification (Phases 78-79) — IN PROGRESS (opened 2026-05-02)</summary>
-
-- 🚧 Phase 78: Stockfish-Eval Cutover for Endgame Classification (6/6 plans, code complete; operational backfill + VAL-01 + deploy + VAL-02 deferred to post-phase-79 combined run) — ENG-01..03, FILL-01..04, IMP-01..02, REFAC-01..05, VAL-01..02
-- 🚧 Phase 79: Position-phase classifier and middlegame eval (3/4 plans) — CLASS-01..02, SCHEMA-01..02, PHASE-IMP-01..02, PHASE-FILL-01..03, PHASE-VAL-01..03, PHASE-INV-01
-
-### Phase 78: Stockfish-Eval Cutover for Endgame Classification
-**Goal**: Replace the material-imbalance + 4-ply persistence proxy for endgame conv/recov classification with Stockfish eval (depth 15) populated into the existing `eval_cp` / `eval_mate` columns on `game_positions`. Backfill historical span-entry positions across benchmark + prod, eval new span-entry positions during import going forward, refactor endgame queries to threshold on eval, and remove the proxy entirely (hard cutover).
-**Depends on**: v1.14 shipped (Phase 77)
-**Requirements**: ENG-01, ENG-02, ENG-03, FILL-01, FILL-02, FILL-03, FILL-04, IMP-01, IMP-02, REFAC-01, REFAC-02, REFAC-03, REFAC-04, REFAC-05, VAL-01, VAL-02
-**Success Criteria** (what must be TRUE):
-  1. The backend Docker image ships a pinned Stockfish binary, and a single shared engine wrapper module exposes a depth-15 evaluation API consumed by both the backfill script and the import path.
-  2. After the benchmark backfill completes, every endgame span-entry row in the benchmark DB has either `eval_cp` or `eval_mate` populated; the prod backfill achieves the same coverage on prod span-entry rows (existing lichess `%eval` annotations preserved, never overwritten).
-  3. New game imports populate `eval_cp` / `eval_mate` on per-class span-entry rows where the lichess `%eval` annotation did not already do so, adding well under 1 second to the typical-game import path.
-  4. `app/repositories/endgame_repository.py` queries (`query_endgame_entry_rows`, `query_endgame_bucket_rows`, `query_endgame_elo_timeline_rows`) classify conv/parity/recov by thresholding `eval_cp` (±100 cp after color-sign flip) and `eval_mate` directly at the span-entry row — no contiguity-checked persistence lookup remains.
-  5. `_MATERIAL_ADVANTAGE_THRESHOLD`, `PERSISTENCE_PLIES`, and the `array_agg(... ORDER BY ply)[PERSISTENCE_PLIES + 1]` contiguity case-expression no longer appear anywhere in the codebase; the `material_imbalance` column is retained for other consumers; `ix_gp_user_endgame_game` has been migrated via Alembic so the rewritten queries stay index-only.
-  6. Re-running the `/conv-recov-validation` skill on the benchmark DB post-backfill produces ~100% agreement on the populated subset by construction, and the live-UI endgame gauges for representative test users show only the expected accuracy-driven shifts (operator smoke check).
-**Plans**: 6 plans
-  - [ ] 78-01-PLAN.md — Stockfish in backend Docker image (ENG-01)
-  - [x] 78-02-PLAN.md — Engine wrapper module + lifespan integration (ENG-02, ENG-03)
-  - [ ] 78-03-PLAN.md — Backfill script (FILL-01, FILL-02 relaxed, FILL-03)
-  - [ ] 78-04-PLAN.md — Import-path integration (IMP-01, IMP-02)
-  - [x] 78-05-PLAN.md — Endgame repository + service refactor + index migration (REFAC-01..05)
-  - [ ] 78-06-PLAN.md — Operator-driven cutover execution (FILL-03, FILL-04, VAL-01, VAL-02)
-
-### Phase 79: Position-phase classifier and middlegame eval
-
-**Goal:** Add a per-position `phase` SmallInteger column (0=opening, 1=middlegame, 2=endgame) to `game_positions` via a Python port of lichess Divider.scala using existing `piece_count`, `backrank_sparse`, `mixedness` inputs. Extend Phase 78's import-time eval pass and `scripts/backfill_eval.py` so the middlegame entry position (MIN(ply) of phase=1 rows per game) is also evaluated with Stockfish at depth 15, populated into the existing `eval_cp` / `eval_mate` columns. Run the combined Phase 78 + Phase 79 backfill against benchmark first, then prod, then merge 78+79 to main and deploy. Folds in Phase 78's deferred operational steps (FILL-03, FILL-04, VAL-01, VAL-02).
-**Requirements**: CLASS-01, CLASS-02, SCHEMA-01, SCHEMA-02, PHASE-IMP-01, PHASE-IMP-02, PHASE-FILL-01, PHASE-FILL-02, PHASE-FILL-03, PHASE-VAL-01, PHASE-VAL-02, PHASE-VAL-03, PHASE-INV-01
-**Depends on:** Phase 78 (engine wrapper, backfill script, import-path integration)
-**Plans:** 4 plans
-**Context:** Adds a `phase` SmallInteger column (0=opening, 1=middlegame, 2=endgame) to `game_positions`, computed via a port of [lichess Divider.scala](https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/Divider.scala) using existing `piece_count`, `backrank_sparse`, `mixedness` inputs. Extends import path and backfill script to also evaluate the middlegame entry position with Stockfish (depth 15). Then runs the combined endgame + middlegame backfill on benchmark + prod (folds in phase 78's deferred operational steps), validates ≥99% agreement, merges 78+79 to main, and deploys.
-
-Plans:
-- [x] 79-01-PLAN.md — Schema migration + Divider classifier port + parity test fixture (SCHEMA-01, CLASS-01, CLASS-02, PHASE-VAL-01)
-- [x] 79-02-PLAN.md — Import-path integration: phase column writes + middlegame entry import-time eval (SCHEMA-02, PHASE-IMP-01, PHASE-IMP-02)
-- [x] 79-03-PLAN.md — Backfill script extension: phase UPDATE pass + middlegame entry eval pass (PHASE-FILL-01, PHASE-FILL-02)
-- [ ] 79-04-PLAN.md — Operator-driven cutover: dev smoke + benchmark backfill + VAL-01 + prod backfill + combined PR merge + deploy + UI smoke check (PHASE-FILL-03, PHASE-VAL-02, PHASE-VAL-03, PHASE-INV-01)
-
-</details>
-
-<details>
-<summary>📦 v1.16 Stockfish Eval Analyses (Phase 80+) — PLANNED (opened 2026-05-03)</summary>
+<summary>🚧 v1.16 Stockfish Eval Analyses (Phase 80+) — IN PROGRESS (opened 2026-05-03)</summary>
 
 Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp` / `eval_mate` on `game_positions`). Additional phases will be added as new analyses are scoped from `.planning/notes/phase-aware-analytics-ideas.md` and other brainstorms.
 
@@ -265,6 +224,16 @@ See [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md) for full details.
 
 </details>
 
+<details>
+<summary>✅ v1.15 Eval-Based Endgame Classification (Phases 78, 79) — SHIPPED 2026-05-03</summary>
+
+- [x] Phase 78: Stockfish-Eval Cutover for Endgame Classification (6/6 plans) — completed 2026-05-03 (PR #78) — ENG-01..03, FILL-01..04, IMP-01..02, REFAC-01..05, VAL-02 (VAL-01 rescinded)
+- [x] Phase 79: Position-phase classifier and middlegame eval (4/4 plans) — completed 2026-05-03 (PR #78) — CLASS-01..02, SCHEMA-01..02, PHASE-IMP-01..02, PHASE-FILL-01..03, PHASE-VAL-02..03, PHASE-INV-01 (PHASE-VAL-01 rescinded)
+
+See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
+
+</details>
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -284,7 +253,8 @@ See [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md) for full details.
 | 69. Benchmark DB Infra & Ingestion | v1.12 | 6/6 | Complete (follow-on phases → SEED-006) | 2026-04-26 |
 | 70-71.1. v1.13 phases | v1.13 | 14/14 | Complete (Phases 72/73/74 descoped) | 2026-04-27 |
 | 75-77. v1.14 phases | v1.14 | 16/16 | Complete (INSIGHT-UI-04 descoped) | 2026-04-29 |
-| 78. Eval-based endgame classification | v1.15 | 2/6 | In Progress|  |
+| 78-79. v1.15 phases | v1.15 | 10/10 | Complete (VAL-01 / PHASE-VAL-01 rescinded) | 2026-05-03 |
+| 80. Opening stats: middlegame-entry eval and clock-diff columns | v1.16 | 0/0 | Not started |  |
 
 ## Backlog
 

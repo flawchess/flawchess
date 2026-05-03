@@ -8,6 +8,24 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.15] Eval-Based Endgame Classification — 2026-05-03
+
+Replaces the material-imbalance + 4-ply persistence proxy for endgame
+conversion / parity / recovery classification with direct Stockfish-eval
+thresholding (±100 cp on `eval_cp`, color-flipped to user perspective;
+`eval_mate` short-circuits to ±1,000,000 cp). Hard cutover, proxy code path
+removed entirely. Closes the structural gap on Queen and pawnless classes
+(~24% miss rate on substantive material-edge sequences per the 2026-05-02
+baseline). Phase 79 folds in a per-position `phase` SmallInteger column
+(0=opening, 1=middlegame, 2=endgame) computed via a Python port of lichess
+`Divider.scala`, plus middlegame-entry Stockfish eval — substrate for v1.16
+opening-stats analyses. Combined Phase 78 + Phase 79 cutover delivered via
+PR #78; follow-on PR #79 parallelises the import-time eval pass via
+`EnginePool`. VAL-01 / PHASE-VAL-01 (re-run `/conv-recov-validation` for
+~100% agreement) rescinded as moot — once the proxy was deleted the
+agreement metric became undefined; the `/conv-recov-validation` skill was
+deleted.
+
 ### Added
 - Phase 79: Per-position `phase` column on `game_positions` (`0=opening`, `1=middlegame`, `2=endgame`) computed via a Python port of [lichess `Divider.scala`](https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/Divider.scala) using existing `piece_count`, `backrank_sparse`, and `mixedness` inputs (no second board scan). Populated on every new import and backfilled across benchmark + prod.
 - Phase 79: Middlegame entry position (`MIN(ply)` of `phase = 1` per game) is now Stockfish-evaluated at depth 15 alongside endgame span-entry positions, populated into the existing `eval_cp` / `eval_mate` columns. Substrate for v1.16 opening-stats analyses.
@@ -458,7 +476,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.14...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.15...HEAD
+[v1.15]: https://github.com/flawchess/flawchess/compare/v1.14...v1.15
 [v1.14]: https://github.com/flawchess/flawchess/compare/v1.13...v1.14
 [v1.13]: https://github.com/flawchess/flawchess/compare/v1.12...v1.13
 [v1.12]: https://github.com/flawchess/flawchess/compare/v1.11...v1.12

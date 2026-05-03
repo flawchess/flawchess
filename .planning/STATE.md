@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
-status: "v1.15 shipped — draft PR #78 (artifacts to follow)"
-last_updated: "2026-05-03T12:10:33.257Z"
-last_activity: "2026-05-03 -- Phases 78+79 shipped as draft PR #78"
+status: "v1.15 shipped as draft PR #78 — artifacts to follow (full STATE refresh in this commit; 79-04-PLAN test-plan checkboxes; post-deploy VAL-02 / VAL-03 UI smoke)"
+last_updated: "2026-05-03T14:12:59.111Z"
+last_activity: 2026-05-03
 progress:
   total_phases: 6
   completed_phases: 0
@@ -19,7 +19,7 @@ progress:
 Phase: 79 (Position-phase classifier and middlegame eval) — CODE COMPLETE; draft PR #78 open, deploy + UI smoke pending
 Plan: 4 of 4 (operator cutover) — rounds 1-3 (dev / benchmark / prod backfill) complete; PR merge + bin/deploy.sh + post-deploy UI smoke remaining
 Status: v1.15 shipped as draft PR #78 — artifacts to follow (full STATE refresh in this commit; 79-04-PLAN test-plan checkboxes; post-deploy VAL-02 / VAL-03 UI smoke)
-Last activity: 2026-05-03 -- v1.15 cutover (Phases 78+79) drafted as PR #78; PHASE-VAL-01 / VAL-01 rescinded as moot (proxy removed → metric undefined; /conv-recov-validation Skill deleted)
+Last activity: 2026-05-03
 
 ## Project Reference
 
