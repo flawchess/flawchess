@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, afterEach } from 'vitest';
+
+// Vitest 4 does not auto-cleanup RTL mounts — rendered DOM from a previous
+// test bleeds into the next one's screen queries if we don't explicitly unmount.
+afterEach(() => {
+  cleanup();
+});
 import { MiniBulletChart } from '../MiniBulletChart';
 
 describe('MiniBulletChart — backward compatibility', () => {
