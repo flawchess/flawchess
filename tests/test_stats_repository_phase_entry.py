@@ -165,6 +165,7 @@ async def _make_game_with_phase_entries(
     )
 
     # Opponent clock row (ply = MG_ENTRY_PLY + 1) — needed for clock-diff computation
+    # No eval_cp / eval_mate — this row represents opponent's clock only, not a phase entry.
     if opp_clock is not None:
         session.add(
             GamePosition(
@@ -175,8 +176,6 @@ async def _make_game_with_phase_entries(
                 white_hash=full_hash + 1000,
                 black_hash=full_hash + 2000,
                 phase=1,
-                eval_cp=mg_eval_cp,
-                eval_mate=mg_eval_mate,
                 clock_seconds=opp_clock,
             )
         )
