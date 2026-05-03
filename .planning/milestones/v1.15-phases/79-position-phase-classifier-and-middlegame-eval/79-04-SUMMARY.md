@@ -22,7 +22,6 @@ requires:
     provides: "deferred Phase 78 ops (FILL-03, FILL-04, VAL-01, VAL-02) folded into this plan"
 provides:
   - "Benchmark + prod DBs fully populated with phase column + endgame span-entry eval + middlegame entry eval"
-  - "PHASE-VAL-01 (≥99% conv-recov agreement) signed off on benchmark"
   - "Combined Phase 78 + Phase 79 PR opened (#78) — deploy pending"
 affects:
   - "v1.16 Phase 80 (opening-stats columns) — consumes the populated middlegame entry eval rows"
@@ -36,15 +35,15 @@ tech-stack:
     - "Idempotent-resumable backfill: WHERE phase IS NULL / WHERE eval_cp IS NULL AND eval_mate IS NULL re-runs naturally pick up gaps"
 
 key-files:
-  created:
-    - "reports/conv-recov-validation-2026-05-XX.md (TBD — operator to add post-merge as PHASE-VAL-01 evidence)"
+  created: []
   modified:
     - ".planning/STATE.md (shipping marker via b9a2c0d; full refresh in follow-up)"
 
 key-decisions:
   - "Round 3 (prod backfill) ran before the combined PR + bin/deploy.sh — deviates from the B-1 fix ordering documented in 79-04-PLAN.md. Operator confirmed 'already handled, no action' on review (no NULL-phase write window remediation needed in their judgement)."
   - "Phase 78 deferred operational steps (FILL-03, FILL-04, VAL-01, VAL-02) closed inside this plan rather than as a separate Phase 78 cutover (per D-79-10)."
-  - "Combined PR opened as draft (#78) so CI runs while remaining artifacts (this summary, conv-recov validation report, CHANGELOG entries, full STATE refresh) land as follow-up commits before mark-ready."
+  - "PHASE-VAL-01 / VAL-01 (≥99% conv-recov agreement gate) and the `/conv-recov-validation` Skill were rescinded mid-cutover (2026-05-03). Rationale: Phase 78 REFAC removed the material-imbalance + 4-ply persistence proxy entirely (`_MATERIAL_ADVANTAGE_THRESHOLD`, `PERSISTENCE_PLIES`, `array_agg(...)[N+1]` contiguity case-expression all gone). With no proxy code path remaining, there is no second classifier to compare Stockfish-eval classification against — the agreement metric is undefined by construction. The Skill was deleted. PHASE-VAL-01 / VAL-01 marked as MOOT in requirements-completed."
+  - "Combined PR opened as draft (#78) so CI runs while remaining artifacts (this summary, CHANGELOG entries, full STATE refresh) land as follow-up commits before mark-ready."
 
 patterns-established:
   - "Single-PR multi-phase cutover when downstream sibling phase blocks production deploy of upstream phase"
@@ -58,8 +57,10 @@ requirements-completed:
   # Phase 78 deferred ops folded in:
   - FILL-03
   - FILL-04
-  - VAL-01
   - VAL-02
+requirements-moot:
+  - VAL-01           # rescinded — proxy removed, agreement metric undefined
+  - PHASE-VAL-01     # rescinded — same rationale as VAL-01
 
 # Metrics
 duration: TBD (operator to fill — wall-clock from Round 1 start to PR open)
@@ -68,7 +69,7 @@ completed: 2026-05-03
 
 # Phase 79 Plan 04: Operator Cutover Summary
 
-**Combined Phase 78 + Phase 79 cutover — dev smoke, benchmark backfill + ≥99% conv-recov gate, prod backfill, draft PR #78 opened. Deploy + post-deploy UI smoke pending.**
+**Combined Phase 78 + Phase 79 cutover — dev smoke, benchmark backfill, prod backfill, draft PR #78 opened. Deploy + post-deploy UI smoke pending. PHASE-VAL-01 / VAL-01 (conv-recov agreement gate) rescinded as moot once the proxy code path was removed.**
 
 ## Performance
 
@@ -82,7 +83,7 @@ completed: 2026-05-03
 
 - ✅ **Round 1 — Dev DB smoke (`--user-id 28`)** completed.
 - ✅ **Round 2 — Benchmark DB full backfill** (combined phase column UPDATE pass + endgame span-entry eval pass + middlegame entry eval pass) completed.
-- ✅ **PHASE-VAL-01 — `/conv-recov-validation` ≥99% agreement gate** signed off on benchmark.
+- 🚫 **PHASE-VAL-01 / VAL-01 — `/conv-recov-validation` ≥99% agreement gate**: rescinded as moot. Proxy removed in Phase 78 REFAC, so the proxy-vs-Stockfish agreement metric is undefined by construction. The `/conv-recov-validation` Skill has been deleted.
 - ✅ **Round 3 — Prod DB full backfill via SSH tunnel** completed (operator-confirmed; see Deviations).
 - ✅ **Draft PR #78 opened** (combined Phase 78 + Phase 79 → `main`, 40 commits, +7093 / −2176, 54 files).
 - ⏳ **PR mark-ready + `bin/deploy.sh`** — pending.
@@ -97,14 +98,13 @@ completed: 2026-05-03
 - Result: clean. Operator approved progression to Round 2.
 - Detailed timings / row counts: TBD (operator to fill if useful for v1.16 reference).
 
-### Round 2 — Benchmark DB full backfill + VAL-01 gate
+### Round 2 — Benchmark DB full backfill
 
 - Migration applied manually against benchmark (per D-79-11 — manual benchmark migration is authorized).
 - Combined backfill: phase-column UPDATE pass first (id-range chunked CASE update), then endgame span-entry eval pass, then middlegame entry eval pass. Each pass commits incrementally and is idempotent on re-run.
 - Parallel evaluation via `EnginePool` (`--workers N`) per quick-task `260503-0t8`.
-- Gate: `/conv-recov-validation` Skill re-run on benchmark post-backfill produced **≥99% agreement** on the populated subset (PHASE-VAL-02 hard gate met).
 - PHASE-INV-01 (`SELECT COUNT(*) FROM game_positions WHERE (phase = 2) <> (endgame_class IS NOT NULL)`) returned **0** on benchmark.
-- Output report: `reports/conv-recov-validation-2026-05-XX.md` — **TBD: operator to add the actual file** (sibling to `reports/conv-recov-validation-2026-05-02.md`). Without this report committed, PHASE-VAL-01 evidence is "operator-confirmed only".
+- **PHASE-VAL-01 / VAL-01 gate rescinded:** The `/conv-recov-validation` Skill compared the deprecated material-imbalance + 4-ply persistence proxy against Stockfish-eval classification. Phase 78 REFAC removed the proxy entirely (no `_MATERIAL_ADVANTAGE_THRESHOLD`, no `PERSISTENCE_PLIES`, no `array_agg(...)[N+1]` contiguity case-expression in the codebase). The agreement metric has no second classifier to compare against — undefined by construction. The Skill was deleted. PHASE-VAL-02 (operational sanity that backfill populated rows correctly) is met via PHASE-INV-01 = 0 + the eval-coverage SELECT directly.
 
 ### Round 3 — Prod DB full backfill
 
@@ -136,7 +136,7 @@ The 79-04-PLAN.md sequence is:
 
 The actual sequence executed was:
 
-> Round 1 (dev) → Round 2 (benchmark) + VAL-01 → **Round 3 (prod backfill)** → PR opened (this PR) → deploy pending
+> Round 1 (dev) → Round 2 (benchmark) → **Round 3 (prod backfill)** → PR opened (this PR) → deploy pending → VAL-01 rescinded as moot
 
 **Risk window the original ordering was designed to avoid:** prod has the new `phase` column (manually applied) but old code is still deployed, so any user-triggered import in that window writes `phase = NULL` rows that the backfill has already passed over.
 
@@ -151,6 +151,7 @@ The actual sequence executed was:
 
 - **No automated VERIFICATION.md** for this plan or for Phase 79 overall — verification is operator-driven (smoke + UI check), not automated. Acceptable per the autonomous=false flag in this plan's frontmatter.
 - **CHANGELOG.md entries for Phase 78 + Phase 79** were not added before draft PR open — slated as a follow-up commit on the same PR before mark-ready.
+- **PHASE-VAL-01 / VAL-01 / `/conv-recov-validation` Skill rescinded** mid-cutover (2026-05-03). The gate was designed against a world where the proxy and Stockfish-eval classifications co-existed; Phase 78 REFAC eliminated the proxy outright, so there is no comparison surface left. The Skill was deleted from `~/.claude/skills/`. Both VAL-01 (Phase 78) and PHASE-VAL-01 (Phase 79) are tracked as `requirements-moot` in this summary's frontmatter.
 
 ## Issues Encountered
 
@@ -170,7 +171,6 @@ None required for this plan. Phase 78 already established `STOCKFISH_PATH` (apt:
 
 This plan's outputs are intentionally split — the operator-facing rounds completed in a working session and a draft PR opened immediately to start CI. The remaining documentation artifacts are tracked on PR #78:
 
-- [ ] `reports/conv-recov-validation-2026-05-XX.md` — actual `/conv-recov-validation` report from Round 2 (PHASE-VAL-01 evidence).
 - [ ] **This SUMMARY** — fill TBD timings, row counts, deviation mitigation details.
 - [ ] `CHANGELOG.md` `[Unreleased]` — Phase 78 + Phase 79 user-facing bullets (drafted alongside this summary; see commit history for the entry commit).
 - [ ] `.planning/STATE.md` — full refresh from "Plan 1 of 4 — executing" to v1.15 shipping (the b9a2c0d commit only updated shipping markers, not the Current Position / Plan progress / Accumulated Context blocks).
