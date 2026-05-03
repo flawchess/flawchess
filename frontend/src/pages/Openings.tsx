@@ -56,6 +56,18 @@ import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTable';
 import { MinimapPopover } from '@/components/stats/MinimapPopover';
+import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
+import { ConfidencePill } from '@/components/insights/ConfidencePill';
+import {
+  EVAL_BULLET_DOMAIN_PAWNS,
+  EVAL_NEUTRAL_MAX_PAWNS,
+  EVAL_NEUTRAL_MIN_PAWNS,
+  EVAL_ENDGAME_BULLET_DOMAIN_PAWNS,
+  EVAL_ENDGAME_NEUTRAL_MAX_PAWNS,
+  EVAL_ENDGAME_NEUTRAL_MIN_PAWNS,
+} from '@/lib/openingStatsZones';
+import { formatSignedPct1, formatSignedSeconds } from '@/lib/clockFormat';
+import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
 import { pgnToSanArray } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
@@ -157,6 +169,110 @@ function MobileMostPlayedRows({
                 }}
                 maxTotal={maxTotal}
               />
+
+              {/* Phase 80 D-06: Mobile line 2 — MG-entry triple (bullet + pill + clock-diff). */}
+              {(() => {
+                const isMgUnreliable =
+                  (o.eval_n ?? 0) < MIN_GAMES_FOR_RELIABLE_STATS || o.eval_confidence === 'low';
+                const mgBulletContent =
+                  o.eval_n === 0 || o.avg_eval_pawns === null || o.avg_eval_pawns === undefined ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    <MiniBulletChart
+                      value={o.avg_eval_pawns}
+                      ciLow={o.eval_ci_low_pawns ?? undefined}
+                      ciHigh={o.eval_ci_high_pawns ?? undefined}
+                      neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
+                      neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
+                      domain={EVAL_BULLET_DOMAIN_PAWNS}
+                      ariaLabel={`Avg eval at MG entry: ${o.avg_eval_pawns.toFixed(2)} pawns`}
+                    />
+                  );
+                const clockDiffContent =
+                  o.clock_diff_n === 0 ||
+                  o.avg_clock_diff_pct === null ||
+                  o.avg_clock_diff_pct === undefined ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    <>
+                      {formatSignedPct1(o.avg_clock_diff_pct)}
+                      <span className="text-muted-foreground ml-1">
+                        ({formatSignedSeconds(o.avg_clock_diff_seconds ?? null)})
+                      </span>
+                    </>
+                  );
+                return (
+                  <div
+                    className="mt-2 grid grid-cols-[auto_1fr_auto_auto] gap-2 items-center"
+                    data-testid={`${testIdPrefix}-mobile-mg-line-${rowKey}`}
+                  >
+                    <span className="text-xs text-muted-foreground">MG entry</span>
+                    <div
+                      data-testid={`${testIdPrefix}-bullet-mobile-${rowKey}`}
+                      style={isMgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
+                    >
+                      {mgBulletContent}
+                    </div>
+                    <div data-testid={`${testIdPrefix}-confidence-mobile-${rowKey}`}>
+                      <ConfidencePill
+                        level={o.eval_confidence}
+                        pValue={o.eval_p_value}
+                        gameCount={o.eval_n}
+                      />
+                    </div>
+                    <div
+                      data-testid={`${testIdPrefix}-clock-diff-mobile-${rowKey}`}
+                      className="text-right text-sm tabular-nums"
+                    >
+                      {clockDiffContent}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Phase 80 D-06: Mobile line 3 — EG-entry pair (bullet + pill). */}
+              {(() => {
+                const isEgUnreliable =
+                  (o.eval_endgame_n ?? 0) < MIN_GAMES_FOR_RELIABLE_STATS ||
+                  o.eval_endgame_confidence === 'low';
+                const egBulletContent =
+                  o.eval_endgame_n === 0 ||
+                  o.avg_eval_endgame_entry_pawns === null ||
+                  o.avg_eval_endgame_entry_pawns === undefined ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    <MiniBulletChart
+                      value={o.avg_eval_endgame_entry_pawns}
+                      ciLow={o.eval_endgame_ci_low_pawns ?? undefined}
+                      ciHigh={o.eval_endgame_ci_high_pawns ?? undefined}
+                      neutralMin={EVAL_ENDGAME_NEUTRAL_MIN_PAWNS}
+                      neutralMax={EVAL_ENDGAME_NEUTRAL_MAX_PAWNS}
+                      domain={EVAL_ENDGAME_BULLET_DOMAIN_PAWNS}
+                      ariaLabel={`Avg eval at EG entry: ${o.avg_eval_endgame_entry_pawns.toFixed(2)} pawns`}
+                    />
+                  );
+                return (
+                  <div
+                    className="mt-1 grid grid-cols-[auto_1fr_auto] gap-2 items-center pb-1"
+                    data-testid={`${testIdPrefix}-mobile-eg-line-${rowKey}`}
+                  >
+                    <span className="text-xs text-muted-foreground">EG entry</span>
+                    <div
+                      data-testid={`${testIdPrefix}-eg-bullet-mobile-${rowKey}`}
+                      style={isEgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
+                    >
+                      {egBulletContent}
+                    </div>
+                    <div data-testid={`${testIdPrefix}-eg-confidence-mobile-${rowKey}`}>
+                      <ConfidencePill
+                        level={o.eval_endgame_confidence}
+                        pValue={o.eval_endgame_p_value}
+                        gameCount={o.eval_endgame_n}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
@@ -989,6 +1105,12 @@ export function OpeningsPage() {
                 win_pct: winPct,
                 draw_pct: drawPct,
                 loss_pct: lossPct,
+                // Phase 80 required fields: bookmark rows have no eval/clock data yet.
+                eval_n: 0,
+                eval_confidence: 'low',
+                clock_diff_n: 0,
+                eval_endgame_n: 0,
+                eval_endgame_confidence: 'low',
               };
               return [row];
             })

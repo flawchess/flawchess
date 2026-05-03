@@ -7,6 +7,7 @@
  * The ConfidenceTooltipContent handles the statistical breakdown in the tooltip body.
  */
 
+import type { ReactElement } from 'react';
 import { Tooltip } from '@/components/ui/tooltip';
 import { ConfidenceTooltipContent } from '@/components/insights/ConfidenceTooltipContent';
 
@@ -29,7 +30,7 @@ export function ConfidencePill({
   score = null,
   gameCount = null,
   testId,
-}: ConfidencePillProps): JSX.Element {
+}: ConfidencePillProps): ReactElement {
   return (
     <Tooltip
       content={
