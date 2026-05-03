@@ -27,6 +27,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Quick task 260503: Endgame gauge typical bands recalibrated from the 2026-05-03 benchmark report (recovery upper bound 0.40 → 0.36, endgame_skill 0.45 → 0.47 lower bound, per-class rook + pawn recovery and pawn conversion bands tightened in lockstep).
 - Quick task 260503-fef: `/benchmarks` skill §2/§3/§6 now apply an equal-footing opponent filter (`abs(opp_rating - user_rating) ≤ 100`) so population baselines reflect peer-vs-peer matchups rather than mixed-strength noise.
 - Quick task 260503-0t8: `scripts/backfill_eval.py` parallelised via a new `EnginePool` (`--workers N`), batched UPDATE writes, and group-by-game PGN parsing.
+- Quick task 260503-pool: Import-time eval pass parallelised. The module-level engine now wraps an `EnginePool` of `STOCKFISH_POOL_SIZE` workers (default 1, prod ships 2 via `docker-compose.yml`) and `app/services/import_service.py` collects eval targets across an import batch and fans them out via `asyncio.gather`. Sequential `await` callers see no change; parallel callers gain ~`POOL_SIZE`× throughput. Behaviour preserved: lichess `%eval` precedence, bounded Sentry context, same UPDATE shape per row.
 
 ### Removed
 - Phase 78: `_MATERIAL_ADVANTAGE_THRESHOLD`, `PERSISTENCE_PLIES`, and the `array_agg(... ORDER BY ply)[PERSISTENCE_PLIES + 1]` contiguity case-expression — no proxy-classification path remains in the codebase. `material_imbalance` column retained on `game_positions` for other consumers (e.g. `tests/test_aggregation_sanity.py`).
