@@ -659,12 +659,14 @@ async def query_opening_phase_entry_metrics_batch(
         .join(
             gp_entry,
             (gp_entry.game_id == phase_entry_subq.c.game_id)
-            & (gp_entry.ply == phase_entry_subq.c.entry_ply),
+            & (gp_entry.ply == phase_entry_subq.c.entry_ply)
+            & (gp_entry.user_id == user_id),
         )
         .outerjoin(
             gp_opp,
             (gp_opp.game_id == phase_entry_subq.c.game_id)
-            & (gp_opp.ply == phase_entry_subq.c.entry_ply + 1),
+            & (gp_opp.ply == phase_entry_subq.c.entry_ply + 1)
+            & (gp_opp.user_id == user_id),
         )
         .group_by(dedup_subq.c.full_hash)
     )
