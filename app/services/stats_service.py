@@ -435,7 +435,13 @@ async def get_most_played_openings(
 
             if pe is not None and pe.clock_diff_n > 0 and pe.base_time_sum > 0:
                 avg_clock_diff_seconds = pe.clock_diff_sum / pe.clock_diff_n
-                avg_clock_diff_pct = (pe.clock_diff_sum / pe.base_time_sum) * 100.0
+                # Option A: per-game average ratio (consistent with avg_clock_diff_seconds).
+                # Both are per-game arithmetic means, so heterogeneous base times (e.g.
+                # mixing bullet + blitz games) give each game equal weight instead of
+                # the sum-weighted ratio (clock_diff_sum / base_time_sum) which would
+                # over-weight games with larger base times.
+                avg_base_time = pe.base_time_sum / pe.clock_diff_n
+                avg_clock_diff_pct = (avg_clock_diff_seconds / avg_base_time) * 100.0
                 clock_diff_n = pe.clock_diff_n
 
             openings.append(

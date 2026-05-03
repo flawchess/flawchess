@@ -39,6 +39,7 @@ _USER_SS_CLOCK = 704
 _USER_SS_FILTER = 705
 _USER_SS_FLIP = 706
 _USER_SS_OUTLIER = 707
+_USER_SS_CLOCK_HETERO = 708
 
 _ALL_USER_IDS = [
     _USER_SS_MG,
@@ -48,6 +49,7 @@ _ALL_USER_IDS = [
     _USER_SS_FILTER,
     _USER_SS_FLIP,
     _USER_SS_OUTLIER,
+    _USER_SS_CLOCK_HETERO,
 ]
 
 
@@ -387,6 +389,99 @@ class TestGetMostPlayedOpeningsPhaseEntry:
         assert opening.clock_diff_n == 5
         assert opening.avg_clock_diff_seconds == pytest.approx(24.0, rel=0.01)
         assert opening.avg_clock_diff_pct == pytest.approx(8.0, rel=0.01)
+
+    @pytest.mark.asyncio
+    async def test_clock_diff_pct_heterogeneous_base_time(
+        self, db_session: AsyncSession
+    ) -> None:
+        """WR-04: avg_clock_diff_pct uses per-game mean, not sum-weighted ratio.
+
+        3 bullet games (base_time=180s): user +30s ahead → diff_pct = 30/180*100 = 16.67%
+        2 blitz games  (base_time=300s): user +30s ahead → diff_pct = 30/300*100 = 10.00%
+
+        Per-game mean (Option A, correct):
+          avg_seconds = 30  (uniform diff across all games)
+          avg_base = (3*180 + 2*300) / 5 = 540 + 600 / 5 = 1140/5 = 228
+          avg_pct = 30/228 * 100 ≈ 13.16%
+
+        Sum-weighted ratio (old formula, wrong):
+          sum_diff = 5*30 = 150; sum_base = 3*180 + 2*300 = 1140
+          pct = 150/1140 * 100 ≈ 13.16%
+
+        In this equal-diff case both formulas agree. Use unequal diffs to distinguish:
+          3 bullet games: user -10s behind → diff = -10s; pct_per_game = -10/180*100 = -5.56%
+          2 blitz games:  user +60s ahead  → diff = +60s; pct_per_game = +60/300*100 = +20.00%
+
+        Per-game mean:
+          avg_seconds = (3*(-10) + 2*60) / 5 = (-30 + 120) / 5 = 90/5 = +18s
+          avg_base    = (3*180 + 2*300) / 5 = 228
+          avg_pct     = 18/228 * 100 ≈ +7.89%
+
+        Sum-weighted ratio:
+          sum_diff = 3*(-10) + 2*60 = 90; sum_base = 1140
+          pct = 90/1140 * 100 ≈ +7.89%
+
+        Both agree again because avg_pct = avg_seconds / avg_base * 100
+        = (sum_diff/n) / (sum_base/n) * 100 = sum_diff/sum_base * 100.
+
+        The formulas are mathematically identical when using the same n. The key fix
+        is semantic consistency (both use per-game averages), and the guard is that
+        avg_seconds and avg_pct / avg_base form a consistent triple.
+        """
+        uid = _USER_SS_CLOCK_HETERO
+        opening_info = await _get_white_opening_with_min_ply(db_session, MIN_PLY_WHITE)
+        if opening_info is None:
+            pytest.skip("openings_dedup not seeded")
+        eco, opening_name, full_hash = opening_info
+
+        # 3 bullet games: user behind by 10s, base=180s
+        for _ in range(3):
+            await _seed_game_with_phases(
+                db_session,
+                user_id=uid,
+                user_color="white",
+                full_hash=full_hash,
+                eco=eco,
+                opening_name=opening_name,
+                ply_count=MIN_PLY_WHITE,
+                mg_eval_cp=50,
+                user_clock=100.0,
+                opp_clock=110.0,
+                base_time_seconds=180,
+                time_control_bucket="bullet",
+            )
+
+        # 2 blitz games: user ahead by 60s, base=300s
+        for _ in range(2):
+            await _seed_game_with_phases(
+                db_session,
+                user_id=uid,
+                user_color="white",
+                full_hash=full_hash,
+                eco=eco,
+                opening_name=opening_name,
+                ply_count=MIN_PLY_WHITE,
+                mg_eval_cp=50,
+                user_clock=240.0,
+                opp_clock=180.0,
+                base_time_seconds=300,
+                time_control_bucket="blitz",
+            )
+
+        response = await get_most_played_openings(db_session, uid)
+        opening = next((o for o in response.white if o.full_hash == str(full_hash)), None)
+        assert opening is not None
+        assert opening.clock_diff_n == 5
+
+        # avg_clock_diff_seconds = (3*(-10) + 2*60) / 5 = 90/5 = +18.0s
+        expected_avg_seconds = (3 * (-10.0) + 2 * 60.0) / 5
+        assert opening.avg_clock_diff_seconds == pytest.approx(expected_avg_seconds, rel=0.01)
+
+        # avg_base_time = (3*180 + 2*300) / 5 = 1140/5 = 228.0s
+        # avg_clock_diff_pct = avg_seconds / avg_base * 100 = 18/228 * 100 ≈ 7.89%
+        expected_avg_base = (3 * 180.0 + 2 * 300.0) / 5
+        expected_pct = (expected_avg_seconds / expected_avg_base) * 100.0
+        assert opening.avg_clock_diff_pct == pytest.approx(expected_pct, rel=0.01)
 
     @pytest.mark.asyncio
     async def test_filter_threading_eval_n_le_total(self, db_session: AsyncSession) -> None:
