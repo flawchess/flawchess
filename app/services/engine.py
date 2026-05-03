@@ -1,26 +1,30 @@
 """Stockfish engine wrapper (Phase 78 ENG-02 / ENG-03).
 
-Single source of UCI option configuration. Long-lived UCI process per Python
-process (D-01). Async-friendly via asyncio.Lock serialization. Sign convention
-is white-perspective and matches app/services/zobrist.py:183-197 byte-for-byte.
+Single source of UCI option configuration. The module-level API is backed by
+an internal `EnginePool` of size `STOCKFISH_POOL_SIZE` (env var, default 1).
+Sign convention is white-perspective and matches app/services/zobrist.py:183-197
+byte-for-byte.
 
 Two APIs:
-    Singleton (live FastAPI traffic, prod imports):
+    Module-level (live FastAPI traffic, prod imports):
         start_engine()       -- call from FastAPI lifespan startup.
         stop_engine()        -- call from lifespan shutdown.
         evaluate(board)      -- async; returns (eval_cp, eval_mate).
+
+        With STOCKFISH_POOL_SIZE=1 (the dev/CI default) this behaves exactly
+        like the original singleton. Set STOCKFISH_POOL_SIZE=2+ on prod to get
+        N independent UCI processes. Callers gain parallelism only when they
+        fan out evaluate() via asyncio.gather — a single sequential awaiter
+        sees no speedup regardless of pool size.
 
     EnginePool (batch jobs that benefit from parallelism, e.g. backfill):
         pool = EnginePool(size=N)
         await pool.start(); ...; await pool.evaluate(board); ...; await pool.stop()
 
-The singleton holds one UCI process. The pool holds N independent processes,
-each with its own protocol, dispatched via an asyncio.Queue. Live traffic
-must keep using the singleton — running N engines in a 4 vCPU / 8 GB prod
-container would starve the API and Postgres. The pool is opt-in for
-short-lived batch scripts running on hosts with the resources to spare.
+        Use directly when you need a different size than the module-level
+        pool (e.g. scripts/backfill_eval.py running on a beefy host).
 
-On engine timeout / crash, evaluate() restarts the affected engine and
+On engine timeout / crash, evaluate() restarts the affected worker and
 returns (None, None). The caller decides whether to log to Sentry
 (import path: D-11; backfill script: log).
 """
@@ -44,71 +48,62 @@ _THREADS: int = 1
 _DEPTH: int = 15
 # D-05: defensive per-eval timeout
 _TIMEOUT_S: float = 2.0
+# Module-level pool size. Default 1 = legacy singleton behavior. Prod sets
+# STOCKFISH_POOL_SIZE=2 to use 2 of 4 vCPUs for parallel import-time evals
+# while leaving headroom for Postgres + uvicorn. Read at start_engine() time.
+_POOL_SIZE_ENV: str = "STOCKFISH_POOL_SIZE"
+_DEFAULT_POOL_SIZE: int = 1
 
-# Long-lived process state. Module-level globals per D-01 (single shared engine).
-_transport: asyncio.SubprocessTransport | None = None
-_protocol: chess.engine.UciProtocol | None = None
-_lock: asyncio.Lock = asyncio.Lock()
+# Module-level pool. None until start_engine() is called.
+_pool: EnginePool | None = None
+
+
+def _read_pool_size() -> int:
+    raw = os.environ.get(_POOL_SIZE_ENV)
+    if raw is None or raw == "":
+        return _DEFAULT_POOL_SIZE
+    try:
+        size = int(raw)
+    except ValueError:
+        return _DEFAULT_POOL_SIZE
+    return max(1, size)
 
 
 async def start_engine() -> None:
-    """Start the long-lived UCI process. Idempotent: a second call is a no-op."""
-    global _transport, _protocol
-    if _protocol is not None:
+    """Start the module-level engine pool. Idempotent: a second call is a no-op."""
+    global _pool
+    if _pool is not None:
         return
-    _transport, _protocol = await chess.engine.popen_uci(_STOCKFISH_PATH)
-    await _protocol.configure({"Hash": _HASH_MB, "Threads": _THREADS})
+    pool = EnginePool(size=_read_pool_size())
+    await pool.start()
+    _pool = pool
 
 
 async def stop_engine() -> None:
-    """Stop the UCI process. Safe to call without start (no-op if not started)."""
-    global _transport, _protocol
-    if _protocol is not None:
-        try:
-            await _protocol.quit()
-        except (chess.engine.EngineError, chess.engine.EngineTerminatedError):
-            pass
-    _transport = None
-    _protocol = None
-
-
-async def _restart_engine() -> None:
-    """Restart after timeout / crash. Internal -- callers do not invoke directly."""
-    await stop_engine()
+    """Stop the module-level engine pool. Safe to call without start (no-op)."""
+    global _pool
+    if _pool is None:
+        return
     try:
-        await start_engine()
-    except Exception:
-        # If restart also fails, _protocol stays None so next evaluate() returns (None, None).
-        pass
+        await _pool.stop()
+    finally:
+        _pool = None
 
 
 async def evaluate(board: chess.Board) -> tuple[int | None, int | None]:
     """Evaluate position at depth 15. Returns (eval_cp, eval_mate) in white perspective.
 
     Returns (None, None) if the engine is not started, or on timeout / crash
-    (engine is restarted before returning so the next caller sees a clean state).
+    (the affected worker is restarted before returning so the next caller
+    sees a clean state).
 
     Sign convention matches app/services/zobrist.py:183-197 byte-for-byte:
         eval_cp  -- centipawn score from white's perspective; None for mate positions
         eval_mate -- moves to forced mate; positive = white mates, negative = black mates
     """
-    async with _lock:
-        if _protocol is None:
-            return None, None
-        try:
-            info = await asyncio.wait_for(
-                _protocol.analyse(board, chess.engine.Limit(depth=_DEPTH)),
-                timeout=_TIMEOUT_S,
-            )
-        except (
-            asyncio.TimeoutError,
-            chess.engine.EngineError,
-            chess.engine.EngineTerminatedError,
-        ):
-            await _restart_engine()
-            return None, None
-
-    return _score_to_cp_mate(info)
+    if _pool is None:
+        return None, None
+    return await _pool.evaluate(board)
 
 
 def _score_to_cp_mate(
@@ -116,8 +111,7 @@ def _score_to_cp_mate(
 ) -> tuple[int | None, int | None]:
     """Extract (eval_cp, eval_mate) from an analyse() result.
 
-    Shared by the singleton and EnginePool paths. Sign convention and clamping
-    match zobrist.py:183-197 byte-for-byte.
+    Sign convention and clamping match zobrist.py:183-197 byte-for-byte.
     """
     pov_score = info.get("score")
     if pov_score is None:
@@ -138,15 +132,16 @@ class EnginePool:
     Owns N independent UCI subprocesses, each with its own protocol. evaluate()
     grabs an idle worker from an asyncio.Queue, runs analyse() against its
     process, and releases it back to the queue. With N callers awaiting
-    evaluate() concurrently, up to N positions analyse in parallel.
+    evaluate() concurrently (e.g. via asyncio.gather), up to N positions
+    analyse in parallel.
 
     On per-worker timeout / crash, that worker restarts in place; siblings
     keep going. If restart fails the worker is permanently disabled and its
     slot is dropped from the queue — remaining workers continue to serve.
 
-    Use only for batch jobs (e.g. scripts/backfill_eval.py). Live FastAPI
-    traffic uses the module-level singleton because the prod container has
-    4 vCPU / 8 GB RAM — a multi-engine pool there would starve the API.
+    The module-level start_engine() / evaluate() use a pool of size
+    STOCKFISH_POOL_SIZE (default 1). Use this class directly when you need
+    a different size — e.g. scripts/backfill_eval.py on a beefy host.
     """
 
     def __init__(self, size: int) -> None:
@@ -157,6 +152,10 @@ class EnginePool:
         self._protocols: list[chess.engine.UciProtocol | None] = []
         self._available: asyncio.Queue[int] = asyncio.Queue()
         self._started = False
+
+    @property
+    def size(self) -> int:
+        return self._size
 
     async def start(self) -> None:
         """Spawn `size` UCI processes. Idempotent: a second call is a no-op."""

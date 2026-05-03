@@ -324,14 +324,20 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       )}
 
       {/* Info box: sync behavior and opponent scouting explanation */}
-      <Alert variant="info" data-testid="import-info">
+      <div
+        data-testid="import-info"
+        className="charcoal-texture rounded-md px-4 py-3 text-sm text-muted-foreground space-y-2"
+      >
         <p>
-          <strong>First sync</strong> imports all your games. Later syncs only fetch new games since the last import.
+          <strong className="text-foreground">First Sync:</strong> imports all your games. Later syncs only fetch new games since the last import.
         </p>
         <p>
-          <strong>Opponent scouting:</strong> delete your games, import the opponent's games to analyze their openings, then delete and re-import your own games.
+          <strong className="text-foreground">Slow Import:</strong> due to partial stockfish game analysis, imports take a while. But it's worth the wait.
         </p>
-      </Alert>
+        <p>
+          <strong className="text-foreground">Opponent Scouting:</strong> delete your games, import the opponent's games to analyze their openings, then delete and re-import your own games.
+        </p>
+      </div>
 
       {/* Inline import progress bars */}
       {activeJobIds.length > 0 && (

@@ -17,7 +17,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 import chess
 import chess.pgn
@@ -66,6 +66,23 @@ def _board_at_ply(pgn_text: str, target_ply: int) -> chess.Board | None:
 # production 7.6GB + 2GB swap server.
 _BATCH_SIZE = 28
 IMPORT_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours per D-24
+
+
+@dataclass(slots=True)
+class _EvalTarget:
+    """One row scheduled for engine evaluation in the import-time eval pass.
+
+    Collected up-front across all games in an import batch so the per-eval
+    asyncio.gather() can fan out to every Stockfish worker in the module-level
+    pool. Without batching the gather, a multi-worker pool would still serve
+    only one in-flight evaluation at a time.
+    """
+
+    game_id: int
+    ply: int
+    eval_kind: Literal["middlegame_entry", "endgame_span_entry"]
+    endgame_class: int | None  # None for middlegame; int for endgame span entry
+    board: chess.Board
 
 
 class JobStatus(str, Enum):
@@ -526,10 +543,20 @@ async def _flush_batch(
     if position_rows:
         await game_repository.bulk_insert_positions(session, position_rows)
 
-    # 5a. Phase 78 IMP-01: evaluate per-class span-entry rows where lichess %eval did NOT
-    # already populate them. Runs AFTER bulk_insert_positions (rows exist in DB) and BEFORE
-    # the final session.commit() so all eval UPDATEs land in the same transaction.
-    # No asyncio.gather — sequential per CLAUDE.md constraint.
+    # 5a. Phase 78 IMP-01 / Phase 79 PHASE-IMP-01: evaluate middlegame-entry and
+    # per-class endgame span-entry rows where lichess %eval did NOT already
+    # populate them. Runs AFTER bulk_insert_positions (rows exist in DB) and
+    # BEFORE the final session.commit() so all eval UPDATEs land in the same
+    # transaction.
+    #
+    # Two-phase to fan out engine work to the EnginePool:
+    #   (a) collect all eval targets across the import batch (no engine, no DB),
+    #   (b) await asyncio.gather(engine.evaluate(...) for each) — concurrency is
+    #       bounded by the pool's internal queue (size = STOCKFISH_POOL_SIZE),
+    #   (c) apply UPDATEs sequentially against the shared session (CLAUDE.md
+    #       constraint: AsyncSession is not safe under asyncio.gather).
+    # With pool size 1 this is equivalent to the previous serial loop. With
+    # pool size N, up to N evaluations run in parallel.
     #
     # Each contiguous run of the same endgame_class within a game is its own
     # span: a class=1 → class=2 → class=1 sequence yields two class=1 entry
@@ -539,6 +566,8 @@ async def _flush_batch(
     eval_pass_start = time.perf_counter()
     eval_calls_made = 0
     eval_calls_failed = 0
+
+    eval_targets: list[_EvalTarget] = []
     for g_id, pgn_text, plies_list in game_eval_data:
         # Phase 79 PHASE-IMP-01: middlegame entry eval — MIN(ply) where phase == 1.
         # At most one middlegame entry per game (later phase=1 stretches after an
@@ -549,34 +578,19 @@ async def _flush_batch(
             mid_pd = min(midgame_entries, key=lambda p: p["ply"])
             # T-78-17 lichess preservation: skip if lichess %eval already populated the row.
             if mid_pd["eval_cp"] is None and mid_pd["eval_mate"] is None:
-                board = _board_at_ply(pgn_text, mid_pd["ply"])
-                if board is not None:
-                    mid_eval_cp, mid_eval_mate = await engine_service.evaluate(board)
-                    eval_calls_made += 1
-                    if mid_eval_cp is None and mid_eval_mate is None:
-                        eval_calls_failed += 1
-                        # Bounded Sentry context (D-79-04, T-78-18: no PGN/FEN/user_id).
-                        # MUST contain only game_id and ply — see W-2 grep gate below.
-                        sentry_sdk.set_context(
-                            "eval",
-                            {"game_id": g_id, "ply": mid_pd["ply"]},
+                mid_board = _board_at_ply(pgn_text, mid_pd["ply"])
+                if mid_board is not None:
+                    eval_targets.append(
+                        _EvalTarget(
+                            game_id=g_id,
+                            ply=mid_pd["ply"],
+                            eval_kind="middlegame_entry",
+                            endgame_class=None,
+                            board=mid_board,
                         )
-                        sentry_sdk.set_tag("source", "import")
-                        sentry_sdk.set_tag("eval_kind", "middlegame_entry")
-                        sentry_sdk.capture_message(
-                            "import-time engine returned None tuple", level="warning"
-                        )
-                    else:
-                        await session.execute(
-                            update(GamePosition)
-                            .where(
-                                GamePosition.game_id == g_id,
-                                GamePosition.ply == mid_pd["ply"],
-                            )
-                            .values(eval_cp=mid_eval_cp, eval_mate=mid_eval_mate)
-                        )
+                    )
 
-        # Existing Phase 78 per-class endgame span entry loop continues unchanged below.
+        # Phase 78 per-class endgame span entry collection.
         # Group plies by endgame_class; only endgame plies have a non-None class.
         class_plies: dict[int, list[PlyData]] = defaultdict(list)
         for pd in plies_list:
@@ -607,40 +621,55 @@ async def _flush_batch(
                     # Lichess %eval already populated this ply — do not overwrite (T-78-17).
                     continue
 
-                board = _board_at_ply(pgn_text, span_pd["ply"])
-                if board is None:
+                span_board = _board_at_ply(pgn_text, span_pd["ply"])
+                if span_board is None:
                     # PGN replay failed — skip row, no Sentry (parse error is unusual but not urgent).
                     continue
 
-                eval_cp, eval_mate = await engine_service.evaluate(board)
-                eval_calls_made += 1
-
-                if eval_cp is None and eval_mate is None:
-                    # D-11: engine error / timeout — skip row, capture to Sentry, continue import.
-                    eval_calls_failed += 1
-                    sentry_sdk.set_context("eval", {
-                        "game_id": g_id,
-                        "ply": span_pd["ply"],
-                        "endgame_class": ec,
-                        # NO pgn, NO user_id, NO fen — information-disclosure mitigation T-78-18
-                    })
-                    sentry_sdk.set_tag("source", "import")
-                    sentry_sdk.set_tag("eval_kind", "endgame_span_entry")
-                    sentry_sdk.capture_message(
-                        "import-time engine returned None tuple", level="warning"
+                eval_targets.append(
+                    _EvalTarget(
+                        game_id=g_id,
+                        ply=span_pd["ply"],
+                        eval_kind="endgame_span_entry",
+                        endgame_class=ec,
+                        board=span_board,
                     )
-                    continue
-
-                # Update the span-entry row with the engine eval.
-                await session.execute(
-                    update(GamePosition)
-                    .where(
-                        GamePosition.game_id == g_id,
-                        GamePosition.ply == span_pd["ply"],
-                        GamePosition.endgame_class == ec,
-                    )
-                    .values(eval_cp=eval_cp, eval_mate=eval_mate)
                 )
+
+    # Fan out engine evaluations across the EnginePool. The pool's internal
+    # queue caps in-flight analyses at STOCKFISH_POOL_SIZE; remaining calls
+    # await their slot. With pool size 1 this serializes (legacy behavior).
+    if eval_targets:
+        results = await asyncio.gather(*(engine_service.evaluate(t.board) for t in eval_targets))
+
+        for target, (eval_cp, eval_mate) in zip(eval_targets, results, strict=True):
+            eval_calls_made += 1
+            if eval_cp is None and eval_mate is None:
+                # D-11: engine error / timeout — skip row, capture to Sentry, continue import.
+                eval_calls_failed += 1
+                # Bounded Sentry context (D-79-04, T-78-18: no PGN/FEN/user_id).
+                ctx: dict[str, Any] = {"game_id": target.game_id, "ply": target.ply}
+                if target.endgame_class is not None:
+                    ctx["endgame_class"] = target.endgame_class
+                sentry_sdk.set_context("eval", ctx)
+                sentry_sdk.set_tag("source", "import")
+                sentry_sdk.set_tag("eval_kind", target.eval_kind)
+                sentry_sdk.capture_message(
+                    "import-time engine returned None tuple", level="warning"
+                )
+                continue
+
+            # Build the WHERE clause for this eval kind. Endgame span entries
+            # filter by endgame_class to disambiguate when the same ply could
+            # in principle belong to multiple class spans (defensive — current
+            # schema has at most one row per (game_id, ply)).
+            stmt = update(GamePosition).where(
+                GamePosition.game_id == target.game_id,
+                GamePosition.ply == target.ply,
+            )
+            if target.endgame_class is not None:
+                stmt = stmt.where(GamePosition.endgame_class == target.endgame_class)
+            await session.execute(stmt.values(eval_cp=eval_cp, eval_mate=eval_mate))
 
     eval_pass_ms = (time.perf_counter() - eval_pass_start) * 1000
     logger.info(
