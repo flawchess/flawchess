@@ -11,18 +11,26 @@ Provides a pure function that accepts a ``chess.Board`` and returns a
 - ``backrank_sparse`` — True when < 4 pieces on either side's back rank (Lichess middlegame detection)
 - ``mixedness`` — Lichess Divider.scala mixedness score (0..~400)
 
-Game phase (opening/middlegame/endgame) and endgame class are derived at query
-time from material_count + ply + material_signature + piece_count + backrank_sparse
-+ mixedness, allowing threshold tuning without data migration.
+Game phase is NOT a per-position attribute under Lichess Divider semantics —
+it requires the full game ply timeline so the assignment is monotonic
+(opening → middlegame → endgame, never back). Use ``assign_game_phases()``
+on a per-ply predicate sequence to derive phase values.
+
+Endgame class is derived at query time from material_signature, allowing
+threshold tuning without data migration.
 
 No I/O, no DB access, no async.  All computation is deterministic.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 import chess
+
+from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD
 
 # ---------------------------------------------------------------------------
 # Named constants (no magic numbers in conditionals per CLAUDE.md)
@@ -61,6 +69,12 @@ _SIGNATURE_LETTER: dict[int, str] = {
 # Backrank sparseness threshold: if either side has fewer than this many pieces
 # on their back rank, the position is considered "backrank sparse".
 BACKRANK_SPARSE_THRESHOLD = 4
+
+# Lichess Divider.scala default: middlegame iff majors+minors piece_count <= 10.
+MIDGAME_MAJORS_AND_MINORS_THRESHOLD = 10
+
+# Lichess Divider.scala default: middlegame iff mixedness > 150.
+MIDGAME_MIXEDNESS_THRESHOLD = 150
 
 # ---------------------------------------------------------------------------
 # Mixedness precomputed tables (Lichess Divider.scala algorithm)
@@ -222,6 +236,29 @@ def _compute_backrank_sparse(board: chess.Board) -> bool:
     )
 
 
+def is_endgame(piece_count: int) -> bool:
+    """Lichess Divider.scala isEndGame predicate.
+
+    True iff piece_count <= ENDGAME_PIECE_COUNT_THRESHOLD (default 6).
+    """
+    return piece_count <= ENDGAME_PIECE_COUNT_THRESHOLD
+
+
+def is_middlegame(piece_count: int, backrank_sparse: bool, mixedness: int) -> bool:
+    """Lichess Divider.scala isMidGame predicate.
+
+    True iff piece_count <= MIDGAME_MAJORS_AND_MINORS_THRESHOLD (default 10)
+    OR backrank_sparse OR mixedness > MIDGAME_MIXEDNESS_THRESHOLD (default 150).
+
+    Note: caller must check is_endgame FIRST so the endgame case wins when both fire.
+    """
+    return (
+        piece_count <= MIDGAME_MAJORS_AND_MINORS_THRESHOLD
+        or backrank_sparse
+        or mixedness > MIDGAME_MIXEDNESS_THRESHOLD
+    )
+
+
 def _mixedness_score(y: int, white: int, black: int) -> int:
     """Return the mixedness contribution for a 2x2 region.
 
@@ -302,13 +339,89 @@ def classify_position(board: chess.Board) -> PositionClassification:
         ``material_count``, ``material_signature``, ``material_imbalance``,
         ``has_opposite_color_bishops``, ``piece_count``,
         ``backrank_sparse``, and ``mixedness``.
+
+        Game phase (opening/middlegame/endgame) is NOT included — under
+        Lichess Divider semantics it requires the full game's ply timeline.
+        Pass per-ply ``(piece_count, backrank_sparse, mixedness)`` tuples to
+        ``assign_game_phases()`` to derive monotonic phase values.
     """
+    material_count = _compute_material_count(board)
+    material_signature = _compute_material_signature(board)
+    material_imbalance = _compute_material_imbalance(board)
+    has_opposite_color_bishops = _compute_opposite_color_bishops(board)
+    piece_count = _compute_piece_count(board)
+    backrank_sparse = _compute_backrank_sparse(board)
+    mixedness = _compute_mixedness(board)
+
     return PositionClassification(
-        material_count=_compute_material_count(board),
-        material_signature=_compute_material_signature(board),
-        material_imbalance=_compute_material_imbalance(board),
-        has_opposite_color_bishops=_compute_opposite_color_bishops(board),
-        piece_count=_compute_piece_count(board),
-        backrank_sparse=_compute_backrank_sparse(board),
-        mixedness=_compute_mixedness(board),
+        material_count=material_count,
+        material_signature=material_signature,
+        material_imbalance=material_imbalance,
+        has_opposite_color_bishops=has_opposite_color_bishops,
+        piece_count=piece_count,
+        backrank_sparse=backrank_sparse,
+        mixedness=mixedness,
     )
+
+
+def assign_game_phases(
+    predicates: Sequence[tuple[int, bool, int]],
+) -> list[Literal[0, 1, 2]]:
+    """Assign monotonic per-ply game phases per Lichess Divider.scala semantics.
+
+    Reference: https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/Divider.scala
+
+    Algorithm:
+      1. Find ``mid_ply`` — the FIRST ply where the midgame predicate fires
+         (piece_count <= 10 OR backrank_sparse OR mixedness > 150).
+      2. If ``mid_ply`` is set, find ``end_ply`` — the FIRST ply where
+         ``piece_count <= 6``. The endgame search starts from ply 0, NOT from
+         ``mid_ply`` — Lichess searches from the beginning.
+      3. If ``end_ply`` exists and ``end_ply <= mid_ply``, drop ``mid_ply``
+         (Lichess: ``midGame.filter(m => endGame.fold(true)(m < _))``). The
+         game then has no middlegame phase — it goes straight from opening
+         to endgame.
+      4. Assign phase per ply by ply-range membership:
+           ``ply < mid_ply`` → 0 (opening)
+           ``mid_ply <= ply < end_ply`` → 1 (middlegame)
+           ``ply >= end_ply`` → 2 (endgame)
+         Once a game enters middlegame it can never return to opening, even
+         if pieces re-occupy the back rank or mixedness drops below 150.
+
+    Args:
+        predicates: per-ply ``(piece_count, backrank_sparse, mixedness)``
+            tuples in ply order, starting from ply 0.
+
+    Returns:
+        A list of phase values (0/1/2), one per input tuple.
+    """
+    n = len(predicates)
+    if n == 0:
+        return []
+
+    mid_ply: int | None = None
+    for i, (piece_count, backrank_sparse, mixedness) in enumerate(predicates):
+        if is_middlegame(piece_count, backrank_sparse, mixedness):
+            mid_ply = i
+            break
+
+    end_ply: int | None = None
+    if mid_ply is not None:
+        for i, (piece_count, _, _) in enumerate(predicates):
+            if is_endgame(piece_count):
+                end_ply = i
+                break
+        # Lichess: midGame.filter(m => endGame.fold(true)(m < _))
+        # If endgame fires at or before midgame, drop midgame entirely.
+        if end_ply is not None and mid_ply >= end_ply:
+            mid_ply = None
+
+    phases: list[Literal[0, 1, 2]] = []
+    for i in range(n):
+        if end_ply is not None and i >= end_ply:
+            phases.append(2)
+        elif mid_ply is not None and i >= mid_ply:
+            phases.append(1)
+        else:
+            phases.append(0)
+    return phases

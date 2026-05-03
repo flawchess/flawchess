@@ -1,15 +1,14 @@
 /**
- * Endgame Score Gap & Material Breakdown section:
+ * Endgame Score Gap & Eval Breakdown section:
  * - Gauge strip (Conversion / Parity / Recovery) showing the absolute rate
  *   against a fixed per-bucket blue target band (skill-cohort expectation).
  *   The targets are intentionally stable — they do NOT shift with filters
  *   or opponent pool, unlike the opponent-relative Diff column.
- * - Material-stratified WDL table: Conversion / Parity / Recovery with
- *   You / Opp / Diff columns and a bullet chart visualizing the signed
- *   diff against a self-calibrating opponent baseline (the user's opponents
- *   in the mirror bucket). Conversion/Recovery require the material
- *   imbalance to persist 4 plies into the endgame to filter out transient
- *   trade noise — games that don't persist fall into the Parity bucket.
+ * - Eval-stratified WDL table: Conversion / Parity / Recovery split by the
+ *   Stockfish evaluation at the endgame-entry ply (>= +1.0 / between -1.0
+ *   and +1.0 / <= -1.0). Each row carries You / Opp / Diff columns and a
+ *   bullet chart visualizing the signed diff against a self-calibrating
+ *   opponent baseline (the user's opponents in the mirror bucket).
  *
  * The two signals (gauge color vs Diff color) can disagree when the
  * opponent pool is unusual — that disagreement is informative.
@@ -53,8 +52,9 @@ const BULLET_DOMAIN = 0.20;
 // mute threshold used in the Opening Explorer moves list.
 const MIN_OPPONENT_BASELINE_GAMES = 10;
 
-// Short display names — the material indicator ("≥ +1", "≤ −1") lives in the
-// section description, freeing column/card space (especially on mobile).
+// Short display names — the eval threshold indicator ("≥ +1.0", "≤ −1.0")
+// lives in the section description, freeing column/card space (especially
+// on mobile).
 const BUCKET_DISPLAY_LABELS: Record<MaterialBucket, string> = {
   conversion: 'Conversion',
   parity: 'Parity',
@@ -188,12 +188,10 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
             >
               <div className="space-y-2">
                 <p>
-                  Games are split by the material balance on entering the endgame:
-                  <strong> Conversion</strong> (you lead by ≥ +1),
-                  <strong> Parity</strong> (balanced), or
-                  <strong> Recovery</strong> (you trail by ≤ −1). The imbalance
-                  must persist 4 half-moves into the endgame, so transient trades
-                  don't distort the split.
+                  Games are split by the Stockfish evaluation at the endgame-entry
+                  ply: <strong>Conversion</strong> (you ahead, eval ≥ +1.0),
+                  <strong> Parity</strong> (roughly balanced, eval between −1.0
+                  and +1.0), or <strong>Recovery</strong> (you behind, eval ≤ −1.0).
                 </p>
                 <p>
                   Each bucket uses its own rate, shown in the gauge and the
@@ -237,8 +235,8 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          How well do you convert a material advantage into a win, and recover
-          when you're down material?
+          How well do you convert a winning endgame into a win, and recover
+          when you're losing?
         </p>
       </div>
 

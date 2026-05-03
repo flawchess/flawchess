@@ -65,6 +65,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends stockfish
           stockfish --help | head -3
+          # apt installs to /usr/games/stockfish; the engine wrapper defaults to the Docker path
+          # /usr/local/bin/stockfish, so export the actual location for the pytest step.
+          echo "STOCKFISH_PATH=$(command -v stockfish)" >> "$GITHUB_ENV"
 
       - name: Run pytest
         env:

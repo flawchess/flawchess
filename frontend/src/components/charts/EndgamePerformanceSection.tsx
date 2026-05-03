@@ -33,12 +33,6 @@ import type {
   ScoreGapTimelinePoint,
 } from '@/types/endgames';
 
-// Material advantage/deficit threshold in pawn points (backend uses 100 centipawns)
-export const MATERIAL_ADVANTAGE_POINTS = 1;
-
-// Persistence requirement in full moves (= 4 plies on the backend)
-export const PERSISTENCE_MOVES = 2;
-
 interface EndgamePerformanceSectionProps {
   data: EndgamePerformanceResponse;
   scoreGap?: ScoreGapMaterialResponse;

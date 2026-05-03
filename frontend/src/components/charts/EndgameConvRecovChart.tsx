@@ -15,7 +15,6 @@ import {
   PER_CLASS_GAUGE_ZONES,
   type EndgameClassKey,
 } from '@/generated/endgameZones';
-import { MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES } from '@/components/charts/EndgamePerformanceSection';
 import type { EndgameCategoryStats } from '@/types/endgames';
 
 interface EndgameConvRecovChartProps {
@@ -36,14 +35,12 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
             <InfoPopover ariaLabel="Conversion and Recovery info" testId="conv-recov-chart-info" side="top">
               <div className="space-y-2">
                 <p>
-                  <strong>Conversion</strong>: percentage of endgame sequences per type with a
-                  material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for
-                  at least {PERSISTENCE_MOVES} moves) where you went on to win the game.
+                  <strong>Conversion</strong>: percentage of endgame sequences per type where you
+                  entered with a Stockfish evaluation of +1.0 or better and went on to win.
                 </p>
                 <p>
-                  <strong>Recovery</strong>: percentage of endgame sequences per type with a
-                  material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for
-                  at least {PERSISTENCE_MOVES} moves) where you went on to draw or win the game.
+                  <strong>Recovery</strong>: percentage of endgame sequences per type where you
+                  entered with a Stockfish evaluation of -1.0 or worse and went on to draw or win.
                 </p>
                 <p>
                   Gauge zones are per-type typical bands sourced from pooled FlawChess benchmark

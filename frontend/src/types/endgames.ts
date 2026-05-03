@@ -7,12 +7,12 @@ import type { GameRecord } from './api';
 export type EndgameClass = 'rook' | 'minor_piece' | 'pawn' | 'queen' | 'mixed' | 'pawnless';
 
 export interface ConversionRecoveryStats {
-  conversion_pct: number;    // win rate when up material (0-100)
-  conversion_games: number;  // games where user entered up
+  conversion_pct: number;    // win rate when entering with eval >= +1.0 (0-100)
+  conversion_games: number;  // games where user entered with eval >= +1.0
   conversion_wins: number;
   conversion_draws: number;
   conversion_losses: number;
-  recovery_pct: number;      // draw+win rate when down material (0-100)
+  recovery_pct: number;      // draw+win rate when entering with eval <= -1.0 (0-100)
   recovery_games: number;
   recovery_saves: number;    // wins + draws (backward compat)
   recovery_wins: number;

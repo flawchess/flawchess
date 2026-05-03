@@ -194,7 +194,7 @@ class TestPromptVersionAndBody:
     """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v21 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v22 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
@@ -204,8 +204,8 @@ class TestPromptVersionAndBody:
       and the `[n=<N> for every point]` disclosure for constant-N series.
     """
 
-    def test_prompt_version_is_v20(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v21"
+    def test_prompt_version_is_v22(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v22"
 
     def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
         from pathlib import Path
@@ -1036,8 +1036,8 @@ class TestPromptAssembly:
 
         # v7 whole-number scale: score_gap band is -10 to +10.
         assert "weak (typical -10 to +10)" in prompt
-        # conversion bucket band is +65 to +75.
-        assert "weak (typical +65 to +75)" in prompt
+        # conversion bucket band is +65 to +77 (260503 calibration).
+        assert "weak (typical +65 to +77)" in prompt
         # net_timeout_rate band is now higher_is_better (positive is strong): typical -5 to +5.
         assert "weak (typical -5 to +5)" in prompt
         assert "lower is better" not in prompt  # v7: no lower_is_better metrics left.
@@ -1885,7 +1885,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v21"
+        assert response.report.prompt_version == "endgame_v22"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -1909,7 +1909,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v21"
+        assert log.response_json["prompt_version"] == "endgame_v22"
 
 
 class TestCacheBehavior:

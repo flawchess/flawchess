@@ -2,29 +2,34 @@
 gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
-status: executing
-last_updated: "2026-05-02T13:42:00.000Z"
-last_activity: 2026-05-02 -- Phase 78 code complete (6/6 plans); operational backfill+deploy deferred to post-phase-79
+status: "v1.15 shipped — draft PR #78 (artifacts to follow)"
+last_updated: "2026-05-03T12:10:33.257Z"
+last_activity: "2026-05-03 -- Phases 78+79 shipped as draft PR #78"
+progress:
+  total_phases: 6
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 78 (Stockfish-Eval Cutover for Endgame Classification) — CODE COMPLETE (operational rollout deferred)
-Plan: 6 of 6 (78-06 ran with slimmed scope: dev-DB smoke for user 28 only; benchmark/prod backfill, VAL-01, deploy, VAL-02 deferred)
-Status: Phase 78 ready for code review; awaiting Phase 79 (lichess Divider phase column + middlegame eval) before combined backfill on benchmark + prod and deploy
-Last activity: 2026-05-02 -- Phase 78 dev smoke complete (3758 evals, 0 errors, idempotent)
+Phase: 79 (Position-phase classifier and middlegame eval) — CODE COMPLETE; draft PR #78 open, deploy + UI smoke pending
+Plan: 4 of 4 (operator cutover) — rounds 1-3 (dev / benchmark / prod backfill) complete; PR merge + bin/deploy.sh + post-deploy UI smoke remaining
+Status: v1.15 shipped as draft PR #78 — artifacts to follow (full STATE refresh in this commit; 79-04-PLAN test-plan checkboxes; post-deploy VAL-02 / VAL-03 UI smoke)
+Last activity: 2026-05-03 -- v1.15 cutover (Phases 78+79) drafted as PR #78; PHASE-VAL-01 / VAL-01 rescinded as moot (proxy removed → metric undefined; /conv-recov-validation Skill deleted)
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-02 for v1.15 open)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report (now score-based with low/medium/high confidence calibration).
-Current focus: v1.15 Phase 78 — replace the material-imbalance + 4-ply persistence proxy for endgame conv/recov classification with Stockfish eval (depth 15) populated into existing `eval_cp` / `eval_mate` columns. Backfill benchmark + prod, refactor endgame queries, hard cutover. SEED-010 Library milestone gated until v1.15 ships. SEED-002 / SEED-006 still dormant, gated on full benchmark ingest.
+Current focus: v1.15 cutover landing — combined Phase 78 + Phase 79 PR #78 awaits CI green + bin/deploy.sh + post-deploy UI smoke. After deploy, every game_positions row carries a `phase` SmallInteger (0=opening, 1=middlegame, 2=endgame) and the middlegame entry + endgame span-entry rows carry Stockfish eval at depth 15. v1.16 (Stockfish Eval Analyses) opens immediately after — first phase is Phase 80 (opening-stats columns: avg eval at middlegame entry ± std, t-test confidence, avg clock diff). SEED-002 / SEED-006 / SEED-010 remain orthogonal (gated on full benchmark ingest, not on v1.15).
 
 ## Milestone Progress
 
-Fourteen milestones complete (v1.0–v1.14). v1.15 opened 2026-05-02 with a single phase (78). v1.14 Score-Based Opening Insights shipped 2026-04-29 with 3 phases (75, 76, 77), 16 plans, delivered via PRs #69, #70, #71 (inline confidence-mute hotfix), #72, #73 (quick task). 73 phases total before v1.15 (+4 inserted: 27.1, 28.1, 41.1, 57.1, 71.1).
+Fourteen milestones complete (v1.0–v1.14). v1.15 Eval-Based Endgame Classification (Phases 78 + 79) — 9 plans across both phases, all code commits landed; combined operator cutover (rounds 1-3) complete; draft PR #78 open against main awaiting deploy + post-deploy UI smoke. v1.14 Score-Based Opening Insights shipped 2026-04-29 with 3 phases (75, 76, 77), 16 plans, delivered via PRs #69, #70, #71 (inline confidence-mute hotfix), #72, #73 (quick task). 73 phases total before v1.15 (+4 inserted: 27.1, 28.1, 41.1, 57.1, 71.1); v1.15 adds 2 more (78, 79) for 75 total.
 
 ## Key Context
 
@@ -36,8 +41,9 @@ Fourteen milestones complete (v1.0–v1.14). v1.15 opened 2026-05-02 with a sing
 - v1.11 LLM stack: pydantic-ai Agent with env-var-driven model selection (`PYDANTIC_AI_MODEL_INSIGHTS`), `genai-prices` for cost accounting, generic `llm_logs` Postgres table
 - v1.12 Benchmark DB: separate PostgreSQL 18 instance on port 5433 — used by v1.15 as the first backfill target before prod; SEED-002 / SEED-006 still pending full ingest
 - v1.14 score plumbing: trinomial Wald 95% half-width drives `confidence: "low" | "medium" | "high"`; `OpeningInsightFinding` and `NextMoveEntry` payloads expose `score`, `confidence`, `p_value`. `compute_confidence_bucket` is the single shared helper (CI structural assertion). `arrowColor.ts` and backend constants are kept in lock-step by `tests/services/test_opening_insights_arrow_consistency.py`.
-- v1.15 inputs: `eval_cp` / `eval_mate` columns already exist on `game_positions` (white-perspective, set in `app/services/zobrist.py:170-220` from lichess `%eval`). Only ~22% of prod positions have eval today (lichess subset). Backfill targets endgame span entries only — `MIN(ply)` of each `(game_id, endgame_class)` group with `count(ply) ≥ ENDGAME_PLY_THRESHOLD`.
-- v1.15 source report: `reports/conv-recov-validation-2026-05-02.md` — proxy holds at ~81.5% agreement vs Stockfish on the populated subset, but misses ~24% of substantive material-edge sequences. Queen and pawnless classes underperform structurally. ~1.5M positions × 35 ms at depth 15 ≈ 2 hours on 8 cores for the benchmark backfill.
+- v1.15 outputs (post-cutover, on benchmark + prod): every `game_positions` row carries a `phase` SmallInteger (0=opening, 1=middlegame, 2=endgame) computed from existing `piece_count` + `backrank_sparse` + `mixedness` via Python port of lichess Divider.scala. Endgame span-entry rows (`MIN(ply)` per `(game_id, endgame_class)` with `count(ply) ≥ ENDGAME_PLY_THRESHOLD`) and middlegame entry rows (`MIN(ply)` per game where `phase = 1`) carry Stockfish eval at depth 15 in `eval_cp` / `eval_mate`. Endgame classification thresholds directly on eval (±100 cp, color-flipped to user perspective) — proxy code path removed entirely.
+- v1.15 source report: `reports/conv-recov-validation-2026-05-02.md` (historical baseline that motivated the cutover — proxy held at ~81.5% agreement vs Stockfish, missed ~24% of substantive material-edge sequences). Post-cutover comparison is moot: proxy is gone (REFAC-05), so `/conv-recov-validation` Skill was deleted on 2026-05-03 and PHASE-VAL-01 / VAL-01 marked rescinded.
+- v1.15 deployed code: `app/services/engine.py` (async Stockfish wrapper, lifespan-managed); `scripts/backfill_eval.py` (idempotent + resumable backfill driver, parallelised via `EnginePool` per quick-task `260503-0t8`); `_classify_endgame_bucket(eval_cp, eval_mate, user_color)` in endgame service; alembic heads `1efcc66a7695` (phase column) + `c92af8282d1a` (ix_gp_user_endgame_game reshape).
 
 ## Accumulated Context
 
@@ -97,6 +103,10 @@ Carried forward from v1.11 close (still relevant):
 - v1.14 shipped 2026-04-29 with 3 phases (75, 76, 77), 16 plans, delivered via PRs #69, #70, #71 (inline confidence-mute hotfix), #72, #73 (quick task). INSIGHT-UI-04 descoped per Phase 76 D-04.
 - 2026-05-02: v1.15 opened — single-phase milestone (Phase 78). Source: `reports/conv-recov-validation-2026-05-02.md`. All 16 v1.15 requirements (ENG-01..03, FILL-01..04, IMP-01..02, REFAC-01..05, VAL-01..02) mapped to Phase 78. SEED-010 Library gated until v1.15 ships.
 - 2026-05-02: Phase 79 added to v1.15 — position-phase classifier (opening/middlegame/endgame) via lichess Divider port plus middlegame Stockfish eval. Phase 78's operational backfill (benchmark + prod) and deploy moved to a single combined run after phase 79 ships, so one backfill pass populates both endgame and middlegame eval entries. Phase 78 stays unmerged in the meantime.
+- 2026-05-03: Phase 80 added to v1.15 — first downstream consumer of Phase 79 data. Adds three columns to Openings → Stats subtab tables (bookmarked + most-played): avg eval at middlegame entry ± std (user-perspective), one-sample t-test confidence (low/medium/high, 10-game minimum threshold reused from opening insights), and avg clock diff at middlegame entry (mirrors endgame-entry pattern). Depends on Phase 79 backfill landing on prod. Source brainstorm: `.planning/notes/phase-aware-analytics-ideas.md`.
+- 2026-05-03: Phase 80 moved out of v1.15 into a new milestone **v1.16 Stockfish Eval Analyses** (planned, multi-phase). Rationale: keep v1.15 focused on the eval-based endgame classification cutover (78+79 backfill+deploy), and bundle downstream consumers of the new Stockfish evals (endgame span-entry + middlegame-entry `eval_cp`/`eval_mate`) into a dedicated milestone so v1.15 can ship as soon as the cutover is verified. v1.16 entry criterion: v1.15 shipped (Phase 79 backfill landed on prod). Phase 80 is the first slot; further phases will be added from `.planning/notes/phase-aware-analytics-ideas.md` and other brainstorms.
+- 2026-05-03: v1.15 cutover (Phases 78 + 79) — combined operator cutover ran rounds 1 (dev DB smoke, user 28), 2 (benchmark DB full backfill — phase column UPDATE pass + endgame span-entry eval pass + middlegame entry eval pass; PHASE-INV-01 = 0), 3 (prod DB full backfill via SSH tunnel; PHASE-INV-01 = 0). Draft PR #78 opened against main (40+ commits, +7093 / −2176, 54 files). PHASE-VAL-01 / VAL-01 rescinded as moot — proxy removed in Phase 78 REFAC, so the proxy-vs-Stockfish agreement metric is undefined; `/conv-recov-validation` Skill deleted from `~/.claude/skills/`. PHASE-VAL-02 (operational sanity that backfill populated rows correctly) satisfied by PHASE-INV-01 = 0. Remaining: bin/deploy.sh on the merge, post-deploy UI smoke (VAL-02 / VAL-03) on 3-5 representative test users.
+- 2026-05-03: B-1 ordering deviation — prod backfill (Round 3) ran before the combined PR + bin/deploy.sh, against the 79-04-PLAN sequence. Operator confirmed "already handled, no action" via /gsd-progress dispatcher. Mitigation specifics (paused traffic / delta backfill / minimal window) not documented in 79-04-SUMMARY (TBD on milestone retro).
 
 ### Pending Todos
 
@@ -106,7 +116,8 @@ Carried forward from v1.11 close (still relevant):
 ### Blockers/Concerns
 
 - Backfill batch_size MUST be 10 games (~400 rows) per commit — prior OOM at batch_size=50 (production incident)
-- Prod backfill run sequencing: benchmark first → operator validates → prod (FILL-03). Do not run prod backfill blindly.
+- Prod backfill sequencing concern (FILL-03) is closed for v1.15 — prod backfill ran post-benchmark on 2026-05-03. For future eval-style backfills, keep the benchmark-first → operator-validates → prod ordering as the default.
+- v1.15 deploy outstanding — until `bin/deploy.sh` lands the combined PR #78, prod has the new alembic heads (1efcc66a7695, c92af8282d1a) applied (manually during Round 3) but is still running pre-cutover code. Any prod-side schema-aware code change before deploy should account for this temporary mismatch.
 
 ### Quick Tasks Completed
 
@@ -126,6 +137,8 @@ Carried forward from v1.11 close (still relevant):
 | 260428-v9i | Switch opening insights ranking from Wald CI bound to Wilson score interval bound | 2026-04-28 | 0715fda | [260428-v9i-switch-opening-insights-ranking-from-wal](./quick/260428-v9i-switch-opening-insights-ranking-from-wal/) |
 | 260429-gmj | Insights finding cards: arrow for after-move on mini board | 2026-04-29 | de187ed | [260429-gmj-insights-finding-cards-arrow-for-after-m](./quick/260429-gmj-insights-finding-cards-arrow-for-after-m/) |
 | 260429-ty5 | Replace Opponent Strength ToggleGroup with dual-handle range slider + 4 preset chips (Spike 001) | 2026-04-29 | 124237b | [260429-ty5-opponent-strength-slider](./quick/260429-ty5-opponent-strength-slider/) |
+| 260503-0t8 | Speed up scripts/backfill_eval.py with parallel Stockfish EnginePool, batched UPDATE, and group-by-game PGN parsing (--workers N, default 1) | 2026-05-03 | d1346b4 | [260503-0t8-speed-up-scripts-backfill-eval-py-with-p](./quick/260503-0t8-speed-up-scripts-backfill-eval-py-with-p/) |
+| 260503-fef | Add equal-footing opponent filter (abs(opp - user) <= 100) to /benchmarks SKILL §2/§3/§6 + capture framing decision in note (gsd-fast, no quick/ dir) | 2026-05-03 | 6773475 | n/a |
 
 ---
-Last activity: 2026-05-02 — Plan 78-05 (endgame refactor, eval_cp/eval_mate) complete. _classify_endgame_bucket added; three repository queries rewritten; Alembic migration c92af8282d1a created. Current plan: 2 of 6 (78-06 cutover execution is next).
+Last activity: 2026-05-03 — v1.15 (Phases 78 + 79) drafted as PR #78. Operator-driven cutover (rounds 1-3) complete on dev / benchmark / prod. PHASE-VAL-01 / VAL-01 rescinded as moot (proxy removed → metric undefined; /conv-recov-validation Skill deleted). Remaining before mark-ready: full STATE refresh (this commit), 79-04-PLAN test-plan checkboxes, post-deploy UI smoke (VAL-02 / VAL-03). Earlier same day: 260503-fef (equal-footing benchmark filter), 260503-0t8 (backfill_eval.py parallelised via EnginePool).

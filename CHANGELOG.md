@@ -8,14 +8,33 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+- Phase 79: Per-position `phase` column on `game_positions` (`0=opening`, `1=middlegame`, `2=endgame`) computed via a Python port of [lichess `Divider.scala`](https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/Divider.scala) using existing `piece_count`, `backrank_sparse`, and `mixedness` inputs (no second board scan). Populated on every new import and backfilled across benchmark + prod.
+- Phase 79: Middlegame entry position (`MIN(ply)` of `phase = 1` per game) is now Stockfish-evaluated at depth 15 alongside endgame span-entry positions, populated into the existing `eval_cp` / `eval_mate` columns. Substrate for v1.16 opening-stats analyses.
+- Phase 78: Pinned Stockfish sf_17 AVX2 binary in the backend Docker image (SHA-256 `6c9aaaf4...341cdde`); CI installs `stockfish` via apt so engine wrapper tests run. `STOCKFISH_PATH` env var threaded end-to-end.
+- Phase 78: `app/services/engine.py` — async-friendly Stockfish wrapper with FastAPI lifespan integration (`start_engine` / `stop_engine`, idempotent, depth-15 `evaluate()` API).
+- Phase 78: `scripts/backfill_eval.py` — idempotent + resumable backfill driver (skip-where-NULL, COMMIT-every-100, `--db dev/benchmark/prod`, `--user-id`, `--limit`, `--dry-run`, `--workers N` for parallel evaluation, `--timeout` per-eval override).
+
 ### Changed
+- Phase 78: Endgame Conversion / Parity / Recovery classification migrated from the material-imbalance + 4-ply persistence proxy to direct Stockfish-eval thresholding (±100 cp on `eval_cp`, color-flipped to user perspective; `eval_mate` short-circuits to ±1 000 000 cp). Hard cutover, proxy code path removed entirely. Closes the structural gap on Queen and pawnless classes where the proxy underperformed (~24% miss rate on substantive material-edge sequences per the 2026-05-02 baseline).
+- Phase 78: New game imports populate `eval_cp` / `eval_mate` on per-class span-entry rows during the import pass (post-`bulk_insert_positions`, same transaction). Adds well under 1 s to the typical-game import path. Existing lichess `%eval` annotations preserved, never overwritten.
+- Phase 78: `_classify_endgame_bucket(eval_cp, eval_mate, user_color)` is now the single helper for endgame conv/parity/recov classification. SQL projects raw white-perspective eval; service layer applies the user-color sign flip.
+- Phase 78: Alembic `c92af8282d1a` reshapes `ix_gp_user_endgame_game INCLUDE` from `material_imbalance` to `eval_cp` / `eval_mate` so rewritten endgame queries stay index-only.
 - Quick task 260501-s0u: Clock-pressure neutral band tightened from ±10pp to ±5pp based on pooled benchmark data (reports/benchmarks-2026-05-01.md).
 - Quick task 260501-s0u: Recovery gauge typical band widened from [25%, 35%] to [25%, 40%] across all endgame classes based on pooled p25/p75 from benchmark data.
 - Quick task 260501-s0u: Endgame type breakdown replaces grouped WDL bar chart with six per-class Conversion/Recovery mini-gauge cards, each using class-specific typical bands sourced from benchmark data (Queen Conversion ~78%, Minor Piece Recovery ~36%, etc.).
 - Quick task 260501-s0u: LLM endgame insights prompt (v18) reframes Conversion/Recovery narration as delta-from-class-baseline rather than absolute percentages, so observations like "65% Conversion" are contextualised against the class-specific typical midpoint.
+- Quick task 260503: Endgame gauge typical bands recalibrated from the 2026-05-03 benchmark report (recovery upper bound 0.40 → 0.36, endgame_skill 0.45 → 0.47 lower bound, per-class rook + pawn recovery and pawn conversion bands tightened in lockstep).
+- Quick task 260503-fef: `/benchmarks` skill §2/§3/§6 now apply an equal-footing opponent filter (`abs(opp_rating - user_rating) ≤ 100`) so population baselines reflect peer-vs-peer matchups rather than mixed-strength noise.
+- Quick task 260503-0t8: `scripts/backfill_eval.py` parallelised via a new `EnginePool` (`--workers N`), batched UPDATE writes, and group-by-game PGN parsing.
 
 ### Removed
+- Phase 78: `_MATERIAL_ADVANTAGE_THRESHOLD`, `PERSISTENCE_PLIES`, and the `array_agg(... ORDER BY ply)[PERSISTENCE_PLIES + 1]` contiguity case-expression — no proxy-classification path remains in the codebase. `material_imbalance` column retained on `game_positions` for other consumers (e.g. `tests/test_aggregation_sanity.py`).
 - Quick task 260501-s0u: Win Rate by Endgame Type timeline chart removed from the Endgame page.
+
+### Tests
+- Phase 78: TDD coverage for `app/services/engine.py` (idempotent start/stop, restart-failure swallow, evaluate-without-start contract); for `scripts/backfill_eval.py` (idempotency, dry-run, resume); for the import-time eval pass (`tests/services/test_import_service_eval.py`).
+- Phase 79: 11 Divider-sourced parity assertions in `tests/test_position_classifier.py` (matches lichess `Divider.scala` output on a curated FEN fixture set); Wave-0 RED/GREEN tests for `PlyData.phase` (`tests/test_zobrist.py`) and bulk-insert phase writes (`tests/test_import_service.py`).
 
 ## [v1.14] Score-Based Opening Insights — 2026-04-29
 

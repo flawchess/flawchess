@@ -19,19 +19,24 @@ EndgameLabel = Literal["Rook", "Minor Piece", "Pawn", "Queen", "Mixed", "Pawnles
 class ConversionRecoveryStats(BaseModel):
     """Inline conversion/recovery stats for one endgame category (D-06, D-08, D-09).
 
-    Conversion: win rate when user entered this endgame type with material advantage.
-    Recovery: draw+win rate when user entered this endgame type with material disadvantage.
+    Buckets are split by the Stockfish evaluation at the endgame-entry ply
+    (REFAC-02): Conversion = user entered with eval >= +1.0 (>= +100 cp),
+    Recovery = user entered with eval <= -1.0 (<= -100 cp). The old material
+    imbalance + 4-ply persistence proxy is gone — eval coverage is 100%.
+
+    Conversion: win rate when user entered this endgame type with eval advantage.
+    Recovery: draw+win rate when user entered this endgame type with eval deficit.
     Both are computed per endgame type (D-11), not per game phase.
     """
 
-    conversion_pct: float  # win rate when up material entering endgame (0-100), per D-08
-    conversion_games: int  # games where user entered this endgame type with material advantage
+    conversion_pct: float  # win rate when user entered with eval >= +1.0 (0-100), per D-08
+    conversion_games: int  # games where user entered this endgame type with eval >= +1.0
     conversion_wins: int  # wins among those games
     conversion_draws: int  # draws among those games
     conversion_losses: int  # losses among those games (= conversion_games - wins - draws)
 
-    recovery_pct: float  # draw+win rate when down material entering endgame (0-100), per D-09
-    recovery_games: int  # games where user entered this endgame type with material disadvantage
+    recovery_pct: float  # draw+win rate when user entered with eval <= -1.0 (0-100), per D-09
+    recovery_games: int  # games where user entered this endgame type with eval <= -1.0
     recovery_saves: int  # draws+wins among those games (kept for backward compat)
     recovery_wins: int  # wins among those games
     recovery_draws: int  # draws among those games
@@ -170,17 +175,19 @@ MaterialBucket = Literal["conversion", "parity", "recovery"]
 
 
 class MaterialRow(BaseModel):
-    """One row in the material-stratified WDL table (section 2 of endgame-analysis-v2.md).
+    """One row in the eval-stratified WDL table (section 2 of endgame-analysis-v2.md).
 
     Represents the user's performance when entering endgames with a specific
-    material imbalance that persists 4 plies into the endgame:
-    conversion (>= +1 pawn preserved), parity, or recovery (<= -1 pawn preserved).
-    Games where the imbalance does not persist fall into the "parity" bucket to
-    filter out transient noise from piece trades at the endgame boundary.
+    Stockfish evaluation at the endgame-entry ply (REFAC-02 \u2014 material_imbalance
+    + 4-ply persistence proxy retired in favor of 100% Stockfish eval coverage):
+    conversion (eval >= +1.0), parity (eval between -1.0 and +1.0), or
+    recovery (eval <= -1.0). The bucket name is kept as `MaterialBucket` for
+    schema/wire compatibility, but the underlying signal is engine eval, not
+    material imbalance.
     """
 
     bucket: MaterialBucket
-    label: str  # "Conversion (\u2265 +1)" | "Parity" | "Recovery (\u2264 \u22121)"
+    label: str  # "Conversion (\u2265 +1.0)" | "Parity" | "Recovery (\u2264 \u22121.0)"
     games: int
     win_pct: float  # 0-100
     draw_pct: float  # 0-100
@@ -232,12 +239,15 @@ class ScoreGapTimelinePoint(BaseModel):
 
 
 class ScoreGapMaterialResponse(BaseModel):
-    """Endgame score difference + material-stratified WDL table (Phase 53).
+    """Endgame score difference + eval-stratified WDL table (Phase 53; REFAC-02 cutover).
 
     endgame_score: user's score (0.0-1.0) in games that reached an endgame.
     non_endgame_score: user's score in games that never reached an endgame.
     score_difference: endgame_score - non_endgame_score (signed, can be negative).
-    material_rows: 3-row table — conversion / parity / recovery — always present.
+    material_rows: 3-row table — conversion / parity / recovery — split by the
+        Stockfish eval at the endgame-entry ply (>= +1.0 / between -1.0 and
+        +1.0 / <= -1.0). Field name kept as `material_rows` for wire-format
+        compatibility; the underlying signal is engine eval, not material.
 
     Phase 60: each MaterialRow carries an opponent_score (1 - user_score[swap_bucket])
     and opponent_games. overall_score was removed; it was only consumed by the old

@@ -87,6 +87,12 @@ class GamePosition(Base):
     # Lichess mixedness score: measures how interleaved white/black pieces are (0-~400)
     mixedness: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
 
+    # Lichess Divider.scala phase classification: 0=opening, 1=middlegame, 2=endgame.
+    # Nullable column — populated by import-path code from import time forward; existing
+    # rows are populated by scripts/backfill_eval.py (PHASE-FILL-01). Nullability is
+    # transient and closes out post-backfill. PHASE-INV-01: phase=2 ⟺ endgame_class IS NOT NULL.
+    phase: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+
     # Engine analysis: per-move eval from lichess %eval PGN annotations (NULL for chess.com and unanalyzed games)
     eval_cp: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     eval_mate: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)

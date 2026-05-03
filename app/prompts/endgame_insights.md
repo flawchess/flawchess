@@ -251,15 +251,17 @@ When `[weakest-type]` is emitted, lead the section with the named type (use `sco
 
 These definitions match the "Endgame statistics concepts" panel shown to the user at the top of the Endgame page. Use these terms exactly as defined; do not invent variants.
 
-- **Endgame phase**: positions where the total count of major and minor pieces (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not counted. This follows the Lichess definition. A game is only counted as having an endgame phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical transitions through endgame-like material are treated as "no endgame".
+- **Endgame phase**: positions where the total count of major and minor pieces (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not counted. This follows the Lichess definition. A game is only counted as having an endgame phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical transitions from middlegame into a checkmate are treated as "no endgame".
 
 - **Endgame types**: Rook, Minor Piece (bishops/knights), Pawn (king and pawns only), Queen, and Mixed (two or more piece types). Use these exact labels in narration. (Pawnless positions exist internally but are hidden in the UI and filtered out of this payload — do not mention Pawnless.)
 
 - **Endgame sequence**: a continuous stretch of at least 3 full moves (6 half-moves) spent in a single endgame type. A single game can produce multiple sequences — e.g. a rook endgame where the rooks get traded becomes a pawn endgame, giving one rook sequence and one pawn sequence. Sequences drive the Endgame Type Breakdown, so a single game can appear under more than one type. Do NOT describe per-type counts as if they sum to the total game count.
 
-- **Conversion**: percentage of games where the user entered the endgame with a material advantage of at least 1 point (persisted for at least 2 full moves) and went on to win. Measures how well the user closes out winning endgames.
+- **Conversion**: percentage of games where the user entered the endgame with a Stockfish evaluation of +1.0 or better (user ahead by at least roughly one pawn of advantage) and went on to win. Measures how well the user closes out winning endgames.
 
-- **Recovery**: percentage of games where the user entered the endgame with a material deficit of at least 1 point (persisted for at least 2 full moves) and drew or won. Measures how well the user defends losing endgames.
+- **Parity**: percentage of games where the user entered the endgame with a Stockfish evaluation between -1.0 and +1.0 (roughly balanced). Score counts draws as half. Measures performance in balanced endgames.
+
+- **Recovery**: percentage of games where the user entered the endgame with a Stockfish evaluation of -1.0 or worse (user behind by at least roughly one pawn of disadvantage) and drew or won. Measures how well the user defends losing endgames.
 
 Conversion and Recovery rates usually reflect the user's performance against opponents at their rating level. As rating changes, the user faces stronger or weaker opponents, so trends may not directly indicate absolute improvement. Note this caveat when narrating Conversion/Recovery trends, but do NOT instruct the user to change filter settings — that's the user's call.
 
@@ -280,15 +282,15 @@ Interpret each metric using the definitions below. These match the user-facing i
   - Scale: whole-number percentage in `[0, 100]`.
   - Only emitted in subsection `score_timeline`.
 
-- **conversion_win_pct** (UI label: "Conversion (Win)"): user's **Win %** in the Conversion material bucket — games where the user entered the endgame leading by ≥ 1 point (persisted ≥ 2 full moves). Only wins count; draws do NOT count as half.
+- **conversion_win_pct** (UI label: "Conversion (Win)"): user's **Win %** in the Conversion eval bucket — games where the user entered the endgame with a Stockfish evaluation of ≥ +1.0. Only wins count; draws do NOT count as half.
   - Scale: whole-number percentage in `[0, 100]`.
   - Tied to exactly **one** bucket: the `dimension.bucket` field is always `"conversion"` for this metric.
 
-- **parity_score_pct** (UI label: "Parity (Score)"): user's **Score %** in the Parity material bucket — games entered at roughly equal material. Draws count as half.
+- **parity_score_pct** (UI label: "Parity (Score)"): user's **Score %** in the Parity eval bucket — games entered with a Stockfish evaluation between -1.0 and +1.0. Draws count as half.
   - Scale: whole-number percentage in `[0, 100]`.
   - Tied to exactly **one** bucket: the `dimension.bucket` field is always `"parity"` for this metric.
 
-- **recovery_save_pct** (UI label: "Recovery (Save)"): user's **Save % (draw or win)** in the Recovery material bucket — games where the user entered the endgame trailing by ≥ 1 point (persisted ≥ 2 full moves). Draws count as a save.
+- **recovery_save_pct** (UI label: "Recovery (Save)"): user's **Save % (draw or win)** in the Recovery eval bucket — games where the user entered the endgame with a Stockfish evaluation of ≤ -1.0. Draws count as a save.
   - Scale: whole-number percentage in `[0, 100]`.
   - Tied to exactly **one** bucket: the `dimension.bucket` field is always `"recovery"` for this metric.
   - **Cohort context:** Recovery is harder than Conversion by definition — the typical bands (bucket-level 25-40, per-type bands range from queen 20-30 to minor_piece 31-41) already reflect this. A weak-zone Recovery value is at or below the cohort population average for that scope, not a crisis. Narrate weak Recovery as a consistent defensive pattern rather than a per-type alarm.

@@ -17,7 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
-import { EndgamePerformanceSection, MATERIAL_ADVANTAGE_POINTS, PERSISTENCE_MOVES, EndgameScoreOverTimeChart } from '@/components/charts/EndgamePerformanceSection';
+import { EndgamePerformanceSection, EndgameScoreOverTimeChart } from '@/components/charts/EndgamePerformanceSection';
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
 import { EndgameScoreGapSection } from '@/components/charts/EndgameScoreGapSection';
 import { EndgameClockPressureSection, ClockDiffTimelineChart } from '@/components/charts/EndgameClockPressureSection';
@@ -318,8 +318,7 @@ export function EndgamesPage() {
                       <strong>Endgame phase:</strong> positions where the total count of major and minor pieces
                       (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
                       counted. This follows the Lichess definition. A game is only counted as having an endgame
-                      phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical
-                      transitions through endgame-like material are treated as no endgame.
+                      phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical transitions from middlegame into a checkmate are treated as no endgame.
                     </p>
                     <p>
                       <strong>Endgame types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
@@ -334,15 +333,18 @@ export function EndgamesPage() {
                     </p>
                     <p>
                       <strong>Conversion:</strong> percentage of games where you entered the endgame with a
-                      material advantage of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted
-                      for at least {PERSISTENCE_MOVES} full moves) and went on to win.
-                      Measures how well you close out winning endgames.
+                      Stockfish evaluation of +1.0 or better (you ahead by at least one pawn of advantage)
+                      and went on to win. Measures how well you close out winning endgames.
+                    </p>
+                    <p>
+                      <strong>Parity:</strong> percentage of games where you entered the endgame with a
+                      Stockfish evaluation between -1.0 and +1.0 (roughly balanced). Score counts draws as
+                      half. Measures how well you handle balanced endgames.
                     </p>
                     <p>
                       <strong>Recovery:</strong> percentage of games where you entered the endgame with a
-                      material deficit of at least {MATERIAL_ADVANTAGE_POINTS} point (persisted for
-                      at least {PERSISTENCE_MOVES} full moves) and drew or won. Measures how well you defend losing
-                      endgames.
+                      Stockfish evaluation of -1.0 or worse (you behind by at least one pawn of disadvantage)
+                      and drew or won. Measures how well you defend losing endgames.
                     </p>
                     <p>
                       Conversion and Recovery rates usually reflect your performance against opponents at your rating
