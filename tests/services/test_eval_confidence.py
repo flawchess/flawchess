@@ -1,18 +1,19 @@
 """Unit tests for app.services.eval_confidence.compute_eval_confidence_bucket.
 
 Bucketing rule under test:
-  - n < 10                        -> "low"  (unreliable-stats gate)
-  - n >= 10 and p_value < 0.05    -> "high"
-  - n >= 10 and p_value < 0.10    -> "medium"
-  - n >= 10 and p_value >= 0.10   -> "low"
+  - n < EVAL_CONFIDENCE_MIN_N (20) -> "low"  (unreliable-stats gate)
+  - n >= 20 and p_value < 0.05     -> "high"
+  - n >= 20 and p_value < 0.10     -> "medium"
+  - n >= 20 and p_value >= 0.10    -> "low"
 
-p_value is the two-sided Wald z-test p for H0: mean == 0, computed as
-erfc(|z| / sqrt(2)) where z = mean / se. The two-sided framing matches the
-"is the avg eval different from zero?" question (both positive and negative
-deviations are meaningful).
+p_value is the two-sided Wald z-test p for H0: mean == baseline_cp, computed as
+erfc(|z| / sqrt(2)) where z = (mean - baseline_cp) / se. baseline_cp defaults
+to 0 (legacy framing); color-aware callers pass EVAL_BASELINE_CP_WHITE (+28)
+for white-color cells and EVAL_BASELINE_CP_BLACK (-20) for black-color cells.
 
 The helper returns a 4-tuple (confidence, p_value, mean, ci_half_width).
-ci_half_width = 1.96 * se (95% CI half-width for the bullet chart whisker).
+ci_half_width = 1.96 * se (95% CI half-width for the bullet chart whisker),
+centered on the observed mean — independent of baseline_cp.
 """
 
 import math
@@ -20,6 +21,11 @@ import math
 import pytest
 
 from app.services.eval_confidence import compute_eval_confidence_bucket
+from app.services.opening_insights_constants import (
+    EVAL_BASELINE_CP_BLACK,
+    EVAL_BASELINE_CP_WHITE,
+    EVAL_CONFIDENCE_MIN_N,
+)
 
 
 # --- n == 0 and n == 1 edge cases ----------------------------------------
@@ -43,31 +49,31 @@ def test_n_one_returns_low_with_mean() -> None:
     assert ci_half_width == 0.0
 
 
-# --- N < 10 gate ----------------------------------------------------------
+# --- N < MIN gate (20) ----------------------------------------------------
 
 
 def test_n_below_min_returns_low_even_with_strong_mean() -> None:
-    """n=9 with mean=100 and variance=0: SE=0 would give p=0 -> "high", but N gate forces "low"."""
-    # mean = 900 / 9 = 100 cp; sumsq = 9 * 100^2 = 90000 -> variance = 0
-    confidence, p_value, mean, ci_half_width = compute_eval_confidence_bucket(
-        eval_sum=900.0, eval_sumsq=81000.0, n=9
+    """n=19 with mean=100 and variance=0: SE=0 would give p=0 -> "high", but N gate forces "low"."""
+    # n=19 sits exactly one below the gate; the precise value of variance doesn't matter
+    # because N < MIN forces "low" first.
+    confidence, _p, mean, _ci = compute_eval_confidence_bucket(
+        eval_sum=1900.0, eval_sumsq=190000.0, n=19
     )
     assert confidence == "low"
     assert mean == pytest.approx(100.0, abs=1e-9)
-    # variance = (81000 - 9 * 100 * 100) / 8 = (81000 - 90000) / 8 — wait, that's negative.
-    # Correct: eval_sumsq must be n * mean^2 for zero variance.
-    # 9 * 100^2 = 90000, so use sumsq=90000 for zero variance.
-    # With sumsq=81000: mean=100 but variance = max(0, (81000 - 90000)/8) = max(0, -1125) = 0
-    assert ci_half_width == 0.0  # SE == 0 -> ci_half_width == 0
 
 
-def test_n_below_min_distinct_9() -> None:
-    """Any n=9 row is "low", regardless of mean magnitude."""
-    # n=9, mean=50 cp, some positive variance: still "low" because N gate.
-    eval_sum = 450.0
-    eval_sumsq = 25000.0  # mean=50, sumsq > n*mean^2 so variance > 0
-    confidence, _p, _mean, _ci = compute_eval_confidence_bucket(eval_sum, eval_sumsq, 9)
+def test_n_below_min_distinct_19() -> None:
+    """Any n < 20 row is "low", regardless of mean magnitude."""
+    eval_sum = 950.0  # mean = 50 cp at n=19
+    eval_sumsq = 60000.0  # variance > 0 (sumsq > n * mean^2 = 47500)
+    confidence, _p, _mean, _ci = compute_eval_confidence_bucket(eval_sum, eval_sumsq, 19)
     assert confidence == "low"
+
+
+def test_min_n_constant_is_20() -> None:
+    """Belt-and-braces: the gate constant is 20 (verified to lock the value)."""
+    assert EVAL_CONFIDENCE_MIN_N == 20
 
 
 # --- N >= 10 buckets by p-value ------------------------------------------
@@ -220,3 +226,84 @@ def test_two_sided_p_value_symmetric() -> None:
     # Mean and ci are identical in magnitude, opposite in sign for mean only
     assert mean_pos == pytest.approx(-mean_neg, abs=1e-9)
     assert ci_pos == pytest.approx(ci_neg, abs=1e-9)
+
+
+# --- Color-specific baseline (engine-asymmetry correction) ---------------
+
+
+def test_baseline_cp_shifts_test_reference() -> None:
+    """A mean equal to the baseline yields p=1.0 (no signal); same mean tested against
+    baseline=0 would yield a low p-value."""
+    n = 100
+    mean_cp = float(EVAL_BASELINE_CP_WHITE)  # +28 cp
+    sd_cp = 50.0
+    variance = sd_cp * sd_cp
+    eval_sum = float(n * mean_cp)
+    eval_sumsq = variance * (n - 1) + n * mean_cp * mean_cp
+
+    # Against baseline=0: z=28/5=5.6 -> p essentially 0 -> "high"
+    conf_zero, p_zero, _m, _ci = compute_eval_confidence_bucket(eval_sum, eval_sumsq, n)
+    assert conf_zero == "high"
+    assert p_zero < 0.001
+
+    # Against the white baseline (+28): z=0 -> p=1.0 -> "low"
+    conf_white, p_white, _m2, _ci2 = compute_eval_confidence_bucket(
+        eval_sum, eval_sumsq, n, baseline_cp=float(EVAL_BASELINE_CP_WHITE)
+    )
+    assert conf_white == "low"
+    assert p_white == pytest.approx(1.0, abs=1e-9)
+
+
+def test_baseline_cp_does_not_shift_displayed_mean_or_ci() -> None:
+    """The CI is centered on the observed mean — baseline only affects p-value/bucket."""
+    n = 100
+    mean_cp = 40.0
+    sd_cp = 100.0
+    variance = sd_cp * sd_cp
+    eval_sum = float(n * mean_cp)
+    eval_sumsq = variance * (n - 1) + n * mean_cp * mean_cp
+
+    _c1, _p1, mean_zero, ci_zero = compute_eval_confidence_bucket(eval_sum, eval_sumsq, n)
+    _c2, _p2, mean_white, ci_white = compute_eval_confidence_bucket(
+        eval_sum, eval_sumsq, n, baseline_cp=float(EVAL_BASELINE_CP_WHITE)
+    )
+    assert mean_zero == pytest.approx(mean_white, abs=1e-9)
+    assert ci_zero == pytest.approx(ci_white, abs=1e-9)
+
+
+def test_baseline_cp_zero_variance_uses_baseline_for_mean_compare() -> None:
+    """SE==0 path: p=1.0 iff mean == baseline (not iff mean == 0)."""
+    n = 30
+    # All games at exactly +28 cp (white baseline) -> variance=0
+    mean_cp = float(EVAL_BASELINE_CP_WHITE)
+    eval_sum = float(n * mean_cp)
+    eval_sumsq = float(n * mean_cp * mean_cp)
+
+    # Against the white baseline: mean == baseline -> p=1.0 -> "low"
+    conf, p, _m, ci = compute_eval_confidence_bucket(
+        eval_sum, eval_sumsq, n, baseline_cp=float(EVAL_BASELINE_CP_WHITE)
+    )
+    assert conf == "low"
+    assert p == 1.0
+    assert ci == 0.0
+
+    # Against baseline=0: mean != 0 -> p=0.0 -> "high"
+    conf2, p2, _m2, _ci2 = compute_eval_confidence_bucket(eval_sum, eval_sumsq, n)
+    assert conf2 == "high"
+    assert p2 == 0.0
+
+
+def test_black_baseline_is_negative() -> None:
+    """Sanity: a black-color cell with mean at the black baseline should not register signal."""
+    n = 100
+    mean_cp = float(EVAL_BASELINE_CP_BLACK)  # -20 cp
+    sd_cp = 50.0
+    variance = sd_cp * sd_cp
+    eval_sum = float(n * mean_cp)
+    eval_sumsq = variance * (n - 1) + n * mean_cp * mean_cp
+
+    conf, p, _m, _ci = compute_eval_confidence_bucket(
+        eval_sum, eval_sumsq, n, baseline_cp=float(EVAL_BASELINE_CP_BLACK)
+    )
+    assert conf == "low"
+    assert p == pytest.approx(1.0, abs=1e-9)

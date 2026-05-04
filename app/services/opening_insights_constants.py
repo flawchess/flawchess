@@ -50,3 +50,25 @@ OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_P: float = 0.10
 # `score_confidence.compute_confidence_bucket` is a different statistical
 # procedure and is not renamed.
 OPENING_INSIGHTS_CI_Z_95: float = 1.96
+
+# --- Phase 80 MG-entry eval test (decoupled from WDL score test) ----------
+# These constants are eval-specific and not shared with score_confidence.
+
+# Engine-asymmetry baselines for H0 in the one-sample test on signed
+# user-perspective eval at MG entry. Stockfish gives white a structural
+# advantage at the starting position which carries through to MG entry
+# (median +28 cp white-side, median -20 cp black-side on the 2026-03 Lichess
+# benchmark, n=1.25M trimmed games). Without these baselines, white-color
+# openings would systematically read as "significant advantage" and
+# black-color openings as "significant disadvantage" purely from engine
+# asymmetry — independent of user skill. See reports/eval-mg-entry-normality-2026-05-04.md.
+EVAL_BASELINE_CP_WHITE: int = 28
+EVAL_BASELINE_CP_BLACK: int = -20
+
+# N gate for the eval z-test, raised from 10 to 20 to keep the Edgeworth
+# leading-error term on the normal approximation under ~2% (the population
+# excess kurtosis of ~2.4 cp at MG entry slows CLT convergence relative to a
+# normal-data baseline). Decoupled from OPENING_INSIGHTS_CONFIDENCE_MIN_N
+# (which gates the WDL score-confidence test, where the binomial-style
+# variance is bounded and N=10 stays defensible).
+EVAL_CONFIDENCE_MIN_N: int = 20

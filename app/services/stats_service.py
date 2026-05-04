@@ -28,7 +28,26 @@ from app.schemas.stats import (
     WDLByCategory,
 )
 from app.services.eval_confidence import compute_eval_confidence_bucket
+from app.services.opening_insights_constants import (
+    EVAL_BASELINE_CP_BLACK,
+    EVAL_BASELINE_CP_WHITE,
+)
 from app.services.openings_service import recency_cutoff
+
+
+def _baseline_cp_for_color(color: Literal["white", "black"] | None) -> float:
+    """Return the H0 baseline (cp) for the eval z-test given the cell's user_color.
+
+    Stockfish gives white a structural ~+28 cp advantage at MG entry and black a
+    symmetric ~-20 cp baseline (median, 2026-03 Lichess benchmark). Mixed-color
+    cells (color=None, e.g. match_side='full' bookmarks) fall back to 0 — the
+    asymmetry partially cancels and a single baseline can't represent both.
+    """
+    if color == "white":
+        return float(EVAL_BASELINE_CP_WHITE)
+    if color == "black":
+        return float(EVAL_BASELINE_CP_BLACK)
+    return 0.0
 
 # Minimum number of games required for an opening to appear in top openings.
 MIN_GAMES_FOR_OPENING = 1
@@ -371,6 +390,7 @@ async def get_most_played_openings(
         rows: list[Row[Any]],
         position_wdl: dict[int, PositionWDL],
         phase_entry_metrics: dict[int, OpeningPhaseEntryMetrics],
+        user_color: Literal["white", "black"],
     ) -> list[OpeningWDL]:
         openings = []
         for eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses in rows:
@@ -399,7 +419,10 @@ async def get_most_played_openings(
 
             if pe is not None and pe.eval_n_mg > 0:
                 confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
-                    pe.eval_sum_mg, pe.eval_sumsq_mg, pe.eval_n_mg
+                    pe.eval_sum_mg,
+                    pe.eval_sumsq_mg,
+                    pe.eval_n_mg,
+                    baseline_cp=_baseline_cp_for_color(user_color),
                 )
                 avg_eval_pawns = mean_cp_mg / 100.0  # cp -> pawns
                 if pe.eval_n_mg >= 2:
@@ -440,20 +463,29 @@ async def get_most_played_openings(
         return openings
 
     return MostPlayedOpeningsResponse(
-        white=rows_to_openings(white_rows, white_position_wdl, white_phase_entry_metrics),
-        black=rows_to_openings(black_rows, black_position_wdl, black_phase_entry_metrics),
+        white=rows_to_openings(
+            white_rows, white_position_wdl, white_phase_entry_metrics, user_color="white"
+        ),
+        black=rows_to_openings(
+            black_rows, black_position_wdl, black_phase_entry_metrics, user_color="black"
+        ),
     )
 
 
 def _phase80_item_from_metrics(
     target_hash: str,
     pe: OpeningPhaseEntryMetrics | None,
+    user_color: Literal["white", "black"] | None,
 ) -> BookmarkPhaseEntryItem:
     """Compute the Phase 80 display fields for a single hash.
 
     Mirrors the inline finalizer in get_most_played_openings.rows_to_openings
     (D-01, D-04, D-05, D-08). Kept as a separate helper so the bookmark endpoint
     can reuse the same numerical logic without depending on the OpeningWDL row shape.
+
+    user_color: drives the color-specific H0 baseline for the eval z-test
+    (EVAL_BASELINE_CP_WHITE / BLACK). None falls back to baseline=0 for
+    mixed-color cells (match_side='full' bookmarks).
     """
     item = BookmarkPhaseEntryItem(target_hash=target_hash)
     if pe is None:
@@ -461,7 +493,10 @@ def _phase80_item_from_metrics(
 
     if pe.eval_n_mg > 0:
         confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
-            pe.eval_sum_mg, pe.eval_sumsq_mg, pe.eval_n_mg
+            pe.eval_sum_mg,
+            pe.eval_sumsq_mg,
+            pe.eval_n_mg,
+            baseline_cp=_baseline_cp_for_color(user_color),
         )
         item.avg_eval_pawns = mean_cp_mg / 100.0
         if pe.eval_n_mg >= 2:
@@ -525,7 +560,9 @@ async def get_bookmark_phase_entry_metrics(
         metrics_by_hash.update(group_metrics)
 
     items = [
-        _phase80_item_from_metrics(b.target_hash, metrics_by_hash.get(int(b.target_hash)))
+        _phase80_item_from_metrics(
+            b.target_hash, metrics_by_hash.get(int(b.target_hash)), user_color=b.color
+        )
         for b in bookmarks
     ]
     return BookmarkPhaseEntryResponse(items=items)

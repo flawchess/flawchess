@@ -252,7 +252,7 @@ Before running each section, grep the code for the constants the section's gauge
 |---|---|---|---|
 | 1 | Score gap (eg vs non-eg) + timeline | `frontend/src/components/charts/EndgamePerformanceSection.tsx` | `SCORE_GAP_NEUTRAL_MIN/MAX`, `SCORE_GAP_DOMAIN`, `SCORE_TIMELINE_Y_DOMAIN`, any `SCORE_TIMELINE_NEUTRAL_*` constants |
 | 2 | Conv / Par / Recov + Endgame Skill | `frontend/src/components/charts/EndgameScoreGapSection.tsx`, `frontend/src/generated/endgameZones.ts` | `FIXED_GAUGE_ZONES`, `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`, `ENDGAME_SKILL_ZONES` |
-| 3 | Phase-entry eval (mid + eg) | TBD — bullet chart not yet implemented (target `frontend/src/components/charts/PhaseEntryEvalSection.tsx` or similar) | TBD; section computes proposed thresholds rather than comparing to live values |
+| 3 | Phase-entry eval (mid + eg) | TBD — bullet chart not yet implemented (target `frontend/src/components/charts/PhaseEntryEvalSection.tsx` or similar). For the **color-split engine-asymmetry baselines** (consumed by the in-app z-test), grep `app/services/opening_insights_constants.py` for `EVAL_BASELINE_CP_WHITE`, `EVAL_BASELINE_CP_BLACK`, and `EVAL_CONFIDENCE_MIN_N`. | Bullet-chart bounds: TBD. Baselines: live values are `EVAL_BASELINE_CP_WHITE = 28`, `EVAL_BASELINE_CP_BLACK = -20`, `EVAL_CONFIDENCE_MIN_N = 20` (re-grep at run time — these get tuned). |
 | 4 | Clock-diff + net timeout | `frontend/src/components/charts/EndgameClockPressureSection.tsx` | `NEUTRAL_PCT_THRESHOLD`, `NEUTRAL_TIMEOUT_THRESHOLD` |
 | 5 | Time-pressure chart | `app/services/endgame_service.py::_compute_time_pressure_chart`, `EndgameTimePressureSection.tsx` | `Y_AXIS_DOMAIN`, `X_AXIS_DOMAIN`, `MIN_GAMES_FOR_CLOCK_STATS` |
 | 6 | Per-class score-diff + conv/recov | `frontend/src/components/charts/EndgameWDLChart.tsx`, `EndgameConvRecovChart.tsx` | `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`; conv/recov chart has no per-class zones today |
@@ -633,34 +633,42 @@ The `mean` / `var_samp` columns feed Cohen's d. Pooled rates come from re-aggreg
 **Question:** How does the Stockfish eval distribute *per user* at the first ply of the middlegame and at the first ply of the endgame? The output calibrates the neutral zones for the twin-tile bullet charts being designed for phase-transition eval (Phase 80 area).
 
 **Two metrics, same shape (twin tile):**
-- **Middlegame-entry eval** — per-user median signed user-POV eval at the first ply where `phase = 1`.
-- **Endgame-entry eval** — per-user median signed user-POV eval at the first ply where `phase = 2`.
+- **Middlegame-entry eval** — per-user mean signed user-POV eval at the first ply where `phase = 1`.
+- **Endgame-entry eval** — per-user mean signed user-POV eval at the first ply where `phase = 2`.
 
 ### Phase-entry definitions
 
 Both entry plies come from `game_positions.phase` (SmallInteger, `0=opening / 1=middlegame / 2=endgame`; see `app/models/game_position.py:90-94`). The endgame-entry definition is consistent with §2 / §4 / §6's `endgame_class IS NOT NULL` thanks to **PHASE-INV-01** (`phase=2 ⟺ endgame_class IS NOT NULL`). Future edits to either definition must preserve this invariant — if PHASE-INV-01 is ever broken, §3's endgame metric and the §2/§4/§6 metrics will silently drift apart.
 
-### Per-user metric: median, not mean
+### Per-user metric: mean (matches production)
 
-Per-user **median** of the signed user-POV eval (cp). Median is robust to single-game outliers (one +9.0 game can't yank a user's central tendency), and it makes clipping a *rendering-only* concern for the bullet chart rather than a load-bearing decision in the metric itself. Population stat is then p25/p50/p75 of those per-user medians — same shape as §2/§4 use on rates.
+Per-user **mean** of the signed user-POV eval (cp). The live opening-stats z-test in `app/services/eval_confidence.py:104` tests `H0: mean == baseline_cp` using `mean = eval_sum / n` — a per-game arithmetic mean. The eventual phase-entry bullet chart should display the same statistic users are being z-tested on, so the population baseline must be calibrated against per-user means, not medians. Population stat is then p25/p50/p75 of those per-user means.
+
+The earlier median-based approach was rejected on 2026-05-04 for definitional consistency with the live test. Median's outlier-robustness (one +9.0 game can't yank a user's central tendency) is not load-bearing here: a per-user mean over ≥20 endgame games with the production trim (`|eval_cp| < 2000`) and mate-exclusion is already well-bounded.
 
 ### Sign convention
 
-User-POV: `signed_cp = CASE WHEN user_color='white' THEN raw_cp ELSE -raw_cp END`. Positive values mean the user is winning at the entry ply.
+User-POV: `signed_cp = CASE WHEN user_color='white' THEN eval_cp ELSE -eval_cp END`. Positive values mean the user is winning at the entry ply.
 
-### Mate handling
+### Mate handling and outlier trim — match production exactly
 
-`coalesce(eval_cp, sign(eval_mate) * 1000)` *before* the user-POV sign flip (mate sign flips with the user just like cp). The 1000cp sentinel (≈ 10 pawns) is well past any realistic bullet-chart domain and exists only so the median ordering is well-defined when forced mate is present. **It is a sentinel for ordering, not a calibrated cp-equivalence** — the actual chart domain is decided in UI code, not here.
+The production aggregator (`app/repositories/stats_repository.py:556-560`, `has_continuous_in_domain_eval` predicate) feeds the live z-test only rows where:
+
+- `eval_cp IS NOT NULL`
+- `eval_mate IS NULL`           (mate scores excluded entirely — no sentinel)
+- `abs(eval_cp) < 2000`          (D-08 outlier trim, `EVAL_OUTLIER_TRIM_CP = 2000`)
+
+§3 must apply the **same three filters** so per-user means are computed over the same row set the live test consumes. Mate scores are reported separately as a footnote count, but never folded into the mean (no sentinel). NULL-eval rows are dropped (not routed to 0). Outlier rows (`|eval_cp| >= 2000`) are dropped (not clipped).
 
 ### Sample floor
 
-≥ 20 games per user with the entry ply present (matches §4). Two notes on the asymmetry:
+≥ 20 games per user with a continuous in-domain eval at the entry ply (matches `EVAL_CONFIDENCE_MIN_N = 20` in `opening_insights_constants.py` — same gate the live z-test uses). Two notes on the asymmetry:
 - **Middlegame entry retains ≈ all qualifying games** — almost every rated game reaches `phase = 1`.
 - **Endgame entry retains the games that reach `phase = 2`** — closer to the §2/§4-style endgame-reaching subset, but *without* the §2/§4 `≥ 6 endgame plies` requirement (§3's metric only needs the entry ply itself to exist). Per-cell sample sizes for the endgame metric will therefore be slightly looser than §2/§4's.
 
 ### Eval coverage sanity check
 
-Reuse the §2-area "Eval coverage check" CTE pattern, parameterized over phase: substitute `WHERE phase = 1` (and drop the `HAVING count(*) >= 6`) for middlegame entry, `WHERE phase = 2` for endgame entry. Lichess analyzed games typically have eval from move 1, but partial-analysis games can be sparser at early plies — flag in the report header if **middlegame-entry coverage is materially below endgame-entry coverage** (e.g. >2 pp gap). NULL-eval entry plies are dropped, not routed to a sentinel, so coverage gaps bias the per-user median toward whichever subset of games happens to be evaled.
+Reuse the §2-area "Eval coverage check" CTE pattern, parameterized over phase: substitute `WHERE phase = 1` (and drop the `HAVING count(*) >= 6`) for middlegame entry, `WHERE phase = 2` for endgame entry. Lichess analyzed games typically have eval from move 1, but partial-analysis games can be sparser at early plies — flag in the report header if **middlegame-entry coverage is materially below endgame-entry coverage** (e.g. >2 pp gap). NULL-eval and mate-eval entry plies are excluded from the per-user mean (matching production), so a coverage drop biases the mean toward whichever subset of games happens to have continuous in-domain eval. Report mate-row prevalence as a footnote.
 
 ### Query
 
@@ -701,27 +709,31 @@ games_filtered AS (
         ) <= 100
 ),
 mid_entry AS (
+  -- Match production filter: continuous in-domain eval only (no mate, no NULL,
+  -- no |cp| >= 2000 outliers). See app/repositories/stats_repository.py:556-560.
   SELECT gf.user_id, gf.elo_bucket, gf.tc, gf.user_color,
-         coalesce(gp.eval_cp, sign(gp.eval_mate) * 1000) AS raw_cp
+         gp.eval_cp AS raw_cp
   FROM games_filtered gf
   JOIN first_middlegame fm ON fm.game_id = gf.game_id
   JOIN game_positions gp ON gp.game_id = gf.game_id AND gp.ply = fm.entry_ply
-  WHERE gp.eval_cp IS NOT NULL OR gp.eval_mate IS NOT NULL
+  WHERE gp.eval_cp IS NOT NULL
+    AND gp.eval_mate IS NULL
+    AND abs(gp.eval_cp) < 2000
 ),
 eg_entry AS (
   SELECT gf.user_id, gf.elo_bucket, gf.tc, gf.user_color,
-         coalesce(gp.eval_cp, sign(gp.eval_mate) * 1000) AS raw_cp
+         gp.eval_cp AS raw_cp
   FROM games_filtered gf
   JOIN first_endgame fe ON fe.game_id = gf.game_id
   JOIN game_positions gp ON gp.game_id = gf.game_id AND gp.ply = fe.entry_ply
-  WHERE gp.eval_cp IS NOT NULL OR gp.eval_mate IS NOT NULL
+  WHERE gp.eval_cp IS NOT NULL
+    AND gp.eval_mate IS NULL
+    AND abs(gp.eval_cp) < 2000
 ),
 mid_per_user AS (
   SELECT user_id, elo_bucket, tc,
          count(*) AS games,
-         percentile_cont(0.5) WITHIN GROUP (
-           ORDER BY CASE WHEN user_color='white' THEN raw_cp ELSE -raw_cp END
-         ) AS median_signed_cp
+         avg(CASE WHEN user_color='white' THEN raw_cp ELSE -raw_cp END) AS mean_signed_cp
   FROM mid_entry
   GROUP BY user_id, elo_bucket, tc
   HAVING count(*) >= 20
@@ -729,9 +741,7 @@ mid_per_user AS (
 eg_per_user AS (
   SELECT user_id, elo_bucket, tc,
          count(*) AS games,
-         percentile_cont(0.5) WITHIN GROUP (
-           ORDER BY CASE WHEN user_color='white' THEN raw_cp ELSE -raw_cp END
-         ) AS median_signed_cp
+         avg(CASE WHEN user_color='white' THEN raw_cp ELSE -raw_cp END) AS mean_signed_cp
   FROM eg_entry
   GROUP BY user_id, elo_bucket, tc
   HAVING count(*) >= 20
@@ -739,13 +749,13 @@ eg_per_user AS (
 SELECT
   'middlegame_entry' AS metric, elo_bucket, tc,
   count(*) AS n_users,
-  round(avg(median_signed_cp)::numeric, 1) AS mean_x,
-  round(var_samp(median_signed_cp)::numeric, 1) AS var_x,
-  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY median_signed_cp)::numeric, 1) AS p05,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY median_signed_cp)::numeric, 1) AS p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY median_signed_cp)::numeric, 1) AS p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY median_signed_cp)::numeric, 1) AS p75,
-  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY median_signed_cp)::numeric, 1) AS p95
+  round(avg(mean_signed_cp)::numeric, 1) AS mean_x,
+  round(var_samp(mean_signed_cp)::numeric, 1) AS var_x,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY mean_signed_cp)::numeric, 1) AS p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY mean_signed_cp)::numeric, 1) AS p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY mean_signed_cp)::numeric, 1) AS p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY mean_signed_cp)::numeric, 1) AS p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY mean_signed_cp)::numeric, 1) AS p95
 FROM mid_per_user
 GROUP BY elo_bucket, tc
 HAVING count(*) >= 10
@@ -753,13 +763,13 @@ UNION ALL
 SELECT
   'endgame_entry' AS metric, elo_bucket, tc,
   count(*) AS n_users,
-  round(avg(median_signed_cp)::numeric, 1) AS mean_x,
-  round(var_samp(median_signed_cp)::numeric, 1) AS var_x,
-  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY median_signed_cp)::numeric, 1) AS p05,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY median_signed_cp)::numeric, 1) AS p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY median_signed_cp)::numeric, 1) AS p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY median_signed_cp)::numeric, 1) AS p75,
-  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY median_signed_cp)::numeric, 1) AS p95
+  round(avg(mean_signed_cp)::numeric, 1) AS mean_x,
+  round(var_samp(mean_signed_cp)::numeric, 1) AS var_x,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY mean_signed_cp)::numeric, 1) AS p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY mean_signed_cp)::numeric, 1) AS p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY mean_signed_cp)::numeric, 1) AS p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY mean_signed_cp)::numeric, 1) AS p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY mean_signed_cp)::numeric, 1) AS p95
 FROM eg_per_user
 GROUP BY elo_bucket, tc
 HAVING count(*) >= 10
@@ -767,19 +777,91 @@ ORDER BY metric, elo_bucket,
          CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
 ```
 
-The `mean_x` / `var_x` columns feed Cohen's d on the per-user-median distribution; pooled marginals come from re-aggregating each `*_per_user` CTE without the `elo_bucket, tc` GROUP BY. **Sparse-cell exclusion** (`(2400, classical)`) is honored in marginals and Cohen's d aggregates per the canonical rule but cells stay in the 5×4 tables with the standard `n=N*` footnote.
+The `mean_x` / `var_x` columns feed Cohen's d on the per-user-mean distribution; pooled marginals come from re-aggregating each `*_per_user` CTE without the `elo_bucket, tc` GROUP BY. **Sparse-cell exclusion** (`(2400, classical)`) is honored in marginals and Cohen's d aggregates per the canonical rule but cells stay in the 5×4 tables with the standard `n=N*` footnote.
 
 ### Output (one block per metric: Middlegame entry, Endgame entry)
 
-1. **5×4 cell table** of per-user median signed cp (`p50 (n_users)`).
-2. **TC marginal** + **ELO marginal** percentile tables (p05 / p25 / p50 / p75 / p95).
+1. **5×4 cell table** of per-user mean signed cp (`p50 of per-user means (n_users)`).
+2. **TC marginal** + **ELO marginal** percentile tables (p05 / p25 / p50 / p75 / p95) over per-user means.
 3. **Pooled overall** — feeds the bullet-chart neutral-zone recommendation.
-4. **Recommendations** per metric:
-   - Proposed neutral-zone bounds = pooled `[p25, p75]` (round to nearest 5–10 cp for chart legibility).
+4. **Color-split engine-asymmetry baselines** — see "Color-split sub-block" below. **Mandatory subsection.**
+5. **Recommendations** per metric:
+   - Proposed neutral-zone bounds = pooled `[p25, p75]` of per-user means (round to nearest 5–10 cp for chart legibility).
    - If TC verdict = `keep`, recommend per-TC bounds (one `[p25, p75]` pair per TC).
    - If ELO verdict = `keep`, note that the bullet chart will need ELO-stratified zones (the eventual UI may already do this via the cohort selector — flag for the chart implementer).
    - **TBD comparison row**: bullet-chart components don't exist in code yet, so there is no live constant to grep against. Recommendations stand on their own and become the *initial* values when the components are built.
-5. **Collapse verdict block** per metric (TC + ELO Cohen's d on the per-user-median distribution, computed per "Collapse verdict methodology (Cohen's d)").
+6. **Collapse verdict block** per metric (TC + ELO Cohen's d on the per-user-mean distribution, computed per "Collapse verdict methodology (Cohen's d)").
+
+### Color-split sub-block (engine-asymmetry baselines)
+
+**Why**: the `eval_confidence` z-test in `app/services/eval_confidence.py` runs per (user, opening) cell with H0: mean = baseline_cp. Stockfish gives white a structural advantage at the starting position which carries through to MG entry, so a single global baseline of 0 systematically labels white-color cells as "advantage" and black-color cells as "disadvantage" purely from engine bias. The production constants `EVAL_BASELINE_CP_WHITE` and `EVAL_BASELINE_CP_BLACK` (in `app/services/opening_insights_constants.py`) are calibrated against the population values reported here. Run the skill on a fresh snapshot whenever you suspect engine-version drift, depth changes, or imported-population changes might have shifted these.
+
+**Critical: the test runs on per-game evals, then aggregates with `mean = eval_sum / n`.** This sub-block must therefore report **game-level** distribution stats (one row per (game, entry-ply) sample, NOT one row per per-user mean). The §3 main block aggregates *to* per-user mean before measuring the cross-user distribution; this sub-block does *not* — it reports the unit the in-app test consumes (raw per-game signed_cp), because that's what the H0 baseline must match dimensionally. Both blocks now agree on the underlying statistic (mean of signed_cp), but at different aggregation levels: per-user-mean (main block) vs per-game (this sub-block).
+
+**Equal-footing filter**: the universal `abs(opp - user) <= 100` filter is **NOT** applied in this sub-block. The in-app test runs on the user's actual games (no opponent-strength filter), so the baseline must be calibrated against the same regime. Note this divergence from §1/§2/§4/§5/§6 inline.
+
+**Two queries** per metric (mid + eg), four numbers per query (white n / mean / median / SD; black n / mean / median / SD). Run for both `phase = 1` (MG entry) and `phase = 2` (EG entry).
+
+```sql
+-- Color-split engine-asymmetry baseline at MG entry (phase = 1).
+-- Substitute phase = 2 for endgame entry. NO equal-footing filter — calibrate
+-- against the production-realistic regime.
+WITH first_phase AS (
+  SELECT game_id, MIN(ply) AS entry_ply
+  FROM game_positions
+  WHERE phase = 1   -- swap to 2 for EG entry
+  GROUP BY game_id
+),
+phase_entry AS (
+  SELECT
+    g.user_color::text AS color,
+    gp.eval_cp AS raw_cp_white_pov,
+    (CASE WHEN g.user_color = 'white' THEN gp.eval_cp ELSE -gp.eval_cp END)::float AS signed_cp_user_pov
+  FROM games g
+  JOIN first_phase fp ON fp.game_id = g.id
+  JOIN game_positions gp ON gp.game_id = g.id AND gp.ply = fp.entry_ply
+  WHERE g.rated AND NOT g.is_computer_game
+    AND gp.eval_cp IS NOT NULL AND gp.eval_mate IS NULL
+    AND abs(gp.eval_cp) < 2000   -- match production trim from D-08
+)
+SELECT
+  color,
+  COUNT(*) AS n_games,
+  ROUND(AVG(signed_cp_user_pov)::numeric, 2) AS mean_signed_cp,
+  ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY signed_cp_user_pov)::numeric, 1) AS median_signed_cp,
+  ROUND(STDDEV_SAMP(signed_cp_user_pov)::numeric, 1) AS sd_signed_cp,
+  ROUND(PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY signed_cp_user_pov)::numeric, 0) AS p05,
+  ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY signed_cp_user_pov)::numeric, 0) AS p95
+FROM phase_entry
+GROUP BY GROUPING SETS ((color), ());
+```
+
+The third (NULL-color) row from `GROUPING SETS` is the pooled total — useful as a sanity check that white-mean + black-mean roughly cancels (since the population is ~50/50 in color split). For 2026-03 Lichess at MG entry the values were:
+
+| color | n_games | mean | median | SD |
+|---|---:|---:|---:|---:|
+| white | 624 k | +31.5 | +28 | 234 |
+| black | 625 k | −18.9 | −20 | 244 |
+| pooled | 1.25 M | +6.3 | +4 | 239 |
+
+**Reporting requirements** for the color-split sub-block:
+
+1. Render the 3-row table verbatim above (per metric — MG and EG separately).
+2. Emit a **distribution-shape line** below the table: skewness and excess kurtosis per color (Edgeworth correction relevance for the z-test). PostgreSQL has no built-in skew/kurtosis; compute via raw moments:
+   ```sql
+   -- Per-color skew + excess kurtosis (run separately per color via WHERE color = ...).
+   WITH stats AS (SELECT AVG(x) AS mu, STDDEV_SAMP(x) AS sigma, COUNT(*) AS n FROM phase_entry WHERE color = 'white')
+   SELECT SUM(POWER((x - mu) / sigma, 3)) / n AS skew,
+          SUM(POWER((x - mu) / sigma, 4)) / n - 3 AS exc_kurt
+   FROM phase_entry, stats WHERE color = 'white';
+   ```
+3. Compare the **mean** values (not median) to the **live constants** — the live z-test in `eval_confidence.py` aggregates with `mean = eval_sum / n`, so the H0 baseline is dimensionally a mean, and that's the comparator:
+   - **Currently in code**: `EVAL_BASELINE_CP_WHITE = 28`, `EVAL_BASELINE_CP_BLACK = -20` (in `app/services/opening_insights_constants.py`).
+   - Recommendation: keep current values when |measured mean − constant| ≤ 5 cp; propose updating when the gap is > 5 cp. Round to whole cp.
+   - The median row is still useful to render (sanity check — engine-asymmetry distributions are nearly symmetric so mean ≈ median, and a large divergence would flag a data pipeline issue) but it does not drive the recommendation.
+4. **Mate-handling note**: the in-app test excludes `eval_mate IS NOT NULL` rows entirely (the `eval_n` accumulator only counts continuous-eval rows per `OpeningPhaseEntryMetrics`), so this sub-block also excludes them — do NOT use the `coalesce(eval_cp, sign(eval_mate) * 1000)` sentinel from the §3 main query here. Mate frequency is a footnote (count of mate rows excluded) but not part of the baseline calibration.
+
+The **MG-entry color-split baseline** is the load-bearing one for production today (Phase 80). The **EG-entry baseline** is reported for future-proofing — when an EG-entry confidence pill ships, the same constants infrastructure will need EG-specific values (likely larger magnitude since by EG the eval has had more time to drift from book parity).
 
 ---
 
@@ -1139,7 +1221,7 @@ Write to `reports/benchmarks-YYYY-MM-DD.md` (UTC date). Layout:
 ... (one block per metric, each with cell table, marginals, recommendations, **collapse verdict block**)
 
 ## 3. Evals at game phase transitions
-... (two blocks: middlegame entry, endgame entry; each with cell table, marginals, proposed neutral-zone bounds, **collapse verdict block**)
+... (two blocks: middlegame entry, endgame entry; each with cell table, marginals, proposed neutral-zone bounds, **color-split engine-asymmetry baseline sub-block** comparing live `EVAL_BASELINE_CP_WHITE` / `EVAL_BASELINE_CP_BLACK` constants against measured medians, **collapse verdict block**)
 
 ## 4. Time pressure at endgame entry
 ... (% diff and net timeout, each with verdict)

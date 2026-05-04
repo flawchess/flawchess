@@ -143,3 +143,4 @@ Carried forward from v1.11 close (still relevant):
 
 ---
 Last activity: 2026-05-03 — v1.15 (Phases 78 + 79) drafted as PR #78. Operator-driven cutover (rounds 1-3) complete on dev / benchmark / prod. PHASE-VAL-01 / VAL-01 rescinded as moot (proxy removed → metric undefined; /conv-recov-validation Skill deleted). Remaining before mark-ready: full STATE refresh (this commit), 79-04-PLAN test-plan checkboxes, post-deploy UI smoke (VAL-02 / VAL-03). Earlier same day: 260503-fef (equal-footing benchmark filter), 260503-0t8 (backfill_eval.py parallelised via EnginePool).
+| 2026-05-04 | fast | Mute opening row when total games < 20; drop confidence-based muting | ✅ |
