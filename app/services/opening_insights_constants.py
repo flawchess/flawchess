@@ -54,20 +54,19 @@ OPENING_INSIGHTS_CI_Z_95: float = 1.96
 # --- Phase 80 MG-entry eval test (decoupled from WDL score test) ----------
 # These constants are eval-specific and not shared with score_confidence.
 
-# Engine-asymmetry baselines for H0 in the one-sample test on signed
-# user-perspective eval at MG entry. Stockfish gives white a structural
-# advantage at the starting position which carries through to MG entry
-# (per-game mean +31.5 cp white-side, per-game mean -18.9 cp black-side on
-# the 2026-05-04 Lichess benchmark, n=1.25M trimmed games). The recalibration
-# from the 2026-03 medians (28 / -20) to 2026-05-04 per-game means (31.5 /
-# -18.9) aligns the H0 with the same statistic the per-row z-test uses, so
-# the visual bullet-chart center matches the test reference. Without these
-# baselines, white-color openings would systematically read as "significant
-# advantage" and black-color openings as "significant disadvantage" purely
-# from engine asymmetry — independent of user skill. See
-# reports/benchmarks-2026-05-04.md.
-EVAL_BASELINE_CP_WHITE: float = 31.5
-EVAL_BASELINE_CP_BLACK: float = -18.9
+# Engine-asymmetry MG-entry tick-mark positions (in pawns, signed
+# user-perspective). Per-game mean from the 2026-05-04 Lichess benchmark
+# (n=1.25M trimmed games — see reports/benchmarks-2026-05-04.md §3a).
+#
+# Used only as a visual reference tick on the MG-entry bullet chart, NOT as
+# the H0 reference for the z-test. The test runs against 0 cp (engine-balanced)
+# regardless of color. Quick task 260504-rvh decoupled the visual baseline
+# from the test H0 so that a user whose MG-entry mean equals the engine
+# asymmetry (+0.32 pawns for white, -0.19 for black) is no longer
+# automatically classified as "no signal" — the chart shows the asymmetry
+# as a tick the user can read against.
+EVAL_BASELINE_PAWNS_WHITE: float = 0.315
+EVAL_BASELINE_PAWNS_BLACK: float = -0.189
 
 # N gate for the eval z-test, raised from 10 to 20 to keep the Edgeworth
 # leading-error term on the normal approximation under ~2% (the population

@@ -6,14 +6,15 @@ Bucketing rule under test:
   - n >= 20 and p_value < 0.10     -> "medium"
   - n >= 20 and p_value >= 0.10    -> "low"
 
-p_value is the two-sided Wald z-test p for H0: mean == baseline_cp, computed as
-erfc(|z| / sqrt(2)) where z = (mean - baseline_cp) / se. baseline_cp defaults
-to 0 (legacy framing); color-aware callers pass EVAL_BASELINE_CP_WHITE (+31.5)
-for white-color cells and EVAL_BASELINE_CP_BLACK (-18.9) for black-color cells.
+p_value is the two-sided Wald z-test p for H0: mean == 0 cp, computed as
+erfc(|z| / sqrt(2)) where z = mean / se. The helper takes an optional
+baseline_cp parameter for arithmetic generality (default 0); no production
+caller passes a non-zero value (quick task 260504-rvh decoupled the per-color
+visual baseline from the test H0).
 
 The helper returns a 4-tuple (confidence, p_value, mean, ci_half_width).
 ci_half_width = 1.96 * se (95% CI half-width for the bullet chart whisker),
-centered on the observed mean — independent of baseline_cp.
+centered on the observed mean.
 """
 
 import math
@@ -21,11 +22,7 @@ import math
 import pytest
 
 from app.services.eval_confidence import compute_eval_confidence_bucket
-from app.services.opening_insights_constants import (
-    EVAL_BASELINE_CP_BLACK,
-    EVAL_BASELINE_CP_WHITE,
-    EVAL_CONFIDENCE_MIN_N,
-)
+from app.services.opening_insights_constants import EVAL_CONFIDENCE_MIN_N
 
 
 # --- n == 0 and n == 1 edge cases ----------------------------------------
@@ -228,82 +225,42 @@ def test_two_sided_p_value_symmetric() -> None:
     assert ci_pos == pytest.approx(ci_neg, abs=1e-9)
 
 
-# --- Color-specific baseline (engine-asymmetry correction) ---------------
+# --- baseline_cp default-equivalence (260504-rvh) ------------------------
 
 
-def test_baseline_cp_shifts_test_reference() -> None:
-    """A mean equal to the baseline yields p=1.0 (no signal); same mean tested against
-    baseline=0 would yield a low p-value."""
+def test_baseline_cp_default_equals_explicit_zero() -> None:
+    """Passing baseline_cp=0.0 explicitly produces the same result as omitting it.
+
+    Locks the parameter's default behavior after quick task 260504-rvh removed
+    all production callers that passed a non-zero baseline_cp.
+    """
     n = 100
-    mean_cp = float(EVAL_BASELINE_CP_WHITE)  # +31.5 cp
+    mean_cp = 25.0
+    sd_cp = 80.0
+    variance = sd_cp * sd_cp
+    eval_sum = float(n * mean_cp)
+    eval_sumsq = variance * (n - 1) + n * mean_cp * mean_cp
+
+    omitted = compute_eval_confidence_bucket(eval_sum, eval_sumsq, n)
+    explicit = compute_eval_confidence_bucket(eval_sum, eval_sumsq, n, baseline_cp=0.0)
+    assert omitted == explicit
+
+
+# --- White-color signal at +31.5 cp now reads as "high" (260504-rvh) -----
+
+
+def test_mean_at_white_engine_baseline_reads_significant() -> None:
+    """A user whose MG-entry mean equals the white engine baseline (+31.5 cp) at n=100,
+    sd=50 now reports "high" / p < 0.001 — the visual reference is decoupled from
+    the test H0 (test runs against 0). This is the intended semantic shift.
+    """
+    n = 100
+    mean_cp = 31.5  # the per-game mean white engine baseline (display tick)
     sd_cp = 50.0
     variance = sd_cp * sd_cp
     eval_sum = float(n * mean_cp)
     eval_sumsq = variance * (n - 1) + n * mean_cp * mean_cp
 
-    # Against baseline=0: z=31.5/5=6.3 -> p essentially 0 -> "high"
-    conf_zero, p_zero, _m, _ci = compute_eval_confidence_bucket(eval_sum, eval_sumsq, n)
-    assert conf_zero == "high"
-    assert p_zero < 0.001
-
-    # Against the white baseline (+31.5): z=0 -> p=1.0 -> "low"
-    conf_white, p_white, _m2, _ci2 = compute_eval_confidence_bucket(
-        eval_sum, eval_sumsq, n, baseline_cp=float(EVAL_BASELINE_CP_WHITE)
-    )
-    assert conf_white == "low"
-    assert p_white == pytest.approx(1.0, abs=1e-9)
-
-
-def test_baseline_cp_does_not_shift_displayed_mean_or_ci() -> None:
-    """The CI is centered on the observed mean — baseline only affects p-value/bucket."""
-    n = 100
-    mean_cp = 40.0
-    sd_cp = 100.0
-    variance = sd_cp * sd_cp
-    eval_sum = float(n * mean_cp)
-    eval_sumsq = variance * (n - 1) + n * mean_cp * mean_cp
-
-    _c1, _p1, mean_zero, ci_zero = compute_eval_confidence_bucket(eval_sum, eval_sumsq, n)
-    _c2, _p2, mean_white, ci_white = compute_eval_confidence_bucket(
-        eval_sum, eval_sumsq, n, baseline_cp=float(EVAL_BASELINE_CP_WHITE)
-    )
-    assert mean_zero == pytest.approx(mean_white, abs=1e-9)
-    assert ci_zero == pytest.approx(ci_white, abs=1e-9)
-
-
-def test_baseline_cp_zero_variance_uses_baseline_for_mean_compare() -> None:
-    """SE==0 path: p=1.0 iff mean == baseline (not iff mean == 0)."""
-    n = 30
-    # All games at exactly +31.5 cp (white baseline) -> variance=0
-    mean_cp = float(EVAL_BASELINE_CP_WHITE)
-    eval_sum = float(n * mean_cp)
-    eval_sumsq = float(n * mean_cp * mean_cp)
-
-    # Against the white baseline: mean == baseline -> p=1.0 -> "low"
-    conf, p, _m, ci = compute_eval_confidence_bucket(
-        eval_sum, eval_sumsq, n, baseline_cp=float(EVAL_BASELINE_CP_WHITE)
-    )
-    assert conf == "low"
-    assert p == 1.0
-    assert ci == 0.0
-
-    # Against baseline=0: mean != 0 -> p=0.0 -> "high"
-    conf2, p2, _m2, _ci2 = compute_eval_confidence_bucket(eval_sum, eval_sumsq, n)
-    assert conf2 == "high"
-    assert p2 == 0.0
-
-
-def test_black_baseline_is_negative() -> None:
-    """Sanity: a black-color cell with mean at the black baseline should not register signal."""
-    n = 100
-    mean_cp = float(EVAL_BASELINE_CP_BLACK)  # -18.9 cp
-    sd_cp = 50.0
-    variance = sd_cp * sd_cp
-    eval_sum = float(n * mean_cp)
-    eval_sumsq = variance * (n - 1) + n * mean_cp * mean_cp
-
-    conf, p, _m, _ci = compute_eval_confidence_bucket(
-        eval_sum, eval_sumsq, n, baseline_cp=float(EVAL_BASELINE_CP_BLACK)
-    )
-    assert conf == "low"
-    assert p == pytest.approx(1.0, abs=1e-9)
+    conf, p, _m, _ci = compute_eval_confidence_bucket(eval_sum, eval_sumsq, n)
+    assert conf == "high"
+    assert p < 0.001

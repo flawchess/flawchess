@@ -37,28 +37,39 @@ describe('openingStatsZones — baseline pawn fallbacks (260504-my2)', () => {
   });
 });
 
-describe('evalZoneColor — baseline-centered (260504-my2)', () => {
-  it('value within ±0.30 of center returns ZONE_NEUTRAL (white baseline)', () => {
-    // delta = 0.55 - 0.32 = 0.23 -> inside ±0.30
-    expect(evalZoneColor(0.55, 0.32)).toBe(ZONE_NEUTRAL);
+describe('evalZoneColor — zero-centered (260504-rvh)', () => {
+  it('value within ±0.30 returns ZONE_NEUTRAL', () => {
+    expect(evalZoneColor(0)).toBe(ZONE_NEUTRAL);
+    expect(evalZoneColor(0.10)).toBe(ZONE_NEUTRAL);
+    expect(evalZoneColor(-0.20)).toBe(ZONE_NEUTRAL);
   });
 
-  it('value at least +0.30 above center returns ZONE_SUCCESS', () => {
-    // delta = 0.65 - 0.32 = 0.33 -> >= 0.30
-    expect(evalZoneColor(0.65, 0.32)).toBe(ZONE_SUCCESS);
+  it('value at the upper neutral boundary (+0.30) returns ZONE_SUCCESS', () => {
+    expect(evalZoneColor(0.30)).toBe(ZONE_SUCCESS);
   });
 
-  it('value at least -0.30 below center returns ZONE_DANGER', () => {
-    // delta = 0.00 - 0.32 = -0.32 -> <= -0.30
-    expect(evalZoneColor(0.00, 0.32)).toBe(ZONE_DANGER);
+  it('value above +0.30 returns ZONE_SUCCESS', () => {
+    expect(evalZoneColor(0.50)).toBe(ZONE_SUCCESS);
+    expect(evalZoneColor(1.0)).toBe(ZONE_SUCCESS);
   });
 
-  it('default-center sanity: value=0, center=0 returns ZONE_NEUTRAL', () => {
-    expect(evalZoneColor(0, 0)).toBe(ZONE_NEUTRAL);
+  it('value at the lower neutral boundary (-0.30) returns ZONE_DANGER', () => {
+    expect(evalZoneColor(-0.30)).toBe(ZONE_DANGER);
   });
 
-  it('black baseline near-zero delta returns ZONE_NEUTRAL', () => {
-    // delta = -0.20 - (-0.19) = -0.01 -> inside ±0.30
-    expect(evalZoneColor(-0.20, -0.19)).toBe(ZONE_NEUTRAL);
+  it('value below -0.30 returns ZONE_DANGER', () => {
+    expect(evalZoneColor(-0.50)).toBe(ZONE_DANGER);
+    expect(evalZoneColor(-1.0)).toBe(ZONE_DANGER);
+  });
+
+  it('white engine baseline (+0.315) sits in the success zone (decoupled from H0)', () => {
+    // Per 260504-rvh: the per-color engine asymmetry baseline is no longer
+    // subtracted, so a value at the white tick reads as ZONE_SUCCESS when
+    // it sits above +0.30. This is the intended visual signal.
+    expect(evalZoneColor(EVAL_BASELINE_PAWNS_WHITE)).toBe(ZONE_SUCCESS);
+  });
+
+  it('black engine baseline (-0.189) sits in the neutral zone (within ±0.30 of 0)', () => {
+    expect(evalZoneColor(EVAL_BASELINE_PAWNS_BLACK)).toBe(ZONE_NEUTRAL);
   });
 });

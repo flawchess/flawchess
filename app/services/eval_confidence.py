@@ -12,19 +12,21 @@ Bucketing rule (thresholds imported from opening_insights_constants):
   - n >= MIN_N and p_value < 0.10 -> "medium"
   - n >= MIN_N and p_value >= 0.10 -> "low"
 
-p_value is the **two-sided** Wald z-test p against H0: mean == baseline_cp. The
-baseline defaults to 0 but color-aware callers should pass EVAL_BASELINE_CP_WHITE
-(+31.5 cp) for white-color cells and EVAL_BASELINE_CP_BLACK (-18.9 cp) for
-black-color cells to neutralize the Stockfish white-advantage asymmetry that
-would otherwise flag every white opening as "significant advantage" and every
-black opening as "significant disadvantage" purely from engine bias.
+p_value is the **two-sided** Wald z-test p against H0: mean == 0 cp (engine-balanced).
+The function exposes a `baseline_cp` parameter for arithmetic generality, but no
+production caller passes a non-zero value (quick task 260504-rvh): the per-color
+engine-asymmetry baseline is now a display annotation (a tick on the bullet chart
+at +0.315 pawns for white / -0.189 for black) rather than the H0 reference. This
+means a user whose MG-entry mean equals the engine baseline reads as a real signal
+("the user's positions sit at the typical asymmetry"), and the chart's center
+remains the color-agnostic 0 cp.
 
 Two-sided framing is correct because both directions are independently meaningful:
-mean > baseline means the user systematically enters MG entry above-baseline,
-mean < baseline means systematically below. The opening-insights helper
+mean > 0 means the user systematically enters MG entry above engine-balanced,
+mean < 0 means systematically below. The opening-insights helper
 (score_confidence.py) uses one-sided framing for its directional question
 ("is score < 0.5?"); this helper uses two-sided because the question is symmetric
-("is the mean different from baseline?"). Mathematically:
+("is the mean different from zero?"). Mathematically:
   p_value = erfc(|z| / sqrt(2))   [range: 0..1, two-sided normal approximation]
 No 0.5× factor (that would halve to one-sided).
 
@@ -61,13 +63,11 @@ def compute_eval_confidence_bucket(
     eval_sumsq: sum of squared eval_cp values (centipawns squared).
     n: count of games used in the mean (mate-excluded, NULL-excluded,
        outlier-trimmed |eval_cp| < 2000 per D-08; trim happens upstream in SQL).
-    baseline_cp: H0 reference for the test. Default 0.0 preserves the legacy
-       "is the mean different from 0?" framing for callers that don't know the
-       cell's user_color (e.g. mixed-color bookmarks). Color-aware callers
-       pass EVAL_BASELINE_CP_WHITE / EVAL_BASELINE_CP_BLACK to neutralize the
-       Stockfish white-advantage asymmetry — without it, white-color openings
-       systematically read as "significant advantage" and black-color
-       openings as "significant disadvantage" from engine asymmetry alone.
+    baseline_cp: H0 reference for the test. Default 0.0 (engine-balanced); no
+       production caller passes a non-zero value. The parameter is retained
+       for arithmetic generality and to keep the function self-contained.
+       The per-color engine-asymmetry baseline (~+31.5 cp white, ~-18.9 cp
+       black) is now a display tick on the bullet chart, not the test H0.
 
     Procedure:
       - n == 0 -> ("low", 1.0, 0.0, 0.0).

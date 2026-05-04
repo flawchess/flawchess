@@ -29,26 +29,10 @@ from app.schemas.stats import (
 )
 from app.services.eval_confidence import compute_eval_confidence_bucket
 from app.services.opening_insights_constants import (
-    EVAL_BASELINE_CP_BLACK,
-    EVAL_BASELINE_CP_WHITE,
+    EVAL_BASELINE_PAWNS_BLACK,
+    EVAL_BASELINE_PAWNS_WHITE,
 )
 from app.services.openings_service import recency_cutoff
-
-
-def _baseline_cp_for_color(color: Literal["white", "black"] | None) -> float:
-    """Return the H0 baseline (cp) for the eval z-test given the cell's user_color.
-
-    Stockfish gives white a structural ~+31.5 cp advantage at MG entry and black a
-    symmetric ~-18.9 cp baseline (per-game mean, 2026-05 Lichess benchmark, n=1.25M
-    trimmed games — see reports/benchmarks-2026-05-04.md). Mixed-color cells
-    (color=None, e.g. match_side='full' bookmarks) fall back to 0 — the asymmetry
-    partially cancels and a single baseline can't represent both.
-    """
-    if color == "white":
-        return float(EVAL_BASELINE_CP_WHITE)
-    if color == "black":
-        return float(EVAL_BASELINE_CP_BLACK)
-    return 0.0
 
 
 # Minimum number of games required for an opening to appear in top openings.
@@ -392,7 +376,6 @@ async def get_most_played_openings(
         rows: list[Row[Any]],
         position_wdl: dict[int, PositionWDL],
         phase_entry_metrics: dict[int, OpeningPhaseEntryMetrics],
-        user_color: Literal["white", "black"],
     ) -> list[OpeningWDL]:
         openings = []
         for eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses in rows:
@@ -420,11 +403,13 @@ async def get_most_played_openings(
             eval_confidence: Literal["low", "medium", "high"] = "low"
 
             if pe is not None and pe.eval_n_mg > 0:
+                # H0: mean == 0 cp (engine-balanced). The per-color engine
+                # asymmetry baseline is shown on the bullet chart as a tick,
+                # not subtracted from the test reference (260504-rvh).
                 confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
                     pe.eval_sum_mg,
                     pe.eval_sumsq_mg,
                     pe.eval_n_mg,
-                    baseline_cp=_baseline_cp_for_color(user_color),
                 )
                 avg_eval_pawns = mean_cp_mg / 100.0  # cp -> pawns
                 if pe.eval_n_mg >= 2:
@@ -465,23 +450,20 @@ async def get_most_played_openings(
         return openings
 
     return MostPlayedOpeningsResponse(
-        white=rows_to_openings(
-            white_rows, white_position_wdl, white_phase_entry_metrics, user_color="white"
-        ),
-        black=rows_to_openings(
-            black_rows, black_position_wdl, black_phase_entry_metrics, user_color="black"
-        ),
-        # Surface the per-color H0 baselines so the frontend bullet chart
-        # centers on the same reference the z-test uses (260504-my2).
-        eval_baseline_pawns_white=_baseline_cp_for_color("white") / 100.0,
-        eval_baseline_pawns_black=_baseline_cp_for_color("black") / 100.0,
+        white=rows_to_openings(white_rows, white_position_wdl, white_phase_entry_metrics),
+        black=rows_to_openings(black_rows, black_position_wdl, black_phase_entry_metrics),
+        # Per-color engine-asymmetry baselines (in pawns). The frontend renders
+        # these as a small reference tick on the MG-entry bullet chart. They
+        # are NOT used as the chart's center or the z-test H0 — both of those
+        # remain anchored at 0 cp (engine-balanced) per quick task 260504-rvh.
+        eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
+        eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
     )
 
 
 def _phase80_item_from_metrics(
     target_hash: str,
     pe: OpeningPhaseEntryMetrics | None,
-    user_color: Literal["white", "black"] | None,
 ) -> BookmarkPhaseEntryItem:
     """Compute the Phase 80 display fields for a single hash.
 
@@ -489,9 +471,9 @@ def _phase80_item_from_metrics(
     (D-01, D-04, D-05, D-08). Kept as a separate helper so the bookmark endpoint
     can reuse the same numerical logic without depending on the OpeningWDL row shape.
 
-    user_color: drives the color-specific H0 baseline for the eval z-test
-    (EVAL_BASELINE_CP_WHITE / BLACK). None falls back to baseline=0 for
-    mixed-color cells (match_side='full' bookmarks).
+    The eval z-test runs against H0: mean == 0 cp (engine-balanced) regardless
+    of the bookmark's color — the per-color engine-asymmetry baseline is now
+    a display tick on the bullet chart, not the test reference (260504-rvh).
     """
     item = BookmarkPhaseEntryItem(target_hash=target_hash)
     if pe is None:
@@ -502,7 +484,6 @@ def _phase80_item_from_metrics(
             pe.eval_sum_mg,
             pe.eval_sumsq_mg,
             pe.eval_n_mg,
-            baseline_cp=_baseline_cp_for_color(user_color),
         )
         item.avg_eval_pawns = mean_cp_mg / 100.0
         if pe.eval_n_mg >= 2:
@@ -568,9 +549,7 @@ async def get_bookmark_phase_entry_metrics(
         metrics_by_hash.update(group_metrics)
 
     items = [
-        _phase80_item_from_metrics(
-            b.target_hash, metrics_by_hash.get(int(b.target_hash)), user_color=b.color
-        )
+        _phase80_item_from_metrics(b.target_hash, metrics_by_hash.get(int(b.target_hash)))
         for b in bookmarks
     ]
     return BookmarkPhaseEntryResponse(items=items)

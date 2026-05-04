@@ -54,6 +54,11 @@ interface MiniBulletChartProps {
   ciLow?: number;
   /** Optional 95% CI upper bound (in domain units, signed). Renders a thin whisker over the value bar when both ciLow and ciHigh are provided. */
   ciHigh?: number;
+  /** Optional reference tick at this absolute axis position. Used to mark the
+   * per-color MG-entry baseline alongside the 0 cp center reference. Rendered
+   * as a thin dashed line distinct from the solid center reference. Suppressed
+   * when the value falls outside the visible axis [center - domain, center + domain]. */
+  tickPawns?: number;
 }
 
 function formatSigned(value: number): string {
@@ -72,6 +77,7 @@ export function MiniBulletChart({
   valueHeightClass = 'h-2',
   ciLow,
   ciHigh,
+  tickPawns,
 }: MiniBulletChartProps) {
   // Axis spans [center - domain, center + domain], so the reference line and
   // neutral band sit at the visual middle regardless of `center`. With center=0
@@ -162,6 +168,21 @@ export function MiniBulletChart({
         <div
           className="absolute top-0 bottom-0 w-px bg-gray-700"
           style={{ left: `${neutralMaxPct}%` }}
+        />
+      )}
+      {/* Optional per-color baseline reference tick. Distinct from the solid
+        center reference: rendered as a thin dashed marker at the absolute
+        axis position. Suppressed when outside the axis. */}
+      {tickPawns !== undefined && tickPawns >= axisMin && tickPawns <= axisMax && (
+        <div
+          className="absolute top-0 bottom-0 w-px bg-foreground/30"
+          style={{
+            left: `${toPct(tickPawns)}%`,
+            borderLeft: '1px dashed currentColor',
+            backgroundColor: 'transparent',
+          }}
+          data-testid="mini-bullet-tick"
+          aria-hidden="true"
         />
       )}
       {/* Value fill bar — thinner than zones, vertically centered */}

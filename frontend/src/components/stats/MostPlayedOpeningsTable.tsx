@@ -28,9 +28,10 @@ interface MostPlayedOpeningsTableProps {
   testIdPrefix: string;
   /** Called when user clicks the games link on a row. Receives the full opening object so callers can route on any field. */
   onOpenGames: (opening: OpeningWDL, color: "white" | "black") => void;
-  /** Engine-asymmetry baseline (in pawns) for the table's color. Drives the
-   * bullet chart's center, the neutral-band shading, and the eval-text color
-   * via shared evalZoneColor. Caller picks per-color value from the
+  /** Engine-asymmetry baseline (in pawns) for the table's color. Rendered as
+   * a small reference tick on the MG-entry bullet chart; the chart's center
+   * and the eval-text zone color stay anchored at 0 cp regardless of color
+   * (260504-rvh). Caller picks per-color value from the
    * MostPlayedOpeningsResponse (eval_baseline_pawns_white/_black) or, for
    * bookmark sections, the EVAL_BASELINE_PAWNS_WHITE/BLACK fallbacks. */
   evalBaselinePawns: number;
@@ -74,11 +75,11 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, evalBa
     o.eval_n > 0 && o.avg_eval_pawns !== null && o.avg_eval_pawns !== undefined;
 
   // Phase 80: MG eval text cell — signed pawns to one decimal (e.g. "+2.1").
-  // Color reflects baseline-centered zone (260504-my2): delta = value - center.
+  // Color reflects zero-anchored zone (260504-rvh): >= +0.30 success, <= -0.30 danger.
   const mgEvalTextContent = hasMgEval ? (
     <span
       className="font-semibold"
-      style={{ color: evalZoneColor(o.avg_eval_pawns as number, evalBaselinePawns) }}
+      style={{ color: evalZoneColor(o.avg_eval_pawns as number) }}
     >
       {formatSignedEvalPawns(o.avg_eval_pawns as number)}
     </span>
@@ -86,14 +87,14 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, evalBa
     <span className="text-muted-foreground">—</span>
   );
 
-  // Phase 80: MG bullet chart cell, centered on the per-color engine baseline
-  // (260504-my2): reference line, neutral band, and bar fill all shift to center.
+  // Phase 80: MG bullet chart cell, anchored on 0 cp (260504-rvh). The per-color
+  // engine baseline is rendered as a small reference tick via tickPawns.
   const mgBulletContent = hasMgEval ? (
     <MiniBulletChart
       value={o.avg_eval_pawns as number}
       ciLow={o.eval_ci_low_pawns ?? undefined}
       ciHigh={o.eval_ci_high_pawns ?? undefined}
-      center={evalBaselinePawns}
+      tickPawns={evalBaselinePawns}
       neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
       neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
       domain={EVAL_BULLET_DOMAIN_PAWNS}
@@ -169,9 +170,8 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, evalBa
               evalMeanPawns={o.avg_eval_pawns}
               evalCiLowPawns={o.eval_ci_low_pawns}
               evalCiHighPawns={o.eval_ci_high_pawns}
-              centerPawns={evalBaselinePawns}
               testId={`${testIdPrefix}-bullet-popover-${rowKey}`}
-              prefaceText={buildMgEvalHeaderTooltip(evalBaselinePawns)}
+              prefaceText={buildMgEvalHeaderTooltip()}
             />
           )}
         </div>
