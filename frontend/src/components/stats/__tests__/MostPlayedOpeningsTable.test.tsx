@@ -162,18 +162,30 @@ describe('MostPlayedOpeningsTable — Phase 80 desktop columns', () => {
     ).toBeNull();
   });
 
-  it('eval_confidence === low dims MG cells even with n >= 10', () => {
+  it('total games below MIN_GAMES_OPENING_ROW dims the whole row', () => {
     const row = _makeRow({
+      total: 15,
       avg_eval_pawns: 0.1,
       eval_n: 15,
       eval_confidence: 'low',
     });
     renderTable([row]);
     const rowKey = row.opening_eco;
-    const text = document.querySelector(`[data-testid="${TEST_PREFIX}-eval-text-${rowKey}"]`) as HTMLElement | null;
-    const bullet = document.querySelector(`[data-testid="${TEST_PREFIX}-bullet-${rowKey}"]`) as HTMLElement | null;
-    expect(text?.style.opacity).toBe('0.5');
-    expect(bullet?.style.opacity).toBe('0.5');
+    const rowEl = document.querySelector(`[data-testid="${TEST_PREFIX}-row-${rowKey}"]`) as HTMLElement | null;
+    expect(rowEl?.style.opacity).toBe('0.5');
+  });
+
+  it('confidence === low does NOT dim a row that has enough total games', () => {
+    const row = _makeRow({
+      total: 50,
+      avg_eval_pawns: 0.1,
+      eval_n: 15,
+      eval_confidence: 'low',
+    });
+    renderTable([row]);
+    const rowKey = row.opening_eco;
+    const rowEl = document.querySelector(`[data-testid="${TEST_PREFIX}-row-${rowKey}"]`) as HTMLElement | null;
+    expect(rowEl?.style.opacity).toBe('');
   });
 });
 

@@ -65,7 +65,7 @@ import {
 } from '@/lib/openingStatsZones';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import {
-  MIN_GAMES_FOR_RELIABLE_STATS,
+  MIN_GAMES_OPENING_ROW,
   UNRELIABLE_OPACITY,
   ZONE_DANGER,
   ZONE_NEUTRAL,
@@ -130,10 +130,12 @@ function MobileMostPlayedRows({
       <div className="space-y-3">
         {visibleOpenings.map((o, i) => {
           const rowKey = o.opening_eco || o.full_hash || `${o.opening_name}-${i}`;
+          const isRowMuted = o.total < MIN_GAMES_OPENING_ROW;
           return (
             <div
               key={rowKey}
               data-testid={`${testIdPrefix}-row-${rowKey}`}
+              style={isRowMuted ? { opacity: UNRELIABLE_OPACITY } : undefined}
             >
               {/* Name row: opening name wraps full width, games count shrink-0 on right */}
               <div className="flex items-start justify-between gap-2 mb-1">
@@ -176,8 +178,6 @@ function MobileMostPlayedRows({
 
               {/* Phase 80 D-06: Mobile line 2 — MG-entry row (label + eval text + bullet w/ confidence popover). */}
               {(() => {
-                const isMgUnreliable =
-                  (o.eval_n ?? 0) < MIN_GAMES_FOR_RELIABLE_STATS || o.eval_confidence === 'low';
                 const hasMgEval =
                   o.eval_n > 0 &&
                   o.avg_eval_pawns !== null &&
@@ -228,13 +228,11 @@ function MobileMostPlayedRows({
                     <div
                       className="text-sm tabular-nums"
                       data-testid={`${testIdPrefix}-eval-text-mobile-${rowKey}`}
-                      style={isMgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
                     >
                       {mgEvalTextContent}
                     </div>
                     <div
                       data-testid={`${testIdPrefix}-bullet-mobile-${rowKey}`}
-                      style={isMgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
                     >
                       {mgBulletContent}
                     </div>

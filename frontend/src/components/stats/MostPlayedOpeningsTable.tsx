@@ -13,7 +13,7 @@ import {
 } from "@/lib/openingStatsZones"
 import { formatSignedEvalPawns } from "@/lib/clockFormat"
 import {
-  MIN_GAMES_FOR_RELIABLE_STATS,
+  MIN_GAMES_OPENING_ROW,
   UNRELIABLE_OPACITY,
   ZONE_DANGER,
   ZONE_NEUTRAL,
@@ -74,10 +74,9 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
 }) {
   const isEvenRow = index % 2 === 0;
 
-  // Phase 80: MG dimming gate. A cell is unreliable when eval_n < MIN_GAMES_FOR_RELIABLE_STATS
-  // OR confidence === 'low'.
-  const isMgUnreliable =
-    (o.eval_n ?? 0) < MIN_GAMES_FOR_RELIABLE_STATS || o.eval_confidence === 'low';
+  // Mute the whole row when total games are below the opening-row threshold —
+  // anything sparser can't sustain a reliable MG-entry eval signal.
+  const isRowMuted = o.total < MIN_GAMES_OPENING_ROW;
 
   const hasMgEval =
     o.eval_n > 0 && o.avg_eval_pawns !== null && o.avg_eval_pawns !== undefined;
@@ -112,6 +111,7 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
   return (
     <div
       data-testid={`${testIdPrefix}-row-${rowKey}`}
+      style={isRowMuted ? { opacity: UNRELIABLE_OPACITY } : undefined}
     >
       {/* Desktop row: 5-column grid (name | games | WDL | eval text | eval bullet) */}
       <div
@@ -156,7 +156,6 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
         <div
           className="hidden sm:block text-right text-sm tabular-nums sm:pl-4"
           data-testid={`${testIdPrefix}-eval-text-${rowKey}`}
-          style={isMgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
         >
           {mgEvalTextContent}
         </div>
@@ -165,7 +164,6 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
         <div
           className="hidden sm:flex items-center gap-2 tabular-nums"
           data-testid={`${testIdPrefix}-bullet-${rowKey}`}
-          style={isMgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
         >
           <div className="flex-1 min-w-0">{mgBulletContent}</div>
           {hasMgEval && (

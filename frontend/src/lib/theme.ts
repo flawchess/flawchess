@@ -73,6 +73,12 @@ export function colorizeGaugeZones(bands: readonly { from: number; to: number }[
 // Minimum games required for reliable stats — rows/charts below this threshold are dimmed
 export const MIN_GAMES_FOR_RELIABLE_STATS = 10;
 
+// Minimum total games to render an opening table row at full opacity. Mirrors
+// backend EVAL_CONFIDENCE_MIN_N (app/services/opening_insights_constants.py) —
+// rows below this threshold can't sustain a reliable MG-entry eval signal, so
+// the whole row is dimmed.
+export const MIN_GAMES_OPENING_ROW = 20;
+
 // Opacity applied to stats/charts with unreliable data (below MIN_GAMES_FOR_RELIABLE_STATS)
 export const UNRELIABLE_OPACITY = 0.5;
 
