@@ -3,7 +3,8 @@ import { Chess } from 'chess.js';
 import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
-import { getArrowColor, GREY, MINOR_EFFECT_SCORE, SCORE_PIVOT } from '@/lib/arrowColor';
+import { MINOR_EFFECT_SCORE, SCORE_PIVOT } from '@/lib/arrowColor';
+import { scoreZoneColor } from '@/lib/scoreBulletConfig';
 import { OPENING_INSIGHTS_CONFIDENCE_COPY } from '@/components/insights/OpeningInsightsBlock';
 import {
   HIGHLIGHT_PULSE_DURATION_MS,
@@ -207,10 +208,10 @@ export function MoveExplorer({
               </th>
               <th className="w-[5.5rem] text-right text-xs text-muted-foreground font-normal pb-1">Games</th>
               <th
-                className="w-[2.5rem] text-center text-xs text-muted-foreground font-normal pb-1"
-                data-testid="move-explorer-th-conf"
+                className="w-[3rem] text-right text-xs text-muted-foreground font-normal pb-1"
+                data-testid="move-explorer-th-score"
               >
-                Conf
+                Score
               </th>
               <th className="text-left text-xs text-muted-foreground font-normal pb-1 pl-2">Results</th>
             </tr>
@@ -258,26 +259,27 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   sideJustMoved: Color;
 }) {
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
-  // Mute the row only on small samples — confidence is now its own column and
-  // is hidden (not muted) when the effect is too small to be interesting.
+  // Mute the row only on small samples — the Score column carries its own
+  // zone color and is muted (not hidden) when the effect is too small to be
+  // interesting.
   const isUnreliable = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
   // Phase 77 D-06: inline troll-face icon when the resulting position is in
   // the curated set for the side that just moved. Pure synchronous lookup —
   // no useMemo (RESEARCH.md anti-pattern note).
   const showTroll = isTrollPosition(entry.result_fen, sideJustMoved);
-  // Hide the per-row confidence indicator for moves below the effect-of-
-  // interest threshold (|score - 0.5| < 0.05) and for samples too small to
-  // ground a significance test (game_count < 10). The column header stays.
+  // Color the score percent only for moves with a meaningful effect on a
+  // reliable sample (|score - 0.5| >= 0.05, game_count >= 10, confidence
+  // above 'low'). Otherwise the percent renders in muted grey.
   const hasEffectOfInterest = Math.abs(entry.score - SCORE_PIVOT) >= MINOR_EFFECT_SCORE;
-  const showConfidence = hasEffectOfInterest && entry.game_count >= MIN_GAMES_FOR_RELIABLE_STATS;
+  const showScoreColor =
+    hasEffectOfInterest &&
+    entry.game_count >= MIN_GAMES_FOR_RELIABLE_STATS &&
+    entry.confidence !== 'low';
 
-  // Strength/weakness row tint: every qualifying row gets the same color the
-  // chessboard arrow uses (green for strengths, red for weaknesses). Grey
-  // (neutral or below the color threshold) means no tint. The deep-link
-  // highlight reuses the same color and adds the pulse animation on top.
-  const arrowColor = getArrowColor(entry.score, entry.game_count, entry.confidence, false);
-  const severityColor = arrowColor === GREY ? null : arrowColor;
-  const tintColor = highlightColor ?? severityColor;
+  // Row tint is now reserved for the deep-link highlight only — the Score
+  // column carries the strength/weakness signal that previously lived in the
+  // row background.
+  const tintColor = highlightColor;
 
   // Merge the unreliable-row opacity with the severity tint + pulse. The
   // sticky background tint stays whenever tintColor is set; the pulse
@@ -368,21 +370,24 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
           {entry.game_count}
         </span>
       </td>
-      <td className="py-1 text-center text-muted-foreground tabular-nums">
-        {showConfidence && (
-          <Tooltip
-            content={
-              <WdlConfidenceTooltip
-                level={entry.confidence}
-                pValue={entry.p_value}
-                score={entry.score}
-                gameCount={entry.game_count}
-              />
-            }
+      <td className="py-1 text-right tabular-nums">
+        <Tooltip
+          content={
+            <WdlConfidenceTooltip
+              level={entry.confidence}
+              pValue={entry.p_value}
+              score={entry.score}
+              gameCount={entry.game_count}
+            />
+          }
+        >
+          <span
+            className={cn('font-semibold', !showScoreColor && 'text-muted-foreground font-normal')}
+            style={showScoreColor ? { color: scoreZoneColor(entry.score) } : undefined}
           >
-            <span>{entry.confidence === 'medium' ? 'med' : entry.confidence}</span>
-          </Tooltip>
-        )}
+            {Math.round(entry.score * 100)}%
+          </span>
+        </Tooltip>
       </td>
       <td className="py-1 pl-2">
         {!hasWdl ? (

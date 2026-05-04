@@ -1,7 +1,7 @@
 // Arrow color utility — maps chess score to categorical hex colors for board
-// arrows and move-list row tints. Color encodes effect size only (Phase 76
-// design lock). Confidence is displayed as a separate "Conf" column in the
-// Move Explorer, not via arrow opacity or dashing.
+// arrows. Color encodes effect size only (Phase 76 design lock). Confidence
+// is surfaced via the Score column tooltip in the Move Explorer, not via
+// arrow opacity or dashing.
 
 export const MIN_GAMES_FOR_COLOR = 10;
 

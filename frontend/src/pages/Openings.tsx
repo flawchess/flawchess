@@ -65,6 +65,7 @@ import {
   SCORE_BULLET_NEUTRAL_MAX,
   SCORE_BULLET_NEUTRAL_MIN,
   clampScoreCi,
+  scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
 import {
   EVAL_BULLET_DOMAIN_PAWNS,
@@ -193,7 +194,7 @@ function MobileMostPlayedRows({
                 {/* Col 1, row 1: games count link */}
                 <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
                   <button
-                    className="flex items-center gap-1 text-xs text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
+                    className="flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
                     aria-label={`View ${o.total} games for ${o.opening_name}`}
                     data-testid={`${testIdPrefix}-games-${rowKey}`}
                     onClick={() => onOpenGames(o, color)}
@@ -960,7 +961,8 @@ export function OpeningsPage() {
                   testId="score-bullet-popover-trigger"
                   ariaLabel="Show score confidence details"
                 />
-                <span>Score: <span className="font-semibold">{scorePct}%</span></span>
+                <span className="text-muted-foreground">Score:</span>
+                <span className="font-semibold" style={{ color: scoreZoneColor(stats.score) }}>{scorePct}%</span>
               </span>
               {/* Col 2, row 2: Score bullet chart */}
               <div data-testid="score-bullet-position">

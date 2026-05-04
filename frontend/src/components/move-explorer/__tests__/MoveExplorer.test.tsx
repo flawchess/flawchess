@@ -62,8 +62,9 @@ function makeEntry(overrides: Partial<NextMoveEntry> & Pick<NextMoveEntry, 'move
   };
 }
 
-// Use score: 0.50 (neutral) so the severity-tint path produces GREY and the
-// existing highlightedMove tests can assert "no background tint" cleanly.
+// Score 0.50 (neutral) keeps the existing highlightedMove tests asserting
+// "no background tint" cleanly even though severity-tinting was removed —
+// the row no longer carries any non-deeplink background.
 function makeMoves(): NextMoveEntry[] {
   return [
     makeEntry({ move_san: 'e4', score: 0.50 }),
@@ -94,7 +95,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
     expect(row.style.backgroundColor || '').toBe('');
   });
 
-  it('renders severity-tinted background on the matching row', () => {
+  it('renders deep-link tinted background on the matching row', () => {
     render(
       <MoveExplorer
         moves={makeMoves()}
@@ -205,8 +206,8 @@ describe('MoveExplorer — highlightedMove prop', () => {
   });
 });
 
-describe('Phase 76 — Conf column + mute extension', () => {
-  it('renders the Conf header cell with data-testid="move-explorer-th-conf"', () => {
+describe('Score column + mute extension', () => {
+  it('renders the Score header cell with data-testid="move-explorer-th-score"', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4' })]}
@@ -216,17 +217,17 @@ describe('Phase 76 — Conf column + mute extension', () => {
         onMoveClick={() => {}}
       />,
     );
-    const th = screen.getByTestId('move-explorer-th-conf');
-    expect(th.textContent?.trim()).toBe('Conf');
+    const th = screen.getByTestId('move-explorer-th-score');
+    expect(th.textContent?.trim()).toBe('Score');
   });
 
-  it('renders "low" / "med" / "high" labels per entry.confidence when the effect is of interest', () => {
+  it('renders the score percent for every entry', () => {
     render(
       <MoveExplorer
         moves={[
-          makeEntry({ move_san: 'e4', confidence: 'low', score: 0.625 }),
-          makeEntry({ move_san: 'd4', confidence: 'medium', score: 0.625 }),
-          makeEntry({ move_san: 'c4', confidence: 'high', score: 0.625 }),
+          makeEntry({ move_san: 'e4', confidence: 'low', score: 0.45 }),
+          makeEntry({ move_san: 'd4', confidence: 'medium', score: 0.55 }),
+          makeEntry({ move_san: 'c4', confidence: 'high', score: 0.75 }),
         ]}
         isLoading={false}
         isError={false}
@@ -234,12 +235,12 @@ describe('Phase 76 — Conf column + mute extension', () => {
         onMoveClick={() => {}}
       />,
     );
-    expect(screen.getByTestId('move-explorer-row-e4').textContent).toContain('low');
-    expect(screen.getByTestId('move-explorer-row-d4').textContent).toContain('med');
-    expect(screen.getByTestId('move-explorer-row-c4').textContent).toContain('high');
+    expect(screen.getByTestId('move-explorer-row-e4').textContent).toContain('45%');
+    expect(screen.getByTestId('move-explorer-row-d4').textContent).toContain('55%');
+    expect(screen.getByTestId('move-explorer-row-c4').textContent).toContain('75%');
   });
 
-  it('hides the confidence indicator when |score - 0.5| < 0.05 (effect below interest threshold)', () => {
+  it('renders the score in muted color when |score - 0.5| < 0.05 (effect below interest threshold)', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 100, score: 0.52 })]}
@@ -250,13 +251,12 @@ describe('Phase 76 — Conf column + mute extension', () => {
       />,
     );
     const row = screen.getByTestId('move-explorer-row-e4');
-    // The "high" confidence label must not render — only the move SAN, game count, and (empty) WDL bar remain.
-    expect(row.textContent).not.toContain('high');
-    expect(row.textContent).not.toContain('med');
-    expect(row.textContent).not.toContain('low');
+    expect(row.textContent).toContain('52%');
+    const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
+    expect(scoreSpan?.className).toContain('text-muted-foreground');
   });
 
-  it('hides the confidence indicator when game_count < 10', () => {
+  it('renders the score in muted color when game_count < 10', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 9, score: 0.625 })]}
@@ -267,7 +267,38 @@ describe('Phase 76 — Conf column + mute extension', () => {
       />,
     );
     const row = screen.getByTestId('move-explorer-row-e4');
-    expect(row.textContent).not.toContain('high');
+    expect(row.textContent).toContain('63%');
+    const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
+    expect(scoreSpan?.className).toContain('text-muted-foreground');
+  });
+
+  it('renders the score in muted color when confidence is "low"', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'low', game_count: 100, score: 0.625 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
+    expect(scoreSpan?.className).toContain('text-muted-foreground');
+  });
+
+  it('does not render row severity tint based on score (severity-tint path removed)', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 100, score: 0.75 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    expect(row.style.backgroundColor || '').toBe('');
   });
 
   it('does NOT mute the row based on confidence alone when game_count >= 10', () => {
