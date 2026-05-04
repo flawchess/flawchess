@@ -111,7 +111,7 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, evalBa
     >
       {/* Desktop row: 5-column grid (name | games | WDL | eval text | eval bullet) */}
       <div
-        className={`grid grid-cols-[1fr_auto_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)_auto_minmax(100px,160px)] gap-2 items-center rounded px-2 py-1.5 hover:bg-white/5 transition-colors ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
+        className={`grid grid-cols-[minmax(0,1fr)_3.5rem_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_3.5rem_minmax(120px,200px)_3rem_minmax(100px,160px)] gap-2 items-center rounded px-2 py-1.5 hover:bg-white/5 transition-colors ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
       >
         {/* Column 1: Name + PGN */}
         <MinimapPopover
@@ -192,7 +192,7 @@ export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenG
   return (
     <div data-testid={`${testIdPrefix}-table`}>
       {/* Table header — desktop shows 5 columns, mobile shows 3 */}
-      <div className="grid grid-cols-[1fr_auto_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)_auto_minmax(100px,160px)] gap-2 px-2 pb-1 text-xs text-muted-foreground border-b border-white/10 mb-1">
+      <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_3.5rem_minmax(120px,200px)_3rem_minmax(100px,160px)] gap-2 px-2 pb-1 text-xs text-muted-foreground border-b border-white/10 mb-1">
         <span>Name</span>
         <span className="text-right">Games</span>
         <span>Win / Draw / Loss</span>

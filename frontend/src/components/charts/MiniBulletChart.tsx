@@ -198,7 +198,7 @@ export function MiniBulletChart({
             {/* Left end cap (suppressed when CI extends past the left domain edge) */}
             {!lowOpen && (
               <div
-                className="absolute top-1/4 bottom-1/4 w-px bg-foreground/70 pointer-events-none"
+                className="absolute top-1/3 bottom-1/3 w-px bg-foreground/70 pointer-events-none"
                 style={{ left: `${ciLowPct}%` }}
                 data-testid="mini-bullet-whisker-cap-low"
                 aria-hidden="true"
@@ -207,7 +207,7 @@ export function MiniBulletChart({
             {/* Right end cap (suppressed when CI extends past the right domain edge) */}
             {!highOpen && (
               <div
-                className="absolute top-1/4 bottom-1/4 w-px bg-foreground/70 pointer-events-none"
+                className="absolute top-1/3 bottom-1/3 w-px bg-foreground/70 pointer-events-none"
                 style={{ left: `${ciHighPct}%` }}
                 data-testid="mini-bullet-whisker-cap-high"
                 aria-hidden="true"

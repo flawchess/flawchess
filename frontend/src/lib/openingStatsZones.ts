@@ -59,7 +59,7 @@ export function evalZoneColor(value: number): string {
  */
 export function buildMgEvalHeaderTooltip(): string {
   return (
-    'The number shows the stockfish engine evaluation at middlegame entry. ' +
+    'The number shows the average stockfish engine evaluation at middlegame entry. ' +
     'The dashed line shows the typical eval for your color: about +0.25 pawns for ' +
     'white, -0.25 for black, per the FlawChess benchmark.'
   );
