@@ -137,115 +137,108 @@ function MobileMostPlayedRows({
         {visibleOpenings.map((o, i) => {
           const rowKey = o.opening_eco || o.full_hash || `${o.opening_name}-${i}`;
           const isRowMuted = o.total < MIN_GAMES_OPENING_ROW;
+          const hasMgEval =
+            o.eval_n > 0 &&
+            o.avg_eval_pawns !== null &&
+            o.avg_eval_pawns !== undefined;
+          const mgEvalTextContent = hasMgEval ? (
+            <span
+              className="font-semibold"
+              style={{ color: evalZoneColor(o.avg_eval_pawns as number) }}
+            >
+              {formatSignedEvalPawns(o.avg_eval_pawns as number)}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          );
+          const mgBulletContent = hasMgEval ? (
+            <MiniBulletChart
+              value={o.avg_eval_pawns as number}
+              ciLow={o.eval_ci_low_pawns ?? undefined}
+              ciHigh={o.eval_ci_high_pawns ?? undefined}
+              tickPawns={evalBaselinePawns}
+              neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
+              neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
+              domain={EVAL_BULLET_DOMAIN_PAWNS}
+              ariaLabel={`Avg eval at MG entry: ${(o.avg_eval_pawns as number).toFixed(2)} pawns`}
+            />
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          );
           return (
             <div
               key={rowKey}
               data-testid={`${testIdPrefix}-row-${rowKey}`}
               style={isRowMuted ? { opacity: UNRELIABLE_OPACITY } : undefined}
             >
-              {/* Name row: opening name wraps full width, games count shrink-0 on right */}
-              <div className="flex items-start justify-between gap-2 mb-1">
-                <div className="flex-1 min-w-0">
-                  <MinimapPopover
-                    fen={o.fen}
-                    boardOrientation={color}
-                    testId={`${testIdPrefix}-minimap-${rowKey}`}
-                  >
-                    <span className="block text-sm font-medium leading-tight break-words">
-                      {/* display_name carries a "vs. " prefix when off-color (PRE-01). */}
-                      {o.display_name}
-                    </span>
-                  </MinimapPopover>
-                </div>
+              {/* Name row: full-width opening name (games count moved into col 1 below) */}
+              <div className="mb-1">
+                <MinimapPopover
+                  fen={o.fen}
+                  boardOrientation={color}
+                  testId={`${testIdPrefix}-minimap-${rowKey}`}
+                >
+                  <span className="block text-sm font-medium leading-tight break-words">
+                    {/* display_name carries a "vs. " prefix when off-color (PRE-01). */}
+                    {o.display_name}
+                  </span>
+                </MinimapPopover>
+              </div>
+
+              {/* 2-column grid: col 1 = labels (games count, eval text); col 2 = charts (WDL bar, MG bullet) */}
+              <div
+                className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center"
+                data-testid={`${testIdPrefix}-mobile-mg-line-${rowKey}`}
+              >
+                {/* Col 1, row 1: games count link */}
                 <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
                   <button
-                    className="shrink-0 flex items-center gap-1 text-xs text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
+                    className="flex items-center gap-1 text-xs text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
                     aria-label={`View ${o.total} games for ${o.opening_name}`}
                     data-testid={`${testIdPrefix}-games-${rowKey}`}
                     onClick={() => onOpenGames(o, color)}
                   >
-                    <span className="tabular-nums">{o.total}</span>
+                    <span className="tabular-nums">{o.total} Games</span>
                     <Swords className="h-3.5 w-3.5" />
                   </button>
                 </Tooltip>
+                {/* Col 2, row 1: WDL bar (no header — games count is in col 1) */}
+                <WDLChartRow
+                  data={{
+                    wins: o.wins,
+                    draws: o.draws,
+                    losses: o.losses,
+                    total: o.total,
+                    win_pct: o.win_pct,
+                    draw_pct: o.draw_pct,
+                    loss_pct: o.loss_pct,
+                  }}
+                />
+                {/* Col 1, row 2: Eval text with info-icon popover trigger */}
+                <span
+                  className="inline-flex items-center gap-1 text-sm tabular-nums"
+                  data-testid={`${testIdPrefix}-eval-text-mobile-${rowKey}`}
+                >
+                  {hasMgEval && (
+                    <BulletConfidencePopover
+                      level={o.eval_confidence}
+                      pValue={o.eval_p_value}
+                      gameCount={o.eval_n}
+                      evalMeanPawns={o.avg_eval_pawns}
+                      evalCiLowPawns={o.eval_ci_low_pawns}
+                      evalCiHighPawns={o.eval_ci_high_pawns}
+                      testId={`${testIdPrefix}-bullet-popover-mobile-${rowKey}`}
+                      prefaceText={buildMgEvalHeaderTooltip()}
+                    />
+                  )}
+                  <span className="text-muted-foreground">Eval:</span>
+                  {mgEvalTextContent}
+                </span>
+                {/* Col 2, row 2: MG-entry bullet chart */}
+                <div data-testid={`${testIdPrefix}-bullet-mobile-${rowKey}`}>
+                  {mgBulletContent}
+                </div>
               </div>
-              {/* Full-width WDL bar below the name */}
-              <WDLChartRow
-                data={{
-                  wins: o.wins,
-                  draws: o.draws,
-                  losses: o.losses,
-                  total: o.total,
-                  win_pct: o.win_pct,
-                  draw_pct: o.draw_pct,
-                  loss_pct: o.loss_pct,
-                }}
-              />
-
-              {/* Phase 80 D-06: Mobile line 2 — MG-entry row (label + eval text + bullet w/ confidence popover). */}
-              {(() => {
-                const hasMgEval =
-                  o.eval_n > 0 &&
-                  o.avg_eval_pawns !== null &&
-                  o.avg_eval_pawns !== undefined;
-                const mgEvalTextContent = hasMgEval ? (
-                  <span
-                    className="font-semibold"
-                    style={{ color: evalZoneColor(o.avg_eval_pawns as number) }}
-                  >
-                    {formatSignedEvalPawns(o.avg_eval_pawns as number)}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                );
-                const mgBulletContent = hasMgEval ? (
-                  <MiniBulletChart
-                    value={o.avg_eval_pawns as number}
-                    ciLow={o.eval_ci_low_pawns ?? undefined}
-                    ciHigh={o.eval_ci_high_pawns ?? undefined}
-                    tickPawns={evalBaselinePawns}
-                    neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
-                    neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
-                    domain={EVAL_BULLET_DOMAIN_PAWNS}
-                    ariaLabel={`Avg eval at MG entry: ${(o.avg_eval_pawns as number).toFixed(2)} pawns`}
-                  />
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                );
-                return (
-                  <div
-                    className="mt-2 grid grid-cols-[auto_auto_1fr] gap-2 items-center pb-1"
-                    data-testid={`${testIdPrefix}-mobile-mg-line-${rowKey}`}
-                  >
-                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                      Eval
-                      {hasMgEval && (
-                        <BulletConfidencePopover
-                          level={o.eval_confidence}
-                          pValue={o.eval_p_value}
-                          gameCount={o.eval_n}
-                          evalMeanPawns={o.avg_eval_pawns}
-                          evalCiLowPawns={o.eval_ci_low_pawns}
-                          evalCiHighPawns={o.eval_ci_high_pawns}
-                          testId={`${testIdPrefix}-bullet-popover-mobile-${rowKey}`}
-                          prefaceText={buildMgEvalHeaderTooltip()}
-                        />
-                      )}
-                    </span>
-                    <div
-                      className="text-sm tabular-nums"
-                      data-testid={`${testIdPrefix}-eval-text-mobile-${rowKey}`}
-                    >
-                      {mgEvalTextContent}
-                    </div>
-                    <div
-                      data-testid={`${testIdPrefix}-bullet-mobile-${rowKey}`}
-                    >
-                      {mgBulletContent}
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
           );
         })}
@@ -940,22 +933,37 @@ export function OpeningsPage() {
           <div
             className="charcoal-texture rounded-md p-4 order-2 lg:order-1"
             style={isUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
+            data-testid="wdl-moves-position"
           >
-            <WDLChartRow
-              data={stats}
-              label={positionResultsLabel}
-              barHeight="h-6"
-              gamesLink="/openings/games"
-              onGamesLinkClick={() => window.scrollTo({ top: 0 })}
-              gamesLinkTestId="btn-moves-to-games"
-              gamesLinkAriaLabel="View games for this position"
-              testId="wdl-moves-position"
-            />
-            <div
-              className="mt-2 flex items-center gap-2"
-              data-testid="score-bullet-position"
-            >
-              <div className="flex-1">
+            <div className="text-sm font-medium mb-2">{positionResultsLabel}</div>
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+              {/* Col 1, row 1: Games link */}
+              <Link
+                to="/openings/games"
+                onClick={() => window.scrollTo({ top: 0 })}
+                className="inline-flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
+                aria-label="View games for this position"
+                data-testid="btn-moves-to-games"
+              >
+                <span className="tabular-nums">{stats.total} Games{isUnreliable && ' (low)'}</span>
+                <Swords className="h-3.5 w-3.5" />
+              </Link>
+              {/* Col 2, row 1: WDL bar (no header — games count moved to col 1) */}
+              <WDLChartRow data={stats} barHeight="h-6" />
+              {/* Col 1, row 2: Score label with popover trigger */}
+              <span className="inline-flex items-center gap-1 text-sm tabular-nums">
+                <ScoreConfidencePopover
+                  level={stats.confidence}
+                  pValue={stats.p_value}
+                  score={stats.score}
+                  gameCount={stats.total}
+                  testId="score-bullet-popover-trigger"
+                  ariaLabel="Show score confidence details"
+                />
+                <span>Score: <span className="font-semibold">{scorePct}%</span></span>
+              </span>
+              {/* Col 2, row 2: Score bullet chart */}
+              <div data-testid="score-bullet-position">
                 <MiniBulletChart
                   value={stats.score}
                   center={SCORE_BULLET_CENTER}
@@ -967,14 +975,6 @@ export function OpeningsPage() {
                   ariaLabel={`Score ${scorePct}% vs 50% baseline`}
                 />
               </div>
-              <ScoreConfidencePopover
-                level={stats.confidence}
-                pValue={stats.p_value}
-                score={stats.score}
-                gameCount={stats.total}
-                testId="score-bullet-popover-trigger"
-                ariaLabel="Show score confidence details"
-              />
             </div>
           </div>
         );
