@@ -58,6 +58,14 @@ import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTa
 import { MinimapPopover } from '@/components/stats/MinimapPopover';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
+import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
+import {
+  SCORE_BULLET_CENTER,
+  SCORE_BULLET_DOMAIN,
+  SCORE_BULLET_NEUTRAL_MAX,
+  SCORE_BULLET_NEUTRAL_MIN,
+  clampScoreCi,
+} from '@/lib/scoreBulletConfig';
 import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
@@ -69,6 +77,7 @@ import {
 } from '@/lib/openingStatsZones';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import {
+  MIN_GAMES_FOR_RELIABLE_STATS,
   MIN_GAMES_OPENING_ROW,
   UNRELIABLE_OPACITY,
 } from '@/lib/theme';
@@ -923,20 +932,53 @@ export function OpeningsPage() {
 
   const moveExplorerContent = (
     <div className="flex flex-col gap-4">
-      {gamesData && gamesData.stats.total > 0 && (
-        <div className="charcoal-texture rounded-md p-4 order-2 lg:order-1">
-          <WDLChartRow
-            data={gamesData.stats}
-            label={positionResultsLabel}
-            barHeight="h-6"
-            gamesLink="/openings/games"
-            onGamesLinkClick={() => window.scrollTo({ top: 0 })}
-            gamesLinkTestId="btn-moves-to-games"
-            gamesLinkAriaLabel="View games for this position"
-            testId="wdl-moves-position"
-          />
-        </div>
-      )}
+      {gamesData && gamesData.stats.total > 0 && (() => {
+        const stats = gamesData.stats;
+        const isUnreliable = stats.total < MIN_GAMES_FOR_RELIABLE_STATS;
+        const scorePct = Math.round(stats.score * 100);
+        return (
+          <div
+            className="charcoal-texture rounded-md p-4 order-2 lg:order-1"
+            style={isUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
+          >
+            <WDLChartRow
+              data={stats}
+              label={positionResultsLabel}
+              barHeight="h-6"
+              gamesLink="/openings/games"
+              onGamesLinkClick={() => window.scrollTo({ top: 0 })}
+              gamesLinkTestId="btn-moves-to-games"
+              gamesLinkAriaLabel="View games for this position"
+              testId="wdl-moves-position"
+            />
+            <div
+              className="mt-2 flex items-center gap-2"
+              data-testid="score-bullet-position"
+            >
+              <div className="flex-1">
+                <MiniBulletChart
+                  value={stats.score}
+                  center={SCORE_BULLET_CENTER}
+                  neutralMin={SCORE_BULLET_NEUTRAL_MIN}
+                  neutralMax={SCORE_BULLET_NEUTRAL_MAX}
+                  domain={SCORE_BULLET_DOMAIN}
+                  ciLow={clampScoreCi(stats.ci_low)}
+                  ciHigh={clampScoreCi(stats.ci_high)}
+                  ariaLabel={`Score ${scorePct}% vs 50% baseline`}
+                />
+              </div>
+              <ScoreConfidencePopover
+                level={stats.confidence}
+                pValue={stats.p_value}
+                score={stats.score}
+                gameCount={stats.total}
+                testId="score-bullet-popover-trigger"
+                ariaLabel="Show score confidence details"
+              />
+            </div>
+          </div>
+        );
+      })()}
       <div className="charcoal-texture rounded-md p-4 order-1 lg:order-2">
         <MoveExplorer
           moves={nextMoves.data?.moves ?? []}
