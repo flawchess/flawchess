@@ -59,8 +59,8 @@ export function evalZoneColor(value: number): string {
  */
 export function buildMgEvalHeaderTooltip(): string {
   return (
-    'Engine evaluation at middlegame entry. 0 cp means engine-balanced. ' +
-    'The tick shows the typical MG-entry eval for your color (a reference ' +
+    'Engine evaluation at middlegame entry. ' +
+    'The dashed line shows the typical eval for your color (a reference ' +
     'for how openings usually leave the position): about +0.25 pawns for ' +
     'white, -0.25 for black, per the FlawChess benchmark.'
   );

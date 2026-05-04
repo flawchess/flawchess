@@ -65,7 +65,7 @@ export function EvalConfidenceTooltip({
         <li>Average eval: {evalLine}</li>
         <li>Number of games reaching middlegame: {gameCount}</li>
         <li>
-          Probability: {pValuePct}% of such a difference from zero resulting from pure chance (p ={' '}
+          Probability: {pValuePct}% of such a difference from 0 resulting from pure chance (p ={' '}
           {pValue.toFixed(3)})
         </li>
         <li>
