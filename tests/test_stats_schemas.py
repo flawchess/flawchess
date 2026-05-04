@@ -10,7 +10,7 @@ Verifies that:
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.stats import OpeningWDL
+from app.schemas.stats import MostPlayedOpeningsResponse, OpeningWDL
 
 _LEGACY: dict[str, object] = dict(
     opening_eco="C50",
@@ -89,3 +89,26 @@ def test_avg_eval_pawns_none_when_omitted() -> None:
     """avg_eval_pawns defaults to None when not supplied."""
     m = OpeningWDL.model_validate(_LEGACY)
     assert m.avg_eval_pawns is None
+
+
+# --- MostPlayedOpeningsResponse: eval baselines (260504-my2) -------------
+
+
+def test_most_played_response_carries_eval_baseline_pawns() -> None:
+    """Wrapper carries per-color eval baselines in pawns (per-game mean,
+    2026-05-04 Lichess benchmark) so the frontend can center the bullet
+    chart on the same H0 the backend z-test uses.
+    """
+    resp = MostPlayedOpeningsResponse(
+        white=[],
+        black=[],
+        eval_baseline_pawns_white=0.315,
+        eval_baseline_pawns_black=-0.189,
+    )
+    assert resp.eval_baseline_pawns_white == pytest.approx(0.315)
+    assert resp.eval_baseline_pawns_black == pytest.approx(-0.189)
+
+    # Round-trip via model_dump preserves the baseline values.
+    resp2 = MostPlayedOpeningsResponse.model_validate(resp.model_dump())
+    assert resp2.eval_baseline_pawns_white == pytest.approx(0.315)
+    assert resp2.eval_baseline_pawns_black == pytest.approx(-0.189)
