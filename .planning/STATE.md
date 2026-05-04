@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
 status: executing
-last_updated: "2026-05-03T18:08:32.598Z"
-last_activity: 2026-05-03 -- Phase 80 execution started
+last_updated: "2026-05-04T22:42:00.000Z"
+last_activity: 2026-05-04 -- Quick task 260504-acl: 3-category arrow palette on Openings Moves tab
 progress:
   total_phases: 6
   completed_phases: 0
@@ -143,8 +143,9 @@ Carried forward from v1.11 close (still relevant):
 | 260504-my2 | Center opening-stats eval bullet chart on color-specific baseline; recalibrate engine-asymmetry baselines from medians (28/-20) to per-game means (31.5/-18.9) | 2026-05-04 | 147b883 | [260504-my2-eval-bullet-chart-baseline-centering-and](./quick/260504-my2-eval-bullet-chart-baseline-centering-and/) |
 | 260504-rvh | Remove eval color-baseline centering: MG-entry bullet chart and backend stats now anchor on 0 cp (engine-balanced); per-color baseline (+0.315 / −0.189) becomes a tick reference instead of the chart center | 2026-05-04 | e1e55bb | [260504-rvh-remove-eval-color-baseline-centering-fro](./quick/260504-rvh-remove-eval-color-baseline-centering-fro/) |
 | 260504-ttq | Add current-position score-vs-50% bullet chart under "Results played as White/Black" WDL bar in Openings → Moves tab; muted when n<10 to double as a sample-size trust indicator for the WDL bar above | 2026-05-04 | 6e3cc51 | [260504-ttq-add-a-current-position-score-vs-50-bulle](./quick/260504-ttq-add-a-current-position-score-vs-50-bulle/) |
+| 260504-acl | Simplify Moves-tab arrow palette from 5 effect-size buckets to 3 score zones (red <=0.45 / blue 0.45-0.55 / green >=0.55); replace HOVER_BLUE with grey for hovered arrows + row tints; update chessboard InfoPopover to describe Score = (W + 0.5·D)/N | 2026-05-04 | 9f586db | [260504-acl-simplify-arrow-color-from-5-to-3-categories](./quick/260504-acl-simplify-arrow-color-from-5-to-3-categories/) |
 
 ---
-Last activity: 2026-05-04 — Completed quick task 260504-ttq: added current-position score-vs-50% bullet chart in Openings Moves tab (under the WDL bar). Backend WDLStats extended with score/confidence/p_value/ci_low/ci_high (Wald) reusing compute_confidence_bucket; new ScoreConfidencePopover and scoreBulletConfig (center 0.5, ±0.05 neutral, 0.20 domain); wrapper card dims to UNRELIABLE_OPACITY when total<10 so it doubles as a trust indicator for the WDL bar above.
+Last activity: 2026-05-04 — Completed quick task 260504-acl: simplified Moves-tab arrow palette to 3 score zones (red <=0.45 / blue 0.45-0.55 / green >=0.55). Hover + selected-row highlight switched from blue to grey. MoveExplorer Score column now renders the neutral blue zone color in the 45-55% band (dropped hasEffectOfInterest gate). LIGHT_GREEN/LIGHT_RED kept as exports — still used by OpeningFindingCard severity borders on the Insights tab.
 | 2026-05-04 | fast | Mute opening row when total games < 20; drop confidence-based muting | ✅ |
 | 2026-05-04 | fast | Score zone color in Moves tab + per-move list; drop severity row tint; bump mobile games-count font size | ✅ |
