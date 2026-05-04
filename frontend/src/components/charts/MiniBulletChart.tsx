@@ -26,10 +26,6 @@ const DEFAULT_NEUTRAL_MAX = 0;
 // Background zone tint — muted but visible enough to read the zones clearly.
 const ZONE_OPACITY = 0.35;
 
-// Tolerance below which two zone boundaries are treated as coincident
-// (used to suppress a redundant tick where a neutral boundary meets zero).
-const BOUNDARY_EPSILON = 1e-6;
-
 interface MiniBulletChartProps {
   /** Signed difference to visualize (e.g. row_score - opponent_score). */
   value: number;
@@ -113,10 +109,10 @@ export function MiniBulletChart({
   const barRight = value >= center ? markerPct : centerPct;
   const barWidth = Math.max(0, barRight - barLeft);
 
-  // Suppress ticks that coincide with the center reference line.
-  // (With center=0 this reduces to |neutralMin| / |neutralMax|.)
-  const showNeutralMinTick = Math.abs(absNeutralMin - center) > BOUNDARY_EPSILON;
-  const showNeutralMaxTick = Math.abs(absNeutralMax - center) > BOUNDARY_EPSILON;
+  // The reference tick is the per-color baseline; a negative tickPawns marks a
+  // black-piece opening, so render the dashed line in black to associate it
+  // with the chess color. Positive ticks keep the theme-default tone.
+  const isBlackPieceTick = tickPawns !== undefined && tickPawns < 0;
 
   return (
     <div
@@ -157,28 +153,16 @@ export function MiniBulletChart({
         className="absolute top-0 bottom-0 w-px bg-foreground/50"
         style={{ left: `${centerPct}%` }}
       />
-      {/* Neutral zone boundary ticks — subtle, only shown when distinct from zero */}
-      {showNeutralMinTick && (
-        <div
-          className="absolute top-0 bottom-0 w-px bg-gray-700"
-          style={{ left: `${neutralMinPct}%` }}
-        />
-      )}
-      {showNeutralMaxTick && (
-        <div
-          className="absolute top-0 bottom-0 w-px bg-gray-700"
-          style={{ left: `${neutralMaxPct}%` }}
-        />
-      )}
       {/* Optional per-color baseline reference tick. Distinct from the solid
         center reference: rendered as a thin dashed marker at the absolute
-        axis position. Suppressed when outside the axis. */}
+        axis position. Black-piece openings get a black dashed line; white-piece
+        openings inherit the theme default. Suppressed when outside the axis. */}
       {tickPawns !== undefined && tickPawns >= axisMin && tickPawns <= axisMax && (
         <div
-          className="absolute top-0 bottom-0 w-px bg-foreground/30"
+          className="absolute top-0 bottom-0 w-px"
           style={{
             left: `${toPct(tickPawns)}%`,
-            borderLeft: '1px dashed currentColor',
+            borderLeft: isBlackPieceTick ? '1px dashed #000' : '1px dashed currentColor',
             backgroundColor: 'transparent',
           }}
           data-testid="mini-bullet-tick"

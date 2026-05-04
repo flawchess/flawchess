@@ -59,7 +59,7 @@ export function evalZoneColor(value: number): string {
  */
 export function buildMgEvalHeaderTooltip(): string {
   return (
-    'Engine evaluation at middlegame entry. ' +
+    'Stockfish engine evaluation at middlegame entry. ' +
     'The dashed line shows the typical eval for your color (a reference ' +
     'for how openings usually leave the position): about +0.25 pawns for ' +
     'white, -0.25 for black, per the FlawChess benchmark.'

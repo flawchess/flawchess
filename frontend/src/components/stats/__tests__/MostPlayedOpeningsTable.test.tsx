@@ -145,7 +145,7 @@ describe('MostPlayedOpeningsTable — Phase 80 desktop columns', () => {
     ) as HTMLElement | null;
     expect(popover).not.toBeNull();
     // Preface text (formerly the column-header tooltip) is now passed into the per-row popover.
-    expect(popover?.dataset.preface).toContain('0 cp means engine-balanced');
+    expect(popover?.dataset.preface).toContain('Stockfish engine evaluation at middlegame entry');
   });
 
   it('eval_n === 0 renders em-dash for both MG eval text and bullet chart, no popover wrapper', () => {
@@ -198,10 +198,10 @@ describe('MostPlayedOpeningsTable — D-10 column header tooltip', () => {
     ).toBeNull();
   });
 
-  it('buildMgEvalHeaderTooltip produces tooltip text anchored on 0 cp (260504-rvh)', () => {
+  it('buildMgEvalHeaderTooltip produces tooltip text describing the dashed-line reference (260504-rvh)', () => {
     const text = buildMgEvalHeaderTooltip();
-    expect(text).toContain('0 cp means engine-balanced');
-    expect(text).toContain('typical MG-entry eval for your color');
+    expect(text).toContain('Stockfish engine evaluation at middlegame entry');
+    expect(text).toContain('dashed line shows the typical eval for your color');
   });
 
   it('buildMgEvalHeaderTooltip avoids em-dashes per CLAUDE.md user-facing copy rule', () => {

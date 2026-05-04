@@ -117,6 +117,24 @@ describe('MiniBulletChart — tickPawns prop (260504-rvh)', () => {
     render(<MiniBulletChart value={0} tickPawns={-2.0} domain={1.5} />);
     expect(screen.queryByTestId('mini-bullet-tick')).toBeNull();
   });
+
+  it('positive tickPawns (white opening) renders the dashed line in the theme default tone', () => {
+    render(<MiniBulletChart value={0} tickPawns={0.25} domain={1.5} />);
+    const tick = screen.queryByTestId('mini-bullet-tick');
+    expect(tick).not.toBeNull();
+    const style = tick?.getAttribute('style') ?? '';
+    expect(style).toContain('currentcolor');
+    expect(style).not.toContain('rgb(0, 0, 0)');
+  });
+
+  it('negative tickPawns (black opening) renders the dashed line in black', () => {
+    render(<MiniBulletChart value={0} tickPawns={-0.25} domain={1.5} />);
+    const tick = screen.queryByTestId('mini-bullet-tick');
+    expect(tick).not.toBeNull();
+    const style = tick?.getAttribute('style') ?? '';
+    expect(style).toContain('rgb(0, 0, 0)');
+    expect(style).not.toContain('currentcolor');
+  });
 });
 
 describe('MiniBulletChart — center prop (260504-my2)', () => {
