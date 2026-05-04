@@ -72,6 +72,12 @@ export interface WDLStats {
   win_pct: number;
   draw_pct: number;
   loss_pct: number;
+  // Score and confidence fields — mirrors backend WDLStats (quick task 260504-ttq)
+  score: number;
+  confidence: 'low' | 'medium' | 'high';
+  p_value: number;
+  ci_low: number;
+  ci_high: number;
 }
 
 export interface GameRecord {
