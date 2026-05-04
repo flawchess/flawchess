@@ -206,78 +206,78 @@ Skill is the unweighted mean of conv/par/recov — its ELO effect aggregates the
 
 ## 3. Evals at game phase transitions
 
-Per-(user, color) mean signed user-POV `eval_cp` at first ply where `phase = 1` (MG entry) or `phase = 2` (EG entry), centered on color-matched baseline. Mate scores and `|eval_cp| ≥ 2000` excluded (matches production filter `has_continuous_in_domain_eval`). Sample floor: ≥20 entry-ply games per (user, color).
+Per-(user, color) mean signed user-POV `eval_cp` at first ply where `phase = 1` (MG entry) or `phase = 2` (EG entry), centered on a **symmetric ±BASELINE**. Pass 1 measures the baseline as a single deduplicated game-level mean (one row per `(platform, platform_game_id)`, white-POV). Pass 2 subtracts ±BASELINE per matching color and pools across colors. Mate scores and `|eval_cp| ≥ 2000` excluded (matches production filter `has_continuous_in_domain_eval`). Sample floor: ≥20 entry-ply games per (user, color).
+
+**Methodology change**: this report (v3, 2026-05-04) replaces the per-color asymmetric baselines (+31.5 / −18.9 from previous runs) with a single symmetric baseline derived from a deduplicated per-physical-game mean. The earlier per-color asymmetry was a sampling artefact: the benchmark stores one row per (user, game), white-user and black-user slices are made up of almost entirely *different* physical games (~0.25% overlap), and the small skill edge of benchmark users vs their typical opponent split the per-color means asymmetrically. Deduping cancels that artefact. See `.claude/skills/benchmarks/SKILL.md` Section 3 methodology change history.
 
 ### Currently set in code
 
-- `EVAL_BASELINE_CP_WHITE = 31.5`, `EVAL_BASELINE_CP_BLACK = -18.9` (in `app/services/opening_insights_constants.py`)
+- `EVAL_BASELINE_CP_WHITE = 28`, `EVAL_BASELINE_CP_BLACK = -20` (in `app/services/opening_insights_constants.py`) — **symmetry invariant violated** (`-20 ≠ -28`); see recommendation below.
 - `EVAL_CONFIDENCE_MIN_N = 20`
 - `EVAL_NEUTRAL_MIN_PAWNS = -0.30`, `EVAL_NEUTRAL_MAX_PAWNS = 0.30`, `EVAL_BULLET_DOMAIN_PAWNS = 1.5` (in `frontend/src/lib/openingStatsZones.ts`)
 - EG-entry constants: not yet defined (no live z-test or bullet chart).
 
-### 3a. MG entry — color-split engine-asymmetry baseline (game-level)
+### 3a. MG entry — symmetric baseline (deduped, game-level, white-POV)
 
-| color | n_games | mean | median | SD | p05 | p95 |
-|-------|--------:|-----:|-------:|---:|----:|----:|
-| white | 624,634 | **+31.53** | +28.0 | 238.0 | -397 | +462 |
-| black | 625,130 | **-18.86** | -20.0 | 237.3 | -445 | +414 |
-| pooled | 1,249,764 | +6.32 | +4.0 | 239.0 | -423 | +440 |
+| n_games | baseline | median | SD | p05 | p95 |
+|--------:|---------:|-------:|---:|----:|----:|
+| 1,246,674 | **+25.18** | +24.0 | 237.7 | −406 | +453 |
 
-**Recommendation**: live `EVAL_BASELINE_CP_WHITE = 31.5` matches measured +31.53 (Δ=0.03 cp); `EVAL_BASELINE_CP_BLACK = -18.9` matches measured -18.86 (Δ=0.04 cp). **Action: keep both.** The benchmark population reproduces the 2026-03 calibration to two decimal places — engine-version and population drift have not moved the asymmetry baseline.
+Black baseline = −25.18 cp by construction. Symmetric around white's first-move tempo; no per-color sub-block needed.
 
-### 3b. MG entry — per-(user, color) centered distribution
+**Recommendation**: update `EVAL_BASELINE_CP_WHITE` from `28` → `25` and `EVAL_BASELINE_CP_BLACK` from `-20` → `-25`. The white shift (`|28 − 25.18| = 2.8` cp) is within the 5 cp tolerance, but the symmetric methodology requires `BLACK = −WHITE`, so both constants should be updated together to restore the invariant. **Action: update both to ±25.**
 
-| color | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
-|-------|--:|-----:|---:|----:|----:|----:|----:|----:|
-| white | 1,745 | -1.81 | 58.6 | -102.8 | -28.6 | +2.2 | +29.1 | +82.1 |
-| black | 1,751 | -2.55 | 57.7 | -97.8 | -25.7 | -0.7 | +26.2 | +78.5 |
-| **pooled** | **3,496** | **-2.18** | **58.2** | **-100.0** | **-26.8** | **+0.6** | **+27.9** | **+80.2** |
+### 3b. MG entry — per-(user, color) centered, pooled distribution
 
-**Color-axis Cohen's d**: `(−1.81 − (−2.55)) / sqrt((58.6² + 57.7²)/2) = 0.74 / 58.16 ≈ 0.013` → **collapse**. Centering on the color-matched baseline removes the engine asymmetry by construction; the residual cross-color drift is statistical noise (well below the 0.2 threshold).
+| n | mean | SD | p05 | p25 | p50 | p75 | p95 |
+|--:|-----:|---:|----:|----:|----:|----:|----:|
+| 3,496 | **+4.15** | 58.2 | −93.5 | −20.6 | +6.9 | +34.2 | +86.4 |
+
+Centered mean = +4.15 cp = the residual benchmark-user skill edge that the baseline does not absorb. Below the 10 cp asymmetric-zone threshold, so symmetric zones remain appropriate.
 
 **Collapse verdict (centered)**:
-- Color: `|d| ≈ 0.013` → **collapse**
-- TC: `max |d| ≈ 0.25` (bullet vs rapid) → **review**
-- ELO: `max |d| ≈ 0.23` (800 vs 2000) → **review**
+- TC: `max |d| ≈ 0.25` (bullet vs rapid; bullet centered −4.5 cp, rapid +9.9 cp) → **review**
+- ELO: `max |d| ≈ 0.23` (800 vs 2000; 800 centered −6.9 cp, 2000 +8.0 cp) → **review**
+- Color: degenerate by construction (single ±X baseline) — not reported.
 
-Both review verdicts are driven by the 800 cohort (-13 cp centered) and the bullet cohort (-11 cp centered) entering MG slightly worse than baseline. Effect size is ~25% of within-cell SD — small but real.
+Both review verdicts are driven by the 800 cohort (−6.9 cp centered) entering MG slightly worse than baseline, and the bullet cohort (−4.5 cp). Effect sizes ~25% of within-cell SD — small but real. Above-1200 cohorts are tightly clustered around +6 to +8 cp centered.
 
 **Recommendations** (MG-entry bullet-chart neutral zone & domain):
-- Neutral zone: pooled `[p25, p75] = [-26.8, +27.9]` → symmetric **±28 cp ≈ ±0.28 pawns**. Live `EVAL_NEUTRAL_MIN/MAX_PAWNS = ±0.30`. **Action: keep** (Δ=2 cp; within noise).
-- Domain: pooled `[p05, p95] = [-100.0, +80.2]` → symmetric **±100 cp = ±1.0 pawns**. Live `EVAL_BULLET_DOMAIN_PAWNS = 1.5`. Live is wider than data demands; **Action: keep** for visual headroom (the 5–95% tails cover ±1.0 pawns; the live bound covers tail outliers cleanly).
+- Neutral zone: pooled `[p25, p75] = [−20.6, +34.2]` → symmetric **±35 cp ≈ ±0.35 pawns** (using max(|p25|, |p75|), rounded to nearest 5 cp). Live `EVAL_NEUTRAL_MIN/MAX_PAWNS = ±0.30`. Δ=5 cp at the threshold; **Action: keep ±0.30** unless a future run consistently shows ±35.
+- Domain: pooled `[p05, p95] = [−93.5, +86.4]` → symmetric **±95 cp ≈ ±0.95 pawns**. Live `EVAL_BULLET_DOMAIN_PAWNS = 1.5`. Live is wider than data demands; **Action: keep** for visual headroom (the 5–95% tails cover ±0.95 pawns; the live bound covers tail outliers cleanly).
+- Mate-row footnote: 6,355 mate rows excluded at MG entry (pre-dedupe; ≈0.5% of qualifying rows).
 
-### 3c. EG entry — color-split engine-asymmetry baseline (game-level)
+### 3c. EG entry — symmetric baseline (deduped, game-level, white-POV)
 
-| color | n_games | mean | median | SD | p05 | p95 |
-|-------|--------:|-----:|-------:|---:|----:|----:|
-| white | 400,153 | +23.11 | +9.0 | 443.1 | -710 | +736 |
-| black | 402,909 | +3.21 | 0.0 | 441.7 | -723 | +720 |
-| pooled | 803,062 | +13.12 | +3.0 | 442.5 | -716 | +728 |
+| n_games | baseline | median | SD | p05 | p95 |
+|--------:|---------:|-------:|---:|----:|----:|
+| 801,065 | **+9.86** | 0.0 | 442.6 | −715 | +730 |
 
-**Note**: no live constants for EG entry yet (no z-test or bullet chart shipped). When that infrastructure lands, calibrate against these values.
+Black baseline = −9.86 cp by construction. EG-entry baseline is ~2.5× smaller in magnitude than MG-entry (+10 vs +25 cp), reflecting that decisive games tend to terminate before reaching `phase = 2` — the surviving sample at EG entry is dominated by closer-to-balanced positions, with much wider tails (SD 443 vs 238).
 
-### 3d. EG entry — per-(user, color) centered distribution
+**Note**: no live constants for EG entry yet (no z-test or bullet chart shipped). When that infrastructure lands, propose `EVAL_BASELINE_CP_WHITE_EG = 10`, `EVAL_BASELINE_CP_BLACK_EG = -10`.
 
-| color | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
-|-------|--:|-----:|---:|----:|----:|----:|----:|----:|
-| white | 1,654 | -3.37 | 119.8 | -199.2 | -69.1 | +1.2 | +63.7 | +183.6 |
-| black | 1,650 | -5.16 | 113.8 | -193.2 | -65.7 | -5.3 | +59.0 | +185.3 |
-| **pooled** | **3,304** | **-4.26** | **116.8** | **-196.0** | **-66.9** | **-2.4** | **+62.2** | **+183.8** |
+### 3d. EG entry — per-(user, color) centered, pooled distribution
 
-**Color-axis Cohen's d**: `(−3.37 − (−5.16)) / sqrt((119.8² + 113.8²)/2) = 1.79 / 116.83 ≈ 0.015` → **collapse**.
+| n | mean | SD | p05 | p25 | p50 | p75 | p95 |
+|--:|-----:|---:|----:|----:|----:|----:|----:|
+| 3,304 | **+8.90** | 116.8 | −182.9 | −53.8 | +10.7 | +75.3 | +197.0 |
+
+Centered mean = +8.90 cp, just under the 10 cp asymmetric-zone threshold. Symmetric zones still appropriate, but flag for re-check on next run.
 
 **Collapse verdict (centered)**:
-- Color: `|d| ≈ 0.015` → **collapse**
-- TC: `max |d| ≈ 0.22` (bullet vs rapid) → **review**
-- ELO: `max |d| ≈ 0.28` (800 vs 2400) → **review**
+- TC: `max |d| ≈ 0.22` (bullet vs rapid; bullet centered −6.1 cp, rapid +20.8 cp) → **review**
+- ELO: `max |d| ≈ 0.28` (800 vs 2400; 800 centered −15.0 cp, 2400 +21.6 cp) → **review**
+- Color: degenerate by construction.
 
-Same pattern as MG: centering removes engine bias cleanly; weak TC + ELO cohort effects (lower ratings enter EG at slightly worse-than-baseline).
+Same pattern as MG, slightly stronger: centering removes engine bias cleanly; weak TC + ELO cohort effects with the same direction (lower ratings and faster TCs enter EG at worse-than-baseline). The ELO ramp at EG is monotonic (`800: −15.0`, `1200: +1.5`, `1600: +14.7`, `2000: +20.6`, `2400: +21.6`) — the Cohen's d is bounded by the noisy 800-cohort variance.
 
 **Recommendations** (informational — no live constants):
-- Neutral zone: pooled `[p25, p75] = [-66.9, +62.2]` → symmetric **±65 cp ≈ ±0.65 pawns**.
-- Domain: pooled `[p05, p95] = [-196.0, +183.8]` → symmetric **±200 cp = ±2.0 pawns**.
+- Neutral zone: pooled `[p25, p75] = [−53.8, +75.3]` → symmetric **±75 cp ≈ ±0.75 pawns**.
+- Domain: pooled `[p05, p95] = [−182.9, +197.0]` → symmetric **±200 cp = ±2.0 pawns**.
+- Mate-row footnote: 45,335 mate rows excluded at EG entry (pre-dedupe; ≈5.2% of qualifying rows — much higher than MG since mate-in-N forecasts dominate late endgames).
 
-EG-entry signal is ~2.5× as wide as MG-entry (SD 117 vs 58 cp) — by EG, evals have had time to drift further from book parity, and the within-user mean swings further too.
+EG-entry signal is ~2× as wide as MG-entry (SD 117 vs 58 cp on centered per-(user, color) means).
 
 ### 3e. Eval coverage at phase entry
 
@@ -474,8 +474,8 @@ Per-(game, endgame_class) span ≥6 plies. Each game traversing multiple classes
 | Parity per-user | collapse (0.13) | review (0.48) | Single zone OK; mild ELO ramp |
 | Recovery per-user | **keep separate (1.10)** | review (0.40) | Stratify per TC; bullet >> classical |
 | Endgame Skill per-user | collapse (0.18) | **keep separate (0.78)** | Stratify per ELO |
-| MG-entry eval per-(user,color) centered | review (0.25) | review (0.23) | Color collapses (d≈0.01); single zone tolerable |
-| EG-entry eval per-(user,color) centered | review (0.22) | review (0.28) | Color collapses (d≈0.02); single zone tolerable |
+| MG-entry eval per-(user,color) centered | review (0.25) | review (0.23) | Symmetric ±25 baseline; color collapse degenerate by construction; single zone OK |
+| EG-entry eval per-(user,color) centered | review (0.22) | review (0.28) | Symmetric ±10 baseline; color collapse degenerate by construction; single zone OK |
 | Clock-diff %-of-base per-user | review (0.23) | review (0.21) | Single zone fine; mild axis effects |
 | Net timeout rate per-user | collapse (0.05) | review (0.41) | Single zone OK; ELO has real ramp |
 | Time-pressure curve per-bucket | review (0.34, bucket 0) | collapse (0.16) | Per-TC overlay needed at low-time end |
@@ -494,10 +494,10 @@ Per-(game, endgame_class) span ≥6 plies. Each game traversing multiple classes
 | Parity neutral band | `FIXED_GAUGE_ZONES.parity` | [0.45, 0.55] | pooled [0.44, 0.56] | TC collapse / ELO review | **keep** |
 | Recovery neutral band | `FIXED_GAUGE_ZONES.recovery` | [0.24, 0.36] | pooled [0.24, 0.36] | **keep separate** on TC, review ELO | **keep** (single band understates TC effect) |
 | Endgame Skill neutral band | `ENDGAME_SKILL_ZONES` | [0.47, 0.55] | pooled [0.47, 0.55] | TC collapse / **keep separate** ELO | **keep** (consider per-ELO if UI affords it) |
-| MG-entry baseline white | `EVAL_BASELINE_CP_WHITE` | 31.5 | 31.5 | color collapse | **keep** (Δ=0.03 cp) |
-| MG-entry baseline black | `EVAL_BASELINE_CP_BLACK` | -18.9 | -18.9 | color collapse | **keep** (Δ=0.04 cp) |
-| MG-entry neutral zone | `EVAL_NEUTRAL_MIN/MAX_PAWNS` | ±0.30 | ±0.28 (pooled p25/p75) | color collapse / TC+ELO review | **keep** (Δ=2 cp) |
-| MG-entry domain | `EVAL_BULLET_DOMAIN_PAWNS` | 1.5 | 1.0 (pooled p05/p95) | — | **keep** (live wider for visual headroom) |
+| MG-entry baseline white | `EVAL_BASELINE_CP_WHITE` | 28 | 25 (deduped game-level mean) | symmetric by construction | **update** to 25 (Δ=2.8 cp; restores symmetry invariant when paired with black) |
+| MG-entry baseline black | `EVAL_BASELINE_CP_BLACK` | -20 | -25 (= -WHITE by construction) | symmetric by construction | **update** to -25 (current value violates `BLACK = -WHITE` invariant) |
+| MG-entry neutral zone | `EVAL_NEUTRAL_MIN/MAX_PAWNS` | ±0.30 | ±0.35 (pooled p25/p75 max) | TC+ELO review | **keep** (Δ=5 cp at threshold; revisit on next run) |
+| MG-entry domain | `EVAL_BULLET_DOMAIN_PAWNS` | 1.5 | 0.95 (pooled p05/p95 max) | — | **keep** (live wider for visual headroom) |
 | Confidence floor | `EVAL_CONFIDENCE_MIN_N` | 20 | 20 | — | **keep** |
 | Clock-diff threshold | `NEUTRAL_PCT_THRESHOLD` | 5.0 | 5.0 (pooled p25/p75 ≈ ±5) | TC+ELO review | **keep** |
 | Net-timeout threshold | `NEUTRAL_TIMEOUT_THRESHOLD` | 5.0 | 5.0 (pooled p25/p75 ≈ ±5) | TC collapse / ELO review | **keep** |
@@ -517,6 +517,6 @@ Per-(game, endgame_class) span ≥6 plies. Each game traversing multiple classes
 | Per-class recov (mixed) | `.mixed.recovery` | [0.28, 0.38] | [0.28, 0.38] | — | **keep** |
 | Per-class recov (pawnless) | `.pawnless.recovery` | [0.21, 0.31] | [0.15, 0.25] | — | **review** (pop -6pp drift; tighten if confident in n=2363 sample) |
 
-**Net actionable**: only **pawnless** conversion and recovery bands have drifted ≥5pp from the population. Everything else is within ±2pp and stays. The MG-entry baseline calibration constants (`EVAL_BASELINE_CP_WHITE/BLACK`) reproduce to 0.04 cp — engine-version drift has not moved them.
+**Net actionable**: (1) **pawnless** conversion and recovery bands have drifted ≥5pp from the population. (2) **MG-entry baseline constants** should be migrated from the asymmetric pair (+28 / −20) to the symmetric pair (+25 / −25) per the Section 3 v3 methodology — the asymmetric values were a sampling-shape artefact, not a real population effect. Both white and black shifts are individually within the 5 cp noise threshold, but together they restore the `BLACK = −WHITE` invariant the new methodology requires. Everything else is within ±2pp and stays.
 
 The two "keep separate" axes that current single-zone gauges don't honor (Conversion and Recovery on TC, Endgame Skill on ELO) are deliberate UI simplifications, not bugs. If/when stratified gauges become a UI priority, the per-cell tables in §2 give the cell-specific neutral zones.
