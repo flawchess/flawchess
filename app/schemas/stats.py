@@ -74,10 +74,11 @@ class MostPlayedOpeningsResponse(BaseModel):
 
     white: list[OpeningWDL]
     black: list[OpeningWDL]
-    # Engine-asymmetry baselines (in pawns) used by the frontend bullet chart
-    # to center the visual on the same H0 the per-row z-test uses. Sourced from
-    # _baseline_cp_for_color('white'|'black') / 100.0; per-game mean from the
-    # 2026-05-04 Lichess benchmark (reports/benchmarks-2026-05-04.md).
+    # Engine-asymmetry baselines (in pawns) rendered as a small reference tick
+    # on the frontend MG-entry bullet chart. The chart's center stays at 0 cp
+    # (engine-balanced) and the per-row z-test runs against H0: mean == 0;
+    # these values are display-only annotations (260504-rvh). Per-game mean
+    # from the 2026-05-04 Lichess benchmark (reports/benchmarks-2026-05-04.md).
     eval_baseline_pawns_white: float
     eval_baseline_pawns_black: float
 
