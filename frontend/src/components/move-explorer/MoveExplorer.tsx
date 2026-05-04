@@ -15,7 +15,7 @@ import {
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Tooltip } from '@/components/ui/tooltip';
-import { ConfidenceTooltipContent } from '@/components/insights/ConfidenceTooltipContent';
+import { WdlConfidenceTooltip } from '@/components/insights/WdlConfidenceTooltip';
 import { cn } from '@/lib/utils';
 import { isTrollPosition } from '@/lib/trollOpenings';
 import type { NextMoveEntry, Color } from '@/types/api';
@@ -372,7 +372,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
         {showConfidence && (
           <Tooltip
             content={
-              <ConfidenceTooltipContent
+              <WdlConfidenceTooltip
                 level={entry.confidence}
                 pValue={entry.p_value}
                 score={entry.score}

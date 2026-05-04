@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { ConfidenceTooltipContent } from './ConfidenceTooltipContent';
+import { EvalConfidenceTooltip } from './EvalConfidenceTooltip';
 
 type ConfidenceLevel = 'low' | 'medium' | 'high';
 
@@ -13,6 +13,9 @@ interface BulletConfidencePopoverProps {
   evalMeanPawns: number | null | undefined;
   evalCiLowPawns?: number | null;
   evalCiHighPawns?: number | null;
+  /** Per-color engine baseline (chart center, in pawns). Drives the "centered"
+   * line in the tooltip body. */
+  centerPawns: number;
   testId: string;
   ariaLabel?: string;
   /** Optional preface paragraph rendered above the per-row stats. */
@@ -31,6 +34,7 @@ export function BulletConfidencePopover({
   evalMeanPawns,
   evalCiLowPawns,
   evalCiHighPawns,
+  centerPawns,
   testId,
   ariaLabel = 'Show eval confidence details',
   prefaceText,
@@ -83,14 +87,14 @@ export function BulletConfidencePopover({
           )}
         >
           {prefaceText && <p className="mb-2">{prefaceText}</p>}
-          <ConfidenceTooltipContent
+          <EvalConfidenceTooltip
             level={level}
             pValue={pValue ?? 1}
-            score={0.5}
             gameCount={gameCount ?? 0}
-            evalMeanPawns={evalMeanPawns}
+            evalMeanPawns={evalMeanPawns ?? 0}
             evalCiLowPawns={evalCiLowPawns}
             evalCiHighPawns={evalCiHighPawns}
+            centerPawns={centerPawns}
           />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>

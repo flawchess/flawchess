@@ -169,6 +169,7 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, evalBa
               evalMeanPawns={o.avg_eval_pawns}
               evalCiLowPawns={o.eval_ci_low_pawns}
               evalCiHighPawns={o.eval_ci_high_pawns}
+              centerPawns={evalBaselinePawns}
               testId={`${testIdPrefix}-bullet-popover-${rowKey}`}
               prefaceText={buildMgEvalHeaderTooltip(evalBaselinePawns)}
             />

@@ -62,7 +62,6 @@ export function buildMgEvalHeaderTooltip(evalBaselinePawns: number): string {
     "The chart is centered on the engine baseline for your color. " +
     "According to the FlawChess benchmark, the mean evaluation when transitioning from the opening to the middlegame " +
     "is +0.32 pawns for white and -0.19 pawns for black. " +
-    "Position relative to the center reflects performance vs that baseline; the displayed number is the raw evaluation. " +
-    `Active baseline: ${sign}${evalBaselinePawns.toFixed(2)} pawns.`
+    "Position relative to the center reflects performance vs that baseline; the displayed number is the raw evaluation."
   );
 }
