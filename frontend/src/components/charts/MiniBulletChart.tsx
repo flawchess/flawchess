@@ -33,12 +33,17 @@ const BOUNDARY_EPSILON = 1e-6;
 interface MiniBulletChartProps {
   /** Signed difference to visualize (e.g. row_score - opponent_score). */
   value: number;
-  /** Lower bound of the neutral zone. Default -0.10. */
+  /** Lower bound of the neutral zone, expressed as an offset from `center`. Default -0.10. */
   neutralMin?: number;
-  /** Upper bound of the neutral zone. Default 0. */
+  /** Upper bound of the neutral zone, expressed as an offset from `center`. Default 0. */
   neutralMax?: number;
   /** Bar domain half-width (values beyond ±domain are clamped). Default 0.40. */
   domain?: number;
+  /** Reference center for the chart. The reference line, neutral-zone shading,
+   * bar-from-center fill, and zone-color test are all computed relative to this.
+   * Default 0 (legacy zero-centered behavior — visually identical to the
+   * pre-260504-my2 chart for callers that don't pass `center`). */
+  center?: number;
   /** Accessible label. Falls back to the signed numeric value. */
   ariaLabel?: string;
   /** Height class for the zone background, default h-5 (matches MiniWDLBar). */
@@ -61,6 +66,7 @@ export function MiniBulletChart({
   neutralMin = DEFAULT_NEUTRAL_MIN,
   neutralMax = DEFAULT_NEUTRAL_MAX,
   domain = DEFAULT_DOMAIN,
+  center = 0,
   ariaLabel,
   heightClass = 'h-5',
   valueHeightClass = 'h-2',
@@ -71,29 +77,36 @@ export function MiniBulletChart({
 
   // Map domain value to percent position (0% = left edge, 100% = right edge).
   const toPct = (v: number): number => ((v + domain) / (2 * domain)) * 100;
-  const zeroPct = toPct(0);
-  const neutralMinPct = toPct(Math.max(-domain, neutralMin));
-  const neutralMaxPct = toPct(Math.min(domain, neutralMax));
+  const centerPct = toPct(center);
+  // Neutral-band bounds are offsets from `center`; convert to absolute eval space
+  // before clamping to the chart domain. With center=0 this collapses to the
+  // legacy zero-centered behavior (absNeutralMin === neutralMin etc.).
+  const absNeutralMin = center + neutralMin;
+  const absNeutralMax = center + neutralMax;
+  const neutralMinPct = toPct(Math.max(-domain, absNeutralMin));
+  const neutralMaxPct = toPct(Math.min(domain, absNeutralMax));
   const markerPct = toPct(clamped);
 
-  // Fill color follows the zone the raw (unclamped) value falls into.
+  // Fill color follows the zone the raw (unclamped) value falls into,
+  // measured against absolute (center-shifted) bounds.
   let fillColor: string;
-  if (value >= neutralMax) {
+  if (value >= absNeutralMax) {
     fillColor = ZONE_SUCCESS;
-  } else if (value >= neutralMin) {
+  } else if (value >= absNeutralMin) {
     fillColor = ZONE_NEUTRAL;
   } else {
     fillColor = ZONE_DANGER;
   }
 
-  // Overlay bar spans from zero to the clamped value.
-  const barLeft = value >= 0 ? zeroPct : markerPct;
-  const barRight = value >= 0 ? markerPct : zeroPct;
+  // Overlay bar spans from the center to the clamped value.
+  const barLeft = value >= center ? centerPct : markerPct;
+  const barRight = value >= center ? markerPct : centerPct;
   const barWidth = Math.max(0, barRight - barLeft);
 
-  // Suppress ticks that coincide with the zero reference line.
-  const showNeutralMinTick = Math.abs(neutralMin) > BOUNDARY_EPSILON;
-  const showNeutralMaxTick = Math.abs(neutralMax) > BOUNDARY_EPSILON;
+  // Suppress ticks that coincide with the center reference line.
+  // (With center=0 this reduces to |neutralMin| / |neutralMax|.)
+  const showNeutralMinTick = Math.abs(absNeutralMin - center) > BOUNDARY_EPSILON;
+  const showNeutralMaxTick = Math.abs(absNeutralMax - center) > BOUNDARY_EPSILON;
 
   return (
     <div
@@ -129,10 +142,10 @@ export function MiniBulletChart({
           }}
         />
       </div>
-      {/* Zero reference line */}
+      {/* Center reference line */}
       <div
         className="absolute top-0 bottom-0 w-px bg-foreground/50"
-        style={{ left: `${zeroPct}%` }}
+        style={{ left: `${centerPct}%` }}
       />
       {/* Neutral zone boundary ticks — subtle, only shown when distinct from zero */}
       {showNeutralMinTick && (
