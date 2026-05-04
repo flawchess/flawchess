@@ -2,10 +2,11 @@
  * Bullet-chart zone bounds for the "Avg eval at MG entry" cell in
  * MostPlayedOpeningsTable (Phase 80, D-07).
  *
- * Calibrated from reports/benchmarks-2026-05-04.md (per-game-mean recalibration,
- * n=1.25M trimmed games). The neutral band widens to ±0.25 pawns (from ±0.20)
- * to accommodate baseline-centering noise: a quarter pawn from the active
- * baseline is still treated as indistinguishable.
+ * Calibrated from reports/benchmarks-2026-05-04-section-3.md (per-(user, color)
+ * centered, n=3,496 user-color pairs ≥20 games each). Pooled centered
+ * [p25, p75] = [-26.8, +27.9] cp -> symmetric ±0.30 pawns. White vs black
+ * Cohen's d = 0.013 confirms color collapse: one symmetric zone applies after
+ * baseline subtraction.
  *
  * Per-game CI at small N: per-game SD is much wider than the per-user-mean SD,
  * so the 95% CI whisker (~1.96 x SE) routinely spans much of the domain at
@@ -18,10 +19,10 @@
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 
 /** MG: lower bound of the neutral zone (in pawns, signed user-perspective, relative to center). */
-export const EVAL_NEUTRAL_MIN_PAWNS = -0.25;
+export const EVAL_NEUTRAL_MIN_PAWNS = -0.30;
 
 /** MG: upper bound of the neutral zone (in pawns, relative to center). Symmetric. */
-export const EVAL_NEUTRAL_MAX_PAWNS = 0.25;
+export const EVAL_NEUTRAL_MAX_PAWNS = 0.30;
 
 /** MG: bullet-chart half-domain (in pawns). Values beyond +-domain clamp; CI whiskers go open-ended. */
 export const EVAL_BULLET_DOMAIN_PAWNS = 1.5;
@@ -59,8 +60,8 @@ export function buildMgEvalHeaderTooltip(evalBaselinePawns: number): string {
   const sign = evalBaselinePawns >= 0 ? '+' : '';
   return (
     "The chart is centered on the engine baseline for your color. " +
-    "Stockfish gives white a structural advantage at middlegame entry (+0.32 pawns mean) " +
-    "and black a symmetric disadvantage (-0.19 pawns mean). " +
+    "According to the FlawChess benchmark, the mean evaluation when transitioning from the opening to the middlegame " +
+    "is +0.32 pawns for white and -0.19 pawns for black. " +
     "Position relative to the center reflects performance vs that baseline; the displayed number is the raw evaluation. " +
     `Active baseline: ${sign}${evalBaselinePawns.toFixed(2)} pawns.`
   );
