@@ -59,6 +59,13 @@ class WDLStats(BaseModel):
     win_pct: float
     draw_pct: float
     loss_pct: float
+    # Score and confidence fields — computed via compute_confidence_bucket
+    # (same Wald formula as per-move pipeline). Added in quick task 260504-ttq.
+    score: float
+    confidence: Literal["low", "medium", "high"]
+    p_value: float
+    ci_low: float
+    ci_high: float
 
 
 class GameRecord(BaseModel):
