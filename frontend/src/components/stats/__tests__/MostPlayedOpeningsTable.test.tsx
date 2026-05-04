@@ -10,9 +10,10 @@ import type { ReactNode } from 'react';
 import type { OpeningWDL } from '@/types/stats';
 import {
   MostPlayedOpeningsTable,
-  MG_EVAL_HEADER_TOOLTIP,
+  buildMgEvalHeaderTooltip,
 } from '../MostPlayedOpeningsTable';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
+import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 
 afterEach(() => {
   cleanup();
@@ -87,13 +88,14 @@ function _makeRow(overrides: Partial<OpeningWDL> = {}): OpeningWDL {
 const noop = () => {};
 const TEST_PREFIX = 'most-played';
 
-function renderTable(rows: OpeningWDL[]) {
+function renderTable(rows: OpeningWDL[], evalBaselinePawns: number = 0) {
   return render(
     <MostPlayedOpeningsTable
       openings={rows}
       color="white"
       testIdPrefix={TEST_PREFIX}
       onOpenGames={noop}
+      evalBaselinePawns={evalBaselinePawns}
       showAll={true}
     />,
   );
@@ -145,7 +147,7 @@ describe('MostPlayedOpeningsTable — Phase 80 desktop columns', () => {
     ) as HTMLElement | null;
     expect(popover).not.toBeNull();
     // Preface text (formerly the column-header tooltip) is now passed into the per-row popover.
-    expect(popover?.dataset.preface).toContain('across analyzed games');
+    expect(popover?.dataset.preface).toContain('Position relative to the center');
   });
 
   it('eval_n === 0 renders em-dash for both MG eval text and bullet chart, no popover wrapper', () => {
@@ -198,8 +200,69 @@ describe('MostPlayedOpeningsTable — D-10 column header tooltip', () => {
     ).toBeNull();
   });
 
-  it('MG_EVAL_HEADER_TOOLTIP constant is exported and well-formed', () => {
-    expect(MG_EVAL_HEADER_TOOLTIP).toContain('across analyzed games');
+  it('buildMgEvalHeaderTooltip produces tooltip text with the active baseline number', () => {
+    const text = buildMgEvalHeaderTooltip(0.32);
+    expect(text).toContain('Position relative to the center');
+    expect(text).toContain('+0.32');
+  });
+
+  it('buildMgEvalHeaderTooltip handles negative baseline (black) without em-dashes', () => {
+    const text = buildMgEvalHeaderTooltip(-0.19);
+    expect(text).toContain('-0.19');
+    // Sanity: no em-dash characters per CLAUDE.md user-facing copy rule.
+    expect(text).not.toContain('—');
+  });
+});
+
+describe('MostPlayedOpeningsTable — baseline-centered eval cell (260504-my2)', () => {
+  function readEvalCellColor(rowKey: string): string {
+    const cell = document.querySelector(
+      `[data-testid="${TEST_PREFIX}-eval-text-${rowKey}"]`,
+    ) as HTMLElement | null;
+    const span = cell?.querySelector('span.font-semibold') as HTMLElement | null;
+    return span?.style.color ?? '';
+  }
+
+  // jsdom normalizes oklch component literals (e.g. "0.50" -> "0.5"), so compare
+  // by stripping whitespace + zero-padding to make the assertion robust.
+  function normalizeColor(c: string): string {
+    return c.replace(/\s+/g, ' ').replace(/(\d)\.(\d+?)0+(\D|$)/g, '$1.$2$3').trim();
+  }
+
+  it('row at the white baseline (delta ≈ 0) is rendered with neutral color', () => {
+    const row = _makeRow({
+      avg_eval_pawns: 0.32,
+      eval_n: 50,
+      eval_confidence: 'medium',
+    });
+    renderTable([row], 0.315);
+    expect(normalizeColor(readEvalCellColor(row.opening_eco))).toBe(
+      normalizeColor(ZONE_NEUTRAL),
+    );
+  });
+
+  it('row well above the white baseline is rendered with success color', () => {
+    const row = _makeRow({
+      avg_eval_pawns: 0.65,
+      eval_n: 50,
+      eval_confidence: 'high',
+    });
+    renderTable([row], 0.315);
+    expect(normalizeColor(readEvalCellColor(row.opening_eco))).toBe(
+      normalizeColor(ZONE_SUCCESS),
+    );
+  });
+
+  it('row well below the white baseline is rendered with danger color', () => {
+    const row = _makeRow({
+      avg_eval_pawns: 0.0,
+      eval_n: 50,
+      eval_confidence: 'high',
+    });
+    renderTable([row], 0.315);
+    expect(normalizeColor(readEvalCellColor(row.opening_eco))).toBe(
+      normalizeColor(ZONE_DANGER),
+    );
   });
 });
 
@@ -216,6 +279,7 @@ describe('MostPlayedOpeningsTable — bookmarked openings reuse', () => {
         color="white"
         testIdPrefix="bookmarked"
         onOpenGames={noop}
+        evalBaselinePawns={0.315}
         showAll={true}
       />,
     );
