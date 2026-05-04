@@ -3,7 +3,6 @@ import { Chess } from 'chess.js';
 import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
-import { MINOR_EFFECT_SCORE, SCORE_PIVOT } from '@/lib/arrowColor';
 import { scoreZoneColor } from '@/lib/scoreBulletConfig';
 import { OPENING_INSIGHTS_CONFIDENCE_COPY } from '@/components/insights/OpeningInsightsBlock';
 import {
@@ -267,12 +266,10 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   // the curated set for the side that just moved. Pure synchronous lookup —
   // no useMemo (RESEARCH.md anti-pattern note).
   const showTroll = isTrollPosition(entry.result_fen, sideJustMoved);
-  // Color the score percent only for moves with a meaningful effect on a
-  // reliable sample (|score - 0.5| >= 0.05, game_count >= 10, confidence
-  // above 'low'). Otherwise the percent renders in muted grey.
-  const hasEffectOfInterest = Math.abs(entry.score - SCORE_PIVOT) >= MINOR_EFFECT_SCORE;
+  // Color the score percent for any reliable sample (game_count >= 10,
+  // confidence above 'low'). The 45-55% band renders in the neutral blue
+  // zone color via scoreZoneColor; outside that band it shows red/green.
   const showScoreColor =
-    hasEffectOfInterest &&
     entry.game_count >= MIN_GAMES_FOR_RELIABLE_STATS &&
     entry.confidence !== 'low';
 
@@ -316,9 +313,9 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
         'cursor-pointer min-h-[44px]',
         // `!` (Tailwind v4 important suffix) is needed so the hover background
         // beats the inline severity tint set via `style.backgroundColor`.
-        // hover:bg-blue-500/15 sticks on mobile after tap, causing two highlighted rows
-        !IS_TOUCH && 'hover:bg-blue-500/15!',
-        selectedMove === entry.move_san && 'bg-blue-500/15',
+        // hover:bg-foreground/10 sticks on mobile after tap, causing two highlighted rows
+        !IS_TOUCH && 'hover:bg-foreground/10!',
+        selectedMove === entry.move_san && 'bg-foreground/10',
         tintColor !== null && highlightPulse && 'animate-row-highlight-pulse',
       )}
       style={Object.keys(rowStyle).length > 0 ? rowStyle : undefined}

@@ -65,20 +65,21 @@ const ARROW_TIP_OVERSHOOT = 0.15;
 // stays driven by the same timing.
 const ARROW_PULSE_CLASS = 'animate-arrow-pulse';
 
-// Render priority determined by arrowSortKey: grey = 2 (drawn first = bottom), red = 1 (middle), green = 0 (drawn last = on top).
-// Sort descending by key so grey (2) is rendered first (behind) and colored arrows (0, 1) render last (on top).
-// Within each color group, thick arrows are drawn first so thin arrows stay visible.
+// Render priority: hovered arrow always on top; otherwise green > red > blue
+// > grey (low-data). Within each tier, thicker arrows are drawn first so thin
+// arrows stay visible.
 
 function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; boardWidth: number; flipped: boolean }) {
   if (arrows.length === 0) return null;
 
   const sqSize = boardWidth / 8;
 
-  const sortedArrows = [...arrows].sort(
-    (a, b) =>
-      arrowSortKey(b.color) - arrowSortKey(a.color)
-      || b.width - a.width,
-  );
+  const sortedArrows = [...arrows].sort((a, b) => {
+    const ah = a.isHovered ? 1 : 0;
+    const bh = b.isHovered ? 1 : 0;
+    if (ah !== bh) return ah - bh;  // hovered drawn last (on top)
+    return arrowSortKey(b.color) - arrowSortKey(a.color) || b.width - a.width;
+  });
 
   return (
     <svg

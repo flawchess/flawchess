@@ -240,7 +240,7 @@ describe('Score column + mute extension', () => {
     expect(screen.getByTestId('move-explorer-row-c4').textContent).toContain('75%');
   });
 
-  it('renders the score in muted color when |score - 0.5| < 0.05 (effect below interest threshold)', () => {
+  it('renders the score in the neutral zone color when 0.45 <= score <= 0.55 (3-category arrow scheme)', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 100, score: 0.52 })]}
@@ -253,7 +253,10 @@ describe('Score column + mute extension', () => {
     const row = screen.getByTestId('move-explorer-row-e4');
     expect(row.textContent).toContain('52%');
     const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
-    expect(scoreSpan?.className).toContain('text-muted-foreground');
+    // No longer muted: the 45-55% band carries the neutral zone color (blue),
+    // matching the board arrow's DARK_BLUE bucket.
+    expect(scoreSpan?.className).not.toContain('text-muted-foreground');
+    expect(scoreSpan?.getAttribute('style')).toContain('color');
   });
 
   it('renders the score in muted color when game_count < 10', () => {
