@@ -13,7 +13,8 @@
  * N=20, this is the desired UX signal "we don't have enough data to tell."
  *
  * Zones are anchored on 0 cp (engine-balanced) for every cell, regardless of
- * color. The per-color engine asymmetry (white +0.315 / black -0.189 pawns)
+ * color. The per-color engine asymmetry (symmetric ±0.25 pawns, white's
+ * first-move tempo, recalibrated from the 2026-05-04 v3 deduped benchmark)
  * is rendered as a small reference tick on the bullet chart, not as the
  * chart's center or the test H0 (260504-rvh).
  */
@@ -29,13 +30,15 @@ export const EVAL_NEUTRAL_MAX_PAWNS = 0.30;
 /** MG: bullet-chart half-domain (in pawns). Values beyond +-domain clamp; CI whiskers go open-ended. */
 export const EVAL_BULLET_DOMAIN_PAWNS = 1.5;
 
-/** Engine-asymmetry tick position for white-color cells (per-game mean,
- * 2026-05-04 Lichess benchmark). Used as the bullet-chart tick fallback for
- * sections without a per-API baseline (e.g. bookmark sections). */
-export const EVAL_BASELINE_PAWNS_WHITE = 0.315;
+/** Engine-asymmetry tick position for white-color cells. Symmetric around 0
+ * cp from the 2026-05-04 v3 deduped benchmark (white first-move tempo
+ * baseline +25.18 cp, rounded to ±0.25 pawns). Used as the bullet-chart
+ * tick fallback for sections without a per-API baseline (e.g. bookmark
+ * sections). */
+export const EVAL_BASELINE_PAWNS_WHITE = 0.25;
 
-/** Engine-asymmetry tick position for black-color cells. */
-export const EVAL_BASELINE_PAWNS_BLACK = -0.189;
+/** Engine-asymmetry tick position for black-color cells (mirror of white). */
+export const EVAL_BASELINE_PAWNS_BLACK = -0.25;
 
 /** Pick the zone color for the MG-entry eval bullet relative to 0 cp.
  *
@@ -58,7 +61,7 @@ export function buildMgEvalHeaderTooltip(): string {
   return (
     'Engine evaluation at middlegame entry. 0 cp means engine-balanced. ' +
     'The tick shows the typical MG-entry eval for your color (a reference ' +
-    'for how openings usually leave the position): about +0.32 pawns for ' +
-    'white, -0.19 for black, per the FlawChess benchmark.'
+    'for how openings usually leave the position): about +0.25 pawns for ' +
+    'white, -0.25 for black, per the FlawChess benchmark.'
   );
 }

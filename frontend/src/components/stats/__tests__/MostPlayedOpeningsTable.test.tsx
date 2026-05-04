@@ -231,7 +231,7 @@ describe('MostPlayedOpeningsTable — zero-anchored eval cell (260504-rvh)', () 
       eval_n: 50,
       eval_confidence: 'medium',
     });
-    renderTable([row], 0.315);
+    renderTable([row], 0.25);
     expect(normalizeColor(readEvalCellColor(row.opening_eco))).toBe(
       normalizeColor(ZONE_NEUTRAL),
     );
@@ -243,7 +243,7 @@ describe('MostPlayedOpeningsTable — zero-anchored eval cell (260504-rvh)', () 
       eval_n: 50,
       eval_confidence: 'high',
     });
-    renderTable([row], 0.315);
+    renderTable([row], 0.25);
     expect(normalizeColor(readEvalCellColor(row.opening_eco))).toBe(
       normalizeColor(ZONE_SUCCESS),
     );
@@ -255,21 +255,21 @@ describe('MostPlayedOpeningsTable — zero-anchored eval cell (260504-rvh)', () 
       eval_n: 50,
       eval_confidence: 'high',
     });
-    renderTable([row], 0.315);
+    renderTable([row], 0.25);
     expect(normalizeColor(readEvalCellColor(row.opening_eco))).toBe(
       normalizeColor(ZONE_DANGER),
     );
   });
 
-  it('white engine baseline tick value (+0.315) reads as success (decoupled from H0)', () => {
+  it('white engine baseline tick value (+0.25) reads as neutral (within ±0.30 zone)', () => {
     const row = _makeRow({
-      avg_eval_pawns: 0.315,
+      avg_eval_pawns: 0.25,
       eval_n: 50,
       eval_confidence: 'high',
     });
-    renderTable([row], 0.315);
+    renderTable([row], 0.25);
     expect(normalizeColor(readEvalCellColor(row.opening_eco))).toBe(
-      normalizeColor(ZONE_SUCCESS),
+      normalizeColor(ZONE_NEUTRAL),
     );
   });
 });

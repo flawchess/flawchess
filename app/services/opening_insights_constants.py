@@ -55,18 +55,22 @@ OPENING_INSIGHTS_CI_Z_95: float = 1.96
 # These constants are eval-specific and not shared with score_confidence.
 
 # Engine-asymmetry MG-entry tick-mark positions (in pawns, signed
-# user-perspective). Per-game mean from the 2026-05-04 Lichess benchmark
+# user-perspective). Symmetric ±BASELINE around 0 cp, derived from the 2026-05-04
+# Lichess benchmark v3 deduplicated per-physical-game mean of +25.18 cp
 # (n=1.25M trimmed games — see reports/benchmarks-2026-05-04.md §3a).
+#
+# The previous per-color asymmetric values (+0.315 / -0.189) were a sampling
+# artefact of the per-(user, color) slice: white-user and black-user rows
+# were almost entirely *different* physical games, so the small skill edge of
+# benchmark users vs typical opponents split the per-color means apart.
+# Deduping at the game level cancels that artefact and yields a single
+# symmetric tempo baseline of about ±25 cp (white's first-move advantage).
 #
 # Used only as a visual reference tick on the MG-entry bullet chart, NOT as
 # the H0 reference for the z-test. The test runs against 0 cp (engine-balanced)
-# regardless of color. Quick task 260504-rvh decoupled the visual baseline
-# from the test H0 so that a user whose MG-entry mean equals the engine
-# asymmetry (+0.32 pawns for white, -0.19 for black) is no longer
-# automatically classified as "no signal" — the chart shows the asymmetry
-# as a tick the user can read against.
-EVAL_BASELINE_PAWNS_WHITE: float = 0.315
-EVAL_BASELINE_PAWNS_BLACK: float = -0.189
+# regardless of color (quick task 260504-rvh).
+EVAL_BASELINE_PAWNS_WHITE: float = 0.25
+EVAL_BASELINE_PAWNS_BLACK: float = -0.25
 
 # N gate for the eval z-test, raised from 10 to 20 to keep the Edgeworth
 # leading-error term on the normal approximation under ~2% (the population

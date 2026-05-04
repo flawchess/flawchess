@@ -16,7 +16,8 @@ p_value is the **two-sided** Wald z-test p against H0: mean == 0 cp (engine-bala
 The function exposes a `baseline_cp` parameter for arithmetic generality, but no
 production caller passes a non-zero value (quick task 260504-rvh): the per-color
 engine-asymmetry baseline is now a display annotation (a tick on the bullet chart
-at +0.315 pawns for white / -0.189 for black) rather than the H0 reference. This
+at ±0.25 pawns by color, symmetric around white's first-move tempo) rather than
+the H0 reference. This
 means a user whose MG-entry mean equals the engine baseline reads as a real signal
 ("the user's positions sit at the typical asymmetry"), and the chart's center
 remains the color-agnostic 0 cp.
@@ -66,8 +67,9 @@ def compute_eval_confidence_bucket(
     baseline_cp: H0 reference for the test. Default 0.0 (engine-balanced); no
        production caller passes a non-zero value. The parameter is retained
        for arithmetic generality and to keep the function self-contained.
-       The per-color engine-asymmetry baseline (~+31.5 cp white, ~-18.9 cp
-       black) is now a display tick on the bullet chart, not the test H0.
+       The per-color engine-asymmetry baseline (symmetric ±25 cp around 0,
+       white's first-move tempo) is now a display tick on the bullet chart,
+       not the test H0.
 
     Procedure:
       - n == 0 -> ("low", 1.0, 0.0, 0.0).

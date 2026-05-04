@@ -92,20 +92,20 @@ describe('MiniBulletChart — tickPawns prop (260504-rvh)', () => {
     expect(screen.queryByTestId('mini-bullet-tick')).toBeNull();
   });
 
-  it('tickPawns=0.315 with domain=1.5 renders tick at the expected percentage', () => {
-    render(<MiniBulletChart value={0} tickPawns={0.315} domain={1.5} />);
+  it('tickPawns=0.25 (white baseline) with domain=1.5 renders tick at the expected percentage', () => {
+    render(<MiniBulletChart value={0} tickPawns={0.25} domain={1.5} />);
     const tick = screen.queryByTestId('mini-bullet-tick');
     expect(tick).not.toBeNull();
-    // axisMin = -1.5, axisMax = 1.5; toPct(0.315) = ((0.315 + 1.5) / 3) * 100 = 60.5%
-    expect(leftPercent(tick)).toBeCloseTo(60.5, 3);
+    // axisMin = -1.5, axisMax = 1.5; toPct(0.25) = ((0.25 + 1.5) / 3) * 100 ≈ 58.333%
+    expect(leftPercent(tick)).toBeCloseTo(58.333, 2);
   });
 
-  it('tickPawns=-0.189 (black baseline) renders tick at expected percentage', () => {
-    render(<MiniBulletChart value={0} tickPawns={-0.189} domain={1.5} />);
+  it('tickPawns=-0.25 (black baseline) renders tick at expected percentage', () => {
+    render(<MiniBulletChart value={0} tickPawns={-0.25} domain={1.5} />);
     const tick = screen.queryByTestId('mini-bullet-tick');
     expect(tick).not.toBeNull();
-    // toPct(-0.189) = ((-0.189 + 1.5) / 3) * 100 = 43.7%
-    expect(leftPercent(tick)).toBeCloseTo(43.7, 3);
+    // toPct(-0.25) = ((-0.25 + 1.5) / 3) * 100 ≈ 41.667%
+    expect(leftPercent(tick)).toBeCloseTo(41.667, 2);
   });
 
   it('tickPawns outside the axis (above axisMax) -> tick not rendered', () => {

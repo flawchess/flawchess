@@ -28,12 +28,15 @@ describe('openingStatsZones — MG-entry calibration (D-07 / 260504-my2)', () =>
   });
 });
 
-describe('openingStatsZones — baseline pawn fallbacks (260504-my2)', () => {
-  it('EVAL_BASELINE_PAWNS_WHITE equals +0.315', () => {
-    expect(EVAL_BASELINE_PAWNS_WHITE).toBe(0.315);
+describe('openingStatsZones — baseline pawn fallbacks (symmetric, 260504-rvh)', () => {
+  it('EVAL_BASELINE_PAWNS_WHITE equals +0.25', () => {
+    expect(EVAL_BASELINE_PAWNS_WHITE).toBe(0.25);
   });
-  it('EVAL_BASELINE_PAWNS_BLACK equals -0.189', () => {
-    expect(EVAL_BASELINE_PAWNS_BLACK).toBe(-0.189);
+  it('EVAL_BASELINE_PAWNS_BLACK equals -0.25', () => {
+    expect(EVAL_BASELINE_PAWNS_BLACK).toBe(-0.25);
+  });
+  it('baselines are symmetric around 0', () => {
+    expect(EVAL_BASELINE_PAWNS_WHITE).toBe(-EVAL_BASELINE_PAWNS_BLACK);
   });
 });
 
@@ -62,14 +65,14 @@ describe('evalZoneColor — zero-centered (260504-rvh)', () => {
     expect(evalZoneColor(-1.0)).toBe(ZONE_DANGER);
   });
 
-  it('white engine baseline (+0.315) sits in the success zone (decoupled from H0)', () => {
-    // Per 260504-rvh: the per-color engine asymmetry baseline is no longer
-    // subtracted, so a value at the white tick reads as ZONE_SUCCESS when
-    // it sits above +0.30. This is the intended visual signal.
-    expect(evalZoneColor(EVAL_BASELINE_PAWNS_WHITE)).toBe(ZONE_SUCCESS);
+  it('white engine baseline (+0.25) sits in the neutral zone (within ±0.30 of 0)', () => {
+    // Per 260504-rvh + symmetric recalibration: the per-color baseline is now
+    // ±0.25, which falls inside the ±0.30 neutral zone. A user sitting exactly
+    // at the typical asymmetry reads as engine-balanced-ish, not as a signal.
+    expect(evalZoneColor(EVAL_BASELINE_PAWNS_WHITE)).toBe(ZONE_NEUTRAL);
   });
 
-  it('black engine baseline (-0.189) sits in the neutral zone (within ±0.30 of 0)', () => {
+  it('black engine baseline (-0.25) sits in the neutral zone (within ±0.30 of 0)', () => {
     expect(evalZoneColor(EVAL_BASELINE_PAWNS_BLACK)).toBe(ZONE_NEUTRAL);
   });
 });
