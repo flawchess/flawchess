@@ -79,3 +79,63 @@ describe('MiniBulletChart — CI whisker', () => {
     expect(screen.queryByTestId('mini-bullet-chart')).not.toBeNull();
   });
 });
+
+describe('MiniBulletChart — center prop (260504-my2)', () => {
+  function leftPercent(el: HTMLElement | null): number | null {
+    if (!el) return null;
+    const m = (el.getAttribute('style') ?? '').match(/left:\s*([\d.]+)%/);
+    return m && m[1] ? parseFloat(m[1]) : null;
+  }
+
+  it('default center=0 places reference line at 50% (legacy zero-centered)', () => {
+    const { container } = render(
+      <MiniBulletChart value={0} domain={0.4} neutralMin={-0.10} neutralMax={0} />,
+    );
+    const refLine = container.querySelector(
+      'div.absolute.top-0.bottom-0.w-px.bg-foreground\\/50',
+    ) as HTMLElement | null;
+    expect(leftPercent(refLine)).toBeCloseTo(50, 3);
+  });
+
+  it('with center=0.32 and value=0.32, marker bar sits at the reference-line position', () => {
+    const { container } = render(
+      <MiniBulletChart
+        value={0.32}
+        center={0.32}
+        domain={1.5}
+        neutralMin={-0.25}
+        neutralMax={0.25}
+      />,
+    );
+    // Reference line: vertical 1px stroke at centerPct.
+    const refLine = container.querySelector(
+      'div.absolute.top-0.bottom-0.w-px.bg-foreground\\/50',
+    ) as HTMLElement | null;
+    // Value bar: horizontal stroke; with value === center, width == 0 and left == centerPct.
+    const valueBar = container.querySelector(
+      'div.absolute.top-1\\/2',
+    ) as HTMLElement | null;
+    const refPct = leftPercent(refLine);
+    const valuePct = leftPercent(valueBar);
+    expect(refPct).not.toBeNull();
+    expect(valuePct).not.toBeNull();
+    expect(valuePct).toBeCloseTo(refPct as number, 3);
+  });
+
+  it('with non-zero center, reference line shifts off 50%', () => {
+    // center=0.315 on a domain of 1.5 -> centerPct = (0.315 + 1.5) / 3 * 100 ≈ 60.5%
+    const { container } = render(
+      <MiniBulletChart
+        value={0.315}
+        center={0.315}
+        domain={1.5}
+        neutralMin={-0.25}
+        neutralMax={0.25}
+      />,
+    );
+    const refLine = container.querySelector(
+      'div.absolute.top-0.bottom-0.w-px.bg-foreground\\/50',
+    ) as HTMLElement | null;
+    expect(leftPercent(refLine)).toBeCloseTo(60.5, 1);
+  });
+});
