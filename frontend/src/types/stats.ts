@@ -51,11 +51,6 @@ export interface OpeningWDL {
   eval_n: number;
   eval_p_value?: number | null;
   eval_confidence: 'low' | 'medium' | 'high';
-
-  // Phase 80 clock diff at MG entry (D-05).
-  avg_clock_diff_pct?: number | null;
-  avg_clock_diff_seconds?: number | null;
-  clock_diff_n: number;
 }
 
 export interface MostPlayedOpeningsResponse {
@@ -78,10 +73,6 @@ export interface BookmarkPhaseEntryItem {
   eval_n: number;
   eval_p_value?: number | null;
   eval_confidence: 'low' | 'medium' | 'high';
-
-  avg_clock_diff_pct?: number | null;
-  avg_clock_diff_seconds?: number | null;
-  clock_diff_n: number;
 }
 
 export interface BookmarkPhaseEntryRequest {

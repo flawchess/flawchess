@@ -386,7 +386,7 @@ async def get_most_played_openings(
             else:
                 win_pct = draw_pct = loss_pct = 0.0
 
-            # Phase 80: phase-entry eval + clock-diff finalizer (D-01, D-04, D-05, D-08).
+            # Phase 80: phase-entry eval finalizer (D-01, D-04, D-08).
             pe = phase_entry_metrics.get(full_hash) if full_hash else None
 
             # MG-entry pillar (D-01, D-04, D-08)
@@ -396,11 +396,6 @@ async def get_most_played_openings(
             eval_n = 0
             eval_p_value: float | None = None
             eval_confidence: Literal["low", "medium", "high"] = "low"
-
-            # Clock diff at MG entry (D-05)
-            avg_clock_diff_pct: float | None = None
-            avg_clock_diff_seconds: float | None = None
-            clock_diff_n = 0
 
             if pe is not None and pe.eval_n_mg > 0:
                 confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
@@ -413,17 +408,6 @@ async def get_most_played_openings(
                 eval_n = pe.eval_n_mg
                 eval_p_value = p_value_mg
                 eval_confidence = confidence_mg
-
-            if pe is not None and pe.clock_diff_n > 0 and pe.base_time_sum > 0:
-                avg_clock_diff_seconds = pe.clock_diff_sum / pe.clock_diff_n
-                # Option A: per-game average ratio (consistent with avg_clock_diff_seconds).
-                # Both are per-game arithmetic means, so heterogeneous base times (e.g.
-                # mixing bullet + blitz games) give each game equal weight instead of
-                # the sum-weighted ratio (clock_diff_sum / base_time_sum) which would
-                # over-weight games with larger base times.
-                avg_base_time = pe.base_time_sum / pe.clock_diff_n
-                avg_clock_diff_pct = (avg_clock_diff_seconds / avg_base_time) * 100.0
-                clock_diff_n = pe.clock_diff_n
 
             openings.append(
                 OpeningWDL(
@@ -448,10 +432,6 @@ async def get_most_played_openings(
                     eval_n=eval_n,
                     eval_p_value=eval_p_value,
                     eval_confidence=eval_confidence,
-                    # Phase 80 clock-diff at MG entry
-                    avg_clock_diff_pct=avg_clock_diff_pct,
-                    avg_clock_diff_seconds=avg_clock_diff_seconds,
-                    clock_diff_n=clock_diff_n,
                 )
             )
         # Sort by position-based game count descending (may differ from
@@ -490,13 +470,6 @@ def _phase80_item_from_metrics(
         item.eval_n = pe.eval_n_mg
         item.eval_p_value = p_value_mg
         item.eval_confidence = confidence_mg
-
-    if pe.clock_diff_n > 0 and pe.base_time_sum > 0:
-        avg_clock_diff_seconds = pe.clock_diff_sum / pe.clock_diff_n
-        avg_base_time = pe.base_time_sum / pe.clock_diff_n
-        item.avg_clock_diff_seconds = avg_clock_diff_seconds
-        item.avg_clock_diff_pct = (avg_clock_diff_seconds / avg_base_time) * 100.0
-        item.clock_diff_n = pe.clock_diff_n
 
     return item
 

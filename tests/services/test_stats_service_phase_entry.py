@@ -1,10 +1,9 @@
-"""Service-level integration tests for MG-entry eval + clock-diff fields in
+"""Service-level integration tests for MG-entry eval fields in
 get_most_played_openings (Plan 02, Task 2).
 
 Coverage:
 - MG-entry eval fields populated when phase=1 rows exist
 - eval_n == 0 when no phase-entry rows have eval
-- Clock-diff pct and seconds populated from MG-entry clock data
 - Filter consistency: eval_n <= total
 - No asyncio.gather in stats_service (CLAUDE.md critical constraint)
 - Color-flip symmetry propagates correctly through service
@@ -33,20 +32,16 @@ from app.services.stats_service import MIN_PLY_WHITE, get_most_played_openings
 
 _USER_SS_MG = 701
 _USER_SS_EMPTY = 703
-_USER_SS_CLOCK = 704
 _USER_SS_FILTER = 705
 _USER_SS_FLIP = 706
 _USER_SS_OUTLIER = 707
-_USER_SS_CLOCK_HETERO = 708
 
 _ALL_USER_IDS = [
     _USER_SS_MG,
     _USER_SS_EMPTY,
-    _USER_SS_CLOCK,
     _USER_SS_FILTER,
     _USER_SS_FLIP,
     _USER_SS_OUTLIER,
-    _USER_SS_CLOCK_HETERO,
 ]
 
 
@@ -282,100 +277,8 @@ class TestGetMostPlayedOpeningsPhaseEntry:
         assert opening.eval_confidence == "low"
 
     @pytest.mark.asyncio
-    async def test_get_most_played_openings_clock_diff_pct_signed(
-        self, db_session: AsyncSession
-    ) -> None:
-        """Clock-diff: user 24s ahead on 300s base → avg_clock_diff_seconds=+24, pct≈+8.0."""
-        uid = _USER_SS_CLOCK
-        opening_info = await _get_white_opening_with_min_ply(db_session, MIN_PLY_WHITE)
-        if opening_info is None:
-            pytest.skip("openings_dedup not seeded")
-        eco, opening_name, full_hash = opening_info
-
-        # 5 games: user_clock=204s, opp_clock=180s → diff = +24s; pct = 24/300*100 = 8.0%
-        for _ in range(5):
-            await _seed_game_with_phases(
-                db_session,
-                user_id=uid,
-                user_color="white",
-                full_hash=full_hash,
-                eco=eco,
-                opening_name=opening_name,
-                ply_count=MIN_PLY_WHITE,
-                mg_eval_cp=50,
-                user_clock=204.0,
-                opp_clock=180.0,
-                base_time_seconds=300,
-            )
-
-        response = await get_most_played_openings(db_session, uid)
-        opening = next((o for o in response.white if o.full_hash == str(full_hash)), None)
-        assert opening is not None
-
-        assert opening.clock_diff_n == 5
-        assert opening.avg_clock_diff_seconds == pytest.approx(24.0, rel=0.01)
-        assert opening.avg_clock_diff_pct == pytest.approx(8.0, rel=0.01)
-
-    @pytest.mark.asyncio
-    async def test_clock_diff_pct_heterogeneous_base_time(
-        self, db_session: AsyncSession
-    ) -> None:
-        """WR-04: avg_clock_diff_pct uses per-game mean, consistent with avg_clock_diff_seconds."""
-        uid = _USER_SS_CLOCK_HETERO
-        opening_info = await _get_white_opening_with_min_ply(db_session, MIN_PLY_WHITE)
-        if opening_info is None:
-            pytest.skip("openings_dedup not seeded")
-        eco, opening_name, full_hash = opening_info
-
-        # 3 bullet games: user behind by 10s, base=180s
-        for _ in range(3):
-            await _seed_game_with_phases(
-                db_session,
-                user_id=uid,
-                user_color="white",
-                full_hash=full_hash,
-                eco=eco,
-                opening_name=opening_name,
-                ply_count=MIN_PLY_WHITE,
-                mg_eval_cp=50,
-                user_clock=100.0,
-                opp_clock=110.0,
-                base_time_seconds=180,
-                time_control_bucket="bullet",
-            )
-
-        # 2 blitz games: user ahead by 60s, base=300s
-        for _ in range(2):
-            await _seed_game_with_phases(
-                db_session,
-                user_id=uid,
-                user_color="white",
-                full_hash=full_hash,
-                eco=eco,
-                opening_name=opening_name,
-                ply_count=MIN_PLY_WHITE,
-                mg_eval_cp=50,
-                user_clock=240.0,
-                opp_clock=180.0,
-                base_time_seconds=300,
-                time_control_bucket="blitz",
-            )
-
-        response = await get_most_played_openings(db_session, uid)
-        opening = next((o for o in response.white if o.full_hash == str(full_hash)), None)
-        assert opening is not None
-        assert opening.clock_diff_n == 5
-
-        expected_avg_seconds = (3 * (-10.0) + 2 * 60.0) / 5
-        assert opening.avg_clock_diff_seconds == pytest.approx(expected_avg_seconds, rel=0.01)
-
-        expected_avg_base = (3 * 180.0 + 2 * 300.0) / 5
-        expected_pct = (expected_avg_seconds / expected_avg_base) * 100.0
-        assert opening.avg_clock_diff_pct == pytest.approx(expected_pct, rel=0.01)
-
-    @pytest.mark.asyncio
     async def test_filter_threading_eval_n_le_total(self, db_session: AsyncSession) -> None:
-        """Filter consistency: eval_n <= total AND clock_diff_n <= total."""
+        """Filter consistency: eval_n <= total."""
         uid = _USER_SS_FILTER
         opening_info = await _get_white_opening_with_min_ply(db_session, MIN_PLY_WHITE)
         if opening_info is None:
@@ -397,7 +300,6 @@ class TestGetMostPlayedOpeningsPhaseEntry:
         response = await get_most_played_openings(db_session, uid)
         for opening in response.white + response.black:
             assert opening.eval_n <= opening.total
-            assert opening.clock_diff_n <= opening.total
 
     @pytest.mark.asyncio
     async def test_no_asyncio_gather_in_stats_service(self) -> None:

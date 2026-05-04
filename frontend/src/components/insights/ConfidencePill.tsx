@@ -26,6 +26,10 @@ interface ConfidencePillProps {
    * WDL score/strength/weakness language.
    */
   evalMeanPawns?: number | null;
+  /** 95% CI lower bound for the eval mean (pawns). Eval-mode only. */
+  evalCiLowPawns?: number | null;
+  /** 95% CI upper bound for the eval mean (pawns). Eval-mode only. */
+  evalCiHighPawns?: number | null;
   /** Optional data-testid for the pill span. */
   testId?: string;
 }
@@ -36,6 +40,8 @@ export function ConfidencePill({
   score = null,
   gameCount = null,
   evalMeanPawns,
+  evalCiLowPawns,
+  evalCiHighPawns,
   testId,
 }: ConfidencePillProps): ReactElement {
   return (
@@ -47,6 +53,8 @@ export function ConfidencePill({
           score={score ?? 0.5}
           gameCount={gameCount ?? 0}
           evalMeanPawns={evalMeanPawns}
+          evalCiLowPawns={evalCiLowPawns}
+          evalCiHighPawns={evalCiHighPawns}
         />
       }
     >

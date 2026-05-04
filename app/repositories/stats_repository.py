@@ -24,7 +24,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
@@ -61,11 +60,6 @@ class OpeningPhaseEntryMetrics:
     mate_n_mg: int  # phase=1 rows with eval_mate IS NOT NULL
     null_eval_n_mg: int  # phase=1 rows with both eval_cp and eval_mate NULL
     outlier_n_mg: int  # phase=1 rows with |eval_cp| >= 2000 (D-08)
-
-    # Clock diff at MG entry (D-05)
-    clock_diff_sum: float  # sum of (user_clock - opp_clock) at MG entry, in seconds
-    base_time_sum: float  # sum of base_time_seconds across the same games
-    clock_diff_n: int  # games with both user_clock and opp_clock NOT NULL at MG entry
 
 
 # Standalone MetaData (not Base.metadata) keeps the view invisible to Alembic autogenerate.
@@ -471,8 +465,8 @@ async def query_opening_phase_entry_metrics_batch(
 ) -> dict[int, OpeningPhaseEntryMetrics]:
     """Return {full_hash: OpeningPhaseEntryMetrics} for games passing through each position.
 
-    Aggregates middlegame-entry (phase=1) eval and clock-diff metrics in a single SQL
-    pass. The phase-entry row per game is identified via DISTINCT ON
+    Aggregates middlegame-entry (phase=1) eval metrics in a single SQL pass. The
+    phase-entry row per game is identified via DISTINCT ON
     ``(game_id, phase ORDER BY ply)`` filtered to phase=1.
 
     Outlier trim: |eval_cp| >= EVAL_OUTLIER_TRIM_CP rows are excluded from the eval mean
@@ -482,9 +476,6 @@ async def query_opening_phase_entry_metrics_batch(
 
     Sign convention: eval_cp is signed at SQL level via ``case(user_color='white', 1, else=-1) * eval_cp``
     matching the endgame_service._classify_endgame_bucket convention.
-
-    Clock-diff: computed only at MG entry (phase=1). Uses the entry_ply row for user clock
-    and entry_ply+1 for the opponent's clock (LEFT JOIN — absent when next ply missing).
 
     Performance note: uses GROUP BY + JOIN shape (not IN(subquery)) — the IN(subquery) form
     caused planner Nested Loop hangs on heavy users (see endgame_repository.py:687-692 for
@@ -515,7 +506,6 @@ async def query_opening_phase_entry_metrics_batch(
             hash_col.label("full_hash"),
             Game.id.label("game_id"),
             Game.user_color.label("user_color"),
-            Game.base_time_seconds.label("base_time_seconds"),
         )
         .join(Game, GamePosition.game_id == Game.id)
         .where(
@@ -538,19 +528,17 @@ async def query_opening_phase_entry_metrics_batch(
     )
     dedup_subq = dedup_select.cte("dedup")
 
-    # Step 2: Per-game per-phase entry ROW (not just ply) via DISTINCT ON.
-    # Inlines eval_cp / eval_mate / clock_seconds into the phase_entry subquery so
-    # the heavy gp_entry JOIN can be eliminated entirely (was a Bitmap Heap Scan
-    # over (game_id, ply) without a composite index — ~100k row scans for a heavy user).
+    # Step 2: Per-game phase-entry ROW (not just ply) via DISTINCT ON.
+    # Inlines eval_cp / eval_mate into the phase_entry subquery so the heavy
+    # gp_entry JOIN is eliminated entirely (was a Bitmap Heap Scan over
+    # (game_id, ply) without a composite index — ~100k row scans for a heavy user).
     # Restricted to dedup's game_id set so the scan is ~10x smaller than the full
     # user partition.
     phase_entry_subq = (
         select(
             GamePosition.game_id.label("game_id"),
-            GamePosition.ply.label("entry_ply"),
             GamePosition.eval_cp.label("eval_cp"),
             GamePosition.eval_mate.label("eval_mate"),
-            GamePosition.clock_seconds.label("user_clock"),
         )
         .where(
             GamePosition.phase == 1,
@@ -560,19 +548,9 @@ async def query_opening_phase_entry_metrics_batch(
         .order_by(GamePosition.game_id, GamePosition.ply)
     ).subquery("phase_entry")
 
-    # Step 3: gp_opp is the entry_ply+1 row, used only for opponent clock at MG entry.
-    # Cannot inline via DISTINCT ON (target row may belong to a different phase), so
-    # this is a LEFT JOIN. Predicate is (game_id, ply = entry_ply + 1); the user_id
-    # predicate is dropped because dedup is already user_id-filtered (game_id implies
-    # the user via FK and the dedup pipeline).
-    gp_opp = aliased(GamePosition, name="gp_opp")
-
     # Sign expression mirrors endgame_service._classify_endgame_bucket convention.
     sign_expr = case((dedup_subq.c.user_color == "white", 1), else_=-1)
     user_eval_expr = sign_expr * phase_entry_subq.c.eval_cp  # signed cp; NULL when eval_cp NULL
-
-    # Clock-diff: user_clock (entry_ply) minus opp_clock (entry_ply+1).
-    clock_diff_expr = phase_entry_subq.c.user_clock - gp_opp.clock_seconds
 
     # Eval-state predicates. Trim threshold = EVAL_OUTLIER_TRIM_CP (D-08).
     has_continuous_in_domain_eval = and_(
@@ -591,11 +569,6 @@ async def query_opening_phase_entry_metrics_batch(
         func.abs(phase_entry_subq.c.eval_cp) >= EVAL_OUTLIER_TRIM_CP,
     )
 
-    has_user_and_opp_clock = and_(
-        phase_entry_subq.c.user_clock.isnot(None),
-        gp_opp.clock_seconds.isnot(None),
-    )
-
     agg_select = (
         select(
             dedup_subq.c.full_hash,
@@ -612,24 +585,9 @@ async def query_opening_phase_entry_metrics_batch(
             func.count().filter(has_mate).label("mate_n_mg"),
             func.count().filter(has_null_eval).label("null_eval_n_mg"),
             func.count().filter(has_outlier_eval).label("outlier_n_mg"),
-            # --- Clock-diff aggregations at MG entry ---
-            func.coalesce(
-                func.sum(clock_diff_expr).filter(has_user_and_opp_clock),
-                0.0,
-            ).label("clock_diff_sum"),
-            func.coalesce(
-                func.sum(dedup_subq.c.base_time_seconds).filter(has_user_and_opp_clock),
-                0.0,
-            ).label("base_time_sum"),
-            func.count().filter(has_user_and_opp_clock).label("clock_diff_n"),
         )
         .select_from(dedup_subq)
         .join(phase_entry_subq, phase_entry_subq.c.game_id == dedup_subq.c.game_id)
-        .outerjoin(
-            gp_opp,
-            (gp_opp.game_id == phase_entry_subq.c.game_id)
-            & (gp_opp.ply == phase_entry_subq.c.entry_ply + 1),
-        )
         .group_by(dedup_subq.c.full_hash)
     )
 
@@ -642,9 +600,6 @@ async def query_opening_phase_entry_metrics_batch(
             mate_n_mg=int(row[4]),
             null_eval_n_mg=int(row[5]),
             outlier_n_mg=int(row[6]),
-            clock_diff_sum=float(row[7]),
-            base_time_sum=float(row[8]),
-            clock_diff_n=int(row[9]),
         )
         for row in result.fetchall()
     }

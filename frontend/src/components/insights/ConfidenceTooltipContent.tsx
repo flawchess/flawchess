@@ -24,6 +24,10 @@ interface ConfidenceTooltipContentProps {
    * Value is the average eval at phase entry in pawns (signed, user perspective).
    */
   evalMeanPawns?: number | null;
+  /** 95% CI lower bound for the eval mean (pawns). Only rendered in eval mode. */
+  evalCiLowPawns?: number | null;
+  /** 95% CI upper bound for the eval mean (pawns). Only rendered in eval mode. */
+  evalCiHighPawns?: number | null;
 }
 
 /**
@@ -42,25 +46,37 @@ export function ConfidenceTooltipContent({
   score,
   gameCount,
   evalMeanPawns,
+  evalCiLowPawns,
+  evalCiHighPawns,
 }: ConfidenceTooltipContentProps): ReactNode {
   const pValuePct = (pValue * 100).toFixed(1);
 
   if (evalMeanPawns !== undefined && evalMeanPawns !== null) {
     // Eval context: one-sample t-test against zero (avg eval != 0 at phase entry).
     const sign = evalMeanPawns >= 0 ? '+' : '';
-    const evalLine = `${sign}${evalMeanPawns.toFixed(2)} pawns (avg at phase entry)`;
+    const evalLine = `${sign}${evalMeanPawns.toFixed(1)} pawns`;
+    const effectType = evalMeanPawns >= 0 ? 'advantage' : 'disadvantage';
     const verdictMap: Record<ConfidenceLevel, string> = {
       low: 'Could plausibly be chance',
-      medium: 'Possibly a significant eval advantage/disadvantage',
-      high: 'Likely a significant eval advantage/disadvantage',
+      medium: 'Possibly a significant ' + effectType,
+      high: 'Likely a significant ' + effectType,
     };
+    const hasCi =
+      evalCiLowPawns !== undefined &&
+      evalCiLowPawns !== null &&
+      evalCiHighPawns !== undefined &&
+      evalCiHighPawns !== null;
+    const ciLine = hasCi
+      ? `[${evalCiLowPawns >= 0 ? '+' : ''}${evalCiLowPawns.toFixed(1)}, ${evalCiHighPawns >= 0 ? '+' : ''}${evalCiHighPawns.toFixed(1)}] pawns`
+      : null;
     return (
       <div className="text-left">
         <ul className="list-disc pl-4 space-y-0.5">
-          <li>Avg eval: {evalLine}</li>
-          <li>Number of games: {gameCount}</li>
+          <li>Avgerage evaluation: {evalLine}</li>
+          {ciLine && <li>95% confidence interval: {ciLine}</li>}
+          <li>Number of games reaching middlegame: {gameCount}</li>
           <li>
-            Probability: {pValuePct}% that this differs from 0 by chance (p ={' '}
+            Probability: {pValuePct}% of such a difference from 0 resulting from pure chance (p ={' '}
             {pValue.toFixed(3)})
           </li>
           <li>

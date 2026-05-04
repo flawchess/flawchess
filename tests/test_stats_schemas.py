@@ -2,7 +2,7 @@
 
 Verifies that:
 - Existing callers with only the 14 legacy fields still parse correctly.
-- The 9 Phase 80 fields (6 MG eval + 3 clock diff) parse when present.
+- The 6 Phase 80 MG-entry eval fields parse when present.
 - Literal type for eval_confidence rejects invalid values.
 - Optional fields default correctly when omitted.
 """
@@ -45,11 +45,6 @@ def test_opening_wdl_old_payload_still_parses() -> None:
     assert m.eval_ci_high_pawns is None
     assert m.eval_p_value is None
 
-    # Clock-diff defaults
-    assert m.clock_diff_n == 0
-    assert m.avg_clock_diff_pct is None
-    assert m.avg_clock_diff_seconds is None
-
 
 # --- Full Phase 80 payload (new fields) ----------------------------------
 
@@ -65,10 +60,6 @@ def test_opening_wdl_new_payload_parses() -> None:
         "eval_n": 42,
         "eval_p_value": 0.032,
         "eval_confidence": "high",
-        # Clock diff
-        "avg_clock_diff_pct": 8.2,
-        "avg_clock_diff_seconds": 24.0,
-        "clock_diff_n": 40,
     }
     m = OpeningWDL.model_validate(payload)
 
@@ -79,7 +70,6 @@ def test_opening_wdl_new_payload_parses() -> None:
     # Spot-check new field values
     assert m.avg_eval_pawns == pytest.approx(0.15)
     assert m.eval_confidence == "high"
-    assert m.clock_diff_n == 40
 
 
 # --- Literal type enforcement -------------------------------------------

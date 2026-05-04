@@ -9,9 +9,7 @@ Coverage:
 - Mate-row exclusion from eval mean
 - Outlier trim |eval_cp| >= 2000 enforced in SQL (D-08)
 - Partition invariant: eval_n + mate_n + null_eval_n + outlier_n == phase_entry_total
-- Clock-diff at MG entry (user_clock - opp_clock, seconds and base_time_sum)
 - Filter consistency: eval_n_mg <= wdl.total
-- Clock-diff excludes games with NULL clock_seconds
 - Empty hashes guard returns {}
 - Recency filter threads identically to WDL
 """
@@ -306,29 +304,6 @@ class TestOpeningPhaseEntryMetrics:
         assert m.eval_n_mg + m.mate_n_mg + m.null_eval_n_mg + m.outlier_n_mg == 5
 
     @pytest.mark.asyncio
-    async def test_mg_entry_clock_diff(self, db_session: AsyncSession) -> None:
-        """Clock-diff: user 180s, opp 200s at MG entry → diff=-20, base_time_sum=300."""
-        full_hash = 10_011
-        await _make_game_with_phase_entries(
-            db_session,
-            full_hash=full_hash,
-            mg_eval_cp=50,
-            user_clock=180.0,
-            opp_clock=200.0,
-            base_time_seconds=300,
-        )
-
-        result = await query_opening_phase_entry_metrics_batch(
-            db_session, _USER_PHASE_ENTRY, [full_hash]
-        )
-
-        assert full_hash in result
-        m = result[full_hash]
-        assert m.clock_diff_n == 1
-        assert m.clock_diff_sum == pytest.approx(-20.0, rel=1e-6)
-        assert m.base_time_sum == pytest.approx(300.0, rel=1e-6)
-
-    @pytest.mark.asyncio
     async def test_filter_consistency_wdl_vs_phase_entry(self, db_session: AsyncSession) -> None:
         """eval_n_mg <= wdl.total for all openings."""
         full_hash = 10_012
@@ -363,24 +338,6 @@ class TestOpeningPhaseEntryMetrics:
         m = phase_result[full_hash]
         total = wdl_result[full_hash].total
         assert m.eval_n_mg <= total
-        assert m.clock_diff_n <= total
-
-    @pytest.mark.asyncio
-    async def test_clock_diff_excludes_null_clock_games(self, db_session: AsyncSession) -> None:
-        """Games with NULL user clock excluded from clock_diff_n; eval still counted."""
-        full_hash = 10_013
-        await _make_game_with_phase_entries(
-            db_session, full_hash=full_hash, mg_eval_cp=100, user_clock=None, opp_clock=None
-        )
-
-        result = await query_opening_phase_entry_metrics_batch(
-            db_session, _USER_PHASE_ENTRY, [full_hash]
-        )
-
-        assert full_hash in result
-        m = result[full_hash]
-        assert m.clock_diff_n == 0
-        assert m.eval_n_mg == 1  # eval still counted even without clock
 
     @pytest.mark.asyncio
     async def test_empty_hashes_returns_empty_dict(self, db_session: AsyncSession) -> None:

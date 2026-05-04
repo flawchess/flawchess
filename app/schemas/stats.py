@@ -68,11 +68,6 @@ class OpeningWDL(BaseModel):
     eval_p_value: float | None = None  # two-sided p-value vs zero
     eval_confidence: Literal["low", "medium", "high"] = "low"
 
-    # Phase 80 additions — clock-diff at middlegame entry (D-05)
-    avg_clock_diff_pct: float | None = None  # signed % of base time; None when clock_diff_n == 0
-    avg_clock_diff_seconds: float | None = None  # signed seconds; None when clock_diff_n == 0
-    clock_diff_n: int = 0  # games with both user and opp clock present at MG entry
-
 
 class MostPlayedOpeningsResponse(BaseModel):
     """Top openings by game count, separated by color."""
@@ -98,11 +93,6 @@ class BookmarkPhaseEntryItem(BaseModel):
     eval_n: int = 0
     eval_p_value: float | None = None
     eval_confidence: Literal["low", "medium", "high"] = "low"
-
-    # Clock-diff at MG entry
-    avg_clock_diff_pct: float | None = None
-    avg_clock_diff_seconds: float | None = None
-    clock_diff_n: int = 0
 
 
 class BookmarkPhaseEntryQuery(BaseModel):

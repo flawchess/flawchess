@@ -54,18 +54,24 @@ import { GameCardList } from '@/components/results/GameCardList';
 import { SidebarLayout, type SidebarPanelConfig } from '@/components/layout/SidebarLayout';
 import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
-import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTable';
+import { MostPlayedOpeningsTable, MG_EVAL_HEADER_TOOLTIP } from '@/components/stats/MostPlayedOpeningsTable';
 import { MinimapPopover } from '@/components/stats/MinimapPopover';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
-import { ConfidencePill } from '@/components/insights/ConfidencePill';
+import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
 import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
   EVAL_NEUTRAL_MIN_PAWNS,
 } from '@/lib/openingStatsZones';
-import { formatSignedEvalPawns, formatSignedPct1, formatSignedSeconds } from '@/lib/clockFormat';
-import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
-import { pgnToSanArray } from '@/lib/pgn';
+import { formatSignedEvalPawns } from '@/lib/clockFormat';
+import {
+  MIN_GAMES_FOR_RELIABLE_STATS,
+  UNRELIABLE_OPACITY,
+  ZONE_DANGER,
+  ZONE_NEUTRAL,
+  ZONE_SUCCESS,
+} from '@/lib/theme';
+import { pgnToSanArray, sanArrayToPgn } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
 import { OpeningInsightsBlock } from '@/components/insights/OpeningInsightsBlock';
@@ -90,6 +96,12 @@ type SidebarPanel = 'filters' | 'bookmarks';
 // Preserves the INITIAL_VISIBLE_COUNT = 3 collapse/expand behavior from MostPlayedOpeningsTable.
 const MOBILE_MPO_INITIAL_VISIBLE_COUNT = 3;
 
+function evalZoneColor(value: number): string {
+  if (value >= EVAL_NEUTRAL_MAX_PAWNS) return ZONE_SUCCESS;
+  if (value >= EVAL_NEUTRAL_MIN_PAWNS) return ZONE_NEUTRAL;
+  return ZONE_DANGER;
+}
+
 function MobileMostPlayedRows({
   openings,
   color,
@@ -112,10 +124,6 @@ function MobileMostPlayedRows({
     : openings.slice(0, MOBILE_MPO_INITIAL_VISIBLE_COUNT);
   const hiddenCount = openings.length - MOBILE_MPO_INITIAL_VISIBLE_COUNT;
   const hasMore = !showAll && hiddenCount > 0;
-
-  // maxTotal spans ALL openings in this color's list so bar widths are comparable
-  // across the collapse/expand toggle (D-10 rationale applied to D-11).
-  const maxTotal = Math.max(...openings.map((o) => o.total));
 
   return (
     <div data-testid={`${testIdPrefix}-mobile-list`}>
@@ -164,10 +172,9 @@ function MobileMostPlayedRows({
                   draw_pct: o.draw_pct,
                   loss_pct: o.loss_pct,
                 }}
-                maxTotal={maxTotal}
               />
 
-              {/* Phase 80 D-06: Mobile line 2 — MG-entry row (eval text + bullet + pill + clock-diff). */}
+              {/* Phase 80 D-06: Mobile line 2 — MG-entry row (label + eval text + bullet w/ confidence popover). */}
               {(() => {
                 const isMgUnreliable =
                   (o.eval_n ?? 0) < MIN_GAMES_FOR_RELIABLE_STATS || o.eval_confidence === 'low';
@@ -176,7 +183,12 @@ function MobileMostPlayedRows({
                   o.avg_eval_pawns !== null &&
                   o.avg_eval_pawns !== undefined;
                 const mgEvalTextContent = hasMgEval ? (
-                  formatSignedEvalPawns(o.avg_eval_pawns as number)
+                  <span
+                    className="font-semibold"
+                    style={{ color: evalZoneColor(o.avg_eval_pawns as number) }}
+                  >
+                    {formatSignedEvalPawns(o.avg_eval_pawns as number)}
+                  </span>
                 ) : (
                   <span className="text-muted-foreground">—</span>
                 );
@@ -193,25 +205,26 @@ function MobileMostPlayedRows({
                 ) : (
                   <span className="text-muted-foreground">—</span>
                 );
-                const clockDiffContent =
-                  o.clock_diff_n === 0 ||
-                  o.avg_clock_diff_pct === null ||
-                  o.avg_clock_diff_pct === undefined ? (
-                    <span className="text-muted-foreground">—</span>
-                  ) : (
-                    <>
-                      {formatSignedPct1(o.avg_clock_diff_pct)}
-                      <span className="text-muted-foreground ml-1">
-                        ({formatSignedSeconds(o.avg_clock_diff_seconds ?? null)})
-                      </span>
-                    </>
-                  );
                 return (
                   <div
-                    className="mt-2 grid grid-cols-[auto_auto_1fr_auto_auto] gap-2 items-center pb-1"
+                    className="mt-2 grid grid-cols-[auto_auto_1fr] gap-2 items-center pb-1"
                     data-testid={`${testIdPrefix}-mobile-mg-line-${rowKey}`}
                   >
-                    <span className="text-xs text-muted-foreground">MG entry</span>
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      Eval
+                      {hasMgEval && (
+                        <BulletConfidencePopover
+                          level={o.eval_confidence}
+                          pValue={o.eval_p_value}
+                          gameCount={o.eval_n}
+                          evalMeanPawns={o.avg_eval_pawns}
+                          evalCiLowPawns={o.eval_ci_low_pawns}
+                          evalCiHighPawns={o.eval_ci_high_pawns}
+                          testId={`${testIdPrefix}-bullet-popover-mobile-${rowKey}`}
+                          prefaceText={MG_EVAL_HEADER_TOOLTIP}
+                        />
+                      )}
+                    </span>
                     <div
                       className="text-sm tabular-nums"
                       data-testid={`${testIdPrefix}-eval-text-mobile-${rowKey}`}
@@ -224,21 +237,6 @@ function MobileMostPlayedRows({
                       style={isMgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
                     >
                       {mgBulletContent}
-                    </div>
-                    <div data-testid={`${testIdPrefix}-confidence-mobile-${rowKey}`}>
-                      <ConfidencePill
-                        level={o.eval_confidence}
-                        pValue={o.eval_p_value}
-                        gameCount={o.eval_n}
-                        evalMeanPawns={o.avg_eval_pawns}
-                        testId={`${testIdPrefix}-confidence-mobile-${rowKey}-info`}
-                      />
-                    </div>
-                    <div
-                      data-testid={`${testIdPrefix}-clock-diff-mobile-${rowKey}`}
-                      className="text-right text-sm tabular-nums"
-                    >
-                      {clockDiffContent}
                     </div>
                   </div>
                 );
@@ -1101,7 +1099,7 @@ export function OpeningsPage() {
                 // Bookmarks have no parity context: display_name === canonical name.
                 display_name: b.label,
                 label: b.label,
-                pgn: '',
+                pgn: sanArrayToPgn(b.moves),
                 fen: b.fen,
                 full_hash: b.target_hash,
                 wins: s.wins,
@@ -1117,9 +1115,6 @@ export function OpeningsPage() {
                 eval_n: pe?.eval_n ?? 0,
                 eval_p_value: pe?.eval_p_value ?? null,
                 eval_confidence: pe?.eval_confidence ?? 'low',
-                avg_clock_diff_pct: pe?.avg_clock_diff_pct ?? null,
-                avg_clock_diff_seconds: pe?.avg_clock_diff_seconds ?? null,
-                clock_diff_n: pe?.clock_diff_n ?? 0,
               };
               return [row];
             })
@@ -1149,14 +1144,10 @@ export function OpeningsPage() {
           <>
             {whiteBookmarkRows.length > 0 && (
               <div className="charcoal-texture rounded-md p-4" data-testid="bookmarks-white-section">
-                <h2 className="text-lg font-medium mb-3 flex items-center gap-1">
+                <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
                   <BookMarked className="h-5 w-5" />
-                  Bookmarked Openings for
                   <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-white" />
-                  White
-                  <InfoPopover ariaLabel="Bookmarked White openings info" testId="bookmarks-white-info" side="top">
-                    Your saved White bookmarks with win, draw, and loss rates based on the current filter settings.
-                  </InfoPopover>
+                  White Opening Bookmarks
                 </h2>
                 <div className="hidden lg:block">
                   <MostPlayedOpeningsTable
@@ -1180,14 +1171,10 @@ export function OpeningsPage() {
             )}
             {blackBookmarkRows.length > 0 && (
               <div className="charcoal-texture rounded-md p-4" data-testid="bookmarks-black-section">
-                <h2 className="text-lg font-medium mb-3 flex items-center gap-1">
+                <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
                   <BookMarked className="h-5 w-5" />
-                  Bookmarked Openings for
                   <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-zinc-900" />
-                  Black
-                  <InfoPopover ariaLabel="Bookmarked Black openings info" testId="bookmarks-black-info" side="top">
-                    Your saved Black bookmarks with win, draw, and loss rates based on the current filter settings.
-                  </InfoPopover>
+                  Black Opening Bookmarks
                 </h2>
                 <div className="hidden lg:block">
                   <MostPlayedOpeningsTable

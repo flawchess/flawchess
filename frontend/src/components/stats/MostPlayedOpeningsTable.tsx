@@ -4,16 +4,27 @@ import type { OpeningWDL } from "@/types/stats"
 import { MinimapPopover } from "./MinimapPopover"
 import { MiniWDLBar } from "./MiniWDLBar"
 import { Tooltip } from "@/components/ui/tooltip"
-import { InfoPopover } from "@/components/ui/info-popover"
 import { MiniBulletChart } from "@/components/charts/MiniBulletChart"
-import { ConfidencePill } from "@/components/insights/ConfidencePill"
+import { BulletConfidencePopover } from "@/components/insights/BulletConfidencePopover"
 import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
   EVAL_NEUTRAL_MIN_PAWNS,
 } from "@/lib/openingStatsZones"
-import { formatSignedEvalPawns, formatSignedPct1, formatSignedSeconds } from "@/lib/clockFormat"
-import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from "@/lib/theme"
+import { formatSignedEvalPawns } from "@/lib/clockFormat"
+import {
+  MIN_GAMES_FOR_RELIABLE_STATS,
+  UNRELIABLE_OPACITY,
+  ZONE_DANGER,
+  ZONE_NEUTRAL,
+  ZONE_SUCCESS,
+} from "@/lib/theme"
+
+function evalZoneColor(value: number): string {
+  if (value >= EVAL_NEUTRAL_MAX_PAWNS) return ZONE_SUCCESS;
+  if (value >= EVAL_NEUTRAL_MIN_PAWNS) return ZONE_NEUTRAL;
+  return ZONE_DANGER;
+}
 
 // Number of openings to show before the "More" fold
 const INITIAL_VISIBLE_COUNT = 3;
@@ -22,16 +33,9 @@ const INITIAL_VISIBLE_COUNT = 3;
 // MG-entry MUST cite "across analyzed games" because Lichess analyzes only ~66%
 // of imported games (bench §3 line 350-355).
 export const MG_EVAL_HEADER_TOOLTIP =
-  "Average Stockfish evaluation when your middlegame begins, signed from your perspective. " +
-  "Computed across analyzed games (Lichess analyses ~66% of imported games).";
-
-export const CONFIDENCE_HEADER_TOOLTIP =
-  "One-sample t-test against zero: high (p<0.05), medium (p<0.10), low otherwise. " +
-  "Requires at least 10 games.";
-
-export const CLOCK_DIFF_HEADER_TOOLTIP =
-  "Difference between your remaining clock and your opponent's at middlegame entry. " +
-  "Shown as percent of base time and absolute seconds. Positive = you have more time.";
+  "Average Stockfish evaluation at the transition from opening to middlegame, signed from your perspective. " +
+  "The evaluation is computed during game import at depth 15. The statistical test tells you how likely the " +
+  "difference from 0 is due to random chance.";
 
 interface MostPlayedOpeningsTableProps {
   openings: OpeningWDL[];
@@ -80,7 +84,12 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
 
   // Phase 80: MG eval text cell — signed pawns to one decimal (e.g. "+2.1").
   const mgEvalTextContent = hasMgEval ? (
-    formatSignedEvalPawns(o.avg_eval_pawns as number)
+    <span
+      className="font-semibold"
+      style={{ color: evalZoneColor(o.avg_eval_pawns as number) }}
+    >
+      {formatSignedEvalPawns(o.avg_eval_pawns as number)}
+    </span>
   ) : (
     <span className="text-muted-foreground">—</span>
   );
@@ -100,28 +109,13 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
     <span className="text-muted-foreground">—</span>
   );
 
-  // Phase 80: clock-diff cell content (D-05).
-  const clockDiffContent =
-    o.clock_diff_n === 0 ||
-    o.avg_clock_diff_pct === null ||
-    o.avg_clock_diff_pct === undefined ? (
-      <span className="text-muted-foreground">—</span>
-    ) : (
-      <>
-        {formatSignedPct1(o.avg_clock_diff_pct)}
-        <span className="text-muted-foreground ml-1">
-          ({formatSignedSeconds(o.avg_clock_diff_seconds ?? null)})
-        </span>
-      </>
-    );
-
   return (
     <div
       data-testid={`${testIdPrefix}-row-${rowKey}`}
     >
-      {/* Desktop row: 7-column grid (name | games | WDL | MG eval | MG bullet | MG conf | clock-diff) */}
+      {/* Desktop row: 5-column grid (name | games | WDL | eval text | eval bullet) */}
       <div
-        className={`grid grid-cols-[1fr_auto_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)_auto_minmax(100px,160px)_auto_minmax(80px,120px)] gap-2 items-center rounded px-2 py-1.5 hover:bg-white/5 transition-colors ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
+        className={`grid grid-cols-[1fr_auto_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)_auto_minmax(100px,160px)] gap-2 items-center rounded px-2 py-1.5 hover:bg-white/5 transition-colors ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
       >
         {/* Column 1: Name + PGN */}
         <MinimapPopover
@@ -143,7 +137,7 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
         {/* Column 2: Game count with link to games tab */}
         <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
           <button
-            className="flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
+            className="flex items-center justify-end gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors justify-self-end"
             aria-label={`View ${o.total} games for ${o.opening_name}`}
             data-testid={`${testIdPrefix}-games-${rowKey}`}
             onClick={() => onOpenGames(o, color)}
@@ -160,79 +154,32 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
 
         {/* Column 4: MG eval text (desktop only) */}
         <div
-          className="hidden sm:block text-right text-sm tabular-nums"
+          className="hidden sm:block text-right text-sm tabular-nums sm:pl-4"
           data-testid={`${testIdPrefix}-eval-text-${rowKey}`}
           style={isMgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
         >
           {mgEvalTextContent}
         </div>
 
-        {/* Column 5: MG bullet chart (desktop only) */}
+        {/* Column 5: MG bullet chart + info-icon popover trigger (desktop only) */}
         <div
-          className="hidden sm:block text-right tabular-nums"
+          className="hidden sm:flex items-center gap-2 tabular-nums"
           data-testid={`${testIdPrefix}-bullet-${rowKey}`}
           style={isMgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
         >
-          {mgBulletContent}
-        </div>
-
-        {/* Column 6: MG confidence pill (desktop only) */}
-        <div
-          className="hidden sm:flex items-center"
-          data-testid={`${testIdPrefix}-confidence-${rowKey}`}
-        >
-          <ConfidencePill
-            level={o.eval_confidence}
-            pValue={o.eval_p_value}
-            gameCount={o.eval_n}
-            evalMeanPawns={o.avg_eval_pawns}
-            testId={`${testIdPrefix}-confidence-${rowKey}-info`}
-          />
-        </div>
-
-        {/* Column 7: Clock diff at MG entry (desktop only) */}
-        <div
-          className="hidden sm:block text-right text-sm tabular-nums"
-          data-testid={`${testIdPrefix}-clock-diff-${rowKey}`}
-        >
-          {clockDiffContent}
-        </div>
-      </div>
-
-      {/* Mobile line 2: MG-entry row.
-          Grid: [label | eval text | bullet | confidence | clock-diff] */}
-      <div
-        className="sm:hidden mt-2 grid grid-cols-[auto_auto_1fr_auto_auto] gap-2 items-center px-2 pb-1.5"
-        data-testid={`${testIdPrefix}-mobile-mg-line-${rowKey}`}
-      >
-        <span className="text-xs text-muted-foreground">MG entry</span>
-        <div
-          className="text-sm tabular-nums"
-          data-testid={`${testIdPrefix}-eval-text-mobile-${rowKey}`}
-          style={isMgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
-        >
-          {mgEvalTextContent}
-        </div>
-        <div
-          data-testid={`${testIdPrefix}-bullet-mobile-${rowKey}`}
-          style={isMgUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
-        >
-          {mgBulletContent}
-        </div>
-        <div data-testid={`${testIdPrefix}-confidence-mobile-${rowKey}`}>
-          <ConfidencePill
-            level={o.eval_confidence}
-            pValue={o.eval_p_value}
-            gameCount={o.eval_n}
-            evalMeanPawns={o.avg_eval_pawns}
-            testId={`${testIdPrefix}-confidence-mobile-${rowKey}-info`}
-          />
-        </div>
-        <div
-          data-testid={`${testIdPrefix}-clock-diff-mobile-${rowKey}`}
-          className="text-right text-sm tabular-nums"
-        >
-          {clockDiffContent}
+          <div className="flex-1 min-w-0">{mgBulletContent}</div>
+          {hasMgEval && (
+            <BulletConfidencePopover
+              level={o.eval_confidence}
+              pValue={o.eval_p_value}
+              gameCount={o.eval_n}
+              evalMeanPawns={o.avg_eval_pawns}
+              evalCiLowPawns={o.eval_ci_low_pawns}
+              evalCiHighPawns={o.eval_ci_high_pawns}
+              testId={`${testIdPrefix}-bullet-popover-${rowKey}`}
+              prefaceText={MG_EVAL_HEADER_TOOLTIP}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -250,52 +197,14 @@ export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenG
 
   return (
     <div data-testid={`${testIdPrefix}-table`}>
-      {/* Table header — desktop shows 7 columns, mobile shows 3 */}
-      <div className="grid grid-cols-[1fr_auto_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)_auto_minmax(100px,160px)_auto_minmax(80px,120px)] gap-2 px-2 pb-1 text-xs text-muted-foreground border-b border-white/10 mb-1">
+      {/* Table header — desktop shows 5 columns, mobile shows 3 */}
+      <div className="grid grid-cols-[1fr_auto_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)_auto_minmax(100px,160px)] gap-2 px-2 pb-1 text-xs text-muted-foreground border-b border-white/10 mb-1">
         <span>Name</span>
-        <span>Games</span>
+        <span className="text-right">Games</span>
         <span>Win / Draw / Loss</span>
-        {/* Phase 80 new column headers — desktop only */}
-        <span className="hidden sm:flex items-center justify-end gap-1">
-          MG eval
-          <InfoPopover
-            ariaLabel="MG eval info"
-            testId="opening-stats-mg-eval-text-info"
-            side="top"
-          >
-            <p>{MG_EVAL_HEADER_TOOLTIP}</p>
-          </InfoPopover>
-        </span>
-        <span className="hidden sm:flex items-center gap-1">
-          MG entry
-          <InfoPopover
-            ariaLabel="MG entry eval info"
-            testId="opening-stats-mg-eval-info"
-            side="top"
-          >
-            <p>{MG_EVAL_HEADER_TOOLTIP}</p>
-          </InfoPopover>
-        </span>
-        <span className="hidden sm:flex items-center gap-1">
-          MG conf.
-          <InfoPopover
-            ariaLabel="MG confidence info"
-            testId="opening-stats-mg-confidence-info"
-            side="top"
-          >
-            <p>{CONFIDENCE_HEADER_TOOLTIP}</p>
-          </InfoPopover>
-        </span>
-        <span className="hidden sm:flex items-center gap-1">
-          MG clock
-          <InfoPopover
-            ariaLabel="MG clock diff info"
-            testId="opening-stats-clock-diff-info"
-            side="top"
-          >
-            <p>{CLOCK_DIFF_HEADER_TOOLTIP}</p>
-          </InfoPopover>
-        </span>
+        {/* Eval text header has no label — column 4 just carries the signed-pawn number */}
+        <span className="hidden sm:block" />
+        <span className="hidden sm:block">Eval</span>
       </div>
 
       {/* Rows */}
