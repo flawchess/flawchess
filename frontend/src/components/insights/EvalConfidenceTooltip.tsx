@@ -18,9 +18,6 @@ interface EvalConfidenceTooltipProps {
   evalCiLowPawns?: number | null;
   /** 95% CI upper bound for the eval mean (pawns). */
   evalCiHighPawns?: number | null;
-  /** Per-color engine baseline used as the chart center. The "centered" line
-   * shows eval and CI re-expressed as deltas vs this baseline. */
-  centerPawns: number;
 }
 
 function fmtSigned(value: number): string {
@@ -29,10 +26,12 @@ function fmtSigned(value: number): string {
 }
 
 /**
- * Tooltip body for the MG-entry eval bullet chart (one-sample t-test against
- * zero). Used by BulletConfidencePopover. Shows the raw eval and CI on one
- * line, then the same numbers re-expressed as deltas from the per-color
- * engine baseline (the chart's center).
+ * Tooltip body for the MG-entry eval bullet chart (one-sample z-test against
+ * 0 cp). Used by BulletConfidencePopover. Shows the raw eval and CI in pawns.
+ *
+ * The chart is centered on 0 cp regardless of color; the per-color engine
+ * baseline is a tick on the chart, not subtracted from the displayed mean
+ * (260504-rvh).
  */
 export function EvalConfidenceTooltip({
   level,
@@ -41,7 +40,6 @@ export function EvalConfidenceTooltip({
   evalMeanPawns,
   evalCiLowPawns,
   evalCiHighPawns,
-  centerPawns,
 }: EvalConfidenceTooltipProps): ReactNode {
   const pValuePct = (pValue * 100).toFixed(1);
   const effectType = evalMeanPawns >= 0 ? 'advantage' : 'disadvantage';
@@ -61,28 +59,20 @@ export function EvalConfidenceTooltip({
     ? `${fmtSigned(evalMeanPawns)} pawns, 95% CI [${fmtSigned(evalCiLowPawns)}, ${fmtSigned(evalCiHighPawns)}]`
     : `${fmtSigned(evalMeanPawns)} pawns`;
 
-  const centeredMean = evalMeanPawns - centerPawns;
-  const centeredLine = hasCi
-    ? `${fmtSigned(centeredMean)} pawns, 95% CI [${fmtSigned(evalCiLowPawns - centerPawns)}, ${fmtSigned(evalCiHighPawns - centerPawns)}]`
-    : `${fmtSigned(centeredMean)} pawns`;
-
   return (
     <div className="text-left">
       <ul className="list-disc pl-4 space-y-0.5">
         <li>Average eval: {evalLine}</li>
-        <li>
-          Centered (vs {fmtSigned(centerPawns)} baseline): {centeredLine}
-        </li>
         <li>Number of games reaching middlegame: {gameCount}</li>
         <li>
-          Probability: {pValuePct}% of such a difference from the baseline resulting from pure chance (p ={' '}
+          Probability: {pValuePct}% of such a difference from zero resulting from pure chance (p ={' '}
           {pValue.toFixed(3)})
         </li>
         <li>
           {CONFIDENCE_LABEL[level]}: {verdictMap[level]}
         </li>
       </ul>
-      <p className="mt-1 opacity-70">* two-sided z-test vs baseline; no correction for multiple comparisons</p>
+      <p className="mt-1 opacity-70">* two-sided z-test vs 0 cp; no correction for multiple comparisons</p>
     </div>
   );
 }

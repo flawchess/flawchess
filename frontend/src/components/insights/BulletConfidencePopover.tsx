@@ -13,9 +13,6 @@ interface BulletConfidencePopoverProps {
   evalMeanPawns: number | null | undefined;
   evalCiLowPawns?: number | null;
   evalCiHighPawns?: number | null;
-  /** Per-color engine baseline (chart center, in pawns). Drives the "centered"
-   * line in the tooltip body. */
-  centerPawns: number;
   testId: string;
   ariaLabel?: string;
   /** Optional preface paragraph rendered above the per-row stats. */
@@ -34,7 +31,6 @@ export function BulletConfidencePopover({
   evalMeanPawns,
   evalCiLowPawns,
   evalCiHighPawns,
-  centerPawns,
   testId,
   ariaLabel = 'Show eval confidence details',
   prefaceText,
@@ -94,7 +90,6 @@ export function BulletConfidencePopover({
             evalMeanPawns={evalMeanPawns ?? 0}
             evalCiLowPawns={evalCiLowPawns}
             evalCiHighPawns={evalCiHighPawns}
-            centerPawns={centerPawns}
           />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>

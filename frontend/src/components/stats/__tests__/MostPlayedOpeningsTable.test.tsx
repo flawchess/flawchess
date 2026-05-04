@@ -145,7 +145,7 @@ describe('MostPlayedOpeningsTable — Phase 80 desktop columns', () => {
     ) as HTMLElement | null;
     expect(popover).not.toBeNull();
     // Preface text (formerly the column-header tooltip) is now passed into the per-row popover.
-    expect(popover?.dataset.preface).toContain('Position relative to the center');
+    expect(popover?.dataset.preface).toContain('0 cp means engine-balanced');
   });
 
   it('eval_n === 0 renders em-dash for both MG eval text and bullet chart, no popover wrapper', () => {
@@ -198,21 +198,19 @@ describe('MostPlayedOpeningsTable — D-10 column header tooltip', () => {
     ).toBeNull();
   });
 
-  it('buildMgEvalHeaderTooltip produces tooltip text with the active baseline number', () => {
-    const text = buildMgEvalHeaderTooltip(0.32);
-    expect(text).toContain('Position relative to the center');
-    expect(text).toContain('+0.32');
+  it('buildMgEvalHeaderTooltip produces tooltip text anchored on 0 cp (260504-rvh)', () => {
+    const text = buildMgEvalHeaderTooltip();
+    expect(text).toContain('0 cp means engine-balanced');
+    expect(text).toContain('typical MG-entry eval for your color');
   });
 
-  it('buildMgEvalHeaderTooltip handles negative baseline (black) without em-dashes', () => {
-    const text = buildMgEvalHeaderTooltip(-0.19);
-    expect(text).toContain('-0.19');
-    // Sanity: no em-dash characters per CLAUDE.md user-facing copy rule.
+  it('buildMgEvalHeaderTooltip avoids em-dashes per CLAUDE.md user-facing copy rule', () => {
+    const text = buildMgEvalHeaderTooltip();
     expect(text).not.toContain('—');
   });
 });
 
-describe('MostPlayedOpeningsTable — baseline-centered eval cell (260504-my2)', () => {
+describe('MostPlayedOpeningsTable — zero-anchored eval cell (260504-rvh)', () => {
   function readEvalCellColor(rowKey: string): string {
     const cell = document.querySelector(
       `[data-testid="${TEST_PREFIX}-eval-text-${rowKey}"]`,
@@ -227,9 +225,9 @@ describe('MostPlayedOpeningsTable — baseline-centered eval cell (260504-my2)',
     return c.replace(/\s+/g, ' ').replace(/(\d)\.(\d+?)0+(\D|$)/g, '$1.$2$3').trim();
   }
 
-  it('row at the white baseline (delta ≈ 0) is rendered with neutral color', () => {
+  it('row within ±0.30 of zero is rendered with neutral color', () => {
     const row = _makeRow({
-      avg_eval_pawns: 0.32,
+      avg_eval_pawns: 0.10,
       eval_n: 50,
       eval_confidence: 'medium',
     });
@@ -239,7 +237,7 @@ describe('MostPlayedOpeningsTable — baseline-centered eval cell (260504-my2)',
     );
   });
 
-  it('row well above the white baseline is rendered with success color', () => {
+  it('row well above zero (>= +0.30) is rendered with success color regardless of color baseline', () => {
     const row = _makeRow({
       avg_eval_pawns: 0.65,
       eval_n: 50,
@@ -251,15 +249,27 @@ describe('MostPlayedOpeningsTable — baseline-centered eval cell (260504-my2)',
     );
   });
 
-  it('row well below the white baseline is rendered with danger color', () => {
+  it('row well below zero (<= -0.30) is rendered with danger color regardless of color baseline', () => {
     const row = _makeRow({
-      avg_eval_pawns: 0.0,
+      avg_eval_pawns: -0.50,
       eval_n: 50,
       eval_confidence: 'high',
     });
     renderTable([row], 0.315);
     expect(normalizeColor(readEvalCellColor(row.opening_eco))).toBe(
       normalizeColor(ZONE_DANGER),
+    );
+  });
+
+  it('white engine baseline tick value (+0.315) reads as success (decoupled from H0)', () => {
+    const row = _makeRow({
+      avg_eval_pawns: 0.315,
+      eval_n: 50,
+      eval_confidence: 'high',
+    });
+    renderTable([row], 0.315);
+    expect(normalizeColor(readEvalCellColor(row.opening_eco))).toBe(
+      normalizeColor(ZONE_SUCCESS),
     );
   });
 });

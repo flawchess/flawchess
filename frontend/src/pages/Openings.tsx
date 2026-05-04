@@ -182,7 +182,7 @@ function MobileMostPlayedRows({
                 const mgEvalTextContent = hasMgEval ? (
                   <span
                     className="font-semibold"
-                    style={{ color: evalZoneColor(o.avg_eval_pawns as number, evalBaselinePawns) }}
+                    style={{ color: evalZoneColor(o.avg_eval_pawns as number) }}
                   >
                     {formatSignedEvalPawns(o.avg_eval_pawns as number)}
                   </span>
@@ -194,7 +194,7 @@ function MobileMostPlayedRows({
                     value={o.avg_eval_pawns as number}
                     ciLow={o.eval_ci_low_pawns ?? undefined}
                     ciHigh={o.eval_ci_high_pawns ?? undefined}
-                    center={evalBaselinePawns}
+                    tickPawns={evalBaselinePawns}
                     neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
                     neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
                     domain={EVAL_BULLET_DOMAIN_PAWNS}
@@ -218,9 +218,8 @@ function MobileMostPlayedRows({
                           evalMeanPawns={o.avg_eval_pawns}
                           evalCiLowPawns={o.eval_ci_low_pawns}
                           evalCiHighPawns={o.eval_ci_high_pawns}
-                          centerPawns={evalBaselinePawns}
                           testId={`${testIdPrefix}-bullet-popover-mobile-${rowKey}`}
-                          prefaceText={buildMgEvalHeaderTooltip(evalBaselinePawns)}
+                          prefaceText={buildMgEvalHeaderTooltip()}
                         />
                       )}
                     </span>

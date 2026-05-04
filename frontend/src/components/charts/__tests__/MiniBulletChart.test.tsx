@@ -80,6 +80,45 @@ describe('MiniBulletChart — CI whisker', () => {
   });
 });
 
+describe('MiniBulletChart — tickPawns prop (260504-rvh)', () => {
+  function leftPercent(el: HTMLElement | null): number | null {
+    if (!el) return null;
+    const m = (el.getAttribute('style') ?? '').match(/left:\s*([\d.]+)%/);
+    return m && m[1] ? parseFloat(m[1]) : null;
+  }
+
+  it('omitted tickPawns -> tick not rendered', () => {
+    render(<MiniBulletChart value={0} domain={1.5} />);
+    expect(screen.queryByTestId('mini-bullet-tick')).toBeNull();
+  });
+
+  it('tickPawns=0.315 with domain=1.5 renders tick at the expected percentage', () => {
+    render(<MiniBulletChart value={0} tickPawns={0.315} domain={1.5} />);
+    const tick = screen.queryByTestId('mini-bullet-tick');
+    expect(tick).not.toBeNull();
+    // axisMin = -1.5, axisMax = 1.5; toPct(0.315) = ((0.315 + 1.5) / 3) * 100 = 60.5%
+    expect(leftPercent(tick)).toBeCloseTo(60.5, 3);
+  });
+
+  it('tickPawns=-0.189 (black baseline) renders tick at expected percentage', () => {
+    render(<MiniBulletChart value={0} tickPawns={-0.189} domain={1.5} />);
+    const tick = screen.queryByTestId('mini-bullet-tick');
+    expect(tick).not.toBeNull();
+    // toPct(-0.189) = ((-0.189 + 1.5) / 3) * 100 = 43.7%
+    expect(leftPercent(tick)).toBeCloseTo(43.7, 3);
+  });
+
+  it('tickPawns outside the axis (above axisMax) -> tick not rendered', () => {
+    render(<MiniBulletChart value={0} tickPawns={2.0} domain={1.5} />);
+    expect(screen.queryByTestId('mini-bullet-tick')).toBeNull();
+  });
+
+  it('tickPawns outside the axis (below axisMin) -> tick not rendered', () => {
+    render(<MiniBulletChart value={0} tickPawns={-2.0} domain={1.5} />);
+    expect(screen.queryByTestId('mini-bullet-tick')).toBeNull();
+  });
+});
+
 describe('MiniBulletChart — center prop (260504-my2)', () => {
   function leftPercent(el: HTMLElement | null): number | null {
     if (!el) return null;
