@@ -147,3 +147,4 @@ Carried forward from v1.11 close (still relevant):
 ---
 Last activity: 2026-05-04 — Completed quick task 260504-ttq: added current-position score-vs-50% bullet chart in Openings Moves tab (under the WDL bar). Backend WDLStats extended with score/confidence/p_value/ci_low/ci_high (Wald) reusing compute_confidence_bucket; new ScoreConfidencePopover and scoreBulletConfig (center 0.5, ±0.05 neutral, 0.20 domain); wrapper card dims to UNRELIABLE_OPACITY when total<10 so it doubles as a trust indicator for the WDL bar above.
 | 2026-05-04 | fast | Mute opening row when total games < 20; drop confidence-based muting | ✅ |
+| 2026-05-04 | fast | Score zone color in Moves tab + per-move list; drop severity row tint; bump mobile games-count font size | ✅ |
