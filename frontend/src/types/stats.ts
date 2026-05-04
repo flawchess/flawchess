@@ -56,6 +56,11 @@ export interface OpeningWDL {
 export interface MostPlayedOpeningsResponse {
   white: OpeningWDL[];
   black: OpeningWDL[];
+  /** Engine-asymmetry baseline (in pawns) for white-color cells, used to
+   * center the bullet chart on the same H0 the per-row z-test uses. */
+  eval_baseline_pawns_white: number;
+  /** Engine-asymmetry baseline (in pawns) for black-color cells. */
+  eval_baseline_pawns_black: number;
 }
 
 export interface BookmarkPhaseEntryQuery {

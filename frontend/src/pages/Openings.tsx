@@ -54,7 +54,7 @@ import { GameCardList } from '@/components/results/GameCardList';
 import { SidebarLayout, type SidebarPanelConfig } from '@/components/layout/SidebarLayout';
 import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
-import { MostPlayedOpeningsTable, MG_EVAL_HEADER_TOOLTIP } from '@/components/stats/MostPlayedOpeningsTable';
+import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTable';
 import { MinimapPopover } from '@/components/stats/MinimapPopover';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
@@ -62,14 +62,15 @@ import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
   EVAL_NEUTRAL_MIN_PAWNS,
+  EVAL_BASELINE_PAWNS_WHITE,
+  EVAL_BASELINE_PAWNS_BLACK,
+  buildMgEvalHeaderTooltip,
+  evalZoneColor,
 } from '@/lib/openingStatsZones';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import {
   MIN_GAMES_OPENING_ROW,
   UNRELIABLE_OPACITY,
-  ZONE_DANGER,
-  ZONE_NEUTRAL,
-  ZONE_SUCCESS,
 } from '@/lib/theme';
 import { pgnToSanArray, sanArrayToPgn } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
@@ -96,23 +97,19 @@ type SidebarPanel = 'filters' | 'bookmarks';
 // Preserves the INITIAL_VISIBLE_COUNT = 3 collapse/expand behavior from MostPlayedOpeningsTable.
 const MOBILE_MPO_INITIAL_VISIBLE_COUNT = 3;
 
-function evalZoneColor(value: number): string {
-  if (value >= EVAL_NEUTRAL_MAX_PAWNS) return ZONE_SUCCESS;
-  if (value >= EVAL_NEUTRAL_MIN_PAWNS) return ZONE_NEUTRAL;
-  return ZONE_DANGER;
-}
-
 function MobileMostPlayedRows({
   openings,
   color,
   testIdPrefix,
   onOpenGames,
+  evalBaselinePawns,
   showAll = false,
 }: {
   openings: OpeningWDL[];
   color: 'white' | 'black';
   testIdPrefix: string;
   onOpenGames: (opening: OpeningWDL, color: 'white' | 'black') => void;
+  evalBaselinePawns: number;
   showAll?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -185,7 +182,7 @@ function MobileMostPlayedRows({
                 const mgEvalTextContent = hasMgEval ? (
                   <span
                     className="font-semibold"
-                    style={{ color: evalZoneColor(o.avg_eval_pawns as number) }}
+                    style={{ color: evalZoneColor(o.avg_eval_pawns as number, evalBaselinePawns) }}
                   >
                     {formatSignedEvalPawns(o.avg_eval_pawns as number)}
                   </span>
@@ -197,6 +194,7 @@ function MobileMostPlayedRows({
                     value={o.avg_eval_pawns as number}
                     ciLow={o.eval_ci_low_pawns ?? undefined}
                     ciHigh={o.eval_ci_high_pawns ?? undefined}
+                    center={evalBaselinePawns}
                     neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
                     neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
                     domain={EVAL_BULLET_DOMAIN_PAWNS}
@@ -221,7 +219,7 @@ function MobileMostPlayedRows({
                           evalCiLowPawns={o.eval_ci_low_pawns}
                           evalCiHighPawns={o.eval_ci_high_pawns}
                           testId={`${testIdPrefix}-bullet-popover-mobile-${rowKey}`}
-                          prefaceText={MG_EVAL_HEADER_TOOLTIP}
+                          prefaceText={buildMgEvalHeaderTooltip(evalBaselinePawns)}
                         />
                       )}
                     </span>
@@ -1153,6 +1151,7 @@ export function OpeningsPage() {
                     color="white"
                     testIdPrefix="bookmarks-white"
                     onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                    evalBaselinePawns={mostPlayedData?.eval_baseline_pawns_white ?? EVAL_BASELINE_PAWNS_WHITE}
                     showAll
                   />
                 </div>
@@ -1162,6 +1161,7 @@ export function OpeningsPage() {
                     color="white"
                     testIdPrefix="bookmarks-white"
                     onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                    evalBaselinePawns={mostPlayedData?.eval_baseline_pawns_white ?? EVAL_BASELINE_PAWNS_WHITE}
                     showAll
                   />
                 </div>
@@ -1180,6 +1180,7 @@ export function OpeningsPage() {
                     color="black"
                     testIdPrefix="bookmarks-black"
                     onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                    evalBaselinePawns={mostPlayedData?.eval_baseline_pawns_black ?? EVAL_BASELINE_PAWNS_BLACK}
                     showAll
                   />
                 </div>
@@ -1189,6 +1190,7 @@ export function OpeningsPage() {
                     color="black"
                     testIdPrefix="bookmarks-black"
                     onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                    evalBaselinePawns={mostPlayedData?.eval_baseline_pawns_black ?? EVAL_BASELINE_PAWNS_BLACK}
                     showAll
                   />
                 </div>
@@ -1241,6 +1243,7 @@ export function OpeningsPage() {
               color="white"
               testIdPrefix="mpo-white"
               onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
+              evalBaselinePawns={mostPlayedData.eval_baseline_pawns_white}
             />
           </div>
           {/* Mobile: stacked WDLChartRows (STAB-02) */}
@@ -1250,6 +1253,7 @@ export function OpeningsPage() {
               color="white"
               testIdPrefix="mpo-white"
               onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
+              evalBaselinePawns={mostPlayedData.eval_baseline_pawns_white}
             />
           </div>
         </div>
@@ -1273,6 +1277,7 @@ export function OpeningsPage() {
               color="black"
               testIdPrefix="mpo-black"
               onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
+              evalBaselinePawns={mostPlayedData.eval_baseline_pawns_black}
             />
           </div>
           {/* Mobile: stacked WDLChartRows (STAB-02) */}
@@ -1282,6 +1287,7 @@ export function OpeningsPage() {
               color="black"
               testIdPrefix="mpo-black"
               onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
+              evalBaselinePawns={mostPlayedData.eval_baseline_pawns_black}
             />
           </div>
         </div>

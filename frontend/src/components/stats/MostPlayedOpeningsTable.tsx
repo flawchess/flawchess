@@ -10,32 +10,17 @@ import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
   EVAL_NEUTRAL_MIN_PAWNS,
+  buildMgEvalHeaderTooltip,
+  evalZoneColor,
 } from "@/lib/openingStatsZones"
 import { formatSignedEvalPawns } from "@/lib/clockFormat"
 import {
   MIN_GAMES_OPENING_ROW,
   UNRELIABLE_OPACITY,
-  ZONE_DANGER,
-  ZONE_NEUTRAL,
-  ZONE_SUCCESS,
 } from "@/lib/theme"
-
-function evalZoneColor(value: number): string {
-  if (value >= EVAL_NEUTRAL_MAX_PAWNS) return ZONE_SUCCESS;
-  if (value >= EVAL_NEUTRAL_MIN_PAWNS) return ZONE_NEUTRAL;
-  return ZONE_DANGER;
-}
 
 // Number of openings to show before the "More" fold
 const INITIAL_VISIBLE_COUNT = 3;
-
-// Phase 80 D-10: column-header tooltip strings.
-// MG-entry MUST cite "across analyzed games" because Lichess analyzes only ~66%
-// of imported games (bench §3 line 350-355).
-export const MG_EVAL_HEADER_TOOLTIP =
-  "Average Stockfish evaluation at the transition from opening to middlegame, signed from your perspective. " +
-  "The evaluation is computed during game import at depth 15. The statistical test tells you how likely the " +
-  "difference from 0 is due to random chance.";
 
 interface MostPlayedOpeningsTableProps {
   openings: OpeningWDL[];
@@ -43,6 +28,12 @@ interface MostPlayedOpeningsTableProps {
   testIdPrefix: string;
   /** Called when user clicks the games link on a row. Receives the full opening object so callers can route on any field. */
   onOpenGames: (opening: OpeningWDL, color: "white" | "black") => void;
+  /** Engine-asymmetry baseline (in pawns) for the table's color. Drives the
+   * bullet chart's center, the neutral-band shading, and the eval-text color
+   * via shared evalZoneColor. Caller picks per-color value from the
+   * MostPlayedOpeningsResponse (eval_baseline_pawns_white/_black) or, for
+   * bookmark sections, the EVAL_BASELINE_PAWNS_WHITE/BLACK fallbacks. */
+  evalBaselinePawns: number;
   /** When true, render every opening without the collapsible "X more" fold. */
   showAll?: boolean;
 }
@@ -64,13 +55,14 @@ function formatName(name: string): React.ReactNode {
   return <span className="font-medium">{name}</span>;
 }
 
-function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
+function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, evalBaselinePawns }: {
   o: OpeningWDL;
   color: "white" | "black";
   index: number;
   testIdPrefix: string;
   rowKey: string;
   onOpenGames: (opening: OpeningWDL, color: "white" | "black") => void;
+  evalBaselinePawns: number;
 }) {
   const isEvenRow = index % 2 === 0;
 
@@ -82,10 +74,11 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
     o.eval_n > 0 && o.avg_eval_pawns !== null && o.avg_eval_pawns !== undefined;
 
   // Phase 80: MG eval text cell — signed pawns to one decimal (e.g. "+2.1").
+  // Color reflects baseline-centered zone (260504-my2): delta = value - center.
   const mgEvalTextContent = hasMgEval ? (
     <span
       className="font-semibold"
-      style={{ color: evalZoneColor(o.avg_eval_pawns as number) }}
+      style={{ color: evalZoneColor(o.avg_eval_pawns as number, evalBaselinePawns) }}
     >
       {formatSignedEvalPawns(o.avg_eval_pawns as number)}
     </span>
@@ -93,12 +86,14 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
     <span className="text-muted-foreground">—</span>
   );
 
-  // Phase 80: MG bullet chart cell.
+  // Phase 80: MG bullet chart cell, centered on the per-color engine baseline
+  // (260504-my2): reference line, neutral band, and bar fill all shift to center.
   const mgBulletContent = hasMgEval ? (
     <MiniBulletChart
       value={o.avg_eval_pawns as number}
       ciLow={o.eval_ci_low_pawns ?? undefined}
       ciHigh={o.eval_ci_high_pawns ?? undefined}
+      center={evalBaselinePawns}
       neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
       neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
       domain={EVAL_BULLET_DOMAIN_PAWNS}
@@ -175,7 +170,7 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
               evalCiLowPawns={o.eval_ci_low_pawns}
               evalCiHighPawns={o.eval_ci_high_pawns}
               testId={`${testIdPrefix}-bullet-popover-${rowKey}`}
-              prefaceText={MG_EVAL_HEADER_TOOLTIP}
+              prefaceText={buildMgEvalHeaderTooltip(evalBaselinePawns)}
             />
           )}
         </div>
@@ -184,7 +179,7 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames }: {
   );
 }
 
-export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenGames, showAll = false }: MostPlayedOpeningsTableProps) {
+export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenGames, evalBaselinePawns, showAll = false }: MostPlayedOpeningsTableProps) {
   const [expanded, setExpanded] = React.useState(false);
 
   if (openings.length === 0) return null;
@@ -218,6 +213,7 @@ export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenG
               testIdPrefix={testIdPrefix}
               rowKey={rowKey}
               onOpenGames={onOpenGames}
+              evalBaselinePawns={evalBaselinePawns}
             />
           );
         })}

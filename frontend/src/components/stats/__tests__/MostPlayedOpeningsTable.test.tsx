@@ -8,10 +8,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import type { OpeningWDL } from '@/types/stats';
-import {
-  MostPlayedOpeningsTable,
-  buildMgEvalHeaderTooltip,
-} from '../MostPlayedOpeningsTable';
+import { MostPlayedOpeningsTable } from '../MostPlayedOpeningsTable';
+import { buildMgEvalHeaderTooltip } from '@/lib/openingStatsZones';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 

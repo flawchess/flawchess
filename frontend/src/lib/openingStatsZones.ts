@@ -46,3 +46,22 @@ export function evalZoneColor(value: number, center: number): string {
   if (delta <= EVAL_NEUTRAL_MIN_PAWNS) return ZONE_DANGER;
   return ZONE_NEUTRAL;
 }
+
+/** Build the per-row tooltip text for the MG-entry eval column.
+ *
+ * The chart is centered on the active engine baseline for the user's color,
+ * so the bullet visual matches the per-row z-test reference. Built per-call
+ * because the active baseline varies by color (white +0.32, black -0.19) and
+ * the tooltip surfaces it numerically. No em-dashes per CLAUDE.md user-facing
+ * copy rule.
+ */
+export function buildMgEvalHeaderTooltip(evalBaselinePawns: number): string {
+  const sign = evalBaselinePawns >= 0 ? '+' : '';
+  return (
+    "The chart is centered on the engine baseline for your color. " +
+    "Stockfish gives white a structural advantage at middlegame entry (+0.32 pawns mean) " +
+    "and black a symmetric disadvantage (-0.19 pawns mean). " +
+    "Position relative to the center reflects performance vs that baseline; the displayed number is the raw evaluation. " +
+    `Active baseline: ${sign}${evalBaselinePawns.toFixed(2)} pawns.`
+  );
+}
