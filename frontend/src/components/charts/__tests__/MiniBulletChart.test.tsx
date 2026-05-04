@@ -122,8 +122,9 @@ describe('MiniBulletChart — center prop (260504-my2)', () => {
     expect(valuePct).toBeCloseTo(refPct as number, 3);
   });
 
-  it('with non-zero center, reference line shifts off 50%', () => {
-    // center=0.315 on a domain of 1.5 -> centerPct = (0.315 + 1.5) / 3 * 100 ≈ 60.5%
+  it('with non-zero center, reference line still sits at 50% (axis recenters)', () => {
+    // Axis spans [center - domain, center + domain], so the reference line is
+    // always at the visual middle regardless of center.
     const { container } = render(
       <MiniBulletChart
         value={0.315}
@@ -136,6 +137,6 @@ describe('MiniBulletChart — center prop (260504-my2)', () => {
     const refLine = container.querySelector(
       'div.absolute.top-0.bottom-0.w-px.bg-foreground\\/50',
     ) as HTMLElement | null;
-    expect(leftPercent(refLine)).toBeCloseTo(60.5, 1);
+    expect(leftPercent(refLine)).toBeCloseTo(50, 3);
   });
 });

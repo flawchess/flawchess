@@ -73,18 +73,22 @@ export function MiniBulletChart({
   ciLow,
   ciHigh,
 }: MiniBulletChartProps) {
-  const clamped = Math.max(-domain, Math.min(domain, value));
+  // Axis spans [center - domain, center + domain], so the reference line and
+  // neutral band sit at the visual middle regardless of `center`. With center=0
+  // this reduces to the legacy [-domain, +domain] mapping.
+  const axisMin = center - domain;
+  const axisMax = center + domain;
+  const clamped = Math.max(axisMin, Math.min(axisMax, value));
 
-  // Map domain value to percent position (0% = left edge, 100% = right edge).
-  const toPct = (v: number): number => ((v + domain) / (2 * domain)) * 100;
+  // Map an absolute eval to its percent position along the centered axis.
+  const toPct = (v: number): number => ((v - axisMin) / (2 * domain)) * 100;
   const centerPct = toPct(center);
   // Neutral-band bounds are offsets from `center`; convert to absolute eval space
-  // before clamping to the chart domain. With center=0 this collapses to the
-  // legacy zero-centered behavior (absNeutralMin === neutralMin etc.).
+  // before clamping to the chart axis.
   const absNeutralMin = center + neutralMin;
   const absNeutralMax = center + neutralMax;
-  const neutralMinPct = toPct(Math.max(-domain, absNeutralMin));
-  const neutralMaxPct = toPct(Math.min(domain, absNeutralMax));
+  const neutralMinPct = toPct(Math.max(axisMin, absNeutralMin));
+  const neutralMaxPct = toPct(Math.min(axisMax, absNeutralMax));
   const markerPct = toPct(clamped);
 
   // Fill color follows the zone the raw (unclamped) value falls into,
@@ -171,10 +175,10 @@ export function MiniBulletChart({
       />
       {/* CI whisker overlay — only rendered when both ciLow and ciHigh are provided */}
       {ciLow !== undefined && ciHigh !== undefined && (() => {
-        const ciLowClamped = Math.max(-domain, ciLow);
-        const ciHighClamped = Math.min(domain, ciHigh);
-        const lowOpen = ciLow < -domain;
-        const highOpen = ciHigh > domain;
+        const ciLowClamped = Math.max(axisMin, ciLow);
+        const ciHighClamped = Math.min(axisMax, ciHigh);
+        const lowOpen = ciLow < axisMin;
+        const highOpen = ciHigh > axisMax;
         const ciLowPct = toPct(ciLowClamped);
         const ciHighPct = toPct(ciHighClamped);
         return (
