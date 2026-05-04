@@ -8,8 +8,8 @@ Bucketing rule under test:
 
 p_value is the two-sided Wald z-test p for H0: mean == baseline_cp, computed as
 erfc(|z| / sqrt(2)) where z = (mean - baseline_cp) / se. baseline_cp defaults
-to 0 (legacy framing); color-aware callers pass EVAL_BASELINE_CP_WHITE (+28)
-for white-color cells and EVAL_BASELINE_CP_BLACK (-20) for black-color cells.
+to 0 (legacy framing); color-aware callers pass EVAL_BASELINE_CP_WHITE (+31.5)
+for white-color cells and EVAL_BASELINE_CP_BLACK (-18.9) for black-color cells.
 
 The helper returns a 4-tuple (confidence, p_value, mean, ci_half_width).
 ci_half_width = 1.96 * se (95% CI half-width for the bullet chart whisker),
@@ -235,18 +235,18 @@ def test_baseline_cp_shifts_test_reference() -> None:
     """A mean equal to the baseline yields p=1.0 (no signal); same mean tested against
     baseline=0 would yield a low p-value."""
     n = 100
-    mean_cp = float(EVAL_BASELINE_CP_WHITE)  # +28 cp
+    mean_cp = float(EVAL_BASELINE_CP_WHITE)  # +31.5 cp
     sd_cp = 50.0
     variance = sd_cp * sd_cp
     eval_sum = float(n * mean_cp)
     eval_sumsq = variance * (n - 1) + n * mean_cp * mean_cp
 
-    # Against baseline=0: z=28/5=5.6 -> p essentially 0 -> "high"
+    # Against baseline=0: z=31.5/5=6.3 -> p essentially 0 -> "high"
     conf_zero, p_zero, _m, _ci = compute_eval_confidence_bucket(eval_sum, eval_sumsq, n)
     assert conf_zero == "high"
     assert p_zero < 0.001
 
-    # Against the white baseline (+28): z=0 -> p=1.0 -> "low"
+    # Against the white baseline (+31.5): z=0 -> p=1.0 -> "low"
     conf_white, p_white, _m2, _ci2 = compute_eval_confidence_bucket(
         eval_sum, eval_sumsq, n, baseline_cp=float(EVAL_BASELINE_CP_WHITE)
     )
@@ -274,7 +274,7 @@ def test_baseline_cp_does_not_shift_displayed_mean_or_ci() -> None:
 def test_baseline_cp_zero_variance_uses_baseline_for_mean_compare() -> None:
     """SE==0 path: p=1.0 iff mean == baseline (not iff mean == 0)."""
     n = 30
-    # All games at exactly +28 cp (white baseline) -> variance=0
+    # All games at exactly +31.5 cp (white baseline) -> variance=0
     mean_cp = float(EVAL_BASELINE_CP_WHITE)
     eval_sum = float(n * mean_cp)
     eval_sumsq = float(n * mean_cp * mean_cp)
@@ -296,7 +296,7 @@ def test_baseline_cp_zero_variance_uses_baseline_for_mean_compare() -> None:
 def test_black_baseline_is_negative() -> None:
     """Sanity: a black-color cell with mean at the black baseline should not register signal."""
     n = 100
-    mean_cp = float(EVAL_BASELINE_CP_BLACK)  # -20 cp
+    mean_cp = float(EVAL_BASELINE_CP_BLACK)  # -18.9 cp
     sd_cp = 50.0
     variance = sd_cp * sd_cp
     eval_sum = float(n * mean_cp)

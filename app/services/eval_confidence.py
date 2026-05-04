@@ -14,10 +14,10 @@ Bucketing rule (thresholds imported from opening_insights_constants):
 
 p_value is the **two-sided** Wald z-test p against H0: mean == baseline_cp. The
 baseline defaults to 0 but color-aware callers should pass EVAL_BASELINE_CP_WHITE
-(+28 cp) for white-color cells and EVAL_BASELINE_CP_BLACK (-20 cp) for black-color
-cells to neutralize the Stockfish white-advantage asymmetry that would otherwise
-flag every white opening as "significant advantage" and every black opening as
-"significant disadvantage" purely from engine bias.
+(+31.5 cp) for white-color cells and EVAL_BASELINE_CP_BLACK (-18.9 cp) for
+black-color cells to neutralize the Stockfish white-advantage asymmetry that
+would otherwise flag every white opening as "significant advantage" and every
+black opening as "significant disadvantage" purely from engine bias.
 
 Two-sided framing is correct because both directions are independently meaningful:
 mean > baseline means the user systematically enters MG entry above-baseline,

@@ -38,16 +38,18 @@ from app.services.openings_service import recency_cutoff
 def _baseline_cp_for_color(color: Literal["white", "black"] | None) -> float:
     """Return the H0 baseline (cp) for the eval z-test given the cell's user_color.
 
-    Stockfish gives white a structural ~+28 cp advantage at MG entry and black a
-    symmetric ~-20 cp baseline (median, 2026-03 Lichess benchmark). Mixed-color
-    cells (color=None, e.g. match_side='full' bookmarks) fall back to 0 — the
-    asymmetry partially cancels and a single baseline can't represent both.
+    Stockfish gives white a structural ~+31.5 cp advantage at MG entry and black a
+    symmetric ~-18.9 cp baseline (per-game mean, 2026-05 Lichess benchmark, n=1.25M
+    trimmed games — see reports/benchmarks-2026-05-04.md). Mixed-color cells
+    (color=None, e.g. match_side='full' bookmarks) fall back to 0 — the asymmetry
+    partially cancels and a single baseline can't represent both.
     """
     if color == "white":
         return float(EVAL_BASELINE_CP_WHITE)
     if color == "black":
         return float(EVAL_BASELINE_CP_BLACK)
     return 0.0
+
 
 # Minimum number of games required for an opening to appear in top openings.
 MIN_GAMES_FOR_OPENING = 1
@@ -469,6 +471,10 @@ async def get_most_played_openings(
         black=rows_to_openings(
             black_rows, black_position_wdl, black_phase_entry_metrics, user_color="black"
         ),
+        # Surface the per-color H0 baselines so the frontend bullet chart
+        # centers on the same reference the z-test uses (260504-my2).
+        eval_baseline_pawns_white=_baseline_cp_for_color("white") / 100.0,
+        eval_baseline_pawns_black=_baseline_cp_for_color("black") / 100.0,
     )
 
 
@@ -534,7 +540,9 @@ async def get_bookmark_phase_entry_metrics(
     cutoff = recency_cutoff(recency)
 
     # Group by (match_side, color). Bookmarks with the same group share one DB call.
-    grouped: dict[tuple[Literal["white", "black", "full"], Literal["white", "black"] | None], list[int]] = {}
+    grouped: dict[
+        tuple[Literal["white", "black", "full"], Literal["white", "black"] | None], list[int]
+    ] = {}
     for b in bookmarks:
         key = (b.match_side, b.color)
         grouped.setdefault(key, []).append(int(b.target_hash))
