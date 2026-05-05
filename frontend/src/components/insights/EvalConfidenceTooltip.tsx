@@ -76,7 +76,8 @@ export function EvalConfidenceTooltip({
       <p className="opacity-70 italic">
         Eval = average stockfish eval at middlegame entry.<br />
         Dashed tick = typical eval for {color} ({fmtSigned(baselinePawns)} pawns).<br />
-        Error bars = 95% confidence interval.
+        Test = two-sided Wald z vs 0 pawns.<br />
+        CI = Wald 95% (whisker on bullet).
       </p>
     </div>
   );
