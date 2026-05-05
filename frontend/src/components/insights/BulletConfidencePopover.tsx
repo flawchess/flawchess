@@ -11,12 +11,10 @@ interface BulletConfidencePopoverProps {
   pValue: number | null | undefined;
   gameCount: number | null | undefined;
   evalMeanPawns: number | null | undefined;
-  evalCiLowPawns?: number | null;
-  evalCiHighPawns?: number | null;
+  /** User's color for this row — drives which per-color baseline tick is shown. */
+  color: 'white' | 'black';
   testId: string;
   ariaLabel?: string;
-  /** Optional preface paragraph rendered above the per-row stats. */
-  prefaceText?: string;
   /** Extra classes for the trigger span (e.g. positioning). */
   triggerClassName?: string;
 }
@@ -29,11 +27,9 @@ export function BulletConfidencePopover({
   pValue,
   gameCount,
   evalMeanPawns,
-  evalCiLowPawns,
-  evalCiHighPawns,
+  color,
   testId,
   ariaLabel = 'Show eval confidence details',
-  prefaceText,
   triggerClassName,
 }: BulletConfidencePopoverProps) {
   const [open, setOpen] = React.useState(false);
@@ -82,14 +78,12 @@ export function BulletConfidencePopover({
             'data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2'
           )}
         >
-          {prefaceText && <p className="mb-2">{prefaceText}</p>}
           <EvalConfidenceTooltip
             level={level}
             pValue={pValue ?? 1}
             gameCount={gameCount ?? 0}
             evalMeanPawns={evalMeanPawns ?? 0}
-            evalCiLowPawns={evalCiLowPawns}
-            evalCiHighPawns={evalCiHighPawns}
+            color={color}
           />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>

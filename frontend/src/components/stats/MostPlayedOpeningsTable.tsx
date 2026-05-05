@@ -10,7 +10,6 @@ import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
   EVAL_NEUTRAL_MIN_PAWNS,
-  buildMgEvalHeaderTooltip,
   evalZoneColor,
 } from "@/lib/openingStatsZones"
 import { formatSignedEvalPawns } from "@/lib/clockFormat"
@@ -111,7 +110,7 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, evalBa
     >
       {/* Desktop row: 5-column grid (name | games | WDL | eval text | eval bullet) */}
       <div
-        className={`grid grid-cols-[minmax(0,1fr)_3.5rem_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_3.5rem_minmax(120px,200px)_3rem_minmax(100px,160px)] gap-2 items-center rounded px-2 py-1.5 hover:bg-white/5 transition-colors ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
+        className={`grid grid-cols-[minmax(0,1fr)_3.5rem_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_3.5rem_minmax(120px,200px)_5rem_minmax(100px,160px)] gap-2 items-center rounded px-2 py-1.5 hover:bg-white/5 transition-colors ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
       >
         {/* Column 1: Name + PGN */}
         <MinimapPopover
@@ -148,32 +147,30 @@ function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, evalBa
           <MiniWDLBar win_pct={o.win_pct} draw_pct={o.draw_pct} loss_pct={o.loss_pct} />
         </div>
 
-        {/* Column 4: MG eval text (desktop only) */}
+        {/* Column 4: MG eval text + info-icon popover trigger (desktop only) */}
         <div
-          className="hidden sm:block text-right text-sm tabular-nums sm:pl-4"
+          className="hidden sm:flex items-center justify-end gap-1 text-sm tabular-nums"
           data-testid={`${testIdPrefix}-eval-text-${rowKey}`}
         >
-          {mgEvalTextContent}
-        </div>
-
-        {/* Column 5: MG bullet chart + info-icon popover trigger (desktop only) */}
-        <div
-          className="hidden sm:flex items-center gap-2 tabular-nums"
-          data-testid={`${testIdPrefix}-bullet-${rowKey}`}
-        >
-          <div className="flex-1 min-w-0">{mgBulletContent}</div>
           {hasMgEval && (
             <BulletConfidencePopover
               level={o.eval_confidence}
               pValue={o.eval_p_value}
               gameCount={o.eval_n}
               evalMeanPawns={o.avg_eval_pawns}
-              evalCiLowPawns={o.eval_ci_low_pawns}
-              evalCiHighPawns={o.eval_ci_high_pawns}
+              color={color}
               testId={`${testIdPrefix}-bullet-popover-${rowKey}`}
-              prefaceText={buildMgEvalHeaderTooltip()}
             />
           )}
+          {mgEvalTextContent}
+        </div>
+
+        {/* Column 5: MG bullet chart (desktop only) */}
+        <div
+          className="hidden sm:block tabular-nums"
+          data-testid={`${testIdPrefix}-bullet-${rowKey}`}
+        >
+          {mgBulletContent}
         </div>
       </div>
     </div>

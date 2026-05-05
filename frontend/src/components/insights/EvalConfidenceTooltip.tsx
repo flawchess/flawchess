@@ -1,12 +1,39 @@
 import type { ReactNode } from 'react';
+import {
+  EVAL_BASELINE_PAWNS_BLACK,
+  EVAL_BASELINE_PAWNS_WHITE,
+  EVAL_NEUTRAL_MAX_PAWNS,
+  EVAL_NEUTRAL_MIN_PAWNS,
+} from '@/lib/openingStatsZones';
 
 type ConfidenceLevel = 'low' | 'medium' | 'high';
 
 const CONFIDENCE_LABEL: Record<ConfidenceLevel, string> = {
-  low: 'Low confidence',
-  medium: 'Medium confidence',
-  high: 'High confidence',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
 };
+
+type Verdict = 'advantage' | 'disadvantage' | 'deviation';
+
+function pickVerdict(evalMeanPawns: number): Verdict {
+  if (evalMeanPawns >= EVAL_NEUTRAL_MAX_PAWNS) return 'advantage';
+  if (evalMeanPawns <= EVAL_NEUTRAL_MIN_PAWNS) return 'disadvantage';
+  return 'deviation';
+}
+
+function headline(level: ConfidenceLevel, evalMeanPawns: number): string {
+  if (level === 'low') return 'Could plausibly be chance.';
+  const verdict = pickVerdict(evalMeanPawns);
+  const lead = level === 'high' ? 'Likely' : 'Possibly';
+  if (verdict === 'deviation') return `${lead} a real deviation from 0 pawns.`;
+  return `${lead} a real ${verdict}.`;
+}
+
+function fmtSigned(value: number): string {
+  const sign = value >= 0 ? '+' : '';
+  return `${sign}${value.toFixed(1)}`;
+}
 
 interface EvalConfidenceTooltipProps {
   level: ConfidenceLevel;
@@ -14,20 +41,15 @@ interface EvalConfidenceTooltipProps {
   gameCount: number;
   /** Average eval at phase entry, in pawns (signed, user perspective). */
   evalMeanPawns: number;
-  /** 95% CI lower bound for the eval mean (pawns). */
-  evalCiLowPawns?: number | null;
-  /** 95% CI upper bound for the eval mean (pawns). */
-  evalCiHighPawns?: number | null;
-}
-
-function fmtSigned(value: number): string {
-  const sign = value >= 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}`;
+  /** User's color for this row — drives which per-color baseline tick is shown. */
+  color: 'white' | 'black';
 }
 
 /**
- * Tooltip body for the MG-entry eval bullet chart (one-sample z-test against
- * 0 cp). Used by BulletConfidencePopover. Shows the raw eval and CI in pawns.
+ * Tooltip body for the MG-entry eval bullet chart (z-test against 0 cp).
+ * Used by BulletConfidencePopover. Mirrors WdlConfidenceTooltip's verdict-first
+ * layout: bold headline, stats line, footer explainer. CI numbers are not
+ * shown in text — the bullet's whisker carries that.
  *
  * The chart is centered on 0 cp regardless of color; the per-color engine
  * baseline is a tick on the chart, not subtracted from the displayed mean
@@ -38,41 +60,24 @@ export function EvalConfidenceTooltip({
   pValue,
   gameCount,
   evalMeanPawns,
-  evalCiLowPawns,
-  evalCiHighPawns,
+  color,
 }: EvalConfidenceTooltipProps): ReactNode {
-  const pValuePct = (pValue * 100).toFixed(1);
-  const effectType = evalMeanPawns >= 0 ? 'advantage' : 'disadvantage';
-  const verdictMap: Record<ConfidenceLevel, string> = {
-    low: 'Could plausibly be chance',
-    medium: 'Possibly a significant ' + effectType,
-    high: 'Likely a significant ' + effectType,
-  };
-
-  const hasCi =
-    evalCiLowPawns !== undefined &&
-    evalCiLowPawns !== null &&
-    evalCiHighPawns !== undefined &&
-    evalCiHighPawns !== null;
-
-  const evalLine = hasCi
-    ? `${fmtSigned(evalMeanPawns)} pawns, 95% CI [${fmtSigned(evalCiLowPawns)}, ${fmtSigned(evalCiHighPawns)}]`
-    : `${fmtSigned(evalMeanPawns)} pawns`;
-
+  const baselinePawns =
+    color === 'white' ? EVAL_BASELINE_PAWNS_WHITE : EVAL_BASELINE_PAWNS_BLACK;
   return (
-    <div className="text-left">
-      <ul className="list-disc pl-4 space-y-0.5">
-        <li>Average eval: {evalLine}</li>
-        <li>Number of games reaching middlegame: {gameCount}</li>
-        <li>
-          Probability: {pValuePct}% of such a difference from 0 resulting from pure chance (p ={' '}
-          {pValue.toFixed(3)})
-        </li>
-        <li>
-          {CONFIDENCE_LABEL[level]}: {verdictMap[level]}
-        </li>
-      </ul>
-      <p className="mt-1 opacity-70">* two-sided z-test vs 0 cp; no correction for multiple comparisons</p>
+    <div className="text-left space-y-1">
+      <p>
+        <strong>{headline(level, evalMeanPawns)}</strong> {CONFIDENCE_LABEL[level]} confidence
+        (p = {pValue.toFixed(3)}).
+      </p>
+      <p>
+        {fmtSigned(evalMeanPawns)} pawns over {gameCount} games.
+      </p>
+      <p className="opacity-70 italic">
+        Eval = average stockfish eval at middlegame entry.<br />
+        Dashed tick = typical eval for {color} ({fmtSigned(baselinePawns)} pawns).<br />
+        Error bars = 95% confidence interval.
+      </p>
     </div>
   );
 }

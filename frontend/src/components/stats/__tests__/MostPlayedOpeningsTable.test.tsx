@@ -9,7 +9,6 @@ import { render, cleanup } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import type { OpeningWDL } from '@/types/stats';
 import { MostPlayedOpeningsTable } from '../MostPlayedOpeningsTable';
-import { buildMgEvalHeaderTooltip } from '@/lib/openingStatsZones';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 
@@ -48,14 +47,8 @@ vi.mock('@/components/ui/info-popover', () => ({
 // Mock BulletConfidencePopover as a self-contained info-icon trigger
 // (no children — it now renders alongside the bullet, not wrapping it).
 vi.mock('@/components/insights/BulletConfidencePopover', () => ({
-  BulletConfidencePopover: ({
-    testId,
-    prefaceText,
-  }: {
-    testId?: string;
-    prefaceText?: string;
-  }) => (
-    <button type="button" data-testid={testId} data-preface={prefaceText}>
+  BulletConfidencePopover: ({ testId }: { testId?: string }) => (
+    <button type="button" data-testid={testId}>
       ?
     </button>
   ),
@@ -124,10 +117,10 @@ describe('MostPlayedOpeningsTable — Phase 80 desktop columns', () => {
     const rowKey = row.opening_eco;
     const cell = document.querySelector(`[data-testid="${TEST_PREFIX}-eval-text-${rowKey}"]`);
     expect(cell).not.toBeNull();
-    expect(cell?.textContent).toBe('+2.1');
+    expect(cell?.textContent).toContain('+2.1');
   });
 
-  it('renders MG bullet chart cell with confidence popover trigger alongside the bullet', () => {
+  it('renders MG eval cell with confidence popover trigger to the left of the eval number', () => {
     const row = _makeRow({
       avg_eval_pawns: 0.3,
       eval_ci_low_pawns: 0.1,
@@ -137,15 +130,14 @@ describe('MostPlayedOpeningsTable — Phase 80 desktop columns', () => {
     });
     renderTable([row]);
     const rowKey = row.opening_eco;
-    const cell = document.querySelector(`[data-testid="${TEST_PREFIX}-bullet-${rowKey}"]`);
-    expect(cell).not.toBeNull();
-    expect(cell?.querySelector('[data-testid="mini-bullet-chart"]')).not.toBeNull();
-    const popover = cell?.querySelector(
+    const evalCell = document.querySelector(`[data-testid="${TEST_PREFIX}-eval-text-${rowKey}"]`);
+    expect(evalCell).not.toBeNull();
+    const popover = evalCell?.querySelector(
       `[data-testid="${TEST_PREFIX}-bullet-popover-${rowKey}"]`,
     ) as HTMLElement | null;
     expect(popover).not.toBeNull();
-    // Preface text (formerly the column-header tooltip) is now passed into the per-row popover.
-    expect(popover?.dataset.preface).toContain('Stockfish engine evaluation at middlegame entry');
+    const bulletCell = document.querySelector(`[data-testid="${TEST_PREFIX}-bullet-${rowKey}"]`);
+    expect(bulletCell?.querySelector('[data-testid="mini-bullet-chart"]')).not.toBeNull();
   });
 
   it('eval_n === 0 renders em-dash for both MG eval text and bullet chart, no popover wrapper', () => {
@@ -196,17 +188,6 @@ describe('MostPlayedOpeningsTable — D-10 column header tooltip', () => {
     expect(
       document.querySelector('[data-testid="opening-stats-mg-eval-info"]'),
     ).toBeNull();
-  });
-
-  it('buildMgEvalHeaderTooltip produces tooltip text describing the dashed-line reference (260504-rvh)', () => {
-    const text = buildMgEvalHeaderTooltip();
-    expect(text).toContain('Stockfish engine evaluation at middlegame entry');
-    expect(text).toContain('dashed line shows the typical eval for your color');
-  });
-
-  it('buildMgEvalHeaderTooltip avoids em-dashes per CLAUDE.md user-facing copy rule', () => {
-    const text = buildMgEvalHeaderTooltip();
-    expect(text).not.toContain('—');
   });
 });
 

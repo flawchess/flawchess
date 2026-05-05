@@ -73,7 +73,6 @@ import {
   EVAL_NEUTRAL_MIN_PAWNS,
   EVAL_BASELINE_PAWNS_WHITE,
   EVAL_BASELINE_PAWNS_BLACK,
-  buildMgEvalHeaderTooltip,
   evalZoneColor,
 } from '@/lib/openingStatsZones';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
@@ -245,10 +244,8 @@ function MobileMostPlayedRows({
                       pValue={o.eval_p_value}
                       gameCount={o.eval_n}
                       evalMeanPawns={o.avg_eval_pawns}
-                      evalCiLowPawns={o.eval_ci_low_pawns}
-                      evalCiHighPawns={o.eval_ci_high_pawns}
+                      color={color}
                       testId={`${testIdPrefix}-bullet-popover-mobile-${rowKey}`}
-                      prefaceText={buildMgEvalHeaderTooltip()}
                     />
                   )}
                   <span className="text-muted-foreground">Eval:</span>

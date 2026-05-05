@@ -67,7 +67,7 @@ export function WdlConfidenceTooltip({
         (p = {pValue.toFixed(3)}).
       </p>
       <p>{statsLine(score, gameCount)}</p>
-      <p className="opacity-70 italic">Score = wins + ½ draws.</p>
+      <p className="opacity-70 italic">Score = wins + ½ draws<br/> Error bars = 95% confidence interval</p>
     </div>
   );
 }

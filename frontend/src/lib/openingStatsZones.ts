@@ -50,17 +50,3 @@ export function evalZoneColor(value: number): string {
   if (value <= EVAL_NEUTRAL_MIN_PAWNS) return ZONE_DANGER;
   return ZONE_NEUTRAL;
 }
-
-/** Build the per-row tooltip text for the MG-entry eval column.
- *
- * The chart is centered on 0 cp (engine-balanced) and the per-color baseline
- * is rendered as a small tick the user can read against. No em-dashes per
- * CLAUDE.md user-facing copy rule.
- */
-export function buildMgEvalHeaderTooltip(): string {
-  return (
-    'The number shows the average stockfish engine evaluation at middlegame entry. ' +
-    'The dashed line shows the typical eval for your color: about +0.25 pawns for ' +
-    'white, -0.25 for black, per the FlawChess benchmark.'
-  );
-}
