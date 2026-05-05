@@ -15,9 +15,16 @@ afterEach(() => {
   cleanup();
 });
 
-describe('Openings board container className (D-03)', () => {
-  it('board container has lg:hidden when activeTab is stats', () => {
+describe('Openings board container className', () => {
+  it('board container has lg:hidden when activeTab is stats (D-03)', () => {
     const className = getBoardContainerClassName('stats');
+    expect(className).toMatch(/lg:hidden/);
+  });
+
+  it('board container has lg:hidden when activeTab is insights', () => {
+    // Insights uses a 2-column white/black layout on desktop and doesn't need
+    // the chessboard, so we hide it at lg+ to free horizontal space.
+    const className = getBoardContainerClassName('insights');
     expect(className).toMatch(/lg:hidden/);
   });
 
@@ -28,11 +35,6 @@ describe('Openings board container className (D-03)', () => {
 
   it('board container does NOT have lg:hidden when activeTab is games', () => {
     const className = getBoardContainerClassName('games');
-    expect(className).not.toMatch(/lg:hidden/);
-  });
-
-  it('board container does NOT have lg:hidden when activeTab is insights', () => {
-    const className = getBoardContainerClassName('insights');
     expect(className).not.toMatch(/lg:hidden/);
   });
 

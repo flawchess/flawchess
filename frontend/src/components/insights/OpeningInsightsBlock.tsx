@@ -198,8 +198,20 @@ function SectionsContent({
     return acc;
   }, []);
 
+  // Mobile (default): single column in the locked SECTIONS order.
+  // Desktop (lg+): 2 columns — White (weaknesses then strengths) on the left,
+  // Black (weaknesses then strengths) on the right. Each section's explicit
+  // lg:col-start/lg:row-start is ignored at mobile widths (grid-cols-1) so the
+  // mobile DOM/visual order matches the legacy single-column stack.
+  const COLUMN_PLACEMENT: Record<SectionMeta['key'], string> = {
+    'white-weaknesses': 'lg:col-start-1 lg:row-start-1',
+    'white-strengths': 'lg:col-start-1 lg:row-start-2',
+    'black-weaknesses': 'lg:col-start-2 lg:row-start-1',
+    'black-strengths': 'lg:col-start-2 lg:row-start-2',
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-4">
       {SECTIONS.map((section, sectionIdx) => (
         <FindingsSection
           key={section.key}
@@ -208,6 +220,7 @@ function SectionsContent({
           startIdx={sectionStartIdxs[sectionIdx] ?? 0}
           onFindingClick={onFindingClick}
           onOpenGames={onOpenGames}
+          className={COLUMN_PLACEMENT[section.key]}
         />
       ))}
     </div>
@@ -220,12 +233,14 @@ function FindingsSection({
   startIdx,
   onFindingClick,
   onOpenGames,
+  className,
 }: {
   section: SectionMeta;
   findings: OpeningInsightFinding[];
   startIdx: number;
   onFindingClick: (finding: OpeningInsightFinding) => void;
   onOpenGames: (finding: OpeningInsightFinding) => void;
+  className?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const swatchClass = section.color === 'white' ? 'bg-white' : 'bg-zinc-900';
@@ -239,7 +254,7 @@ function FindingsSection({
   return (
     <section
       data-testid={`opening-insights-section-${section.key}`}
-      className="space-y-2"
+      className={`space-y-2${className ? ` ${className}` : ''}`}
     >
       <h3 className="text-base font-semibold flex items-center gap-1.5">
         <span
