@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { Chessboard } from 'react-chessboard';
-import { arrowSortKey } from '../../lib/arrowColor';
+import { arrowSortKey, DARK_BLUE } from '../../lib/arrowColor';
 import { darkSquareStyle, lightSquareStyle, BOARD_DARK_SQUARE, BOARD_LIGHT_SQUARE } from '../../lib/theme';
 import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '../../lib/highlightPulse';
 import { squareToCoords, buildArrowPath } from './arrowGeometry';
@@ -50,6 +50,10 @@ const MIN_HEAD_WIDTH = 0.25;
 const MAX_HEAD_WIDTH = 0.65;
 const HEAD_LENGTH_RATIO = 0.7; // head length = head width * this
 const ARROW_OPACITY = 0.75;
+// Blue arrows (in-between zone OR low-data OR low-confidence) render much
+// fainter at rest so reliable red/green arrows visually dominate. Hover bumps
+// any arrow back to ARROW_HOVER_OPACITY regardless of color.
+const ARROW_LOW_EMPHASIS_OPACITY = 0.30;
 const ARROW_HOVER_OPACITY = 0.9;
 const ARROW_OUTLINE_COLOR = 'rgba(0, 0, 0, 0.5)';
 const ARROW_OUTLINE_WIDTH = 1;
@@ -125,6 +129,10 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
             }
           : undefined;
 
+        // Blue arrows render much fainter at rest (low-emphasis); hover bumps
+        // every arrow back to ARROW_HOVER_OPACITY regardless of color.
+        const baseOpacity = arrow.color === DARK_BLUE ? ARROW_LOW_EMPHASIS_OPACITY : ARROW_OPACITY;
+
         // Stable key keyed on the move identity (start→end), NOT the sorted
         // index. Hovering a different move changes another arrow's color and
         // therefore the sort order, so an index-based key would shift the
@@ -136,7 +144,7 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
             key={`${arrow.startSquare}-${arrow.endSquare}`}
             d={d}
             fill={arrow.color}
-            opacity={arrow.isHovered ? ARROW_HOVER_OPACITY : ARROW_OPACITY}
+            opacity={arrow.isHovered ? ARROW_HOVER_OPACITY : baseOpacity}
             stroke={ARROW_OUTLINE_COLOR}
             strokeWidth={ARROW_OUTLINE_WIDTH}
             strokeLinejoin="round"

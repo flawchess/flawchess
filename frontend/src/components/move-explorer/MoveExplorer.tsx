@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
+import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY, ZONE_NEUTRAL } from '@/lib/theme';
 import { scoreZoneColor } from '@/lib/scoreBulletConfig';
+import { DARK_GREEN, DARK_RED, getArrowColor } from '@/lib/arrowColor';
 import { OPENING_INSIGHTS_CONFIDENCE_COPY } from '@/components/insights/OpeningInsightsBlock';
 import {
   HIGHLIGHT_PULSE_DURATION_MS,
@@ -28,14 +29,14 @@ interface MoveExplorerProps {
   onMoveClick: (from: string, to: string) => void;
   onMoveHover?: (moveSan: string | null) => void;
   /**
-   * When non-null, the row whose move_san matches `san` renders a sticky
-   * severity-tinted background in `color` and is auto-scrolled into view once.
-   * When `pulse` is true, the row tint also runs the synced pulse animation.
-   * The parent flips `pulse` false after the pulse window so a later React
-   * re-render can't re-attach the animation class and restart it.
-   * (Quick-task 260427-j41.)
+   * When non-null, the row whose move_san matches `san` is auto-scrolled into
+   * view once. When `pulse` is true, the row also runs the grey pulse animation
+   * (the parent flips `pulse` false after the pulse window so a later React
+   * re-render can't re-attach the animation class and restart it).
+   * The row's steady-state tint color comes from the score zone (independent
+   * of the deep-link), so no `color` field is needed here.
    */
-  highlightedMove?: { san: string; color: string; pulse: boolean } | null;
+  highlightedMove?: { san: string; pulse: boolean } | null;
   /**
    * Fired when the highlight should clear:
    *   1. Position changes (board move played, navigation, etc.).
@@ -189,7 +190,7 @@ export function MoveExplorer({
                   <InfoPopover ariaLabel="Move arrows info" testId="move-arrows-info" side="top">
                     <div className="space-y-2">
                       <p>
-                        These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings. Moves with fewer than 10 games or low confidence are always grey. Rows with fewer than 10 games are also dimmed since their statistics are unreliable.
+                        These are the moves that occurred next in the position shown on the board, over all the games that match the current filter settings. Moves with fewer than 10 games or low confidence render in the neutral blue zone color (and the corresponding board arrow is drawn faintly). Rows with fewer than 10 games are also dimmed since their statistics are unreliable.
                       </p>
                       <p>
                         On desktop, click a move to play it. On mobile, tap to highlight (shows the arrow on the board), then tap again to play.
@@ -226,7 +227,6 @@ export function MoveExplorer({
                   onRowClick={handleRowClick}
                   onRowKeyDown={handleRowKeyDown}
                   onMoveHover={onMoveHover}
-                  highlightColor={isHighlighted ? highlightedMove.color : null}
                   highlightPulse={isHighlighted ? highlightedMove.pulse : false}
                   // Only attach the ref to the matching row — we don't need a Map of refs.
                   rowRef={isHighlighted ? highlightedRowRef : undefined}
@@ -241,16 +241,19 @@ export function MoveExplorer({
   );
 }
 
+// Grey pulse hex — the deep-link pulse animates between these alphas + this
+// neutral grey so the highlight calls attention without overriding the score
+// zone signal. Picked to harmonize with the existing hover/selected `bg-foreground/10`.
+const PULSE_GREY_HEX = '#808080';
+
 /** Move row with inline MiniWDLBar showing percentages */
-function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, highlightColor, highlightPulse, rowRef, sideJustMoved }: {
+function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, highlightPulse, rowRef, sideJustMoved }: {
   entry: NextMoveEntry;
   selectedMove: string | null;
   onRowClick: (entry: NextMoveEntry) => void;
   onRowKeyDown: (e: React.KeyboardEvent, entry: NextMoveEntry) => void;
   onMoveHover?: (moveSan: string | null) => void;
-  /** Hex color for the row background tint when this row matches highlightedMove. Null otherwise. */
-  highlightColor: string | null;
-  /** Whether the row should run the pulse animation. Sticky tint is independent (always on when highlightColor !== null). */
+  /** Whether the row should run the deep-link pulse animation (grey alpha levels). */
   highlightPulse: boolean;
   /** Ref attached only to the highlighted row so the parent can scrollIntoView once. */
   rowRef?: React.Ref<HTMLTableRowElement>;
@@ -258,47 +261,51 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   sideJustMoved: Color;
 }) {
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
-  // Mute the row only on small samples — the Score column carries its own
-  // zone color and is muted (not hidden) when the effect is too small to be
-  // interesting.
   const isUnreliable = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
   // Phase 77 D-06: inline troll-face icon when the resulting position is in
   // the curated set for the side that just moved. Pure synchronous lookup —
   // no useMemo (RESEARCH.md anti-pattern note).
   const showTroll = isTrollPosition(entry.result_fen, sideJustMoved);
-  // Color the score percent for any reliable sample (game_count >= 10,
-  // confidence above 'low'). The 45-55% band renders in the neutral blue
-  // zone color via scoreZoneColor; outside that band it shows red/green.
-  const showScoreColor =
-    entry.game_count >= MIN_GAMES_FOR_RELIABLE_STATS &&
-    entry.confidence !== 'low';
 
-  // Row tint is now reserved for the deep-link highlight only — the Score
-  // column carries the strength/weakness signal that previously lived in the
-  // row background.
-  const tintColor = highlightColor;
+  // Reliability gate. Drives BOTH the Score column color and the row-bg tint:
+  // unreliable rows render the Score number in the neutral blue zone color
+  // (matching the faint blue arrow on the board) and skip the row tint.
+  const isReliable =
+    entry.game_count >= MIN_GAMES_FOR_RELIABLE_STATS && entry.confidence !== 'low';
+  const scoreColor = isReliable ? scoreZoneColor(entry.score) : ZONE_NEUTRAL;
 
-  // Merge the unreliable-row opacity with the severity tint + pulse. The
-  // sticky background tint stays whenever tintColor is set; the pulse
-  // animation properties are only attached while highlightPulse is true so
-  // the parent can drop it after the pulse window — preventing later React
-  // re-renders (e.g. arrow re-sort on hover) from re-attaching the animation
-  // class and restarting the CSS keyframe.
+  // Row-bg score-zone tint. Only red and green zones get a row tint — the
+  // blue (in-between OR unreliable) class stays untinted so the eye is drawn
+  // to strong/weak moves. Reuse the arrow palette hex so the row tint and
+  // the board arrow share one source of truth.
+  const arrowColorHex = getArrowColor(entry.score, entry.game_count, entry.confidence);
+  const zoneTintHex =
+    arrowColorHex === DARK_GREEN || arrowColorHex === DARK_RED ? arrowColorHex : null;
+
+  // Merge unreliable-row opacity with the score-zone tint and the deep-link
+  // pulse. The pulse animates through grey alpha levels; the row settles at
+  // the score-zone tint (or untinted) once the pulse class is dropped by the
+  // parent flipping `highlightPulse` to false.
   const rowStyle: React.CSSProperties = {};
   if (isUnreliable) rowStyle.opacity = UNRELIABLE_OPACITY;
-  if (tintColor !== null) {
-    rowStyle.backgroundColor = `${tintColor}${HIGHLIGHT_BG_REST_ALPHA}`;
-    if (highlightPulse) {
-      rowStyle.animationDuration = `${HIGHLIGHT_PULSE_DURATION_MS}ms`;
-      rowStyle.animationIterationCount = HIGHLIGHT_PULSE_ITERATIONS;
-      // CSS custom properties for the keyframe stops; resolved by index.css.
-      (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-low'] =
-        `${tintColor}${HIGHLIGHT_BG_LOW_ALPHA}`;
-      (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-high'] =
-        `${tintColor}${HIGHLIGHT_BG_HIGH_ALPHA}`;
-      (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-rest'] =
-        `${tintColor}${HIGHLIGHT_BG_REST_ALPHA}`;
-    }
+  if (zoneTintHex !== null) {
+    rowStyle.backgroundColor = `${zoneTintHex}${HIGHLIGHT_BG_REST_ALPHA}`;
+  }
+  if (highlightPulse) {
+    rowStyle.animationDuration = `${HIGHLIGHT_PULSE_DURATION_MS}ms`;
+    rowStyle.animationIterationCount = HIGHLIGHT_PULSE_ITERATIONS;
+    // CSS custom properties for the keyframe stops; resolved by index.css.
+    // Pulse is grey (low/high). Rest stop matches the row's natural
+    // steady-state — score-zone tint when present, else fully transparent —
+    // so the pulse lands smoothly at the row's resting color.
+    const restStop = zoneTintHex !== null
+      ? `${zoneTintHex}${HIGHLIGHT_BG_REST_ALPHA}`
+      : 'transparent';
+    (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-low'] =
+      `${PULSE_GREY_HEX}${HIGHLIGHT_BG_LOW_ALPHA}`;
+    (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-high'] =
+      `${PULSE_GREY_HEX}${HIGHLIGHT_BG_HIGH_ALPHA}`;
+    (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-rest'] = restStop;
   }
 
   // The highlighted row reuses the existing data-testid (`move-explorer-row-${san}`) —
@@ -316,7 +323,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
         // hover:bg-foreground/10 sticks on mobile after tap, causing two highlighted rows
         !IS_TOUCH && 'hover:bg-foreground/10!',
         selectedMove === entry.move_san && 'bg-foreground/10',
-        tintColor !== null && highlightPulse && 'animate-row-highlight-pulse',
+        highlightPulse && 'animate-row-highlight-pulse',
       )}
       style={Object.keys(rowStyle).length > 0 ? rowStyle : undefined}
       role="button"
@@ -378,10 +385,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
             />
           }
         >
-          <span
-            className={cn('font-semibold', !showScoreColor && 'text-muted-foreground font-normal')}
-            style={showScoreColor ? { color: scoreZoneColor(entry.score) } : undefined}
-          >
+          <span className="font-semibold" style={{ color: scoreColor }}>
             {Math.round(entry.score * 100)}%
           </span>
         </Tooltip>

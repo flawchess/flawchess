@@ -95,7 +95,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
     expect(row.style.backgroundColor || '').toBe('');
   });
 
-  it('renders deep-link tinted background on the matching row', () => {
+  it('attaches the pulse animation class only to the matching row when highlightedMove is set with pulse:true', () => {
     render(
       <MoveExplorer
         moves={makeMoves()}
@@ -103,14 +103,16 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
+        highlightedMove={{ san: 'e4', pulse: true }}
       />,
     );
     const matched = screen.getByTestId('move-explorer-row-e4');
     const other = screen.getByTestId('move-explorer-row-d4');
-    // jsdom normalizes #ff000026 to rgba(255, 0, 0, 0.149).
-    expect(matched.style.backgroundColor.toLowerCase()).toContain('rgba(255, 0, 0');
-    expect(other.style.backgroundColor || '').toBe('');
+    expect(matched.className).toContain('animate-row-highlight-pulse');
+    expect(other.className).not.toContain('animate-row-highlight-pulse');
+    // Pulse keyframe stops are set as CSS custom props (grey alpha levels).
+    expect(matched.style.getPropertyValue('--row-highlight-low')).toBeTruthy();
+    expect(matched.style.getPropertyValue('--row-highlight-high')).toBeTruthy();
   });
 
   it('does NOT scroll the matching row into view (deeplinks scroll to top instead)', () => {
@@ -121,7 +123,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'd4', color: '#00ff00', pulse: true }}
+        highlightedMove={{ san: 'd4', pulse: true }}
       />,
     );
     expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
@@ -136,7 +138,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
+        highlightedMove={{ san: 'e4', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -148,7 +150,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={AFTER_E4_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
+        highlightedMove={{ san: 'e4', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -169,7 +171,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
+        highlightedMove={{ san: 'e4', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -181,7 +183,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
+        highlightedMove={{ san: 'e4', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -197,7 +199,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
+        highlightedMove={{ san: 'e4', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -259,7 +261,7 @@ describe('Score column + mute extension', () => {
     expect(scoreSpan?.getAttribute('style')).toContain('color');
   });
 
-  it('renders the score in muted color when game_count < 10', () => {
+  it('renders the score in the neutral blue zone color when game_count < 10 (low-data → blue, not muted)', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 9, score: 0.625 })]}
@@ -272,10 +274,11 @@ describe('Score column + mute extension', () => {
     const row = screen.getByTestId('move-explorer-row-e4');
     expect(row.textContent).toContain('63%');
     const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
-    expect(scoreSpan?.className).toContain('text-muted-foreground');
+    expect(scoreSpan?.className).not.toContain('text-muted-foreground');
+    expect(scoreSpan?.getAttribute('style')).toContain('color');
   });
 
-  it('renders the score in muted color when confidence is "low"', () => {
+  it('renders the score in the neutral blue zone color when confidence is "low" (low-conf → blue, not muted)', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'low', game_count: 100, score: 0.625 })]}
@@ -287,13 +290,78 @@ describe('Score column + mute extension', () => {
     );
     const row = screen.getByTestId('move-explorer-row-e4');
     const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
-    expect(scoreSpan?.className).toContain('text-muted-foreground');
+    expect(scoreSpan?.className).not.toContain('text-muted-foreground');
+    expect(scoreSpan?.getAttribute('style')).toContain('color');
   });
 
-  it('does not render row severity tint based on score (severity-tint path removed)', () => {
+  it('renders a faint green row tint when score >= 0.55 with reliable sample (n>=10, conf!=low)', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 100, score: 0.75 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    // Inline backgroundColor is set to DARK_GREEN + alpha. JSDOM normalizes
+    // hex to rgb, so we just assert a green background is present.
+    const bg = row.style.backgroundColor;
+    expect(bg).not.toBe('');
+    // DARK_GREEN = #1E6B1E → rgb(30, 107, 30) — green dominates
+    expect(bg.toLowerCase()).toMatch(/^(#1e6b1e|rgb\(30, ?107, ?30\)|rgba\(30, ?107, ?30)/i);
+  });
+
+  it('renders a faint red row tint when score <= 0.45 with reliable sample', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 100, score: 0.30 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    const bg = row.style.backgroundColor;
+    expect(bg).not.toBe('');
+    // DARK_RED = #9B1C1C → rgb(155, 28, 28)
+    expect(bg.toLowerCase()).toMatch(/^(#9b1c1c|rgb\(155, ?28, ?28\)|rgba\(155, ?28, ?28)/i);
+  });
+
+  it('does NOT tint the row when score is in the neutral 0.45..0.55 band', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 100, score: 0.50 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    expect(row.style.backgroundColor || '').toBe('');
+  });
+
+  it('does NOT tint the row when sample is unreliable (game_count < 10), even with strong score', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 9, score: 0.75 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    expect(row.style.backgroundColor || '').toBe('');
+  });
+
+  it('does NOT tint the row when confidence is "low", even with strong score', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'low', game_count: 100, score: 0.75 })]}
         isLoading={false}
         isError={false}
         position={START_FEN}

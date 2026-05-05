@@ -86,7 +86,6 @@ import { pgnToSanArray, sanArrayToPgn } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
 import { OpeningInsightsBlock } from '@/components/insights/OpeningInsightsBlock';
-import { getSeverityBorderColor } from '@/lib/openingInsights';
 import { getBoardContainerClassName } from '@/lib/openingsBoardLayout';
 import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '@/lib/highlightPulse';
 import type { FilterState } from '@/components/filters/FilterPanel';
@@ -303,7 +302,7 @@ export function OpeningsPage() {
   // OpeningFindingCard; cleared by MoveExplorer's onHighlightConsumed (position
   // change or row click), by leaving the explorer subtab, and by filter changes
   // (handled below in a baseline-snapshot effect).
-  const [highlightedMove, setHighlightedMove] = useState<{ san: string; color: string } | null>(null);
+  const [highlightedMove, setHighlightedMove] = useState<{ san: string } | null>(null);
 
   // Whether the deep-link pulse animations should currently render. Goes true
   // when highlightedMove is set, then auto-flips false after the pulse window.
@@ -461,15 +460,12 @@ export function OpeningsPage() {
   // ── Moves data ──────────────────────────────────────────────────────
   const nextMoves = useNextMoves(chess.hashes.fullHash, debouncedFilters);
 
-  // Board arrows derived from next move frequencies.
-  // Highlight pulse decision (quick-task 260427-j41): the matching arrow gets
-  // isHighlightPulse=true so its <path> animates briefly. The arrow's COLOR
-  // stays whatever getArrowColor returned — we deliberately do NOT recolor it
-  // to highlightedMove.color. The MoveExplorer row border uses the severity
-  // color (which encodes weakness/strength + minor/major); the on-board pulse
-  // only modulates opacity so the arrow stays consistent with the rest of the
-  // arrow set. This keeps the visual language clean: row = severity-coded
-  // emphasis, arrow = pulse-only attention grab.
+  // Board arrows derived from next move frequencies. The matching arrow on a
+  // deep-link gets isHighlightPulse=true so its <path> pulses briefly. The
+  // arrow's COLOR stays whatever getArrowColor returned (score zone) — pulse
+  // only modulates opacity. Row tint comes from the score zone too, so a
+  // highlighted row pulses through grey alpha levels and lands on the row's
+  // natural score-zone color.
   const boardArrows = useMemo(() => {
     if (!nextMoves.data?.moves.length) return [];
 
@@ -489,7 +485,7 @@ export function OpeningsPage() {
         return {
           startSquare: squares.from,
           endSquare: squares.to,
-          color: getArrowColor(entry.score, entry.game_count, entry.confidence, isHovered),
+          color: getArrowColor(entry.score, entry.game_count, entry.confidence),
           width: entry.game_count / maxCount,
           isHovered,
           isHighlightPulse,
@@ -695,12 +691,10 @@ export function OpeningsPage() {
     (finding: OpeningInsightFinding) => {
       chess.loadMoves(finding.entry_san_sequence);
       // Set the deep-link highlight BEFORE navigation so MoveExplorer renders
-      // with the highlight on its first paint after the route change. The
-      // severity color matches the OpeningFindingCard's left-border color.
-      setHighlightedMove({
-        san: finding.candidate_move_san,
-        color: getSeverityBorderColor(finding.classification, finding.severity),
-      });
+      // with the highlight on its first paint after the route change. The row
+      // pulses through grey alpha levels regardless of finding severity — the
+      // steady-state row tint comes from the score zone independently.
+      setHighlightedMove({ san: finding.candidate_move_san });
       setBoardFlipped(finding.color === 'black');
       setFilters((prev) => ({
         ...prev,
@@ -1479,7 +1473,7 @@ export function OpeningsPage() {
                     <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
                       <div className="space-y-2">
                         <p>Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.</p>
-                        <p>The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors are based on your Score, where Score = (wins + 0.5 × draws) / games: green (Score 55%+), red (Score 45% or less), blue (in between, 45-55%). Moves with fewer than 10 games or low statistical confidence show in grey. Hovered arrows and rows are highlighted in grey.</p>
+                        <p>The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow and row colors come from your Score = (wins + 0.5 × draws) / games: green when Score is 55% or more, red when Score is 45% or less, blue for everything in between. Blue is also used for moves with fewer than 10 games or low statistical confidence, and these arrows are drawn faintly so the reliable strong/weak moves stand out. Hover a row to highlight it: the row turns grey and the matching arrow grows larger and more opaque while keeping its color.</p>
                       </div>
                     </InfoPopover>
                   }
@@ -1653,7 +1647,7 @@ export function OpeningsPage() {
                     <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="left">
                       Play moves on the board by tapping squares or dragging pieces.
                       <br /><br />
-                      The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors are based on your Score, where Score = (wins + 0.5 × draws) / games: green (Score 55%+), red (Score 45% or less), blue (in between, 45-55%). Moves with fewer than 10 games or low statistical confidence show in grey. Hovered arrows and rows are highlighted in grey.
+                      The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow and row colors come from your Score = (wins + 0.5 × draws) / games: green when Score is 55% or more, red when Score is 45% or less, blue for everything in between. Blue is also used for moves with fewer than 10 games or low statistical confidence, and these arrows are drawn faintly so the reliable strong/weak moves stand out. Tap a row to highlight it: the row turns grey and the matching arrow grows larger and more opaque while keeping its color.
                     </InfoPopover>
                   </div>
                 </div>
