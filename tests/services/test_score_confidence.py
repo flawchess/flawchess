@@ -1,19 +1,17 @@
 """Unit tests for app.services.score_confidence.compute_confidence_bucket.
 
-Bucketing rule under test:
+Bucketing rule under test (unified two-sided standard, 260505):
   - n < 10                        -> "low"  (unreliable-stats gate)
-  - n >= 10 and p_value < 0.05    -> "high"
-  - n >= 10 and p_value < 0.10    -> "medium"
-  - n >= 10 and p_value >= 0.10   -> "low"
+  - n >= 10 and p_value < 0.01    -> "high"
+  - n >= 10 and p_value < 0.05    -> "medium"
+  - n >= 10 and p_value >= 0.05   -> "low"
 
-p_value is the one-sided p for the directional Wald z-test on H0: score == 0.50,
-computed as 0.5 * erfc(|z| / sqrt(2)). SE == 0 cases produce p_value = 0.5 if
-score == 0.5 (all draws — the one-sided null) or 0.0 otherwise (all wins / all
-losses — extreme observation in the directional alternative).
+p_value is the two-sided Wald z-test p on H0: score == 0.50, computed as
+erfc(|z| / sqrt(2)). SE == 0 cases produce p_value = 1.0 if score == 0.5
+(all draws — the null) or 0.0 otherwise (all wins / all losses — extreme
+observation).
 
-The helper returns a 3-tuple (confidence, p_value, se) — SE is exposed so the
-opening_insights ranking layer can build the Wald 95% CI bound for within-bucket
-tiebreak (quick task 260428-tgg).
+The helper returns a 3-tuple (confidence, p_value, se).
 """
 
 import math
@@ -44,12 +42,12 @@ def test_n_below_gate_balanced_is_low() -> None:
     assert confidence == "low"
 
 
-def test_n_zero_returns_low_half() -> None:
-    """MD-02 guard: n<=0 returns ("low", 0.5, 0.0) without raising — 0.5 is the
-    one-sided null and SE is zero with no sample."""
+def test_n_zero_returns_low_one() -> None:
+    """MD-02 guard: n<=0 returns ("low", 1.0, 0.0) without raising — 1.0 is the
+    two-sided null and SE is zero with no sample."""
     confidence, p_value, se = compute_confidence_bucket(w=0, d=0, losses=0, n=0)
     assert confidence == "low"
-    assert p_value == 0.5
+    assert p_value == 1.0
     assert se == 0.0
 
 
@@ -57,32 +55,33 @@ def test_n_zero_returns_low_half() -> None:
 
 
 def test_high_at_strong_evidence() -> None:
-    # n=400 with score = 0.30: SE small, |z| large, one-sided p << 0.05.
+    # n=400 with score = 0.30: SE small, |z| large, two-sided p << 0.01.
     confidence, p_value, _se = compute_confidence_bucket(w=80, d=80, losses=240, n=400)
     assert confidence == "high"
-    assert p_value < 0.05
+    assert p_value < 0.01
 
 
 def test_medium_at_moderate_evidence() -> None:
-    # n=50, w=20, d=0, losses=30: score=0.40, |z|≈1.443, one-sided p ≈ 0.0745,
-    # lands in [0.05, 0.10) -> medium.
-    confidence, p_value, _se = compute_confidence_bucket(w=20, d=0, losses=30, n=50)
+    # n=100, w=40, d=10, losses=50: score=0.45, |z|≈0.998, two-sided p ≈ 0.318 — too low.
+    # Use a stronger signal: n=200, w=85, d=0, losses=115: score=0.425, |z|≈2.121,
+    # two-sided p ≈ 0.0339, lands in [0.01, 0.05) -> medium.
+    confidence, p_value, _se = compute_confidence_bucket(w=85, d=0, losses=115, n=200)
     assert confidence == "medium"
-    assert 0.05 <= p_value < 0.10
+    assert 0.01 <= p_value < 0.05
 
 
 def test_low_at_weak_evidence_with_large_n() -> None:
-    # Score exactly 0.50 with n=100: |z| = 0, one-sided p = 0.5 -> low.
+    # Score exactly 0.50 with n=100: |z| = 0, two-sided p = 1.0 -> low.
     confidence, p_value, _se = compute_confidence_bucket(w=48, d=4, losses=48, n=100)
     assert confidence == "low"
-    assert p_value == pytest.approx(0.5, abs=1e-9)
+    assert p_value == pytest.approx(1.0, abs=1e-9)
 
 
 def test_low_at_n10_balanced() -> None:
-    # n=10 score exactly 0.5: one-sided p = 0.5, n>=10, falls into "else low".
+    # n=10 score exactly 0.5: two-sided p = 1.0, n>=10, falls into "else low".
     confidence, p_value, _se = compute_confidence_bucket(w=2, d=6, losses=2, n=10)
     assert confidence == "low"
-    assert p_value == pytest.approx(0.5, abs=1e-9)
+    assert p_value == pytest.approx(1.0, abs=1e-9)
 
 
 # --- SE == 0 boundary cases (n >= 10) -----------------------------------
@@ -102,10 +101,10 @@ def test_se_zero_all_losses_n10_is_high() -> None:
 
 
 def test_se_zero_all_draws_n10_is_low() -> None:
-    """All draws at n=10: score=0.5, one-sided p=0.5 -> low (no evidence of any direction)."""
+    """All draws at n=10: score=0.5, two-sided p=1.0 -> low (no evidence of any direction)."""
     confidence, p_value, _se = compute_confidence_bucket(w=0, d=10, losses=0, n=10)
     assert confidence == "low"
-    assert p_value == 0.5
+    assert p_value == 1.0
 
 
 # --- SE component (third tuple element) ----------------------------------

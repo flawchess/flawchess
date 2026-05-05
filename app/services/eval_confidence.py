@@ -4,30 +4,27 @@ Used for Stockfish eval at middlegame entry (D-04). Callers supply already-trimm
 inputs per D-08: rows with |eval_cp| >= 2000 are excluded upstream in SQL via FILTER
 predicates; the helper math is phase-agnostic.
 
-Bucketing rule (thresholds imported from opening_insights_constants):
-  - n < EVAL_CONFIDENCE_MIN_N     -> "low"   (gate raised from 10 to 20 — Edgeworth
-                                              correction for excess kurtosis ~2.4 needs
-                                              more samples to keep error <2%)
-  - n >= MIN_N and p_value < 0.05 -> "high"
-  - n >= MIN_N and p_value < 0.10 -> "medium"
-  - n >= MIN_N and p_value >= 0.10 -> "low"
+Bucketing rule (thresholds + N gate shared with score_confidence.py):
+  - n < 10                        -> "low"  (matches the unreliable-stats UI dim;
+                                             the |eval_cp|>=2000 trim already clips
+                                             the heaviest kurtosis tails)
+  - n >= 10 and p_value < 0.01    -> "high"
+  - n >= 10 and p_value < 0.05    -> "medium"
+  - n >= 10 and p_value >= 0.05   -> "low"
 
 p_value is the **two-sided** Wald z-test p against H0: mean == 0 cp (engine-balanced).
 The function exposes a `baseline_cp` parameter for arithmetic generality, but no
 production caller passes a non-zero value (quick task 260504-rvh): the per-color
 engine-asymmetry baseline is now a display annotation (a tick on the bullet chart
 at ±0.25 pawns by color, symmetric around white's first-move tempo) rather than
-the H0 reference. This
-means a user whose MG-entry mean equals the engine baseline reads as a real signal
-("the user's positions sit at the typical asymmetry"), and the chart's center
-remains the color-agnostic 0 cp.
+the H0 reference. This means a user whose MG-entry mean equals the engine baseline
+reads as a real signal ("the user's positions sit at the typical asymmetry"), and
+the chart's center remains the color-agnostic 0 cp.
 
-Two-sided framing is correct because both directions are independently meaningful:
-mean > 0 means the user systematically enters MG entry above engine-balanced,
-mean < 0 means systematically below. The opening-insights helper
-(score_confidence.py) uses one-sided framing for its directional question
-("is score < 0.5?"); this helper uses two-sided because the question is symmetric
-("is the mean different from zero?"). Mathematically:
+Two-sided framing: both directions are independently meaningful — mean > 0 means
+the user systematically enters MG entry above engine-balanced, mean < 0 means
+systematically below. Same framing now used by the score helper, so both tests
+sit on the same evidentiary footing. Mathematically:
   p_value = erfc(|z| / sqrt(2))   [range: 0..1, two-sided normal approximation]
 No 0.5× factor (that would halve to one-sided).
 

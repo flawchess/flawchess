@@ -407,7 +407,7 @@ class TestGetNextMoves:
         # W=1, D=0, L=1, N=2 → score = 0.5
         assert ps.score == pytest.approx((1 + 0.5 * 0) / 2)
         assert ps.confidence in {"low", "medium", "high"}
-        assert 0.0 <= ps.p_value <= 0.5
+        assert 0.0 <= ps.p_value <= 1.0
         assert 0.0 <= ps.ci_low <= ps.score <= ps.ci_high <= 1.0
 
     @pytest.mark.asyncio
@@ -486,7 +486,7 @@ class TestGetNextMoves:
         assert ps.losses == 2
         assert ps.score == pytest.approx((8 + 0.5 * 0) / 10)
         assert ps.confidence in {"low", "medium", "high"}
-        assert 0.0 <= ps.p_value <= 0.5
+        assert 0.0 <= ps.p_value <= 1.0
         # CI must bracket the score and stay within [0, 1]
         assert 0.0 <= ps.ci_low <= ps.score
         assert ps.score <= ps.ci_high <= 1.0

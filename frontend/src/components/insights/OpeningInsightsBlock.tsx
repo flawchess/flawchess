@@ -17,14 +17,14 @@ export const OPENING_INSIGHTS_CONFIDENCE_COPY: ReactNode = (
   <>
     <p>
       <strong>Confidence</strong> is based on the p-value, the chance of seeing
-      this difference by pure chance (one-sided Wald test against 50%). High confidence
+      this difference by pure chance (two-sided Wald test against 50%). High confidence
       can both result from a small difference based on a high number of games, or
       from a large difference based on a small number of games:
     </p>
     <ul className="list-disc pl-4 space-y-0.5">
-      <li><em>high</em>: p &lt; 0.05 (likely a real effect)</li>
-      <li><em>medium</em>: p &lt; 0.10 (possibly a real effect)</li>
-      <li><em>low</em>: p ≥ 0.10, or fewer than 10 games (could plausibly be chance)</li>
+      <li><em>high</em>: p &lt; 0.01 (likely a real effect)</li>
+      <li><em>medium</em>: p &lt; 0.05 (possibly a real effect)</li>
+      <li><em>low</em>: p ≥ 0.05, or fewer than 10 games (could plausibly be chance)</li>
     </ul>
   </>
 );

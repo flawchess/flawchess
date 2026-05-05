@@ -50,7 +50,7 @@ interface WdlConfidenceTooltipProps {
 }
 
 /**
- * Tooltip body for WDL-context confidence indicators (one-sided Wald test
+ * Tooltip body for WDL-context confidence indicators (two-sided Wald test
  * against the 50% baseline). Used by OpeningFindingCard (via ScoreConfidencePopover),
  * the move-explorer Score column, and the stats-board Score bullet popover.
  */

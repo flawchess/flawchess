@@ -1,10 +1,10 @@
 """Unit tests for app.services.eval_confidence.compute_eval_confidence_bucket.
 
-Bucketing rule under test:
-  - n < EVAL_CONFIDENCE_MIN_N (20) -> "low"  (unreliable-stats gate)
-  - n >= 20 and p_value < 0.05     -> "high"
-  - n >= 20 and p_value < 0.10     -> "medium"
-  - n >= 20 and p_value >= 0.10    -> "low"
+Bucketing rule under test (unified two-sided standard, 260505):
+  - n < EVAL_CONFIDENCE_MIN_N (10) -> "low"  (unreliable-stats gate)
+  - n >= 10 and p_value < 0.01     -> "high"
+  - n >= 10 and p_value < 0.05     -> "medium"
+  - n >= 10 and p_value >= 0.05    -> "low"
 
 p_value is the two-sided Wald z-test p for H0: mean == 0 cp, computed as
 erfc(|z| / sqrt(2)) where z = mean / se. The helper takes an optional
@@ -50,41 +50,35 @@ def test_n_one_returns_low_with_mean() -> None:
 
 
 def test_n_below_min_returns_low_even_with_strong_mean() -> None:
-    """n=19 with mean=100 and variance=0: SE=0 would give p=0 -> "high", but N gate forces "low"."""
-    # n=19 sits exactly one below the gate; the precise value of variance doesn't matter
+    """n=9 with mean=100 and variance=0: SE=0 would give p=0 -> "high", but N gate forces "low"."""
+    # n=9 sits exactly one below the gate; the precise value of variance doesn't matter
     # because N < MIN forces "low" first.
     confidence, _p, mean, _ci = compute_eval_confidence_bucket(
-        eval_sum=1900.0, eval_sumsq=190000.0, n=19
+        eval_sum=900.0, eval_sumsq=90000.0, n=9
     )
     assert confidence == "low"
     assert mean == pytest.approx(100.0, abs=1e-9)
 
 
-def test_n_below_min_distinct_19() -> None:
-    """Any n < 20 row is "low", regardless of mean magnitude."""
-    eval_sum = 950.0  # mean = 50 cp at n=19
-    eval_sumsq = 60000.0  # variance > 0 (sumsq > n * mean^2 = 47500)
-    confidence, _p, _mean, _ci = compute_eval_confidence_bucket(eval_sum, eval_sumsq, 19)
+def test_n_below_min_distinct_9() -> None:
+    """Any n < 10 row is "low", regardless of mean magnitude."""
+    eval_sum = 450.0  # mean = 50 cp at n=9
+    eval_sumsq = 30000.0  # variance > 0 (sumsq > n * mean^2 = 22500)
+    confidence, _p, _mean, _ci = compute_eval_confidence_bucket(eval_sum, eval_sumsq, 9)
     assert confidence == "low"
 
 
-def test_min_n_constant_is_20() -> None:
-    """Belt-and-braces: the gate constant is 20 (verified to lock the value)."""
-    assert EVAL_CONFIDENCE_MIN_N == 20
+def test_min_n_constant_is_10() -> None:
+    """Belt-and-braces: the gate constant is 10, unified with score-confidence."""
+    assert EVAL_CONFIDENCE_MIN_N == 10
 
 
 # --- N >= 10 buckets by p-value ------------------------------------------
 
 
-def test_high_when_p_below_005() -> None:
+def test_high_when_p_below_001() -> None:
     """n=400, mean=50 cp, sd=200 cp -> SE=10, z=5.0, p~5.7e-7 -> "high".
 
-    eval_sum = 400 * 50 = 20000
-    eval_sumsq = sum(xi^2); for variance = sd^2 = 40000:
-      variance = (sumsq - n * mean^2) / (n-1)
-      sumsq = variance * (n-1) + n * mean^2
-            = 40000 * 399 + 400 * 2500
-            = 15960000 + 1000000 = 16960000
     se = sqrt(40000 / 400) = sqrt(100) = 10
     z = 50 / 10 = 5.0
     p = erfc(5 / sqrt(2)) ≈ erfc(3.535) ≈ 5.73e-7
@@ -100,25 +94,22 @@ def test_high_when_p_below_005() -> None:
         eval_sum, eval_sumsq, n
     )
     assert confidence == "high"
-    assert p_value < 0.05
+    assert p_value < 0.01
     assert mean == pytest.approx(mean_cp, abs=1e-9)
-    # se = 10, ci_half_width = 1.96 * 10 = 19.6
     assert ci_half_width == pytest.approx(1.96 * (sd_cp / math.sqrt(n)), rel=1e-9)
 
 
-def test_medium_when_p_in_005_010() -> None:
-    """n=100, mean=10 cp, sd=60 cp -> SE=6, z=10/6~1.667, two-sided p~0.0956 -> "medium".
+def test_medium_when_p_in_001_005() -> None:
+    """n=200, mean=15 cp, sd=80 cp -> SE=80/sqrt(200)~5.657, z~2.652, two-sided p~0.0080 — too low.
 
-    sumsq = 60^2 * 99 + 100 * 10^2
-          = 3600 * 99 + 10000
-          = 356400 + 10000 = 366400
-    se = sqrt(3600 / 100) = 6
-    z = 10 / 6 ≈ 1.6667
-    p = erfc(1.6667 / sqrt(2)) = erfc(1.1785) ≈ 0.0956
+    Use n=100, mean=15 cp, sd=70 cp:
+      se = 70/sqrt(100) = 7.0
+      z = 15 / 7 ≈ 2.143
+      p = erfc(2.143/sqrt(2)) ≈ 0.0322 — in [0.01, 0.05) -> medium.
     """
     n = 100
-    mean_cp = 10.0
-    sd_cp = 60.0
+    mean_cp = 15.0
+    sd_cp = 70.0
     variance = sd_cp * sd_cp
     eval_sum = float(n * mean_cp)
     eval_sumsq = variance * (n - 1) + n * mean_cp * mean_cp
@@ -127,13 +118,13 @@ def test_medium_when_p_in_005_010() -> None:
         eval_sum, eval_sumsq, n
     )
     assert confidence == "medium"
-    assert 0.05 <= p_value < 0.10
+    assert 0.01 <= p_value < 0.05
     assert mean == pytest.approx(mean_cp, abs=1e-9)
     se = sd_cp / math.sqrt(n)
     assert ci_half_width == pytest.approx(1.96 * se, rel=1e-9)
 
 
-def test_low_when_p_above_010_with_large_n() -> None:
+def test_low_when_p_above_005_with_large_n() -> None:
     """n=100, mean=2 cp, sd=100 cp -> SE=10, z=0.2, p~0.841 -> "low"."""
     n = 100
     mean_cp = 2.0
@@ -144,7 +135,7 @@ def test_low_when_p_above_010_with_large_n() -> None:
 
     confidence, p_value, _mean, _ci = compute_eval_confidence_bucket(eval_sum, eval_sumsq, n)
     assert confidence == "low"
-    assert p_value >= 0.10
+    assert p_value >= 0.05
 
 
 # --- SE == 0 boundary cases (n >= 10) ------------------------------------
