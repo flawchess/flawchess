@@ -61,13 +61,22 @@ jobs:
         run: uv run ty check app/ tests/
 
       - name: Install Stockfish (for engine wrapper tests)
+        # Mirrors Dockerfile: download pinned sf_18 binary from GitHub releases instead of
+        # apt-get (which is ~24s slower and pulls Stockfish 16, drifting from prod's sf_18).
+        env:
+          STOCKFISH_TAG: sf_18
+          STOCKFISH_ASSET: stockfish-ubuntu-x86-64-avx2
+          STOCKFISH_SHA256: 536c0c2c0cf06450df0bfb5e876ef0d3119950703a8f143627f990c7b5417964
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends stockfish
+          set -euo pipefail
+          curl -fsSL "https://github.com/official-stockfish/Stockfish/releases/download/${STOCKFISH_TAG}/${STOCKFISH_ASSET}.tar" -o /tmp/stockfish.tar
+          echo "${STOCKFISH_SHA256}  /tmp/stockfish.tar" | sha256sum -c -
+          tar -xf /tmp/stockfish.tar -C /tmp
+          sudo mv "/tmp/stockfish/${STOCKFISH_ASSET}" /usr/local/bin/stockfish
+          sudo chmod +x /usr/local/bin/stockfish
+          rm -rf /tmp/stockfish.tar /tmp/stockfish
           stockfish --help | head -3
-          # apt installs to /usr/games/stockfish; the engine wrapper defaults to the Docker path
-          # /usr/local/bin/stockfish, so export the actual location for the pytest step.
-          echo "STOCKFISH_PATH=$(command -v stockfish)" >> "$GITHUB_ENV"
+          echo "STOCKFISH_PATH=/usr/local/bin/stockfish" >> "$GITHUB_ENV"
 
       - name: Run pytest
         env:
