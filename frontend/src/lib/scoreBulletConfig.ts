@@ -19,9 +19,8 @@ export const SCORE_BULLET_NEUTRAL_MAX = 0.05;
 export const SCORE_NEUTRAL_LOW = SCORE_BULLET_CENTER + SCORE_BULLET_NEUTRAL_MIN;
 export const SCORE_NEUTRAL_HIGH = SCORE_BULLET_CENTER + SCORE_BULLET_NEUTRAL_MAX;
 
-// Axis half-width: spans 0.30-0.70 around center, matching the visual
-// range used elsewhere in the move explorer.
-export const SCORE_BULLET_DOMAIN = 0.2;
+// Axis half-width: spans the full 0-100% score range around the 0.5 center.
+export const SCORE_BULLET_DOMAIN = 0.5;
 
 /** Clamp a score-domain value (or CI bound) to the valid [0, 1] range. */
 export function clampScoreCi(value: number): number {
