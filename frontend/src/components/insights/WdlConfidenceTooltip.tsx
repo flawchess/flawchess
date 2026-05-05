@@ -68,9 +68,9 @@ export function WdlConfidenceTooltip({
       </p>
       <p>{statsLine(score, gameCount)}</p>
       <p className="opacity-70 italic">
-        Score = wins + ½ draws.<br />
-        Test = two-sided Wald z vs 50%.<br />
-        CI = Wilson 95% (whisker on bullet).
+        Score: wins + ½ draws.<br />
+        Test: two-sided Wald z vs 50%.<br />
+        Confidence interval: Wilson 95% (whiskers).
       </p>
     </div>
   );
