@@ -77,6 +77,11 @@ class OpeningInsightFinding(BaseModel):
     p_value: float = Field(
         ge=0.0, le=1.0
     )  # One-sided p-value for directional Wald z-test on H0: score = 0.50 (Phase 75 D-05/D-09)
+    # Wilson 95% score interval bounds, clamped to [0, 1]. Same formula already
+    # used internally for ranking (_wilson_bounds); now exposed so the FE can
+    # render the CI whisker on the bullet chart.
+    ci_low: float = Field(ge=0.0, le=1.0)
+    ci_high: float = Field(ge=0.0, le=1.0)
 
 
 class OpeningInsightsResponse(BaseModel):

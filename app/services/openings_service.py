@@ -21,10 +21,7 @@ from app.repositories.openings_repository import (
     query_transposition_counts,
     query_wdl_counts,
 )
-from app.services.score_confidence import compute_confidence_bucket
-from app.services.opening_insights_constants import (
-    OPENING_INSIGHTS_CI_Z_95 as _CI_Z_95,
-)
+from app.services.score_confidence import compute_confidence_bucket, wilson_bounds
 from app.schemas.openings import (
     OpeningsRequest,
     OpeningsResponse,
@@ -59,11 +56,12 @@ RECENCY_DELTAS: dict[str, datetime.timedelta] = {
 
 
 def _build_wdl_stats(wins: int, draws: int, losses: int, total: int) -> WDLStats:
-    """Construct WDLStats with score, confidence, p_value, and Wald 95% CI.
+    """Construct WDLStats with score, confidence, p_value, and Wilson 95% CI.
 
-    Computes score = (W + 0.5·D) / total via compute_confidence_bucket (same
-    Wald formula as the per-move pipeline). ci_low / ci_high are clamped to
-    [0, 1] so callers never receive out-of-range values.
+    Computes score = (W + 0.5·D) / total via compute_confidence_bucket. The CI
+    uses Wilson bounds (shared `wilson_bounds`) — Wald was clamping to [0, 1] at
+    the boundaries and degenerated to width 0 at p=0/1, so it was replaced with
+    Wilson which is well-defined at the boundaries and always contains p.
     When total == 0, all stats are neutral defaults (score=0.5, CI=[0.5, 0.5]).
     """
     if total > 0:
@@ -73,13 +71,15 @@ def _build_wdl_stats(wins: int, draws: int, losses: int, total: int) -> WDLStats
     else:
         win_pct = draw_pct = loss_pct = 0.0
 
-    confidence, p_value, se = compute_confidence_bucket(wins, draws, losses, total)
+    confidence, p_value, _se = compute_confidence_bucket(wins, draws, losses, total)
     if total > 0:
         score = (wins + 0.5 * draws) / total
     else:
         score = 0.5
-    ci_low = max(0.0, score - _CI_Z_95 * se)
-    ci_high = min(1.0, score + _CI_Z_95 * se)
+    if total > 0:
+        ci_low, ci_high = wilson_bounds(score, total)
+    else:
+        ci_low = ci_high = 0.5
 
     return WDLStats(
         wins=wins,

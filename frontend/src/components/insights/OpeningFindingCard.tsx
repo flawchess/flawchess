@@ -1,9 +1,16 @@
 import { ArrowRightLeft, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
+import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { Tooltip } from '@/components/ui/tooltip';
-import { ConfidencePill } from '@/components/insights/ConfidencePill';
-import { formatCandidateMove, getSeverityBorderColor } from '@/lib/openingInsights';
+import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
+import { formatCandidateMove } from '@/lib/openingInsights';
 import { fenAfterMove, sanToSquares } from '@/lib/sanToSquares';
+import {
+  SCORE_BULLET_CENTER,
+  SCORE_BULLET_NEUTRAL_MAX,
+  SCORE_BULLET_NEUTRAL_MIN,
+  scoreZoneColor,
+} from '@/lib/scoreBulletConfig';
 import { MIN_GAMES_FOR_RELIABLE_STATS, TROLL_WATERMARK_OPACITY, UNRELIABLE_OPACITY } from '@/lib/theme';
 import { isTrollPosition } from '@/lib/trollOpenings';
 import trollFaceUrl from '@/assets/troll-face.svg';
@@ -31,15 +38,14 @@ export function OpeningFindingCard({
     finding.entry_san_sequence,
     finding.candidate_move_san,
   );
-  const borderLeftColor = getSeverityBorderColor(
-    finding.classification,
-    finding.severity,
-  );
+  // Border + arrow + score-percent text all draw from the shared score-zone
+  // palette used by the Moves-tab Score column: dark red <= 45%, dark green
+  // >= 55%, neutral blue in between. One source of truth across both surfaces.
+  const borderLeftColor = scoreZoneColor(finding.score);
   // Quick-task 260429-gmj: render a fine score-colored arrow on the mini board
-  // pointing from the candidate move's source to its target square. The same
-  // hex used for the card border tint goes into the arrow so the visuals stay
-  // in lockstep. Illegal/unparseable SAN returns null and the card simply
-  // falls back to no arrow (no try/catch needed at the call site).
+  // pointing from the candidate move's source to its target square. Same color
+  // as the border so the visuals stay in lockstep. Illegal/unparseable SAN
+  // returns null and the card simply falls back to no arrow.
   const moveSquares = sanToSquares(finding.entry_fen, finding.candidate_move_san);
   const arrows = moveSquares
     ? ([{ from: moveSquares.from, to: moveSquares.to, color: borderLeftColor }] as const)
@@ -89,7 +95,7 @@ export function OpeningFindingCard({
   );
 
   // D-02: "You score X% as <Color> after <seq>" — same form for both weakness and strength.
-  // Section title carries the polarity; the border tint via getSeverityBorderColor conveys direction visually.
+  // Section title carries the polarity; the score-zone tint conveys direction visually.
   const proseLine = (
     <p className="text-sm text-muted-foreground">
       You score{' '}
@@ -101,23 +107,35 @@ export function OpeningFindingCard({
     </p>
   );
 
-  // "Confidence: low/medium/high" line — tooltip on hover over the level word
-  // matches the Moves/Games link pattern (hover-only, no tap-friendly trigger).
-  // Phase 80: refactored to use shared <ConfidencePill> component (DRY with MostPlayedOpeningsTable).
-  const confidenceLine = (
-    <p
-      className="text-sm text-muted-foreground flex items-center gap-1"
-      data-testid={`opening-finding-card-${idx}-confidence`}
+  // Score bullet chart + popover info icon — same center/neutral band as the
+  // Moves-tab Score bullet, but the axis spans the full 0..100% score range
+  // (domain=0.5) so insight findings sit visibly toward the edges of the bar
+  // rather than slamming the rails of the narrower Moves-tab axis. Default
+  // height matches the Moves-tab bullet. Popover on the right opens the same
+  // WdlConfidenceTooltip body.
+  const bulletLine = (
+    <div
+      className="flex items-center gap-1.5"
+      data-testid={`opening-finding-card-${idx}-score-bullet`}
     >
-      Confidence:{' '}
-      <ConfidencePill
+      <MiniBulletChart
+        value={finding.score}
+        center={SCORE_BULLET_CENTER}
+        neutralMin={SCORE_BULLET_NEUTRAL_MIN}
+        neutralMax={SCORE_BULLET_NEUTRAL_MAX}
+        domain={0.5}
+        ciLow={finding.ci_low}
+        ciHigh={finding.ci_high}
+        ariaLabel={`Score ${scoreDisplay}% vs 50% baseline`}
+      />
+      <ScoreConfidencePopover
         level={finding.confidence}
         pValue={finding.p_value}
         score={finding.score}
         gameCount={finding.n_games}
         testId={`opening-finding-card-${idx}-confidence-info`}
       />
-    </p>
+    </div>
   );
 
   const linksRow = (
@@ -168,7 +186,7 @@ export function OpeningFindingCard({
           />
           <div className="flex-1 min-w-0 flex flex-col gap-2">
             {proseLine}
-            {confidenceLine}
+            {bulletLine}
             {linksRow}
           </div>
         </div>
@@ -185,7 +203,7 @@ export function OpeningFindingCard({
         <div className="min-w-0 flex-1 flex flex-col gap-2">
           {headerLine}
           {proseLine}
-          {confidenceLine}
+          {bulletLine}
           {linksRow}
         </div>
       </div>

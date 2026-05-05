@@ -15,10 +15,6 @@
 // instead. Sorting hovered arrows on top happens in ChessBoard.tsx via a
 // separate isHovered-first comparator, not via this color value.
 //
-// LIGHT_GREEN / LIGHT_RED are kept exported because the OpeningFindingCard
-// border (Insights tab) still uses them for minor-severity findings — that
-// 4-shade severity palette is independent of the board-arrow scheme.
-
 export const MIN_GAMES_FOR_COLOR = 10;
 
 // Score-based thresholds. MIN_GAMES_FOR_COLOR is 10 — matching
@@ -30,12 +26,6 @@ export const SCORE_BOUNDARY = 0.05;  // boundaries: >=0.55 / <=0.45
 export const DARK_GREEN = '#1E6B1E';
 export const DARK_RED = '#9B1C1C';
 export const DARK_BLUE = '#1E40AF';
-
-// Insights severity-border palette (OpeningFindingCard). Not used by
-// getArrowColor — kept here so the insights card and the score-aware UI
-// share one place to look up palette hex.
-export const LIGHT_GREEN = '#6BBF59';
-export const LIGHT_RED = '#E07070';
 
 /**
  * Returns a categorical hex color string for a board arrow / row tint based on

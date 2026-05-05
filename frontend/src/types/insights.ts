@@ -85,6 +85,8 @@ export interface OpeningInsightFinding {
   score: number;
   confidence: 'low' | 'medium' | 'high';
   p_value: number;
+  ci_low: number;
+  ci_high: number;
 }
 
 export interface OpeningInsightsResponse {

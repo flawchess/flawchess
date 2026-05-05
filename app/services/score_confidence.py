@@ -26,11 +26,37 @@ import math
 from typing import Literal
 
 from app.services.opening_insights_constants import (
+    OPENING_INSIGHTS_CI_Z_95 as CI_Z_95,
     OPENING_INSIGHTS_CONFIDENCE_HIGH_MAX_P as CONFIDENCE_HIGH_MAX_P,
     OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_P as CONFIDENCE_MEDIUM_MAX_P,
     OPENING_INSIGHTS_CONFIDENCE_MIN_N as CONFIDENCE_MIN_N,
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
 )
+
+
+def wilson_bounds(p: float, n: int) -> tuple[float, float]:
+    """Return (lower, upper) Wilson 95% score interval bounds, clamped to [0, 1].
+
+    Preferred over Wald for chess-score proportions in [0, 1]:
+      - Wald (score +/- z * SE) is symmetric around p, so it routinely extends
+        past 0 or 1 and has to be clamped, hiding the underlying problem.
+      - Wald collapses to width 0 at p=0 and p=1 (SE=0), claiming impossible
+        certainty. Wilson is well-defined at the boundaries.
+      - The observed proportion p is always inside the (unclamped) Wilson
+        interval, since Wilson is the score-test inversion at p == pi0.
+
+    The n <= 0 branch is purely defensive — callers are expected to gate.
+    """
+    if n <= 0:
+        return (0.0, 1.0)
+    z = CI_Z_95
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    center = (p + z2 / (2 * n)) / denom
+    margin = (z * math.sqrt(p * (1.0 - p) / n + z2 / (4 * n * n))) / denom
+    lower = max(0.0, min(1.0, center - margin))
+    upper = max(0.0, min(1.0, center + margin))
+    return lower, upper
 
 
 def compute_confidence_bucket(

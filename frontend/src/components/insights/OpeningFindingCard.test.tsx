@@ -46,7 +46,7 @@ import type * as React from 'react';
 
 import { OpeningFindingCard } from './OpeningFindingCard';
 import type { OpeningInsightFinding } from '@/types/insights';
-import { DARK_RED, LIGHT_RED, DARK_GREEN, LIGHT_GREEN } from '@/lib/arrowColor';
+import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 
 function makeFinding(overrides: Partial<OpeningInsightFinding> = {}): OpeningInsightFinding {
   return {
@@ -68,6 +68,8 @@ function makeFinding(overrides: Partial<OpeningInsightFinding> = {}): OpeningIns
     score: 0.30,            // gives clean "30%" prose
     confidence: 'medium',   // Phase 76 D-21
     p_value: 0.05,          // Phase 76 D-21
+    ci_low: 0.25,
+    ci_high: 0.35,
     ...overrides,
   };
 }
@@ -146,56 +148,43 @@ describe('OpeningFindingCard', () => {
     expect(text).not.toMatch(/\b50%/);
   });
 
-  it('applies DARK_RED border-left for major weakness', () => {
+  it('applies ZONE_DANGER (red) border-left when score <= 0.45', () => {
     render(
       <OpeningFindingCard
-        finding={makeFinding({ classification: 'weakness', severity: 'major' })}
+        finding={makeFinding({ classification: 'weakness', score: 0.30 })}
         idx={2}
         onFindingClick={() => {}}
         onOpenGames={() => {}}
       />,
     );
     const card = screen.getByTestId('opening-finding-card-2');
-    expect(card.style.borderLeftColor).toBe(hexToRgb(DARK_RED));
+    expect(normalizeColor(card.style.borderLeftColor)).toBe(normalizeColor(ZONE_DANGER));
   });
 
-  it('applies LIGHT_RED border-left for minor weakness', () => {
+  it('applies ZONE_NEUTRAL (blue) border-left when score sits in the 45-55% band', () => {
     render(
       <OpeningFindingCard
-        finding={makeFinding({ classification: 'weakness', severity: 'minor' })}
+        finding={makeFinding({ classification: 'weakness', score: 0.49 })}
         idx={3}
         onFindingClick={() => {}}
         onOpenGames={() => {}}
       />,
     );
     const card = screen.getByTestId('opening-finding-card-3');
-    expect(card.style.borderLeftColor).toBe(hexToRgb(LIGHT_RED));
+    expect(normalizeColor(card.style.borderLeftColor)).toBe(normalizeColor(ZONE_NEUTRAL));
   });
 
-  it('applies DARK_GREEN border-left for major strength', () => {
+  it('applies ZONE_SUCCESS (green) border-left when score >= 0.55', () => {
     render(
       <OpeningFindingCard
-        finding={makeFinding({ classification: 'strength', severity: 'major' })}
+        finding={makeFinding({ classification: 'strength', score: 0.60 })}
         idx={4}
         onFindingClick={() => {}}
         onOpenGames={() => {}}
       />,
     );
     const card = screen.getByTestId('opening-finding-card-4');
-    expect(card.style.borderLeftColor).toBe(hexToRgb(DARK_GREEN));
-  });
-
-  it('applies LIGHT_GREEN border-left for minor strength', () => {
-    render(
-      <OpeningFindingCard
-        finding={makeFinding({ classification: 'strength', severity: 'minor' })}
-        idx={5}
-        onFindingClick={() => {}}
-        onOpenGames={() => {}}
-      />,
-    );
-    const card = screen.getByTestId('opening-finding-card-5');
-    expect(card.style.borderLeftColor).toBe(hexToRgb(LIGHT_GREEN));
+    expect(normalizeColor(card.style.borderLeftColor)).toBe(normalizeColor(ZONE_SUCCESS));
   });
 
   it('Moves link calls onFindingClick with the finding', () => {
@@ -300,25 +289,32 @@ describe('OpeningFindingCard', () => {
     expect(text).not.toContain('3.d4 cxd4');
   });
 
-  describe('Phase 76 — Confidence indicator + mute', () => {
-    it('renders Confidence: <level> line with the right data-testid', () => {
+  describe('Score bullet + confidence-info popover (260505 refactor)', () => {
+    it('renders the score bullet chart with the popover info trigger to its right', () => {
       const finding = makeFinding({ confidence: 'medium' });
       renderCard({ finding, idx: 3 });
-      // Both mobile + desktop branches render confidence lines with same testid.
-      // getAllByTestId returns both; check text content of the first.
-      const lines = screen.getAllByTestId('opening-finding-card-3-confidence');
-      expect(lines.length).toBeGreaterThanOrEqual(1);
-      expect(lines[0]!.textContent).toMatch(/Confidence:\s*medium/);
+      // Both mobile + desktop branches render — same testids.
+      const bullets = screen.getAllByTestId('opening-finding-card-3-score-bullet');
+      expect(bullets.length).toBeGreaterThanOrEqual(1);
+      // The bullet container holds the MiniBulletChart and the popover trigger.
+      expect(bullets[0]!.querySelector('[data-testid="mini-bullet-chart"]')).not.toBeNull();
+      expect(bullets[0]!.querySelector(
+        '[data-testid="opening-finding-card-3-confidence-info"]',
+      )).not.toBeNull();
     });
 
-    it('renders all three confidence levels as full words (low/medium/high)', () => {
-      for (const level of ['low', 'medium', 'high'] as const) {
-        const finding = makeFinding({ confidence: level });
-        renderCard({ finding, idx: 0 });
-        const lines = screen.getAllByTestId('opening-finding-card-0-confidence');
-        expect(lines[0]!.textContent).toMatch(new RegExp(level));
-        cleanup();
-      }
+    it('renders the CI whisker on the bullet chart from finding.ci_low/ci_high', () => {
+      const finding = makeFinding({ ci_low: 0.40, ci_high: 0.55 });
+      renderCard({ finding, idx: 5 });
+      const bullet = screen.getAllByTestId('opening-finding-card-5-score-bullet')[0]!;
+      expect(bullet.querySelector('[data-testid="mini-bullet-whisker"]')).not.toBeNull();
+    });
+
+    it('does NOT render the legacy Confidence: <level> text line', () => {
+      const finding = makeFinding({ confidence: 'medium' });
+      renderCard({ finding, idx: 0 });
+      const card = screen.getByTestId('opening-finding-card-0');
+      expect(card.textContent ?? '').not.toMatch(/Confidence:/);
     });
 
     it('applies UNRELIABLE_OPACITY when finding.confidence === "low"', () => {
@@ -452,18 +448,18 @@ describe('OpeningFindingCard', () => {
       expect(overlays.length).toBe(2); // one in sm:hidden, one in hidden sm:flex
     });
 
-    // Test B: arrow color = getSeverityBorderColor for all 4 (classification, severity) combos.
+    // Test B: arrow color is driven by score zone (matches Moves-tab scoreZoneColor).
     it.each([
-      ['weakness', 'major', DARK_RED] as const,
-      ['weakness', 'minor', LIGHT_RED] as const,
-      ['strength', 'major', DARK_GREEN] as const,
-      ['strength', 'minor', LIGHT_GREEN] as const,
+      [0.30, ZONE_DANGER] as const,    // <= 0.45 → red
+      [0.45, ZONE_DANGER] as const,    // boundary inclusive
+      [0.49, ZONE_NEUTRAL] as const,   // in-between band → blue
+      [0.55, ZONE_SUCCESS] as const,   // boundary inclusive
+      [0.70, ZONE_SUCCESS] as const,   // >= 0.55 → green
     ])(
-      'arrow path fill matches getSeverityBorderColor for %s/%s',
-      (classification, severity, expectedHex) => {
+      'arrow path fill matches scoreZoneColor for score=%s',
+      (score, expectedColor) => {
         const finding = makeFinding({
-          classification: classification as OpeningInsightFinding['classification'],
-          severity: severity as OpeningInsightFinding['severity'],
+          score,
           entry_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
           candidate_move_san: 'e4',
         });
@@ -471,12 +467,7 @@ describe('OpeningFindingCard', () => {
         const overlays = screen.getAllByTestId('mini-board-arrow-overlay');
         const path = overlays[0]!.querySelector('path');
         expect(path).not.toBeNull();
-        const fillAttr = path!.getAttribute('fill') ?? '';
-        // jsdom may normalize hex → rgb() on inline style but preserves the
-        // raw value when set via the `fill` SVG attribute. Check both forms.
-        expect(
-          fillAttr === expectedHex || fillAttr === hexToRgb(expectedHex),
-        ).toBe(true);
+        expect(normalizeColor(path!.getAttribute('fill') ?? '')).toBe(normalizeColor(expectedColor));
       },
     );
 
@@ -508,13 +499,11 @@ describe('OpeningFindingCard', () => {
 });
 
 /**
- * jsdom returns inline style colors as rgb() strings, not the original hex.
- * Helper converts a hex like "#9B1C1C" to "rgb(155, 28, 28)".
+ * jsdom normalizes CSS colors when round-tripped through `style.*` (e.g.
+ * `oklch(0.50 0.14 260)` → `oklch(0.5 0.14 260)`). Strip whitespace + collapse
+ * trailing zeros so test comparisons are insensitive to that normalization.
  */
-function hexToRgb(hex: string): string {
-  const h = hex.replace('#', '');
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  return `rgb(${r}, ${g}, ${b})`;
+function normalizeColor(value: string): string {
+  // Strip trailing zeros from decimals (oklch(0.50 ...) ↔ oklch(0.5 ...)).
+  return value.replace(/(\.\d*?)0+(?=\D|$)/g, '$1');
 }
