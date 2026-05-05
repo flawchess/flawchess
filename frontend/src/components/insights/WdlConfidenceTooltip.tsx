@@ -34,10 +34,10 @@ export function WdlConfidenceTooltip({
 }: WdlConfidenceTooltipProps): ReactNode {
   const pValuePct = (pValue * 100).toFixed(1);
   const noun: 'strength' | 'weakness' = score >= 0.5 ? 'strength' : 'weakness';
-  const scorePct = Math.round(score * 100);
-  const diffPct = Math.round(Math.abs(score * 100 - 50));
+  const scorePct = (score * 100).toFixed(1);
+  const diffPct = Math.abs(score * 100 - 50).toFixed(1);
   const scoreLine =
-    diffPct === 0
+    diffPct === '0.0'
       ? `${scorePct}% (at 50% baseline)`
       : `${scorePct}% (${diffPct}% difference from 50% baseline)`;
   return (

@@ -100,6 +100,21 @@ const PAGE_SIZE = 20;
 
 type SidebarPanel = 'filters' | 'bookmarks';
 
+// Shared body for the chessboard info popover. Device-agnostic copy ("click or
+// tap", "hover or tap") so the same prose works on desktop and mobile.
+function ChessboardInfoCopy() {
+  return (
+    <div className="space-y-2">
+      <p>
+        Play moves by clicking or tapping squares, dragging pieces, or selecting a row in the Moves tab.
+      </p>
+      <p>
+        The arrows show the next moves from your games. Bigger means more frequent. Color matches the row's score zone (green strong, red weak, faint blue inconclusive).
+      </p>
+    </div>
+  );
+}
+
 // MOBILE MostPlayedOpenings renderer (STAB-02 / D-11-D-14)
 // Renders each opening as a WDLChartRow, matching the Bookmarked Openings: Results
 // visual style. Desktop keeps the existing MostPlayedOpeningsTable (unchanged).
@@ -1471,10 +1486,7 @@ export function OpeningsPage() {
                   canGoForward={chess.currentPly < chess.moveHistory.length}
                   infoSlot={
                     <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
-                      <div className="space-y-2">
-                        <p>Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.</p>
-                        <p>The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow and row colors come from your Score = (wins + 0.5 × draws) / games: green when Score is 55% or more, red when Score is 45% or less, blue for everything in between. Blue is also used for moves with fewer than 10 games or low statistical confidence, and these arrows are drawn faintly so the reliable strong/weak moves stand out. Hover a row to highlight it: the row turns grey and the matching arrow grows larger and more opaque while keeping its color.</p>
-                      </div>
+                      <ChessboardInfoCopy />
                     </InfoPopover>
                   }
                 />
@@ -1645,9 +1657,7 @@ export function OpeningsPage() {
                   </Tooltip>
                   <div className="flex h-11 w-11 items-center justify-center">
                     <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="left">
-                      Play moves on the board by tapping squares or dragging pieces.
-                      <br /><br />
-                      The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow and row colors come from your Score = (wins + 0.5 × draws) / games: green when Score is 55% or more, red when Score is 45% or less, blue for everything in between. Blue is also used for moves with fewer than 10 games or low statistical confidence, and these arrows are drawn faintly so the reliable strong/weak moves stand out. Tap a row to highlight it: the row turns grey and the matching arrow grows larger and more opaque while keeping its color.
+                      <ChessboardInfoCopy />
                     </InfoPopover>
                   </div>
                 </div>

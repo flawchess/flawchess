@@ -5,7 +5,6 @@ import { Popover as PopoverPrimitive } from 'radix-ui';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY, ZONE_NEUTRAL } from '@/lib/theme';
 import { scoreZoneColor } from '@/lib/scoreBulletConfig';
 import { DARK_GREEN, DARK_RED, getArrowColor } from '@/lib/arrowColor';
-import { OPENING_INSIGHTS_CONFIDENCE_COPY } from '@/components/insights/OpeningInsightsBlock';
 import {
   HIGHLIGHT_PULSE_DURATION_MS,
   HIGHLIGHT_PULSE_ITERATIONS,
@@ -195,13 +194,6 @@ export function MoveExplorer({
                       <p>
                         On desktop, click a move to play it. On mobile, tap to highlight (shows the arrow on the board), then tap again to play.
                       </p>
-                      <p>
-                        <strong>Score</strong> is your win rate plus half your draw rate.
-                        When your score is below 45% or above 55% over at
-                        least 10 games, a statistical test is conducted to determine how
-                        likely the difference occurred by chance.
-                      </p>
-                      {OPENING_INSIGHTS_CONFIDENCE_COPY}
                     </div>
                   </InfoPopover>
                 </span>
