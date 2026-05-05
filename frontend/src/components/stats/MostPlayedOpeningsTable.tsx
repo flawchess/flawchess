@@ -189,7 +189,7 @@ export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenG
   return (
     <div data-testid={`${testIdPrefix}-table`}>
       {/* Table header — desktop shows 5 columns, mobile shows 3 */}
-      <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_3.5rem_minmax(120px,200px)_3rem_minmax(100px,160px)] gap-2 px-2 pb-1 text-xs text-muted-foreground border-b border-white/10 mb-1">
+      <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_3.5rem_minmax(120px,200px)_5rem_minmax(100px,160px)] gap-2 px-2 pb-1 text-xs text-muted-foreground border-b border-white/10 mb-1">
         <span>Name</span>
         <span className="text-right">Games</span>
         <span>Win / Draw / Loss</span>
