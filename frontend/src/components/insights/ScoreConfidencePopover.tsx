@@ -3,7 +3,6 @@ import { Popover as PopoverPrimitive } from 'radix-ui';
 import { HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WdlConfidenceTooltip } from './WdlConfidenceTooltip';
-import { OPENING_INSIGHTS_CONFIDENCE_COPY } from './OpeningInsightsBlock';
 
 type ConfidenceLevel = 'low' | 'medium' | 'high';
 
@@ -77,20 +76,12 @@ export function ScoreConfidencePopover({
             'data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
           )}
         >
-          <div className="space-y-2">
-            <WdlConfidenceTooltip
-              level={level}
-              pValue={pValue}
-              score={score}
-              gameCount={gameCount}
-            />
-            <div className="border-t border-background/20 pt-2 space-y-2">
-              <p>
-                <strong>Score</strong> is your win rate plus half your draw rate. When your score is below 45% or above 55% over at least 10 games, a statistical test is conducted to determine how likely the difference occurred by chance.
-              </p>
-              {OPENING_INSIGHTS_CONFIDENCE_COPY}
-            </div>
-          </div>
+          <WdlConfidenceTooltip
+            level={level}
+            pValue={pValue}
+            score={score}
+            gameCount={gameCount}
+          />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>
