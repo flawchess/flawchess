@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
-status: executing
-last_updated: "2026-05-05T18:50:00.000Z"
-last_activity: 2026-05-05 -- Quick task 260505-uzp: unified score-zone palette across arrow + Score column + row tint
+status: "Phase 80 shipped — PR #80 awaiting CI + UI smoke"
+last_updated: "2026-05-05T20:28:36.955Z"
+last_activity: "2026-05-05 -- Phase 80 shipped — PR #80 opened"
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 6
-  completed_plans: 0
-  percent: 0
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State: FlawChess
@@ -19,8 +19,8 @@ progress:
 
 Phase: 80 (opening-stats-middlegame-entry-eval-and-clock-diff-columns) — EXECUTING
 Plan: 1 of 6
-Status: Executing Phase 80
-Last activity: 2026-05-03 -- Phase 80 execution started
+Status: Phase 80 shipped — PR #80 awaiting CI + UI smoke
+Last activity: 2026-05-05 -- Phase 80 shipped — PR #80 opened
 
 ## Project Reference
 
