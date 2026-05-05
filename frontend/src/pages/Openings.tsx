@@ -80,6 +80,7 @@ import {
   MIN_GAMES_FOR_RELIABLE_STATS,
   MIN_GAMES_OPENING_ROW,
   UNRELIABLE_OPACITY,
+  ZONE_NEUTRAL,
 } from '@/lib/theme';
 import { pgnToSanArray, sanArrayToPgn } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
@@ -942,6 +943,11 @@ export function OpeningsPage() {
         const stats = gamesData.stats;
         const isUnreliable = stats.total < MIN_GAMES_FOR_RELIABLE_STATS;
         const scorePct = Math.round(stats.score * 100);
+        // Score-color reliability gate mirrors MoveExplorer.tsx so the position
+        // panel and the moves table agree on when green/red is meaningful.
+        const isReliableScore =
+          stats.total >= MIN_GAMES_FOR_RELIABLE_STATS && stats.confidence !== 'low';
+        const scoreColor = isReliableScore ? scoreZoneColor(stats.score) : ZONE_NEUTRAL;
         return (
           <div
             className="charcoal-texture rounded-md p-4 order-2 lg:order-1"
@@ -974,7 +980,7 @@ export function OpeningsPage() {
                   ariaLabel="Show score confidence details"
                 />
                 <span className="text-muted-foreground">Score:</span>
-                <span className="font-semibold" style={{ color: scoreZoneColor(stats.score) }}>{scorePct}%</span>
+                <span className="font-semibold" style={{ color: scoreColor }}>{scorePct}%</span>
               </span>
               {/* Col 2, row 2: Score bullet chart */}
               <div data-testid="score-bullet-position">
