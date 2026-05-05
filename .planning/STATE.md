@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
-status: "Phase 80 shipped — PR #80 awaiting CI + UI smoke"
-last_updated: "2026-05-05T20:28:36.955Z"
-last_activity: "2026-05-05 -- Phase 80 shipped — PR #80 opened"
+status: "Phase 80 merged — PR #80 squash-merged to main (18456f6); awaiting bin/deploy.sh + post-deploy UI smoke"
+last_updated: "2026-05-05T21:10:29.856Z"
+last_activity: "2026-05-05 -- Phase 80 PR #80 squash-merged to main; local main reset to origin; feature branch deleted"
 progress:
   total_phases: 6
   completed_phases: 1
@@ -19,8 +19,8 @@ progress:
 
 Phase: 80 (opening-stats-middlegame-entry-eval-and-clock-diff-columns) — EXECUTING
 Plan: 1 of 6
-Status: Phase 80 shipped — PR #80 awaiting CI + UI smoke
-Last activity: 2026-05-05 -- Phase 80 shipped — PR #80 opened
+Status: Phase 80 merged — PR #80 squash-merged to main (18456f6); awaiting bin/deploy.sh + post-deploy UI smoke
+Last activity: 2026-05-05 -- Phase 80 PR #80 squash-merged to main; local main reset to origin; feature branch deleted
 
 ## Project Reference
 
